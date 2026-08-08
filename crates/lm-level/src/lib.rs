@@ -50,8 +50,8 @@ mod ssc_sidecar_resolved;
 pub use binary::{BinaryError, ByteCursor};
 pub use complete_file::{CompleteLevelFile, CompleteLevelFileError, LevelCollection};
 pub use custom_object_library::{
-    CustomObjectEntry, CustomObjectLibrary, CustomObjectLibraryError, DescriptionFormat,
-    LineEnding, MAX_CUSTOM_OBJECT_SIDECAR_LEN,
+    CUSTOM_OBJECT_HEADER_LEN, CustomObjectEntry, CustomObjectLibrary, CustomObjectLibraryError,
+    DescriptionFormat, LineEnding, MAX_CUSTOM_OBJECT_SIDECAR_LEN,
 };
 pub use custom_sprite_library::{
     CustomSpriteEntry, CustomSpriteLibrary, CustomSpriteLibraryError, MAX_CUSTOM_SPRITE_SIDECAR_LEN,

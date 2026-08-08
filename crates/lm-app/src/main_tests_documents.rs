@@ -9,7 +9,7 @@ fn custom_object_shell_opens_edits_saves_and_closes_paired_sidecars() {
     let data = directory.join("My Objects.mw0");
     let descriptions = directory.join("My Objects.mw0t");
     let script = directory.join("Custom edits.lmedit");
-    fs::write(&data, [1, 0, 3, 0xff]).unwrap();
+    fs::write(&data, [0, 0, 0, 0, 0, 1, 0, 3, 0xff]).unwrap();
     fs::write(&descriptions, b"Original\n").unwrap();
     fs::write(
         &script,
@@ -52,7 +52,7 @@ fn failed_custom_object_pair_save_releases_pending_slot_for_retry() {
     let data = directory.join("objects.mw0");
     let descriptions = directory.join("objects.mw0t");
     let script = directory.join("edits.lmedit");
-    fs::write(&data, [1, 0, 3, 0xff]).unwrap();
+    fs::write(&data, [0, 0, 0, 0, 0, 1, 0, 3, 0xff]).unwrap();
     fs::write(&descriptions, b"Original\n").unwrap();
     fs::write(&script, "LMCUSED1\nreplace 0 020004 4368616e676564\n").unwrap();
     let mut session = None;
@@ -63,7 +63,7 @@ fn failed_custom_object_pair_save_releases_pending_slot_for_retry() {
     let controller = session.as_ref().unwrap();
     assert!(controller.is_modified());
     assert!(!controller.save_pending());
-    assert_eq!(fs::read(&data).unwrap(), [1, 0, 3, 0xff]);
+    assert_eq!(fs::read(&data).unwrap(), [0, 0, 0, 0, 0, 1, 0, 3, 0xff]);
     fs::write(&descriptions, b"Original\n").unwrap();
     save_custom_objects(&mut session).unwrap();
     assert!(!session.as_ref().unwrap().is_modified());

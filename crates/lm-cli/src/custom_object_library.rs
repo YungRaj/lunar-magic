@@ -101,7 +101,7 @@ mod tests {
         let text = directory.join("objects.mw0t");
         let output_data = directory.join("normalized.mw0");
         let output_text = directory.join("normalized.mw0t");
-        fs::write(&data, [1, 0, 3, 0xff]).unwrap();
+        fs::write(&data, [0, 0, 0, 0, 0, 1, 0, 3, 0xff]).unwrap();
         fs::write(&text, b"Object\n").unwrap();
         let observation = directory.join("objects.obs");
         execute(
@@ -111,7 +111,10 @@ mod tests {
             Some(&observation),
         )
         .unwrap();
-        assert_eq!(fs::read(output_data).unwrap(), [1, 0, 3, 0xff]);
+        assert_eq!(
+            fs::read(output_data).unwrap(),
+            [0, 0, 0, 0, 0, 1, 0, 3, 0xff]
+        );
         assert_eq!(fs::read(output_text).unwrap(), b"Object\n");
         let observed =
             lm_oracle::Observation::from_text(&fs::read_to_string(observation).unwrap()).unwrap();

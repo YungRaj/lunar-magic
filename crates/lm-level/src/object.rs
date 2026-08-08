@@ -24,6 +24,19 @@ impl ObjectRecord {
     pub fn encoded(&self) -> &[u8] {
         &self.encoded
     }
+
+    /// Changes the stream/group boundary bit without interpreting a custom record's width.
+    pub(crate) fn set_raw_advances_screen(
+        &mut self,
+        advances: bool,
+    ) -> Result<(), ObjectStreamError> {
+        let first = (self.encoded[0] & !0x80) | if advances { 0x80 } else { 0 };
+        if first == 0xff {
+            return Err(ObjectStreamError::InvalidRecord);
+        }
+        self.encoded[0] = first;
+        Ok(())
+    }
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]

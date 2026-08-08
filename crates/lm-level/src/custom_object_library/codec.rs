@@ -1,14 +1,30 @@
 use super::{
-    CustomObjectEntry, CustomObjectLibraryError, DescriptionFormat, LineEnding,
-    MAX_CUSTOM_OBJECT_SIDECAR_LEN, UTF8_BOM,
+    CUSTOM_OBJECT_HEADER_LEN, CustomObjectEntry, CustomObjectLibraryError, DescriptionFormat,
+    LineEnding, MAX_CUSTOM_OBJECT_SIDECAR_LEN, UTF8_BOM,
 };
 use crate::{ObjectRecord, encoded_record_length};
 
 pub(super) const MAX_DESCRIPTION_LEN: usize = 1024;
 
-pub(super) fn decode_objects(data: &[u8]) -> Result<Vec<ObjectRecord>, CustomObjectLibraryError> {
-    let mut offset = 0;
-    let mut objects = Vec::new();
+pub(super) fn decode_objects(
+    data: &[u8],
+) -> Result<([u8; CUSTOM_OBJECT_HEADER_LEN], Vec<Vec<ObjectRecord>>), CustomObjectLibraryError> {
+    // Early Rust builds emitted a headerless pair. Accept the only unambiguous short form so
+    // those documents can be opened and canonically saved into Lunar Magic's native framing.
+    let (header, mut offset) = if data.len() < CUSTOM_OBJECT_HEADER_LEN + 1 {
+        if data.len() < 4 || data.last() != Some(&0xff) {
+            return Err(CustomObjectLibraryError::MissingHeader);
+        }
+        ([0; CUSTOM_OBJECT_HEADER_LEN], 0)
+    } else {
+        (
+            data[..CUSTOM_OBJECT_HEADER_LEN]
+                .try_into()
+                .expect("bounded header slice"),
+            CUSTOM_OBJECT_HEADER_LEN,
+        )
+    };
+    let mut groups: Vec<Vec<ObjectRecord>> = Vec::new();
     loop {
         let first = *data
             .get(offset)
@@ -19,7 +35,7 @@ pub(super) fn decode_objects(data: &[u8]) -> Result<Vec<ObjectRecord>, CustomObj
                     data.len() - offset - 1,
                 ));
             }
-            return Ok(objects);
+            return Ok((header, groups));
         }
         let length = encoded_record_length(&data[offset..])
             .ok_or(CustomObjectLibraryError::MalformedObject { offset })?;
@@ -29,10 +45,18 @@ pub(super) fn decode_objects(data: &[u8]) -> Result<Vec<ObjectRecord>, CustomObj
         let bytes = data
             .get(offset..end)
             .ok_or(CustomObjectLibraryError::MalformedObject { offset })?;
-        objects.push(
-            ObjectRecord::new(bytes.to_vec())
-                .map_err(|_| CustomObjectLibraryError::MalformedObject { offset })?,
-        );
+        let mut object = ObjectRecord::new(bytes.to_vec())
+            .map_err(|_| CustomObjectLibraryError::MalformedObject { offset })?;
+        let starts_group = object.advances_screen();
+        if groups.is_empty() || starts_group {
+            groups.push(Vec::new());
+        }
+        if starts_group {
+            object
+                .set_raw_advances_screen(false)
+                .map_err(|_| CustomObjectLibraryError::InvalidGroupBoundary)?;
+        }
+        groups.last_mut().expect("group inserted").push(object);
         offset = end;
     }
 }
@@ -77,12 +101,16 @@ pub(super) fn decode_descriptions(
 pub(super) fn encoded_data_len(
     entries: &[CustomObjectEntry],
 ) -> Result<usize, CustomObjectLibraryError> {
-    entries.iter().try_fold(1usize, |length, entry| {
-        length
-            .checked_add(entry.object.encoded().len())
-            .filter(|length| *length <= MAX_CUSTOM_OBJECT_SIDECAR_LEN)
-            .ok_or(CustomObjectLibraryError::DataTooLarge)
-    })
+    entries
+        .iter()
+        .try_fold(CUSTOM_OBJECT_HEADER_LEN + 1, |length, entry| {
+            entry.objects().try_fold(length, |length, object| {
+                length
+                    .checked_add(object.encoded().len())
+                    .filter(|length| *length <= MAX_CUSTOM_OBJECT_SIDECAR_LEN)
+                    .ok_or(CustomObjectLibraryError::DataTooLarge)
+            })
+        })
 }
 
 pub(super) fn encoded_description_len(

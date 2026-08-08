@@ -633,7 +633,9 @@ interactive frontends cannot bypass confirmation and request correlation through
   Focused word parsing is separate from `ExpandedSettingsDocumentController` lifecycle ownership,
   which provides exact history, immutable recoverable saves, and dirty-close/quit protection.
   Paired `.mw0`/`.mw0t` custom-object libraries are editable as one synchronized native document.
-  The window edits complete variable-width object records and one-line Unicode descriptions,
+  The binary side retains Lunar Magic's five reserved header bytes, and new-screen markers divide
+  the following variable-width records into one-or-more-object collection groups. The window edits
+  complete groups (semicolon-separated records) and one-line Unicode descriptions,
   supports insertion/replacement/removal/reordering and Unicode search, and exposes retained UTF-8
   BOM, LF/CRLF, and trailing-line framing. Entry forms and lifecycle code are separate; mutations
   use `CustomObjectLibraryController` canonical history, and saves publish both existing sidecars

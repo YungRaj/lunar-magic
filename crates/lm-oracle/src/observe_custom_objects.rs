@@ -29,6 +29,11 @@ pub fn observe_custom_object_library(library: &CustomObjectLibrary) -> Observati
         "custom-objects/text/trailing-line-ending",
         &format.trailing_line_ending,
     );
+    put(
+        &mut result,
+        "custom-objects/data/header",
+        &hex(library.data_header()),
+    );
     for (index, entry) in library.entries().iter().enumerate() {
         let base = format!("custom-objects/entries/{index:04x}");
         put(
@@ -36,6 +41,18 @@ pub fn observe_custom_object_library(library: &CustomObjectLibrary) -> Observati
             &format!("{base}/object"),
             &hex(entry.object.encoded()),
         );
+        put(
+            &mut result,
+            &format!("{base}/object-count"),
+            &entry.objects().count(),
+        );
+        for (object_index, object) in entry.objects().enumerate() {
+            put(
+                &mut result,
+                &format!("{base}/objects/{object_index:04x}"),
+                &hex(object.encoded()),
+            );
+        }
         put(
             &mut result,
             &format!("{base}/description"),
@@ -67,12 +84,20 @@ mod tests {
     #[test]
     fn framing_objects_and_unicode_descriptions_are_observed() {
         let library = CustomObjectLibrary::decode(
-            &[1, 0, 3, 0xff],
+            &[0, 0, 0, 0, 0, 1, 0, 3, 0xff],
             b"\xef\xbb\xbfObject \xe6\x97\xa5\xe6\x9c\xac\xe8\xaa\x9e\r\n",
         )
         .unwrap();
         let observed = observe_custom_object_library(&library);
         assert_eq!(observed.get("custom-objects/count"), Some("1"));
+        assert_eq!(
+            observed.get("custom-objects/data/header"),
+            Some("0000000000")
+        );
+        assert_eq!(
+            observed.get("custom-objects/entries/0000/object-count"),
+            Some("1")
+        );
         assert_eq!(observed.get("custom-objects/text/utf8-bom"), Some("true"));
         assert_eq!(
             observed.get("custom-objects/text/line-ending"),

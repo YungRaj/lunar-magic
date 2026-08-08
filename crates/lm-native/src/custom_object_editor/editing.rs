@@ -1,5 +1,5 @@
 use super::{CustomObjectEditor, CustomObjectLibraryEdit, native_clipboard};
-use lm_level::{CustomObjectEntry, ObjectRecord};
+use lm_level::ObjectRecord;
 
 impl CustomObjectEditor {
     pub(super) fn apply_edit(&mut self, edit: &CustomObjectLibraryEdit) {
@@ -29,8 +29,14 @@ impl CustomObjectEditor {
 
     pub(super) fn paste_object(&mut self, text: &str) {
         match native_clipboard::decode_level_object(text).and_then(|object| {
-            CustomObjectEntry::new(object, self.form.description.clone())
-                .map_err(|error| error.to_string())
+            let mut entry = self
+                .controller
+                .as_ref()
+                .and_then(|controller| controller.library().entries().get(self.index))
+                .cloned()
+                .ok_or_else(|| "no custom-object entry is selected".to_string())?;
+            entry.object = object;
+            Ok(entry)
         }) {
             Ok(entry) => self.apply_edit(&CustomObjectLibraryEdit::Replace {
                 index: self.index,

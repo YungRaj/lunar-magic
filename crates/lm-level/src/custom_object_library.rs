@@ -9,6 +9,7 @@ use codec::{
 };
 
 pub const MAX_CUSTOM_OBJECT_SIDECAR_LEN: usize = 0x8000;
+pub const CUSTOM_OBJECT_HEADER_LEN: usize = 5;
 const UTF8_BOM: &[u8] = b"\xef\xbb\xbf";
 
 /// Text framing retained from a Lunar Magic `.mw0t` custom-object description sidecar.
@@ -48,6 +49,8 @@ impl LineEnding {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CustomObjectEntry {
     pub object: ObjectRecord,
+    /// Remaining records pasted with the primary object as one custom collection entry.
+    pub additional_objects: Vec<ObjectRecord>,
     pub description: String,
 }
 
@@ -59,20 +62,56 @@ impl CustomObjectEntry {
     /// Returns [`CustomObjectLibraryError::InvalidDescription`] for embedded line separators,
     /// NULs, or descriptions longer than 1,024 encoded bytes.
     pub fn new(
-        object: ObjectRecord,
+        mut object: ObjectRecord,
         description: String,
     ) -> Result<Self, CustomObjectLibraryError> {
         validate_description(&description)?;
+        object
+            .set_raw_advances_screen(false)
+            .map_err(|_| CustomObjectLibraryError::InvalidGroupBoundary)?;
         Ok(Self {
             object,
+            additional_objects: Vec::new(),
             description,
         })
+    }
+
+    /// Constructs one native multi-object collection entry.
+    ///
+    /// # Errors
+    ///
+    /// Rejects an empty group or a description outside Lunar Magic's text boundary.
+    pub fn new_group(
+        mut objects: Vec<ObjectRecord>,
+        description: String,
+    ) -> Result<Self, CustomObjectLibraryError> {
+        if objects.is_empty() {
+            return Err(CustomObjectLibraryError::EmptyObjectGroup);
+        }
+        validate_description(&description)?;
+        for object in &mut objects {
+            object
+                .set_raw_advances_screen(false)
+                .map_err(|_| CustomObjectLibraryError::InvalidGroupBoundary)?;
+        }
+        let object = objects.remove(0);
+        Ok(Self {
+            object,
+            additional_objects: objects,
+            description,
+        })
+    }
+
+    #[must_use]
+    pub fn objects(&self) -> impl Iterator<Item = &ObjectRecord> {
+        std::iter::once(&self.object).chain(&self.additional_objects)
     }
 }
 
 /// Lossless paired custom-object library used by `.mw0` and `.mw0t` files.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct CustomObjectLibrary {
+    data_header: [u8; CUSTOM_OBJECT_HEADER_LEN],
     entries: Vec<CustomObjectEntry>,
     description_format: DescriptionFormat,
 }
@@ -80,9 +119,10 @@ pub struct CustomObjectLibrary {
 impl CustomObjectLibrary {
     /// Decodes a synchronized native sidecar pair.
     ///
-    /// The binary sidecar is a terminated sequence of ordinary variable-width level-object
-    /// records. The text sidecar is UTF-8 with an optional BOM and either consistent LF or CRLF
-    /// separators. Text framing is retained for byte-stable re-encoding.
+    /// The binary sidecar has five retained reserved bytes followed by a terminated sequence of
+    /// variable-width level-object records. A set new-screen bit on a record begins the next
+    /// multi-object collection entry. The text sidecar is UTF-8 with an optional BOM and either
+    /// consistent LF or CRLF separators. Text framing is retained for byte-stable re-encoding.
     ///
     /// # Errors
     ///
@@ -96,27 +136,28 @@ impl CustomObjectLibrary {
             return Err(CustomObjectLibraryError::DescriptionsTooLarge);
         }
 
-        let objects = decode_objects(data)?;
+        let (data_header, object_groups) = decode_objects(data)?;
         let (text, utf8_bom) = descriptions
             .strip_prefix(UTF8_BOM)
             .map_or((descriptions, false), |text| (text, true));
         let text = std::str::from_utf8(text)
             .map_err(|_| CustomObjectLibraryError::InvalidDescriptionEncoding)?;
         let (description_values, line_ending, trailing_line_ending) =
-            decode_descriptions(text, objects.len())?;
-        if objects.len() != description_values.len() {
+            decode_descriptions(text, object_groups.len())?;
+        if object_groups.len() != description_values.len() {
             return Err(CustomObjectLibraryError::EntryCountMismatch {
-                objects: objects.len(),
+                objects: object_groups.len(),
                 descriptions: description_values.len(),
             });
         }
 
-        let entries = objects
+        let entries = object_groups
             .into_iter()
             .zip(description_values)
-            .map(|(object, description)| CustomObjectEntry::new(object, description))
+            .map(|(objects, description)| CustomObjectEntry::new_group(objects, description))
             .collect::<Result<Vec<_>, _>>()?;
         Ok(Self {
+            data_header,
             entries,
             description_format: DescriptionFormat {
                 utf8_bom,
@@ -129,6 +170,12 @@ impl CustomObjectLibrary {
     #[must_use]
     pub fn entries(&self) -> &[CustomObjectEntry] {
         &self.entries
+    }
+
+    /// Returns the five native reserved bytes retained from the `.mw0` file.
+    #[must_use]
+    pub const fn data_header(&self) -> &[u8; CUSTOM_OBJECT_HEADER_LEN] {
+        &self.data_header
     }
 
     #[must_use]
@@ -258,8 +305,15 @@ impl CustomObjectLibrary {
     pub fn encode(&self) -> Result<(Vec<u8>, Vec<u8>), CustomObjectLibraryError> {
         validate_encoded_sizes(&self.entries, self.description_format)?;
         let mut data = Vec::with_capacity(encoded_data_len(&self.entries)?);
-        for entry in &self.entries {
-            data.extend_from_slice(entry.object.encoded());
+        data.extend_from_slice(&self.data_header);
+        for (entry_index, entry) in self.entries.iter().enumerate() {
+            for (object_index, object) in entry.objects().enumerate() {
+                let mut object = object.clone();
+                object
+                    .set_raw_advances_screen(entry_index != 0 && object_index == 0)
+                    .map_err(|_| CustomObjectLibraryError::InvalidGroupBoundary)?;
+                data.extend_from_slice(object.encoded());
+            }
         }
         data.push(0xff);
 
@@ -297,6 +351,9 @@ pub enum CustomObjectLibraryError {
     MalformedObject { offset: usize },
     InvalidDescriptionEncoding,
     InvalidDescription,
+    MissingHeader,
+    EmptyObjectGroup,
+    InvalidGroupBoundary,
     MixedLineEndings,
     EntryCountMismatch { objects: usize, descriptions: usize },
     InvalidIndex(usize),

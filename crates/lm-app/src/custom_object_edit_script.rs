@@ -162,15 +162,20 @@ fn entry(
     object: &str,
     description: &str,
 ) -> Result<CustomObjectEntry, CustomObjectEditScriptError> {
-    let object = ObjectRecord::new(hex_bytes(line, object)?).map_err(|error| {
-        CustomObjectEditScriptError::InvalidObject {
-            line,
-            message: error.to_string(),
-        }
-    })?;
+    let objects = object
+        .split(',')
+        .map(|object| {
+            ObjectRecord::new(hex_bytes(line, object)?).map_err(|error| {
+                CustomObjectEditScriptError::InvalidObject {
+                    line,
+                    message: error.to_string(),
+                }
+            })
+        })
+        .collect::<Result<Vec<_>, _>>()?;
     let description = String::from_utf8(hex_bytes(line, description)?)
         .map_err(|_| CustomObjectEditScriptError::InvalidUtf8 { line })?;
-    CustomObjectEntry::new(object, description).map_err(|error| {
+    CustomObjectEntry::new_group(objects, description).map_err(|error| {
         CustomObjectEditScriptError::InvalidEntry {
             line,
             message: error.to_string(),
@@ -227,12 +232,13 @@ mod tests {
 
     #[test]
     fn parses_entries_ordering_and_text_framing() {
-        let edits = parse("LMCUSED1\ninsert 0 010003 5365636f6e6420e29883\nreplace 0 020004 4368616e676564\nmove 0 0\nremove 0\nformat no-bom lf no-trailing\n").unwrap();
+        let edits = parse("LMCUSED1\ninsert 0 010003,020804 5365636f6e6420e29883\nreplace 0 020004 4368616e676564\nmove 0 0\nremove 0\nformat no-bom lf no-trailing\n").unwrap();
         assert_eq!(edits.len(), 5);
         let CustomObjectLibraryEdit::Insert { entry, .. } = &edits[0] else {
             panic!()
         };
         assert_eq!(entry.description, "Second ☃");
+        assert_eq!(entry.objects().count(), 2);
     }
 
     #[test]

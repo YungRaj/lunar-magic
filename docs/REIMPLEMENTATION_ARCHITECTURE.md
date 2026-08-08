@@ -634,11 +634,12 @@ This is a behavioral reimplementation plan, not a translation of the Windows exe
   focused bounded `LMCUSED1` parser. The runnable shell derives `.mw0t` from `.mw0`, applies edits
   against the controller revision, refuses dirty close, and acknowledges a save only after the
   recoverable two-file persistence boundary publishes both snapshots. Its bounded canonical
-  history restores records, descriptions, and text framing together without moving the saved
-  baseline.
+  history restores the five-byte reserved data header, new-screen-delimited multi-object groups,
+  descriptions, and text framing together without moving the saved baseline. Edit-script object
+  groups use comma-separated native records; the graphical form uses semicolons.
 - The headless paired-sidecar workflow can publish normalized `.mw0`, normalized `.mw0t`, and a
   canonical record-addressable observation in one create-new batch. Observations include retained
-  BOM/newline framing, exact object bytes, and Unicode descriptions.
+  BOM/newline framing, the reserved header, every grouped object record, and Unicode descriptions.
 - The separate `.mw2`/`.mwt` boundary retains a binary stream header, one-or-more-record placement
   groups, native bit-zero group markers, revision-table-selected record widths, optional text BOM,
   line-ending style, and trailing-line framing. Its headless workflow requires the exact four-table

@@ -12,7 +12,11 @@ pub(crate) struct CustomObjectForm {
 impl CustomObjectForm {
     pub(crate) fn load(entry: &CustomObjectEntry, index: usize) -> Self {
         Self {
-            object_bytes: level_editor_forms::format_bytes(entry.object.encoded()),
+            object_bytes: entry
+                .objects()
+                .map(|object| level_editor_forms::format_bytes(object.encoded()))
+                .collect::<Vec<_>>()
+                .join(" ; "),
             description: entry.description.clone(),
             insert_index: index,
             move_to: index,
@@ -20,11 +24,14 @@ impl CustomObjectForm {
     }
 
     pub(crate) fn entry(&self) -> Result<CustomObjectEntry, String> {
-        CustomObjectEntry::new(
-            level_editor_forms::parse_object(&self.object_bytes)?,
-            self.description.clone(),
-        )
-        .map_err(|error| error.to_string())
+        let objects = self
+            .object_bytes
+            .split(';')
+            .map(str::trim)
+            .map(level_editor_forms::parse_object)
+            .collect::<Result<Vec<_>, _>>()?;
+        CustomObjectEntry::new_group(objects, self.description.clone())
+            .map_err(|error| error.to_string())
     }
 }
 
@@ -71,6 +78,19 @@ mod tests {
         let value = CustomObjectEntry::new(
             ObjectRecord::new(vec![1, 2, 3, 4, 5]).unwrap(),
             "Coin ★".into(),
+        )
+        .unwrap();
+        assert_eq!(CustomObjectForm::load(&value, 0).entry().unwrap(), value);
+    }
+
+    #[test]
+    fn entry_form_round_trips_a_native_multi_object_group() {
+        let value = CustomObjectEntry::new_group(
+            vec![
+                ObjectRecord::new(vec![1, 2, 3]).unwrap(),
+                ObjectRecord::new(vec![2, 4, 5]).unwrap(),
+            ],
+            "Platform pair".into(),
         )
         .unwrap();
         assert_eq!(CustomObjectForm::load(&value, 0).entry().unwrap(), value);

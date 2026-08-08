@@ -242,7 +242,7 @@ mod tests {
         CustomObjectLibraryController::decode(
             "objects.mw0".into(),
             "objects.mw0t".into(),
-            &[1, 0, 3, 0xff],
+            &[0, 0, 0, 0, 0, 1, 0, 3, 0xff],
             b"Original\n",
         )
         .unwrap()
@@ -276,7 +276,7 @@ mod tests {
         assert_eq!(controller.library().entries()[0].description, "Second");
         let save = controller.begin_save().unwrap();
         assert_eq!(save.revision, 1);
-        assert_eq!(save.data, [2, 8, 4, 1, 0, 3, 0xff]);
+        assert_eq!(save.data, [0, 0, 0, 0, 0, 2, 8, 4, 0x81, 0, 3, 0xff]);
         controller.acknowledge_save(save.request_id).unwrap();
         assert!(!controller.is_modified());
     }

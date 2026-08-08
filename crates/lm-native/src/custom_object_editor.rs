@@ -90,7 +90,7 @@ impl CustomObjectEditor {
             .as_ref()
             .map_or(0, |controller| controller.library().entries().len());
         self.entry_navigation(ui, entries);
-        ui.label("Variable-width object bytes:");
+        ui.label("Object-group bytes (separate records with ';'):");
         ui.text_edit_singleline(&mut self.form.object_bytes);
         ui.label("Description (one line, UTF-8):");
         ui.text_edit_singleline(&mut self.form.description);
@@ -288,7 +288,7 @@ mod tests {
         let controller = CustomObjectLibraryController::decode(
             "objects.mw0".into(),
             "objects.mw0t".into(),
-            &[1, 0, 3, 0xff],
+            &[0, 0, 0, 0, 0, 1, 0, 3, 0xff],
             b"Original description\n",
         )
         .unwrap();
