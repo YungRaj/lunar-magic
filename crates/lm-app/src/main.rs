@@ -127,10 +127,9 @@ use lm_overworld::{
     encode_native_overworld_message_file,
 };
 use lm_profile::{
-    SMW_US_V1_EXPANDED_SETTINGS_ALLOCATION_SEARCH_START, SMW_US_V1_OVERWORLD_SETTINGS_FIRST_SLOT,
     load_smw_us_v1_event_tilemaps, load_smw_us_v1_overworld_messages,
+    load_smw_us_v1_overworld_settings,
     smw_us_v1_boss_sequence_locator, smw_us_v1_credits_tilemap_locator,
-    smw_us_v1_default_special_expanded_settings_record, smw_us_v1_expanded_settings_layout,
     smw_us_v1_lunar_magic_metadata_layout, smw_us_v1_overworld_event_number_map_locator,
     smw_us_v1_overworld_event_reveal_locator, smw_us_v1_overworld_level_name_locator,
     smw_us_v1_overworld_level_name_runtime, smw_us_v1_overworld_path_patch_locator,
@@ -631,22 +630,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             }
             ShellCommand::NativeOverworldSettingsExport(path) => {
                 let project = app.project().ok_or("no project is open")?;
-                let settings = if project.rom.logical_bytes().get(
-                    SMW_US_V1_EXPANDED_SETTINGS_ALLOCATION_SEARCH_START
-                        ..SMW_US_V1_EXPANDED_SETTINGS_ALLOCATION_SEARCH_START + 4,
-                ) == Some(b"STAR")
-                {
-                    project.load_expanded_overworld_settings(
-                        SMW_US_V1_OVERWORLD_SETTINGS_FIRST_SLOT,
-                        smw_us_v1_expanded_settings_layout(),
-                    )?
-                } else {
-                    ExpandedOverworldSettings {
-                        records: std::array::from_fn(|_| {
-                            smw_us_v1_default_special_expanded_settings_record()
-                        }),
-                    }
-                };
+                let settings = native_overworld_settings_for_export(project)?;
                 file_persistence::write_new(&path, &settings.encode_file())?;
                 println!("exported-native-overworld-settings: 7");
             }
@@ -932,6 +916,12 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
     Ok(())
+}
+
+fn native_overworld_settings_for_export(
+    project: &lm_project::Project,
+) -> Result<ExpandedOverworldSettings, Box<dyn std::error::Error>> {
+    Ok(load_smw_us_v1_overworld_settings(project)?.settings)
 }
 
 fn print_help() {

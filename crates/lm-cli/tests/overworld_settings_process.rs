@@ -2,9 +2,12 @@ mod common;
 
 use lm_level::ExpandedOverworldSettings;
 use lm_oracle::Observation;
-use lm_profile::{SMW_US_V1_OVERWORLD_SETTINGS_FIRST_SLOT, smw_us_v1_expanded_settings_layout};
+use lm_profile::{
+    SMW_US_V1_EXPANDED_SETTINGS_ALLOCATION_SEARCH_START, SMW_US_V1_OVERWORLD_SETTINGS_FIRST_SLOT,
+    smw_us_v1_expanded_settings_layout,
+};
 use lm_project::Project;
-use lm_rom::{RomImage, detect_identity};
+use lm_rom::{Mapper, RomImage, detect_identity};
 use std::{fs, process::Command};
 
 fn run(operation: &str, arguments: &[&std::path::Path]) -> std::process::Output {
@@ -23,6 +26,8 @@ fn built_cli_exports_installs_and_reopens_native_overworld_settings() {
     fs::create_dir(&directory).unwrap();
     let input = common::pristine_smw_us_rom_path();
     let defaults_file = directory.join("defaults.lmowset");
+    let collision_rom = directory.join("unrelated first-fit block.sfc");
+    let collision_defaults = directory.join("collision defaults.lmowset");
     let changed_file = directory.join("changed.lmowset");
     let expanded_rom = directory.join("expanded.sfc");
     let reopened_file = directory.join("reopened.lmowset");
@@ -36,6 +41,39 @@ fn built_cli_exports_installs_and_reopens_native_overworld_settings() {
     );
     let mut changed =
         ExpandedOverworldSettings::decode_file(&fs::read(&defaults_file).unwrap()).unwrap();
+
+    let mut collision =
+        Project::open_supported(RomImage::from_bytes(fs::read(&input).unwrap()).unwrap()).unwrap();
+    collision
+        .expand_rom(Mapper::LoRom, 0x10_0000, 0xff, 0x7fdc)
+        .unwrap();
+    let mut unrelated = vec![0x30; 0x8008];
+    unrelated[..4].copy_from_slice(b"STAR");
+    unrelated[4..6].copy_from_slice(&0x7fff_u16.to_le_bytes());
+    unrelated[6..8].copy_from_slice(&0x8000_u16.to_le_bytes());
+    collision
+        .rom
+        .write(
+            SMW_US_V1_EXPANDED_SETTINGS_ALLOCATION_SEARCH_START,
+            &unrelated,
+        )
+        .unwrap();
+    collision.refresh_checksum(0x7fdc).unwrap();
+    fs::write(&collision_rom, collision.save_snapshot()).unwrap();
+    let collision_export = run(
+        "smw-overworld-settings-export",
+        &[&collision_rom, &collision_defaults],
+    );
+    assert!(
+        collision_export.status.success(),
+        "{}",
+        String::from_utf8_lossy(&collision_export.stderr)
+    );
+    assert_eq!(
+        fs::read(&collision_defaults).unwrap(),
+        fs::read(&defaults_file).unwrap()
+    );
+
     changed.records[6].set_word(9, 0x4567).unwrap();
     fs::write(&changed_file, changed.encode_file()).unwrap();
 

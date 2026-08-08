@@ -5,15 +5,12 @@ use crate::{
 use lm_level::ExpandedOverworldSettings;
 use lm_oracle::observe_overworld_layer3_settings;
 use lm_profile::{
-    SMW_US_V1_CHECKSUM_FIELD, SMW_US_V1_EXPANDED_SETTINGS_ALLOCATION_LEN,
-    SMW_US_V1_EXPANDED_SETTINGS_ALLOCATION_SEARCH_START, SMW_US_V1_OVERWORLD_SETTINGS_FIRST_SLOT,
-    SmwUsV1ExpandedSettingsAllocation, load_smw_us_v1_overworld_layer3_settings,
-    smw_us_v1_default_special_expanded_settings_record,
+    SMW_US_V1_CHECKSUM_FIELD, SMW_US_V1_OVERWORLD_SETTINGS_FIRST_SLOT,
+    load_smw_us_v1_overworld_layer3_settings, load_smw_us_v1_overworld_settings,
     smw_us_v1_expanded_settings_installation_plan_with_overworld_settings,
     smw_us_v1_expanded_settings_layout,
 };
 use lm_project::Project;
-use lm_rats::parse_at;
 use lm_rom::{Mapper, Region, RomImage, SupportedGame};
 use std::path::Path;
 
@@ -101,31 +98,11 @@ fn import(
 fn load_or_default(
     project: &Project,
 ) -> Result<ExpandedOverworldSettings, Box<dyn std::error::Error>> {
-    if installed(project)? {
-        Ok(project.load_expanded_overworld_settings(
-            SMW_US_V1_OVERWORLD_SETTINGS_FIRST_SLOT,
-            smw_us_v1_expanded_settings_layout(),
-        )?)
-    } else {
-        Ok(ExpandedOverworldSettings {
-            records: std::array::from_fn(|_| smw_us_v1_default_special_expanded_settings_record()),
-        })
-    }
+    Ok(load_smw_us_v1_overworld_settings(project)?.settings)
 }
 
 fn installed(project: &Project) -> Result<bool, Box<dyn std::error::Error>> {
-    let bytes = project.rom.logical_bytes();
-    let header = SMW_US_V1_EXPANDED_SETTINGS_ALLOCATION_SEARCH_START;
-    if bytes.get(header..header + 4) != Some(b"STAR") {
-        return Ok(false);
-    }
-    let block = parse_at(bytes, header)
-        .map_err(|error| format!("invalid expanded-settings STAR block: {error:?}"))?;
-    if block.payload.len() != SMW_US_V1_EXPANDED_SETTINGS_ALLOCATION_LEN {
-        return Err("expanded-settings STAR block has the wrong length".into());
-    }
-    SmwUsV1ExpandedSettingsAllocation::decode(&bytes[block.payload])?;
-    Ok(true)
+    Ok(load_smw_us_v1_overworld_settings(project)?.installed)
 }
 
 fn open_smw_us_v1(path: &Path) -> Result<Project, Box<dyn std::error::Error>> {

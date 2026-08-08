@@ -105,6 +105,60 @@ fn profile_and_rom_with_installed_animation_features() -> (lm_profile::RevisionP
 }
 
 #[test]
+fn native_overworld_settings_export_distinguishes_first_fit_collision_from_owned_storage() {
+    let header = lm_profile::SMW_US_V1_EXPANDED_SETTINGS_ALLOCATION_SEARCH_START;
+    let mut collision = vec![0xff; 0x10_0000];
+    let runtime = lm_profile::ExpandedSettingsRuntimeLayout::smw_us_v1(
+        0x11_8000,
+        lm_profile::ExpandedSettingsEntryContinuation::Continue,
+    );
+    for write in lm_profile::smw_us_v1_expanded_settings_fixed_writes(runtime).unwrap() {
+        let end = write.offset + write.expected.len();
+        collision[write.offset..end].copy_from_slice(&write.expected);
+    }
+    collision[header..header + 4].copy_from_slice(b"STAR");
+    collision[header + 4..header + 6].copy_from_slice(&0x7fff_u16.to_le_bytes());
+    collision[header + 6..header + 8].copy_from_slice(&0x8000_u16.to_le_bytes());
+    collision[header + 8..header + 8 + 0x8000].fill(0x30);
+    let defaults = lm_level::ExpandedOverworldSettings {
+        records: std::array::from_fn(|_| {
+            lm_profile::smw_us_v1_default_special_expanded_settings_record()
+        }),
+    };
+
+    let mut installed_settings = defaults.clone();
+    installed_settings.records[3].set_word(7, 0x4567).unwrap();
+    let mut allocation = lm_profile::SmwUsV1ExpandedSettingsAllocation::new_default();
+    allocation
+        .set_record(0x203, installed_settings.records[3].clone())
+        .unwrap();
+    let payload = allocation.encode();
+    let mut installed_logical = vec![0xff; 0x10_0000];
+    installed_logical[header..header + 4].copy_from_slice(b"STAR");
+    let size = u16::try_from(payload.len() - 1).unwrap();
+    installed_logical[header + 4..header + 6].copy_from_slice(&size.to_le_bytes());
+    installed_logical[header + 6..header + 8].copy_from_slice(&(!size).to_le_bytes());
+    installed_logical[header + 8..header + 8 + payload.len()].copy_from_slice(&payload);
+
+    for (logical, expected) in [
+        (&collision, &defaults),
+        (&installed_logical, &installed_settings),
+    ] {
+        for copier_header in [lm_rom::CopierHeader::Absent, lm_rom::CopierHeader::Present] {
+            let mut image = RomImage::from_bytes(logical.clone()).unwrap();
+            image.set_copier_header(copier_header, 0xa5);
+            let before = image.as_file_bytes().to_vec();
+            let project = Project::new(image);
+            assert_eq!(
+                native_overworld_settings_for_export(&project).unwrap(),
+                *expected
+            );
+            assert_eq!(project.rom.as_file_bytes(), before);
+        }
+    }
+}
+
+#[test]
 fn terminal_native_assets_spec_commits_all_domains_as_one_undoable_operation() {
     let (profile, rom) = profile_and_rom_with_installed_animation_features();
     let mut app = native_assets_test_app_from_rom(&profile, rom);

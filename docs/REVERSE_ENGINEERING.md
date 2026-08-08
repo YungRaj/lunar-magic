@@ -2065,6 +2065,17 @@ defaults. `SmwUsV1ExpandedSettingsAllocation` implements this exact shape and ro
 allocation byte-for-byte. The remaining family is therefore the separate hook/pointer installer,
 not hidden machine code inside the allocation.
 
+The fixed first-fit address is not itself an ownership marker. A retained ordinary level-save ROM
+has a valid `$8000`-byte RATS allocation at `$087FF8` while all expanded-settings runtime
+destinations remain pristine. The shared profile loader therefore treats that combination as
+uninstalled defaults, accepts `$6E00` only after validating its fill prefix and records, and still
+rejects a wrong-length block once the runtime destinations prove installed ownership. Both the
+interactive shell and `lm-cli` overworld-settings import/export routes now delegate to this single
+decoder instead of performing weaker local `STAR` tests. A process test expands a supported ROM,
+places the unrelated `$8000` allocation, and requires CLI export to produce the exact defaults; a
+terminal test repeats collision and genuine-owned reads with and without copier headers, proves
+exact settings, and verifies that export is physically non-mutating.
+
 The pointer installer is now represented as typed, non-installable relocation evidence. The
 recovered `PatchExpandedLevelHeaderTablePointers` loop patches descriptor entries `$35..$39` at
 operand offset `$6C` to fixed runtime entry `$70`. The allocation-dependent portion of
