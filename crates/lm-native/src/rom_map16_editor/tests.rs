@@ -11,7 +11,7 @@ fn retained_lunar_magic_map16_editor_oracle_binds_complete_edit_history() {
         .filter_map(|line| line.split_once('\t'))
         .collect::<std::collections::BTreeMap<_, _>>();
     assert_eq!(fields.get("page"), Some(&"02"));
-    assert_eq!(fields.get("tile"), Some(&"200"));
+    assert_eq!(fields.get("tile"), Some(&"1F0"));
     assert_eq!(fields.get("initial_subtiles"), Some(&"192,193,194,195"));
     assert_eq!(fields.get("initial_acts_like"), Some(&"1F0"));
     assert_eq!(fields.get("initial_palette_index"), Some(&"3"));
@@ -24,6 +24,81 @@ fn retained_lunar_magic_map16_editor_oracle_binds_complete_edit_history() {
     assert_eq!(fields.get("undo_restored_initial"), Some(&"1"));
     assert_eq!(fields.get("redo_steps"), Some(&"9"));
     assert_eq!(fields.get("redo_restored_modified"), Some(&"1"));
+}
+
+#[test]
+fn retained_lunar_magic_map16_transfer_oracle_binds_every_file_and_prompt_boundary() {
+    let oracle = include_str!(
+        "../../../../docs/oracle-work/lm363/pristine-us/map16-transfer-interaction/oracle.tsv"
+    );
+    let fields = oracle
+        .lines()
+        .skip(1)
+        .filter_map(|line| line.split_once('\t'))
+        .collect::<std::collections::BTreeMap<_, _>>();
+
+    for (field, expected) in [
+        ("selected_export_command", "2266"),
+        ("selected_import_command", "2267"),
+        ("complete_export_command", "2268"),
+        ("complete_import_command", "2269"),
+        ("export_dialog", "Save As"),
+        ("import_dialog", "Open"),
+        ("modern_filter_index", "0"),
+        ("raw_filter_index", "1"),
+        ("selected_origin", "0200"),
+        ("selected_width", "1"),
+        ("selected_height", "1"),
+        ("selected_size", "186"),
+        ("selected_import_reexport_equal", "1"),
+        ("complete_size", "651760"),
+        ("complete_import_reexport_equal", "1"),
+        ("complete_import_saves_rom", "1"),
+        ("raw_page_definitions_size", "2048"),
+        ("raw_page_acts_size", "512"),
+        ("raw_page_import_accepted", "1"),
+        ("raw_fg_definitions_size", "262144"),
+        ("raw_fg_acts_size", "65536"),
+        ("raw_fg_import_reexport_equal", "1"),
+        ("raw_bg_definitions_size", "262144"),
+        ("raw_bg_acts_size", "65536"),
+        ("raw_bg_import_reexport_equal", "1"),
+    ] {
+        assert_eq!(fields.get(field), Some(&expected), "oracle field {field}");
+    }
+    assert_eq!(
+        fields.get("missing_restore_prompt_title"),
+        Some(&"Restore System Issue")
+    );
+    assert_eq!(
+        fields.get("missing_restore_prompt"),
+        Some(
+            &"The restore system cannot locate a copy of the original unmodified ROM with header, which is required for an operation about to be performed.  Would you like to browse to a copy of this file now?"
+        )
+    );
+
+    let tile = lm_level::Map16Tile {
+        top_left: lm_level::Subtile(0x1004),
+        top_right: lm_level::Subtile(0x1004),
+        bottom_left: lm_level::Subtile(0x1004),
+        bottom_right: lm_level::Subtile(0x1004),
+        acts_like: 0x0130,
+    };
+    let selected = lm_level::Lm16Map16File::from_selected_tiles(0x0200, 1, 1, &[tile])
+        .expect("retained selected tile must fit the LM16 rectangle model");
+    let (origin, decoded) = selected
+        .selected_tiles()
+        .expect("constructed retained selection must decode");
+    assert_eq!(origin, 0x0200);
+    assert_eq!(decoded, [tile]);
+    let encoded = selected.encode();
+    assert_eq!(encoded.len(), 186);
+    assert_eq!(
+        &encoded[encoded.len() - 10..],
+        &[4, 16, 4, 16, 4, 16, 4, 16, 48, 1]
+    );
+    assert_eq!(lm_level::Lm16Map16File::COMBINED_TILES_LEN, 2 * 262_144);
+    assert_eq!(lm_level::Lm16Map16File::ACTS_LIKE_LEN, 65_536);
 }
 
 #[test]

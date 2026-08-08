@@ -1,6 +1,6 @@
 field	value
 page	02
-tile	200
+tile	1F0
 initial_subtiles	192,193,194,195
 initial_acts_like	1F0
 initial_palette_index	3

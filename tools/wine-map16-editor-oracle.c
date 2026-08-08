@@ -170,7 +170,7 @@ static void reselect_visible_tile(struct editor *editor) {
     Sleep(100);
 }
 
-static int select_tile_200(struct editor *editor) {
+static int select_tile_1f0(struct editor *editor) {
     set_edit(editor, 0x74, "02");
     SendMessageA(GetDlgItem(editor->dialog, 0x73), BM_CLICK, 0, 0);
     SendMessageA(GetDlgItem(editor->dialog, 0x74), WM_KEYDOWN, VK_RETURN, 0);
@@ -239,9 +239,9 @@ int main(int argc, char **argv) {
     }
     int initial_undo = IsWindowEnabled(GetDlgItem(editor.dialog, 0x2279));
     int initial_redo = IsWindowEnabled(GetDlgItem(editor.dialog, 0x227a));
-    if (initial_undo || initial_redo || !select_tile_200(&editor)) {
+    if (initial_undo || initial_redo || !select_tile_1f0(&editor)) {
         fprintf(stderr, "initial undo=%d redo=%d\n", initial_undo, initial_redo);
-        fprintf(stderr, "Map16 editor did not begin at the expected clean tile $200\n");
+        fprintf(stderr, "Map16 editor did not begin at the expected clean tile $1F0\n");
         return 1;
     }
 
