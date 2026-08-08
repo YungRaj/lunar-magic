@@ -1,0 +1,24 @@
+field	value
+lunar_magic_version	3.63
+dirty_prompt_title	Lunar Magic
+dirty_prompt_question	Save level to ROM?
+dirty_prompt_yes_id	6
+save_dialog_title	Save Level to ROM as (in hex)
+save_dialog_ok_id	1
+save_dialog_cancel_id	2
+level_number_control_id	0x0199
+level_number_edit_id	0x0069
+pc_address_control_id	0x00DB
+pc_address_edit_id	0x006A
+expand_checkbox_id	0x00DD
+transfer_entrances_checkbox_id	0x019A
+before_physical_bytes	524800
+before_sha256	5e3d55b019dd012e8db1498dda06b63ad1a304787625402b511e6d525946beaf
+after_physical_bytes	1049088
+after_logical_bytes	1048576
+after_sha256	69cc6693ccd83f67369479314466b53c50e57569d319d9f8078667cfc025928e
+after_mapper	LoRom
+after_copier_header	Present
+after_rats_blocks	13
+after_checksum_matches	true
+process_closed	true

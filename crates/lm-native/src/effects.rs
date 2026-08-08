@@ -392,6 +392,34 @@ mod tests {
     }
 
     #[test]
+    fn retained_lm363_rom_save_completes_exact_expansion_and_checksum_boundary() {
+        let fixture = include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../docs/oracle-work/lm363/pristine-us/rom-save/observation.tsv"
+        ));
+        let field = |name: &str| {
+            fixture
+                .lines()
+                .find_map(|line| line.split_once('\t').filter(|(key, _)| *key == name))
+                .map(|(_, value)| value)
+                .unwrap_or_else(|| panic!("missing retained ROM-save field {name}"))
+        };
+
+        assert_eq!(field("dirty_prompt_question"), "Save level to ROM?");
+        assert_eq!(field("dirty_prompt_yes_id"), "6");
+        assert_eq!(field("save_dialog_title"), "Save Level to ROM as (in hex)");
+        assert_eq!(field("save_dialog_ok_id"), "1");
+        assert_eq!(field("before_physical_bytes"), "524800");
+        assert_eq!(field("after_physical_bytes"), "1049088");
+        assert_eq!(field("after_logical_bytes"), "1048576");
+        assert_eq!(field("after_mapper"), "LoRom");
+        assert_eq!(field("after_copier_header"), "Present");
+        assert_eq!(field("after_rats_blocks"), "13");
+        assert_eq!(field("after_checksum_matches"), "true");
+        assert_eq!(field("process_closed"), "true");
+    }
+
+    #[test]
     fn rom_loader_completion_opens_the_exact_pending_request() {
         let mut app = AppState::default();
         let request_id = open_request(&mut app);
