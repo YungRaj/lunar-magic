@@ -629,8 +629,7 @@ fn apply_popularity_reduction_method_2(
 }
 
 const fn component_range_start(component: u16, radius: u16) -> u16 {
-    let start = component.wrapping_sub(radius);
-    if start == 0 { 0 } else { start }
+    component.saturating_sub(radius)
 }
 
 fn bubble_popularity_color_up(selected: &mut [(u16, u32)], mut index: usize, score: u32) {
@@ -1430,6 +1429,29 @@ mod tests {
             20
         ));
         assert_eq!(selected, vec![(0x0843, 40), (0x0421, 30), (0x0c63, 10)]);
+    }
+
+    #[test]
+    fn popularity_neighborhoods_clamp_at_zero_instead_of_wrapping_empty() {
+        assert_eq!(component_range_start(0, 1), 0);
+        assert_eq!(component_range_start(0, 2), 0);
+        assert_eq!(component_range_start(1, 2), 0);
+
+        let mut method_1 = vec![(0x0001, 10)];
+        assert!(apply_popularity_reduction_method_1(
+            &mut method_1,
+            0x0000,
+            20
+        ));
+        assert_eq!(method_1, vec![(0x0000, 20)]);
+
+        let mut method_2 = vec![(0x0001, 10)];
+        assert!(apply_popularity_reduction_method_2(
+            &mut method_2,
+            0x0000,
+            20
+        ));
+        assert_eq!(method_2, vec![(0x0000, 30)]);
     }
 
     #[test]
