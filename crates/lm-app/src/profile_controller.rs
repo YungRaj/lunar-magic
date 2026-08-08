@@ -35,6 +35,7 @@ pub enum ProfileControllerError {
     Lfix3Detect(lm_profile::SmwUsV1Lfix3DetectError),
     Lfix3Fields(lm_project::Lfix3LevelFieldsIoError),
     VanillaPalette(lm_profile::SmwUsV1LevelPaletteError),
+    ExpandedSettingsLayout(lm_profile::SmwUsV1OverworldSettingsLoadError),
 }
 
 impl fmt::Display for ProfileControllerError {
@@ -204,11 +205,12 @@ impl RevisionProfileControllers for RevisionProfile {
             .resolve(&image)?
             .payload;
         let level = self.level_layout_for_rom(&image)?;
+        let expanded_settings = resolve_smw_us_v1_expanded_settings_layout(self, &image)?;
         let layout = lm_project::NativeLevelAssetsLayout {
             level,
             palette,
             exanimation,
-            expanded_settings: self.expanded_settings,
+            expanded_settings,
         };
         let preloaded_assets =
             load_smw_us_v1_assets_with_vanilla_fallback(self, snapshot, &image, layout)?;
@@ -247,8 +249,8 @@ impl RevisionProfileControllers for RevisionProfile {
         snapshot: &ControllerSnapshot,
     ) -> Result<ExpandedSettingsController, ProfileControllerError> {
         validate_snapshot(self, snapshot)?;
-        let layout = self
-            .expanded_settings
+        let image = RomImage::from_bytes(snapshot.rom_bytes.clone())?;
+        let layout = resolve_smw_us_v1_expanded_settings_layout(self, &image)?
             .ok_or(ProfileControllerError::ExpandedSettingsUnavailable)?;
         ExpandedSettingsController::decode(snapshot, layout)
             .map_err(ProfileControllerError::ExpandedSettings)
@@ -366,6 +368,24 @@ impl RevisionProfileControllers for RevisionProfile {
         )
         .map_err(ProfileControllerError::Overworld)
     }
+}
+
+fn resolve_smw_us_v1_expanded_settings_layout(
+    profile: &RevisionProfile,
+    image: &RomImage,
+) -> Result<Option<lm_project::ExpandedLevelSettingsLayout>, ProfileControllerError> {
+    if profile.game != lm_rom::SupportedGame::SuperMarioWorld
+        || profile.region != lm_rom::Region::NorthAmerica
+        || profile.revision != 0
+        || profile.mapper != lm_rom::Mapper::LoRom
+        || profile.expanded_settings != Some(lm_profile::smw_us_v1_expanded_settings_layout())
+    {
+        return Ok(profile.expanded_settings);
+    }
+    let project = Project::new(image.clone());
+    lm_profile::smw_us_v1_installed_expanded_settings_layout(&project)
+        .map(|installed| installed.or(profile.expanded_settings))
+        .map_err(ProfileControllerError::ExpandedSettingsLayout)
 }
 
 fn load_smw_us_v1_assets_with_vanilla_fallback(
@@ -634,5 +654,36 @@ mod tests {
                 expected = Some(state);
             }
         }
+    }
+
+    #[test]
+    fn canonical_profile_resolves_a_relocated_expanded_settings_table() {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let collision =
+            std::fs::read(root.join("oracle-work/lm363/pristine-us/level-save-000/after.smc"))
+                .unwrap();
+        let image = RomImage::from_bytes(collision).unwrap();
+        let mut project =
+            Project::new(RomImage::from_bytes(image.logical_bytes().to_vec()).unwrap());
+        project
+            .install_relocatable_patch(
+                &lm_profile::smw_us_v1_expanded_settings_installation_plan().unwrap(),
+            )
+            .unwrap();
+        let layout = lm_profile::smw_us_v1_installed_expanded_settings_layout(&project)
+            .unwrap()
+            .unwrap();
+        assert_eq!(layout.table_offset, 0x09_2d08);
+        let mut expected = lm_profile::smw_us_v1_default_expanded_settings_record();
+        expected.set_word(9, 0x4567).unwrap();
+        project
+            .save_expanded_level_settings(0, &expected, layout, 0x7fdc)
+            .unwrap();
+
+        let (profile, mut snapshot) = installed_fixture(false, 0);
+        snapshot.rom_bytes = project.save_snapshot();
+        snapshot.identity = lm_rom::detect_identity(&project.rom).unwrap();
+        let controller = profile.decode_expanded_settings(&snapshot).unwrap();
+        assert_eq!(controller.record(), &expected);
     }
 }

@@ -4,11 +4,11 @@ use lm_level::ExpandedLevelSettingsRecord;
 use lm_level::ExpandedOverworldSettings;
 use lm_overworld::{OverworldLayer3SettingsError, OverworldLayer3SettingsTable};
 use lm_project::{
-    ExpandedLevelSettingsLayout, ExpandedOverworldSettingsIoError,
+    ExpandedLevelSettingsIoError, ExpandedLevelSettingsLayout, ExpandedOverworldSettingsIoError,
     OverworldLayer3SettingsRomLayout, Project,
 };
 use lm_rats::parse_at;
-use lm_rom::Mapper;
+use lm_rom::{Mapper, snes_to_pc};
 
 use crate::{
     ExpandedSettingsEntryContinuation, ExpandedSettingsRuntimeLayout,
@@ -24,6 +24,7 @@ pub const SMW_US_V1_EXPANDED_SETTINGS_PAYLOAD_OFFSET: usize =
     SMW_US_V1_EXPANDED_SETTINGS_ALLOCATION_SEARCH_START + 8;
 pub const SMW_US_V1_EXPANDED_SETTINGS_TABLE_OFFSET: usize =
     SMW_US_V1_EXPANDED_SETTINGS_PAYLOAD_OFFSET + SMW_US_V1_EXPANDED_SETTINGS_PREFIX_LEN;
+const SMW_US_V1_EXPANDED_SETTINGS_BASE_OPERAND: usize = 0x7f840 + 0x33;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct LoadedSmwUsV1OverworldSettings {
@@ -46,8 +47,11 @@ pub struct LoadedSmwUsV1OverworldLayer3Settings {
 #[derive(Debug)]
 pub enum SmwUsV1OverworldSettingsLoadError {
     InvalidOwnedBlock,
+    InvalidRuntimePointer,
+    RuntimeMismatch,
     WrongOwnedLength(usize),
     Allocation(SmwUsV1ExpandedSettingsAllocationError),
+    LevelSettings(ExpandedLevelSettingsIoError),
     Settings(ExpandedOverworldSettingsIoError),
     Layer3Settings(OverworldLayer3SettingsError),
 }
@@ -75,6 +79,12 @@ impl From<ExpandedOverworldSettingsIoError> for SmwUsV1OverworldSettingsLoadErro
     }
 }
 
+impl From<ExpandedLevelSettingsIoError> for SmwUsV1OverworldSettingsLoadError {
+    fn from(value: ExpandedLevelSettingsIoError) -> Self {
+        Self::LevelSettings(value)
+    }
+}
+
 impl From<OverworldLayer3SettingsError> for SmwUsV1OverworldSettingsLoadError {
     fn from(value: OverworldLayer3SettingsError) -> Self {
         Self::Layer3Settings(value)
@@ -91,6 +101,67 @@ pub const fn smw_us_v1_expanded_settings_layout() -> ExpandedLevelSettingsLayout
     }
 }
 
+/// Resolves the installed settings table through the authenticated runtime's allocation operand.
+///
+/// Lunar Magic uses `$087FF8` only as a first-fit search start. When that bank tail is occupied,
+/// the same runtime can point at a later `$6E00` RATS payload. A pristine runtime means the feature
+/// is absent even if an unrelated allocation happens to begin at the preferred address.
+///
+/// # Errors
+///
+/// Rejects malformed runtime pointers, RATS ownership, allocation contents, or installed runtime
+/// bytes. Returns `None` only when every fixed runtime destination is pristine.
+pub fn smw_us_v1_installed_expanded_settings_layout(
+    project: &Project,
+) -> Result<Option<ExpandedLevelSettingsLayout>, SmwUsV1OverworldSettingsLoadError> {
+    if expanded_settings_runtime_destinations_are_pristine(project) {
+        return Ok(None);
+    }
+    let operand = project
+        .rom
+        .read(SMW_US_V1_EXPANDED_SETTINGS_BASE_OPERAND, 3)
+        .map_err(|_| SmwUsV1OverworldSettingsLoadError::InvalidRuntimePointer)?;
+    let allocation_base_snes = u32::from_le_bytes([operand[0], operand[1], operand[2], 0]);
+    let payload_offset = snes_to_pc(Mapper::LoRom, allocation_base_snes)
+        .map_err(|_| SmwUsV1OverworldSettingsLoadError::InvalidRuntimePointer)?;
+    let header_offset = payload_offset
+        .checked_sub(8)
+        .ok_or(SmwUsV1OverworldSettingsLoadError::InvalidRuntimePointer)?;
+    let block = parse_at(project.rom.logical_bytes(), header_offset)
+        .map_err(|_| SmwUsV1OverworldSettingsLoadError::InvalidOwnedBlock)?;
+    if block.payload.start != payload_offset {
+        return Err(SmwUsV1OverworldSettingsLoadError::InvalidOwnedBlock);
+    }
+    if block.payload.len() != SMW_US_V1_EXPANDED_SETTINGS_ALLOCATION_LEN {
+        return Err(SmwUsV1OverworldSettingsLoadError::WrongOwnedLength(
+            block.payload.len(),
+        ));
+    }
+    SmwUsV1ExpandedSettingsAllocation::decode(&project.rom.logical_bytes()[block.payload.clone()])?;
+
+    let runtime = ExpandedSettingsRuntimeLayout::smw_us_v1(
+        allocation_base_snes,
+        ExpandedSettingsEntryContinuation::Continue,
+    );
+    let runtime_matches = smw_us_v1_expanded_settings_fixed_writes(runtime).is_ok_and(|writes| {
+        writes.iter().all(|write| {
+            project
+                .rom
+                .read(write.offset, write.replacement.len())
+                .is_ok_and(|bytes| bytes == write.replacement)
+        })
+    });
+    if !runtime_matches {
+        return Err(SmwUsV1OverworldSettingsLoadError::RuntimeMismatch);
+    }
+    Ok(Some(ExpandedLevelSettingsLayout {
+        mapper: Mapper::LoRom,
+        table_offset: payload_offset + SMW_US_V1_EXPANDED_SETTINGS_PREFIX_LEN,
+        entries: SMW_US_V1_EXPANDED_SETTINGS_RECORD_COUNT,
+        stride: 0x20,
+    }))
+}
+
 /// Returns the semantic Layer 3 view of expanded-settings slots `$200..$206`.
 #[must_use]
 pub const fn smw_us_v1_overworld_layer3_settings_layout() -> OverworldLayer3SettingsRomLayout {
@@ -104,9 +175,9 @@ pub const fn smw_us_v1_overworld_layer3_settings_layout() -> OverworldLayer3Sett
 
 /// Loads the seven installed special records or materializes Lunar Magic's pristine defaults.
 ///
-/// Absence is recognized only when the recovered allocation header is not a `STAR` tag. A present
-/// tag must have the exact allocation length and decode as the recovered expanded-settings
-/// allocation before any record is exposed.
+/// Absence is recognized only when all fixed runtime destinations remain pristine. Installed
+/// storage is resolved through the runtime operand, then its RATS owner and complete runtime family
+/// are authenticated before any record is exposed.
 ///
 /// # Errors
 ///
@@ -114,9 +185,7 @@ pub const fn smw_us_v1_overworld_layer3_settings_layout() -> OverworldLayer3Sett
 pub fn load_smw_us_v1_overworld_settings(
     project: &Project,
 ) -> Result<LoadedSmwUsV1OverworldSettings, SmwUsV1OverworldSettingsLoadError> {
-    let bytes = project.rom.logical_bytes();
-    let header = SMW_US_V1_EXPANDED_SETTINGS_ALLOCATION_SEARCH_START;
-    if bytes.get(header..header + 4) != Some(b"STAR") {
+    let Some(layout) = smw_us_v1_installed_expanded_settings_layout(project)? else {
         return Ok(LoadedSmwUsV1OverworldSettings {
             settings: ExpandedOverworldSettings {
                 records: std::array::from_fn(|_| {
@@ -125,28 +194,10 @@ pub fn load_smw_us_v1_overworld_settings(
             },
             installed: false,
         });
-    }
-    let block = parse_at(bytes, header)
-        .map_err(|_| SmwUsV1OverworldSettingsLoadError::InvalidOwnedBlock)?;
-    if block.payload.len() != SMW_US_V1_EXPANDED_SETTINGS_ALLOCATION_LEN {
-        // `$087FF8` is Lunar Magic's first-fit search start, not an ownership marker. Other
-        // Lunar Magic subsystems can legitimately place a different RATS block there before the
-        // expanded-settings family is installed (the retained ordinary level-save oracle does
-        // exactly that). Only treat the wrong-sized block as damaged expanded-settings storage
-        // when the family's fixed runtime destinations are no longer pristine.
-        if expanded_settings_runtime_destinations_are_pristine(project) {
-            return Ok(default_overworld_settings());
-        }
-        return Err(SmwUsV1OverworldSettingsLoadError::WrongOwnedLength(
-            block.payload.len(),
-        ));
-    }
-    SmwUsV1ExpandedSettingsAllocation::decode(&bytes[block.payload])?;
+    };
     Ok(LoadedSmwUsV1OverworldSettings {
-        settings: project.load_expanded_overworld_settings(
-            SMW_US_V1_OVERWORLD_SETTINGS_FIRST_SLOT,
-            smw_us_v1_expanded_settings_layout(),
-        )?,
+        settings: project
+            .load_expanded_overworld_settings(SMW_US_V1_OVERWORLD_SETTINGS_FIRST_SLOT, layout)?,
         installed: true,
     })
 }
@@ -161,41 +212,16 @@ pub fn load_smw_us_v1_expanded_level_settings(
     project: &Project,
     level: usize,
 ) -> Result<LoadedSmwUsV1ExpandedLevelSettings, SmwUsV1OverworldSettingsLoadError> {
-    let bytes = project.rom.logical_bytes();
-    let header = SMW_US_V1_EXPANDED_SETTINGS_ALLOCATION_SEARCH_START;
-    if bytes.get(header..header + 4) != Some(b"STAR") {
+    let Some(layout) = smw_us_v1_installed_expanded_settings_layout(project)? else {
         return Ok(LoadedSmwUsV1ExpandedLevelSettings {
             settings: crate::smw_us_v1_default_expanded_settings_record(),
             installed: false,
         });
-    }
-    let block = parse_at(bytes, header)
-        .map_err(|_| SmwUsV1OverworldSettingsLoadError::InvalidOwnedBlock)?;
-    if block.payload.len() != SMW_US_V1_EXPANDED_SETTINGS_ALLOCATION_LEN {
-        if expanded_settings_runtime_destinations_are_pristine(project) {
-            return Ok(LoadedSmwUsV1ExpandedLevelSettings {
-                settings: crate::smw_us_v1_default_expanded_settings_record(),
-                installed: false,
-            });
-        }
-        return Err(SmwUsV1OverworldSettingsLoadError::WrongOwnedLength(
-            block.payload.len(),
-        ));
-    }
-    let allocation = SmwUsV1ExpandedSettingsAllocation::decode(&bytes[block.payload])?;
+    };
     Ok(LoadedSmwUsV1ExpandedLevelSettings {
-        settings: allocation.record(level)?.clone(),
+        settings: project.load_expanded_level_settings(level, layout)?,
         installed: true,
     })
-}
-
-fn default_overworld_settings() -> LoadedSmwUsV1OverworldSettings {
-    LoadedSmwUsV1OverworldSettings {
-        settings: ExpandedOverworldSettings {
-            records: std::array::from_fn(|_| smw_us_v1_default_special_expanded_settings_record()),
-        },
-        installed: false,
-    }
 }
 
 fn expanded_settings_runtime_destinations_are_pristine(project: &Project) -> bool {

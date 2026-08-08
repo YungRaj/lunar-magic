@@ -402,7 +402,8 @@ pub use overworld_settings::{
     SMW_US_V1_EXPANDED_SETTINGS_TABLE_OFFSET, SMW_US_V1_OVERWORLD_SETTINGS_FIRST_SLOT,
     SmwUsV1OverworldSettingsLoadError, load_smw_us_v1_expanded_level_settings,
     load_smw_us_v1_overworld_layer3_settings, load_smw_us_v1_overworld_settings,
-    smw_us_v1_expanded_settings_layout, smw_us_v1_overworld_layer3_settings_layout,
+    smw_us_v1_expanded_settings_layout, smw_us_v1_installed_expanded_settings_layout,
+    smw_us_v1_overworld_layer3_settings_layout,
 };
 pub use overworld_special_event::{
     SMW_US_V1_SPECIAL_EVENT_DESTINATION_OPERAND, SMW_US_V1_SPECIAL_EVENT_DIRECTION_OPERAND,

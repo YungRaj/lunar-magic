@@ -13,7 +13,7 @@ use lm_rats::AllocationPolicy;
 use lm_rom::Mapper;
 
 pub const SMW_US_V1_EXPANDED_SETTINGS_ALLOCATION_SEARCH_START: usize = 0x08_7ff8;
-pub const SMW_US_V1_EXPANDED_SETTINGS_ALLOCATION_SEARCH_END: usize = 0x09_0000;
+pub const SMW_US_V1_EXPANDED_SETTINGS_ALLOCATION_SEARCH_END: usize = 0x10_0000;
 pub const SMW_US_V1_GFX_EXPANDED_SETTINGS_ALLOCATION_START: usize = 0x08_0028;
 pub const SMW_US_V1_GFX_EXPANDED_SETTINGS_ALLOCATION_END: usize = 0x08_6e30;
 pub const SMW_US_V1_CHECKSUM_FIELD: usize = 0x00_7fdc;
@@ -159,6 +159,7 @@ fn smw_us_v1_expanded_settings_installation_plan_for_range(
                     PatchFixupEncoding::Long24LowBank
                 }
                 ExpandedSettingsAllocationFixupEncoding::Low16 => PatchFixupEncoding::Low16,
+                ExpandedSettingsAllocationFixupEncoding::Low8 => PatchFixupEncoding::Low8,
                 ExpandedSettingsAllocationFixupEncoding::Bank8 => PatchFixupEncoding::Bank8LowBank,
             },
         });
@@ -179,7 +180,11 @@ fn smw_us_v1_expanded_settings_installation_plan_for_range(
             search,
             // Lunar Magic places the tag in the preceding bank's final eight bytes.
             bank_size: None,
-            fill_bytes: vec![expansion_fill],
+            fill_bytes: if expansion_fill == 0xff {
+                vec![0xff, 0x00]
+            } else {
+                vec![expansion_fill]
+            },
             protected: Vec::new(),
         },
         checksum_field: SMW_US_V1_CHECKSUM_FIELD,
@@ -285,6 +290,79 @@ mod tests {
         ));
         assert_eq!(project.rom.logical_bytes(), original);
         assert_eq!(project.history.undo_len(), 0);
+    }
+
+    #[test]
+    fn authentic_first_fit_collision_relocates_settings_to_the_next_lunar_magic_bank() {
+        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let bytes =
+            fs::read(root.join("oracle-work/lm363/pristine-us/level-save-000/after.smc")).unwrap();
+        let image = RomImage::from_bytes(bytes.clone()).unwrap();
+        let original_header = image.copier_header_bytes().unwrap().to_vec();
+        let mut project = Project::new(image);
+        let mut settings = ExpandedOverworldSettings {
+            records: std::array::from_fn(|_| {
+                crate::smw_us_v1_default_special_expanded_settings_record()
+            }),
+        };
+        settings.records[4].set_word(7, 0x4567).unwrap();
+
+        let result = project
+            .install_relocatable_patch(
+                &smw_us_v1_expanded_settings_installation_plan_with_overworld_settings(Some(
+                    &settings,
+                ))
+                .unwrap(),
+            )
+            .unwrap();
+        assert_eq!(result.blocks[0].header_offset, 0x09_0000);
+        assert_eq!(result.blocks[0].payload.start, 0x09_0008);
+        let allocation_base_snes =
+            lm_rom::pc_to_snes(Mapper::LoRom, result.blocks[0].payload.start).unwrap() & 0x7f_ffff;
+        for write in
+            smw_us_v1_expanded_settings_fixed_writes(ExpandedSettingsRuntimeLayout::smw_us_v1(
+                allocation_base_snes,
+                ExpandedSettingsEntryContinuation::Continue,
+            ))
+            .unwrap()
+        {
+            assert_eq!(
+                project
+                    .rom
+                    .read(write.offset, write.replacement.len())
+                    .unwrap(),
+                write.replacement,
+                "runtime write at {:x}",
+                write.offset
+            );
+        }
+        let layout = crate::smw_us_v1_installed_expanded_settings_layout(&project)
+            .unwrap()
+            .unwrap();
+        assert_eq!(layout.table_offset, 0x09_2d08);
+        assert_eq!(
+            project
+                .load_expanded_overworld_settings(
+                    crate::SMW_US_V1_OVERWORLD_SETTINGS_FIRST_SLOT,
+                    layout,
+                )
+                .unwrap(),
+            settings
+        );
+        assert_eq!(
+            project.rom.copier_header_bytes(),
+            Some(original_header.as_slice())
+        );
+        assert!(
+            lm_rom::detect_identity(&project.rom)
+                .unwrap()
+                .checksum_matches()
+        );
+        let installed = project.save_snapshot();
+        assert!(project.undo().unwrap());
+        assert_eq!(project.rom.as_file_bytes(), bytes);
+        assert!(project.redo().unwrap());
+        assert_eq!(project.rom.as_file_bytes(), installed);
     }
 
     #[test]

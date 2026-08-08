@@ -28,6 +28,7 @@ fn built_cli_exports_installs_and_reopens_native_overworld_settings() {
     let defaults_file = directory.join("defaults.lmowset");
     let collision_rom = directory.join("unrelated first-fit block.sfc");
     let collision_defaults = directory.join("collision defaults.lmowset");
+    let collision_expanded_rom = directory.join("collision expanded.sfc");
     let changed_file = directory.join("changed.lmowset");
     let expanded_rom = directory.join("expanded.sfc");
     let reopened_file = directory.join("reopened.lmowset");
@@ -76,6 +77,41 @@ fn built_cli_exports_installs_and_reopens_native_overworld_settings() {
 
     changed.records[6].set_word(9, 0x4567).unwrap();
     fs::write(&changed_file, changed.encode_file()).unwrap();
+
+    let collision_install = run(
+        "smw-overworld-settings-import",
+        &[&collision_rom, &changed_file, &collision_expanded_rom],
+    );
+    assert!(
+        collision_install.status.success(),
+        "{}",
+        String::from_utf8_lossy(&collision_install.stderr)
+    );
+    let collision_before = RomImage::from_bytes(fs::read(&collision_rom).unwrap()).unwrap();
+    let collision_after = RomImage::from_bytes(fs::read(&collision_expanded_rom).unwrap()).unwrap();
+    assert_eq!(
+        &collision_after.logical_bytes()
+            [SMW_US_V1_EXPANDED_SETTINGS_ALLOCATION_SEARCH_START..0x09_0000],
+        &collision_before.logical_bytes()
+            [SMW_US_V1_EXPANDED_SETTINGS_ALLOCATION_SEARCH_START..0x09_0000]
+    );
+    let collision_project = Project::open_supported(collision_after.clone()).unwrap();
+    let collision_layout =
+        lm_profile::smw_us_v1_installed_expanded_settings_layout(&collision_project)
+            .unwrap()
+            .unwrap();
+    assert_eq!(collision_layout.table_offset, 0x09_2d08);
+    assert_eq!(
+        lm_profile::load_smw_us_v1_overworld_settings(&collision_project)
+            .unwrap()
+            .settings,
+        changed
+    );
+    assert!(
+        detect_identity(&collision_after)
+            .unwrap()
+            .checksum_matches()
+    );
 
     let install = run(
         "smw-overworld-settings-import",

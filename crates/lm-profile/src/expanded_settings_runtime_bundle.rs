@@ -68,6 +68,7 @@ impl ExpandedSettingsRuntimeLayout {
 pub enum ExpandedSettingsAllocationFixupEncoding {
     Long24,
     Low16,
+    Low8,
     Bank8,
 }
 
@@ -82,7 +83,13 @@ pub struct ExpandedSettingsAllocationFixup {
 
 /// Every operand that must be rebound after allocating the `$6E00` settings payload.
 pub const SMW_US_V1_EXPANDED_SETTINGS_RUNTIME_ALLOCATION_FIXUPS: [ExpandedSettingsAllocationFixup;
-    9] = [
+    10] = [
+    allocation_fixup(
+        0x172,
+        0x16,
+        0x2d00,
+        ExpandedSettingsAllocationFixupEncoding::Low8,
+    ),
     allocation_fixup(
         0x172,
         0x0f,
@@ -361,6 +368,7 @@ pub fn resolve_expanded_settings_runtime_allocation(
         let replacement: &[u8] = match fixup.encoding {
             ExpandedSettingsAllocationFixupEncoding::Long24 => &encoded[..3],
             ExpandedSettingsAllocationFixupEncoding::Low16 => &encoded[..2],
+            ExpandedSettingsAllocationFixupEncoding::Low8 => &encoded[..1],
             ExpandedSettingsAllocationFixupEncoding::Bank8 => &encoded[2..3],
         };
         let end = fixup.offset.checked_add(replacement.len()).ok_or(

@@ -8,7 +8,7 @@ use lm_profile::{
     SMW_US_V1_CHECKSUM_FIELD, SMW_US_V1_OVERWORLD_SETTINGS_FIRST_SLOT,
     load_smw_us_v1_overworld_layer3_settings, load_smw_us_v1_overworld_settings,
     smw_us_v1_expanded_settings_installation_plan_with_overworld_settings,
-    smw_us_v1_expanded_settings_layout,
+    smw_us_v1_installed_expanded_settings_layout,
 };
 use lm_project::Project;
 use lm_rom::{Mapper, Region, RomImage, SupportedGame};
@@ -73,11 +73,11 @@ fn import(
         ExpandedOverworldSettings::ENCODED_LEN,
     )?)?;
     let mut project = open_smw_us_v1(input_rom)?;
-    if installed(&project)? {
+    if let Some(layout) = smw_us_v1_installed_expanded_settings_layout(&project)? {
         project.save_expanded_overworld_settings(
             SMW_US_V1_OVERWORLD_SETTINGS_FIRST_SLOT,
             &settings,
-            smw_us_v1_expanded_settings_layout(),
+            layout,
             SMW_US_V1_CHECKSUM_FIELD,
         )?;
     } else {
@@ -99,10 +99,6 @@ fn load_or_default(
     project: &Project,
 ) -> Result<ExpandedOverworldSettings, Box<dyn std::error::Error>> {
     Ok(load_smw_us_v1_overworld_settings(project)?.settings)
-}
-
-fn installed(project: &Project) -> Result<bool, Box<dyn std::error::Error>> {
-    Ok(load_smw_us_v1_overworld_settings(project)?.installed)
 }
 
 fn open_smw_us_v1(path: &Path) -> Result<Project, Box<dyn std::error::Error>> {

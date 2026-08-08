@@ -2076,6 +2076,20 @@ places the unrelated `$8000` allocation, and requires CLI export to produce the 
 terminal test repeats collision and genuine-owned reads with and without copier headers, proves
 exact settings, and verifies that export is physically non-mutating.
 
+The original allocator also relocates this family rather than failing when that ordinary block
+occupies the preferred bank tail. Importing the retained Layer 3-settings MWL into the collision
+ROM under Lunar Magic 3.63 preserves the `$087FF8` owner, places the new RATS header at `$090000`,
+uses payload `$090008`, and moves the record table to `$092D08`. The runtime base operand becomes
+SNES `$128008` and the table operand becomes `$12AD08`. This exposed a tenth allocation fixup in
+descriptor `$172`: its immediate at copied offset `$16` holds the low byte of allocation + `$2D00`
+independently of the three-byte table operand. The relocation resolver now models that byte, accepts
+the original's zero-filled free tail as well as `$FF`, derives installed storage from the
+authenticated runtime operand and exact `$6E00` RATS owner, and makes canonical revision profiles
+follow that resolved table. `lunar_magic_and_rust_match_relocated_expanded_settings_owned_bytes`
+compares the complete allocation and every fixed runtime write against fresh Lunar Magic runs for
+both copier-header forms; the native application, CLI process, semantic reopen, checksum, and
+byte-exact Undo/Redo gates cover the same collision.
+
 The pointer installer is now represented as typed, non-installable relocation evidence. The
 recovered `PatchExpandedLevelHeaderTablePointers` loop patches descriptor entries `$35..$39` at
 operand offset `$6C` to fixed runtime entry `$70`. The allocation-dependent portion of

@@ -5,7 +5,7 @@ use lm_profile::{
     SMW_US_V1_CHECKSUM_FIELD, SMW_US_V1_OVERWORLD_SETTINGS_FIRST_SLOT,
     load_smw_us_v1_overworld_settings,
     smw_us_v1_expanded_settings_installation_plan_with_overworld_settings,
-    smw_us_v1_expanded_settings_layout,
+    smw_us_v1_installed_expanded_settings_layout,
 };
 use lm_rom::{Mapper, Region, SupportedGame};
 
@@ -46,14 +46,13 @@ impl AppState {
         {
             return Err(AppError::NativeOverworldSettingsIdentityMismatch);
         }
-        let installed = load_smw_us_v1_overworld_settings(project)
-            .map_err(|error| AppError::NativeOverworldSettingsStorage(error.to_string()))?
-            .installed;
-        if installed {
+        let installed_layout = smw_us_v1_installed_expanded_settings_layout(project)
+            .map_err(|error| AppError::NativeOverworldSettingsStorage(error.to_string()))?;
+        if let Some(layout) = installed_layout {
             project.save_expanded_overworld_settings(
                 SMW_US_V1_OVERWORLD_SETTINGS_FIRST_SLOT,
                 settings,
-                smw_us_v1_expanded_settings_layout(),
+                layout,
                 SMW_US_V1_CHECKSUM_FIELD,
             )?;
         } else {
@@ -63,10 +62,9 @@ impl AppState {
                 ))?,
             )?;
         }
-        let reopened = project.load_expanded_overworld_settings(
-            SMW_US_V1_OVERWORLD_SETTINGS_FIRST_SLOT,
-            smw_us_v1_expanded_settings_layout(),
-        )?;
+        let reopened = load_smw_us_v1_overworld_settings(project)
+            .map_err(|error| AppError::NativeOverworldSettingsStorage(error.to_string()))?
+            .settings;
         if reopened != *settings {
             return Err(AppError::NativeOverworldSettingsReopenMismatch);
         }
@@ -89,9 +87,9 @@ mod tests {
         NativeOverworldLevelNameTable, OverworldLevelName, OverworldMessage, Submap,
     };
     use lm_profile::{
-        smw_us_v1_default_special_expanded_settings_record, smw_us_v1_overworld_level_name_locator,
-        smw_us_v1_overworld_level_name_runtime, smw_us_v1_overworld_message_patch_locator,
-        smw_us_v1_overworld_player_start_layout,
+        smw_us_v1_default_special_expanded_settings_record, smw_us_v1_expanded_settings_layout,
+        smw_us_v1_overworld_level_name_locator, smw_us_v1_overworld_level_name_runtime,
+        smw_us_v1_overworld_message_patch_locator, smw_us_v1_overworld_player_start_layout,
     };
     use lm_rom::{RomImage, detect_identity};
     use std::path::PathBuf;
@@ -124,6 +122,61 @@ mod tests {
         );
         app.dispatch(Command::Undo).unwrap();
         assert_eq!(app.project().unwrap().save_snapshot(), original);
+    }
+
+    #[test]
+    fn authentic_first_fit_collision_installs_relocated_settings_across_header_variants() {
+        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let physical =
+            std::fs::read(root.join("oracle-work/lm363/pristine-us/level-save-000/after.smc"))
+                .unwrap();
+        let physical_image = RomImage::from_bytes(physical.clone()).unwrap();
+        let logical = physical_image.logical_bytes().to_vec();
+        let collision = logical
+            [lm_profile::SMW_US_V1_EXPANDED_SETTINGS_ALLOCATION_SEARCH_START..0x09_0000]
+            .to_vec();
+        let mut logical_results = Vec::new();
+
+        for original in [logical.clone(), physical] {
+            let mut app = AppState::default();
+            app.load_rom(original.clone()).unwrap();
+            let mut settings = ExpandedOverworldSettings {
+                records: std::array::from_fn(|_| {
+                    smw_us_v1_default_special_expanded_settings_record()
+                }),
+            };
+            settings.records[5].set_word(7, 0x4567).unwrap();
+            app.dispatch(Command::ReplaceNativeOverworldSettings {
+                rev: 0,
+                settings: Box::new(settings.clone()),
+            })
+            .unwrap();
+
+            let installed = RomImage::from_bytes(app.project().unwrap().save_snapshot()).unwrap();
+            assert_eq!(
+                &installed.logical_bytes()
+                    [lm_profile::SMW_US_V1_EXPANDED_SETTINGS_ALLOCATION_SEARCH_START..0x09_0000],
+                collision
+            );
+            let layout = smw_us_v1_installed_expanded_settings_layout(app.project().unwrap())
+                .unwrap()
+                .unwrap();
+            assert_eq!(layout.table_offset, 0x09_2d08);
+            assert_eq!(
+                load_smw_us_v1_overworld_settings(app.project().unwrap())
+                    .unwrap()
+                    .settings,
+                settings
+            );
+            assert!(detect_identity(&installed).unwrap().checksum_matches());
+            logical_results.push(installed.logical_bytes().to_vec());
+            let after = installed.as_file_bytes().to_vec();
+            app.dispatch(Command::Undo).unwrap();
+            assert_eq!(app.project().unwrap().rom.as_file_bytes(), original);
+            app.dispatch(Command::Redo).unwrap();
+            assert_eq!(app.project().unwrap().rom.as_file_bytes(), after);
+        }
+        assert_eq!(logical_results[0], logical_results[1]);
     }
 
     #[test]
