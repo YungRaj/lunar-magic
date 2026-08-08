@@ -126,6 +126,7 @@ pub(crate) fn request_graphics_tile_paste(
     Ok(None)
 }
 
+#[cfg_attr(not(any(windows, test)), allow(dead_code))]
 pub(crate) fn encode_lunar_magic_graphics_tile(tile: &IndexedTile) -> [u8; 64] {
     *tile.pixels()
 }
@@ -157,6 +158,51 @@ pub(crate) fn decode_map16_tile(text: &str) -> Result<Map16Tile, String> {
         return Err("Map16 paste requires exactly one tile".into());
     };
     Ok(*tile)
+}
+
+pub(crate) fn copy_map16_tile_to_system(
+    context: &eframe::egui::Context,
+    tile: Map16Tile,
+) -> Result<(), String> {
+    let fallback = encode_map16_tile(tile)?;
+    #[cfg(windows)]
+    {
+        let native = encode_lunar_magic_map16_tile(tile);
+        lm_windows::write_map16_tile_clipboard(&native, &fallback)
+    }
+    #[cfg(not(windows))]
+    {
+        context.copy_text(fallback);
+        Ok(())
+    }
+}
+
+pub(crate) fn request_map16_tile_paste(
+    context: &eframe::egui::Context,
+) -> Result<Option<Map16Tile>, String> {
+    #[cfg(windows)]
+    if let Some(bytes) = lm_windows::read_map16_tile_clipboard()? {
+        return decode_lunar_magic_map16_tile(&bytes).map(Some);
+    }
+    context.send_viewport_cmd(eframe::egui::ViewportCommand::RequestPaste);
+    Ok(None)
+}
+
+#[cfg_attr(not(any(windows, test)), allow(dead_code))]
+pub(crate) fn encode_lunar_magic_map16_tile(tile: Map16Tile) -> [u8; 10] {
+    let mut bytes = [0; 10];
+    bytes[..Map16Tile::GRAPHICS_LEN].copy_from_slice(&tile.encode_graphics());
+    bytes[Map16Tile::GRAPHICS_LEN..].copy_from_slice(&tile.acts_like.to_le_bytes());
+    bytes
+}
+
+#[cfg_attr(not(any(windows, test)), allow(dead_code))]
+pub(crate) fn decode_lunar_magic_map16_tile(bytes: &[u8]) -> Result<Map16Tile, String> {
+    let record = bytes
+        .get(..10)
+        .ok_or_else(|| "Lunar Magic Map16 clipboard data is shorter than 10 bytes".to_owned())?;
+    let acts_like = u16::from_le_bytes([record[8], record[9]]);
+    Map16Tile::decode(&record[..8], acts_like).map_err(|error| error.to_string())
 }
 
 pub(crate) fn encode_native_map16_rectangle(
@@ -439,6 +485,28 @@ mod tests {
         let mut invalid = encoded;
         invalid[17] = 0x10;
         assert!(decode_lunar_magic_graphics_tile(&invalid).is_err());
+    }
+
+    #[test]
+    fn lunar_magic_native_map16_tile_is_four_words_then_acts_like() {
+        let tile = Map16Tile {
+            top_left: lm_level::Subtile(0x0123),
+            top_right: lm_level::Subtile(0x4567),
+            bottom_left: lm_level::Subtile(0x89ab),
+            bottom_right: lm_level::Subtile(0xcdef),
+            acts_like: 0x1357,
+        };
+        let encoded = encode_lunar_magic_map16_tile(tile);
+        assert_eq!(
+            encoded,
+            [0x23, 0x01, 0x67, 0x45, 0xab, 0x89, 0xef, 0xcd, 0x57, 0x13]
+        );
+        assert_eq!(decode_lunar_magic_map16_tile(&encoded).unwrap(), tile);
+
+        let mut oversized = encoded.to_vec();
+        oversized.extend_from_slice(&[0xaa; 16]);
+        assert_eq!(decode_lunar_magic_map16_tile(&oversized).unwrap(), tile);
+        assert!(decode_lunar_magic_map16_tile(&encoded[..9]).is_err());
     }
 
     #[test]

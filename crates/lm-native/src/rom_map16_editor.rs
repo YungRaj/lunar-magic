@@ -603,13 +603,13 @@ impl RomMap16Editor {
             self.load();
         }
         ui.heading(format!("Map16 {:02X}:{:02X}", self.page, self.tile));
+        let mut native_paste = None;
         ui.horizontal(|ui| {
             if ui.button("Copy tile").clicked()
                 && let Some(tile) = self.current_tile()
             {
-                match native_clipboard::encode_map16_tile(tile) {
-                    Ok(text) => ui.ctx().copy_text(text),
-                    Err(error) => self.error = Some(error),
+                if let Err(error) = native_clipboard::copy_map16_tile_to_system(ui.ctx(), tile) {
+                    self.error = Some(error);
                 }
             }
             let paste_clicked = ui
@@ -623,10 +623,28 @@ impl RomMap16Editor {
                     .map(|workspace| workspace.controller.revision());
                 self.clipboard_paste_target =
                     revision.map(|revision| (revision, self.staged_revision, self.address()));
-                ui.ctx()
-                    .send_viewport_cmd(egui::ViewportCommand::RequestPaste);
+                match native_clipboard::request_map16_tile_paste(ui.ctx()) {
+                    Ok(Some(tile)) => {
+                        let target = self
+                            .clipboard_paste_target
+                            .take()
+                            .expect("native paste target was just recorded");
+                        native_paste = Some((target, tile));
+                    }
+                    Ok(None) => {}
+                    Err(error) => {
+                        self.clipboard_paste_target = None;
+                        self.error = Some(error);
+                    }
+                }
             }
         });
+        if let Some(((revision, staged_revision, address), tile)) = native_paste {
+            match native_clipboard::encode_map16_tile(tile) {
+                Ok(text) => self.paste_tile_at(&text, revision, staged_revision, address, pages),
+                Err(error) => self.error = Some(error),
+            }
+        }
         if let Some(text) = pasted
             && let Some((revision, staged_revision, address)) = self.clipboard_paste_target.take()
         {

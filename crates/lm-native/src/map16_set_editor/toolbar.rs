@@ -18,6 +18,7 @@ impl Map16SetEditor {
         let mut history = None;
         let mut save_requested = false;
         let mut copy_requested = false;
+        let mut native_paste = None;
         let mut append_requested = false;
         let mut remove_requested = false;
         let page_count = controller.value().set.pages.len();
@@ -46,8 +47,20 @@ impl Map16SetEditor {
                         tile: self.tile,
                     },
                 ));
-                ui.ctx()
-                    .send_viewport_cmd(egui::ViewportCommand::RequestPaste);
+                match native_clipboard::request_map16_tile_paste(ui.ctx()) {
+                    Ok(Some(tile)) => {
+                        let target = self
+                            .clipboard_paste_target
+                            .take()
+                            .expect("native paste target was just recorded");
+                        native_paste = Some((target, tile));
+                    }
+                    Ok(None) => {}
+                    Err(error) => {
+                        self.clipboard_paste_target = None;
+                        self.error = Some(error);
+                    }
+                }
             }
             append_requested = ui
                 .add_enabled(
@@ -60,10 +73,15 @@ impl Map16SetEditor {
                 .clicked();
             ui.label(if modified { "Modified" } else { "Saved" });
         });
-        if copy_requested && let Some(tile) = self.current_tile() {
+        if let Some(((revision, address), tile)) = native_paste {
             match native_clipboard::encode_map16_tile(tile) {
-                Ok(text) => ui.ctx().copy_text(text),
+                Ok(text) => self.paste_tile_at(&text, revision, address),
                 Err(error) => self.error = Some(error),
+            }
+        }
+        if copy_requested && let Some(tile) = self.current_tile() {
+            if let Err(error) = native_clipboard::copy_map16_tile_to_system(ui.ctx(), tile) {
+                self.error = Some(error);
             }
         }
         let mut changed = false;

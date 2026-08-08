@@ -17,6 +17,8 @@ const MERGED_USER_AND_SYSTEM_FALLBACKS: u32 = 0x30;
 const MAX_LANGUAGE_LIST_UTF16_UNITS: u32 = 0x600;
 const LUNAR_MAGIC_GRAPHICS_TILE_FORMAT: &str = "Lunar Magic 8x8 Tile";
 const LUNAR_MAGIC_GRAPHICS_TILE_BYTES: usize = 64;
+const LUNAR_MAGIC_MAP16_TILE_FORMAT: &str = "Lunar Magic 16x16 Tile";
+const LUNAR_MAGIC_MAP16_TILE_BYTES: usize = 10;
 
 /// Publishes Lunar Magic's native 64-byte graphics-tile record and a Unicode text fallback in one
 /// clipboard transaction. The custom allocation is transferred to Windows only after
@@ -30,13 +32,33 @@ pub fn write_graphics_tile_clipboard(tile: &[u8], fallback_text: &str) -> Result
     if tile.len() != LUNAR_MAGIC_GRAPHICS_TILE_BYTES {
         return Err("Lunar Magic graphics clipboard tile must contain exactly 64 bytes".into());
     }
-    let format = register_graphics_tile_format()?;
+    write_registered_clipboard(LUNAR_MAGIC_GRAPHICS_TILE_FORMAT, tile, fallback_text)
+}
+
+/// Publishes Lunar Magic's native ten-byte single-Map16-tile record and a Unicode text fallback.
+///
+/// # Errors
+///
+/// Returns an error when the tile is not exactly ten bytes or a Win32 clipboard operation fails.
+pub fn write_map16_tile_clipboard(tile: &[u8], fallback_text: &str) -> Result<(), String> {
+    if tile.len() != LUNAR_MAGIC_MAP16_TILE_BYTES {
+        return Err("Lunar Magic Map16 clipboard tile must contain exactly 10 bytes".into());
+    }
+    write_registered_clipboard(LUNAR_MAGIC_MAP16_TILE_FORMAT, tile, fallback_text)
+}
+
+fn write_registered_clipboard(
+    format_name: &str,
+    bytes: &[u8],
+    fallback_text: &str,
+) -> Result<(), String> {
+    let format = register_clipboard_format(format_name)?;
     let fallback = fallback_text
         .encode_utf16()
         .chain(std::iter::once(0))
         .flat_map(u16::to_ne_bytes)
         .collect::<Vec<_>>();
-    let custom = allocate_global_copy(tile)?;
+    let custom = allocate_global_copy(bytes)?;
     let unicode = match allocate_global_copy(&fallback) {
         Ok(unicode) => unicode,
         Err(error) => {
@@ -90,7 +112,29 @@ pub fn write_graphics_tile_clipboard(tile: &[u8], fallback_text: &str) -> Result
 ///
 /// Returns an error for Win32 failures or a present custom payload shorter than 64 bytes.
 pub fn read_graphics_tile_clipboard() -> Result<Option<[u8; 64]>, String> {
-    let format = register_graphics_tile_format()?;
+    read_registered_clipboard(
+        LUNAR_MAGIC_GRAPHICS_TILE_FORMAT,
+        LUNAR_MAGIC_GRAPHICS_TILE_BYTES,
+    )
+    .map(|bytes| bytes.map(|bytes| bytes.try_into().expect("requested exactly 64 bytes")))
+}
+
+/// Reads Lunar Magic's registered single-Map16-tile clipboard payload, accepting larger
+/// allocations and consuming only the first ten bytes.
+///
+/// # Errors
+///
+/// Returns an error for Win32 failures or a present custom payload shorter than ten bytes.
+pub fn read_map16_tile_clipboard() -> Result<Option<[u8; 10]>, String> {
+    read_registered_clipboard(LUNAR_MAGIC_MAP16_TILE_FORMAT, LUNAR_MAGIC_MAP16_TILE_BYTES)
+        .map(|bytes| bytes.map(|bytes| bytes.try_into().expect("requested exactly 10 bytes")))
+}
+
+fn read_registered_clipboard(
+    format_name: &str,
+    minimum_bytes: usize,
+) -> Result<Option<Vec<u8>>, String> {
+    let format = register_clipboard_format(format_name)?;
     // SAFETY: A null owner is valid for a short synchronous clipboard transaction.
     if unsafe { OpenClipboard(std::ptr::null_mut()) } == 0 {
         return Err("could not open the Windows clipboard".into());
@@ -110,10 +154,12 @@ pub fn read_graphics_tile_clipboard() -> Result<Option<[u8; 64]>, String> {
     }
     // SAFETY: `memory` is the global-memory handle returned by `GetClipboardData`.
     let size = unsafe { GlobalSize(memory) };
-    if size < LUNAR_MAGIC_GRAPHICS_TILE_BYTES {
+    if size < minimum_bytes {
         // SAFETY: This thread opened the clipboard above.
         unsafe { CloseClipboard() };
-        return Err("Lunar Magic graphics clipboard data is shorter than 64 bytes".into());
+        return Err(format!(
+            "Lunar Magic clipboard data is shorter than {minimum_bytes} bytes"
+        ));
     }
     // SAFETY: `memory` remains owned by the clipboard and valid while it is open.
     let source = unsafe { GlobalLock(memory) }.cast::<u8>();
@@ -122,21 +168,21 @@ pub fn read_graphics_tile_clipboard() -> Result<Option<[u8; 64]>, String> {
         unsafe { CloseClipboard() };
         return Err("could not lock Lunar Magic graphics clipboard data".into());
     }
-    let mut tile = [0; LUNAR_MAGIC_GRAPHICS_TILE_BYTES];
-    // SAFETY: `source` is readable for at least 64 bytes by the `GlobalSize` check, and `tile` is
-    // writable for exactly 64 non-overlapping bytes.
-    unsafe { std::ptr::copy_nonoverlapping(source, tile.as_mut_ptr(), tile.len()) };
+    let mut bytes = vec![0; minimum_bytes];
+    // SAFETY: `source` is readable for at least `minimum_bytes` by the `GlobalSize` check, and the
+    // destination is writable for exactly that many non-overlapping bytes.
+    unsafe { std::ptr::copy_nonoverlapping(source, bytes.as_mut_ptr(), bytes.len()) };
     // SAFETY: The handle was successfully locked above.
     unsafe { GlobalUnlock(memory) };
     // SAFETY: This thread opened the clipboard above.
     if unsafe { CloseClipboard() } == 0 {
         return Err("could not close the Windows clipboard".into());
     }
-    Ok(Some(tile))
+    Ok(Some(bytes))
 }
 
-fn register_graphics_tile_format() -> Result<u32, String> {
-    let name = LUNAR_MAGIC_GRAPHICS_TILE_FORMAT
+fn register_clipboard_format(format_name: &str) -> Result<u32, String> {
+    let name = format_name
         .encode_utf16()
         .chain(std::iter::once(0))
         .collect::<Vec<_>>();

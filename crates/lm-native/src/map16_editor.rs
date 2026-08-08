@@ -161,6 +161,7 @@ impl Map16Editor {
         };
         let controller = &mut document.controller;
         let revision = controller.revision();
+        let mut native_paste = None;
         ui.horizontal(|ui| {
             if ui
                 .add_enabled(controller.can_undo(), egui::Button::new("Undo"))
@@ -185,15 +186,26 @@ impl Map16Editor {
             if ui.button("Copy tile").clicked()
                 && let Some(tile) = controller.value().page.tiles.get(self.selected_tile)
             {
-                match native_clipboard::encode_map16_tile(*tile) {
-                    Ok(text) => ui.ctx().copy_text(text),
-                    Err(error) => self.error = Some(error),
+                if let Err(error) = native_clipboard::copy_map16_tile_to_system(ui.ctx(), *tile) {
+                    self.error = Some(error);
                 }
             }
             if ui.button("Paste tile").clicked() {
                 self.clipboard_paste_target = Some((controller.revision(), self.selected_tile));
-                ui.ctx()
-                    .send_viewport_cmd(egui::ViewportCommand::RequestPaste);
+                match native_clipboard::request_map16_tile_paste(ui.ctx()) {
+                    Ok(Some(tile)) => {
+                        let target = self
+                            .clipboard_paste_target
+                            .take()
+                            .expect("native paste target was just recorded");
+                        native_paste = Some((target, tile));
+                    }
+                    Ok(None) => {}
+                    Err(error) => {
+                        self.clipboard_paste_target = None;
+                        self.error = Some(error);
+                    }
+                }
             }
             ui.label(if controller.is_modified() {
                 "Modified"
@@ -201,6 +213,18 @@ impl Map16Editor {
                 "Saved"
             });
         });
+        if let Some(((revision, tile), value)) = native_paste {
+            match controller.apply_edits(
+                revision,
+                &[lm_app::Map16PageDocumentEdit::ReplaceTile { tile, value }],
+            ) {
+                Ok(()) => {
+                    self.loaded_selection = None;
+                    self.rendered_revision = None;
+                }
+                Err(error) => self.error = Some(error.to_string()),
+            }
+        }
     }
 
     fn page_view(&mut self, ui: &mut egui::Ui) {

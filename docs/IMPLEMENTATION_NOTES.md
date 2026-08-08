@@ -2206,6 +2206,11 @@ external Acts Like targets without pretending to own a complete graph. ROM compl
 `Map16Controller::ReplaceTiles` with the full profile-declared resolution limit, so dangling links
 and cycles are rejected before staged state changes. Stale ROM windows and wrong-domain or
 multi-tile envelopes remain non-mutating failures.
+On Windows, the standalone page, complete-set, and installed-ROM editors also publish Lunar Magic's
+registered `Lunar Magic 16x16 Tile` format in the recovered native layout: four little-endian
+subtile words in top-left/top-right/bottom-left/bottom-right order followed by one little-endian
+Acts Like word. Native paste is preferred, requires at least ten bytes, and ignores an allocation
+suffix exactly like the original; the semantic Unicode envelope remains the portable fallback.
 ExAnimation clipboard support copies one complete fixed record in both portable and ROM-backed
 windows. This retains transfer kind, frame count, size mode, destination/flag, ordinary frame words,
 and every reserved byte rather than reconstructing a record from visible form fields. Paste decodes
