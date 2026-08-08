@@ -643,6 +643,18 @@ same typed controls and routes the recovered words through its checked, undoable
 transaction, so the mapping is usable for profile-declared expanded tables rather than only
 portable level files.
 
+A reciprocal Lunar Magic 3.63 export oracle now closes the installed Super GFX storage variants.
+It first validates that the retained ROM owns the recovered `$6E00` expanded-settings allocation;
+the ordinary level-save fixture instead has an unrelated `$8000` RATS block at the same first-fit
+address and is deliberately rejected as evidence. On the owned fixture, Rust writes ten distinct
+available GFX files with word-0 bit 15 both clear and set. Lunar Magic exports the exact dormant
+selectors when disabled and the same selectors when enabled, proving that disabled state does not
+canonicalize an owned record. The oracle repeats both states with the authentic copier header and
+with that header removed, preserves the header bytes exactly, repairs the checksum, reopens the
+typed record, proves byte-exact Undo/Redo, and requires identical logical ROM output across both
+physical forms. This complements the exhaustive 12-bit model boundary with live resource-valid
+selectors instead of mistaking nonexistent ExGFX IDs for a storage failure.
+
 The profile-backed project layer can now resolve an enabled Super GFX selection into all six FG/BG
 and four sprite payloads in native slot order, with errors retaining the exact slot and file number.
 It selects 2bpp, 3bpp, or 4bpp decoding from the native `$800`/`$C00`/`$1000` decompressed lengths,
