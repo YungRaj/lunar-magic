@@ -2065,6 +2065,10 @@ On Windows, the same actions additionally publish and consume Lunar Magic's regi
 larger allocations are accepted with trailing bytes ignored, while short or non-4bpp values reject
 before mutation. Copy publishes that native block and the portable Unicode envelope atomically, so
 Rust-to-Rust text fallback does not prevent direct exchange with the original editor.
+The retained isolated-Wine single-tile graphics oracle independently exercises Lunar Magic's named
+copy and paste entry points through a second process, proving an exact 64-byte copy plus a
+four-row asymmetric paste/copy round trip. The fixture is compiled into the native tests so a
+record-order or documentation regression fails automatically.
 Portable, pristine-layout, and installed tile sheets expose Lunar Magic's Ctrl+left-click copy
 source gesture. Shift or Alt alongside Ctrl falls back to ordinary left-click selection, as do
 other non-Ctrl left clicks. Direct executable evidence further proves that right-click routing tests

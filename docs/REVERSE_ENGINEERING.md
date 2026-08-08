@@ -4283,3 +4283,9 @@ Rust frontend now publishes and consumes the exact single-tile record on all thr
 surfaces while publishing its Unicode typed envelope in the same clipboard transaction for
 portable interoperability. The bounded Rust decoder rejects color indexes outside 4bpp instead of
 allowing malformed native clipboard bytes to reach palette rendering.
+
+The retained isolated-Wine `graphics-single-tile-clipboard/oracle.tsv` binds those original entry
+points to the registered cross-process boundary. A newly opened edit buffer copies as exactly 64
+zero pixels. Publishing four repeats of indexed row `00 01 ... 0F`, invoking original paste, and
+copying again returns all 64 pixels byte-for-byte, independently proving the headerless row-major
+record consumed by Rust.

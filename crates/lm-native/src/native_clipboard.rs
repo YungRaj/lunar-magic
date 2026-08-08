@@ -488,6 +488,40 @@ mod tests {
     }
 
     #[test]
+    fn retained_lunar_magic_graphics_clipboard_oracle_binds_copy_and_roundtrip() {
+        let oracle = include_str!(
+            "../../../docs/oracle-work/lm363/pristine-us/graphics-single-tile-clipboard/oracle.tsv"
+        );
+        let fields = oracle
+            .lines()
+            .skip(1)
+            .filter_map(|line| line.split_once('\t'))
+            .collect::<std::collections::BTreeMap<_, _>>();
+        assert_eq!(fields.get("format_name"), Some(&"Lunar Magic 8x8 Tile"));
+        assert_eq!(fields.get("copied_size"), Some(&"64"));
+        assert_eq!(
+            fields.get("copied_bytes"),
+            Some(
+                &"00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+            )
+        );
+        assert_eq!(fields.get("roundtrip_size"), Some(&"64"));
+        assert_eq!(
+            fields.get("roundtrip_bytes"),
+            Some(
+                &"000102030405060708090A0B0C0D0E0F000102030405060708090A0B0C0D0E0F000102030405060708090A0B0C0D0E0F000102030405060708090A0B0C0D0E0F"
+            )
+        );
+
+        let expected = IndexedTile::new(std::array::from_fn(|index| (index & 0x0f) as u8));
+        let encoded = encode_lunar_magic_graphics_tile(&expected);
+        assert_eq!(
+            decode_lunar_magic_graphics_tile(&encoded).unwrap(),
+            expected
+        );
+    }
+
+    #[test]
     fn lunar_magic_native_map16_tile_is_four_words_then_acts_like() {
         let tile = Map16Tile {
             top_left: lm_level::Subtile(0x0123),
