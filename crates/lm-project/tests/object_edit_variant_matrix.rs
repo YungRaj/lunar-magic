@@ -1,7 +1,8 @@
 use lm_graphics::{Bgr555, Palette};
 use lm_level::{
-    LevelObjectData, Map16Page, Map16Tile, NativeSpriteRecordFields, NativeSpriteStream,
-    ObjectCoordinateNibbles, ObjectRecord, SpriteLengthTable, SpriteRecord, SpriteToken, Subtile,
+    LevelObjectData, Lm16Map16File, Map16Page, Map16PageFile, Map16Set, Map16SetFile, Map16Tile,
+    NativeSpriteRecordFields, NativeSpriteStream, ObjectCoordinateNibbles, ObjectRecord,
+    SpriteLengthTable, SpriteRecord, SpriteToken, Subtile,
 };
 use lm_project::{
     LevelPointerTable, LevelRomLayout, LevelSaveOptions, LoadedLevelSlot, Map16RomLayout,
@@ -578,6 +579,69 @@ fn edit_map16_variant(
         .unwrap();
     let before_edit = project.save_snapshot();
     let mut expected = project.load_map16_page(0, layout).unwrap();
+    let (legacy_graphics, legacy_acts_like) = expected.encode().unwrap();
+    expected = Map16Page::decode(&legacy_graphics, &legacy_acts_like).unwrap();
+    expected = Map16PageFile::decode(
+        &Map16PageFile {
+            source_page: 0,
+            page: expected,
+        }
+        .encode()
+        .unwrap(),
+    )
+    .unwrap()
+    .page;
+    expected = Map16SetFile::decode(
+        &Map16SetFile {
+            set: Map16Set {
+                pages: vec![expected],
+            },
+        }
+        .encode()
+        .unwrap(),
+    )
+    .unwrap()
+    .set
+    .pages
+    .remove(0);
+    let selected_tiles = vec![
+        Map16Tile {
+            top_left: Subtile(0x1111),
+            top_right: Subtile(0x2222),
+            bottom_left: Subtile(0x3333),
+            bottom_right: Subtile(0x4444),
+            acts_like: 0x0101,
+        },
+        Map16Tile {
+            top_left: Subtile(0x5555),
+            top_right: Subtile(0x6666),
+            bottom_left: Subtile(0x7777),
+            bottom_right: Subtile(0x8888),
+            acts_like: 0x0102,
+        },
+        Map16Tile {
+            top_left: Subtile(0x9999),
+            top_right: Subtile(0xaaaa),
+            bottom_left: Subtile(0xbbbb),
+            bottom_right: Subtile(0xcccc),
+            acts_like: 0x0103,
+        },
+        Map16Tile {
+            top_left: Subtile(0xdddd),
+            top_right: Subtile(0xeeee),
+            bottom_left: Subtile(0xffff),
+            bottom_right: Subtile(0x0000),
+            acts_like: 0x0104,
+        },
+    ];
+    let selected_file = Lm16Map16File::from_selected_tiles(0x24, 2, 2, &selected_tiles).unwrap();
+    let selected_file = Lm16Map16File::decode(&selected_file.encode()).unwrap();
+    let (selected_origin, selected_tiles) = selected_file.selected_tiles().unwrap();
+    assert_eq!(selected_origin, 0x24);
+    for (index, tile) in selected_tiles.into_iter().enumerate() {
+        let destination = selected_origin + index / 2 * 0x10 + index % 2;
+        expected.tiles[destination] = tile;
+    }
     expected.tiles[0].top_left = Subtile(0xffff);
     expected.tiles[0].top_right = Subtile(0x2001);
     expected.tiles[0].acts_like = 0x01ff;
@@ -612,7 +676,7 @@ fn edit_map16_variant(
 }
 
 #[test]
-fn map16_subtile_attribute_and_acts_like_edits_reopen_and_undo_across_every_supported_variant() {
+fn map16_file_imports_and_subtile_attribute_edits_reopen_across_every_supported_variant() {
     const SMW: &[u8; 21] = b"SUPER MARIOWORLD     ";
     const ALL_STARS_WORLD: &[u8; 21] = b"ALL_STARS + WORLD    ";
     let identities = [(SMW, 0), (SMW, 1), (ALL_STARS_WORLD, 1)];
