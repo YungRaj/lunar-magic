@@ -5,6 +5,12 @@ use lm_level::{Lm16Map16File, Map16Address, Map16Page, Map16Set, Map16Tile};
 
 const PROTECTED_FOREGROUND_TILES: usize = 0x200;
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum SelectedFileShortcut {
+    Import,
+    Export,
+}
+
 pub(super) struct PendingSelectedImport {
     revision: u64,
     destination: Option<usize>,
@@ -64,6 +70,7 @@ impl RomMap16Editor {
             || self.bitmap_loader.is_running()
             || self.bitmap_clipboard_loader.is_running()
             || self.bitmap_session.is_some();
+        let shortcut = take_selected_file_shortcut(ui);
         ui.horizontal(|ui| {
             ui.label("Selected range width");
             ui.text_edit_singleline(&mut self.selected_width);
@@ -72,12 +79,15 @@ impl RomMap16Editor {
             ui.checkbox(&mut self.selected_use_file_origin, "Import at file origin");
         });
         ui.horizontal(|ui| {
-            if ui
+            let import_clicked = ui
                 .add_enabled(
                     !blocked && !busy,
-                    egui::Button::new("Import selected .map16…"),
+                    egui::Button::new("Import selected .map16…").shortcut_text("W"),
                 )
-                .clicked()
+                .clicked();
+            if !blocked
+                && !busy
+                && (import_clicked || shortcut == Some(SelectedFileShortcut::Import))
                 && let Some(path) = dialogs::choose_selected_map16_document()
             {
                 let destination = (!self.selected_use_file_origin)
@@ -96,12 +106,15 @@ impl RomMap16Editor {
                     Err(error) => self.error = Some(error),
                 }
             }
-            if ui
+            let export_clicked = ui
                 .add_enabled(
                     !blocked && !busy,
-                    egui::Button::new("Export selected .map16…"),
+                    egui::Button::new("Export selected .map16…").shortcut_text("V"),
                 )
-                .clicked()
+                .clicked();
+            if !blocked
+                && !busy
+                && (export_clicked || shortcut == Some(SelectedFileShortcut::Export))
                 && let Some(path) = dialogs::choose_selected_map16_save_path()
             {
                 let result = parse_dimensions(&self.selected_width, &self.selected_height)
@@ -221,6 +234,21 @@ impl RomMap16Editor {
             resolution_limit,
         }])
     }
+}
+
+fn take_selected_file_shortcut(ui: &mut egui::Ui) -> Option<SelectedFileShortcut> {
+    ui.input_mut(|input| {
+        if input.modifiers == egui::Modifiers::NONE
+            && input.consume_key(egui::Modifiers::NONE, egui::Key::V)
+        {
+            Some(SelectedFileShortcut::Export)
+        } else {
+            let modifiers = input.modifiers;
+            input
+                .consume_key(modifiers, egui::Key::W)
+                .then_some(SelectedFileShortcut::Import)
+        }
+    })
 }
 
 fn parse_dimensions(width: &str, height: &str) -> Result<(usize, usize), String> {
@@ -367,6 +395,35 @@ mod tests {
     use super::*;
     use lm_level::Subtile;
 
+    fn observed_shortcut(
+        key: egui::Key,
+        modifiers: egui::Modifiers,
+    ) -> (Option<SelectedFileShortcut>, Option<SelectedFileShortcut>) {
+        let context = egui::Context::default();
+        let mut first = None;
+        let mut second = None;
+        let _ = context.run(
+            egui::RawInput {
+                events: vec![egui::Event::Key {
+                    key,
+                    physical_key: None,
+                    pressed: true,
+                    repeat: false,
+                    modifiers,
+                }],
+                modifiers,
+                ..Default::default()
+            },
+            |context| {
+                egui::CentralPanel::default().show(context, |ui| {
+                    first = take_selected_file_shortcut(ui);
+                    second = take_selected_file_shortcut(ui);
+                });
+            },
+        );
+        (first, second)
+    }
+
     fn complete_set() -> Map16Set {
         Map16Set {
             pages: (0..lm_app::SMW_COMPLETE_MAP16_PAGES)
@@ -442,6 +499,30 @@ mod tests {
         assert_eq!(
             validate_import_revision(10, 9).unwrap_err(),
             "the ROM changed while selected Map16 was loading"
+        );
+    }
+
+    #[test]
+    fn original_selected_file_shortcuts_match_v_export_and_w_import_modifiers() {
+        assert_eq!(
+            observed_shortcut(egui::Key::V, egui::Modifiers::NONE),
+            (Some(SelectedFileShortcut::Export), None)
+        );
+        for modifiers in [
+            egui::Modifiers::SHIFT,
+            egui::Modifiers::CTRL,
+            egui::Modifiers::ALT,
+            egui::Modifiers::COMMAND,
+        ] {
+            assert_eq!(observed_shortcut(egui::Key::V, modifiers), (None, None));
+            assert_eq!(
+                observed_shortcut(egui::Key::W, modifiers),
+                (Some(SelectedFileShortcut::Import), None)
+            );
+        }
+        assert_eq!(
+            observed_shortcut(egui::Key::W, egui::Modifiers::NONE),
+            (Some(SelectedFileShortcut::Import), None)
         );
     }
 }

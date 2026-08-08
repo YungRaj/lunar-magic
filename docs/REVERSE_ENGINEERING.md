@@ -1295,6 +1295,14 @@ uninterpreted until their consumers provide stronger evidence.
 
 Map16 rendering is traced from individual flipped 8x8 SNES tile descriptors through the cached 256x256 page bitmap and selected-tile previews. Clipboard copy/paste uses the custom `Lunar Magic 16x16 Tile` format; added the exact 10-byte `Map16TileClipboardRecord` containing four subtile descriptors and an acts-like value. The main editor window procedure, keyboard/control handlers, page navigation, import/export shortcuts, attribute flipping, acts-like-cycle detection, selection/paste paths, and cache lifecycle are named. The current page, selected subtiles, acts-like value, selected absolute tile index, and active-selection flag are typed and named.
 
+The modeless editor's later import/export dispatcher is recovered independently at
+`00501550`. Commands `$2266/$2267` export/import the selected compact `.map16` range, while
+`$2268/$2269` export/import the complete `AllMap16.map16` container. The virtual-key table consumed
+by `HandleMap16EditorKeyCommand` at `004FFEF0` maps unmodified `V` to selected export and `W` with
+any modifier state to selected import. Rust routes those fixed keys through the same bounded,
+revision-bound file workers as the visible selected-range buttons and consumes each accepted key
+event once.
+
 The separate Map16 tile-selector/viewer subsystem through `004e99c0` is now named. It consists of an outer selector window, a scrollable 256x256 tile-view child, and a status bar. Recovered behavior includes DPI-aware percentage scaling, client/outer size calculation, horizontal and vertical scroll state, mouse-wheel page motion, hover and primary/secondary selection highlighting, keyboard page navigation, foreground-page unlocking, palette-context changes, and top-down 32-bit DIB cache creation/rendering/cleanup. Typed and named the current/maximum selector page, selected and hovered absolute tile numbers, palette context, and backing pixel pointer.
 
 The outer Layer 1 selector creator and the beginning of the main level-editor presentation layer through `004eac40` are now named. This includes renderer/file-error reporting, status-bar sizing and DPI handling, horizontal/vertical level-editor scroll state, backing-cache and auxiliary-buffer cleanup, and the toolbar icon system. The toolbar uses a 24-entry command table with parallel enabled/disabled icon arrays, supports an external `Lunar Magic.ff5` bitmap, compressed and built-in fallbacks, per-window DPI scaling, right-to-left mirroring, and a separately rebuilt alternate mode cache.
