@@ -2018,7 +2018,9 @@ impl VanillaLevelEditor {
         if self.placement_mode.is_some() {
             ui.label("Click a canvas tile to place the values from the matching editor below.");
         } else {
-            ui.label("Select or drag an object/enemy; Insert duplicates the selection and Delete removes it.");
+            ui.label(
+                "Select or drag an object/enemy; Insert duplicates in place, right-click duplicates at the pointer, and Delete removes it.",
+            );
         }
         let mut toolbar_shortcut = None;
         if let Some(selection) = self.canvas_entity_selection {
@@ -3076,6 +3078,24 @@ impl VanillaLevelEditor {
         if selection_pressed {
             response.request_focus();
         }
+        let duplicate_at_pointer =
+            response.secondary_clicked() && response.ctx.input(|input| !input.modifiers.any());
+        if duplicate_at_pointer
+            && self.placement_mode.is_none()
+            && let Some(position) = response.interact_pointer_pos()
+        {
+            response.request_focus();
+            let visible = match self.canvas_entity_selection {
+                Some(CanvasEntitySelection::Layer1Object) => visibility.layer1,
+                Some(CanvasEntitySelection::Layer2Object) => visibility.layer2,
+                Some(CanvasEntitySelection::Sprite) => visibility.sprites,
+                None => false,
+            };
+            if visible {
+                self.duplicate_canvas_selection_at(position, rect, cell, vertical);
+                return;
+            }
+        }
         if response.clicked()
             && let Some(mode) = self.placement_mode
             && placement_mode_visible(mode, visibility)
@@ -3333,6 +3353,30 @@ impl VanillaLevelEditor {
                     Err(error) => self.error = Some(error.to_string()),
                 }
             }
+        }
+    }
+
+    /// Reproduces Lunar Magic's unmodified right-click placement boundary for the one selected
+    /// native entity. The original clones the selection before relocating it, so the source stays
+    /// in place and the newly inserted record becomes the active selection.
+    fn duplicate_canvas_selection_at(
+        &mut self,
+        position: egui::Pos2,
+        canvas: egui::Rect,
+        cell: f32,
+        vertical: bool,
+    ) {
+        match self.canvas_entity_selection {
+            Some(CanvasEntitySelection::Layer1Object) => {
+                self.place_object_at_canvas(position, canvas, cell, vertical);
+            }
+            Some(CanvasEntitySelection::Layer2Object) => {
+                self.place_layer2_object_at_canvas(position, canvas, cell, vertical);
+            }
+            Some(CanvasEntitySelection::Sprite) => {
+                self.place_sprite_at_canvas(position, canvas, cell, vertical);
+            }
+            None => {}
         }
     }
 
@@ -12210,7 +12254,8 @@ mod tests {
         let vertical = editor.controller.as_ref().is_some_and(|controller| {
             lm_profile::smw_us_v1_level_mode(controller.level().layer1.header.level_mode()).vertical
         });
-        editor.place_layer2_object_at_canvas(
+        editor.canvas_entity_selection = Some(CanvasEntitySelection::Layer2Object);
+        editor.duplicate_canvas_selection_at(
             egui::pos2(ROM_LEVEL_CANVAS_CELL * 2.5, ROM_LEVEL_CANVAS_CELL * 3.5),
             canvas,
             ROM_LEVEL_CANVAS_CELL,
@@ -15466,6 +15511,133 @@ mod tests {
             original_sprites
         );
         assert_eq!(editor.canvas_entity_selection, None);
+    }
+
+    #[test]
+    #[allow(
+        clippy::too_many_lines,
+        reason = "one workflow proves both original right-click object and sprite routes"
+    )]
+    fn right_click_duplication_repositions_objects_and_sprites_without_removing_sources() {
+        let mut app = AppState::default();
+        app.load_rom(crate::test_support::pristine_smw_us_rom_bytes())
+            .unwrap();
+        app.dispatch(Command::SelectLevel(0x105)).unwrap();
+        let snapshot = app.controller_snapshot().unwrap();
+        let mut editor = VanillaLevelEditor::default();
+        editor.load(
+            &snapshot,
+            EditorKey {
+                revision: snapshot.revision,
+                level: 0x105,
+                sprite_lengths_signature: ssc_sprite_lengths_signature(None),
+            },
+            None,
+        );
+        let canvas = egui::Rect::from_min_size(
+            egui::Pos2::ZERO,
+            egui::vec2(512.0, f32::from(NATIVE_LEVEL_MINOR_TILES)),
+        );
+
+        let object_placement = editor
+            .controller
+            .as_ref()
+            .unwrap()
+            .level()
+            .layer1
+            .objects
+            .native_placements()
+            .into_iter()
+            .next()
+            .unwrap();
+        let source_object = editor
+            .controller
+            .as_ref()
+            .unwrap()
+            .level()
+            .layer1
+            .objects
+            .records[object_placement.record_index]
+            .clone();
+        let object_count = editor
+            .controller
+            .as_ref()
+            .unwrap()
+            .level()
+            .layer1
+            .objects
+            .native_placements()
+            .len();
+        editor.selected_object = object_placement.record_index;
+        editor.object_form = ObjectForm::from_record(&source_object);
+        editor.object_placement_template = Some(source_object.clone());
+        editor.canvas_entity_selection = Some(CanvasEntitySelection::Layer1Object);
+        let object_target = egui::pos2(36.5, 8.5);
+        let (screen, coordinates, perpendicular_high) =
+            object_placement_at_canvas_position(object_target, canvas, 1.0, false).unwrap();
+        editor.duplicate_canvas_selection_at(object_target, canvas, 1.0, false);
+        let objects = &editor.controller.as_ref().unwrap().level().layer1.objects;
+        assert_eq!(objects.native_placements().len(), object_count + 1);
+        assert!(objects.records.contains(&source_object));
+        assert!(objects.native_placements().into_iter().any(|placement| {
+            placement.record_index == editor.selected_object
+                && placement.screen == screen
+                && placement.major
+                    == screen
+                        .saturating_mul(16)
+                        .saturating_add(u16::from(coordinates.second))
+                && placement.minor == coordinates.first | if perpendicular_high { 0x10 } else { 0 }
+        }));
+
+        let source_sprite_index = editor
+            .controller
+            .as_ref()
+            .unwrap()
+            .level()
+            .sprites
+            .tokens
+            .iter()
+            .position(|token| matches!(token, SpriteToken::Record(_)))
+            .unwrap();
+        let source_sprite =
+            editor.controller.as_ref().unwrap().level().sprites.tokens[source_sprite_index].clone();
+        let sprite_count = editor
+            .controller
+            .as_ref()
+            .unwrap()
+            .level()
+            .sprites
+            .tokens
+            .len();
+        editor.selected_sprite = source_sprite_index;
+        editor.sprite_form = SpriteForm::from_token(
+            editor.controller.as_ref().unwrap().level().sprites.header,
+            Some(&source_sprite),
+        );
+        editor.canvas_entity_selection = Some(CanvasEntitySelection::Sprite);
+        let sprite_target = egui::pos2(69.5, 7.5);
+        let expected_fields = sprite_fields_at_canvas_position(
+            sprite_target,
+            canvas,
+            1.0,
+            false,
+            NativeSpriteRecordFields {
+                y_low: editor.sprite_form.y_low,
+                extra_bits: editor.sprite_form.extra_bits,
+                screen: editor.sprite_form.screen,
+                x: editor.sprite_form.x,
+                sprite_number: editor.sprite_form.sprite_number,
+            },
+        )
+        .unwrap();
+        editor.duplicate_canvas_selection_at(sprite_target, canvas, 1.0, false);
+        let sprites = &editor.controller.as_ref().unwrap().level().sprites;
+        assert_eq!(sprites.tokens.len(), sprite_count + 1);
+        assert!(sprites.tokens.contains(&source_sprite));
+        let SpriteToken::Record(inserted) = &sprites.tokens[editor.selected_sprite] else {
+            panic!("right-click duplication must select the inserted sprite record");
+        };
+        assert_eq!(inserted.native_fields().unwrap(), expected_fields);
     }
 
     #[test]
