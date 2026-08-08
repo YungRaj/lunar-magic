@@ -20,6 +20,15 @@ pub enum SmwUsV1ExpandedSettingsAllocationError {
     RecordOutOfRange(usize),
 }
 
+/// Record generations selected by `LoadLevelHeaderRecordWithVersionUpgrade` (`00462E10`).
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum SmwUsV1ExpandedSettingsRecordGeneration {
+    PreExpansionLayout,
+    LegacyExpandedLayout,
+    LegacyReferenceLayout,
+    Current,
+}
+
 impl std::fmt::Display for SmwUsV1ExpandedSettingsAllocationError {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(formatter, "expanded-settings allocation error: {self:?}")
@@ -165,6 +174,73 @@ pub fn smw_us_v1_default_special_expanded_settings_record() -> ExpandedLevelSett
     ExpandedLevelSettingsRecord::from_encoded(bytes)
 }
 
+/// Applies `UpgradeExpandedLevelHeaderRecordLayout` (`00461E80`) to one pre-expansion record.
+///
+/// The old words 1 through 9 move to words 5 through 13. Words 1 through 4 and 14 through 15
+/// become `$007F`, while word 0 retains only its `$8000` enable bit and receives the `$007F`
+/// default. This operation deliberately does not perform the later reference or field
+/// normalization passes.
+pub fn smw_us_v1_upgrade_legacy_expanded_settings_record_layout(
+    record: &mut ExpandedLevelSettingsRecord,
+) {
+    let source = *record.encoded();
+    let mut bytes = source;
+    for destination in 5..=13 {
+        write_word(&mut bytes, destination, read_word(&source, destination - 4));
+    }
+    write_word(&mut bytes, 0, read_word(&source, 0) & 0x807f | 0x007f);
+    for index in 1..=4 {
+        write_word(&mut bytes, index, 0x007f);
+    }
+    write_word(&mut bytes, 14, 0x007f);
+    write_word(&mut bytes, 15, 0x007f);
+    *record = ExpandedLevelSettingsRecord::from_encoded(bytes);
+}
+
+/// Applies `NormalizeLevelHeaderRecordReferences` (`00461F90`) to words 2 through 10.
+///
+/// Word 8 is not a reference and is preserved. Every other selected word maps `$FFFF` to `$007F`
+/// and otherwise retains only the low twelve bits.
+pub fn smw_us_v1_normalize_expanded_settings_references(record: &mut ExpandedLevelSettingsRecord) {
+    let mut bytes = *record.encoded();
+    for index in 2..=10 {
+        if index == 8 {
+            continue;
+        }
+        let value = read_word(&bytes, index);
+        write_word(
+            &mut bytes,
+            index,
+            if value == 0xffff {
+                0x007f
+            } else {
+                value & 0x0fff
+            },
+        );
+    }
+    *record = ExpandedLevelSettingsRecord::from_encoded(bytes);
+}
+
+/// Applies the exact load-time conversion selected for one authenticated historical generation.
+pub fn smw_us_v1_upgrade_expanded_settings_record(
+    record: &mut ExpandedLevelSettingsRecord,
+    generation: SmwUsV1ExpandedSettingsRecordGeneration,
+) {
+    match generation {
+        SmwUsV1ExpandedSettingsRecordGeneration::PreExpansionLayout => {
+            smw_us_v1_upgrade_legacy_expanded_settings_record_layout(record);
+            smw_us_v1_normalize_expanded_settings_record(record);
+        }
+        SmwUsV1ExpandedSettingsRecordGeneration::LegacyExpandedLayout => {
+            smw_us_v1_normalize_expanded_settings_record(record);
+        }
+        SmwUsV1ExpandedSettingsRecordGeneration::LegacyReferenceLayout => {
+            smw_us_v1_normalize_expanded_settings_references(record);
+        }
+        SmwUsV1ExpandedSettingsRecordGeneration::Current => {}
+    }
+}
+
 /// Applies Lunar Magic 3.63's recovered current-layout normalization in place.
 pub fn smw_us_v1_normalize_expanded_settings_record(record: &mut ExpandedLevelSettingsRecord) {
     let source = *record.encoded();
@@ -272,6 +348,95 @@ mod tests {
                 .collect::<Vec<_>>(),
             [0x2b, 0x2a, 0x29, 0x28]
         );
+    }
+
+    #[test]
+    fn legacy_layout_upgrade_moves_exact_words_and_initializes_only_recovered_slots() {
+        let mut bytes = [0; ExpandedLevelSettingsRecord::ENCODED_LEN];
+        for index in 0..ExpandedLevelSettingsRecord::WORD_COUNT {
+            write_word(&mut bytes, index, 0xa100 | u16::try_from(index).unwrap());
+        }
+        write_word(&mut bytes, 0, 0xffff);
+        let mut record = ExpandedLevelSettingsRecord::from_encoded(bytes);
+        smw_us_v1_upgrade_legacy_expanded_settings_record_layout(&mut record);
+
+        assert_eq!(record.word(0).unwrap(), 0x807f);
+        for index in 1..=4 {
+            assert_eq!(record.word(index).unwrap(), 0x007f);
+        }
+        for destination in 5..=13 {
+            assert_eq!(
+                record.word(destination).unwrap(),
+                0xa100 | u16::try_from(destination - 4).unwrap()
+            );
+        }
+        assert_eq!(record.word(14).unwrap(), 0x007f);
+        assert_eq!(record.word(15).unwrap(), 0x007f);
+    }
+
+    #[test]
+    fn reference_only_normalizer_covers_exact_range_sentinel_and_mode_exception() {
+        let mut bytes = [0; ExpandedLevelSettingsRecord::ENCODED_LEN];
+        for index in 0..ExpandedLevelSettingsRecord::WORD_COUNT {
+            write_word(&mut bytes, index, 0xf100 | u16::try_from(index).unwrap());
+        }
+        write_word(&mut bytes, 4, 0xffff);
+        write_word(&mut bytes, 8, 0xffff);
+        let mut record = ExpandedLevelSettingsRecord::from_encoded(bytes);
+        smw_us_v1_normalize_expanded_settings_references(&mut record);
+
+        for index in 0..ExpandedLevelSettingsRecord::WORD_COUNT {
+            let expected = match index {
+                4 => 0x007f,
+                8 => 0xffff,
+                2..=10 if index != 8 => 0x0100 | u16::try_from(index).unwrap(),
+                _ => 0xf100 | u16::try_from(index).unwrap(),
+            };
+            assert_eq!(record.word(index).unwrap(), expected, "word {index}");
+        }
+    }
+
+    #[test]
+    fn generation_dispatch_composes_only_the_original_load_time_passes() {
+        let source = ExpandedLevelSettingsRecord::from_encoded(std::array::from_fn(|byte| {
+            let word = 0xe000 | u16::try_from(byte / 2).unwrap();
+            word.to_le_bytes()[byte & 1]
+        }));
+
+        let mut expected_pre = source.clone();
+        smw_us_v1_upgrade_legacy_expanded_settings_record_layout(&mut expected_pre);
+        smw_us_v1_normalize_expanded_settings_record(&mut expected_pre);
+        let mut actual_pre = source.clone();
+        smw_us_v1_upgrade_expanded_settings_record(
+            &mut actual_pre,
+            SmwUsV1ExpandedSettingsRecordGeneration::PreExpansionLayout,
+        );
+        assert_eq!(actual_pre, expected_pre);
+
+        let mut expected_legacy = source.clone();
+        smw_us_v1_normalize_expanded_settings_record(&mut expected_legacy);
+        let mut actual_legacy = source.clone();
+        smw_us_v1_upgrade_expanded_settings_record(
+            &mut actual_legacy,
+            SmwUsV1ExpandedSettingsRecordGeneration::LegacyExpandedLayout,
+        );
+        assert_eq!(actual_legacy, expected_legacy);
+
+        let mut expected_references = source.clone();
+        smw_us_v1_normalize_expanded_settings_references(&mut expected_references);
+        let mut actual_references = source.clone();
+        smw_us_v1_upgrade_expanded_settings_record(
+            &mut actual_references,
+            SmwUsV1ExpandedSettingsRecordGeneration::LegacyReferenceLayout,
+        );
+        assert_eq!(actual_references, expected_references);
+
+        let mut current = source.clone();
+        smw_us_v1_upgrade_expanded_settings_record(
+            &mut current,
+            SmwUsV1ExpandedSettingsRecordGeneration::Current,
+        );
+        assert_eq!(current, source);
     }
 
     #[test]

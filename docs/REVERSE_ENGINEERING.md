@@ -2090,6 +2090,18 @@ compares the complete allocation and every fixed runtime write against fresh Lun
 both copier-header forms; the native application, CLI process, semantic reopen, checksum, and
 byte-exact Undo/Redo gates cover the same collision.
 
+The restored Ghidra project now separates the historical record transformations used by
+`LoadLevelHeaderRecordWithVersionUpgrade` (`00462E10`).
+`UpgradeExpandedLevelHeaderRecordLayout` (`00461E80`) moves old words 1–9 to current words 5–13,
+initializes words 1–4 and 14–15 to `$007F`, and retains only word 0's `$8000` bit before applying
+that same default. `NormalizeLevelHeaderRecordReferences` (`00461F90`) independently maps `$FFFF`
+to `$007F`
+and masks words 2–10 except non-reference word 8. `NormalizeExpandedLevelHeaderRecord`
+(`00461ED0`) is the distinct field-reordering pass already modeled by the current normalizer.
+`SmwUsV1ExpandedSettingsRecordGeneration` now dispatches the exact composition for the four load
+branches, with exhaustive source/destination-word and untouched-field tests. Whole-ROM migration
+still requires authenticated legacy runtime fixtures and is not inferred from these record rules.
+
 The pointer installer is now represented as typed, non-installable relocation evidence. The
 recovered `PatchExpandedLevelHeaderTablePointers` loop patches descriptor entries `$35..$39` at
 operand offset `$6C` to fixed runtime entry `$70`. The allocation-dependent portion of

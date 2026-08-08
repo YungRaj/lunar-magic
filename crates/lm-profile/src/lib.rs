@@ -131,9 +131,11 @@ pub use expanded_settings_allocation::{
     SMW_US_V1_EXPANDED_SETTINGS_ALLOCATION_LEN, SMW_US_V1_EXPANDED_SETTINGS_PREFIX_LEN,
     SMW_US_V1_EXPANDED_SETTINGS_RECORD_COUNT, SMW_US_V1_EXPANDED_SETTINGS_SPECIAL_RECORD_OFFSET,
     SMW_US_V1_EXPANDED_SETTINGS_STANDARD_LEVEL_COUNT, SmwUsV1ExpandedSettingsAllocation,
-    SmwUsV1ExpandedSettingsAllocationError, smw_us_v1_default_expanded_settings_record,
-    smw_us_v1_default_special_expanded_settings_record,
-    smw_us_v1_normalize_expanded_settings_record,
+    SmwUsV1ExpandedSettingsAllocationError, SmwUsV1ExpandedSettingsRecordGeneration,
+    smw_us_v1_default_expanded_settings_record, smw_us_v1_default_special_expanded_settings_record,
+    smw_us_v1_normalize_expanded_settings_record, smw_us_v1_normalize_expanded_settings_references,
+    smw_us_v1_upgrade_expanded_settings_record,
+    smw_us_v1_upgrade_legacy_expanded_settings_record_layout,
 };
 pub use expanded_settings_base::{
     ExpandedSettingsBaseError, SMW_US_V1_EXPANDED_SETTINGS_BASE_HELPER_OFFSET,
