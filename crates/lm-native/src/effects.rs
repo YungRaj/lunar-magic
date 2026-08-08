@@ -133,6 +133,9 @@ impl EffectState {
                 crate::persistence_worker::PersistenceTarget::Replace(_) => {
                     app.confirm_saved(completion.request_id)
                 }
+                crate::persistence_worker::PersistenceTarget::ReplaceAs(path) => {
+                    app.confirm_saved_at(completion.request_id, path)
+                }
                 crate::persistence_worker::PersistenceTarget::Create(path) => {
                     app.confirm_saved_at(completion.request_id, path)
                 }
@@ -245,12 +248,30 @@ impl EffectState {
             }
             return;
         };
-        self.start_persistence(
-            app,
-            request_id,
-            crate::persistence_worker::PersistenceTarget::Create(path),
-            bytes.to_vec(),
-        );
+        self.complete_save_destination(app, request_id, bytes, path);
+    }
+
+    fn complete_save_destination(
+        &mut self,
+        app: &mut AppState,
+        request_id: u64,
+        bytes: &[u8],
+        path: PathBuf,
+    ) {
+        let target = match crate::persistence_worker::PersistenceTarget::save_as(path) {
+            Ok(target) => target,
+            Err(error) => {
+                self.save_then = None;
+                self.error = Some(match app.save_failed(request_id, error.clone()) {
+                    Ok(()) => error,
+                    Err(acknowledgement) => {
+                        format!("{error}; could not release failed save: {acknowledgement}")
+                    }
+                });
+                return;
+            }
+        };
+        self.start_persistence(app, request_id, target, bytes.to_vec());
     }
 
     pub(crate) fn save_before_confirmation_action(
@@ -452,6 +473,49 @@ mod tests {
     }
 
     #[test]
+    fn save_as_overwrite_replaces_approved_file_and_adopts_destination() {
+        let destination = path();
+        fs::write(&destination, b"previous unrelated file").unwrap();
+        let mut app = AppState::default();
+        app.load_rom(test_rom()).unwrap();
+        app.dispatch(Command::CommitRomWrites {
+            expected_revision: app.project_revision(),
+            description: "Save As overwrite".into(),
+            writes: vec![RomWrite {
+                offset: 6,
+                bytes: vec![0x66],
+            }],
+        })
+        .unwrap();
+        let (request_id, bytes) = app
+            .dispatch(Command::SaveAs)
+            .unwrap()
+            .into_iter()
+            .find_map(|effect| match effect {
+                FrontendEffect::ChooseSaveDestination { request_id, bytes } => {
+                    Some((request_id, bytes))
+                }
+                _ => None,
+            })
+            .unwrap();
+
+        let context = egui::Context::default();
+        let mut state = EffectState::default();
+        state.complete_save_destination(&mut app, request_id, &bytes, destination.clone());
+        let completion = state.persistence.wait_for_test();
+        assert_eq!(
+            completion.target,
+            crate::persistence_worker::PersistenceTarget::ReplaceAs(destination.clone())
+        );
+        state.complete_persistence(&context, &mut app, completion);
+
+        assert_eq!(fs::read(&destination).unwrap(), bytes);
+        assert_eq!(app.document_path.as_deref(), Some(destination.as_path()));
+        assert!(!app.project().unwrap().is_modified());
+        fs::remove_file(destination).unwrap();
+    }
+
+    #[test]
     fn confirmed_save_closes_only_after_successful_persistence() {
         let path = path();
         let bytes = test_rom();
@@ -588,6 +652,101 @@ mod tests {
             }
         }
         assert_eq!(completed, 48);
+    }
+
+    #[test]
+    fn save_as_create_and_overwrite_cover_all_supported_identity_variants() {
+        let games = [
+            (b"SUPER MARIOWORLD     ", 0),
+            (b"SUPER MARIOWORLD     ", 1),
+            (b"ALL_STARS + WORLD    ", 1),
+        ];
+        let map_modes = [0x20, 0x30, 0x23, 0x32];
+        let context = egui::Context::default();
+        let mut completed = 0;
+
+        for (title, region) in games {
+            for map_mode in map_modes {
+                for headered in [false, true] {
+                    for corrupt_checksum in [false, true] {
+                        for overwrite in [false, true] {
+                            let destination = path();
+                            if overwrite {
+                                fs::write(&destination, b"approved overwrite target").unwrap();
+                            }
+                            let mut app = AppState::default();
+                            app.load_rom(lifecycle_variant_rom(
+                                title,
+                                region,
+                                map_mode,
+                                headered,
+                                corrupt_checksum,
+                            ))
+                            .unwrap();
+                            app.dispatch(Command::CommitRomWrites {
+                                expected_revision: app.project_revision(),
+                                description: "cross-variant Save As".into(),
+                                writes: vec![RomWrite {
+                                    offset: 0x11,
+                                    bytes: vec![0x77],
+                                }],
+                            })
+                            .unwrap();
+                            let expected = app.project().unwrap().save_snapshot();
+                            let (request_id, bytes) = app
+                                .dispatch(Command::SaveAs)
+                                .unwrap()
+                                .into_iter()
+                                .find_map(|effect| match effect {
+                                    FrontendEffect::ChooseSaveDestination { request_id, bytes } => {
+                                        Some((request_id, bytes))
+                                    }
+                                    _ => None,
+                                })
+                                .unwrap();
+                            assert_eq!(bytes, expected);
+
+                            let mut state = EffectState::default();
+                            state.complete_save_destination(
+                                &mut app,
+                                request_id,
+                                &bytes,
+                                destination.clone(),
+                            );
+                            let completion = state.persistence.wait_for_test();
+                            assert_eq!(
+                                completion.target,
+                                if overwrite {
+                                    crate::persistence_worker::PersistenceTarget::ReplaceAs(
+                                        destination.clone(),
+                                    )
+                                } else {
+                                    crate::persistence_worker::PersistenceTarget::Create(
+                                        destination.clone(),
+                                    )
+                                }
+                            );
+                            state.complete_persistence(&context, &mut app, completion);
+
+                            assert_eq!(fs::read(&destination).unwrap(), expected);
+                            assert_eq!(app.document_path.as_deref(), Some(destination.as_path()));
+                            assert!(!app.project().unwrap().is_modified());
+                            let subsequent = app.dispatch(Command::Save).unwrap();
+                            assert!(matches!(
+                                subsequent.as_slice(),
+                                [FrontendEffect::PersistRomAt { path, .. }]
+                                    if path == &destination
+                            ));
+                            app.cancel_save(app.pending_save_request_id().unwrap())
+                                .unwrap();
+                            fs::remove_file(destination).unwrap();
+                            completed += 1;
+                        }
+                    }
+                }
+            }
+        }
+        assert_eq!(completed, 96);
     }
 
     #[test]

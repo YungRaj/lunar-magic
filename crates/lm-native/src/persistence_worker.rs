@@ -7,6 +7,7 @@ use std::sync::mpsc::{self, Receiver, TryRecvError};
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) enum PersistenceTarget {
     Replace(PathBuf),
+    ReplaceAs(PathBuf),
     Create(PathBuf),
     CreateRemoving { create: PathBuf, remove: PathBuf },
     ReplacePair { first: PathBuf, second: PathBuf },
@@ -16,13 +17,27 @@ pub(crate) enum PersistenceTarget {
 impl PersistenceTarget {
     fn description(&self) -> String {
         match self {
-            Self::Replace(path) | Self::Create(path) => path.display().to_string(),
+            Self::Replace(path) | Self::ReplaceAs(path) | Self::Create(path) => {
+                path.display().to_string()
+            }
             Self::CreateRemoving { create, remove } => {
                 format!("{} and removal of {}", create.display(), remove.display())
             }
             Self::ReplacePair { first, second } | Self::CreatePair { first, second } => {
                 format!("{} and {}", first.display(), second.display())
             }
+        }
+    }
+
+    pub(crate) fn save_as(path: PathBuf) -> Result<Self, String> {
+        match std::fs::symlink_metadata(&path) {
+            Ok(metadata) if metadata.file_type().is_file() => Ok(Self::ReplaceAs(path)),
+            Ok(_) => Err("Save As destination must be absent or an existing regular file".into()),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(Self::Create(path)),
+            Err(error) => Err(format!(
+                "could not inspect Save As destination {}: {error}",
+                path.display()
+            )),
         }
     }
 }
@@ -129,9 +144,10 @@ impl PersistenceWorker {
             .name(format!("lm-save-{request_id}"))
             .spawn(move || {
                 let write_result = match (&target, payload) {
-                    (PersistenceTarget::Replace(path), PersistencePayload::Single(bytes)) => {
-                        lm_app::file_persistence::replace_existing(path, &bytes)
-                    }
+                    (
+                        PersistenceTarget::Replace(path) | PersistenceTarget::ReplaceAs(path),
+                        PersistencePayload::Single(bytes),
+                    ) => lm_app::file_persistence::replace_existing(path, &bytes),
                     (PersistenceTarget::Create(path), PersistencePayload::Single(bytes)) => {
                         lm_app::file_persistence::write_new(path, &bytes)
                     }
@@ -269,6 +285,61 @@ mod tests {
         wait(&mut worker).result.unwrap();
         assert_eq!(fs::read(&path).unwrap(), [6, 7, 8]);
         fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn save_as_routes_absent_to_create_and_approved_existing_file_to_replace() {
+        let absent = path("save-as-absent");
+        assert_eq!(
+            PersistenceTarget::save_as(absent.clone()).unwrap(),
+            PersistenceTarget::Create(absent.clone())
+        );
+        let mut worker = PersistenceWorker::default();
+        worker
+            .start(
+                20,
+                PersistenceTarget::save_as(absent.clone()).unwrap(),
+                vec![1, 2],
+            )
+            .unwrap();
+        wait(&mut worker).result.unwrap();
+        assert_eq!(fs::read(&absent).unwrap(), [1, 2]);
+
+        assert_eq!(
+            PersistenceTarget::save_as(absent.clone()).unwrap(),
+            PersistenceTarget::ReplaceAs(absent.clone())
+        );
+        worker
+            .start(
+                21,
+                PersistenceTarget::save_as(absent.clone()).unwrap(),
+                vec![3, 4, 5],
+            )
+            .unwrap();
+        wait(&mut worker).result.unwrap();
+        assert_eq!(fs::read(&absent).unwrap(), [3, 4, 5]);
+        fs::remove_file(absent).unwrap();
+    }
+
+    #[test]
+    fn save_as_rejects_non_file_destinations_before_starting_a_worker() {
+        let directory = path("save-as-directory");
+        fs::create_dir(&directory).unwrap();
+        assert!(PersistenceTarget::save_as(directory.clone()).is_err());
+        fs::remove_dir(directory).unwrap();
+
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::symlink;
+            let target = path("save-as-link-target");
+            let link = path("save-as-link");
+            fs::write(&target, [7]).unwrap();
+            symlink(&target, &link).unwrap();
+            assert!(PersistenceTarget::save_as(link.clone()).is_err());
+            assert_eq!(fs::read(&target).unwrap(), [7]);
+            fs::remove_file(link).unwrap();
+            fs::remove_file(target).unwrap();
+        }
     }
 
     #[test]
