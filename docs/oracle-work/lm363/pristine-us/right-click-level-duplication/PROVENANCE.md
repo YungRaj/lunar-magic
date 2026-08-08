@@ -32,16 +32,27 @@ higher-level gestures.
 
 The same authenticated command dispatcher establishes the aggregate keyboard boundary. Its recovered
 command-index table maps `$245D` to `SelectAllLevelObjectsInLayer` (`00436E70`), `$245B` to the
-object/sprite delete branch containing `DeleteSelectedLevelObjects` (`00439260`), and `$245C` to the
-corresponding duplicate branch. Select All walks the active Layer 1 or object-backed Layer 2 list and
+object/sprite delete branch containing `DeleteSelectedLevelObjects` (`00439260`), and `$245A` to the
+single-template Insert-at-cursor branch. `DispatchLevelEditorKeyboardShortcut` (`00491420`) independently
+proves that bare Insert dispatches `$245A`, bare Delete dispatches `$245B`, and Ctrl+Delete dispatches
+the distinct destructive `$245C` command. Select All walks the active Layer 1 or object-backed Layer 2 list and
 excludes command-zero control nodes. The ignored
 `lunar_magic_select_all_deletes_every_positioned_object_and_preserves_controls` Wine gate executes
 the actual `$245D` then `$245B` commands in Lunar Magic 3.63 on pristine level `$105`, saves, and
 compares Lunar Magic's own before/after MWL exports. Every positioned object is removed, opaque
 controls and every non-object domain remain exact, redundant screen jumps are canonically dropped,
 and the reopened ROM checksum is valid. The native canvas now consumes Ctrl+A in its focused active
-domain and applies Select All, Insert duplicate, and Delete to complete object, Layer 2 object, or
-sprite groups atomically.
+domain, applies Delete to complete object, Layer 2 object, or sprite groups atomically, and matches
+bare Insert by placing one active object/sprite template at the current canvas pointer.
+
+`lunar_magic_ctrl_selection_right_duplicates_and_drags_the_complete_object_group` closes the live
+aggregate gesture boundary. It Ctrl-clicks two authenticated pristine level `$105` objects, reads
+Lunar Magic's selected-count global at `$00E2777C` and requires exactly two, right-press clones the
+selection into clear sky, drags the clones by one more tile, saves, and compares Lunar Magic's own
+complete before/after MWL streams to Rust. The first comparison exposed that Rust unnecessarily
+canonicalized every pre-existing screen transition during cloning. Group duplication now inserts
+only the clones at the end of their target screen segment, preserving every source record, opaque
+control, screen jump, and advance bit byte-for-byte; the live stream consequently matches exactly.
 
 `right_click_duplication_repositions_objects_and_sprites_without_removing_sources` verifies the
 single-selection source-preserving clone, exact target cell, selected inserted record, immediate
@@ -49,10 +60,11 @@ drag state, release cleanup, and semantic sprite fields.
 
 The orientation-neutral `ObjectStream::duplicate_ordinary_object_group` and
 `relocate_ordinary_object_group` operations clone or move an ordered selection with one shared
-major/minor tile delta, retain every source and extension byte when cloning, canonically rebuild
-screen transitions once, return selection indexes in caller order, and reject empty, duplicate,
+major/minor tile delta, retain every source and extension byte when cloning, preserve all existing
+screen-transition encodings, return selection indexes in caller order, and reject empty, duplicate,
 non-positioned, opaque-control, or any-member-out-of-bounds input without changing the stream.
 `group_duplication_preserves_sources_relative_delta_and_selection_order`,
+`group_duplication_preserves_every_preexisting_transition_byte`,
 `invalid_group_duplication_is_failure_atomic`,
 `group_relocation_moves_every_member_once_and_tracks_reordered_indexes`, and
 `invalid_group_relocation_is_failure_atomic` cover that model/transaction boundary.

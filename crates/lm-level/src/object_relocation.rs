@@ -207,7 +207,8 @@ impl ObjectStream {
         if selected.is_empty() {
             return Err(ObjectRelocationError::EmptySelection);
         }
-        let (mut positioned, trailing_controls) = decode_positioned_objects(self)?;
+        let (positioned, trailing_controls) = decode_positioned_objects(self)?;
+        let original_records = self.records.clone();
         let mut seen = std::collections::BTreeSet::new();
         let mut clones = Vec::with_capacity(selected.len());
         let first_clone_id = self.records.len();
@@ -265,12 +266,65 @@ impl ObjectStream {
                 record,
             });
         }
-        let clone_ids: Vec<_> = clones.iter().map(|object| object.original_index).collect();
-        positioned.extend(clones);
-        positioned.sort_by_key(|object| object.screen);
-        let (mut records, selected_indexes) =
-            encode_positioned_object_group(positioned, &clone_ids)?;
+        let trailing_start = original_records.len() - trailing_controls.len();
+        let mut original_screen = 0_u16;
+        let mut record_screens = vec![None; trailing_start];
+        let mut last_record_by_screen = std::collections::BTreeMap::new();
+        for (index, record) in original_records[..trailing_start].iter().enumerate() {
+            if let Some(jump) = record.screen_jump() {
+                original_screen = jump.resolved_screen();
+            } else if record.is_positioned_object() {
+                if record.advances_screen() {
+                    original_screen = original_screen.saturating_add(1);
+                }
+                record_screens[index] = Some(original_screen);
+                last_record_by_screen.insert(original_screen, index);
+            }
+        }
+        let mut clones_by_screen =
+            std::collections::BTreeMap::<u16, Vec<(usize, ObjectRecord)>>::new();
+        for (ordinal, clone) in clones.into_iter().enumerate() {
+            clones_by_screen
+                .entry(clone.screen)
+                .or_default()
+                .push((ordinal, clone.record));
+        }
+        let mut records = Vec::with_capacity(original_records.len() + selected.len() + 1);
+        let mut selected_indexes = vec![None; selected.len()];
+        for (index, record) in original_records[..trailing_start]
+            .iter()
+            .cloned()
+            .enumerate()
+        {
+            records.push(record);
+            let Some(screen) = record_screens[index] else {
+                continue;
+            };
+            if last_record_by_screen.get(&screen) != Some(&index) {
+                continue;
+            }
+            if let Some(screen_clones) = clones_by_screen.remove(&screen) {
+                for (ordinal, clone) in screen_clones {
+                    selected_indexes[ordinal] = Some(records.len());
+                    records.push(clone);
+                }
+            }
+        }
+        for (screen, screen_clones) in clones_by_screen {
+            records.push(canonical_screen_jump(screen)?);
+            for (ordinal, clone) in screen_clones {
+                selected_indexes[ordinal] = Some(records.len());
+                records.push(clone);
+            }
+        }
         records.extend(trailing_controls);
+        let selected_indexes = selected_indexes
+            .into_iter()
+            .enumerate()
+            .map(|(ordinal, index)| {
+                index.ok_or(ObjectRelocationError::NotOrdinaryObject(selected[ordinal]))
+            })
+            .collect::<Result<Vec<_>, _>>()?;
         self.records = records;
         Ok(selected_indexes)
     }
@@ -554,6 +608,30 @@ mod tests {
             .unwrap();
         assert_eq!((second.major, second.minor), (19, 15));
         assert_eq!(stream.records[second.record_index].parameter(), 0x10);
+    }
+
+    #[test]
+    fn group_duplication_preserves_every_preexisting_transition_byte() {
+        let source = object(false, 1, 2, 0x10);
+        let jump = ObjectRecord::new(vec![10, 0, 1]).unwrap();
+        let later = object(false, 3, 4, 0x20);
+        let trailing = ObjectRecord::new(vec![7, 5, 0, 0xcb]).unwrap();
+        let mut stream = ObjectStream {
+            records: vec![
+                source.clone(),
+                jump.clone(),
+                later.clone(),
+                trailing.clone(),
+            ],
+        };
+        let selected = stream.duplicate_ordinary_object_group(&[0], 1, 0).unwrap();
+        assert_eq!(selected, vec![1]);
+        assert_eq!(stream.records[0], source);
+        assert_eq!(stream.records[2], jump);
+        assert_eq!(stream.records[3], later);
+        assert_eq!(stream.records[4], trailing);
+        assert_eq!(stream.records[1].coordinate_nibbles().second, 3);
+        assert!(!stream.records[1].advances_screen());
     }
 
     #[test]

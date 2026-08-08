@@ -309,6 +309,7 @@ enum CanvasEntitySelection {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum CanvasEntityShortcut {
     SelectAll,
+    Insert,
     Duplicate,
     Remove,
 }
@@ -2043,7 +2044,7 @@ impl VanillaLevelEditor {
             ui.label("Click a canvas tile to place the values from the matching editor below.");
         } else {
             ui.label(
-                "Select or drag an object/enemy; Insert duplicates in place, right-click duplicates at the pointer, and Delete removes it.",
+                "Select or drag an object/enemy; Insert places the active template at the pointer, right-click duplicates there, and Delete removes the selection.",
             );
         }
         let mut toolbar_shortcut = None;
@@ -3341,7 +3342,40 @@ impl VanillaLevelEditor {
             && self.resizing_layer2_object.is_none()
             && let Some(shortcut) = canvas_entity_shortcut(response)
         {
-            self.apply_canvas_entity_shortcut(shortcut);
+            if shortcut == CanvasEntityShortcut::Insert {
+                if let Some(position) = response
+                    .interact_pointer_pos()
+                    .or_else(|| response.ctx.pointer_hover_pos())
+                {
+                    self.apply_canvas_insert_shortcut(position, rect, cell, vertical);
+                } else {
+                    self.error =
+                        Some("Insert requires a pointer position on the level canvas".into());
+                }
+            } else {
+                self.apply_canvas_entity_shortcut(shortcut);
+            }
+        }
+    }
+
+    fn apply_canvas_insert_shortcut(
+        &mut self,
+        position: egui::Pos2,
+        canvas: egui::Rect,
+        cell: f32,
+        vertical: bool,
+    ) {
+        match self.canvas_entity_selection {
+            Some(CanvasEntitySelection::Layer1Object) => {
+                self.place_object_at_canvas(position, canvas, cell, vertical);
+            }
+            Some(CanvasEntitySelection::Layer2Object) => {
+                self.place_layer2_object_at_canvas(position, canvas, cell, vertical);
+            }
+            Some(CanvasEntitySelection::Sprite) => {
+                self.place_sprite_at_canvas(position, canvas, cell, vertical);
+            }
+            None => {}
         }
     }
 
@@ -3461,6 +3495,7 @@ impl VanillaLevelEditor {
             return;
         };
         match (selection, shortcut) {
+            (_, CanvasEntityShortcut::Insert) => {}
             (selection, CanvasEntityShortcut::SelectAll) => {
                 let Some(controller) = self.controller.as_ref() else {
                     return;
@@ -6490,7 +6525,7 @@ fn canvas_entity_shortcut(response: &egui::Response) -> Option<CanvasEntityShort
             return None;
         }
         if input.consume_key(modifiers, egui::Key::Insert) {
-            Some(CanvasEntityShortcut::Duplicate)
+            Some(CanvasEntityShortcut::Insert)
         } else if input.consume_key(modifiers, egui::Key::Delete)
             || input.consume_key(modifiers, egui::Key::Backspace)
         {
@@ -17173,6 +17208,57 @@ mod tests {
         assert_eq!(semantic(restored), semantic(&original));
         assert!(editor.selected_object_group.is_empty());
         assert_eq!(editor.canvas_entity_selection, None);
+    }
+
+    #[test]
+    fn insert_shortcut_places_one_active_object_template_at_the_pointer() {
+        let mut app = AppState::default();
+        app.load_rom(crate::test_support::pristine_smw_us_rom_bytes())
+            .unwrap();
+        app.dispatch(Command::SelectLevel(0x105)).unwrap();
+        let snapshot = app.controller_snapshot().unwrap();
+        let mut editor = VanillaLevelEditor::default();
+        editor.load(
+            &snapshot,
+            EditorKey {
+                revision: snapshot.revision,
+                level: 0x105,
+                sprite_lengths_signature: ssc_sprite_lengths_signature(None),
+            },
+            None,
+        );
+        let original = editor
+            .controller
+            .as_ref()
+            .unwrap()
+            .level()
+            .layer1
+            .objects
+            .clone();
+        let placements = original.native_placements();
+        editor.selected_object_group = vec![placements[0].record_index, placements[1].record_index];
+        editor.selected_object = editor.selected_object_group[0];
+        editor.object_form = ObjectForm::from_record(&original.records[editor.selected_object]);
+        editor.canvas_entity_selection = Some(CanvasEntitySelection::Layer1Object);
+        let canvas = egui::Rect::from_min_size(
+            egui::Pos2::ZERO,
+            egui::vec2(512.0, f32::from(NATIVE_LEVEL_MINOR_TILES)),
+        );
+        editor.apply_canvas_insert_shortcut(egui::pos2(10.5, 10.5), canvas, 1.0, false);
+
+        assert!(editor.error.is_none(), "{:?}", editor.error);
+        let updated = &editor.controller.as_ref().unwrap().level().layer1.objects;
+        assert_eq!(
+            updated.native_placements().len(),
+            original.native_placements().len() + 1
+        );
+        let inserted = updated
+            .native_placements()
+            .into_iter()
+            .find(|placement| placement.record_index == editor.selected_object)
+            .unwrap();
+        assert_eq!((inserted.major, inserted.minor), (10, 10));
+        assert_eq!(editor.selected_object_group, vec![editor.selected_object]);
     }
 
     #[test]

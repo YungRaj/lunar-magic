@@ -1,12 +1,12 @@
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #include <stdio.h>
+#include <stdint.h>
 #include <string.h>
 #include <tlhelp32.h>
 
 #define SAVE_LEVEL_COMMAND 0x23d2
 #define DELETE_SELECTION_COMMAND 0x245b
-#define DUPLICATE_SELECTION_COMMAND 0x245c
 #define SELECT_ALL_COMMAND 0x245d
 
 typedef struct {
@@ -26,6 +26,19 @@ static BOOL CALLBACK find_yes_button(HWND window, LPARAM opaque) {
         return FALSE;
     }
     return TRUE;
+}
+
+static void physical_click(HWND window, int x, int y, BOOL control) {
+    if (control) keybd_event(VK_CONTROL, 0, 0, 0);
+    LPARAM point = MAKELPARAM(x, y);
+    SendMessageA(
+        window,
+        WM_LBUTTONDOWN,
+        MK_LBUTTON | (control ? MK_CONTROL : 0),
+        point
+    );
+    SendMessageA(window, WM_LBUTTONUP, control ? MK_CONTROL : 0, point);
+    if (control) keybd_event(VK_CONTROL, 0, KEYEVENTF_KEYUP, 0);
 }
 
 static DWORD find_process(const char *executable) {
@@ -73,8 +86,8 @@ static BOOL CALLBACK find_child(HWND window, LPARAM opaque) {
 
 int main(int argc, char **argv) {
     if (argc != 3 ||
-        (strcmp(argv[2], "delete") != 0 && strcmp(argv[2], "insert") != 0)) {
-        fputs("usage: wine-object-selection-oracle.exe EXECUTABLE delete|insert\n", stderr);
+        (strcmp(argv[2], "delete") != 0 && strcmp(argv[2], "right-duplicate-drag") != 0)) {
+        fputs("usage: wine-object-selection-oracle.exe EXECUTABLE delete|right-duplicate-drag\n", stderr);
         return 2;
     }
     DWORD process_id = 0;
@@ -100,19 +113,45 @@ int main(int argc, char **argv) {
     SetForegroundWindow(frame.window);
     SetFocus(canvas.window);
     Sleep(100);
-    SendMessageA(frame.window, WM_COMMAND, MAKEWPARAM(SELECT_ALL_COMMAND, 0), 0);
-    Sleep(100);
-    SendMessageA(
-        frame.window,
-        WM_COMMAND,
-        MAKEWPARAM(
-            strcmp(argv[2], "delete") == 0
-                ? DELETE_SELECTION_COMMAND
-                : DUPLICATE_SELECTION_COMMAND,
-            0
-        ),
-        0
-    );
+    if (strcmp(argv[2], "delete") == 0) {
+        SendMessageA(frame.window, WM_COMMAND, MAKEWPARAM(SELECT_ALL_COMMAND, 0), 0);
+        Sleep(100);
+        SendMessageA(frame.window, WM_COMMAND, MAKEWPARAM(DELETE_SELECTION_COMMAND, 0), 0);
+    } else {
+        // Pristine level $105 records 1 and 2 are bounded, non-overlapping objects anchored at
+        // tiles (4,23) and (13,18). Ctrl-click both, then use Lunar Magic's recovered unmodified
+        // right-press clone-and-drag gesture to place the aggregate one tile right and thirteen
+        // tiles upward in clear sky, avoiding Lunar Magic's separate overlap-priority reorder.
+        physical_click(canvas.window, 4 * 16 + 8, 23 * 16 + 8, TRUE);
+        physical_click(canvas.window, 13 * 16 + 8, 18 * 16 + 8, TRUE);
+        Sleep(100);
+        DWORD selected_count = 0;
+        SIZE_T selected_read = 0;
+        HANDLE process = OpenProcess(PROCESS_VM_READ | PROCESS_QUERY_INFORMATION, FALSE, process_id);
+        if (!process || !ReadProcessMemory(
+                process,
+                (LPCVOID)(uintptr_t)0x00e2777c,
+                &selected_count,
+                sizeof(selected_count),
+                &selected_read
+            ) || selected_read != sizeof(selected_count)) {
+            if (process) CloseHandle(process);
+            return 7;
+        }
+        CloseHandle(process);
+        printf("phase=selected count=%lu\n", (unsigned long)selected_count);
+        fflush(stdout);
+        if (selected_count != 2) return 8;
+        LPARAM target = MAKELPARAM(4 * 16 + 8, 10 * 16 + 8);
+        LPARAM moved = MAKELPARAM(5 * 16 + 8, 10 * 16 + 8);
+        SendMessageA(canvas.window, WM_RBUTTONDOWN, MK_RBUTTON, target);
+        puts("phase=duplicated");
+        fflush(stdout);
+        SendMessageA(canvas.window, WM_MOUSEMOVE, MK_RBUTTON, moved);
+        SendMessageA(canvas.window, WM_RBUTTONUP, 0, moved);
+        puts("phase=dragged");
+        fflush(stdout);
+    }
     Sleep(250);
     PostMessageA(frame.window, WM_COMMAND, MAKEWPARAM(SAVE_LEVEL_COMMAND, 0), 0);
     for (unsigned attempt = 0; attempt < 80; attempt++) {
@@ -127,7 +166,12 @@ int main(int argc, char **argv) {
         Sleep(25);
     }
     Sleep(500);
-    printf("gesture=ctrl-a,%s\n", argv[2]);
+    printf(
+        "gesture=%s\n",
+        strcmp(argv[2], "delete") == 0
+            ? "ctrl-a,delete"
+            : "ctrl-select,right-duplicate,drag"
+    );
     SendMessageA(frame.window, WM_CLOSE, 0, 0);
     return 0;
 }
