@@ -4249,3 +4249,20 @@ then reads exactly `count * $23` record bytes beginning at the following address
 `LegacyExAnimationRomLayout` and `load_legacy_exanimation`/`load_all_legacy_exanimations` implement
 that complete read boundary, including exact table shape, all 512 slots, mapper conversion, bounded
 payload reads, typed failures, and the original empty-pointer rule.
+
+### Graphics 8×8 selected-tile edit buffer
+
+`SelectGraphicsTileForPixelEditing` at `$00505120` copies the selected decoded tile into the
+64-byte buffer at `$00ACF908` and records its index at `$00ACF900`. The X/Y/R branches in
+`HandleGraphicsEditorCommand` at `$005054D0` and `PaintGraphicsTilePixelAtPoint` at `$00505380`
+mutate only that private buffer. `CommitEditedGraphicsTile` at `$00504E00` is reached by the sheet
+right-paste branch at `$00507A58`; it copies the buffer into an eligible decoded/backing tile.
+
+The retained isolated-Wine `graphics-pixel-buffer/oracle.tsv` confirms that two horizontal flips
+change and restore the edit buffer without changing planar backing. Painting diagnostic tile
+`$600` changes buffer pixel zero from 0 to 1 while both decoded and planar backing remain exact.
+This is deliberately distinct from the retained cache-paste oracle: high diagnostic tiles remain
+selectable and paintable, but the paste predicate prevents `$600` or later from receiving the
+staged buffer. Native pristine and installed editors therefore retain a selected edit tile across
+painting, transforms, color mapping, copying, and F9; backing changes only when a permitted sheet
+paste succeeds.

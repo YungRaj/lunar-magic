@@ -94,6 +94,7 @@ impl RomGraphicsEditor {
             Some(PendingLoad::Ownership { profiled, level }) => {
                 match result.and_then(|loaded| decode_loaded(profiled, level, loaded, revision)) {
                     Ok(workspace) => {
+                        self.edit_tile = workspace.controller.graphics().tiles.first().cloned();
                         self.workspace = Some(workspace);
                         self.selected_tile = 0;
                         self.foreground_color = 1;
@@ -128,7 +129,10 @@ impl RomGraphicsEditor {
                         .map_err(|error| error.to_string())
                 });
                 match outcome {
-                    Ok(()) => self.io_status = Some("Raw graphics staged successfully.".into()),
+                    Ok(()) => {
+                        self.reload_edit_tile_from_selection();
+                        self.io_status = Some("Raw graphics staged successfully.".into());
+                    }
                     Err(error) => self.error = Some(error),
                 }
             }
@@ -172,6 +176,7 @@ impl RomGraphicsEditor {
 
     fn clear(&mut self) {
         self.workspace = None;
+        self.edit_tile = None;
         self.pending_load = None;
         self.pending_close = None;
         self.pending_level_graphics_export = None;

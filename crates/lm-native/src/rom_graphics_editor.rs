@@ -72,6 +72,7 @@ enum PendingLoad {
 pub(crate) struct RomGraphicsEditor {
     workspace: Option<Workspace>,
     selected_tile: usize,
+    edit_tile: Option<IndexedTile>,
     foreground_color: u8,
     background_color: u8,
     display_palette: GraphicsDisplayPalette,
@@ -133,6 +134,15 @@ impl RomGraphicsEditor {
                 workspace.internal_cache = None;
                 workspace.internal_cache_error = Some(error);
                 self.internal_cache_unlocked = false;
+            }
+        }
+        if self.internal_cache_unlocked {
+            match self.synchronize_active_graphics_into_internal_cache() {
+                Ok(()) => self.reload_edit_tile_from_selection(),
+                Err(error) => {
+                    self.internal_cache_unlocked = false;
+                    self.error = Some(error);
+                }
             }
         }
     }
@@ -658,11 +668,16 @@ impl RomGraphicsEditor {
         };
         let tile_count = tiles.len();
         self.selected_tile = self.selected_tile.min(tiles.len().saturating_sub(1));
+        let selection_before = self.selected_tile;
+        let mut reload_selected_edit_tile = false;
         let page = tile_page_range(self.selected_tile, tile_count);
         let (page_start, page_end) = (page.start, page.end);
         let mut responses = Vec::with_capacity(page_end.saturating_sub(page_start));
         let mut selected_by_pointer = None;
-        let selected_tile = tiles.get(self.selected_tile).cloned();
+        let selected_tile = self
+            .edit_tile
+            .clone()
+            .or_else(|| tiles.get(self.selected_tile).cloned());
         let mut selected_paste = None;
         let mut copied = false;
         let mut paste_status = None;
@@ -689,9 +704,11 @@ impl RomGraphicsEditor {
                                 Some(TilePointerAction::Select(index)) => {
                                     self.selected_tile = index;
                                     selected_by_pointer = Some(index);
+                                    reload_selected_edit_tile = true;
                                 }
                                 Some(TilePointerAction::Copy(index)) => {
                                     self.selected_tile = index;
+                                    reload_selected_edit_tile = true;
                                     match native_clipboard::encode_graphics_tile(tile) {
                                         Ok(text) => {
                                             ui.ctx().copy_text(text);
@@ -807,6 +824,7 @@ impl RomGraphicsEditor {
                 match self.synchronize_active_graphics_into_internal_cache() {
                     Ok(()) => {
                         self.internal_cache_unlocked = true;
+                        reload_selected_edit_tile = true;
                         self.status.set("Internal GFX data viewing unlocked.");
                     }
                     Err(error) => self.error = Some(error),
@@ -853,6 +871,9 @@ impl RomGraphicsEditor {
             } else {
                 LevelGraphicsExportMode::ReplaceExtracted
             });
+        }
+        if reload_selected_edit_tile || self.selected_tile != selection_before {
+            self.reload_edit_tile_from_selection();
         }
     }
 
@@ -1030,8 +1051,9 @@ impl RomGraphicsEditor {
             if !stale && target_editable {
                 match native_clipboard::decode_graphics_tile(text) {
                     Ok(tile) => {
-                        if self.apply_tile_at(target, tile) {
+                        if self.apply_tile_at(target, tile.clone()) {
                             self.selected_tile = target;
+                            self.edit_tile = Some(tile);
                             self.status.set(format!(
                                 "Pasted tile from clipboard over tile 0x{target:X}."
                             ));
@@ -1074,7 +1096,7 @@ impl RomGraphicsEditor {
         } else {
             ownership::show(ui, owner)
         };
-        let Some(mut tile) = selected.cloned() else {
+        let Some(mut tile) = self.edit_tile.clone().or_else(|| selected.cloned()) else {
             ui.label("No graphics tiles");
             return;
         };
@@ -1092,17 +1114,12 @@ impl RomGraphicsEditor {
             .flatten()
             .or(clicked_mapping);
         if let Some(mapped) = mapped {
-            self.apply_tile(mapped);
-            if let Some(current) = self.selected_tile_clone() {
-                tile = current;
-            }
+            tile = mapped;
+            self.stage_tile(tile.clone());
         }
         if let Some(direction) = self.pending_shift.take() {
-            let shifted = tile.shifted_wrapping(direction);
-            self.apply_tile(shifted);
-            if let Some(current) = self.selected_tile_clone() {
-                tile = current;
-            }
+            tile = tile.shifted_wrapping(direction);
+            self.stage_tile(tile.clone());
         }
         ui.horizontal(|ui| {
             if ui.button("Copy tile").clicked() {
@@ -1130,10 +1147,8 @@ impl RomGraphicsEditor {
                 GraphicsTileTransform::FlipHorizontal => tile.flipped(true, false),
                 GraphicsTileTransform::FlipVertical => tile.flipped(false, true),
             };
-            self.apply_tile(transformed);
-            if let Some(current) = self.selected_tile_clone() {
-                tile = current;
-            }
+            tile = transformed;
+            self.stage_tile(tile.clone());
         }
         let (rect, response) = ui.allocate_exact_size(
             egui::Vec2::splat(TILE_EDITOR_SIDE),
@@ -1176,10 +1191,14 @@ impl RomGraphicsEditor {
             self.error = Some(error.to_string());
             return;
         }
-        self.apply_tile(tile);
+        self.stage_tile(tile);
     }
-    fn apply_tile(&mut self, tile: IndexedTile) {
-        self.apply_tile_at(self.selected_tile, tile);
+    fn stage_tile(&mut self, tile: IndexedTile) {
+        self.edit_tile = Some(tile);
+    }
+
+    fn reload_edit_tile_from_selection(&mut self) {
+        self.edit_tile = self.selected_tile_clone();
     }
     fn apply_tile_at(&mut self, index: usize, tile: IndexedTile) -> bool {
         if self.internal_cache_unlocked {
@@ -2085,6 +2104,31 @@ mod tests {
         assert!(!diagnostic_sheet_paste_editable(0x300, observed));
         assert!(diagnostic_sheet_paste_editable(0x5ff, observed));
         assert!(!diagnostic_sheet_paste_editable(0x600, observed));
+    }
+
+    #[test]
+    fn retained_lunar_magic_pixel_buffer_oracle_proves_staging_before_paste() {
+        let fixture = include_str!(
+            "../../../docs/oracle-work/lm363/pristine-us/graphics-pixel-buffer/oracle.tsv"
+        );
+        let fields = fixture
+            .lines()
+            .skip(1)
+            .map(|line| line.split_once('\t').expect("oracle row has two columns"))
+            .collect::<std::collections::HashMap<_, _>>();
+        assert_eq!(fields["tile"], "600");
+        assert_eq!(fields["maximum_page"], "3F");
+        assert_eq!(fields["flip_changed_edit_buffer"], "1");
+        assert_eq!(fields["flip_changed_planar_backing"], "0");
+        assert_eq!(fields["second_flip_restored_edit_buffer"], "1");
+        assert_eq!(fields["foreground_paint_changed_edit_buffer"], "1");
+        assert_eq!(fields["foreground_paint_changed_decoded_backing"], "0");
+        assert_eq!(fields["foreground_paint_changed_planar_backing"], "0");
+        assert_eq!(fields["painted_edit_pixel_zero"], "1");
+        assert_eq!(fields["backing_pixel_zero"], "0");
+        assert_eq!(fields["background_paint_restored_edit_buffer"], "1");
+        assert_eq!(fields["background_paint_restored_decoded"], "1");
+        assert_eq!(fields["background_paint_restored_planar"], "1");
     }
 
     #[test]

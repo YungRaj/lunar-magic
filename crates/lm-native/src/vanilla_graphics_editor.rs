@@ -45,6 +45,7 @@ pub(crate) struct VanillaGraphicsEditor {
     key: Option<EditorKey>,
     controller: Option<GraphicsController>,
     selected_tile: usize,
+    edit_tile: Option<IndexedTile>,
     foreground_color: u8,
     background_color: u8,
     display_palette: GraphicsDisplayPalette,
@@ -355,6 +356,7 @@ impl VanillaGraphicsEditor {
             lm_profile::smw_us_v1_vanilla_graphics_layout(),
         ) {
             Ok(controller) => {
+                self.edit_tile = controller.graphics().tiles.first().cloned();
                 self.controller = Some(controller);
                 self.selected_tile = 0;
                 self.foreground_color = 1;
@@ -389,6 +391,7 @@ impl VanillaGraphicsEditor {
             }
             Err(error) => {
                 self.controller = None;
+                self.edit_tile = None;
                 self.internal_cache = None;
                 self.internal_cache_unlocked = false;
                 self.internal_cache_level = None;
@@ -437,6 +440,8 @@ impl VanillaGraphicsEditor {
         {
             self.internal_cache_unlocked = false;
             self.error = Some(error);
+        } else if self.internal_cache_unlocked {
+            self.reload_edit_tile_from_selection();
         }
     }
 
@@ -503,11 +508,16 @@ impl VanillaGraphicsEditor {
         };
         let tile_count = tiles.len();
         self.selected_tile = self.selected_tile.min(tiles.len().saturating_sub(1));
+        let selection_before = self.selected_tile;
+        let mut reload_selected_edit_tile = false;
         let page = tile_page_range(self.selected_tile, tile_count);
         let (page_start, page_end) = (page.start, page.end);
         let mut responses = Vec::with_capacity(page_end.saturating_sub(page_start));
         let mut selected_by_pointer = None;
-        let selected_tile = tiles.get(self.selected_tile).cloned();
+        let selected_tile = self
+            .edit_tile
+            .clone()
+            .or_else(|| tiles.get(self.selected_tile).cloned());
         let mut selected_paste = None;
         let mut copied = false;
         let mut paste_status = None;
@@ -534,9 +544,11 @@ impl VanillaGraphicsEditor {
                                 Some(TilePointerAction::Select(index)) => {
                                     self.selected_tile = index;
                                     selected_by_pointer = Some(index);
+                                    reload_selected_edit_tile = true;
                                 }
                                 Some(TilePointerAction::Copy(index)) => {
                                     self.selected_tile = index;
+                                    reload_selected_edit_tile = true;
                                     match native_clipboard::encode_graphics_tile(tile) {
                                         Ok(text) => {
                                             ui.ctx().copy_text(text);
@@ -622,6 +634,7 @@ impl VanillaGraphicsEditor {
                 match self.synchronize_active_graphics_into_internal_cache(snapshot) {
                     Ok(()) => {
                         self.internal_cache_unlocked = true;
+                        reload_selected_edit_tile = true;
                         self.status.set("Internal GFX data viewing unlocked.");
                     }
                     Err(error) => self.error = Some(error),
@@ -657,6 +670,9 @@ impl VanillaGraphicsEditor {
                 LevelGraphicsExportMode::ReplaceExtracted
             });
         }
+        if reload_selected_edit_tile || self.selected_tile != selection_before {
+            self.reload_edit_tile_from_selection();
+        }
     }
 
     fn pixel_editor(
@@ -665,25 +681,26 @@ impl VanillaGraphicsEditor {
         palette: &PaletteInterchangeFile,
         edits_enabled: bool,
     ) {
-        let tile = self
-            .internal_cache_unlocked
-            .then(|| self.internal_cache.as_ref())
-            .flatten()
-            .and_then(|cache| cache.tiles.get(self.selected_tile))
-            .or_else(|| {
-                (!self.internal_cache_unlocked)
-                    .then(|| self.controller.as_ref())
-                    .flatten()
-                    .and_then(|controller| controller.graphics().tiles.get(self.selected_tile))
-            })
-            .cloned();
+        let tile = self.edit_tile.clone().or_else(|| {
+            self.internal_cache_unlocked
+                .then(|| self.internal_cache.as_ref())
+                .flatten()
+                .and_then(|cache| cache.tiles.get(self.selected_tile))
+                .or_else(|| {
+                    (!self.internal_cache_unlocked)
+                        .then(|| self.controller.as_ref())
+                        .flatten()
+                        .and_then(|controller| controller.graphics().tiles.get(self.selected_tile))
+                })
+                .cloned()
+        });
         let Some(mut tile) = tile else {
             ui.label("No tiles in this graphics file.");
             return;
         };
         if let Some(direction) = self.pending_shift.take() {
             tile = tile.shifted_wrapping(direction);
-            self.apply_tile(tile.clone());
+            self.stage_tile(tile.clone());
         }
         let character_shortcut = self.pending_character_shortcut.take();
         if character_shortcut == Some(GraphicsCharacterShortcut::EditColorMap) {
@@ -700,10 +717,8 @@ impl VanillaGraphicsEditor {
             .and_then(|_| self.color_map.apply(&tile))
             .or(clicked_mapping);
         if let Some(mapped) = mapped {
-            self.apply_tile(mapped);
-            if let Some(current) = self.selected_tile_clone() {
-                tile = current.clone();
-            }
+            tile = mapped;
+            self.stage_tile(tile.clone());
         }
         let clicked_transform = graphics_transform_controls(ui, edits_enabled);
         let transform = shortcut_transform(character_shortcut)
@@ -715,7 +730,7 @@ impl VanillaGraphicsEditor {
                 GraphicsTileTransform::FlipHorizontal => tile.flipped(true, false),
                 GraphicsTileTransform::FlipVertical => tile.flipped(false, true),
             };
-            self.apply_tile(tile.clone());
+            self.stage_tile(tile.clone());
         }
         let (rect, response) = ui.allocate_exact_size(
             egui::Vec2::splat(TILE_EDITOR_SIDE),
@@ -748,7 +763,7 @@ impl VanillaGraphicsEditor {
                         self.error = Some(error.to_string());
                         return;
                     }
-                    self.apply_tile(tile);
+                    self.stage_tile(tile);
                 }
                 TilePixelPointerAction::PickForeground => {
                     self.foreground_color = tile.pixel(x, y).unwrap_or(0);
@@ -765,6 +780,14 @@ impl VanillaGraphicsEditor {
 
     fn apply_tile(&mut self, tile: IndexedTile) {
         self.apply_tile_at(self.selected_tile, tile);
+    }
+
+    fn stage_tile(&mut self, tile: IndexedTile) {
+        self.edit_tile = Some(tile);
+    }
+
+    fn reload_edit_tile_from_selection(&mut self) {
+        self.edit_tile = self.selected_tile_clone();
     }
 
     fn apply_tile_at(&mut self, index: usize, tile: IndexedTile) -> bool {
@@ -830,8 +853,9 @@ impl VanillaGraphicsEditor {
         }
         match native_clipboard::decode_graphics_tile(text) {
             Ok(tile) => {
-                if self.apply_tile_at(target, tile) {
+                if self.apply_tile_at(target, tile.clone()) {
                     self.selected_tile = target;
+                    self.edit_tile = Some(tile);
                     self.status.set(format!(
                         "Pasted tile from clipboard over tile 0x{target:X}."
                     ));
@@ -844,6 +868,7 @@ impl VanillaGraphicsEditor {
     fn clear(&mut self) {
         self.key = None;
         self.controller = None;
+        self.edit_tile = None;
         self.internal_cache = None;
         self.internal_cache_unlocked = false;
         self.internal_cache_level = None;
@@ -1088,6 +1113,40 @@ mod tests {
     }
 
     #[test]
+    fn pristine_pixel_edit_buffer_stages_until_sheet_paste() {
+        let mut app = AppState::default();
+        app.load_rom(crate::test_support::pristine_smw_us_rom_bytes())
+            .unwrap();
+        app.dispatch(Command::ShowGraphics(0)).unwrap();
+        let snapshot = app.controller_snapshot().unwrap();
+        let controller = GraphicsController::decode_editable(
+            &snapshot,
+            lm_profile::smw_us_v1_vanilla_graphics_layout(),
+        )
+        .unwrap();
+        let mut editor = VanillaGraphicsEditor {
+            edit_tile: controller.graphics().tiles.first().cloned(),
+            controller: Some(controller),
+            selected_tile: 0,
+            ..VanillaGraphicsEditor::default()
+        };
+        let source_before = editor.selected_tile_clone().unwrap();
+        let staged = source_before.flipped(true, false);
+
+        editor.stage_tile(staged.clone());
+        assert_eq!(editor.edit_tile, Some(staged.clone()));
+        assert_eq!(editor.selected_tile_clone(), Some(source_before.clone()));
+        assert!(!editor.controller.as_ref().unwrap().is_modified());
+
+        assert!(editor.apply_tile_at(2, staged.clone()));
+        assert_eq!(editor.selected_tile_clone(), Some(source_before));
+        assert_eq!(
+            editor.controller.as_ref().unwrap().graphics().tiles[2],
+            staged
+        );
+    }
+
+    #[test]
     fn pristine_selected_tile_paste_writes_the_target_without_changing_selection() {
         let mut app = AppState::default();
         app.load_rom(crate::test_support::pristine_smw_us_rom_bytes())
@@ -1149,6 +1208,39 @@ mod tests {
 
         editor.clipboard_paste_target = Some(0x5ff);
         editor.paste_tile(&encoded);
+        assert_eq!(
+            editor.internal_cache.as_ref().unwrap().tiles[0x5ff],
+            changed
+        );
+    }
+
+    #[test]
+    fn pristine_diagnostic_high_tile_can_stage_but_only_paste_to_eligible_backing() {
+        let blank = IndexedTile::new([0; IndexedTile::PIXEL_COUNT]);
+        let changed = IndexedTile::new([0x0d; IndexedTile::PIXEL_COUNT]);
+        let mut editor = VanillaGraphicsEditor {
+            internal_cache: Some(crate::vanilla_map16_preview::VanillaInternalGraphicsCache {
+                tiles: vec![blank.clone(); 0x4000],
+            }),
+            internal_cache_unlocked: true,
+            selected_tile: 0x600,
+            edit_tile: Some(blank.clone()),
+            ..VanillaGraphicsEditor::default()
+        };
+
+        editor.stage_tile(changed.clone());
+        assert_eq!(editor.edit_tile, Some(changed.clone()));
+        assert_eq!(editor.selected_tile_clone(), Some(blank.clone()));
+        assert!(!diagnostic_sheet_paste_editable(
+            0x600,
+            DiagnosticSheetPasteContext {
+                extended_foreground_background: false,
+                vanilla_animation_enabled: true,
+                special_world_passed: false,
+            }
+        ));
+        assert!(editor.apply_tile_at(0x5ff, changed.clone()));
+        assert_eq!(editor.internal_cache.as_ref().unwrap().tiles[0x600], blank);
         assert_eq!(
             editor.internal_cache.as_ref().unwrap().tiles[0x5ff],
             changed
