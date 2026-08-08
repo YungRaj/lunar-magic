@@ -6,7 +6,13 @@ license.workspace = true
 rust-version.workspace = true
 
 [dependencies]
-windows-sys = { version = "0.59", features = ["Win32_Globalization"] }
+windows-sys = { version = "0.59", features = [
+    "Win32_Foundation",
+    "Win32_Globalization",
+    "Win32_System_DataExchange",
+    "Win32_System_Memory",
+    "Win32_System_Ole",
+] }
 
 [lints.rust]
 unsafe_op_in_unsafe_fn = "deny"

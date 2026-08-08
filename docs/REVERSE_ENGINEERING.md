@@ -4267,3 +4267,13 @@ selectable and paintable, but the paste predicate prevents `$600` or later from 
 staged buffer. Native pristine and installed editors therefore retain a selected edit tile across
 painting, transforms, color mapping, copying, and F9; backing changes only when a permitted sheet
 paste succeeds.
+
+`CopyEditedGraphicsTileToClipboard` at `$005051E0` registers the singular format name
+`Lunar Magic 8x8 Tile`, allocates exactly `$40` bytes, and copies the private edit buffer without a
+header. `PasteEditedGraphicsTileFromClipboard` at `$005052B0` requires that registered format and
+an allocation of at least `$40` bytes, then copies only the first `$40`. This single-tile format is
+distinct from the general selector's plural `Lunar Magic 8x8 Tiles` rectangle format. The Windows
+Rust frontend now publishes and consumes the exact single-tile record on all three graphics
+surfaces while publishing its Unicode typed envelope in the same clipboard transaction for
+portable interoperability. The bounded Rust decoder rejects color indexes outside 4bpp instead of
+allowing malformed native clipboard bytes to reach palette rendering.

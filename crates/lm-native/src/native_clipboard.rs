@@ -98,6 +98,53 @@ pub(crate) fn decode_graphics_tile(text: &str) -> Result<IndexedTile, String> {
     Ok(tile.clone())
 }
 
+pub(crate) fn copy_graphics_tile_to_system(
+    context: &eframe::egui::Context,
+    tile: &IndexedTile,
+) -> Result<(), String> {
+    let fallback = encode_graphics_tile(tile)?;
+    #[cfg(windows)]
+    {
+        let native = encode_lunar_magic_graphics_tile(tile);
+        lm_windows::write_graphics_tile_clipboard(&native, &fallback)
+    }
+    #[cfg(not(windows))]
+    {
+        context.copy_text(fallback);
+        Ok(())
+    }
+}
+
+pub(crate) fn request_graphics_tile_paste(
+    context: &eframe::egui::Context,
+) -> Result<Option<IndexedTile>, String> {
+    #[cfg(windows)]
+    if let Some(bytes) = lm_windows::read_graphics_tile_clipboard()? {
+        return decode_lunar_magic_graphics_tile(&bytes).map(Some);
+    }
+    context.send_viewport_cmd(eframe::egui::ViewportCommand::RequestPaste);
+    Ok(None)
+}
+
+pub(crate) fn encode_lunar_magic_graphics_tile(tile: &IndexedTile) -> [u8; 64] {
+    *tile.pixels()
+}
+
+#[cfg_attr(not(any(windows, test)), allow(dead_code))]
+pub(crate) fn decode_lunar_magic_graphics_tile(bytes: &[u8]) -> Result<IndexedTile, String> {
+    let pixels = bytes
+        .get(..IndexedTile::PIXEL_COUNT)
+        .ok_or_else(|| "Lunar Magic graphics clipboard data is shorter than 64 bytes".to_owned())?;
+    if let Some(color) = pixels.iter().copied().find(|color| *color > 0x0f) {
+        return Err(format!(
+            "Lunar Magic graphics clipboard contains invalid color {color:02X}"
+        ));
+    }
+    let pixels = <[u8; IndexedTile::PIXEL_COUNT]>::try_from(pixels)
+        .expect("the exact 64-byte slice was checked above");
+    Ok(IndexedTile::new(pixels))
+}
+
 pub(crate) fn encode_map16_tile(tile: Map16Tile) -> Result<String, String> {
     encode(&ClipboardPayload::from_map16_tiles(&[tile]))
 }
@@ -373,6 +420,25 @@ mod tests {
         assert!(decode("ordinary text").is_err());
         assert!(decode("LMCLIP1:0").is_err());
         assert!(decode("LMCLIP1:GG").is_err());
+    }
+
+    #[test]
+    fn lunar_magic_native_graphics_tile_is_the_exact_first_64_pixels() {
+        let tile = IndexedTile::new(std::array::from_fn(|index| {
+            u8::try_from(index & 0x0f).unwrap()
+        }));
+        let encoded = encode_lunar_magic_graphics_tile(&tile);
+        assert_eq!(encoded.as_slice(), tile.pixels());
+        assert_eq!(decode_lunar_magic_graphics_tile(&encoded).unwrap(), tile);
+
+        let mut oversized = encoded.to_vec();
+        oversized.extend_from_slice(&[0xaa; 32]);
+        assert_eq!(decode_lunar_magic_graphics_tile(&oversized).unwrap(), tile);
+        assert!(decode_lunar_magic_graphics_tile(&encoded[..63]).is_err());
+
+        let mut invalid = encoded;
+        invalid[17] = 0x10;
+        assert!(decode_lunar_magic_graphics_tile(&invalid).is_err());
     }
 
     #[test]

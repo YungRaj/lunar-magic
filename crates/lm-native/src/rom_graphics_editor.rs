@@ -646,6 +646,7 @@ impl RomGraphicsEditor {
             .clone()
             .or_else(|| tiles.get(self.selected_tile).cloned());
         let mut selected_paste = None;
+        let mut clipboard_paste = None;
         let mut copied = false;
         let mut paste_status = None;
         let row_count = palette.palette.colors.len() / 16;
@@ -676,11 +677,11 @@ impl RomGraphicsEditor {
                                 Some(TilePointerAction::Copy(index)) => {
                                     self.selected_tile = index;
                                     reload_selected_edit_tile = true;
-                                    match native_clipboard::encode_graphics_tile(tile) {
-                                        Ok(text) => {
-                                            ui.ctx().copy_text(text);
-                                            copied = true;
-                                        }
+                                    match native_clipboard::copy_graphics_tile_to_system(
+                                        ui.ctx(),
+                                        tile,
+                                    ) {
+                                        Ok(()) => copied = true,
                                         Err(error) => self.error = Some(error),
                                     }
                                 }
@@ -715,8 +716,19 @@ impl RomGraphicsEditor {
                                             || (!diagnostic && ownership::is_editable(owner)))
                                     {
                                         self.clipboard_paste_target = Some(index);
-                                        ui.ctx()
-                                            .send_viewport_cmd(egui::ViewportCommand::RequestPaste);
+                                        match native_clipboard::request_graphics_tile_paste(
+                                            ui.ctx(),
+                                        ) {
+                                            Ok(Some(tile)) => {
+                                                self.clipboard_paste_target = None;
+                                                clipboard_paste = Some((index, tile));
+                                            }
+                                            Ok(None) => {}
+                                            Err(error) => {
+                                                self.clipboard_paste_target = None;
+                                                self.error = Some(error);
+                                            }
+                                        }
                                     }
                                 }
                                 None => {}
@@ -732,6 +744,15 @@ impl RomGraphicsEditor {
             && self.apply_tile_at(index, tile)
         {
             paste_status = Some(format!("Pasted selected tile over tile 0x{index:X}."));
+        }
+        if let Some((index, tile)) = clipboard_paste
+            && self.apply_tile_at(index, tile.clone())
+        {
+            self.clipboard_paste_target = None;
+            self.selected_tile = index;
+            self.edit_tile = Some(tile);
+            reload_selected_edit_tile = false;
+            paste_status = Some(format!("Pasted tile from clipboard over tile 0x{index:X}."));
         }
         let selected_owner = (!diagnostic)
             .then(|| {
@@ -1089,21 +1110,35 @@ impl RomGraphicsEditor {
             tile = tile.shifted_wrapping(direction);
             self.stage_tile(tile.clone());
         }
+        let mut native_clipboard_tile = None;
         ui.horizontal(|ui| {
             if ui.button("Copy tile").clicked() {
-                match native_clipboard::encode_graphics_tile(&tile) {
-                    Ok(text) => ui.ctx().copy_text(text),
-                    Err(error) => self.error = Some(error),
+                if let Err(error) = native_clipboard::copy_graphics_tile_to_system(ui.ctx(), &tile)
+                {
+                    self.error = Some(error);
                 }
             }
             if ui
                 .add_enabled(!stale && paste_editable, egui::Button::new("Paste tile"))
                 .clicked()
             {
-                ui.ctx()
-                    .send_viewport_cmd(egui::ViewportCommand::RequestPaste);
+                match native_clipboard::request_graphics_tile_paste(ui.ctx()) {
+                    Ok(Some(tile)) => native_clipboard_tile = Some(tile),
+                    Ok(None) => {}
+                    Err(error) => self.error = Some(error),
+                }
             }
         });
+        if let Some(pasted) = native_clipboard_tile
+            && self.apply_tile_at(self.selected_tile, pasted.clone())
+        {
+            tile = pasted.clone();
+            self.edit_tile = Some(pasted);
+            self.status.set(format!(
+                "Pasted tile from clipboard over tile 0x{:X}.",
+                self.selected_tile
+            ));
+        }
         let enabled = !stale && editable;
         let clicked_transform = graphics_transform_controls(ui, enabled);
         let transform = shortcut_transform(character_shortcut)

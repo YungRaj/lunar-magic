@@ -519,6 +519,7 @@ impl VanillaGraphicsEditor {
             .clone()
             .or_else(|| tiles.get(self.selected_tile).cloned());
         let mut selected_paste = None;
+        let mut clipboard_paste = None;
         let mut copied = false;
         let mut paste_status = None;
         let row_count = palette.palette.colors.len() / 16;
@@ -549,11 +550,11 @@ impl VanillaGraphicsEditor {
                                 Some(TilePointerAction::Copy(index)) => {
                                     self.selected_tile = index;
                                     reload_selected_edit_tile = true;
-                                    match native_clipboard::encode_graphics_tile(tile) {
-                                        Ok(text) => {
-                                            ui.ctx().copy_text(text);
-                                            copied = true;
-                                        }
+                                    match native_clipboard::copy_graphics_tile_to_system(
+                                        ui.ctx(),
+                                        tile,
+                                    ) {
+                                        Ok(()) => copied = true,
                                         Err(error) => self.error = Some(error),
                                     }
                                 }
@@ -578,8 +579,17 @@ impl VanillaGraphicsEditor {
                                             )) =>
                                 {
                                     self.clipboard_paste_target = Some(index);
-                                    ui.ctx()
-                                        .send_viewport_cmd(egui::ViewportCommand::RequestPaste);
+                                    match native_clipboard::request_graphics_tile_paste(ui.ctx()) {
+                                        Ok(Some(tile)) => {
+                                            self.clipboard_paste_target = None;
+                                            clipboard_paste = Some((index, tile));
+                                        }
+                                        Ok(None) => {}
+                                        Err(error) => {
+                                            self.clipboard_paste_target = None;
+                                            self.error = Some(error);
+                                        }
+                                    }
                                 }
                                 Some(TilePointerAction::PasteClipboard(_)) | None => {}
                             }
@@ -594,6 +604,15 @@ impl VanillaGraphicsEditor {
             && self.apply_tile_at(index, tile)
         {
             paste_status = Some(format!("Pasted selected tile over tile 0x{index:X}."));
+        }
+        if let Some((index, tile)) = clipboard_paste
+            && self.apply_tile_at(index, tile.clone())
+        {
+            self.clipboard_paste_target = None;
+            self.selected_tile = index;
+            self.edit_tile = Some(tile);
+            reload_selected_edit_tile = false;
+            paste_status = Some(format!("Pasted tile from clipboard over tile 0x{index:X}."));
         }
         let navigation_status = if let Some(navigation) = page_control {
             apply_tile_navigation(&mut self.selected_tile, &responses, tile_count, navigation)

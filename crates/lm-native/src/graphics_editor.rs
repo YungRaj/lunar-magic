@@ -229,14 +229,23 @@ impl GraphicsEditor {
             if ui.button("Copy tile").clicked()
                 && let Some(tile) = controller.value().graphics.tiles.get(self.selected_tile)
             {
-                match native_clipboard::encode_graphics_tile(tile) {
-                    Ok(text) => ui.ctx().copy_text(text),
-                    Err(error) => self.error = Some(error),
+                if let Err(error) = native_clipboard::copy_graphics_tile_to_system(ui.ctx(), tile) {
+                    self.error = Some(error);
                 }
             }
             if ui.button("Paste tile").clicked() {
-                ui.ctx()
-                    .send_viewport_cmd(egui::ViewportCommand::RequestPaste);
+                match native_clipboard::request_graphics_tile_paste(ui.ctx()) {
+                    Ok(Some(tile)) => {
+                        let target = self.selected_tile;
+                        if apply_tile(controller, target, tile, &mut self.error) {
+                            self.status.set(format!(
+                                "Pasted tile from clipboard over tile 0x{target:X}."
+                            ));
+                        }
+                    }
+                    Ok(None) => {}
+                    Err(error) => self.error = Some(error),
+                }
             }
             ui.label(if controller.is_modified() {
                 "Modified"
@@ -303,6 +312,7 @@ impl GraphicsEditor {
         let mut selected_by_pointer = None;
         let selected_tile = tiles.get(self.selected_tile).cloned();
         let mut selected_paste = None;
+        let mut clipboard_paste = None;
         let mut copied = false;
         let mut paste_status = None;
         let row_count = palette.palette.colors.len() / 16;
@@ -330,11 +340,9 @@ impl GraphicsEditor {
                             }
                             Some(TilePointerAction::Copy(index)) => {
                                 self.selected_tile = index;
-                                match native_clipboard::encode_graphics_tile(tile) {
-                                    Ok(text) => {
-                                        ui.ctx().copy_text(text);
-                                        copied = true;
-                                    }
+                                match native_clipboard::copy_graphics_tile_to_system(ui.ctx(), tile)
+                                {
+                                    Ok(()) => copied = true,
                                     Err(error) => self.error = Some(error),
                                 }
                             }
@@ -345,8 +353,17 @@ impl GraphicsEditor {
                             }
                             Some(TilePointerAction::PasteClipboard(index)) => {
                                 self.clipboard_paste_target = Some(index);
-                                ui.ctx()
-                                    .send_viewport_cmd(egui::ViewportCommand::RequestPaste);
+                                match native_clipboard::request_graphics_tile_paste(ui.ctx()) {
+                                    Ok(Some(tile)) => {
+                                        self.clipboard_paste_target = None;
+                                        clipboard_paste = Some((index, tile));
+                                    }
+                                    Ok(None) => {}
+                                    Err(error) => {
+                                        self.clipboard_paste_target = None;
+                                        self.error = Some(error);
+                                    }
+                                }
                             }
                             None => {}
                         }
@@ -362,6 +379,14 @@ impl GraphicsEditor {
             && apply_tile(&mut document.controller, index, tile, &mut self.error)
         {
             paste_status = Some(format!("Pasted selected tile over tile 0x{index:X}."));
+        }
+        if let Some((index, tile)) = clipboard_paste
+            && let Some(document) = self.document.as_mut()
+            && apply_tile(&mut document.controller, index, tile, &mut self.error)
+        {
+            self.clipboard_paste_target = None;
+            self.selected_tile = index;
+            paste_status = Some(format!("Pasted tile from clipboard over tile 0x{index:X}."));
         }
         let navigation_status = if let Some(navigation) = page_control {
             apply_tile_navigation(&mut self.selected_tile, &responses, tile_count, navigation)

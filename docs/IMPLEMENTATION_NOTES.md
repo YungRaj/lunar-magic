@@ -2060,6 +2060,11 @@ The selected 8×8 tile is encoded as one validated 64-pixel `GraphicsTiles` reco
 wrong domains, multiple tiles, malformed pixels, empty destinations, and stale ROM controllers.
 Successful replacement passes through `GraphicsDocumentController` or `GraphicsController` with
 the full editable-ownership shape, preserving portable undo/redo and native staged-commit behavior.
+On Windows, the same actions additionally publish and consume Lunar Magic's registered singular
+`Lunar Magic 8x8 Tile` format. Its payload is exactly the selected 64-byte indexed-pixel buffer;
+larger allocations are accepted with trailing bytes ignored, while short or non-4bpp values reject
+before mutation. Copy publishes that native block and the portable Unicode envelope atomically, so
+Rust-to-Rust text fallback does not prevent direct exchange with the original editor.
 Portable, pristine-layout, and installed tile sheets expose Lunar Magic's Ctrl+left-click copy
 source gesture. Shift or Alt alongside Ctrl falls back to ordinary left-click selection, as do
 other non-Ctrl left clicks. Direct executable evidence further proves that right-click routing tests
@@ -2069,9 +2074,8 @@ Installed right-click paste admits only an editable owner in a current, idle wor
 ExAnimation-owned, stale, and file-worker targets cannot enter either paste path.
 The portable document, pristine-layout ROM surface, and profile-backed installed ROM window also
 expose horizontal and vertical transforms of the selected tile. Each transform materializes an
-exact flipped 64-pixel tile and enters the same controller path as painting and paste: portable
-documents receive one undoable revision, while installed fixed and ExAnimation-owned tiles remain
-read-only and stale or active-file-worker ROM workspaces cannot flip.
+exact flipped 64-pixel edit buffer; pristine and installed backing changes only through a permitted
+sheet paste, while portable documents retain their independently revisioned extension behavior.
 Their tile sheets also share focus-scoped keyboard navigation. Unmodified Up selects the same
 in-page offset on the previous 256-tile graphics page, while Down selects it on the next;
 missing pages are no-ops and a partial final page clamps to its last tile. Every move transfers
