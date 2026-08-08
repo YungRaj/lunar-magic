@@ -1658,11 +1658,10 @@ Native `Lunar Magic Map8 Tiles` copy/paste entry points and fallbacks are now na
 
 The Map16 modeless parent dialog is now fully named through `00503ae0`, including its command dispatcher, exhaustive control initialization, DPI resize paths, render-child creation, teardown, and show/close entry points. The adjacent graphics editor is named through `00504fe0`: status-bar lifecycle, sixteen-by-sixteen color-map filter editing, indexed-to-SNES-4bpp encoding, active palette selection, editable 8x8 pixel grid, foreground/background swatches, complete tile-sheet rendering, commit propagation, zoomed presentation, and refresh paths.
 
-Rust now routes selected-tile horizontal and vertical flips through the same typed mutation boundary
-as individual pixel painting in all three native graphics surfaces. The portable document records
-each flip as an independently undoable revision; pristine-layout and profile-backed ROM editors
-stage the exact transformed pixels for their normal atomic commit, and the installed editor applies
-its fixed/ExAnimation ownership plus stale-worker gates before enabling either transform. The three
+Rust routes selected-tile horizontal and vertical flips through each graphics surface's selected
+edit buffer. The portable document retains its revisioned document behavior; pristine-layout and
+profile-backed ROM editors now match Lunar Magic's separate private-buffer boundary, so transforms,
+color mapping, and painting do not modify backing until a permitted sheet paste. The three
 tile sheets now give unmodified Up/Down their authenticated page role: Up moves to the same offset
 on the previous 256-tile page and Down moves to the next, with bounded partial-page handling, focus
 transfer, and automatic scrolling; Left/Right only enter the Shift-modified pixel-wrap path.
@@ -1681,8 +1680,7 @@ one-pixel directional wrap. Direct decompilation also proves asymmetric modifier
 wrap whenever Shift is held; Up/Down wrap only when Shift is held without Ctrl or Alt, otherwise
 those vertical keys retain page navigation (including modified forms and Shift on a read-only tile).
 Page Up advances the palette with any modifiers, while Page Down reverses it unless Ctrl+Shift
-invokes the separate internal-cache unlock. Rust uses the same revisioned or ownership-guarded tile
-replacement paths as paint, paste, and flips rather than a presentation-only buffer. Exact
+invokes the separate internal-cache unlock. Exact
 Ctrl+left-click copies and selects the pointed tile; adding Shift or Alt instead follows ordinary
 selection. Right-click tests only the Ctrl state: without Ctrl it copies the active edit tile over
 its target, while Ctrl with any other modifiers requests the typed single-tile clipboard payload
@@ -1746,13 +1744,16 @@ and Layer 3 sources, loads reserved source files GFX60–GFX63 into the four exa
 selects auxiliary bank `$780-$87F` from expanded-header field 0 when bit `$8000` is set or from the
 last legacy object-control command `$25/$26` parameter minus one, and boundedly reads all present
 ROM-sibling `ExternalGraphics/ExSpriteGFX00–07.bin` files into their eight exact bases. The
-diagnostic cache accepts transient pixel, transform, and typed-paste mutations. Original
+diagnostic cache stages pixel and transform mutations in the private edit tile. Original
 right-click sheet paste rejects tiles above `$5FF`, unused `$300–$3FF` when bypass is off,
 fixed-animation `$41–$81/$90–$91/$DA–$DD/$EA–$ED` when vanilla animation is enabled, and
 Special World SP2 `$480–$4FF`. The isolated Wine `graphics-cache-paste` oracle proves successful
 source-identical mutation at `$002/$5FF` and unchanged rejection targets `$041/$300/$600`; F9
 persists only the current-level
 FG/BG/SP working buffers described below, leaving edits to all other diagnostic banks transient.
+The installed editor applies that same predicate to both clipboard and selected-buffer paste entry
+routes. Toolkit paste events and the native extension button can arrive without the sheet gesture
+that requested them, so neither may bypass the `$5FF`, bypass, animation, or Special World guards.
 The same window procedure and `ProcessGraphicsEditorKeyboardInput` at `005059f0` establish the
 status lifecycle. Mouse movement publishes `Tile 0x%X (Address 0x%X)`, `Color %X.`, or the active
 tile-edit selection. `HandleGraphicsEditorWindowMessage` at `005068c0` proves that primary and

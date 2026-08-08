@@ -614,40 +614,7 @@ impl RomGraphicsEditor {
             return;
         };
         let diagnostic = self.internal_cache_unlocked;
-        let diagnostic_paste_context = diagnostic.then(|| {
-            let assignments = workspace.level.and_then(|level| {
-                current_level_graphics_assignments(
-                    &workspace.image,
-                    &workspace.profile,
-                    level,
-                    workspace.internal_cache_special_world,
-                )
-                .ok()
-            });
-            let extended_foreground_background = assignments
-                .as_ref()
-                .is_some_and(|assignments| assignments.super_graphics_bypass_enabled);
-            let vanilla_animation_enabled = workspace
-                .level
-                .and_then(|level| {
-                    lm_project::Project::new(workspace.image.clone())
-                        .load_installed_exanimation_features(
-                            usize::from(level),
-                            workspace.profile.exanimation_feature_installation,
-                        )
-                        .ok()
-                })
-                .map_or(true, |features| {
-                    features
-                        .options
-                        .enabled(ExAnimationFeature::VanillaAnimation)
-                });
-            DiagnosticSheetPasteContext {
-                extended_foreground_background,
-                vanilla_animation_enabled,
-                special_world_passed: workspace.internal_cache_special_world,
-            }
-        });
+        let diagnostic_paste_context = diagnostic.then(|| diagnostic_paste_context(workspace));
         let internal_cache_available = workspace.internal_cache.is_some();
         let internal_cache_error = workspace.internal_cache_error.clone();
         let tiles = if diagnostic {
@@ -1042,12 +1009,10 @@ impl RomGraphicsEditor {
                 .clipboard_paste_target
                 .take()
                 .unwrap_or(self.selected_tile);
-            let target_editable = diagnostic
-                || self
-                    .workspace
-                    .as_ref()
-                    .and_then(|workspace| workspace.controller.ownership().owner(target))
-                    .is_some_and(|owner| ownership::is_editable(Some(owner)));
+            let target_editable = self
+                .workspace
+                .as_ref()
+                .is_some_and(|workspace| paste_target_editable(workspace, diagnostic, target));
             if !stale && target_editable {
                 match native_clipboard::decode_graphics_tile(text) {
                     Ok(tile) => {
@@ -1096,6 +1061,9 @@ impl RomGraphicsEditor {
         } else {
             ownership::show(ui, owner)
         };
+        let paste_editable = self.workspace.as_ref().is_some_and(|workspace| {
+            paste_target_editable(workspace, diagnostic, self.selected_tile)
+        });
         let Some(mut tile) = self.edit_tile.clone().or_else(|| selected.cloned()) else {
             ui.label("No graphics tiles");
             return;
@@ -1129,7 +1097,7 @@ impl RomGraphicsEditor {
                 }
             }
             if ui
-                .add_enabled(!stale && editable, egui::Button::new("Paste tile"))
+                .add_enabled(!stale && paste_editable, egui::Button::new("Paste tile"))
                 .clicked()
             {
                 ui.ctx()
@@ -1295,6 +1263,66 @@ pub(crate) const fn diagnostic_sheet_paste_editable(
         return false;
     }
     true
+}
+
+fn diagnostic_paste_context(workspace: &Workspace) -> DiagnosticSheetPasteContext {
+    let assignments = workspace.level.and_then(|level| {
+        current_level_graphics_assignments(
+            &workspace.image,
+            &workspace.profile,
+            level,
+            workspace.internal_cache_special_world,
+        )
+        .ok()
+    });
+    let extended_foreground_background = assignments
+        .as_ref()
+        .is_some_and(|assignments| assignments.super_graphics_bypass_enabled);
+    let vanilla_animation_enabled = workspace
+        .level
+        .and_then(|level| {
+            lm_project::Project::new(workspace.image.clone())
+                .load_installed_exanimation_features(
+                    usize::from(level),
+                    workspace.profile.exanimation_feature_installation,
+                )
+                .ok()
+        })
+        .map_or(true, |features| {
+            features
+                .options
+                .enabled(ExAnimationFeature::VanillaAnimation)
+        });
+    DiagnosticSheetPasteContext {
+        extended_foreground_background,
+        vanilla_animation_enabled,
+        special_world_passed: workspace.internal_cache_special_world,
+    }
+}
+
+fn paste_target_editable(workspace: &Workspace, diagnostic: bool, index: usize) -> bool {
+    paste_target_permitted(
+        diagnostic,
+        index,
+        diagnostic.then(|| diagnostic_paste_context(workspace)),
+        ownership::is_editable(workspace.controller.ownership().owner(index)),
+    )
+}
+
+const fn paste_target_permitted(
+    diagnostic: bool,
+    index: usize,
+    diagnostic_context: Option<DiagnosticSheetPasteContext>,
+    ordinary_editable: bool,
+) -> bool {
+    if diagnostic {
+        match diagnostic_context {
+            Some(context) => diagnostic_sheet_paste_editable(index, context),
+            None => false,
+        }
+    } else {
+        ordinary_editable
+    }
 }
 
 pub(crate) fn overlay_current_graphics_file(
@@ -1914,8 +1942,8 @@ mod tests {
     use super::{
         diagnostic_sheet_paste_editable, ensure_external_edit_revision, installed_exgraphics_slots,
         internal_cache_level_graphics_overrides, lunar_magic_standard_graphics_sources,
-        overlay_current_graphics_file, pristine_special_graphics, replace_internal_cache_tile,
-        supports_exgraphics, supports_native_exgraphics,
+        overlay_current_graphics_file, paste_target_permitted, pristine_special_graphics,
+        replace_internal_cache_tile, supports_exgraphics, supports_native_exgraphics,
     };
     use crate::{
         level_graphics_export::CurrentLevelGraphicsAssignments,
@@ -2070,6 +2098,27 @@ mod tests {
         assert!(!diagnostic_sheet_paste_editable(0x480, special_world));
         assert!(!diagnostic_sheet_paste_editable(0x4ff, special_world));
         assert!(diagnostic_sheet_paste_editable(0x500, special_world));
+    }
+
+    #[test]
+    fn every_installed_clipboard_route_obeys_diagnostic_paste_guards() {
+        let context = super::DiagnosticSheetPasteContext {
+            extended_foreground_background: false,
+            vanilla_animation_enabled: true,
+            special_world_passed: false,
+        };
+        for index in 0..0x4000 {
+            assert_eq!(
+                paste_target_permitted(true, index, Some(context), true),
+                diagnostic_sheet_paste_editable(index, context),
+                "diagnostic clipboard mismatch at tile {index:03X}"
+            );
+        }
+        assert!(paste_target_permitted(true, 0x5ff, Some(context), false));
+        assert!(!paste_target_permitted(true, 0x600, Some(context), true));
+        assert!(!paste_target_permitted(true, 0x002, None, true));
+        assert!(paste_target_permitted(false, 0x600, None, true));
+        assert!(!paste_target_permitted(false, 0x002, Some(context), false));
     }
 
     #[test]

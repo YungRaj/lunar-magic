@@ -172,7 +172,8 @@ route. The retained Wine `graphics-pixel-buffer/oracle.tsv` proves transforms an
 the private 64-byte edit buffer while decoded and planar backing remain unchanged. The retained
 Wine `graphics-cache-paste/oracle.tsv` additionally proves ordinary `$002` and
 boundary `$5FF` mutation plus exact rejection at fixed-animation `$041`, unused non-bypass `$300`,
-and out-of-range `$600`; its automated binding exhausts every recovered predicate range. Broader
+and out-of-range `$600`; its automated binding exhausts every recovered predicate range, and both
+installed clipboard entry routes share that predicate so direct paste events cannot bypass it. Broader
 original interaction/write fixtures remain incomplete, so the Graphics
 workflow is not promoted.
 
