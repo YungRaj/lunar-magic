@@ -1,11 +1,11 @@
 use lm_graphics::{Bgr555, Palette};
 use lm_level::{
-    LevelObjectData, NativeSpriteRecordFields, NativeSpriteStream, ObjectCoordinateNibbles,
-    ObjectRecord, SpriteLengthTable, SpriteRecord, SpriteToken,
+    LevelObjectData, Map16Page, Map16Tile, NativeSpriteRecordFields, NativeSpriteStream,
+    ObjectCoordinateNibbles, ObjectRecord, SpriteLengthTable, SpriteRecord, SpriteToken, Subtile,
 };
 use lm_project::{
-    LevelPointerTable, LevelRomLayout, LevelSaveOptions, LoadedLevelSlot, PaletteRomLayout,
-    PaletteSaveOptions, Project,
+    LevelPointerTable, LevelRomLayout, LevelSaveOptions, LoadedLevelSlot, Map16RomLayout,
+    Map16SaveOptions, PaletteRomLayout, PaletteSaveOptions, Project,
 };
 use lm_rats::{AllocationPolicy, ProtectedRange};
 use lm_rom::{Mapper, RomImage, compute_snes_checksum, detect_identity};
@@ -81,7 +81,7 @@ fn allocation(search: std::ops::Range<usize>) -> AllocationPolicy {
         search,
         bank_size: Some(0x8000),
         fill_bytes: vec![0xff],
-        protected: vec![ProtectedRange(0x100..0x123), ProtectedRange(0x7fc0..0x7fe0)],
+        protected: vec![ProtectedRange(0x100..0x143), ProtectedRange(0x7fc0..0x7fe0)],
     }
 }
 
@@ -511,6 +511,126 @@ fn per_level_palette_edits_reopen_and_undo_across_every_supported_identity_mappe
                 let (edited_headered, headered_palette) =
                     edit_palette_variant(headered, map_mode, storage);
                 assert_eq!(headered_palette, palette);
+                assert_eq!(&edited_headered[..512], &COPIER_PREFIX);
+                assert_eq!(&edited_headered[512..], edited_headerless);
+            }
+        }
+    }
+}
+
+fn map16_layout(mapper: Mapper) -> Map16RomLayout {
+    Map16RomLayout {
+        mapper,
+        graphics: LevelPointerTable {
+            offset: 0x130,
+            entries: 1,
+            stride: 3,
+        },
+        acts_like: LevelPointerTable {
+            offset: 0x140,
+            entries: 1,
+            stride: 3,
+        },
+    }
+}
+
+fn source_map16_page() -> Map16Page {
+    let mut tiles = vec![Map16Tile::default(); Map16Page::TILE_COUNT];
+    tiles[0] = Map16Tile {
+        top_left: Subtile(0x0001),
+        top_right: Subtile(0x4002),
+        bottom_left: Subtile(0x8003),
+        bottom_right: Subtile(0xc004),
+        acts_like: 0x0130,
+    };
+    tiles[255] = Map16Tile {
+        top_left: Subtile(0x3fff),
+        top_right: Subtile(0x7ffe),
+        bottom_left: Subtile(0xbffd),
+        bottom_right: Subtile(0xfffc),
+        acts_like: 0x00ff,
+    };
+    Map16Page::new(tiles).unwrap()
+}
+
+fn edit_map16_variant(
+    physical: Vec<u8>,
+    expected_map_mode: u8,
+    storage: std::ops::Range<usize>,
+) -> (Vec<u8>, Map16Page) {
+    let original_prefix = physical[..physical.len() % 0x8000].to_vec();
+    let image = RomImage::from_bytes(physical).unwrap();
+    let identity = detect_identity(&image).unwrap();
+    assert_eq!(identity.map_mode, expected_map_mode);
+    assert_eq!(identity.mapper, mapper(expected_map_mode));
+    let layout = map16_layout(identity.mapper);
+    let mut project = Project::new(image);
+    let initial_options = Map16SaveOptions {
+        graphics_allocation: allocation(storage.clone()),
+        acts_like_allocation: allocation(storage.clone()),
+        previous_graphics: None,
+        previous_acts_like: None,
+        reuse_identical: true,
+        erase_fill: 0xff,
+    };
+    let initial = project
+        .save_map16_page_with_checksum(0, &source_map16_page(), layout, 0x7fdc, &initial_options)
+        .unwrap();
+    let before_edit = project.save_snapshot();
+    let mut expected = project.load_map16_page(0, layout).unwrap();
+    expected.tiles[0].top_left = Subtile(0xffff);
+    expected.tiles[0].top_right = Subtile(0x2001);
+    expected.tiles[0].acts_like = 0x01ff;
+    expected.tiles[127].bottom_left = Subtile(0xa345);
+    expected.tiles[127].bottom_right = Subtile(0x6abc);
+    expected.tiles[127].acts_like = 0x0000;
+    expected.tiles[255].acts_like = 0x0100;
+    let options = Map16SaveOptions {
+        graphics_allocation: allocation(storage.clone()),
+        acts_like_allocation: allocation(storage),
+        previous_graphics: Some(initial.graphics.block),
+        previous_acts_like: Some(initial.acts_like.block),
+        reuse_identical: true,
+        erase_fill: 0xff,
+    };
+    project
+        .save_map16_page_with_checksum(0, &expected, layout, 0x7fdc, &options)
+        .unwrap();
+    let reopened = project.load_map16_page(0, layout).unwrap();
+    assert_eq!(reopened, expected);
+    assert!(detect_identity(&project.rom).unwrap().checksum_matches());
+    assert_eq!(
+        &project.save_snapshot()[..original_prefix.len()],
+        original_prefix
+    );
+    let edited = project.save_snapshot();
+    assert!(project.undo().unwrap());
+    assert_eq!(project.save_snapshot(), before_edit);
+    assert!(project.redo().unwrap());
+    assert_eq!(project.save_snapshot(), edited);
+    (edited, reopened)
+}
+
+#[test]
+fn map16_subtile_attribute_and_acts_like_edits_reopen_and_undo_across_every_supported_variant() {
+    const SMW: &[u8; 21] = b"SUPER MARIOWORLD     ";
+    const ALL_STARS_WORLD: &[u8; 21] = b"ALL_STARS + WORLD    ";
+    let identities = [(SMW, 0), (SMW, 1), (ALL_STARS_WORLD, 1)];
+    for &(title, region) in &identities {
+        for map_mode in [0x20, 0x30, 0x23, 0x32] {
+            for storage in [0x1_0000..0x1_8000, 0x2_0000..0x2_8000] {
+                let case = IdentityCase {
+                    title,
+                    region,
+                    map_mode,
+                };
+                let headerless = variant_rom(case, false);
+                let headered = variant_rom(case, true);
+                let (edited_headerless, page) =
+                    edit_map16_variant(headerless, map_mode, storage.clone());
+                let (edited_headered, headered_page) =
+                    edit_map16_variant(headered, map_mode, storage);
+                assert_eq!(headered_page, page);
                 assert_eq!(&edited_headered[..512], &COPIER_PREFIX);
                 assert_eq!(&edited_headered[512..], edited_headerless);
             }
