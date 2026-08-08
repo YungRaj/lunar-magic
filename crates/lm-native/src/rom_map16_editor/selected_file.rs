@@ -82,7 +82,7 @@ impl RomMap16Editor {
             let import_clicked = ui
                 .add_enabled(
                     !blocked && !busy,
-                    egui::Button::new("Import selected .map16…").shortcut_text("W"),
+                    egui::Button::new("Import selected .map16…").shortcut_text("F3"),
                 )
                 .clicked();
             if !blocked
@@ -109,7 +109,7 @@ impl RomMap16Editor {
             let export_clicked = ui
                 .add_enabled(
                     !blocked && !busy,
-                    egui::Button::new("Export selected .map16…").shortcut_text("V"),
+                    egui::Button::new("Export selected .map16…").shortcut_text("F2"),
                 )
                 .clicked();
             if !blocked
@@ -239,13 +239,13 @@ impl RomMap16Editor {
 fn take_selected_file_shortcut(ui: &mut egui::Ui) -> Option<SelectedFileShortcut> {
     ui.input_mut(|input| {
         if input.modifiers == egui::Modifiers::NONE
-            && input.consume_key(egui::Modifiers::NONE, egui::Key::V)
+            && input.consume_key(egui::Modifiers::NONE, egui::Key::F2)
         {
             Some(SelectedFileShortcut::Export)
         } else {
             let modifiers = input.modifiers;
             input
-                .consume_key(modifiers, egui::Key::W)
+                .consume_key(modifiers, egui::Key::F3)
                 .then_some(SelectedFileShortcut::Import)
         }
     })
@@ -503,9 +503,9 @@ mod tests {
     }
 
     #[test]
-    fn original_selected_file_shortcuts_match_v_export_and_w_import_modifiers() {
+    fn original_selected_file_shortcuts_match_f2_export_and_f3_import_modifiers() {
         assert_eq!(
-            observed_shortcut(egui::Key::V, egui::Modifiers::NONE),
+            observed_shortcut(egui::Key::F2, egui::Modifiers::NONE),
             (Some(SelectedFileShortcut::Export), None)
         );
         for modifiers in [
@@ -514,14 +514,14 @@ mod tests {
             egui::Modifiers::ALT,
             egui::Modifiers::COMMAND,
         ] {
-            assert_eq!(observed_shortcut(egui::Key::V, modifiers), (None, None));
+            assert_eq!(observed_shortcut(egui::Key::F2, modifiers), (None, None));
             assert_eq!(
-                observed_shortcut(egui::Key::W, modifiers),
+                observed_shortcut(egui::Key::F3, modifiers),
                 (Some(SelectedFileShortcut::Import), None)
             );
         }
         assert_eq!(
-            observed_shortcut(egui::Key::W, egui::Modifiers::NONE),
+            observed_shortcut(egui::Key::F3, egui::Modifiers::NONE),
             (Some(SelectedFileShortcut::Import), None)
         );
     }

@@ -1319,9 +1319,10 @@ Map16 rendering is traced from individual flipped 8x8 SNES tile descriptors thro
 
 The modeless editor's later import/export dispatcher is recovered independently at
 `00501550`. Commands `$2266/$2267` export/import the selected compact `.map16` range, while
-`$2268/$2269` export/import the complete `AllMap16.map16` container. The virtual-key table consumed
-by `HandleMap16EditorKeyCommand` at `004FFEF0` maps unmodified `V` to selected export and `W` with
-any modifier state to selected import. Rust routes those fixed keys through the same bounded,
+`$2268/$2269` export/import the complete `AllMap16.map16` container. `HandleMap16RenderWindow` at
+`005008A0` bounds the key range then passes `virtual_key - $1B` into the table consumed by
+`HandleMap16EditorKeyCommand` at `004FFEF0`; the resulting entries map unmodified F2 to selected
+export and F3 with any modifier state to selected import. Rust routes those fixed keys through the same bounded,
 revision-bound file workers as the visible selected-range buttons and consumes each accepted key
 event once.
 
