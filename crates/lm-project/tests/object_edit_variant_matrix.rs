@@ -1,8 +1,12 @@
+use lm_graphics::{Bgr555, Palette};
 use lm_level::{
     LevelObjectData, NativeSpriteRecordFields, NativeSpriteStream, ObjectCoordinateNibbles,
     ObjectRecord, SpriteLengthTable, SpriteRecord, SpriteToken,
 };
-use lm_project::{LevelPointerTable, LevelRomLayout, LevelSaveOptions, LoadedLevelSlot, Project};
+use lm_project::{
+    LevelPointerTable, LevelRomLayout, LevelSaveOptions, LoadedLevelSlot, PaletteRomLayout,
+    PaletteSaveOptions, Project,
+};
 use lm_rats::{AllocationPolicy, ProtectedRange};
 use lm_rom::{Mapper, RomImage, compute_snes_checksum, detect_identity};
 
@@ -77,7 +81,7 @@ fn allocation(search: std::ops::Range<usize>) -> AllocationPolicy {
         search,
         bank_size: Some(0x8000),
         fill_bytes: vec![0xff],
-        protected: vec![ProtectedRange(0x100..0x113), ProtectedRange(0x7fc0..0x7fe0)],
+        protected: vec![ProtectedRange(0x100..0x123), ProtectedRange(0x7fc0..0x7fe0)],
     }
 }
 
@@ -408,6 +412,105 @@ fn sprite_edits_reopen_and_undo_across_every_supported_identity_mapper_header_an
                 let (edited_headered, headered_level) =
                     edit_sprite_variant(headered, map_mode, expanded, storage);
                 assert_eq!(headered_level, level);
+                assert_eq!(&edited_headered[..512], &COPIER_PREFIX);
+                assert_eq!(&edited_headered[512..], edited_headerless);
+            }
+        }
+    }
+}
+
+fn palette_layout(mapper: Mapper) -> PaletteRomLayout {
+    PaletteRomLayout {
+        mapper,
+        pointers: LevelPointerTable {
+            offset: 0x120,
+            entries: 1,
+            stride: 3,
+        },
+        colors_per_palette: 256,
+    }
+}
+
+fn source_palette() -> Palette {
+    Palette {
+        colors: (0_u16..256)
+            .map(|index| Bgr555(index.wrapping_mul(0x21) & 0x7fff))
+            .collect(),
+    }
+}
+
+fn edit_palette_variant(
+    physical: Vec<u8>,
+    expected_map_mode: u8,
+    storage: std::ops::Range<usize>,
+) -> (Vec<u8>, Palette) {
+    let original_prefix = physical[..physical.len() % 0x8000].to_vec();
+    let image = RomImage::from_bytes(physical).unwrap();
+    let identity = detect_identity(&image).unwrap();
+    assert_eq!(identity.map_mode, expected_map_mode);
+    assert_eq!(identity.mapper, mapper(expected_map_mode));
+    let layout = palette_layout(identity.mapper);
+    let mut project = Project::new(image);
+    let initial_options = PaletteSaveOptions {
+        allocation: allocation(storage.clone()),
+        previous_block: None,
+        reuse_identical: true,
+        erase_fill: 0xff,
+    };
+    let initial = project
+        .save_palette_with_checksum(0, &source_palette(), layout, 0x7fdc, &initial_options)
+        .unwrap();
+    let before_edit = project.save_snapshot();
+    let mut expected = project.load_palette(0, layout).unwrap();
+    expected.colors[0] = Bgr555(0x001f);
+    expected.colors[15] = Bgr555(0x03e0);
+    expected.colors[16] = Bgr555(0x7c00);
+    expected.colors[255] = Bgr555(0x7fff);
+    let options = PaletteSaveOptions {
+        allocation: allocation(storage),
+        previous_block: Some(initial.block),
+        reuse_identical: true,
+        erase_fill: 0xff,
+    };
+    project
+        .save_palette_with_checksum(0, &expected, layout, 0x7fdc, &options)
+        .unwrap();
+    let reopened = project.load_palette(0, layout).unwrap();
+    assert_eq!(reopened, expected);
+    assert!(detect_identity(&project.rom).unwrap().checksum_matches());
+    assert_eq!(
+        &project.save_snapshot()[..original_prefix.len()],
+        original_prefix
+    );
+    let edited = project.save_snapshot();
+    assert!(project.undo().unwrap());
+    assert_eq!(project.save_snapshot(), before_edit);
+    assert!(project.redo().unwrap());
+    assert_eq!(project.save_snapshot(), edited);
+    (edited, reopened)
+}
+
+#[test]
+fn per_level_palette_edits_reopen_and_undo_across_every_supported_identity_mapper_header_and_storage_variant()
+ {
+    const SMW: &[u8; 21] = b"SUPER MARIOWORLD     ";
+    const ALL_STARS_WORLD: &[u8; 21] = b"ALL_STARS + WORLD    ";
+    let identities = [(SMW, 0), (SMW, 1), (ALL_STARS_WORLD, 1)];
+    for &(title, region) in &identities {
+        for map_mode in [0x20, 0x30, 0x23, 0x32] {
+            for storage in [0x1_0000..0x1_8000, 0x2_0000..0x2_8000] {
+                let case = IdentityCase {
+                    title,
+                    region,
+                    map_mode,
+                };
+                let headerless = variant_rom(case, false);
+                let headered = variant_rom(case, true);
+                let (edited_headerless, palette) =
+                    edit_palette_variant(headerless, map_mode, storage.clone());
+                let (edited_headered, headered_palette) =
+                    edit_palette_variant(headered, map_mode, storage);
+                assert_eq!(headered_palette, palette);
                 assert_eq!(&edited_headered[..512], &COPIER_PREFIX);
                 assert_eq!(&edited_headered[512..], edited_headerless);
             }
