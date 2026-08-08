@@ -151,6 +151,7 @@ impl RomGraphicsEditor {
         self.workspace = None;
         self.pending_load = None;
         self.pending_close = None;
+        self.pending_level_graphics_export = None;
         self.clipboard_paste_target = None;
         self.pixel_pointer_capture = crate::graphics_painter::TilePixelPointerCapture::None;
         self.status = Default::default();

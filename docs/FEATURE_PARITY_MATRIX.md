@@ -156,6 +156,19 @@ the original unlock status. `pristine_internal_graphics_cache_materializes_every
 modifier split. Installed-bank population and the original's transient internal-cache mutation/save
 routing remain incomplete, so the Graphics workflow is not promoted.
 
+Current Graphics shortcut evidence also corrects the older off-by-one function-key wording in the
+ledger row below. `HandleGraphicsEditorWindowMessage` forwards raw `WM_KEYDOWN` virtual keys:
+F8 toggles the tile grid and Ctrl+Alt+F8 changes its color; unmodified F9 confirms and publishes the
+current level's working FG/BG/sprite buffers. F9 requires the complete ROM-sibling standard set
+`Graphics/GFX00.bin` through `GFX33.bin` before output, and the Special World view omits the normal
+SP2 assignment. Rust now replaces the selected decoded `$1000`-byte files as one recoverable group,
+substituting a staged active file when applicable; ROM commits remain explicit Rust buttons. The
+portable document retains its independent F9 save. `original_level_graphics_publication_shortcut_is_unmodified_f9`,
+`extracted_graphics_paths_use_the_rom_sibling_directory_and_complete_standard_set`,
+`replacement_batch_requires_the_complete_declared_set_and_replaces_atomically`, and the focused
+grid tests bind this correction. AllGFX-mode publication and retained live Wine interaction remain
+open, so the Graphics workflow remains Partial.
+
 ## Workflow ledger
 
 | Area | Original Lunar Magic workflow | Model | Tx | GUI | Oracle | Variants | Status | Primary evidence / next gap |

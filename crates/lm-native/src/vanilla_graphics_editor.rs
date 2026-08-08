@@ -8,12 +8,13 @@ use crate::{
         apply_tile_palette_keyboard, apply_tile_palette_step, color_selection_marker,
         graphics_navigation_controls, graphics_transform_controls, paint_tile,
         palette_pointer_action, shortcut_transform, take_graphics_character_shortcut,
-        take_graphics_refresh_shortcut, take_graphics_save_shortcut,
-        take_internal_graphics_cache_unlock, take_tile_grid_shortcut, take_tile_shift, tile_button,
-        tile_coordinate, tile_page_range, tile_pixel_pointer_action, tile_pointer_action,
+        take_graphics_refresh_shortcut, take_internal_graphics_cache_unlock,
+        take_tile_grid_shortcut, take_tile_shift, tile_button, tile_coordinate, tile_page_range,
+        tile_pixel_pointer_action, tile_pointer_action,
     },
     level_graphics_export::{
-        pristine_current_level_graphics_files, take_level_graphics_export_shortcut,
+        LevelGraphicsExportMode, extracted_graphics_paths, pristine_current_level_graphics_files,
+        take_level_graphics_export_shortcut,
     },
     native_clipboard,
 };
@@ -50,7 +51,7 @@ pub(crate) struct VanillaGraphicsEditor {
     clipboard_paste_target: Option<usize>,
     status: GraphicsEditorStatus,
     error: Option<String>,
-    pending_level_graphics_export: bool,
+    pending_level_graphics_export: Option<LevelGraphicsExportMode>,
     graphics_batch: graphics_batch::GraphicsBatchWorker,
     internal_cache: Option<crate::vanilla_map16_preview::VanillaInternalGraphicsCache>,
     internal_cache_unlocked: bool,
@@ -117,10 +118,10 @@ impl VanillaGraphicsEditor {
                 !file_work_running && app.current_level().is_some(),
                 egui::Button::new("Extract current level GFX…"),
             )
-            .on_hover_text("F8 — saves the active level's FG/BG/SP files as decoded 4bpp")
+            .on_hover_text("Choose a new directory for the active level's decoded FG/BG/SP files")
             .clicked()
         {
-            self.pending_level_graphics_export = true;
+            self.pending_level_graphics_export = Some(LevelGraphicsExportMode::ChooseNewDirectory);
         }
         ui.separator();
         let palette = grayscale_palette();
@@ -218,8 +219,7 @@ impl VanillaGraphicsEditor {
                 egui::Button::new("Commit graphics changes to ROM"),
             )
             .clicked();
-        let commit_shortcut = take_graphics_save_shortcut(ui);
-        if expanded && modified && !file_work_running && (commit_clicked || commit_shortcut) {
+        if expanded && modified && !file_work_running && commit_clicked {
             match prepare_commit(
                 self.controller
                     .as_ref()
@@ -241,9 +241,9 @@ impl VanillaGraphicsEditor {
         snapshot: &lm_app::ControllerSnapshot,
         special_world_passed: bool,
     ) {
-        if !self.pending_level_graphics_export {
+        let Some(mode) = self.pending_level_graphics_export else {
             return;
-        }
+        };
         let mut accepted = false;
         let mut cancelled = false;
         egui::Window::new("Save level GFX to Graphics folder?")
@@ -260,10 +260,10 @@ impl VanillaGraphicsEditor {
                 });
             });
         if accepted {
-            self.pending_level_graphics_export = false;
-            self.begin_level_graphics_batch(app, snapshot, special_world_passed);
+            self.pending_level_graphics_export = None;
+            self.begin_level_graphics_batch(app, snapshot, special_world_passed, mode);
         } else if cancelled || context.input(|input| input.key_pressed(egui::Key::Escape)) {
-            self.pending_level_graphics_export = false;
+            self.pending_level_graphics_export = None;
         }
     }
 
@@ -272,6 +272,7 @@ impl VanillaGraphicsEditor {
         app: &AppState,
         snapshot: &lm_app::ControllerSnapshot,
         special_world_passed: bool,
+        mode: LevelGraphicsExportMode,
     ) {
         let Some(level) = app.current_level() else {
             self.error = Some("no active level is available for GFX extraction".into());
@@ -289,10 +290,27 @@ impl VanillaGraphicsEditor {
                 return;
             }
         };
-        let Some(directory) = crate::dialogs::choose_level_graphics_directory() else {
-            return;
+        let start = match mode {
+            LevelGraphicsExportMode::ChooseNewDirectory => {
+                let Some(directory) = crate::dialogs::choose_level_graphics_directory() else {
+                    return;
+                };
+                self.graphics_batch.start(source, directory)
+            }
+            LevelGraphicsExportMode::ReplaceExtracted => {
+                let Some(rom_path) = app.document_path.as_deref() else {
+                    self.error = Some("the open ROM has no document path".into());
+                    return;
+                };
+                match extracted_graphics_paths(rom_path) {
+                    Ok((directory, required)) => self
+                        .graphics_batch
+                        .start_replace(source, directory, required),
+                    Err(error) => Err(error),
+                }
+            }
         };
-        if let Err(error) = self.graphics_batch.start(source, directory) {
+        if let Err(error) = start {
             self.error = Some(error);
         }
     }
@@ -501,7 +519,7 @@ impl VanillaGraphicsEditor {
             self.status.set(status);
         }
         if level_export_enabled && take_level_graphics_export_shortcut(ui) {
-            self.pending_level_graphics_export = true;
+            self.pending_level_graphics_export = Some(LevelGraphicsExportMode::ReplaceExtracted);
         }
     }
 
@@ -656,7 +674,7 @@ impl VanillaGraphicsEditor {
         self.internal_cache = None;
         self.internal_cache_unlocked = false;
         self.error = None;
-        self.pending_level_graphics_export = false;
+        self.pending_level_graphics_export = None;
         self.status = GraphicsEditorStatus::default();
         self.clipboard_paste_target = None;
         self.pixel_pointer_capture = TilePixelPointerCapture::None;

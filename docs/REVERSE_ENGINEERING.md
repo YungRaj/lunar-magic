@@ -1691,10 +1691,11 @@ All four tile-sheet routes dispatch directly from their primary/secondary button
 than waiting for a completed click.
 Installed paste cannot bypass fixed/ExAnimation ownership, stale revision,
 or active file-worker gates.
-The documented unmodified F9 save command now enters the existing button-backed save/commit path
-on each surface. The two ROM editors preserve their existing expansion, modified-state,
-stale-revision, active-worker, and manifest-loader eligibility checks instead of giving the
-shortcut a separate mutation route.
+`HandleGraphicsEditorWindowMessage` passes the `WM_KEYDOWN` virtual-key value directly to
+`ProcessGraphicsEditorKeyboardInput`; this corrects an earlier off-by-one interpretation of the
+function-key cases. Unmodified F9 is not a ROM-commit shortcut. It enters the current-level GFX
+publication path described below. The Rust ROM editors retain explicit commit buttons for their
+extension workflow, while only the portable standalone document keeps its own F9 save binding.
 Direct decompilation of `ApplyColorMapFilterToGraphicsTile` at `00503ce0`,
 `DrawColorMapFilterPreview` at `00503db0`, and `HandleColorMapFilterDialog` at `005040e0` proves
 sixteen filters of sixteen 4-bit destinations. Application maps every decoded tile pixel through
@@ -1768,13 +1769,14 @@ the graphics, palette, Map16, background, ExAnimation, and other dependent edito
 rerenders the shared 512-pixel surface. The branch performs no modifier checks, model mutation, or
 status update. Rust therefore consumes every modifier form of F1 on each graphics surface and
 requests a toolkit repaint without fabricating a reload or message.
-The same keyboard jump table maps F7 to the branch at `00505A4D`. Ordinary F7 toggles byte
-`00E27B90`; Ctrl+Alt+F7 instead toggles grid DWORD `005E54F8` between its initialized white
+The same keyboard jump table maps virtual key `$77` (F8) to the branch at `00505A4D`. Ordinary F8
+toggles byte `00E27B90`; Ctrl+Alt+F8 instead toggles grid DWORD `005E54F8` between its initialized white
 `$00FFFFFF` and black `$00000000`, reporting `Tile grid color 1.` or `Tile grid color 2.`. The
 renderer at `00504D00` overwrites every sixteenth row and column of the 256×256 page DIB, proving a
 seamless 16×16 array of 16-pixel tile cells rather than spaced widgets. The selected page global
 `00E27B80` determines which 256-tile slice is rendered.
-The adjacent F8 branch at `00505B7B` displays `Save level GFX to Graphics folder?` and calls
+The adjacent virtual-key `$78` (F9) branch at `00505B7B` displays
+`Save level GFX to Graphics folder?` and calls
 `00480B60` after confirmation. That routine walks six FG/BG source buffers at `0086B7E8` and four
 SP buffers at `008737E8`, each with a `$1000`-byte stride, pairing them with the active file-number
 tables at `008F3918` and `0061FC38`. It therefore exports the current level selection rather than
@@ -1783,14 +1785,20 @@ as decoded 4bpp files. The sprite loop conditionally omits its second slot when 
 the ordinary path visits all four. Cross-references prove that `00E278DF` is the non-persistent
 `Special World Passed Graphics` view flag: `LoadSpecialWorldGraphicsFile` (`00464890`) decodes the
 half-size 3bpp GFX31, synthesizes the absent fourth plane, and installs it in the SP2 working slot.
-F8 omits the ordinary SP2 filename because that working buffer no longer represents it. Its exact
+F9 omits the ordinary SP2 filename because that working buffer no longer represents it. Before
+opening any output, the separate-file path verifies that the full standard set `GFX00.bin` through
+`GFX33.bin` exists in the ROM-sibling `Graphics` directory and contains no directory entries. Each
+selected output is then opened in truncating write mode. Its exact
 completion messages are `Saved FG/BG/SP GFX to files.` and `Couldn't save FG/BG/SP GFX to file!`.
-Rust now exposes this exact F8 workflow on both pristine SMW-US and profile-backed installed ROM
+Rust now exposes this F9 workflow on both pristine SMW-US and profile-backed installed ROM
 graphics editors. The pristine path reads the authenticated vanilla object/sprite assignment tables
 for the globally active level, while the installed path additionally honors expanded Super GFX
-bypass records. Both publish decoded `$1000`-byte files as one create-new group and substitute the
-active staged slot when it belongs to the exported set. Rust's View menu exposes the same ephemeral
-Special World option; pristine and installed previews substitute decoded GFX31 into SP2, and F8
+bypass records. Both require the complete existing standard file set before staging and publish the
+selected decoded `$1000`-byte replacements as one recoverable group, which is stronger than the
+original per-file truncation on a mid-publication failure. They substitute the active staged slot
+when it belongs to the exported set. A separate visible Rust extraction button retains the useful
+create-new-directory workflow without claiming the original shortcut. Rust's View menu exposes the
+same ephemeral Special World option; pristine and installed previews substitute decoded GFX31 into SP2, and F9
 omits the normal SP2 assignment before stable duplicate collapse just like the native loop.
 With Ctrl+Shift held, `HandleGraphicsEditorWindowMessage` indexes the tile-attribution byte at
 `006136B8`; its two independent key-state tests do not reject Alt. Zero has no animation

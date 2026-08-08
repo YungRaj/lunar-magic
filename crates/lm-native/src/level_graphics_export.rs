@@ -2,11 +2,41 @@ use eframe::egui;
 use lm_app::RevisionProfile;
 use lm_level::{LegacyLevelHeader, SpriteLengthTable};
 use lm_rom::{Region, RomImage, SupportedGame};
+use std::path::{Path, PathBuf};
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum LevelGraphicsExportMode {
+    ChooseNewDirectory,
+    ReplaceExtracted,
+}
 
 pub(crate) fn take_level_graphics_export_shortcut(ui: &mut egui::Ui) -> bool {
     ui.input_mut(|input| {
-        !input.modifiers.any() && input.consume_key(egui::Modifiers::NONE, egui::Key::F8)
+        !input.modifiers.any() && input.consume_key(egui::Modifiers::NONE, egui::Key::F9)
     })
+}
+
+pub(crate) fn extracted_graphics_paths(rom_path: &Path) -> Result<(PathBuf, Vec<PathBuf>), String> {
+    let parent = rom_path
+        .parent()
+        .ok_or("the open ROM path has no parent directory")?;
+    let directory = parent.join("Graphics");
+    let metadata = std::fs::symlink_metadata(&directory).map_err(|error| {
+        format!(
+            "the extracted Graphics directory {} is unavailable: {error}",
+            directory.display()
+        )
+    })?;
+    if metadata.file_type().is_symlink() || !metadata.file_type().is_dir() {
+        return Err(format!(
+            "the extracted Graphics path must be a directory: {}",
+            directory.display()
+        ));
+    }
+    let required = (0..=0x33)
+        .map(|file| directory.join(format!("GFX{file:02X}.bin")))
+        .collect::<Vec<_>>();
+    Ok((directory, required))
 }
 
 pub(crate) fn current_level_graphics_files(
@@ -143,6 +173,58 @@ fn collapse_duplicate_files(files: Vec<usize>) -> Vec<usize> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    static NEXT_DIRECTORY: AtomicUsize = AtomicUsize::new(0);
+
+    #[test]
+    fn original_level_graphics_publication_shortcut_is_unmodified_f9() {
+        for (modifiers, expected) in [
+            (egui::Modifiers::NONE, true),
+            (egui::Modifiers::CTRL, false),
+            (egui::Modifiers::SHIFT, false),
+            (egui::Modifiers::ALT, false),
+        ] {
+            let context = egui::Context::default();
+            let mut taken = false;
+            let _ = context.run(
+                egui::RawInput {
+                    events: vec![egui::Event::Key {
+                        key: egui::Key::F9,
+                        physical_key: None,
+                        pressed: true,
+                        repeat: false,
+                        modifiers,
+                    }],
+                    modifiers,
+                    ..Default::default()
+                },
+                |context| {
+                    egui::CentralPanel::default().show(context, |ui| {
+                        taken = take_level_graphics_export_shortcut(ui);
+                    });
+                },
+            );
+            assert_eq!(taken, expected, "unexpected F9 routing for {modifiers:?}");
+        }
+    }
+
+    #[test]
+    fn extracted_graphics_paths_use_the_rom_sibling_directory_and_complete_standard_set() {
+        let root = std::env::temp_dir().join(format!(
+            "lm-level-gfx-paths-{}-{}",
+            std::process::id(),
+            NEXT_DIRECTORY.fetch_add(1, Ordering::Relaxed)
+        ));
+        let graphics = root.join("Graphics");
+        std::fs::create_dir_all(&graphics).unwrap();
+        let (actual_directory, paths) = extracted_graphics_paths(&root.join("game.smc")).unwrap();
+        assert_eq!(actual_directory, graphics);
+        assert_eq!(paths.len(), 0x34);
+        assert_eq!(paths.first().unwrap(), &graphics.join("GFX00.bin"));
+        assert_eq!(paths.last().unwrap(), &graphics.join("GFX33.bin"));
+        std::fs::remove_dir_all(root).unwrap();
+    }
 
     #[test]
     fn pristine_level_105_resolves_the_exact_vanilla_fg_bg_and_sprite_set() {

@@ -42,13 +42,19 @@ struct RunningBatch {
 #[derive(Clone)]
 enum GraphicsExportTarget {
     Directory(PathBuf),
+    ReplaceDirectory {
+        path: PathBuf,
+        required_existing: Vec<PathBuf>,
+    },
     JoinedFile(PathBuf),
 }
 
 impl GraphicsExportTarget {
     fn path(&self) -> &Path {
         match self {
-            Self::Directory(path) | Self::JoinedFile(path) => path,
+            Self::Directory(path)
+            | Self::JoinedFile(path)
+            | Self::ReplaceDirectory { path, .. } => path,
         }
     }
 }
@@ -83,6 +89,21 @@ impl GraphicsBatchWorker {
         path: PathBuf,
     ) -> Result<(), String> {
         self.start_target(source, GraphicsExportTarget::JoinedFile(path))
+    }
+
+    pub(super) fn start_replace(
+        &mut self,
+        source: GraphicsBatchSource,
+        directory: PathBuf,
+        required_existing: Vec<PathBuf>,
+    ) -> Result<(), String> {
+        self.start_target(
+            source,
+            GraphicsExportTarget::ReplaceDirectory {
+                path: directory,
+                required_existing,
+            },
+        )
     }
 
     fn start_target(
@@ -186,8 +207,21 @@ fn export_batch(
 ) -> Result<Option<usize>, String> {
     let total = source.file_numbers.len();
     let project = Project::new(source.image);
+    if let GraphicsExportTarget::ReplaceDirectory {
+        required_existing, ..
+    } = target
+    {
+        validate_existing_graphics_set(required_existing)?;
+    }
     let mut group = matches!(target, GraphicsExportTarget::Directory(_))
         .then_some(lm_app::file_persistence::NewFileGroup::new());
+    let mut replacements = Vec::with_capacity(
+        if matches!(target, GraphicsExportTarget::ReplaceDirectory { .. }) {
+            total
+        } else {
+            0
+        },
+    );
     let mut joined_files = Vec::with_capacity(if group.is_some() { 0 } else { total });
     for (index, (slot, file_number)) in source
         .slots
@@ -268,14 +302,20 @@ fn export_batch(
             ));
         }
         match target {
-            GraphicsExportTarget::Directory(directory) => group
-                .as_mut()
-                .expect("directory exports create a staging group")
-                .stage(
-                    &batch_output_path(directory, file_number, source.exgraphics_names),
-                    &bytes,
-                )
-                .map_err(|error| format!("GFX{file_number:02X}: {error}"))?,
+            GraphicsExportTarget::Directory(directory) => {
+                group
+                    .as_mut()
+                    .expect("directory exports create a staging group")
+                    .stage(
+                        &batch_output_path(directory, file_number, source.exgraphics_names),
+                        &bytes,
+                    )
+                    .map_err(|error| format!("GFX{file_number:02X}: {error}"))?;
+            }
+            GraphicsExportTarget::ReplaceDirectory { path, .. } => replacements.push((
+                batch_output_path(path, file_number, source.exgraphics_names),
+                bytes,
+            )),
             GraphicsExportTarget::JoinedFile(_) => joined_files.push(bytes),
         }
         completed.store(index + 1, Ordering::Relaxed);
@@ -290,6 +330,14 @@ fn export_batch(
                 .publish()
                 .map_err(|error| error.to_string())?;
         }
+        GraphicsExportTarget::ReplaceDirectory { .. } => {
+            let documents = replacements
+                .iter()
+                .map(|(path, bytes)| (path.as_path(), bytes.as_slice()))
+                .collect::<Vec<_>>();
+            lm_app::file_persistence::replace_existing_group(&documents)
+                .map_err(|error| error.to_string())?;
+        }
         GraphicsExportTarget::JoinedFile(path) => {
             let joined = lm_graphics::JoinedGraphics {
                 files: joined_files,
@@ -301,6 +349,27 @@ fn export_batch(
         }
     }
     Ok(Some(total))
+}
+
+fn validate_existing_graphics_set(paths: &[PathBuf]) -> Result<(), String> {
+    if paths.is_empty() {
+        return Err("replacement export requires an existing graphics-file set".into());
+    }
+    for path in paths {
+        let metadata = std::fs::symlink_metadata(path).map_err(|error| {
+            format!(
+                "required extracted graphics file {} is unavailable: {error}",
+                path.display()
+            )
+        })?;
+        if metadata.file_type().is_symlink() || !metadata.file_type().is_file() {
+            return Err(format!(
+                "required extracted graphics path must be a regular file: {}",
+                path.display()
+            ));
+        }
+    }
+    Ok(())
 }
 
 fn lunar_magic_standard_export_bytes(
@@ -539,6 +608,57 @@ mod tests {
         assert_eq!(completed.load(Ordering::Relaxed), 2);
         assert_eq!(fs::read(directory.join("GFX00.bin")).unwrap(), expected[0]);
         assert_eq!(fs::read(directory.join("GFX01.bin")).unwrap(), expected[1]);
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn replacement_batch_requires_the_complete_declared_set_and_replaces_atomically() {
+        let directory = temporary_directory();
+        fs::create_dir(&directory).unwrap();
+        let required = (0..=0x33)
+            .map(|file| directory.join(format!("GFX{file:02X}.bin")))
+            .collect::<Vec<_>>();
+        for path in &required {
+            fs::write(path, b"old").unwrap();
+        }
+        let zero = required[0].clone();
+        let one = required[1].clone();
+        let (source, expected) = fixture_source();
+        let target = GraphicsExportTarget::ReplaceDirectory {
+            path: directory.clone(),
+            required_existing: required.clone(),
+        };
+        assert_eq!(
+            export_batch(
+                source.clone(),
+                &target,
+                &AtomicUsize::new(0),
+                &AtomicBool::new(false),
+            )
+            .unwrap(),
+            Some(2)
+        );
+        assert_eq!(fs::read(&zero).unwrap(), expected[0]);
+        assert_eq!(fs::read(&one).unwrap(), expected[1]);
+        assert_eq!(fs::read(&required[2]).unwrap(), b"old");
+
+        fs::write(&zero, b"sentinel-zero").unwrap();
+        fs::remove_file(required.last().unwrap()).unwrap();
+        let target = GraphicsExportTarget::ReplaceDirectory {
+            path: directory.clone(),
+            required_existing: required,
+        };
+        assert!(
+            export_batch(
+                source,
+                &target,
+                &AtomicUsize::new(0),
+                &AtomicBool::new(false),
+            )
+            .is_err()
+        );
+        assert_eq!(fs::read(&zero).unwrap(), b"sentinel-zero");
+        assert_eq!(fs::read(&one).unwrap(), expected[1]);
         fs::remove_dir_all(directory).unwrap();
     }
 

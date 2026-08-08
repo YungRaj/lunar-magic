@@ -280,6 +280,37 @@ pub fn replace_existing(destination: &Path, bytes: &[u8]) -> io::Result<()> {
     }
 }
 
+/// Replaces a group of existing regular files as one recoverable publication.
+///
+/// Every destination must exist as a regular non-symlink file before staging begins. The shared
+/// grouped replacement then retains all originals as backups until every staged file publishes.
+///
+/// # Errors
+///
+/// Returns an I/O error for an empty group, a missing/non-regular/symlink destination, aliased
+/// paths, staging failure, or publication/restoration failure.
+pub fn replace_existing_group(documents: &[(&Path, &[u8])]) -> io::Result<()> {
+    if documents.is_empty() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "grouped replacement requires at least one document",
+        ));
+    }
+    for (destination, _) in documents {
+        let metadata = fs::symlink_metadata(destination)?;
+        if metadata.file_type().is_symlink() || !metadata.file_type().is_file() {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                format!(
+                    "grouped replacement destination must be an existing regular file: {}",
+                    destination.display()
+                ),
+            ));
+        }
+    }
+    replace_or_create_group(documents)
+}
+
 /// Replaces existing regular files and creates absent files as one recoverable publication group.
 ///
 /// Every payload is staged before any destination changes. Existing destinations are retained as

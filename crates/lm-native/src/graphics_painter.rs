@@ -222,7 +222,7 @@ impl GraphicsTileGrid {
         })
     }
 
-    fn apply_f7(&mut self, modifiers: egui::Modifiers) -> Option<&'static str> {
+    fn apply_f8(&mut self, modifiers: egui::Modifiers) -> Option<&'static str> {
         if modifiers.ctrl && modifiers.alt {
             self.color = match self.color {
                 GraphicsTileGridColor::White => GraphicsTileGridColor::Black,
@@ -637,8 +637,8 @@ pub(crate) fn take_tile_grid_shortcut(
     ui.input_mut(|input| {
         let modifiers = input.modifiers;
         input
-            .consume_key(modifiers, egui::Key::F7)
-            .then(|| grid.apply_f7(modifiers))
+            .consume_key(modifiers, egui::Key::F8)
+            .then(|| grid.apply_f8(modifiers))
             .flatten()
     })
 }
@@ -1805,7 +1805,7 @@ mod tests {
     }
 
     #[test]
-    fn tile_sheet_geometry_and_f7_grid_state_match_native_defaults() {
+    fn tile_sheet_geometry_and_f8_grid_state_match_native_defaults() {
         assert_eq!(TILE_GRID_COLUMNS, 16);
         assert_eq!(TILE_SHEET_CELL_SIDE, 16.0);
         assert_eq!(TILE_SHEET_CELL_SIDE * TILE_GRID_COLUMNS as f32, 256.0);
@@ -1813,23 +1813,23 @@ mod tests {
         let mut grid = GraphicsTileGrid::default();
         assert!(!grid.visible);
         assert_eq!(grid.color, GraphicsTileGridColor::White);
-        assert_eq!(grid.apply_f7(egui::Modifiers::NONE), None);
+        assert_eq!(grid.apply_f8(egui::Modifiers::NONE), None);
         assert!(grid.visible);
         assert_eq!(grid.color(), Some(egui::Color32::WHITE));
 
         assert_eq!(
-            grid.apply_f7(egui::Modifiers::CTRL | egui::Modifiers::ALT),
+            grid.apply_f8(egui::Modifiers::CTRL | egui::Modifiers::ALT),
             Some("Tile grid color 2.")
         );
         assert!(grid.visible);
         assert_eq!(grid.color(), Some(egui::Color32::BLACK));
         assert_eq!(
-            grid.apply_f7(egui::Modifiers::CTRL | egui::Modifiers::ALT | egui::Modifiers::SHIFT),
+            grid.apply_f8(egui::Modifiers::CTRL | egui::Modifiers::ALT | egui::Modifiers::SHIFT),
             Some("Tile grid color 1.")
         );
         assert_eq!(grid.color(), Some(egui::Color32::WHITE));
 
-        assert_eq!(grid.apply_f7(egui::Modifiers::CTRL), None);
+        assert_eq!(grid.apply_f8(egui::Modifiers::CTRL), None);
         assert!(!grid.visible);
     }
 

@@ -170,6 +170,30 @@ fn existing_regular_document_is_replaced_without_staging_debris() {
 }
 
 #[test]
+fn existing_group_replaces_every_file_and_rejects_a_missing_member_before_staging() {
+    let directory = TestDirectory::new();
+    let first = directory.0.join("GFX00.bin");
+    let second = directory.0.join("GFX01.bin");
+    fs::write(&first, b"old-zero").unwrap();
+    fs::write(&second, b"old-one").unwrap();
+
+    replace_existing_group(&[(&first, b"new-zero"), (&second, b"new-one")]).unwrap();
+    assert_eq!(fs::read(&first).unwrap(), b"new-zero");
+    assert_eq!(fs::read(&second).unwrap(), b"new-one");
+
+    fs::remove_file(&second).unwrap();
+    assert_eq!(
+        replace_existing_group(&[(&first, b"bad-zero"), (&second, b"bad-one")])
+            .unwrap_err()
+            .kind(),
+        io::ErrorKind::NotFound
+    );
+    assert_eq!(fs::read(&first).unwrap(), b"new-zero");
+    assert!(!second.exists());
+    assert_eq!(fs::read_dir(&directory.0).unwrap().count(), 1);
+}
+
+#[test]
 fn mixed_group_replaces_existing_and_creates_absent_documents() {
     let directory = TestDirectory::new();
     let rom = directory.0.join("game.smc");

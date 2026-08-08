@@ -2084,25 +2084,26 @@ ordering, for the picker, tile sheet, color-map previews, and pixel editor on al
 Only the active page is materialized as a seamless 16×16 array of 16-logical-pixel cells, matching
 the original 256×256 backing canvas. F1 consumes all modifier forms and requests an immediate
 repaint on every graphics surface, matching the native `$1B59` dependent-editor redraw fanout
-without changing model state or status. F7 toggles the initially hidden tile grid. Ctrl+Alt+F7 changes
+without changing model state or status. F8 toggles the initially hidden tile grid. Ctrl+Alt+F8 changes
 its retained color between the recovered white and black DWORDs without changing visibility and
 publishes `Tile grid color 1.` or `Tile grid color 2.` exactly.
 Visible previous/next page and previous/next palette controls synthesize the same four native
 navigation actions as Up/Down and Page Up/Down. They share selection clamping, focus transfer,
 default-palette traversal, and exact page, boundary, and rendered-palette status with the keyboard
 routes on all three graphics surfaces.
-Both pristine SMW-US and profile-backed installed ROM editors additionally reserve unmodified F8
-for the recovered current-level export. They resolve the globally active level independently of the
-selected graphics page, present the native confirmation text, and export only that level's ordered
-FG/BG and sprite assignments.
+Both pristine SMW-US and profile-backed installed ROM editors additionally reserve unmodified F9
+for the recovered current-level replacement. They resolve the globally active level independently
+of the selected graphics page, present the native confirmation text, require the ROM-sibling
+`Graphics` directory to contain the complete `GFX00.bin` through `GFX33.bin` standard set, and
+replace only that level's ordered FG/BG and sprite assignments as one recoverable group.
 Expanded Super GFX bypass records contribute six plus four slots; the recovered vanilla SMW-US
 tables contribute four plus four. Repeated filenames are collapsed because publication is a file
 set. Every output is a decoded `$1000`-byte 4bpp GFX/ExGFX file, and the active staged graphics
 controller replaces its ROM source when it belongs to the set. The existing background group
-writer retains cancellation and create-new all-or-nothing publication.
+writer remains available through the separate visible create-new-directory extraction action.
 The View menu's non-persistent `Special World Passed Graphics` option mirrors the native global
 display flag. It loads legacy GFX31 as half-size 3bpp data (or accepts its already expanded 4bpp
-form), pads the synthesized SP2 working slot, and invalidates both built-in and installed level previews. Current-level F8 export
+form), pads the synthesized SP2 working slot, and invalidates both built-in and installed level previews. Current-level F9 export
 then omits the ordinary SP2 assignment before duplicate collapse because the preview buffer contains
 GFX31 rather than that assigned file; GFX31 itself is not published by this command.
 The same tile-grid adapter draws a distinct outline around the current nonselected hover target.
@@ -2150,11 +2151,11 @@ Palette FG/BG selection likewise occurs on primary/secondary button-down on all 
 surfaces, independent of keyboard modifiers, rather than waiting for a completed toolkit click.
 Tile-sheet selection, copy, selected-tile paste, and clipboard paste also dispatch on the initiating
 primary/secondary button-down while retaining their native Ctrl/Shift/Alt routing.
-Unmodified F9 is consumed as the graphics editor's documented save command on all three surfaces.
-It enters the same persistence action as each visible Save/Commit button: the portable document
-uses its bounded background writer, pristine SMW requires an expanded ROM and staged changes, and
-the installed editor additionally retains dirty-state, revision, file-worker, and manifest-loader
-gates. Modified F9 combinations are left available to other shortcut routing.
+Direct `WM_KEYDOWN` virtual-key tracing corrects the prior off-by-one function-key interpretation:
+unmodified F9 is the original current-level GFX publication command, not a ROM-commit command.
+Pristine and installed ROM editors route it only through the confirmed replacement workflow above;
+their explicit commit buttons remain a Rust extension. The portable standalone document retains
+F9 for its own document save workflow. Modified F9 combinations remain available to other routing.
 The executable's character jump table covers the inclusive `D` through `Y` range twice, for
 uppercase and lowercase input, and maps only five entries: D applies the selected color map, M
 opens the map editor, R rotates the active tile 90 degrees clockwise, X flips horizontally, and Y

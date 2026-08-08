@@ -9,11 +9,13 @@ use crate::{
         apply_tile_palette_keyboard, apply_tile_palette_step, color_selection_marker,
         graphics_navigation_controls, graphics_transform_controls, paint_tile, palette_color,
         palette_pointer_action, shortcut_transform, take_graphics_character_shortcut,
-        take_graphics_refresh_shortcut, take_graphics_save_shortcut, take_tile_grid_shortcut,
-        take_tile_shift, tile_button, tile_coordinate, tile_page_range, tile_pixel_pointer_action,
-        tile_pointer_action,
+        take_graphics_refresh_shortcut, take_tile_grid_shortcut, take_tile_shift, tile_button,
+        tile_coordinate, tile_page_range, tile_pixel_pointer_action, tile_pointer_action,
     },
-    level_graphics_export::{current_level_graphics_files, take_level_graphics_export_shortcut},
+    level_graphics_export::{
+        LevelGraphicsExportMode, current_level_graphics_files, extracted_graphics_paths,
+        take_level_graphics_export_shortcut,
+    },
     native_clipboard,
 };
 use eframe::egui;
@@ -74,7 +76,7 @@ pub(crate) struct RomGraphicsEditor {
     search_end: String,
     error: Option<String>,
     pending_close: Option<PendingClose>,
-    pending_level_graphics_export: bool,
+    pending_level_graphics_export: Option<LevelGraphicsExportMode>,
     loader: DocumentLoader,
     pending_load: Option<PendingLoad>,
     manifest_loader: crate::rom_ownership::RomOwnershipLoader,
@@ -356,10 +358,13 @@ impl RomGraphicsEditor {
                     !stale && !file_work_running && app.current_level().is_some(),
                     egui::Button::new("Extract current level GFX…"),
                 )
-                .on_hover_text("F8 — saves the active level's FG/BG/SP files as decoded 4bpp")
+                .on_hover_text(
+                    "Choose a new directory for the active level's decoded FG/BG/SP files",
+                )
                 .clicked()
             {
-                self.pending_level_graphics_export = true;
+                self.pending_level_graphics_export =
+                    Some(LevelGraphicsExportMode::ChooseNewDirectory);
             }
             if ui
                 .add_enabled(
@@ -481,8 +486,7 @@ impl RomGraphicsEditor {
         let commit_clicked = ui
             .add_enabled(commit_enabled, egui::Button::new("Commit graphics to ROM"))
             .clicked();
-        let commit_shortcut = take_graphics_save_shortcut(ui);
-        if commit_enabled && (commit_clicked || commit_shortcut) {
+        if commit_enabled && commit_clicked {
             match self.prepare_commit() {
                 Ok(command) => {
                     return Some(command);
@@ -666,7 +670,7 @@ impl RomGraphicsEditor {
             self.status.set(status);
         }
         if level_export_enabled && take_level_graphics_export_shortcut(ui) {
-            self.pending_level_graphics_export = true;
+            self.pending_level_graphics_export = Some(LevelGraphicsExportMode::ReplaceExtracted);
         }
     }
 
@@ -676,9 +680,9 @@ impl RomGraphicsEditor {
         app: &AppState,
         special_world_passed: bool,
     ) {
-        if !self.pending_level_graphics_export {
+        let Some(mode) = self.pending_level_graphics_export else {
             return;
-        }
+        };
         let mut accepted = false;
         let mut cancelled = false;
         egui::Window::new("Save level GFX to Graphics folder?")
@@ -695,14 +699,19 @@ impl RomGraphicsEditor {
                 });
             });
         if accepted {
-            self.pending_level_graphics_export = false;
-            self.begin_level_graphics_batch(app, special_world_passed);
+            self.pending_level_graphics_export = None;
+            self.begin_level_graphics_batch(app, special_world_passed, mode);
         } else if cancelled || context.input(|input| input.key_pressed(egui::Key::Escape)) {
-            self.pending_level_graphics_export = false;
+            self.pending_level_graphics_export = None;
         }
     }
 
-    fn begin_level_graphics_batch(&mut self, app: &AppState, special_world_passed: bool) {
+    fn begin_level_graphics_batch(
+        &mut self,
+        app: &AppState,
+        special_world_passed: bool,
+        mode: LevelGraphicsExportMode,
+    ) {
         let Some(level) = app.current_level() else {
             self.error = Some("no active level is available for GFX extraction".into());
             return;
@@ -729,9 +738,6 @@ impl RomGraphicsEditor {
                 return;
             }
         };
-        let Some(directory) = crate::dialogs::choose_level_graphics_directory() else {
-            return;
-        };
         let raw_4bpp_overrides = slots
             .contains(&usize::from(workspace.slot))
             .then(|| vec![(usize::from(workspace.slot), raw)])
@@ -747,7 +753,27 @@ impl RomGraphicsEditor {
             raw_4bpp_overrides,
             file_layouts: Vec::new(),
         };
-        match self.graphics_batch.start(source, directory) {
+        let start = match mode {
+            LevelGraphicsExportMode::ChooseNewDirectory => {
+                let Some(directory) = crate::dialogs::choose_level_graphics_directory() else {
+                    return;
+                };
+                self.graphics_batch.start(source, directory)
+            }
+            LevelGraphicsExportMode::ReplaceExtracted => {
+                let Some(rom_path) = app.document_path.as_deref() else {
+                    self.error = Some("the open ROM has no document path".into());
+                    return;
+                };
+                match extracted_graphics_paths(rom_path) {
+                    Ok((directory, required)) => self
+                        .graphics_batch
+                        .start_replace(source, directory, required),
+                    Err(error) => Err(error),
+                }
+            }
+        };
+        match start {
             Ok(()) => {
                 self.level_graphics_batch_running = true;
                 self.io_status = None;
