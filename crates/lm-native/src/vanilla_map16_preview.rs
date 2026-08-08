@@ -1,4 +1,5 @@
 use eframe::egui;
+use lm_app::RevisionProfile;
 use lm_graphics::{IndexedTile, Palette};
 use lm_level::LegacyLevelHeader;
 use lm_project::Project;
@@ -241,6 +242,165 @@ pub(crate) fn load_pristine_internal_graphics_cache(
     );
 
     Ok(VanillaInternalGraphicsCache { tiles: cache })
+}
+
+/// Materializes the installed editor's level-dependent portion of Lunar Magic's complete decoded
+/// graphics workspace through the active revision profile.
+///
+/// Unlike the pristine constructor, this resolves an enabled six-slot Super GFX Bypass and the
+/// installed graphics pointer table. Banks owned by ExAnimation or external project files remain
+/// zero until their independent loaders are attached; no unrelated ROM bytes are guessed.
+pub(crate) fn load_profiled_internal_graphics_cache(
+    image: RomImage,
+    profile: &RevisionProfile,
+    level: u16,
+    special_world_passed: bool,
+) -> Result<VanillaInternalGraphicsCache, String> {
+    let project = Project::new(image.clone());
+    let level_layout = profile
+        .level_layout_for_rom(&image)
+        .map_err(|error| error.to_string())?;
+    let loaded_level = project
+        .load_level_slot(usize::from(level), level_layout, &profile.sprite_lengths)
+        .map_err(|error| format!("cannot load level {level:03X} graphics header: {error}"))?;
+    let header = loaded_level.layer1.header;
+    let blank = IndexedTile::new([0; IndexedTile::PIXEL_COUNT]);
+    let mut cache = vec![blank; INTERNAL_GRAPHICS_CACHE_TILES];
+
+    let expanded = profile
+        .expanded_settings
+        .map(|layout| {
+            project
+                .load_expanded_level_settings(usize::from(level), layout)
+                .map_err(|error| {
+                    format!("cannot load level {level:03X} expanded graphics settings: {error}")
+                })
+        })
+        .transpose()?;
+    let bypass = expanded
+        .as_ref()
+        .map(lm_level::ExpandedLevelHeader::from)
+        .map(|header| header.super_graphics_bypass())
+        .filter(|selection| selection.enabled);
+    let (foreground_files, mut sprite_files) = if let Some(selection) = bypass {
+        (
+            selection
+                .foreground_background
+                .into_iter()
+                .map(usize::from)
+                .collect::<Vec<_>>(),
+            selection.sprites.map(usize::from).to_vec(),
+        )
+    } else {
+        if profile.game != lm_rom::SupportedGame::SuperMarioWorld
+            || profile.region != lm_rom::Region::NorthAmerica
+            || profile.revision != 0
+        {
+            return Err(format!(
+                "legacy graphics assignment tables are not recovered for profile {}",
+                profile.name
+            ));
+        }
+        (
+            lm_profile::smw_us_v1_object_tileset_graphics_files(
+                &image,
+                usize::from(header.object_tileset()),
+            )
+            .map_err(|error| error.to_string())?
+            .to_vec(),
+            lm_profile::smw_us_v1_sprite_tileset_graphics_files(
+                &image,
+                usize::from(header.sprite_tileset()),
+            )
+            .map_err(|error| error.to_string())?
+            .to_vec(),
+        )
+    };
+    if special_world_passed && sprite_files.len() >= 2 {
+        sprite_files[1] = 0x31;
+    }
+    let foreground = load_profiled_graphics_slots(&project, profile.graphics, &foreground_files)?;
+    let sprites = load_profiled_graphics_slots(&project, profile.graphics, &sprite_files)?;
+    let foreground_len = foreground.len().min(INTERNAL_SPRITE_START);
+    cache[..foreground_len].clone_from_slice(&foreground[..foreground_len]);
+    let sprite_len = sprites
+        .len()
+        .min(INTERNAL_GFX33_START - INTERNAL_SPRITE_START);
+    cache[INTERNAL_SPRITE_START..INTERNAL_SPRITE_START + sprite_len]
+        .clone_from_slice(&sprites[..sprite_len]);
+
+    let (gfx33, gfx32) = load_profiled_internal_special_graphics(&project, profile.graphics)?;
+    let gfx33_len = gfx33.len().min(INTERNAL_GFX33_TILES);
+    cache[INTERNAL_GFX33_START..INTERNAL_GFX33_START + gfx33_len]
+        .clone_from_slice(&gfx33[..gfx33_len]);
+    let gfx32_len = gfx32.len().min(INTERNAL_GFX32_TILES);
+    cache[INTERNAL_GFX32_START..INTERNAL_GFX32_START + gfx32_len]
+        .clone_from_slice(&gfx32[..gfx32_len]);
+
+    let layer3 = if let Some(settings) = expanded.as_ref() {
+        load_layer3_tiles_from_settings(&project, settings, profile.graphics)?
+    } else {
+        load_layer3_tiles(&project, usize::from(level), profile.graphics)?
+    };
+    if layer3.len() != INTERNAL_LAYER3_TILES {
+        return Err(format!(
+            "profiled internal Layer 3 cache has {} tiles instead of {INTERNAL_LAYER3_TILES}",
+            layer3.len()
+        ));
+    }
+    cache[INTERNAL_LAYER3_START..INTERNAL_LAYER3_START + INTERNAL_LAYER3_TILES]
+        .clone_from_slice(&layer3);
+    Ok(VanillaInternalGraphicsCache { tiles: cache })
+}
+
+fn load_profiled_graphics_slots(
+    project: &Project,
+    layout: lm_project::GraphicsRomLayout,
+    files: &[usize],
+) -> Result<Vec<IndexedTile>, String> {
+    let mut tiles = Vec::with_capacity(files.len() * LAYER1_SPRITE_SLOT_TILES);
+    for (slot, file) in files.iter().copied().enumerate() {
+        let file = u16::try_from(file)
+            .map_err(|_| format!("graphics slot {slot} file {file:X} exceeds $FFFF"))?;
+        let mut loaded = project
+            .load_super_graphics_file(file, layout)
+            .map_err(|error| {
+                format!("cannot load graphics slot {slot} file GFX{file:02X}: {error}")
+            })?
+            .tiles;
+        loaded.resize_with(LAYER1_SPRITE_SLOT_TILES, || {
+            IndexedTile::new([0; IndexedTile::PIXEL_COUNT])
+        });
+        tiles.extend(loaded);
+    }
+    Ok(tiles)
+}
+
+fn load_profiled_internal_special_graphics(
+    project: &Project,
+    layout: lm_project::GraphicsRomLayout,
+) -> Result<(Vec<IndexedTile>, Vec<IndexedTile>), String> {
+    let entries = layout
+        .split_pointer_planes
+        .map_or(layout.pointers.entries, |planes| planes.entries);
+    let (gfx33_file, gfx32_file, gfx33_layout, gfx32_layout) = if entries > 0x33 {
+        (0x33, 0x32, layout, layout)
+    } else {
+        let special = lm_profile::smw_us_v1_special_graphics_layouts(&project.rom)
+            .map_err(|error| format!("cannot resolve profiled special graphics: {error}"))?;
+        (0, 0, special.gfx33, special.gfx32)
+    };
+    let gfx33 = project
+        .load_decompressed_graphics_file(gfx33_file, gfx33_layout)
+        .map_err(|error| format!("cannot load profiled internal GFX33: {error}"))?;
+    let gfx33 = lm_graphics::decode_planar_tiles(&gfx33, 3)
+        .map_err(|error| format!("cannot decode profiled internal GFX33: {error}"))?;
+    let gfx32 = project
+        .load_decompressed_graphics_file(gfx32_file, gfx32_layout)
+        .map_err(|error| format!("cannot load profiled internal GFX32: {error}"))?;
+    let gfx32 = lm_graphics::decode_planar_tiles(&gfx32, 4)
+        .map_err(|error| format!("cannot decode profiled internal GFX32: {error}"))?;
+    Ok((gfx33, gfx32))
 }
 
 fn game_palette_header(level: u16, mut header: LegacyLevelHeader) -> LegacyLevelHeader {
@@ -1619,6 +1779,14 @@ pub(crate) fn load_layer3_tiles(
     let settings = lm_profile::load_smw_us_v1_expanded_level_settings(project, level)
         .map_err(|error| error.to_string())?
         .settings;
+    load_layer3_tiles_from_settings(project, &settings, graphics_layout)
+}
+
+fn load_layer3_tiles_from_settings(
+    project: &Project,
+    settings: &lm_level::ExpandedLevelSettingsRecord,
+    graphics_layout: lm_project::GraphicsRomLayout,
+) -> Result<Vec<IndexedTile>, String> {
     let files = [
         usize::from(settings.word(15).map_err(|error| error.to_string())? & 0x0fff),
         usize::from(settings.word(14).map_err(|error| error.to_string())? & 0x0fff),
@@ -1931,6 +2099,48 @@ mod tests {
             cache.tiles[INTERNAL_EXTERNAL_SPRITE_START..]
                 .iter()
                 .all(tile_is_blank)
+        );
+    }
+
+    #[test]
+    fn profiled_internal_graphics_cache_matches_pristine_level_banks() {
+        let bytes = crate::test_support::pristine_smw_us_rom_bytes();
+        let image = RomImage::from_bytes(bytes.clone()).unwrap();
+        let project = Project::new(image.clone());
+        let level = project
+            .load_level_slot(
+                0x105,
+                lm_profile::smw_us_v1_vanilla_level_layout(),
+                &lm_level::SpriteLengthTable::standard(),
+            )
+            .unwrap();
+        let expected =
+            load_pristine_internal_graphics_cache(bytes, 0x105, level.layer1.header, false)
+                .unwrap();
+        let mut profile = lm_profile::test_support::profile();
+        profile.mapper = lm_rom::Mapper::LoRom;
+        profile.level = lm_profile::smw_us_v1_vanilla_level_layout();
+        profile.graphics = lm_profile::smw_us_v1_vanilla_graphics_layout();
+        profile.sprite_lengths = lm_level::SpriteLengthTable::standard();
+        profile.expanded_settings = None;
+
+        let actual = load_profiled_internal_graphics_cache(image, &profile, 0x105, false).unwrap();
+        assert_eq!(actual.tiles.len(), INTERNAL_GRAPHICS_CACHE_TILES);
+        assert_eq!(
+            &actual.tiles[INTERNAL_SPRITE_START..INTERNAL_GFX33_START],
+            &expected.tiles[INTERNAL_SPRITE_START..INTERNAL_GFX33_START]
+        );
+        assert_eq!(
+            &actual.tiles[INTERNAL_GFX33_START..INTERNAL_AUXILIARY_ANIMATION_START],
+            &expected.tiles[INTERNAL_GFX33_START..INTERNAL_AUXILIARY_ANIMATION_START]
+        );
+        assert_eq!(
+            &actual.tiles[INTERNAL_GFX32_START..INTERNAL_EXANIMATION_START],
+            &expected.tiles[INTERNAL_GFX32_START..INTERNAL_EXANIMATION_START]
+        );
+        assert_eq!(
+            &actual.tiles[INTERNAL_LAYER3_START..INTERNAL_EXTERNAL_SPRITE_START],
+            &expected.tiles[INTERNAL_LAYER3_START..INTERNAL_EXTERNAL_SPRITE_START]
         );
     }
 

@@ -9,8 +9,9 @@ use crate::{
         apply_tile_palette_keyboard, apply_tile_palette_step, color_selection_marker,
         graphics_navigation_controls, graphics_transform_controls, paint_tile, palette_color,
         palette_pointer_action, shortcut_transform, take_graphics_character_shortcut,
-        take_graphics_refresh_shortcut, take_tile_grid_shortcut, take_tile_shift, tile_button,
-        tile_coordinate, tile_page_range, tile_pixel_pointer_action, tile_pointer_action,
+        take_graphics_refresh_shortcut, take_internal_graphics_cache_unlock,
+        take_tile_grid_shortcut, take_tile_shift, tile_button, tile_coordinate, tile_page_range,
+        tile_pixel_pointer_action, tile_pointer_action,
     },
     level_graphics_export::{
         LUNAR_MAGIC_ALL_GFX_FILE_SIZES, LevelGraphicsExportMode, current_level_graphics_files,
@@ -48,11 +49,16 @@ struct Workspace {
     slot: u16,
     image: lm_rom::RomImage,
     internal_header: usize,
+    level: Option<u16>,
+    internal_cache: Option<crate::vanilla_map16_preview::VanillaInternalGraphicsCache>,
+    internal_cache_error: Option<String>,
+    internal_cache_special_world: bool,
 }
 
 enum PendingLoad {
     Ownership {
         profiled: ProfiledControllerSnapshot,
+        level: Option<u16>,
     },
     RawImport {
         expected_revision: u64,
@@ -89,9 +95,44 @@ pub(crate) struct RomGraphicsEditor {
     graphics_import: graphics_import::GraphicsImportWorker,
     external_editor: external_edit::ExternalGraphicsEditor,
     external_tool_id: Option<String>,
+    internal_cache_unlocked: bool,
 }
 
 impl RomGraphicsEditor {
+    fn refresh_internal_cache(&mut self, level: Option<u16>, special_world_passed: bool) {
+        let Some(workspace) = self.workspace.as_mut() else {
+            return;
+        };
+        if workspace.level == level
+            && workspace.internal_cache_special_world == special_world_passed
+        {
+            return;
+        }
+        workspace.level = level;
+        workspace.internal_cache_special_world = special_world_passed;
+        let result = level
+            .ok_or_else(|| "no active level is available".to_owned())
+            .and_then(|level| {
+                crate::vanilla_map16_preview::load_profiled_internal_graphics_cache(
+                    workspace.image.clone(),
+                    &workspace.profile,
+                    level,
+                    special_world_passed,
+                )
+            });
+        match result {
+            Ok(cache) => {
+                workspace.internal_cache = Some(cache);
+                workspace.internal_cache_error = None;
+            }
+            Err(error) => {
+                workspace.internal_cache = None;
+                workspace.internal_cache_error = Some(error);
+                self.internal_cache_unlocked = false;
+            }
+        }
+    }
+
     pub(crate) fn show(
         &mut self,
         context: &egui::Context,
@@ -103,6 +144,7 @@ impl RomGraphicsEditor {
         if let Some(result) = self.loader.show(context) {
             self.finish_load(result, revision);
         }
+        self.refresh_internal_cache(app.current_level(), special_world_passed);
         if let Some(completion) = self.persistence.show(context) {
             self.io_status = Some(match completion.result {
                 Ok(()) => "Raw graphics file extracted successfully.".into(),
@@ -533,7 +575,25 @@ impl RomGraphicsEditor {
         let Some(workspace) = &self.workspace else {
             return;
         };
-        let tiles = &workspace.controller.graphics().tiles;
+        let diagnostic = self.internal_cache_unlocked;
+        let internal_cache_available = workspace.internal_cache.is_some();
+        let internal_cache_error = workspace.internal_cache_error.clone();
+        let tiles = if diagnostic {
+            let Some(cache) = &workspace.internal_cache else {
+                self.internal_cache_unlocked = false;
+                self.error = Some(
+                    workspace
+                        .internal_cache_error
+                        .clone()
+                        .unwrap_or_else(|| "internal graphics cache is unavailable".into()),
+                );
+                return;
+            };
+            ui.small("Internal GFX data — diagnostic working cache (read-only until owned-bank save routing is recovered)");
+            &cache.tiles
+        } else {
+            &workspace.controller.graphics().tiles
+        };
         let tile_count = tiles.len();
         self.selected_tile = self.selected_tile.min(tiles.len().saturating_sub(1));
         let page = tile_page_range(self.selected_tile, tile_count);
@@ -579,8 +639,11 @@ impl RomGraphicsEditor {
                                     }
                                 }
                                 Some(TilePointerAction::PasteSelected(index)) => {
-                                    let owner = workspace.controller.ownership().owner(index);
-                                    if edits_enabled
+                                    let owner = (!diagnostic)
+                                        .then(|| workspace.controller.ownership().owner(index))
+                                        .flatten();
+                                    if !diagnostic
+                                        && edits_enabled
                                         && ownership::is_editable(owner)
                                         && let Some(tile) = selected_tile.clone()
                                     {
@@ -588,8 +651,11 @@ impl RomGraphicsEditor {
                                     }
                                 }
                                 Some(TilePointerAction::PasteClipboard(index)) => {
-                                    let owner = workspace.controller.ownership().owner(index);
-                                    if edits_enabled && ownership::is_editable(owner) {
+                                    let owner = (!diagnostic)
+                                        .then(|| workspace.controller.ownership().owner(index))
+                                        .flatten();
+                                    if !diagnostic && edits_enabled && ownership::is_editable(owner)
+                                    {
                                         self.clipboard_paste_target = Some(index);
                                         ui.ctx()
                                             .send_viewport_cmd(egui::ViewportCommand::RequestPaste);
@@ -609,11 +675,15 @@ impl RomGraphicsEditor {
         {
             paste_status = Some(format!("Pasted selected tile over tile 0x{index:X}."));
         }
-        let selected_owner = self
-            .workspace
-            .as_ref()
-            .and_then(|workspace| workspace.controller.ownership().owner(self.selected_tile));
-        let tile_shift_enabled = edits_enabled && ownership::is_editable(selected_owner);
+        let selected_owner = (!diagnostic)
+            .then(|| {
+                self.workspace.as_ref().and_then(|workspace| {
+                    workspace.controller.ownership().owner(self.selected_tile)
+                })
+            })
+            .flatten();
+        let tile_shift_enabled =
+            !diagnostic && edits_enabled && ownership::is_editable(selected_owner);
         let navigation_status = if let Some(navigation) = page_control {
             apply_tile_navigation(&mut self.selected_tile, &responses, tile_count, navigation)
         } else {
@@ -636,14 +706,18 @@ impl RomGraphicsEditor {
                 row_count,
             )
         };
-        let hovered_owner = responses
-            .iter()
-            .position(egui::Response::hovered)
-            .and_then(|offset| {
-                self.workspace.as_ref().and_then(|workspace| {
-                    workspace.controller.ownership().owner(page_start + offset)
-                })
-            });
+        let hovered_owner = (!diagnostic)
+            .then(|| {
+                responses
+                    .iter()
+                    .position(egui::Response::hovered)
+                    .and_then(|offset| {
+                        self.workspace.as_ref().and_then(|workspace| {
+                            workspace.controller.ownership().owner(page_start + offset)
+                        })
+                    })
+            })
+            .flatten();
         self.status.update_tile_hover(
             &responses,
             page_start,
@@ -654,6 +728,17 @@ impl RomGraphicsEditor {
         if let Some(status) = navigation_status.or(palette_status) {
             self.status.set(status);
         }
+        if take_internal_graphics_cache_unlock(ui, self.selected_tile, &responses) {
+            if internal_cache_available {
+                self.internal_cache_unlocked = true;
+                self.status.set("Internal GFX data viewing unlocked.");
+            } else {
+                self.error = Some(
+                    internal_cache_error
+                        .unwrap_or_else(|| "internal graphics cache is unavailable".into()),
+                );
+            }
+        }
         if let Some(index) = selected_by_pointer {
             self.status.select_tile(index);
         }
@@ -663,15 +748,18 @@ impl RomGraphicsEditor {
         if copied {
             self.status.set("Copied tile to clipboard.");
         }
-        let owner = self
-            .workspace
-            .as_ref()
-            .and_then(|workspace| workspace.controller.ownership().owner(self.selected_tile));
+        let owner = (!diagnostic)
+            .then(|| {
+                self.workspace.as_ref().and_then(|workspace| {
+                    workspace.controller.ownership().owner(self.selected_tile)
+                })
+            })
+            .flatten();
         self.pending_shift = take_tile_shift(
             ui,
             self.selected_tile,
             &responses,
-            edits_enabled && ownership::is_editable(owner),
+            !diagnostic && edits_enabled && ownership::is_editable(owner),
         );
         self.pending_character_shortcut =
             take_graphics_character_shortcut(ui, self.selected_tile, &responses);
@@ -822,7 +910,8 @@ impl RomGraphicsEditor {
         stale: bool,
         pasted: Option<&str>,
     ) {
-        if let Some(text) = pasted {
+        let diagnostic = self.internal_cache_unlocked;
+        if let Some(text) = pasted.filter(|_| !diagnostic) {
             let target = self
                 .clipboard_paste_target
                 .take()
@@ -846,27 +935,40 @@ impl RomGraphicsEditor {
                 }
             }
         }
-        let has_tile = self
-            .workspace
-            .as_ref()
-            .and_then(|w| w.controller.graphics().tiles.get(self.selected_tile))
-            .is_some();
+        let selected = self.workspace.as_ref().and_then(|workspace| {
+            if diagnostic {
+                workspace
+                    .internal_cache
+                    .as_ref()
+                    .and_then(|cache| cache.tiles.get(self.selected_tile))
+            } else {
+                workspace
+                    .controller
+                    .graphics()
+                    .tiles
+                    .get(self.selected_tile)
+            }
+        });
+        let has_tile = selected.is_some();
         if !has_tile {
             ui.label("No graphics tiles");
             return;
         }
         ui.label(format!("Tile {:03X}", self.selected_tile));
-        let owner = self
-            .workspace
-            .as_ref()
-            .and_then(|workspace| workspace.controller.ownership().owner(self.selected_tile));
-        let editable = ownership::show(ui, owner);
-        let Some(mut tile) = self
-            .workspace
-            .as_ref()
-            .and_then(|w| w.controller.graphics().tiles.get(self.selected_tile))
-            .cloned()
-        else {
+        let owner = (!diagnostic)
+            .then(|| {
+                self.workspace.as_ref().and_then(|workspace| {
+                    workspace.controller.ownership().owner(self.selected_tile)
+                })
+            })
+            .flatten();
+        let editable = if diagnostic {
+            ui.label("Diagnostic cache tile; saving this bank is not yet enabled.");
+            false
+        } else {
+            ownership::show(ui, owner)
+        };
+        let Some(mut tile) = selected.cloned() else {
             ui.label("No graphics tiles");
             return;
         };

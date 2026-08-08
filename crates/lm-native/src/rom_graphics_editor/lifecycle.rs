@@ -34,7 +34,12 @@ impl RomGraphicsEditor {
             "graphics ownership evidence",
         );
         match self.loader.start(vec![request]) {
-            Ok(()) => self.pending_load = Some(PendingLoad::Ownership { profiled }),
+            Ok(()) => {
+                self.pending_load = Some(PendingLoad::Ownership {
+                    profiled,
+                    level: app.current_level(),
+                })
+            }
             Err(error) => self.error = Some(error),
         }
     }
@@ -69,8 +74,8 @@ impl RomGraphicsEditor {
     pub(super) fn finish_load(&mut self, result: Result<LoadedDocument, String>, revision: u64) {
         let pending = self.pending_load.take();
         match pending {
-            Some(PendingLoad::Ownership { profiled }) => {
-                match result.and_then(|loaded| decode_loaded(profiled, loaded, revision)) {
+            Some(PendingLoad::Ownership { profiled, level }) => {
+                match result.and_then(|loaded| decode_loaded(profiled, level, loaded, revision)) {
                     Ok(workspace) => {
                         self.workspace = Some(workspace);
                         self.selected_tile = 0;
@@ -83,6 +88,7 @@ impl RomGraphicsEditor {
                             crate::graphics_painter::TilePixelPointerCapture::None;
                         self.search_start.clear();
                         self.search_end.clear();
+                        self.internal_cache_unlocked = false;
                     }
                     Err(error) => self.error = Some(error),
                 }
@@ -155,6 +161,7 @@ impl RomGraphicsEditor {
         self.clipboard_paste_target = None;
         self.pixel_pointer_capture = crate::graphics_painter::TilePixelPointerCapture::None;
         self.status = Default::default();
+        self.internal_cache_unlocked = false;
     }
 
     pub(crate) fn commit_succeeded(&mut self) {
@@ -164,6 +171,7 @@ impl RomGraphicsEditor {
 
 fn decode_loaded(
     profiled: lm_app::ProfiledControllerSnapshot,
+    level: Option<u16>,
     loaded: LoadedDocument,
     current_revision: u64,
 ) -> Result<Workspace, String> {
@@ -201,6 +209,18 @@ fn decode_loaded(
     }
     let image = RomImage::from_bytes(profiled.snapshot.rom_bytes.clone())
         .map_err(|error| error.to_string())?;
+    let (internal_cache, internal_cache_error) = match level {
+        Some(level) => match crate::vanilla_map16_preview::load_profiled_internal_graphics_cache(
+            image.clone(),
+            &profiled.profile,
+            level,
+            false,
+        ) {
+            Ok(cache) => (Some(cache), None),
+            Err(error) => (None, Some(error)),
+        },
+        None => (None, Some("no active level is available".into())),
+    };
     Ok(Workspace {
         controller,
         profile: profiled.profile,
@@ -208,5 +228,9 @@ fn decode_loaded(
         slot,
         image,
         internal_header: profiled.snapshot.identity.internal_header_offset,
+        level,
+        internal_cache,
+        internal_cache_error,
+        internal_cache_special_world: false,
     })
 }
