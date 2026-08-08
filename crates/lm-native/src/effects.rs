@@ -307,6 +307,30 @@ mod tests {
         bytes
     }
 
+    fn lifecycle_variant_rom(
+        title: &[u8; 21],
+        region: u8,
+        map_mode: u8,
+        headered: bool,
+        corrupt_checksum: bool,
+    ) -> Vec<u8> {
+        let mut logical = vec![0; 0x8000];
+        logical[0x7fc0..0x7fd5].copy_from_slice(title);
+        logical[0x7fd5] = map_mode;
+        logical[0x7fd9] = region;
+        let checksum = lm_rom::compute_snes_checksum(&logical, 0x7fdc).unwrap();
+        logical[0x7fdc..0x7fe0].copy_from_slice(&checksum.encoded());
+        if corrupt_checksum {
+            logical[0] ^= 1;
+        }
+        if !headered {
+            return logical;
+        }
+        let mut physical = vec![0xa5; lm_rom::COPIER_HEADER_LEN];
+        physical.extend_from_slice(&logical);
+        physical
+    }
+
     fn open_request(app: &mut AppState) -> u64 {
         app.dispatch(Command::Open)
             .unwrap()
@@ -492,6 +516,78 @@ mod tests {
         assert!(!state.quit_requested);
         assert!(state.save_then.is_none());
         assert!(state.error.is_some());
+    }
+
+    #[test]
+    fn confirmed_save_close_covers_all_forty_eight_supported_identity_variants() {
+        let games = [
+            (b"SUPER MARIOWORLD     ", 0),
+            (b"SUPER MARIOWORLD     ", 1),
+            (b"ALL_STARS + WORLD    ", 1),
+        ];
+        let map_modes = [0x20, 0x30, 0x23, 0x32];
+        let context = egui::Context::default();
+        let mut completed = 0;
+
+        for (title, region) in games {
+            for map_mode in map_modes {
+                for headered in [false, true] {
+                    for corrupt_checksum in [false, true] {
+                        let path = path();
+                        let original = lifecycle_variant_rom(
+                            title,
+                            region,
+                            map_mode,
+                            headered,
+                            corrupt_checksum,
+                        );
+                        fs::write(&path, &original).unwrap();
+                        let mut app = AppState::default();
+                        app.load_rom_at(original, Some(path.clone())).unwrap();
+                        app.dispatch(Command::CommitRomWrites {
+                            expected_revision: app.project_revision(),
+                            description: "cross-variant dirty close".into(),
+                            writes: vec![RomWrite {
+                                offset: 0x10,
+                                bytes: vec![0x66],
+                            }],
+                        })
+                        .unwrap();
+                        let expected = app.project().unwrap().save_snapshot();
+                        let expected_prefix = app
+                            .project()
+                            .unwrap()
+                            .rom
+                            .copier_header_bytes()
+                            .map(<[u8]>::to_vec);
+
+                        let mut state = EffectState::default();
+                        state.save_before_confirmation_action(
+                            &mut app,
+                            &context,
+                            Confirmation::DiscardAndClose { quit_after: false },
+                        );
+                        assert!(app.project().is_some());
+                        let completion = state.persistence.wait_for_test();
+                        state.complete_persistence(&context, &mut app, completion);
+
+                        assert!(app.project().is_none());
+                        assert!(!state.quit_requested);
+                        assert_eq!(fs::read(&path).unwrap(), expected);
+                        assert_eq!(
+                            lm_rom::RomImage::from_bytes(expected)
+                                .unwrap()
+                                .copier_header_bytes()
+                                .map(<[u8]>::to_vec),
+                            expected_prefix
+                        );
+                        fs::remove_file(path).unwrap();
+                        completed += 1;
+                    }
+                }
+            }
+        }
+        assert_eq!(completed, 48);
     }
 
     #[test]
