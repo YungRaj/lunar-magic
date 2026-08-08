@@ -12,7 +12,8 @@ use crate::{
 use lm_level::ExpandedOverworldSettings;
 use lm_project::{PatchFixup, PatchFixupEncoding, PatchPayload, RelocatablePatchPlan};
 use lm_rats::{AllocationPolicy, HeaderError, RatsBlock, parse_at};
-use lm_rom::{Mapper, RomError, snes_to_pc};
+use lm_rom::{Mapper, RomError, pc_to_snes, snes_to_pc};
+use sha2::{Digest, Sha256};
 
 pub const SMW_US_V1_EXPANDED_SETTINGS_ALLOCATION_SEARCH_START: usize = 0x08_7ff8;
 pub const SMW_US_V1_EXPANDED_SETTINGS_ALLOCATION_SEARCH_END: usize = 0x10_0000;
@@ -20,6 +21,9 @@ pub const SMW_US_V1_GFX_EXPANDED_SETTINGS_ALLOCATION_START: usize = 0x08_0028;
 pub const SMW_US_V1_GFX_EXPANDED_SETTINGS_ALLOCATION_END: usize = 0x08_6e30;
 pub const SMW_US_V1_CHECKSUM_FIELD: usize = 0x00_7fdc;
 pub const SMW_US_V1_EXPANDED_SETTINGS_GENERATION_102_MARKER: [u8; 4] = [0x4c, 0x4d, 0x02, 0x01];
+pub const SMW_US_V1_LEGACY_GRAPHICS_GENERATION_101_MARKER_OFFSET: usize = 0x06_ff37;
+pub const SMW_US_V1_LEGACY_GRAPHICS_GENERATION_101_MARKER: [u8; 4] = [0x4c, 0x4d, 0x01, 0x01];
+pub const SMW_US_V1_EXPANDED_SETTINGS_GENERATION_101_ALLOCATION_LEN: usize = 0x6d00;
 
 const GENERATION_102_BLOCK_220_HEX: &str =
     include_str!("assets/expanded_settings_runtime_generation_102_block_220.hex");
@@ -29,6 +33,41 @@ pub struct SmwUsV1ExpandedSettingsGeneration102Migration {
     pub plan: RelocatablePatchPlan,
     pub previous_allocation: RatsBlock,
 }
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SmwUsV1ExpandedSettingsGeneration101Migration {
+    pub plan: RelocatablePatchPlan,
+    pub previous_allocation: RatsBlock,
+}
+
+#[derive(Debug)]
+pub enum SmwUsV1ExpandedSettingsGeneration101MigrationError {
+    CurrentMarkerPresent,
+    LegacyMarkerMismatch,
+    InvalidRuntimePointer,
+    RuntimeAddress(RomError),
+    RuntimeBeforeHeader(usize),
+    RuntimeHeader(HeaderError),
+    RuntimeOwnership { expected: usize, actual: usize },
+    RuntimeLength(usize),
+    NonFillPrefix { offset: usize, value: u8 },
+    SourceRange { offset: usize, len: usize },
+    RuntimeOperandMismatch { offset: usize },
+    RuntimeDigestMismatch { offset: usize },
+    RecordIndex(usize),
+    Plan(ExpandedSettingsInstallPlanError),
+}
+
+impl std::fmt::Display for SmwUsV1ExpandedSettingsGeneration101MigrationError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            formatter,
+            "cannot migrate SMW-US expanded settings generation 1.01: {self:?}"
+        )
+    }
+}
+
+impl std::error::Error for SmwUsV1ExpandedSettingsGeneration101MigrationError {}
 
 #[derive(Debug)]
 pub enum SmwUsV1ExpandedSettingsGeneration102MigrationError {
@@ -246,6 +285,294 @@ fn smw_us_v1_expanded_settings_installation_plan_for_range(
         }],
         writes,
     })
+}
+
+const GENERATION_101_RUNTIME_DIGESTS: &[(usize, usize, &str)] = &[
+    (
+        0x07_f160,
+        0x90,
+        "fee419db30673bec07babf53f20dffd1f33228fa48db5af911f2fe6a5f938179",
+    ),
+    (
+        0x07_f780,
+        0x60,
+        "287c3f8c3514134c1255c69f35ac9b4ef0ead40a362ab475861ade624200a86c",
+    ),
+    (
+        0x07_f7f0,
+        0x50,
+        "e3eacb98542238a94e7198eba122a4ebc18821baa751d20f3cdad52af5c22ce0",
+    ),
+    (
+        0x07_f840,
+        0x50,
+        "d1f7a66f04e461b49a78ad037c148270c8d20b6f09fd7e25aec9ba007a4612ec",
+    ),
+    (
+        0x07_f8a0,
+        0x50,
+        "ed3070cd141a979c956d8e09f2f129f79e0fc510a8f32dc264103458908aa6ef",
+    ),
+    (
+        0x07_f900,
+        0x70,
+        "ca9913250b771ad0ee144afe03ec0618604103ba9335aaedfee45f83dd30d95c",
+    ),
+    (
+        0x07_f9c0,
+        0x20,
+        "af9613760f72635fbdb44a5a0a63c39f12af30f950a6ee5c971be188e89c4051",
+    ),
+    (
+        0x07_f9e0,
+        0xd0,
+        "86ff85227f7cc42cc3293ebdeeb10d8660b51eb429dd1d6c999ddf14cb59db73",
+    ),
+    (
+        0x07_fab0,
+        0x40,
+        "8667e718294e9e0df1d30600ba3eeb201f764aad2dad72748643e4a285e1d1f7",
+    ),
+    (
+        0x07_faf0,
+        0x30,
+        "80a76a18acf8cb64fec3a659ffc4bab4a87cd9a6fde4dab2161a8751d136c9d2",
+    ),
+    (
+        0x07_fb20,
+        0x220,
+        "af71f904a725ecb2d9bae2414f79a793539f38f39a6bbf14da7be38a8b49f683",
+    ),
+    (
+        0x07_fd80,
+        0x150,
+        "77071fc978963dce5058c795643c95c195d0d2506c5f02ff38c09e4c8d6ec517",
+    ),
+    (
+        0x06_f0f0,
+        0x10,
+        "6e14aebb5d4519a9b463173ad662ad446094195b5d17e64940072208597c6704",
+    ),
+    (
+        0x06_a4c1,
+        3,
+        "282dac78870e292d4a8db35f86cba1d2468179e95ef4045002e7eb565962b284",
+    ),
+    (
+        0x06_c206,
+        3,
+        "282dac78870e292d4a8db35f86cba1d2468179e95ef4045002e7eb565962b284",
+    ),
+    (
+        0x06_ce06,
+        3,
+        "282dac78870e292d4a8db35f86cba1d2468179e95ef4045002e7eb565962b284",
+    ),
+    (
+        0x06_da06,
+        3,
+        "282dac78870e292d4a8db35f86cba1d2468179e95ef4045002e7eb565962b284",
+    ),
+    (
+        0x06_e906,
+        3,
+        "282dac78870e292d4a8db35f86cba1d2468179e95ef4045002e7eb565962b284",
+    ),
+    (
+        0x00_2a50,
+        4,
+        "77e65f2e015f4e3d512204af098e8ce54392173f61fa1036e372e8a68e2f31f1",
+    ),
+    (
+        0x02_83b8,
+        5,
+        "04b1a6c4a6e75c3e9128c872d5da0f64eb4c6facdde2e72e31cb2cd6d212f468",
+    ),
+    (
+        0x00_1471,
+        5,
+        "35c62b46696bd0dd15b898a71cfa81d8133055f7e79a79e77e2ff963aab04441",
+    ),
+    (
+        0x00_2140,
+        4,
+        "3673d6ba717acb4a14679e71ffe5e05a858a343a544d933997dd7f02537514bf",
+    ),
+    (
+        0x02_1dfe,
+        3,
+        "927c8242d29ff105e9ae693e95258ddb23d81d63165b25b5a5439487c55dabd8",
+    ),
+];
+
+/// Authenticates and builds the pre-Layer-3 generation-1.01 expanded-header migration.
+///
+/// Lunar Magic 2.22 owns only `$6D00`: a `$2D00` fill prefix followed by 512 records. The current
+/// installer grows that model to `$6E00`, preserving and normalizing the ordinary records while
+/// initializing the eight later special slots from their recovered defaults.
+pub fn smw_us_v1_expanded_settings_generation_101_migration(
+    bytes: &[u8],
+) -> Result<
+    SmwUsV1ExpandedSettingsGeneration101Migration,
+    SmwUsV1ExpandedSettingsGeneration101MigrationError,
+> {
+    let current_marker = bytes.get(
+        SMW_US_V1_EXPANDED_SETTINGS_RUNTIME_MARKER_OFFSET
+            ..SMW_US_V1_EXPANDED_SETTINGS_RUNTIME_MARKER_OFFSET + 4,
+    );
+    if current_marker != Some(&[0xff; 4]) {
+        return Err(SmwUsV1ExpandedSettingsGeneration101MigrationError::CurrentMarkerPresent);
+    }
+    if bytes.get(
+        SMW_US_V1_LEGACY_GRAPHICS_GENERATION_101_MARKER_OFFSET
+            ..SMW_US_V1_LEGACY_GRAPHICS_GENERATION_101_MARKER_OFFSET + 4,
+    ) != Some(&SMW_US_V1_LEGACY_GRAPHICS_GENERATION_101_MARKER)
+    {
+        return Err(SmwUsV1ExpandedSettingsGeneration101MigrationError::LegacyMarkerMismatch);
+    }
+
+    let operand_offset = 0x07_f840 + 0x33;
+    let operand = bytes
+        .get(operand_offset..operand_offset + 3)
+        .ok_or(SmwUsV1ExpandedSettingsGeneration101MigrationError::InvalidRuntimePointer)?;
+    let allocation_base_snes = u32::from_le_bytes([operand[0], operand[1], operand[2], 0]);
+    let payload_offset = snes_to_pc(Mapper::LoRom, allocation_base_snes)
+        .map_err(SmwUsV1ExpandedSettingsGeneration101MigrationError::RuntimeAddress)?;
+    let header_offset = payload_offset.checked_sub(8).ok_or(
+        SmwUsV1ExpandedSettingsGeneration101MigrationError::RuntimeBeforeHeader(payload_offset),
+    )?;
+    let previous_allocation = parse_at(bytes, header_offset)
+        .map_err(SmwUsV1ExpandedSettingsGeneration101MigrationError::RuntimeHeader)?;
+    if previous_allocation.payload.start != payload_offset {
+        return Err(
+            SmwUsV1ExpandedSettingsGeneration101MigrationError::RuntimeOwnership {
+                expected: payload_offset,
+                actual: previous_allocation.payload.start,
+            },
+        );
+    }
+    if previous_allocation.payload.len()
+        != SMW_US_V1_EXPANDED_SETTINGS_GENERATION_101_ALLOCATION_LEN
+    {
+        return Err(
+            SmwUsV1ExpandedSettingsGeneration101MigrationError::RuntimeLength(
+                previous_allocation.payload.len(),
+            ),
+        );
+    }
+    let legacy = bytes.get(previous_allocation.payload.clone()).ok_or(
+        SmwUsV1ExpandedSettingsGeneration101MigrationError::SourceRange {
+            offset: previous_allocation.payload.start,
+            len: previous_allocation.payload.len(),
+        },
+    )?;
+    if let Some((offset, value)) = legacy[..crate::SMW_US_V1_EXPANDED_SETTINGS_PREFIX_LEN]
+        .iter()
+        .copied()
+        .enumerate()
+        .find(|(_, value)| *value != 0xff)
+    {
+        return Err(
+            SmwUsV1ExpandedSettingsGeneration101MigrationError::NonFillPrefix { offset, value },
+        );
+    }
+
+    authenticate_generation_101_runtime(bytes, payload_offset)?;
+
+    let mut allocation = SmwUsV1ExpandedSettingsAllocation::new_default();
+    for (index, encoded) in legacy[crate::SMW_US_V1_EXPANDED_SETTINGS_PREFIX_LEN..]
+        .chunks_exact(lm_level::ExpandedLevelSettingsRecord::ENCODED_LEN)
+        .enumerate()
+    {
+        let mut bytes = [0; lm_level::ExpandedLevelSettingsRecord::ENCODED_LEN];
+        bytes.copy_from_slice(encoded);
+        let mut record = lm_level::ExpandedLevelSettingsRecord::from_encoded(bytes);
+        smw_us_v1_upgrade_expanded_settings_record(
+            &mut record,
+            SmwUsV1ExpandedSettingsRecordGeneration::LegacyReferenceLayout,
+        );
+        allocation
+            .set_record(index, record)
+            .map_err(|_| SmwUsV1ExpandedSettingsGeneration101MigrationError::RecordIndex(index))?;
+    }
+
+    let mut plan = smw_us_v1_expanded_settings_installation_plan()
+        .map_err(SmwUsV1ExpandedSettingsGeneration101MigrationError::Plan)?;
+    plan.description = "migrate SMW US expanded settings generation 1.01".into();
+    plan.payloads[0].bytes = allocation.encode();
+    for write in &mut plan.writes {
+        let source = bytes
+            .get(write.offset..write.offset + write.expected.len())
+            .ok_or(
+                SmwUsV1ExpandedSettingsGeneration101MigrationError::SourceRange {
+                    offset: write.offset,
+                    len: write.expected.len(),
+                },
+            )?;
+        write.expected.copy_from_slice(source);
+    }
+    Ok(SmwUsV1ExpandedSettingsGeneration101Migration {
+        plan,
+        previous_allocation,
+    })
+}
+
+fn authenticate_generation_101_runtime(
+    bytes: &[u8],
+    payload_offset: usize,
+) -> Result<(), SmwUsV1ExpandedSettingsGeneration101MigrationError> {
+    let base = pc_to_snes(Mapper::LoRom, payload_offset)
+        .map_err(SmwUsV1ExpandedSettingsGeneration101MigrationError::RuntimeAddress)?
+        & 0x7f_ffff;
+    let table = pc_to_snes(
+        Mapper::LoRom,
+        payload_offset + crate::SMW_US_V1_EXPANDED_SETTINGS_PREFIX_LEN,
+    )
+    .map_err(SmwUsV1ExpandedSettingsGeneration101MigrationError::RuntimeAddress)?
+        & 0x7f_ffff;
+    for (offset, expected) in [
+        (0x07_f7f0 + 0x0f, &table.to_le_bytes()[..3]),
+        (0x07_f7f0 + 0x1a, &(table + 2).to_le_bytes()[..2]),
+        (0x07_f7f0 + 0x23, &table.to_le_bytes()[2..3]),
+        (0x07_f840 + 0x33, &base.to_le_bytes()[..3]),
+        (0x07_f900 + 0x37, &base.to_le_bytes()[..3]),
+        (0x07_f900 + 0x3d, &(base + 1).to_le_bytes()[..3]),
+    ] {
+        if bytes.get(offset..offset + expected.len()) != Some(expected) {
+            return Err(
+                SmwUsV1ExpandedSettingsGeneration101MigrationError::RuntimeOperandMismatch {
+                    offset,
+                },
+            );
+        }
+    }
+    for &(offset, len, expected) in GENERATION_101_RUNTIME_DIGESTS {
+        let mut range = bytes
+            .get(offset..offset + len)
+            .ok_or(SmwUsV1ExpandedSettingsGeneration101MigrationError::SourceRange { offset, len })?
+            .to_vec();
+        match offset {
+            0x07_f7f0 => {
+                range[0x0f..0x12].fill(0);
+                range[0x1a..0x1c].fill(0);
+                range[0x23] = 0;
+            }
+            0x07_f840 => range[0x33..0x36].fill(0),
+            0x07_f900 => {
+                range[0x37..0x3a].fill(0);
+                range[0x3d..0x40].fill(0);
+            }
+            _ => {}
+        }
+        if format!("{:x}", Sha256::digest(&range)) != expected {
+            return Err(
+                SmwUsV1ExpandedSettingsGeneration101MigrationError::RuntimeDigestMismatch {
+                    offset,
+                },
+            );
+        }
+    }
+    Ok(())
 }
 
 /// Authenticates and builds Lunar Magic's generation-1.02 whole-table migration.
@@ -731,5 +1058,58 @@ mod tests {
         );
         project.undo().unwrap();
         assert_eq!(project.rom.as_file_bytes(), before);
+    }
+
+    #[test]
+    fn external_generation_101_oracles_migrate_when_supplied() {
+        let Ok(paths) = std::env::var("LM_EXPANDED_SETTINGS_101_ROMS") else {
+            return;
+        };
+        for path in std::env::split_paths(&paths) {
+            let image = RomImage::from_bytes(fs::read(&path).unwrap()).unwrap();
+            let before = image.as_file_bytes().to_vec();
+            let migration =
+                smw_us_v1_expanded_settings_generation_101_migration(image.logical_bytes())
+                    .unwrap();
+            assert_eq!(migration.previous_allocation.payload.len(), 0x6d00);
+            let allocation =
+                SmwUsV1ExpandedSettingsAllocation::decode(&migration.plan.payloads[0].bytes)
+                    .unwrap();
+            assert_eq!(allocation.records().len(), 0x208);
+            assert_eq!(
+                allocation.record(0x200).unwrap(),
+                &crate::smw_us_v1_default_special_expanded_settings_record()
+            );
+
+            let mut corrupt = image.logical_bytes().to_vec();
+            corrupt[0x07_fd80 + 7] ^= 1;
+            assert!(matches!(
+                smw_us_v1_expanded_settings_generation_101_migration(&corrupt),
+                Err(
+                    SmwUsV1ExpandedSettingsGeneration101MigrationError::RuntimeDigestMismatch {
+                        offset: 0x07_fd80,
+                    }
+                )
+            ));
+
+            let mut project = Project::new(image);
+            project
+                .replace_relocatable_patch(
+                    &migration.plan,
+                    &RatsOwnershipManifest {
+                        owned: vec![migration.previous_allocation],
+                        retained: Vec::new(),
+                    },
+                    0xff,
+                )
+                .unwrap();
+            assert!(
+                crate::smw_us_v1_installed_expanded_settings_layout(&project)
+                    .unwrap()
+                    .is_some()
+            );
+            project.undo().unwrap();
+            assert_eq!(project.rom.as_file_bytes(), before, "{}", path.display());
+        }
     }
 }

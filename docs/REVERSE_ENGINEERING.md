@@ -2109,7 +2109,20 @@ boundary, normalizes reference words 2–10 except word 8 across only the 512 st
 preserves all eight trailing records byte-for-byte, reclaims the old owner only in staging, installs
 the current runtime/table, repairs the checksum, semantically reopens, and records one exact
 Undo/Redo operation. Corrupt marker, runtime, pointer, owner, length, or fill-prefix evidence rejects
-before mutation. Earlier `$0100/$0101` whole-ROM families remain evidence-gated work.
+before mutation.
+
+The older generation-1.01 boundary is now independently authenticated from Lunar Magic 2.22.
+Unlike 2.30 and later, it publishes no marker at `$07F15C`; its companion graphics-table marker is
+`4C 4D 01 01` at `$06FF37`, and its expanded-header RATS owner is only `$6D00`: `$2D00` fill plus
+512 records, with no Layer 3 special-record tail. Two real 2.22 saves prove both payload `$0801E0`
+(SNES `$1081E0`) and a forced relocated payload `$088000` (SNES `$118000`). Only six operand
+groups change: the record-table long address, its low-word-plus-two/bank publications, allocation
+base, and allocation base plus one. Rust derives and verifies all six for the live owner, masks only
+those operands for SHA-256 authentication of the complete immutable runtime/hook family, normalizes
+the 512 records with the recovered reference-only pass, initializes the eight current special slots,
+and atomically replaces the old owner with current `$6E00` storage. Corruption and byte-exact undo
+are tested against both placements. The still-earlier pre-expansion `$0100` record-layout family
+remains evidence-gated work.
 
 Instruction-level inspection of `CheckLegacyGraphicsTablePatchState` (`004609D0`) and
 `CheckExpandedLevelHeaderPatchState` (`00460A30`) also recovered the previously omitted generation

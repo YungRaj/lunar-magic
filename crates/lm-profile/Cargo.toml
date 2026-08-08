@@ -19,6 +19,7 @@ lm-rats = { path = "../lm-rats" }
 lm-rom = { path = "../lm-rom" }
 lm-title = { path = "../lm-title" }
 lm-snes = { path = "../lm-snes" }
+sha2 = "0.10.9"
 
 [dev-dependencies]
 base64 = "0.22.1"

@@ -1748,6 +1748,14 @@ fixed-write, checksum, or reopen failure publishes nothing and successful migrat
 byte-exact undoable revision. Synthetic corruption tests and an externally supplied Lunar Magic
 2.42-created ROM exercise the same migration function; the external ROM remains outside the
 repository.
+Generation 1.01 is a separate pre-Layer-3 route rather than an alias for 1.02. It requires the
+legacy graphics marker at `$06FF37`, an absent current marker, an exact `$6D00` owner, and SHA-256
+authentication of all twelve runtime destinations plus every base helper, pointer publication, and
+hook after canonicalizing only six proven relocation operand groups. The live base and record-table
+addresses are rederived through LoROM and checked before hashing. Its 512 records receive the
+reference-only conversion; a current default allocation supplies the eight historically absent
+special slots. Both the original `$0801E0` placement and a forced `$088000` relocation from real
+Lunar Magic 2.22 saves pass replacement, checksum/reopen, and exact undo.
 The cross-platform application reaches the same boundary through
 `revision-patch-install-file SPEC`. Its bounded `LMRPINS1` specification supplies a template path
 relative to the specification plus hexadecimal `search-start`, `search-end`, and `fill` fields.
