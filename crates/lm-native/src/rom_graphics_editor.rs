@@ -25,7 +25,9 @@ use lm_app::{
     AppState, Command, GraphicsController, GraphicsControllerEdit, ProfiledControllerSnapshot,
     RevisionProfile,
 };
-use lm_graphics::{GraphicsTileChange, IndexedTile, PaletteInterchangeFile, TileShift};
+use lm_graphics::{
+    ExAnimationFeature, GraphicsTileChange, IndexedTile, PaletteInterchangeFile, TileShift,
+};
 
 mod commit;
 mod external_edit;
@@ -602,6 +604,40 @@ impl RomGraphicsEditor {
             return;
         };
         let diagnostic = self.internal_cache_unlocked;
+        let diagnostic_paste_context = diagnostic.then(|| {
+            let assignments = workspace.level.and_then(|level| {
+                current_level_graphics_assignments(
+                    &workspace.image,
+                    &workspace.profile,
+                    level,
+                    workspace.internal_cache_special_world,
+                )
+                .ok()
+            });
+            let extended_foreground_background = assignments
+                .as_ref()
+                .is_some_and(|assignments| assignments.super_graphics_bypass_enabled);
+            let vanilla_animation_enabled = workspace
+                .level
+                .and_then(|level| {
+                    lm_project::Project::new(workspace.image.clone())
+                        .load_installed_exanimation_features(
+                            usize::from(level),
+                            workspace.profile.exanimation_feature_installation,
+                        )
+                        .ok()
+                })
+                .map_or(true, |features| {
+                    features
+                        .options
+                        .enabled(ExAnimationFeature::VanillaAnimation)
+                });
+            DiagnosticSheetPasteContext {
+                extended_foreground_background,
+                vanilla_animation_enabled,
+                special_world_passed: workspace.internal_cache_special_world,
+            }
+        });
         let internal_cache_available = workspace.internal_cache.is_some();
         let internal_cache_error = workspace.internal_cache_error.clone();
         let tiles = if diagnostic {
@@ -669,7 +705,12 @@ impl RomGraphicsEditor {
                                         .then(|| workspace.controller.ownership().owner(index))
                                         .flatten();
                                     if edits_enabled
-                                        && ((diagnostic && diagnostic_sheet_paste_editable(index))
+                                        && ((diagnostic
+                                            && diagnostic_sheet_paste_editable(
+                                                index,
+                                                diagnostic_paste_context
+                                                    .expect("diagnostic paste context exists"),
+                                            ))
                                             || (!diagnostic && ownership::is_editable(owner)))
                                         && let Some(tile) = selected_tile.clone()
                                     {
@@ -681,7 +722,12 @@ impl RomGraphicsEditor {
                                         .then(|| workspace.controller.ownership().owner(index))
                                         .flatten();
                                     if edits_enabled
-                                        && ((diagnostic && diagnostic_sheet_paste_editable(index))
+                                        && ((diagnostic
+                                            && diagnostic_sheet_paste_editable(
+                                                index,
+                                                diagnostic_paste_context
+                                                    .expect("diagnostic paste context exists"),
+                                            ))
                                             || (!diagnostic && ownership::is_editable(owner)))
                                     {
                                         self.clipboard_paste_target = Some(index);
@@ -1200,8 +1246,36 @@ fn replace_internal_cache_tile(
     Ok(())
 }
 
-pub(crate) const fn diagnostic_sheet_paste_editable(index: usize) -> bool {
-    index <= 0x5ff
+#[derive(Clone, Copy)]
+pub(crate) struct DiagnosticSheetPasteContext {
+    pub(crate) extended_foreground_background: bool,
+    pub(crate) vanilla_animation_enabled: bool,
+    pub(crate) special_world_passed: bool,
+}
+
+pub(crate) const fn diagnostic_sheet_paste_editable(
+    index: usize,
+    context: DiagnosticSheetPasteContext,
+) -> bool {
+    if index > 0x5ff {
+        return false;
+    }
+    if !context.extended_foreground_background && index >= 0x300 && index < 0x400 {
+        return false;
+    }
+    if context.vanilla_animation_enabled
+        && ((index > 0x40 && index < 0x82)
+            || index == 0x90
+            || index == 0x91
+            || (index >= 0xda && index < 0xde)
+            || (index >= 0xea && index < 0xee))
+    {
+        return false;
+    }
+    if context.special_world_passed && index >= 0x480 && index < 0x500 {
+        return false;
+    }
+    true
 }
 
 pub(crate) fn overlay_current_graphics_file(
@@ -1939,10 +2013,78 @@ mod tests {
 
     #[test]
     fn diagnostic_sheet_paste_accepts_current_level_cache_only() {
-        assert!(diagnostic_sheet_paste_editable(0x000));
-        assert!(diagnostic_sheet_paste_editable(0x5ff));
-        assert!(!diagnostic_sheet_paste_editable(0x600));
-        assert!(!diagnostic_sheet_paste_editable(0x3fff));
+        let vanilla = super::DiagnosticSheetPasteContext {
+            extended_foreground_background: false,
+            vanilla_animation_enabled: true,
+            special_world_passed: false,
+        };
+        assert!(diagnostic_sheet_paste_editable(0x000, vanilla));
+        assert!(!diagnostic_sheet_paste_editable(0x041, vanilla));
+        assert!(!diagnostic_sheet_paste_editable(0x081, vanilla));
+        assert!(diagnostic_sheet_paste_editable(0x082, vanilla));
+        for tile in [0x090, 0x091, 0x0da, 0x0dd, 0x0ea, 0x0ed] {
+            assert!(!diagnostic_sheet_paste_editable(tile, vanilla));
+        }
+        assert!(!diagnostic_sheet_paste_editable(0x300, vanilla));
+        assert!(diagnostic_sheet_paste_editable(0x5ff, vanilla));
+        assert!(!diagnostic_sheet_paste_editable(0x600, vanilla));
+        assert!(!diagnostic_sheet_paste_editable(0x3fff, vanilla));
+
+        let bypass_without_vanilla_animation = super::DiagnosticSheetPasteContext {
+            extended_foreground_background: true,
+            vanilla_animation_enabled: false,
+            special_world_passed: false,
+        };
+        assert!(diagnostic_sheet_paste_editable(
+            0x041,
+            bypass_without_vanilla_animation
+        ));
+        assert!(diagnostic_sheet_paste_editable(
+            0x300,
+            bypass_without_vanilla_animation
+        ));
+
+        let special_world = super::DiagnosticSheetPasteContext {
+            special_world_passed: true,
+            ..bypass_without_vanilla_animation
+        };
+        assert!(!diagnostic_sheet_paste_editable(0x480, special_world));
+        assert!(!diagnostic_sheet_paste_editable(0x4ff, special_world));
+        assert!(diagnostic_sheet_paste_editable(0x500, special_world));
+    }
+
+    #[test]
+    fn retained_lunar_magic_diagnostic_paste_oracle_binds_every_observed_boundary() {
+        let fixture = include_str!(
+            "../../../docs/oracle-work/lm363/pristine-us/graphics-cache-paste/oracle.tsv"
+        );
+        let fields = fixture
+            .lines()
+            .skip(1)
+            .map(|line| line.split_once('\t').expect("oracle row has two columns"))
+            .collect::<std::collections::HashMap<_, _>>();
+        assert_eq!(fields["maximum_page"], "3F");
+        assert_eq!(fields["super_gfx_bypass"], "0");
+        assert_eq!(fields["vanilla_animation_enabled"], "1");
+        assert_eq!(fields["special_world_passed"], "0");
+        assert_eq!(fields["ordinary_target_changed"], "1");
+        assert_eq!(fields["ordinary_target_matches_source"], "1");
+        assert_eq!(fields["fixed_animation_target_changed"], "0");
+        assert_eq!(fields["unused_fg_target_changed"], "0");
+        assert_eq!(fields["last_editable_target_changed"], "1");
+        assert_eq!(fields["last_editable_target_matches_source"], "1");
+        assert_eq!(fields["beyond_limit_target_changed"], "0");
+
+        let observed = super::DiagnosticSheetPasteContext {
+            extended_foreground_background: fields["super_gfx_bypass"] == "1",
+            vanilla_animation_enabled: fields["vanilla_animation_enabled"] == "1",
+            special_world_passed: fields["special_world_passed"] == "1",
+        };
+        assert!(diagnostic_sheet_paste_editable(0x002, observed));
+        assert!(!diagnostic_sheet_paste_editable(0x041, observed));
+        assert!(!diagnostic_sheet_paste_editable(0x300, observed));
+        assert!(diagnostic_sheet_paste_editable(0x5ff, observed));
+        assert!(!diagnostic_sheet_paste_editable(0x600, observed));
     }
 
     #[test]
@@ -1956,6 +2098,7 @@ mod tests {
         let assignments = CurrentLevelGraphicsAssignments {
             foreground_background: vec![0x14, 0x17, 0x14],
             sprites: vec![0x20, 0x7f],
+            super_graphics_bypass_enabled: true,
         };
         let overrides = internal_cache_level_graphics_overrides(&cache, &assignments).unwrap();
         assert_eq!(
@@ -1988,6 +2131,7 @@ mod tests {
         let assignments = CurrentLevelGraphicsAssignments {
             foreground_background: vec![0x14, 0x17, 0x14, 0x7f],
             sprites: vec![0x20, 0x14, 0x13, 0x22],
+            super_graphics_bypass_enabled: true,
         };
         let staged = vec![changed.clone(); 0x80];
         overlay_current_graphics_file(&mut cache, &assignments, 0x14, &staged).unwrap();

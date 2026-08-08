@@ -32,6 +32,7 @@ pub(crate) struct ExtractedJoinedGraphicsPaths {
 pub(crate) struct CurrentLevelGraphicsAssignments {
     pub(crate) foreground_background: Vec<usize>,
     pub(crate) sprites: Vec<usize>,
+    pub(crate) super_graphics_bypass_enabled: bool,
 }
 
 pub(crate) const LUNAR_MAGIC_ALL_GFX_FILE_SIZES: [usize; 0x34] = {
@@ -197,42 +198,46 @@ pub(crate) fn current_level_graphics_assignments(
     let loaded_level = project
         .load_level_slot(usize::from(level), level_layout, &profile.sprite_lengths)
         .map_err(|error| format!("cannot load level {level:03X} graphics settings: {error}"))?;
-    let (foreground_background, sprites) = if let Some(settings_layout) = profile.expanded_settings
-    {
-        let settings = project
-            .load_expanded_level_settings(usize::from(level), settings_layout)
-            .map_err(|error| {
-                format!("cannot load level {level:03X} expanded graphics settings: {error}")
-            })?;
-        let selection = lm_level::ExpandedLevelHeader::from(&settings).super_graphics_bypass();
-        if selection.enabled {
-            let mut sprites = selection.sprites.map(usize::from).to_vec();
-            if special_world_passed {
-                sprites[1] = 0x7f;
+    let (foreground_background, sprites, super_graphics_bypass_enabled) =
+        if let Some(settings_layout) = profile.expanded_settings {
+            let settings = project
+                .load_expanded_level_settings(usize::from(level), settings_layout)
+                .map_err(|error| {
+                    format!("cannot load level {level:03X} expanded graphics settings: {error}")
+                })?;
+            let selection = lm_level::ExpandedLevelHeader::from(&settings).super_graphics_bypass();
+            if selection.enabled {
+                let mut sprites = selection.sprites.map(usize::from).to_vec();
+                if special_world_passed {
+                    sprites[1] = 0x7f;
+                }
+                (
+                    selection.foreground_background.map(usize::from).to_vec(),
+                    sprites,
+                    true,
+                )
+            } else {
+                let (foreground, sprites) = legacy_level_graphics_assignments(
+                    image,
+                    profile,
+                    loaded_level.layer1.header,
+                    special_world_passed,
+                )?;
+                (foreground, sprites, false)
             }
-            (
-                selection.foreground_background.map(usize::from).to_vec(),
-                sprites,
-            )
         } else {
-            legacy_level_graphics_assignments(
+            let (foreground, sprites) = legacy_level_graphics_assignments(
                 image,
                 profile,
                 loaded_level.layer1.header,
                 special_world_passed,
-            )?
-        }
-    } else {
-        legacy_level_graphics_assignments(
-            image,
-            profile,
-            loaded_level.layer1.header,
-            special_world_passed,
-        )?
-    };
+            )?;
+            (foreground, sprites, false)
+        };
     Ok(CurrentLevelGraphicsAssignments {
         foreground_background,
         sprites,
+        super_graphics_bypass_enabled,
     })
 }
 
@@ -318,6 +323,7 @@ pub(crate) fn pristine_current_level_graphics_assignments(
     Ok(CurrentLevelGraphicsAssignments {
         foreground_background,
         sprites,
+        super_graphics_bypass_enabled: false,
     })
 }
 
@@ -467,6 +473,7 @@ mod tests {
             [0x14, 0x17, 0x1b, 0x15, 0x7f, 0x7f]
         );
         assert_eq!(assignments.sprites, [0x00, 0x7f, 0x13, 0x20]);
+        assert!(!assignments.super_graphics_bypass_enabled);
     }
 
     #[test]

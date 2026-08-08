@@ -1,0 +1,12 @@
+field	value
+maximum_page	3F
+super_gfx_bypass	0
+vanilla_animation_enabled	1
+special_world_passed	0
+ordinary_target_changed	1
+ordinary_target_matches_source	1
+fixed_animation_target_changed	0
+unused_fg_target_changed	0
+last_editable_target_changed	1
+last_editable_target_matches_source	1
+beyond_limit_target_changed	0

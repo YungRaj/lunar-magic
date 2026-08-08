@@ -1747,7 +1747,11 @@ selects auxiliary bank `$780-$87F` from expanded-header field 0 when bit `$8000`
 last legacy object-control command `$25/$26` parameter minus one, and boundedly reads all present
 ROM-sibling `ExternalGraphics/ExSpriteGFX00–07.bin` files into their eight exact bases. The
 diagnostic cache accepts transient pixel, transform, and typed-paste mutations. Original
-right-click sheet paste still rejects tiles above `$5FF`; F9 persists only the current-level
+right-click sheet paste rejects tiles above `$5FF`, unused `$300–$3FF` when bypass is off,
+fixed-animation `$41–$81/$90–$91/$DA–$DD/$EA–$ED` when vanilla animation is enabled, and
+Special World SP2 `$480–$4FF`. The isolated Wine `graphics-cache-paste` oracle proves successful
+source-identical mutation at `$002/$5FF` and unchanged rejection targets `$041/$300/$600`; F9
+persists only the current-level
 FG/BG/SP working buffers described below, leaving edits to all other diagnostic banks transient.
 The same window procedure and `ProcessGraphicsEditorKeyboardInput` at `005059f0` establish the
 status lifecycle. Mouse movement publishes `Tile 0x%X (Address 0x%X)`, `Color %X.`, or the active

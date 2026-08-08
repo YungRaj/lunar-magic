@@ -19,8 +19,8 @@ use crate::{
     },
     native_clipboard,
     rom_graphics_editor::{
-        diagnostic_sheet_paste_editable, internal_cache_level_graphics_overrides,
-        overlay_current_graphics_file,
+        DiagnosticSheetPasteContext, diagnostic_sheet_paste_editable,
+        internal_cache_level_graphics_overrides, overlay_current_graphics_file,
     },
 };
 use eframe::egui;
@@ -485,6 +485,11 @@ impl VanillaGraphicsEditor {
             return;
         };
         let diagnostic = self.internal_cache_unlocked;
+        let diagnostic_paste_context = DiagnosticSheetPasteContext {
+            extended_foreground_background: false,
+            vanilla_animation_enabled: true,
+            special_world_passed: self.internal_cache_special_world,
+        };
         let tiles = if diagnostic {
             let Some(cache) = &self.internal_cache else {
                 self.internal_cache_unlocked = false;
@@ -542,7 +547,11 @@ impl VanillaGraphicsEditor {
                                 }
                                 Some(TilePointerAction::PasteSelected(index)) => {
                                     if edits_enabled
-                                        && (!diagnostic || diagnostic_sheet_paste_editable(index))
+                                        && (!diagnostic
+                                            || diagnostic_sheet_paste_editable(
+                                                index,
+                                                diagnostic_paste_context,
+                                            ))
                                         && let Some(tile) = selected_tile.clone()
                                     {
                                         selected_paste = Some((index, tile));
@@ -551,7 +560,10 @@ impl VanillaGraphicsEditor {
                                 Some(TilePointerAction::PasteClipboard(index))
                                     if edits_enabled
                                         && (!diagnostic
-                                            || diagnostic_sheet_paste_editable(index)) =>
+                                            || diagnostic_sheet_paste_editable(
+                                                index,
+                                                diagnostic_paste_context,
+                                            )) =>
                                 {
                                     self.clipboard_paste_target = Some(index);
                                     ui.ctx()
@@ -804,7 +816,16 @@ impl VanillaGraphicsEditor {
             .clipboard_paste_target
             .take()
             .unwrap_or(self.selected_tile);
-        if self.internal_cache_unlocked && !diagnostic_sheet_paste_editable(target) {
+        if self.internal_cache_unlocked
+            && !diagnostic_sheet_paste_editable(
+                target,
+                DiagnosticSheetPasteContext {
+                    extended_foreground_background: false,
+                    vanilla_animation_enabled: true,
+                    special_world_passed: self.internal_cache_special_world,
+                },
+            )
+        {
             return;
         }
         match native_clipboard::decode_graphics_tile(text) {
