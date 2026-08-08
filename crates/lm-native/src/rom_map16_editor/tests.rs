@@ -357,6 +357,110 @@ fn original_map16_zoom_shortcuts_require_ctrl_and_preserve_bounds() {
 }
 
 #[test]
+fn original_map16_f1_shortcuts_split_page_numbers_and_protected_unlock() {
+    fn observed(modifiers: egui::Modifiers) -> Option<Map16F1Shortcut> {
+        let context = egui::Context::default();
+        let mut shortcut = None;
+        let _ = context.run(
+            egui::RawInput {
+                events: vec![egui::Event::Key {
+                    key: egui::Key::F1,
+                    physical_key: None,
+                    pressed: true,
+                    repeat: false,
+                    modifiers,
+                }],
+                modifiers,
+                ..Default::default()
+            },
+            |context| {
+                egui::CentralPanel::default().show(context, |ui| {
+                    shortcut = take_map16_f1_shortcut(ui);
+                });
+            },
+        );
+        shortcut
+    }
+
+    assert_eq!(
+        observed(egui::Modifiers::NONE),
+        Some(Map16F1Shortcut::TogglePageNumbers)
+    );
+    assert_eq!(
+        observed(egui::Modifiers::ALT),
+        Some(Map16F1Shortcut::TogglePageNumbers)
+    );
+    assert_eq!(
+        observed(egui::Modifiers::CTRL),
+        Some(Map16F1Shortcut::ToggleProtectedPages)
+    );
+    assert_eq!(
+        observed(egui::Modifiers::CTRL | egui::Modifiers::ALT),
+        Some(Map16F1Shortcut::ToggleProtectedPages)
+    );
+    for modifiers in [
+        egui::Modifiers::SHIFT,
+        egui::Modifiers::SHIFT | egui::Modifiers::ALT,
+        egui::Modifiers::SHIFT | egui::Modifiers::CTRL,
+    ] {
+        assert_eq!(observed(modifiers), None);
+    }
+
+    assert!(!map16_page_is_editable(0, false));
+    assert!(!map16_page_is_editable(1, false));
+    assert!(map16_page_is_editable(2, false));
+    assert!(map16_page_is_editable(0, true));
+}
+
+#[test]
+fn built_in_page_clipboard_paste_requires_explicit_unlock() {
+    let mut app = AppState::default();
+    app.load_rom(pristine_fixture()).unwrap();
+    app.dispatch(Command::ShowMap16).unwrap();
+    let mut editor = RomMap16Editor::default();
+    editor.open(&app);
+    let revision = editor.workspace.as_ref().unwrap().controller.revision();
+    let address = Map16Address { page: 0, tile: 3 };
+    let replacement = lm_level::Map16Tile {
+        top_left: Subtile(0x1234),
+        top_right: Subtile(0x2345),
+        bottom_left: Subtile(0x3456),
+        bottom_right: Subtile(0x4567),
+        acts_like: 0x0123,
+    };
+    let text = native_clipboard::encode_map16_tile(replacement).unwrap();
+    let before = editor.workspace.as_ref().unwrap().controller.set().pages[0].tiles[3];
+
+    editor.paste_tile_at(
+        &text,
+        revision,
+        editor.staged_revision,
+        address,
+        lm_app::SMW_COMPLETE_MAP16_PAGES,
+    );
+    assert!(editor.error.as_deref().unwrap().contains("protected"));
+    assert_eq!(
+        editor.workspace.as_ref().unwrap().controller.set().pages[0].tiles[3],
+        before
+    );
+
+    editor.error = None;
+    editor.protected_pages_unlocked = true;
+    editor.paste_tile_at(
+        &text,
+        revision,
+        editor.staged_revision,
+        address,
+        lm_app::SMW_COMPLETE_MAP16_PAGES,
+    );
+    assert!(editor.error.is_none());
+    assert_eq!(
+        editor.workspace.as_ref().unwrap().controller.set().pages[0].tiles[3],
+        replacement
+    );
+}
+
+#[test]
 fn unmodified_f9_routes_through_the_existing_map16_commit_transaction() {
     let mut app = AppState::default();
     app.load_rom(pristine_fixture()).unwrap();

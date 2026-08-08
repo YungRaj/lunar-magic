@@ -1359,6 +1359,14 @@ logical canvas, the native adapter represents system reset as 100 logical percen
 retains the exact step and bounds. The rendered texture remains 256×256 pixels, while its scrollable
 presentation, grid, selection outline, and proportional hit testing share the selected scale.
 
+Case `$0B` is actual F1. With Shift down it performs no action. Without Shift, Ctrl enters the
+localized warning path that toggles `DAT_00E27871`, refreshes the Map16 view, and marks the editor
+dirty; without Ctrl it clicks the page-number control whose tooltip is `Display page numbers.` Alt
+is not tested in either branch. The native editor now matches this gesture partition: F1 toggles a
+`Page 0xX` canvas overlay, Ctrl+F1 opens an explicit confirmation before pages `$00–$01` become
+manually editable, and every Shift combination is inert. Lock state gates subtile, Acts-Like, and
+typed clipboard mutations without weakening the existing protected-word import rules.
+
 The separate Map16 tile-selector/viewer subsystem through `004e99c0` is now named. It consists of an outer selector window, a scrollable 256x256 tile-view child, and a status bar. Recovered behavior includes DPI-aware percentage scaling, client/outer size calculation, horizontal and vertical scroll state, mouse-wheel page motion, hover and primary/secondary selection highlighting, keyboard page navigation, foreground-page unlocking, palette-context changes, and top-down 32-bit DIB cache creation/rendering/cleanup. Typed and named the current/maximum selector page, selected and hovered absolute tile numbers, palette context, and backing pixel pointer.
 
 The outer Layer 1 selector creator and the beginning of the main level-editor presentation layer through `004eac40` are now named. This includes renderer/file-error reporting, status-bar sizing and DPI handling, horizontal/vertical level-editor scroll state, backing-cache and auxiliary-buffer cleanup, and the toolbar icon system. The toolbar uses a 24-entry command table with parallel enabled/disabled icon arrays, supports an external `Lunar Magic.ff5` bitmap, compressed and built-in fallbacks, per-window DPI scaling, right-to-left mirroring, and a separately rebuilt alternate mode cache.

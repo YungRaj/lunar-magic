@@ -42,6 +42,12 @@ enum Map16ZoomShortcut {
     Decrease,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Map16F1Shortcut {
+    TogglePageNumbers,
+    ToggleProtectedPages,
+}
+
 struct Workspace {
     controller: Controller,
     profile: Option<RevisionProfile>,
@@ -152,6 +158,9 @@ pub(crate) struct RomMap16Editor {
     show_grid: bool,
     dark_grid: bool,
     page_zoom_percent: u16,
+    show_page_number: bool,
+    protected_pages_unlocked: bool,
+    pending_protected_page_toggle: bool,
     preview_level: String,
     preview_tileset: u8,
     preview_palette: u8,
@@ -240,6 +249,7 @@ impl RomMap16Editor {
         if let Some(snes_command) = self.snes_tileset_preview_window(context, project_revision) {
             command = Some(snes_command);
         }
+        self.protected_page_confirmation(context);
         let approved = self.close_confirmation(context);
         self.show_error(context);
         (approved, command)
@@ -282,6 +292,16 @@ impl RomMap16Editor {
         }
         if let Some(shortcut) = take_map16_zoom_shortcut(ui) {
             self.page_zoom_percent = map16_zoom_after_shortcut(self.page_zoom_percent, shortcut);
+        }
+        if let Some(shortcut) = take_map16_f1_shortcut(ui) {
+            match shortcut {
+                Map16F1Shortcut::TogglePageNumbers => {
+                    self.show_page_number = !self.show_page_number;
+                }
+                Map16F1Shortcut::ToggleProtectedPages => {
+                    self.pending_protected_page_toggle = true;
+                }
+            }
         }
         if let Some(shortcut) = take_map16_page_shortcut(ui) {
             let next_page = map16_page_after_shortcut(self.page, pages, shortcut);
@@ -367,6 +387,19 @@ impl RomMap16Editor {
                         .step_by(100.0)
                         .suffix("%"),
                 );
+                ui.checkbox(&mut self.show_page_number, "Page number")
+                    .on_hover_text("F1 toggles page numbers.");
+                if ui
+                    .button(if self.protected_pages_unlocked {
+                        "Lock built-in pages…"
+                    } else {
+                        "Unlock built-in pages…"
+                    })
+                    .on_hover_text("Ctrl+F1")
+                    .clicked()
+                {
+                    self.pending_protected_page_toggle = true;
+                }
                 level || tileset || palette
             })
             .inner;
@@ -433,6 +466,8 @@ impl RomMap16Editor {
         let show_grid = self.show_grid;
         let dark_grid = self.dark_grid;
         let selected_tile = self.tile;
+        let show_page_number = self.show_page_number;
+        let page = self.page;
         let response = egui::ScrollArea::both()
             .max_height(420.0)
             .show(ui, |ui| {
@@ -465,6 +500,15 @@ impl RomMap16Editor {
                             egui::Stroke::new(1.0_f32, color),
                         );
                     }
+                }
+                if show_page_number {
+                    ui.painter().text(
+                        response.rect.center(),
+                        egui::Align2::CENTER_CENTER,
+                        format!("Page 0x{page:X}"),
+                        egui::FontId::proportional((24.0 * zoom).clamp(24.0, 96.0)),
+                        egui::Color32::WHITE,
+                    );
                 }
                 let column = f32::from(u8::try_from(selected_tile % 16).unwrap_or(0));
                 let row = f32::from(u8::try_from(selected_tile / 16).unwrap_or(0));
@@ -501,6 +545,7 @@ impl RomMap16Editor {
     ) {
         let old = (self.page, self.tile, self.quadrant);
         let paste_shortcut = take_map16_paste_shortcut(ui);
+        let editable = map16_page_is_editable(self.page, self.protected_pages_unlocked);
         ui.add(egui::Slider::new(&mut self.page, 0..=pages.saturating_sub(1)).text("Page"));
         ui.add(egui::Slider::new(&mut self.tile, 0..=Map16Page::TILE_COUNT - 1).text("Tile"));
         egui::ComboBox::from_label("Quadrant")
@@ -529,9 +574,9 @@ impl RomMap16Editor {
                 }
             }
             let paste_clicked = ui
-                .add_enabled(!stale, egui::Button::new("Paste tile"))
+                .add_enabled(!stale && editable, egui::Button::new("Paste tile"))
                 .clicked();
-            if !stale && (paste_clicked || paste_shortcut) {
+            if !stale && editable && (paste_clicked || paste_shortcut) {
                 self.rectangle_clipboard_paste_target = None;
                 let revision = self
                     .workspace
@@ -565,6 +610,9 @@ impl RomMap16Editor {
     ) {
         let result = native_clipboard::decode_map16_tile(text).and_then(|tile| {
             let workspace = self.workspace.as_ref().ok_or("Map16 workspace is closed")?;
+            if !map16_page_is_editable(address.page, self.protected_pages_unlocked) {
+                return Err("built-in Map16 pages 00–01 are protected".into());
+            }
             if workspace.controller.revision() != revision
                 || self.staged_revision != staged_revision
             {
@@ -643,6 +691,7 @@ impl RomMap16Editor {
     }
 
     fn tile_fields(&mut self, ui: &mut egui::Ui, stale: bool, pages: usize) {
+        let protected = !map16_page_is_editable(self.page, self.protected_pages_unlocked);
         let supports_acts_like = self
             .workspace
             .as_ref()
@@ -657,7 +706,7 @@ impl RomMap16Editor {
         ui.checkbox(&mut self.subtile.y_flip, "Y flip");
         let mut edit = None;
         if ui
-            .add_enabled(!stale, egui::Button::new("Apply subtile"))
+            .add_enabled(!stale && !protected, egui::Button::new("Apply subtile"))
             .clicked()
         {
             edit = Some(
@@ -679,7 +728,7 @@ impl RomMap16Editor {
         });
         if ui
             .add_enabled(
-                !stale && supports_acts_like,
+                !stale && !protected && supports_acts_like,
                 egui::Button::new("Apply Acts Like"),
             )
             .clicked()
@@ -703,6 +752,42 @@ impl RomMap16Editor {
         if !supports_acts_like {
             ui.small("Background Map16 definitions do not have Acts-Like values.");
         }
+        if protected {
+            ui.colored_label(
+                egui::Color32::YELLOW,
+                "Built-in pages 00–01 are protected. Use Ctrl+F1 to unlock them.",
+            );
+        }
+    }
+
+    fn protected_page_confirmation(&mut self, context: &egui::Context) {
+        if !self.pending_protected_page_toggle {
+            return;
+        }
+        let unlocking = !self.protected_pages_unlocked;
+        egui::Window::new(if unlocking {
+            "Unlock built-in Map16 pages?"
+        } else {
+            "Lock built-in Map16 pages?"
+        })
+        .collapsible(false)
+        .resizable(false)
+        .show(context, |ui| {
+            if unlocking {
+                ui.label("Pages 00–01 contain built-in game definitions. Editing them can affect many levels and imported files continue to preserve their graphics words.");
+            } else {
+                ui.label("Lock pages 00–01 against further manual edits?");
+            }
+            ui.horizontal(|ui| {
+                if ui.button("Cancel").clicked() {
+                    self.pending_protected_page_toggle = false;
+                }
+                if ui.button(if unlocking { "Unlock" } else { "Lock" }).clicked() {
+                    self.protected_pages_unlocked = unlocking;
+                    self.pending_protected_page_toggle = false;
+                }
+            });
+        });
     }
 
     fn commit_controls(
@@ -904,6 +989,23 @@ fn take_map16_zoom_shortcut(ui: &mut egui::Ui) -> Option<Map16ZoomShortcut> {
         };
         modifiers.ctrl.then_some(shortcut).flatten()
     })
+}
+
+fn take_map16_f1_shortcut(ui: &mut egui::Ui) -> Option<Map16F1Shortcut> {
+    ui.input_mut(|input| {
+        let modifiers = input.modifiers;
+        if !input.consume_key(modifiers, egui::Key::F1) || modifiers.shift {
+            None
+        } else if modifiers.ctrl {
+            Some(Map16F1Shortcut::ToggleProtectedPages)
+        } else {
+            Some(Map16F1Shortcut::TogglePageNumbers)
+        }
+    })
+}
+
+fn map16_page_is_editable(page: usize, protected_pages_unlocked: bool) -> bool {
+    page >= 2 || protected_pages_unlocked
 }
 
 fn map16_zoom_after_shortcut(current: u16, shortcut: Map16ZoomShortcut) -> u16 {
