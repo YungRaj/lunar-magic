@@ -404,6 +404,29 @@ fn low_bank_pointer(mapper: Mapper, pc: usize) -> Result<[u8; 3], RomError> {
     let mut bytes: [u8; 3] = pc_to_snes(mapper, pc)?.to_le_bytes()[..3]
         .try_into()
         .expect("three-byte slice");
-    bytes[2] &= 0x7f;
+    // Only LoROM has an equivalent low-bank mirror. ExLoROM bit 23 selects the ROM half, and
+    // SA-1 uses the complete bank value as part of its mapped address.
+    if mapper == Mapper::LoRom {
+        bytes[2] &= 0x7f;
+    }
     Ok(bytes)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn runtime_and_recording_pointers_preserve_mapper_significant_high_banks() {
+        for (mapper, pc) in [
+            (Mapper::LoRom, 0x2_0000),
+            (Mapper::ExLoRom, 0x2_0000),
+            (Mapper::ExLoRom, 0x42_0000),
+            (Mapper::Sa1, 0x2_0000),
+            (Mapper::Sa1, 0x42_0000),
+        ] {
+            let pointer = low_bank_pointer(mapper, pc).unwrap();
+            assert_eq!(read_pointer(&pointer, 0, mapper).unwrap(), pc);
+        }
+    }
 }
