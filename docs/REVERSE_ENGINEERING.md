@@ -1220,6 +1220,14 @@ retaining a visible diagnostic when required custom-display data cannot be resol
 
 The entrance synchronization path is now tied to the binary MWL boundary. `SynchronizeEntranceNodeData` (`004ccda0`) projects 40-byte editor nodes from packed main, midway, and secondary-exit state; `RebuildLevelEntranceNodes` (`004cd7e0`) creates one main node, a conditional midway node, and secondary nodes targeting the current level. `ExportBinaryMwlLevelFile` proves that the 64-byte level-header section owns main-entrance bytes at offsets `2`-`6`, `14`, and `15`, and midway-specific bytes at offsets `9`-`12`. The Rust `MwlLevelHeaderSection` exposes these as lossless typed records and the native MWL editor can modify them without normalizing the other 53 bytes. A reciprocal Wine oracle proves Lunar Magic 3.63 imports and re-exports a changed main position exactly; it also proves that midway-only bytes are normalized to zero when the destination ROM lacks Lunar Magic's separate-midway runtime.
 
+The complete original entrance-dialog transaction is now bound as well. Editor command `$2524`
+creates resource `$03F0` with callback `$00410440`; callback initialization populates controls
+through `$00410DA6`, while IDOK packs the edited globals through `$0041097E`, rebuilds entrance
+nodes, and marks the level modified. IDCANCEL calls `EndDialog` without entering that apply path.
+The live `original_main_midway_dialog_applies_reopens_and_cancels_losslessly` gate exercises both
+branches, including the separate-midway enable transition, and binds the resulting main bytes
+`54 13 B7 1A C0 00 5A` and midway bytes `00 E9 0A 4B` to Lunar Magic's own MWL export.
+
 Comparing all 512 pristine MWL exports against the source ROM locates the four vanilla
 main-entrance planes exactly at headerless PC offsets `$2F000`, `$2F200`, `$2F400`, and `$2F600`.
 They correspond to MWL header offsets `2`-`5` for position, vertical settings, screen/method, and

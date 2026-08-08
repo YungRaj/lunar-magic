@@ -31,23 +31,31 @@ func captureImage(filter: SCContentFilter, configuration: SCStreamConfiguration)
     }
 }
 
-guard CommandLine.arguments.count == 8 else {
-    fail("usage: capture-macos-window OWNER TITLE X Y WIDTH HEIGHT OUTPUT.png")
+guard CommandLine.arguments.count == 4 || CommandLine.arguments.count == 8 else {
+    fail("usage: capture-macos-window OWNER TITLE [X Y WIDTH HEIGHT] OUTPUT.png")
 }
 
 let owner = CommandLine.arguments[1]
 let title = CommandLine.arguments[2]
-guard
-    let x = Double(CommandLine.arguments[3]),
-    let y = Double(CommandLine.arguments[4]),
-    let width = Double(CommandLine.arguments[5]),
-    let height = Double(CommandLine.arguments[6]),
-    width > 0,
-    height > 0
-else {
-    fail("capture rectangle must contain finite positive numbers")
+let requestedRectangle: CGRect?
+let output: URL
+if CommandLine.arguments.count == 8 {
+    guard
+        let x = Double(CommandLine.arguments[3]),
+        let y = Double(CommandLine.arguments[4]),
+        let width = Double(CommandLine.arguments[5]),
+        let height = Double(CommandLine.arguments[6]),
+        width > 0,
+        height > 0
+    else {
+        fail("capture rectangle must contain finite positive numbers")
+    }
+    requestedRectangle = CGRect(x: x, y: y, width: width, height: height)
+    output = URL(fileURLWithPath: CommandLine.arguments[7])
+} else {
+    requestedRectangle = nil
+    output = URL(fileURLWithPath: CommandLine.arguments[3])
 }
-let output = URL(fileURLWithPath: CommandLine.arguments[7])
 _ = NSApplication.shared
 
 do {
@@ -61,12 +69,14 @@ do {
     guard matches.count == 1, let window = matches.first else {
         fail("expected one visible \(owner)/\(title) window, found \(matches.count)")
     }
-    let relative = CGRect(
-        x: x - window.frame.minX,
-        y: y - window.frame.minY,
-        width: width,
-        height: height
-    )
+    let relative = requestedRectangle.map { rectangle in
+        CGRect(
+            x: rectangle.minX - window.frame.minX,
+            y: rectangle.minY - window.frame.minY,
+            width: rectangle.width,
+            height: rectangle.height
+        )
+    } ?? CGRect(origin: .zero, size: window.frame.size)
     guard
         relative.minX >= 0,
         relative.minY >= 0,
