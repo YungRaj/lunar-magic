@@ -2456,6 +2456,15 @@ Profile, CLI, and application tests cover pristine decoding, 112-to-200 installa
 255 entries, the Wine-derived 112-to-120 hybrid load, undo to the byte-exact original ROM,
 built-process import/export/oracle replay, and save-as reopen.
 
+The recovered editor movement boundary stores each destination as twice a seam-aware main-map
+tile index. A selected ordinary reveal owns a 6x6 footprint; a requested drag is constrained by
+searching X toward zero and then Y toward zero until every selected footprint fits. The Rust
+cross-variant regression applies that semantic movement to both the pristine fixed table and the
+retained Lunar Magic transferred-source hybrid, saves each as two owned expanded planes, moves and
+republishes the expanded owner again, and semantically reopens both revisions. Headerless and real
+512-byte-headered containers produce identical logical ROMs, preserve their exact physical prefix,
+repair the checksum, undo to both exact predecessors, and redo both edits byte-for-byte.
+
 ### Overworld event-number mapping
 
 `LoadOverworldEventNumberMap` at `004BA220` and `CommitOverworldEventNumberMap` at `004BA3B0`

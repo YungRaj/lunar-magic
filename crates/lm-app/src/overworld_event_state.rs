@@ -95,9 +95,10 @@ mod tests {
 
     #[test]
     fn complete_event_workflow_matches_across_copier_header_variants() {
-        let physical = crate::test_support::pristine_smw_us_rom_bytes();
-        let physical_image = RomImage::from_bytes(physical.clone()).unwrap();
-        let variants = [physical, physical_image.logical_bytes().to_vec()];
+        let headerless = crate::test_support::pristine_smw_us_rom_bytes();
+        let mut headered = vec![0xa5; 0x200];
+        headered.extend_from_slice(&headerless);
+        let variants = [headerless, headered];
         let mut logical_results = Vec::new();
 
         for original in variants {

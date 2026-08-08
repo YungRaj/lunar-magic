@@ -32,7 +32,7 @@ mod tests {
     use super::*;
     use lm_overworld::EventReveal;
     use lm_project::{OverworldEventRevealPatchError, OverworldEventRevealStorage, Project};
-    use lm_rom::RomImage;
+    use lm_rom::{CopierHeader, RomImage, detect_identity};
     use std::{fs, path::PathBuf};
 
     #[test]
@@ -142,6 +142,121 @@ mod tests {
         ));
         assert!(editable.undo().unwrap());
         assert_eq!(editable.save_snapshot(), after_bytes);
+    }
+
+    #[test]
+    fn event_movement_round_trips_every_storage_and_copier_header_variant() {
+        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let fixtures =
+            [
+                (false, crate::test_support::pristine_smw_us_rom_bytes()),
+                (
+                    true,
+                    fs::read(root.join(
+                        "oracle-work/lm363/pristine-us/overworld-transfer-positive/after.smc",
+                    ))
+                    .unwrap(),
+                ),
+            ];
+        let locator = smw_us_v1_overworld_event_reveal_locator();
+
+        for (transferred, fixture) in fixtures {
+            let logical = RomImage::from_bytes(fixture)
+                .unwrap()
+                .logical_bytes()
+                .to_vec();
+            let mut headered = RomImage::from_bytes(logical.clone()).unwrap();
+            headered.set_copier_header(CopierHeader::Present, 0xa5);
+            let variants = [logical, headered.as_file_bytes().to_vec()];
+            let mut logical_results = Vec::new();
+
+            for original in variants {
+                let original_image = RomImage::from_bytes(original.clone()).unwrap();
+                let original_header = original_image.copier_header_bytes().map(<[u8]>::to_vec);
+                let mut project = Project::open_supported(original_image).unwrap();
+                let loaded = project
+                    .load_overworld_event_reveals_detected(locator)
+                    .unwrap();
+                if transferred {
+                    assert!(matches!(
+                        loaded.storage,
+                        OverworldEventRevealStorage::TransferredSources { .. }
+                    ));
+                } else {
+                    assert_eq!(loaded.storage, OverworldEventRevealStorage::Fixed);
+                }
+
+                let (selected, mut moved, displacement) = (0..loaded.table.entries.len())
+                    .find_map(|selected| {
+                        let mut candidate = loaded.table.clone();
+                        candidate
+                            .relocate_selection(&[selected], 1, 1)
+                            .ok()
+                            .flatten()
+                            .map(|displacement| (selected, candidate, displacement))
+                    })
+                    .expect("fixture must contain at least one movable event reveal");
+                project
+                    .save_overworld_event_reveals_detected(
+                        &moved,
+                        locator,
+                        &smw_us_v1_overworld_event_allocation_policy(),
+                        crate::SMW_US_V1_CHECKSUM_FIELD,
+                        0xff,
+                    )
+                    .unwrap();
+                let first_save = project.save_snapshot();
+                assert!(matches!(
+                    project
+                        .load_overworld_event_reveals_detected(locator)
+                        .unwrap()
+                        .storage,
+                    OverworldEventRevealStorage::Expanded { .. }
+                ));
+
+                assert_eq!(
+                    moved
+                        .relocate_selection(&[selected], -displacement.0, -displacement.1)
+                        .unwrap(),
+                    Some((-displacement.0, -displacement.1))
+                );
+                project
+                    .save_overworld_event_reveals_detected(
+                        &moved,
+                        locator,
+                        &smw_us_v1_overworld_event_allocation_policy(),
+                        crate::SMW_US_V1_CHECKSUM_FIELD,
+                        0xff,
+                    )
+                    .unwrap();
+                let second_save = project.save_snapshot();
+                assert_eq!(
+                    project
+                        .load_overworld_event_reveals_detected(locator)
+                        .unwrap()
+                        .table,
+                    moved
+                );
+                let result = RomImage::from_bytes(second_save.clone()).unwrap();
+                assert_eq!(
+                    result.copier_header_bytes().map(<[u8]>::to_vec),
+                    original_header
+                );
+                assert!(detect_identity(&result).unwrap().checksum_matches());
+                logical_results.push(result.logical_bytes().to_vec());
+
+                assert!(project.undo().unwrap());
+                assert_eq!(project.save_snapshot(), first_save);
+                assert!(project.undo().unwrap());
+                assert_eq!(project.save_snapshot(), original);
+                assert!(project.redo().unwrap());
+                assert_eq!(project.save_snapshot(), first_save);
+                assert!(project.redo().unwrap());
+                assert_eq!(project.save_snapshot(), second_save);
+            }
+
+            assert_eq!(logical_results[0], logical_results[1]);
+        }
     }
 
     #[test]
