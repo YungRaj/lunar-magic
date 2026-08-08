@@ -85,6 +85,67 @@ fn original_map16_commit_shortcut_requires_unmodified_f9() {
 }
 
 #[test]
+fn original_map16_page_shortcuts_accept_up_and_down_with_all_modifiers() {
+    fn observed(key: egui::Key, modifiers: egui::Modifiers) -> Option<Map16PageShortcut> {
+        let context = egui::Context::default();
+        let mut shortcut = None;
+        let _ = context.run(
+            egui::RawInput {
+                events: vec![egui::Event::Key {
+                    key,
+                    physical_key: None,
+                    pressed: true,
+                    repeat: false,
+                    modifiers,
+                }],
+                modifiers,
+                ..Default::default()
+            },
+            |context| {
+                egui::CentralPanel::default().show(context, |ui| {
+                    shortcut = take_map16_page_shortcut(ui);
+                });
+            },
+        );
+        shortcut
+    }
+
+    for modifiers in [
+        egui::Modifiers::NONE,
+        egui::Modifiers::CTRL,
+        egui::Modifiers::SHIFT,
+        egui::Modifiers::ALT,
+        egui::Modifiers::COMMAND,
+    ] {
+        assert_eq!(
+            observed(egui::Key::ArrowUp, modifiers),
+            Some(Map16PageShortcut::Previous)
+        );
+        assert_eq!(
+            observed(egui::Key::ArrowDown, modifiers),
+            Some(Map16PageShortcut::Next)
+        );
+    }
+
+    assert_eq!(
+        map16_page_after_shortcut(0, 256, Map16PageShortcut::Previous),
+        0
+    );
+    assert_eq!(
+        map16_page_after_shortcut(0x23, 256, Map16PageShortcut::Previous),
+        0x22
+    );
+    assert_eq!(
+        map16_page_after_shortcut(0x23, 256, Map16PageShortcut::Next),
+        0x24
+    );
+    assert_eq!(
+        map16_page_after_shortcut(255, 256, Map16PageShortcut::Next),
+        255
+    );
+}
+
+#[test]
 fn unmodified_f9_routes_through_the_existing_map16_commit_transaction() {
     let mut app = AppState::default();
     app.load_rom(pristine_fixture()).unwrap();

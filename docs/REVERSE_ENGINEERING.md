@@ -1332,6 +1332,13 @@ Ctrl+Shift+F9 writes the `.s16` sidecar after confirmation. The native installed
 now routes only unmodified F9 through its existing revision-checked complete-set commit transaction;
 the modified chords remain available for their distinct sidecar workflows.
 
+Cases `$03/$04` are actual Up/Down. Their assembly reads the current row-aligned Map16 position:
+Up aligns to the current page boundary or subtracts `$10` rows when already aligned, while Down
+adds `$10` rows; both call `NavigateToMap16Page` at `$004FAD60`, which clamps the lower boundary,
+scrolls to the aligned page, and updates the hexadecimal page status. Neither branch tests a
+modifier. The native editor therefore consumes Up/Down with every modifier state and moves one
+bounded page while retaining the selected within-page tile.
+
 The separate Map16 tile-selector/viewer subsystem through `004e99c0` is now named. It consists of an outer selector window, a scrollable 256x256 tile-view child, and a status bar. Recovered behavior includes DPI-aware percentage scaling, client/outer size calculation, horizontal and vertical scroll state, mouse-wheel page motion, hover and primary/secondary selection highlighting, keyboard page navigation, foreground-page unlocking, palette-context changes, and top-down 32-bit DIB cache creation/rendering/cleanup. Typed and named the current/maximum selector page, selected and hovered absolute tile numbers, palette context, and backing pixel pointer.
 
 The outer Layer 1 selector creator and the beginning of the main level-editor presentation layer through `004eac40` are now named. This includes renderer/file-error reporting, status-bar sizing and DPI handling, horizontal/vertical level-editor scroll state, backing-cache and auxiliary-buffer cleanup, and the toolbar icon system. The toolbar uses a 24-entry command table with parallel enabled/disabled icon arrays, supports an external `Lunar Magic.ff5` bitmap, compressed and built-in fallbacks, per-window DPI scaling, right-to-left mirroring, and a separately rebuilt alternate mode cache.

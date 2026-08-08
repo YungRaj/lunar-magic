@@ -23,6 +23,12 @@ enum PendingClose {
     Application,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Map16PageShortcut {
+    Previous,
+    Next,
+}
+
 struct Workspace {
     controller: Controller,
     profile: Option<RevisionProfile>,
@@ -255,6 +261,14 @@ impl RomMap16Editor {
             || self.snes_tileset_loader.is_running()
             || self.snes_tileset_preview.is_some();
         let edit_blocked = stale || file_busy;
+        if let Some(shortcut) = take_map16_page_shortcut(ui) {
+            let next_page = map16_page_after_shortcut(self.page, pages, shortcut);
+            if next_page != self.page {
+                self.page = next_page;
+                self.invalidate();
+                self.load();
+            }
+        }
         self.history_controls(ui, edit_blocked);
         self.selection_and_clipboard(ui, edit_blocked, pages, pasted.as_deref());
         self.visual_page(ui);
@@ -754,6 +768,26 @@ fn take_map16_commit_shortcut(ui: &mut egui::Ui) -> bool {
     ui.input_mut(|input| {
         !input.modifiers.any() && input.consume_key(egui::Modifiers::NONE, egui::Key::F9)
     })
+}
+
+fn take_map16_page_shortcut(ui: &mut egui::Ui) -> Option<Map16PageShortcut> {
+    ui.input_mut(|input| {
+        let modifiers = input.modifiers;
+        if input.consume_key(modifiers, egui::Key::ArrowUp) {
+            Some(Map16PageShortcut::Previous)
+        } else if input.consume_key(modifiers, egui::Key::ArrowDown) {
+            Some(Map16PageShortcut::Next)
+        } else {
+            None
+        }
+    })
+}
+
+fn map16_page_after_shortcut(current: usize, pages: usize, shortcut: Map16PageShortcut) -> usize {
+    match shortcut {
+        Map16PageShortcut::Previous => current.saturating_sub(1),
+        Map16PageShortcut::Next => current.saturating_add(1).min(pages.saturating_sub(1)),
+    }
 }
 
 const MAP16_HISTORY_LIMIT: usize = 100;
