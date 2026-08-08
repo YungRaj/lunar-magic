@@ -333,6 +333,8 @@ fn remove_private_directory(directory: &Path) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(unix)]
+    use std::os::unix::fs::PermissionsExt;
 
     fn configured_tool(arguments: &[&str]) -> ExternalTool {
         ExternalTool {
@@ -346,6 +348,63 @@ mod tests {
             working_directory: Some("{project_dir}".into()),
             subscriptions: Vec::new(),
         }
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn every_graphics_domain_and_command_template_reloads_the_process_output() {
+        let script = std::env::temp_dir().join(format!(
+            "lm-external-graphics-variant-{}-{}.sh",
+            std::process::id(),
+            NEXT_DIRECTORY.fetch_add(1, Ordering::Relaxed)
+        ));
+        fs::write(
+            &script,
+            b"#!/bin/sh\nset -eu\ndd if=/dev/zero of=\"$1\" bs=32 count=1 2>/dev/null\n",
+        )
+        .unwrap();
+        let mut permissions = fs::metadata(&script).unwrap().permissions();
+        permissions.set_mode(0o700);
+        fs::set_permissions(&script, permissions).unwrap();
+
+        for file_name in ["GFX00.bin", "ExGFX123.bin"] {
+            for template in [None, Some("{graphics}"), Some("%1")] {
+                let mut editor = ExternalGraphicsEditor::default();
+                if let Some(template) = template {
+                    let tool = ExternalTool {
+                        id: format!("configured-{template}"),
+                        name: "Configured graphics editor".into(),
+                        executable: script.clone(),
+                        arguments: vec![template.into()],
+                        working_directory: None,
+                        subscriptions: Vec::new(),
+                    };
+                    editor
+                        .stage_configured(&tool, ToolContext::default(), file_name, &[0xa5; 32], 41)
+                        .unwrap();
+                } else {
+                    editor
+                        .stage(script.clone(), file_name, &[0xa5; 32], 41)
+                        .unwrap();
+                }
+                assert_eq!(
+                    editor.pending.as_ref().unwrap().path.file_name().unwrap(),
+                    file_name
+                );
+                editor.launch_pending().unwrap();
+                let running = editor.running.take().unwrap();
+                assert_eq!(
+                    running
+                        .result
+                        .recv_timeout(std::time::Duration::from_secs(5))
+                        .unwrap()
+                        .unwrap(),
+                    [0; 32]
+                );
+                assert!(!running.directory.exists());
+            }
+        }
+        fs::remove_file(script).unwrap();
     }
 
     #[test]
