@@ -15,6 +15,34 @@ fn native_pair_round_trips_with_text_framing() {
 }
 
 #[test]
+fn every_native_text_framing_variant_round_trips_exactly() {
+    for utf8_bom in [false, true] {
+        for line_ending in [LineEnding::Lf, LineEnding::CrLf] {
+            for trailing_line_ending in [false, true] {
+                let mut library = CustomObjectLibrary::default();
+                library
+                    .push(CustomObjectEntry::new(object(&[1, 0, 3]), "Ground ≈".into()).unwrap())
+                    .unwrap();
+                library
+                    .push(CustomObjectEntry::new(object(&[2, 8, 4]), "Pipe".into()).unwrap())
+                    .unwrap();
+                let format = DescriptionFormat {
+                    utf8_bom,
+                    line_ending,
+                    trailing_line_ending,
+                };
+                library.set_description_format(format).unwrap();
+                let encoded = library.encode().unwrap();
+                let decoded = CustomObjectLibrary::decode(&encoded.0, &encoded.1).unwrap();
+                assert_eq!(decoded.description_format(), format);
+                assert_eq!(decoded.entries(), library.entries());
+                assert_eq!(decoded.encode().unwrap(), encoded);
+            }
+        }
+    }
+}
+
+#[test]
 fn synchronized_edits_search_and_failure_atomicity() {
     let mut library = CustomObjectLibrary::default();
     library
