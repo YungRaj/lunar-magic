@@ -454,6 +454,7 @@ impl RomMap16Editor {
         pasted: Option<&str>,
     ) {
         let old = (self.page, self.tile, self.quadrant);
+        let paste_shortcut = take_map16_paste_shortcut(ui);
         ui.add(egui::Slider::new(&mut self.page, 0..=pages.saturating_sub(1)).text("Page"));
         ui.add(egui::Slider::new(&mut self.tile, 0..=Map16Page::TILE_COUNT - 1).text("Tile"));
         egui::ComboBox::from_label("Quadrant")
@@ -481,10 +482,10 @@ impl RomMap16Editor {
                     Err(error) => self.error = Some(error),
                 }
             }
-            if ui
+            let paste_clicked = ui
                 .add_enabled(!stale, egui::Button::new("Paste tile"))
-                .clicked()
-            {
+                .clicked();
+            if !stale && (paste_clicked || paste_shortcut) {
                 self.rectangle_clipboard_paste_target = None;
                 let revision = self
                     .workspace
@@ -807,6 +808,13 @@ impl RomMap16Editor {
 fn take_map16_commit_shortcut(ui: &mut egui::Ui) -> bool {
     ui.input_mut(|input| {
         !input.modifiers.any() && input.consume_key(egui::Modifiers::NONE, egui::Key::F9)
+    })
+}
+
+fn take_map16_paste_shortcut(ui: &mut egui::Ui) -> bool {
+    ui.input_mut(|input| {
+        let modifiers = input.modifiers;
+        modifiers.ctrl && input.consume_key(modifiers, egui::Key::V)
     })
 }
 

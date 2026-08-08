@@ -1346,6 +1346,11 @@ original white and black grid colors and refreshes the view. `DrawMap16PageBound
 now exposes the same initially hidden grid, fixed F8 gesture, independent color gesture, and visible
 white/black control while keeping the selected-tile outline above the grid.
 
+Table case `$08` is actual `V` and dispatches paste command `$2276` whenever Ctrl is down; it does
+not reject simultaneous Shift or Alt. The native editor now consumes those exact Ctrl+V variants
+and routes them through the same request-captured ROM revision, staged revision, and Map16 address
+used by its visible Paste Tile action. Non-Ctrl V remains unconsumed.
+
 The separate Map16 tile-selector/viewer subsystem through `004e99c0` is now named. It consists of an outer selector window, a scrollable 256x256 tile-view child, and a status bar. Recovered behavior includes DPI-aware percentage scaling, client/outer size calculation, horizontal and vertical scroll state, mouse-wheel page motion, hover and primary/secondary selection highlighting, keyboard page navigation, foreground-page unlocking, palette-context changes, and top-down 32-bit DIB cache creation/rendering/cleanup. Typed and named the current/maximum selector page, selected and hovered absolute tile numbers, palette context, and backing pixel pointer.
 
 The outer Layer 1 selector creator and the beginning of the main level-editor presentation layer through `004eac40` are now named. This includes renderer/file-error reporting, status-bar sizing and DPI handling, horizontal/vertical level-editor scroll state, backing-cache and auxiliary-buffer cleanup, and the toolbar icon system. The toolbar uses a 24-entry command table with parallel enabled/disabled icon arrays, supports an external `Lunar Magic.ff5` bitmap, compressed and built-in fallbacks, per-window DPI scaling, right-to-left mirroring, and a separately rebuilt alternate mode cache.

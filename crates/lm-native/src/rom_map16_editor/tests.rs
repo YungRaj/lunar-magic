@@ -196,6 +196,94 @@ fn original_map16_f8_grid_shortcut_separates_visibility_and_color_chords() {
 }
 
 #[test]
+fn original_map16_paste_shortcut_requires_ctrl_and_accepts_other_modifiers() {
+    fn observed(modifiers: egui::Modifiers) -> bool {
+        let context = egui::Context::default();
+        let mut taken = false;
+        let _ = context.run(
+            egui::RawInput {
+                events: vec![egui::Event::Key {
+                    key: egui::Key::V,
+                    physical_key: None,
+                    pressed: true,
+                    repeat: false,
+                    modifiers,
+                }],
+                modifiers,
+                ..Default::default()
+            },
+            |context| {
+                egui::CentralPanel::default().show(context, |ui| {
+                    taken = take_map16_paste_shortcut(ui);
+                });
+            },
+        );
+        taken
+    }
+
+    for modifiers in [
+        egui::Modifiers::CTRL,
+        egui::Modifiers::CTRL | egui::Modifiers::SHIFT,
+        egui::Modifiers::CTRL | egui::Modifiers::ALT,
+        egui::Modifiers::CTRL | egui::Modifiers::ALT | egui::Modifiers::SHIFT,
+    ] {
+        assert!(observed(modifiers));
+    }
+    for modifiers in [
+        egui::Modifiers::NONE,
+        egui::Modifiers::SHIFT,
+        egui::Modifiers::ALT,
+        egui::Modifiers::COMMAND,
+    ] {
+        assert!(!observed(modifiers));
+    }
+}
+
+#[test]
+fn ctrl_v_captures_the_current_map16_target_before_requesting_clipboard_data() {
+    let mut app = AppState::default();
+    app.load_rom(pristine_fixture()).unwrap();
+    app.dispatch(Command::ShowMap16).unwrap();
+    let mut editor = RomMap16Editor::default();
+    editor.open(&app);
+    editor.page = 0x23;
+    editor.tile = 0x45;
+    let expected_revision = editor.workspace.as_ref().unwrap().controller.revision();
+
+    let context = egui::Context::default();
+    let _ = context.run(
+        egui::RawInput {
+            events: vec![egui::Event::Key {
+                key: egui::Key::V,
+                physical_key: None,
+                pressed: true,
+                repeat: false,
+                modifiers: egui::Modifiers::CTRL,
+            }],
+            modifiers: egui::Modifiers::CTRL,
+            ..Default::default()
+        },
+        |context| {
+            egui::CentralPanel::default().show(context, |ui| {
+                editor.selection_and_clipboard(ui, false, lm_app::SMW_COMPLETE_MAP16_PAGES, None);
+            });
+        },
+    );
+
+    assert_eq!(
+        editor.clipboard_paste_target,
+        Some((
+            expected_revision,
+            editor.staged_revision,
+            Map16Address {
+                page: 0x23,
+                tile: 0x45
+            }
+        ))
+    );
+}
+
+#[test]
 fn unmodified_f9_routes_through_the_existing_map16_commit_transaction() {
     let mut app = AppState::default();
     app.load_rom(pristine_fixture()).unwrap();
