@@ -16,6 +16,7 @@ use lm_rats::{AllocationPolicy, HEADER_LEN, HeaderError, RatsBlock, parse_at};
 use lm_rom::{
     LunarMagicRomMetadata, LunarMagicRomMetadataError, Mapper, RomError, pc_to_snes, snes_to_pc,
 };
+use sha2::{Digest, Sha256};
 use std::fmt;
 use std::ops::Range;
 
@@ -53,6 +54,18 @@ const SHARED_PALETTE_RUNTIME_A: [u8; 0x0d] = [
 ];
 const SHARED_PALETTE_RUNTIME_B: [u8; 0x10] = [
     0x9c, 0xcd, 0x13, 0x64, 0xfe, 0x64, 0xff, 0x84, 0x76, 0x84, 0x89, 0x6b, 0xff, 0xff, 0xff, 0xff,
+];
+const GENERATION_101_SHARED_PALETTE_RUNTIME_A: [u8; 0x0d] = [
+    0xa5, 0x0e, 0x1a, 0x85, 0xfe, 0x3a, 0x0a, 0xa8, 0x6b, 0xff, 0xff, 0xff, 0xff,
+];
+const GENERATION_101_SHARED_PALETTE_RUNTIME_B: [u8; 0x10] = [
+    0x64, 0xfe, 0x64, 0xff, 0x84, 0x76, 0x84, 0x89, 0x6b, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+];
+
+const GENERATION_101_CORE_DIGEST: &str =
+    "10dbd77a94ddb479cf4ac83360c824ccf97f58dbbc55f61770465369e6cc90e0";
+const GENERATION_101_IRAM_ADDENDS: [u16; 12] = [
+    0x05af, 0x05af, 0x0b4a, 0x05cf, 0x0b82, 0x0b82, 0x0b82, 0x0b82, 0x0b82, 0x0b82, 0x0b82, 0x0b82,
 ];
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -319,6 +332,63 @@ pub fn detect_smw_us_v1_current_expanded_exanimation_runtime(
     detect_smw_us_v1_current_expanded_exanimation_runtime_for_mapper(bytes, Mapper::LoRom, false)
 }
 
+fn generation_101_core_matches(
+    installed: &[u8],
+    expected_relocations: &[u8],
+    runtime_offset: usize,
+) -> bool {
+    if installed.len() != 0xc30 || expected_relocations.len() != installed.len() {
+        return false;
+    }
+    for (offset, len) in SNES_POINTER_OFFSETS
+        .into_iter()
+        .map(|offset| (offset, 3))
+        .chain(std::iter::once((
+            LOCAL_WORD_TABLE_OFFSET,
+            LOCAL_WORD_TABLE_ENTRIES * 2,
+        )))
+    {
+        if installed[offset..offset + len] != expected_relocations[offset..offset + len] {
+            return false;
+        }
+    }
+    let Ok(runtime_base) = pc_to_snes(Mapper::LoRom, runtime_offset) else {
+        return false;
+    };
+    for (offset, addend) in IRAM_WORD_OFFSETS
+        .into_iter()
+        .zip(GENERATION_101_IRAM_ADDENDS)
+    {
+        let expected = (runtime_base as u16).wrapping_add(addend);
+        if installed[offset..offset + 2] != expected.to_le_bytes() {
+            return false;
+        }
+    }
+
+    generation_101_core_digest_matches(installed)
+}
+
+fn generation_101_core_digest_matches(installed: &[u8]) -> bool {
+    if installed.len() != 0xc30 {
+        return false;
+    }
+    let mut canonical = installed.to_vec();
+    for offset in MAPPING_BYTE_OFFSETS {
+        canonical[offset] = 0;
+    }
+    canonical[0x46..0x49].fill(0);
+    canonical[0x65] = 0;
+    for offset in SNES_POINTER_OFFSETS {
+        canonical[offset..offset + 3].fill(0);
+    }
+    for offset in IRAM_WORD_OFFSETS {
+        canonical[offset..offset + 2].fill(0);
+    }
+    canonical[LOCAL_WORD_TABLE_OFFSET..LOCAL_WORD_TABLE_OFFSET + LOCAL_WORD_TABLE_ENTRIES * 2]
+        .fill(0);
+    format!("{:x}", Sha256::digest(canonical)) == GENERATION_101_CORE_DIGEST
+}
+
 /// Authenticates the complete current runtime family for a concrete mapper/runtime form.
 pub fn detect_smw_us_v1_current_expanded_exanimation_runtime_for_mapper(
     bytes: &[u8],
@@ -424,7 +494,11 @@ pub fn detect_smw_us_v1_current_expanded_exanimation_runtime_for_mapper(
     .map_err(SmwUsV1ExpandedExAnimationRuntimeDetectError::Relocation)?;
     expected[0x46..0x49].copy_from_slice(&installed[0x46..0x49]);
     expected[0x65] = installed[0x65];
-    if installed != expected {
+    let generation_101 = installed != expected
+        && mapper == Mapper::LoRom
+        && !mapper_runtime
+        && generation_101_core_matches(installed, &expected, runtime_offset);
+    if installed != expected && !generation_101 {
         return Err(SmwUsV1ExpandedExAnimationRuntimeDetectError::RuntimeMismatch);
     }
     let pointer_hook_target = mapped_address(runtime_offset + 0x170)
@@ -454,8 +528,16 @@ pub fn detect_smw_us_v1_current_expanded_exanimation_runtime_for_mapper(
         (shared_b_target >> 8) as u8,
         (shared_b_target >> 16) as u8,
     ];
-    let mut shared_a = SHARED_PALETTE_RUNTIME_A;
-    let mut shared_b = SHARED_PALETTE_RUNTIME_B;
+    let mut shared_a = if generation_101 {
+        GENERATION_101_SHARED_PALETTE_RUNTIME_A
+    } else {
+        SHARED_PALETTE_RUNTIME_A
+    };
+    let mut shared_b = if generation_101 {
+        GENERATION_101_SHARED_PALETTE_RUNTIME_B
+    } else {
+        SHARED_PALETTE_RUNTIME_B
+    };
     let mut level_graphics = LEVEL_GRAPHICS_RUNTIME;
     if mapper_runtime {
         add_mapper_iram_word(&mut shared_a, 3);
@@ -471,7 +553,13 @@ pub fn detect_smw_us_v1_current_expanded_exanimation_runtime_for_mapper(
         (mapper_rom_offset(mapper, 0x26b8), &shared_b_hook[..]),
         (shared_b_offset, &shared_b[..]),
     ] {
-        if bytes.get(offset..offset + expected.len()) != Some(expected) {
+        let actual = bytes.get(offset..offset + expected.len());
+        let mirrored_generation_101_hook = generation_101
+            && matches!(offset, 0x2d8e2 | 0x26b8)
+            && actual.is_some_and(|actual| {
+                actual.len() == 4 && actual[..3] == expected[..3] && actual[3] == expected[3] ^ 0x80
+            });
+        if actual != Some(expected) && !mirrored_generation_101_hook {
             return Err(
                 SmwUsV1ExpandedExAnimationRuntimeDetectError::FixedRangeMismatch { offset },
             );
@@ -964,13 +1052,109 @@ mod tests {
     use super::*;
     use base64::{Engine as _, engine::general_purpose::STANDARD};
     use flate2::read::GzDecoder;
-    use lm_project::{Project, RelocatablePatchError};
+    use lm_project::{ExAnimationRomLayout, LevelPointerTable, Project, RelocatablePatchError};
     use lm_rats::make_header;
     use lm_rom::{RomImage, SnesChecksum, pc_to_snes};
     use std::{fs, io::Read, path::PathBuf};
 
     const EXLOROM_RUNTIME_ORACLE_GZIP_BASE64: &str =
         include_str!("assets/exanimation_exlorom_runtime.bin.gz.b64");
+
+    fn generation_101_payload_modes(
+        image: &RomImage,
+        pointers: LevelPointerTable,
+    ) -> ([bool; 256], usize) {
+        let mut recovered = [None; 256];
+        let mut populated = 0usize;
+        for slot in 0..pointers.entries {
+            let pointer = pointers.pointer_offset(slot).unwrap();
+            let raw = &image.logical_bytes()[pointer..pointer + 3];
+            if raw[2] == 0 {
+                continue;
+            }
+            populated += 1;
+            let address = lm_rom::SnesPointer24::decode(raw).unwrap().get();
+            let offset = lm_rom::snes_to_pc(Mapper::LoRom, address).unwrap();
+            let owner = owned_block(image.logical_bytes(), offset).unwrap();
+            let payload = &image.logical_bytes()[owner.payload];
+            let record_count = usize::from(payload[0]);
+            let trigger_mask = u16::from_le_bytes([payload[6], payload[7]]);
+            let offset_base = 8 + trigger_mask.count_ones() as usize;
+            let table_end = offset_base + record_count * 2;
+            let mut starts = payload[offset_base..table_end]
+                .chunks_exact(2)
+                .filter_map(|pair| {
+                    let relative = usize::from(u16::from_le_bytes([pair[0], pair[1]]));
+                    (relative != 0).then_some(offset_base + relative)
+                })
+                .collect::<Vec<_>>();
+            starts.sort_unstable();
+            starts.dedup();
+            for (index, start) in starts.iter().copied().enumerate() {
+                let end = starts.get(index + 1).copied().unwrap_or(payload.len());
+                let metadata = &payload[start..start + 5];
+                let base = if (0x18..=0x1b).contains(&metadata[0]) || metadata[0] == 0 {
+                    0
+                } else {
+                    (usize::from(metadata[2]) + 1) * 2
+                };
+                let actual = end - (start + 5);
+                let double = match (actual == base, actual == base * 2) {
+                    (true, false) => false,
+                    (false, true) => true,
+                    (true, true) => false,
+                    _ => panic!(
+                        "generation-1.01 slot {slot:#05x} mode {:#04x} has {actual} frame bytes, expected {base} or {}",
+                        metadata[1],
+                        base * 2
+                    ),
+                };
+                let mode = usize::from(metadata[1]);
+                if let Some(previous) = recovered[mode] {
+                    assert_eq!(previous, double, "conflicting size for mode {mode:#04x}");
+                }
+                recovered[mode] = Some(double);
+            }
+        }
+        (recovered.map(|value| value.unwrap_or(false)), populated)
+    }
+
+    fn verify_generation_101_level_payloads(image: &RomImage, runtime: &RatsBlock) -> usize {
+        let pointer_offset = mapped_operand(
+            Mapper::LoRom,
+            &image.logical_bytes()[runtime.payload.start + 0xea..runtime.payload.start + 0xed],
+        )
+        .unwrap();
+        let layout = ExAnimationRomLayout {
+            mapper: Mapper::LoRom,
+            pointers: LevelPointerTable {
+                offset: pointer_offset,
+                entries: 0x200,
+                stride: 3,
+            },
+            maximum_records: 0x40,
+            maximum_encoded_len: 0x8000,
+        };
+        let project = Project::new(image.clone());
+        let (modes, populated) = generation_101_payload_modes(image, layout.pointers);
+        for slot in 0..0x200 {
+            let pointer = layout.pointers.pointer_offset(slot).unwrap();
+            let raw = &image.logical_bytes()[pointer..pointer + 3];
+            if raw[2] == 0 {
+                continue;
+            }
+            let animation = project
+                .load_exanimation(slot, layout, &modes)
+                .unwrap_or_else(|error| panic!("generation-1.01 slot {slot:#05x}: {error}"));
+            let encoded = animation.encode(&modes).unwrap();
+            let (decoded, consumed) =
+                lm_graphics::CompactExAnimation::decode(&encoded, layout.maximum_records, &modes)
+                    .unwrap();
+            assert_eq!(consumed, encoded.len());
+            assert_eq!(decoded, animation, "generation-1.01 slot {slot:#05x}");
+        }
+        populated
+    }
 
     fn mapper_metadata_rom(mapper: Mapper, feature_bits: Option<u32>, hook_word: u16) -> Vec<u8> {
         let mut bytes = RomImage::from_bytes(crate::test_support::pristine_smw_us_rom_bytes())
@@ -1512,6 +1696,60 @@ mod tests {
             probe_smw_us_v1_expanded_exanimation_runtime_generation(retained.logical_bytes())
                 .unwrap(),
             SmwUsV1ExpandedExAnimationRuntimeGeneration::Current
+        );
+    }
+
+    #[test]
+    fn external_generation_101_current_family_authenticates_when_supplied() {
+        let Ok(path) = std::env::var("LM_EXPANDED_EXANIMATION_101_ROM") else {
+            return;
+        };
+        let image = RomImage::from_bytes(fs::read(path).unwrap()).unwrap();
+        let runtime =
+            detect_smw_us_v1_current_expanded_exanimation_runtime(image.logical_bytes()).unwrap();
+        assert_eq!(runtime.payload.len(), 0xc30);
+        assert_eq!(
+            &image.logical_bytes()[runtime.payload.start + 0x169..runtime.payload.start + 0x16d],
+            &[0x4c, 0x4d, 0x01, 0x01]
+        );
+        assert_eq!(
+            probe_smw_us_v1_expanded_exanimation_runtime_generation(image.logical_bytes()).unwrap(),
+            SmwUsV1ExpandedExAnimationRuntimeGeneration::Current
+        );
+
+        for relative in [0x120, IRAM_WORD_OFFSETS[0]] {
+            let mut corrupt = image.logical_bytes().to_vec();
+            corrupt[runtime.payload.start + relative] ^= 1;
+            assert!(
+                detect_smw_us_v1_current_expanded_exanimation_runtime(&corrupt).is_err(),
+                "generation-1.01 corruption at core+{relative:#x} was accepted"
+            );
+        }
+        let mut corrupt_owner = image.logical_bytes().to_vec();
+        corrupt_owner[runtime.header_offset + 6] ^= 1;
+        assert!(detect_smw_us_v1_current_expanded_exanimation_runtime(&corrupt_owner).is_err());
+    }
+
+    #[test]
+    fn external_generation_101_level_payloads_round_trip_when_supplied() {
+        let Ok(path) = std::env::var("LM_EXPANDED_EXANIMATION_101_PAYLOAD_ROM") else {
+            return;
+        };
+        let image = RomImage::from_bytes(fs::read(path).unwrap()).unwrap();
+        let marker = image
+            .logical_bytes()
+            .windows(4)
+            .position(|window| window == [0x4c, 0x4d, 0x01, 0x01])
+            .expect("generation-1.01 core marker is absent");
+        let runtime_offset = marker.checked_sub(0x169).unwrap();
+        let runtime = owned_block(image.logical_bytes(), runtime_offset).unwrap();
+        assert_eq!(runtime.payload.len(), 0xc30);
+        assert!(generation_101_core_digest_matches(
+            &image.logical_bytes()[runtime.payload.clone()]
+        ));
+        assert!(
+            verify_generation_101_level_payloads(&image, &runtime) > 0,
+            "historical payload oracle has no populated level slots"
         );
     }
 
