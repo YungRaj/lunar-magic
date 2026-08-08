@@ -1,0 +1,20 @@
+field	value
+lunar_magic_version	3.63
+dialog_title	Lunar Magic
+question	Save level to ROM?
+save_button_title	&Yes
+save_button_id	6
+discard_button_title	&No
+discard_button_id	7
+cancel_button_title	Cancel
+cancel_button_id	2
+cancel_frame_present	true
+cancel_modified_byte	01
+discard_process_closed	true
+prompt_enable_byte	01
+loaded_state_byte	01
+modified_state_byte	01
+save_command_id	0x2392
+prompt_function	0x00491080
+core_coordinator_function	0x00455F50
+all_coordinator_function	0x00455F80

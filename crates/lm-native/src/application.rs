@@ -516,6 +516,7 @@ impl NativeApplication {
             UiTextKey::UnsavedDiscard,
             UiTextKey::UnsavedDiscard.english(),
         );
+        let save = self.localized(UiTextKey::FileSave, UiTextKey::FileSave.english());
         egui::Window::new(self.localized(
             UiTextKey::UnsavedChangesTitle,
             UiTextKey::UnsavedChangesTitle.english(),
@@ -526,6 +527,14 @@ impl NativeApplication {
         .show(context, |ui| {
             ui.label(&question);
             ui.horizontal(|ui| {
+                if ui.button(&save).clicked() {
+                    self.effects.confirmation = None;
+                    self.effects.save_before_confirmation_action(
+                        &mut self.app,
+                        context,
+                        confirmation,
+                    );
+                }
                 if ui.button(&cancel).clicked() {
                     self.effects.confirmation = None;
                     if matches!(confirmation, Confirmation::DiscardAndOpen) {

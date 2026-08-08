@@ -15,6 +15,7 @@ pub(crate) enum Confirmation {
 #[derive(Default)]
 pub(crate) struct EffectState {
     pub confirmation: Option<Confirmation>,
+    pub(crate) save_then: Option<Confirmation>,
     pub error: Option<String>,
     pub quit_requested: bool,
     pub(crate) requested_rom_path: Option<PathBuf>,
@@ -142,6 +143,7 @@ impl EffectState {
                 }
             },
             Err(error) => {
+                self.save_then = None;
                 self.error = Some(
                     match app.save_failed(completion.request_id, error.clone()) {
                         Ok(()) => error,
@@ -153,7 +155,24 @@ impl EffectState {
                 return;
             }
         };
-        self.follow(app, context, result);
+        match result {
+            Ok(effects) => {
+                self.handle(app, context, effects);
+                if let Some(confirmation) = self.save_then.take() {
+                    let effects = match confirmation {
+                        Confirmation::DiscardAndOpen => app.discard_and_request_open(),
+                        Confirmation::DiscardAndClose { quit_after } => {
+                            Ok(app.discard_and_close(quit_after))
+                        }
+                    };
+                    self.follow(app, context, effects);
+                }
+            }
+            Err(error) => {
+                self.save_then = None;
+                self.error = Some(error.to_string());
+            }
+        }
     }
 
     fn start_persistence(
@@ -164,6 +183,7 @@ impl EffectState {
         bytes: Vec<u8>,
     ) {
         if let Err(error) = self.persistence.start(request_id, target, bytes) {
+            self.save_then = None;
             self.error = Some(match app.save_failed(request_id, error.clone()) {
                 Ok(()) => error,
                 Err(acknowledgement) => {
@@ -219,6 +239,7 @@ impl EffectState {
 
     fn choose_save_destination(&mut self, app: &mut AppState, request_id: u64, bytes: &[u8]) {
         let Some(path) = dialogs::choose_save_path() else {
+            self.save_then = None;
             if let Err(error) = app.cancel_save(request_id) {
                 self.error = Some(error.to_string());
             }
@@ -230,6 +251,22 @@ impl EffectState {
             crate::persistence_worker::PersistenceTarget::Create(path),
             bytes.to_vec(),
         );
+    }
+
+    pub(crate) fn save_before_confirmation_action(
+        &mut self,
+        app: &mut AppState,
+        context: &egui::Context,
+        confirmation: Confirmation,
+    ) {
+        self.save_then = Some(confirmation);
+        match app.dispatch(lm_app::Command::Save) {
+            Ok(effects) => self.handle(app, context, effects),
+            Err(error) => {
+                self.save_then = None;
+                self.error = Some(error.to_string());
+            }
+        }
     }
 
     fn follow<E: std::fmt::Display>(
@@ -279,6 +316,34 @@ mod tests {
                 _ => None,
             })
             .unwrap()
+    }
+
+    #[test]
+    fn retained_lm363_dirty_close_prompt_has_save_discard_cancel_contract() {
+        let fixture = include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../docs/oracle-work/lm363/pristine-us/lifecycle-dirty-close/observation.tsv"
+        ));
+        let field = |name: &str| {
+            fixture
+                .lines()
+                .find_map(|line| line.split_once('\t').filter(|(key, _)| *key == name))
+                .map(|(_, value)| value)
+                .unwrap_or_else(|| panic!("missing retained lifecycle field {name}"))
+        };
+
+        assert_eq!(field("dialog_title"), "Lunar Magic");
+        assert_eq!(field("question"), "Save level to ROM?");
+        assert_eq!(field("save_button_title"), "&Yes");
+        assert_eq!(field("save_button_id"), "6");
+        assert_eq!(field("discard_button_title"), "&No");
+        assert_eq!(field("discard_button_id"), "7");
+        assert_eq!(field("cancel_button_title"), "Cancel");
+        assert_eq!(field("cancel_button_id"), "2");
+        assert_eq!(field("cancel_frame_present"), "true");
+        assert_eq!(field("cancel_modified_byte"), "01");
+        assert_eq!(field("discard_process_closed"), "true");
+        assert_eq!(field("save_command_id"), "0x2392");
     }
 
     #[test]
@@ -360,6 +425,73 @@ mod tests {
         assert_eq!(app.mode, mode);
         assert_eq!(fs::read(&path).unwrap()[2], 9);
         fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn confirmed_save_closes_only_after_successful_persistence() {
+        let path = path();
+        let bytes = test_rom();
+        fs::write(&path, &bytes).unwrap();
+        let mut app = AppState::default();
+        app.load_rom_at(bytes, Some(path.clone())).unwrap();
+        app.dispatch(Command::CommitRomWrites {
+            expected_revision: app.project_revision(),
+            description: "dirty before confirmed close".into(),
+            writes: vec![RomWrite {
+                offset: 4,
+                bytes: vec![0x44],
+            }],
+        })
+        .unwrap();
+
+        let context = egui::Context::default();
+        let mut state = EffectState::default();
+        state.save_before_confirmation_action(
+            &mut app,
+            &context,
+            Confirmation::DiscardAndClose { quit_after: true },
+        );
+        assert!(app.project().is_some());
+        assert!(!state.quit_requested);
+
+        let completion = state.persistence.wait_for_test();
+        state.complete_persistence(&context, &mut app, completion);
+
+        assert!(app.project().is_none());
+        assert!(state.quit_requested);
+        assert_eq!(fs::read(&path).unwrap()[4], 0x44);
+        fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn failed_confirmed_save_keeps_dirty_project_open() {
+        let path = path().join("missing-parent").join("rom.smc");
+        let mut app = AppState::default();
+        app.load_rom_at(test_rom(), Some(path)).unwrap();
+        app.dispatch(Command::CommitRomWrites {
+            expected_revision: app.project_revision(),
+            description: "dirty before failed confirmed close".into(),
+            writes: vec![RomWrite {
+                offset: 5,
+                bytes: vec![0x55],
+            }],
+        })
+        .unwrap();
+
+        let context = egui::Context::default();
+        let mut state = EffectState::default();
+        state.save_before_confirmation_action(
+            &mut app,
+            &context,
+            Confirmation::DiscardAndClose { quit_after: true },
+        );
+        let completion = state.persistence.wait_for_test();
+        state.complete_persistence(&context, &mut app, completion);
+
+        assert!(app.project().unwrap().is_modified());
+        assert!(!state.quit_requested);
+        assert!(state.save_then.is_none());
+        assert!(state.error.is_some());
     }
 
     #[test]
