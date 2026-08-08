@@ -271,6 +271,87 @@ fn retained_custom_object_preview_is_hash_and_structure_bound() {
     assert_eq!(&bytes[24..29], &[8, 6, 0, 0, 0]);
 }
 
+#[test]
+#[ignore = "requires Wine, MinGW, local Lunar Magic 3.63, and the verified pristine SMW-US ROM"]
+fn lunar_magic_hides_a_custom_description_without_its_final_newline() {
+    let root = fs::canonicalize(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..")).unwrap();
+    let lunar_magic = root.join("lm363/Lunar Magic.exe");
+    let pristine = root.join("sysLMRestore/smwOrig.smc");
+    let pristine_bytes = fs::read(&pristine).unwrap();
+    assert_eq!(
+        lm_oracle::sha256_hex(&fs::read(&lunar_magic).unwrap()),
+        LUNAR_MAGIC_363_SHA256
+    );
+    assert_eq!(
+        lm_oracle::sha256_hex(&pristine_bytes),
+        PRISTINE_HEADERED_SMW_US_SHA256
+    );
+    let nonce = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    let directory = root.join("target/custom-object-wine-oracle").join(format!(
+        "lm-custom-object-wine-rejection-{}-{nonce}",
+        std::process::id()
+    ));
+    fs::create_dir_all(&directory).unwrap();
+    let prefix = PathBuf::new();
+    let running = successful(&prefix, "wine", &["tasklist"]);
+    assert!(!String::from_utf8_lossy(&running.stdout).contains("Lunar Magic.exe"));
+
+    let rom = pristine.parent().unwrap().join(format!(
+        "custom-object-rejection-{}-{nonce}.smc",
+        std::process::id()
+    ));
+    let _cleanup = OracleFixtureCleanup {
+        directory: directory.clone(),
+        rom: rom.clone(),
+        keep: std::env::var_os("LM_KEEP_CUSTOM_OBJECT_ORACLE").is_some(),
+    };
+    fs::copy(&pristine, &rom).unwrap();
+    let data = [0, 0, 0, 0, 0, 1, 0, 4, 0xff];
+    let decoded = CustomObjectLibrary::decode(&data, b"incomplete").unwrap();
+    assert_eq!(decoded.entries().len(), 1);
+    assert!(decoded.lunar_magic_picker_entries().is_empty());
+    fs::write(rom.with_extension("mw0"), data).unwrap();
+    fs::write(rom.with_extension("mw0t"), b"incomplete").unwrap();
+
+    let oracle_helper = directory.join("wine-custom-object-oracle.exe");
+    compile_helper(
+        &root,
+        "tools/wine-custom-object-oracle.c",
+        &oracle_helper,
+        &["-luser32"],
+    );
+    let startup_rom = wine_path(&prefix, &rom);
+    let mut launcher = Command::new("wine")
+        .env("WINEDEBUG", "-all")
+        .current_dir(&root)
+        .arg(&lunar_magic)
+        .arg(&startup_rom)
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .unwrap();
+    thread::sleep(Duration::from_secs(5));
+    successful(
+        &prefix,
+        "wine",
+        &[
+            oracle_helper.to_str().unwrap(),
+            "Lunar Magic.exe",
+            "--expect-empty",
+            "0",
+            "0",
+            "unused",
+            "unused",
+        ],
+    );
+    wait_for_lunar_magic_exit(&prefix);
+    let _ = launcher.wait();
+    assert_eq!(fs::read(&rom).unwrap(), pristine_bytes);
+}
+
 /// Loads a Rust-authored two-object `.mw0`/`.mw0t` collection in Lunar Magic 3.63, binds its
 /// description to the live picker entry, retains its rendered preview, pastes the complete group,
 /// saves the ROM, and proves both objects survive Lunar Magic's own MWL exporter.

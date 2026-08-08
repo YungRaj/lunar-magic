@@ -2686,6 +2686,10 @@ and modified levels through Lunar Magic itself. It requires the two-record place
 exactly `[06 06 10]`, `[07 0E 10]`, matching the original's recovered custom-selector and relative-
 coordinate conversion; every other MWL domain, the ROM identity, and the repaired checksum remain
 unchanged. Failure cleanup owns only its nonce-scoped ROM, sidecars, helper, and captures.
+`PopulateCustomObjectTemplateList` additionally proves the original commits a picker row only when
+it consumes LF. The live no-final-newline gate observes zero custom rows and an unchanged ROM;
+`lunar_magic_picker_entries()` reproduces that view without discarding the final description from
+the lossless editor or its byte-exact re-encoding.
 
 Custom sprite-placement libraries use the distinct synchronized `.mw2`/`.mwt` model. The binary
 half retains its one-byte header and groups one or more variable-width sprite records by the

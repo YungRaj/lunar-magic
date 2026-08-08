@@ -148,6 +148,24 @@ fn object_count_disambiguates_empty_final_description() {
 }
 
 #[test]
+fn original_picker_hides_only_the_unterminated_final_description() {
+    let data = [0, 0, 0, 0, 0, 1, 0, 4, 0x82, 8, 4, 0xff];
+    let terminated = CustomObjectLibrary::decode(&data, b"one\ntwo\n").unwrap();
+    assert_eq!(
+        terminated.lunar_magic_picker_entries(),
+        terminated.entries()
+    );
+
+    let unterminated = CustomObjectLibrary::decode(&data, b"one\ntwo").unwrap();
+    assert_eq!(unterminated.entries().len(), 2);
+    assert_eq!(
+        unterminated.lunar_magic_picker_entries(),
+        &unterminated.entries()[..1]
+    );
+    assert_eq!(unterminated.encode().unwrap().1, b"one\ntwo");
+}
+
+#[test]
 fn every_data_truncation_and_sidecar_limits_fail() {
     let data = [0, 0, 0, 0, 0, 0x00, 0x00, 0x00, 0x12, 0xff];
     for length in 0..data.len() {

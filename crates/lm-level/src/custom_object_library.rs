@@ -175,6 +175,18 @@ impl CustomObjectLibrary {
         &self.entries
     }
 
+    /// Returns the entries Lunar Magic publishes in its Add Objects picker.
+    ///
+    /// The original list population loop commits a description only when it consumes an LF. A
+    /// losslessly retained final description without its line ending therefore remains editable
+    /// and re-encodable, but is deliberately absent from the original picker.
+    #[must_use]
+    pub fn lunar_magic_picker_entries(&self) -> &[CustomObjectEntry] {
+        let hidden_tail =
+            usize::from(!self.description_format.trailing_line_ending && !self.entries.is_empty());
+        &self.entries[..self.entries.len() - hidden_tail]
+    }
+
     /// Returns the five native reserved bytes retained from the `.mw0` file.
     #[must_use]
     pub const fn data_header(&self) -> &[u8; CUSTOM_OBJECT_HEADER_LEN] {

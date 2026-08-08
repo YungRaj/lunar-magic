@@ -21,3 +21,10 @@ Magic's undefined-exit warning, and closed the editor. Lunar Magic's own before/
 differed by exactly the two placed records `[06 06 10]` and `[07 0E 10]`; header, Layer 2,
 sprites, palette, secondary exits, ExAnimation, and expanded settings remained equal, and the ROM
 checksum reopened valid. The nonce-scoped ROM and sidecars are not retained.
+
+The companion `lunar_magic_hides_a_custom_description_without_its_final_newline` run used a
+well-formed one-entry `.mw0` and the byte-exact text `incomplete` without a final LF. Ghidra's
+`PopulateCustomObjectTemplateList` shows that Lunar Magic commits list rows only on LF. The live
+custom category consequently contained zero entries, Lunar Magic closed normally, and the ROM
+remained byte-identical to the authenticated pristine input. Rust retains that final line for exact
+round-trip editing but exposes `lunar_magic_picker_entries()` to reproduce the original picker.

@@ -137,6 +137,7 @@ int main(int argc, char **argv) {
     unsigned long x = strtoul(argv[3], &x_end, 0);
     unsigned long y = strtoul(argv[4], &y_end, 0);
     if (!x_end || *x_end || !y_end || *y_end || x > 0xffff || y > 0xffff) return 2;
+    BOOL expect_empty = strcmp(argv[2], "--expect-empty") == 0;
 
     DWORD process_id = 0;
     for (unsigned attempt = 0; attempt < 400 && !process_id; attempt++) {
@@ -200,12 +201,17 @@ int main(int argc, char **argv) {
     LRESULT list_count = LB_ERR;
     for (unsigned attempt = 0; attempt < 400; attempt++) {
         list_count = SendMessageA(list, LB_GETCOUNT, 0, 0);
-        if (list_count == 1) break;
+        if (list_count == (expect_empty ? 0 : 1)) break;
         Sleep(25);
     }
-    if (list_count != 1) {
+    if (list_count != (expect_empty ? 0 : 1)) {
         fprintf(stderr, "unexpected custom object list count: %ld\n", (long)list_count);
         return 7;
+    }
+    if (expect_empty) {
+        puts("incomplete_description_entries=0");
+        PostMessageA(frame.window, WM_CLOSE, 0, 0);
+        return 0;
     }
     char description[1024] = {0};
     if (!read_list_text(process_id, list, 0, description, sizeof(description))) return 8;
