@@ -7,6 +7,7 @@
 
 #define CATEGORY_CONTROL_ID 0x01de
 #define LIST_CONTROL_ID 0x0065
+#define STANDARD_CATEGORY_INDEX 0
 #define CUSTOM_CATEGORY_INDEX 4
 #define ADD_SPRITES_COMMAND 0x2331
 #define TOGGLE_SPRITE_EDITING_COMMAND 0x2459
@@ -112,7 +113,7 @@ static int read_list_text(HWND list, int index, char *output, size_t capacity) {
 int main(int argc, char **argv) {
     if (argc != 7) {
         fputs(
-            "usage: wine-custom-sprite-oracle.exe EXECUTABLE EXPECTED_DESCRIPTION X Y READY_FILE CONTINUE_FILE\n",
+            "usage: wine-custom-sprite-oracle.exe EXECUTABLE EXPECTED_DESCRIPTION|--standard-first|--expect-empty X Y READY_FILE CONTINUE_FILE\n",
             stderr
         );
         return 2;
@@ -123,6 +124,7 @@ int main(int argc, char **argv) {
     unsigned long y = strtoul(argv[4], &y_end, 0);
     if (!x_end || *x_end || !y_end || *y_end || x > 0xffff || y > 0xffff) return 2;
     BOOL expect_empty = strcmp(argv[2], "--expect-empty") == 0;
+    BOOL expect_standard = strcmp(argv[2], "--standard-first") == 0;
 
     DWORD process_id = 0;
     for (unsigned attempt = 0; attempt < 400 && !process_id; attempt++) {
@@ -173,19 +175,20 @@ int main(int argc, char **argv) {
     HWND category = descendant_control(dialog, CATEGORY_CONTROL_ID);
     HWND list = descendant_control(dialog, LIST_CONTROL_ID);
     if (!category || !list) return 5;
-    if (SendMessageA(category, CB_SETCURSEL, CUSTOM_CATEGORY_INDEX, 0) == CB_ERR) return 6;
+    int category_index = expect_standard ? STANDARD_CATEGORY_INDEX : CUSTOM_CATEGORY_INDEX;
+    if (SendMessageA(category, CB_SETCURSEL, category_index, 0) == CB_ERR) return 6;
     SendMessageA(
         GetParent(category), WM_COMMAND,
         MAKEWPARAM(CATEGORY_CONTROL_ID, CBN_SELCHANGE), (LPARAM)category
     );
-    if (SendMessageA(category, CB_GETCURSEL, 0, 0) != CUSTOM_CATEGORY_INDEX) return 7;
+    if (SendMessageA(category, CB_GETCURSEL, 0, 0) != category_index) return 7;
     LRESULT list_count = LB_ERR;
     for (unsigned attempt = 0; attempt < 400; attempt++) {
         list_count = SendMessageA(list, LB_GETCOUNT, 0, 0);
-        if (list_count == (expect_empty ? 0 : 1)) break;
+        if (expect_standard ? list_count > 0 : list_count == (expect_empty ? 0 : 1)) break;
         Sleep(25);
     }
-    if (list_count != (expect_empty ? 0 : 1)) {
+    if (expect_standard ? list_count <= 0 : list_count != (expect_empty ? 0 : 1)) {
         fprintf(stderr, "unexpected custom sprite list count: %ld\n", (long)list_count);
         return 7;
     }
@@ -196,7 +199,8 @@ int main(int argc, char **argv) {
     }
     char description[1024] = {0};
     if (!read_list_text(list, 0, description, sizeof(description))) return 8;
-    if (strcmp(description, argv[2]) != 0) {
+    if (expect_standard && description[0] == '\0') return 9;
+    if (!expect_standard && strcmp(description, argv[2]) != 0) {
         fprintf(stderr, "unexpected custom sprite description: %s\n", description);
         return 9;
     }

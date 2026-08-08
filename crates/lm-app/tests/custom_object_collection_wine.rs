@@ -1,6 +1,6 @@
 use lm_level::{
     CustomObjectEntry, CustomObjectLibrary, CustomSpriteLibrary, MwlFile, ObjectRecord,
-    SpriteLengthTable, SpriteToken, SscSidecar,
+    SpriteLengthTable, SpriteRecord, SpriteToken, SscSidecar,
 };
 use lm_project::MwlNativeLevel;
 use lm_rom::RomImage;
@@ -169,6 +169,44 @@ fn wait_for_lunar_magic_exit(prefix: &Path) {
         thread::sleep(Duration::from_millis(250));
     }
     panic!("Lunar Magic did not close after the saved oracle transaction");
+}
+
+fn launch_lunar_magic_with_retry(
+    prefix: &Path,
+    root: &Path,
+    executable: &Path,
+    startup_rom: &str,
+) -> std::process::Child {
+    for _ in 0..3 {
+        let mut candidate = Command::new("wine")
+            .env("WINEDEBUG", "-all")
+            .current_dir(root)
+            .arg(executable)
+            .arg(startup_rom)
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .unwrap();
+        thread::sleep(Duration::from_secs(6));
+        let processes = run(prefix, "wine", &["tasklist"]);
+        let tasklist = String::from_utf8_lossy(&processes.stdout);
+        let healthy = candidate.try_wait().unwrap().is_none()
+            && tasklist.contains("Lunar Magic.exe")
+            && !tasklist.contains("winedbg.exe");
+        if healthy {
+            return candidate;
+        }
+        for image in [
+            "wine-custom-sprite-oracle.exe",
+            "Lunar Magic.exe",
+            "winedbg.exe",
+        ] {
+            let _ = run(prefix, "wine", &["taskkill", "/IM", image, "/F"]);
+        }
+        let _ = candidate.wait();
+        thread::sleep(Duration::from_secs(1));
+    }
+    panic!("Lunar Magic failed to remain healthy after three startup attempts");
 }
 
 fn added_object_records(before: &MwlNativeLevel, after: &MwlNativeLevel) -> Vec<Vec<u8>> {
@@ -942,6 +980,118 @@ fn rust_multi_sprite_collection_reloads_renders_and_places_in_lunar_magic() {
         [vec![0x60, 0x60, 0x00], vec![0x60, 0x70, 0x0f]],
         "Lunar Magic did not apply its custom-sprite group coordinate transformation"
     );
+    assert_eq!(after.header, before.header);
+    assert_eq!(after.layer1, before.layer1);
+    assert_eq!(after.layer2, before.layer2);
+    assert_eq!(after.palette, before.palette);
+    assert_eq!(after.secondary_exits, before.secondary_exits);
+    assert_eq!(after.exanimation, before.exanimation);
+    assert_eq!(after.expanded_settings, before.expanded_settings);
+    let image = RomImage::from_bytes(fs::read(&rom).unwrap()).unwrap();
+    assert!(lm_rom::detect_identity(&image).unwrap().checksum_matches());
+}
+
+/// Drives Lunar Magic's built-in Add Sprites dialog rather than a sidecar-defined custom row,
+/// selects its first standard entry, places it through the documented Ctrl+right-click gesture,
+/// and requires the complete exported sprite stream to equal Rust's semantic placement.
+#[test]
+#[ignore = "requires Wine, MinGW, local Lunar Magic 3.63, and the verified pristine SMW-US ROM"]
+fn lunar_magic_standard_sprite_dialog_places_the_selected_enemy_exactly() {
+    let root = fs::canonicalize(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..")).unwrap();
+    let lunar_magic = root.join("lm363/Lunar Magic.exe");
+    let pristine = root.join("sysLMRestore/smwOrig.smc");
+    assert_eq!(
+        lm_oracle::sha256_hex(&fs::read(&lunar_magic).unwrap()),
+        LUNAR_MAGIC_363_SHA256
+    );
+    assert_eq!(
+        lm_oracle::sha256_hex(&fs::read(&pristine).unwrap()),
+        PRISTINE_HEADERED_SMW_US_SHA256
+    );
+
+    let nonce = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    let directory = root
+        .join("target/standard-sprite-wine-oracle")
+        .join(format!("lm-standard-sprite-{}-{nonce}", std::process::id()));
+    fs::create_dir_all(&directory).unwrap();
+    let prefix = PathBuf::new();
+    let running = successful(&prefix, "wine", &["tasklist"]);
+    assert!(
+        !String::from_utf8_lossy(&running.stdout).contains("Lunar Magic.exe"),
+        "the standard-sprite oracle requires no pre-existing Lunar Magic process"
+    );
+
+    let rom = pristine.parent().unwrap().join(format!(
+        "standard-sprite-{}-{nonce}.smc",
+        std::process::id()
+    ));
+    let _cleanup = OracleFixtureCleanup {
+        directory: directory.clone(),
+        rom: rom.clone(),
+        keep: std::env::var_os("LM_KEEP_STANDARD_SPRITE_ORACLE").is_some(),
+    };
+    let before_mwl = directory.join("before.mwl");
+    let after_mwl = directory.join("after.mwl");
+    let preview_ready = directory.join("preview-ready.txt");
+    let preview_continue = directory.join("preview-continue");
+    fs::copy(&pristine, &rom).unwrap();
+    run_lunar_magic(&lunar_magic, "-ExportLevel", &rom, &before_mwl);
+
+    let oracle_helper = directory.join("wine-custom-sprite-oracle.exe");
+    compile_helper(
+        &root,
+        "tools/wine-custom-sprite-oracle.c",
+        &oracle_helper,
+        &["-luser32"],
+    );
+    fs::write(&preview_continue, b"continue\n").unwrap();
+    let startup_rom = wine_path(&prefix, &rom);
+    let mut launcher = launch_lunar_magic_with_retry(&prefix, &root, &lunar_magic, &startup_rom);
+    let ready_wine = wine_path(&prefix, &preview_ready);
+    let continue_wine = wine_path(&prefix, &preview_continue);
+    let oracle_output = successful(
+        &prefix,
+        "wine",
+        &[
+            oracle_helper.to_str().unwrap(),
+            "Lunar Magic.exe",
+            "--standard-first",
+            "96",
+            "96",
+            &ready_wine,
+            &continue_wine,
+        ],
+    );
+    let stdout = String::from_utf8(oracle_output.stdout).unwrap();
+    assert!(!stdout.contains("description=\n"), "{stdout}");
+    assert!(stdout.contains("placed_at=96,96"), "{stdout}");
+    wait_for_lunar_magic_exit(&prefix);
+    let _ = launcher.wait();
+    run_lunar_magic(&lunar_magic, "-ExportLevel", &rom, &after_mwl);
+
+    let before = decode_level(&before_mwl);
+    let after = decode_level(&after_mwl);
+    let mut expected_sprites = before.sprites.clone();
+    expected_sprites
+        .place_record_at_position(
+            SpriteRecord {
+                encoded: vec![0, 0, 0],
+            },
+            0,
+            6,
+            6,
+            false,
+            &SpriteLengthTable::standard(),
+        )
+        .unwrap();
+    assert_eq!(
+        after.sprites, expected_sprites,
+        "Lunar Magic's standard picker placement differs from Rust"
+    );
+    assert_eq!(added_sprite_records(&before, &after), [vec![0x60, 0x60, 0]]);
     assert_eq!(after.header, before.header);
     assert_eq!(after.layer1, before.layer1);
     assert_eq!(after.layer2, before.layer2);

@@ -29,3 +29,13 @@ Ghidra port 8089 independently binds the behavior to `LoadLevelCustomSpritePlace
 (`$00579010`), `SpritePlacementDialogProc` (`$0057C830`), and `LevelEditorWindowProc`
 (`$00498FA0`). The dialog tooltip explicitly requires Ctrl+right-click while sprite editing mode is
 active.
+
+The companion
+`lunar_magic_standard_sprite_dialog_places_the_selected_enemy_exactly` gate covers the built-in
+side of the same dialog without any custom sidecars. It activates category 0, requires a nonempty
+standard list and a live `WindowSpriteViewx` preview, selects the first built-in row, performs the
+same Ctrl+right-click at `(96, 96)`, and saves. Lunar Magic's own before/after MWL exports add
+exactly `60 60 00`, the standard green Koopa at tile `(6, 6)`. Rust independently constructs that
+placement through `NativeSpriteStream::place_record_at_position` and matches Lunar Magic's complete
+sorted sprite aggregate exactly. All nonsprite level domains remain equal and the saved ROM
+checksum is valid.
