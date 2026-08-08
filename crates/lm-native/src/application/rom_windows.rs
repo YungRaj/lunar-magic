@@ -62,7 +62,21 @@ impl NativeApplication {
         if quit {
             self.request_quit(context);
         }
-        show_rom_editor!(self, context, rom_map16_editor);
+        let active_sidecar = self.native_map16_sidecar_editor.value().cloned();
+        let (quit, command) = self.rom_map16_editor.show(
+            context,
+            self.app.project_revision(),
+            active_sidecar.as_ref(),
+        );
+        if let Some(command) = command
+            && self.try_dispatch(context, command)
+        {
+            self.rom_map16_editor.commit_succeeded();
+            self.renderer.invalidate();
+        }
+        if quit {
+            self.request_quit(context);
+        }
         show_rom_editor!(self, context, rom_palette_editor);
         let (quit, command) =
             self.rom_graphics_editor

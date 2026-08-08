@@ -13,6 +13,7 @@ mod complete_file;
 mod legacy_page;
 mod lifecycle;
 mod selected_file;
+mod sidecar_export;
 mod snes_tileset_import;
 #[cfg(test)]
 mod tests;
@@ -54,6 +55,19 @@ struct Workspace {
     snapshot: lm_app::ControllerSnapshot,
     image: lm_rom::RomImage,
     internal_header: usize,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Map16SidecarKind {
+    M16,
+    S16,
+}
+
+struct PendingSidecarExport {
+    kind: Map16SidecarKind,
+    path: std::path::PathBuf,
+    bytes: Vec<u8>,
+    revision: u64,
 }
 
 #[derive(Clone)]
@@ -182,6 +196,13 @@ pub(crate) struct RomMap16Editor {
     legacy_page_loader: DocumentLoader,
     legacy_page_persistence: crate::persistence_worker::PersistenceWorker,
     pending_legacy_import: Option<legacy_page::PendingLegacyImport>,
+    associated_sidecar_loader: DocumentLoader,
+    associated_sidecar_persistence: crate::persistence_worker::PersistenceWorker,
+    associated_sidecar_paths: Option<(std::path::PathBuf, std::path::PathBuf)>,
+    associated_m16: Option<lm_level::M16Sidecar>,
+    associated_s16: Option<lm_level::S16Sidecar>,
+    pending_sidecar_export: Option<PendingSidecarExport>,
+    sidecar_export_in_flight: Option<(Map16SidecarKind, Vec<u8>)>,
     bitmap_session: Option<lm_app::NativeMap16BitmapImportSession>,
     bitmap_extra_slot_4: String,
     bitmap_extra_slot_5: String,
@@ -209,11 +230,13 @@ impl RomMap16Editor {
         &mut self,
         context: &egui::Context,
         project_revision: u64,
+        active_sidecar: Option<&lm_app::NativeMap16SidecarDocument>,
     ) -> (bool, Option<Command>) {
         let mut command = self.poll_bitmap_loader(context);
         self.poll_complete_file_io(context);
         self.poll_selected_file_io(context);
         self.poll_legacy_page_io(context);
+        self.poll_associated_sidecar_io(context);
         self.poll_snes_tileset_io(context);
         let manifest_command = match self.manifest_loader.show(context, project_revision) {
             Some(Ok(manifest)) => match self.prepare_commit_owned(&manifest) {
@@ -238,7 +261,7 @@ impl RomMap16Editor {
             egui::Window::new("ROM Complete Map16 Editor")
                 .default_size([560.0, 650.0])
                 .show(context, |ui| {
-                    if let Some(ui_command) = self.contents(ui, project_revision) {
+                    if let Some(ui_command) = self.contents(ui, project_revision, active_sidecar) {
                         command = Some(ui_command);
                     }
                 });
@@ -250,11 +273,17 @@ impl RomMap16Editor {
             command = Some(snes_command);
         }
         self.protected_page_confirmation(context);
+        self.sidecar_export_confirmation(context);
         let approved = self.close_confirmation(context);
         self.show_error(context);
         (approved, command)
     }
-    fn contents(&mut self, ui: &mut egui::Ui, project_revision: u64) -> Option<Command> {
+    fn contents(
+        &mut self,
+        ui: &mut egui::Ui,
+        project_revision: u64,
+        active_sidecar: Option<&lm_app::NativeMap16SidecarDocument>,
+    ) -> Option<Command> {
         let commit_shortcut = take_map16_commit_shortcut(ui);
         let pasted = ui.input(|input| {
             input.events.iter().find_map(|event| match event {
@@ -281,6 +310,9 @@ impl RomMap16Editor {
             || self.selected_persistence.is_running()
             || self.legacy_page_loader.is_running()
             || self.legacy_page_persistence.is_running()
+            || self.associated_sidecar_loader.is_running()
+            || self.associated_sidecar_persistence.is_running()
+            || self.pending_sidecar_export.is_some()
             || self.bitmap_loader.is_running()
             || self.bitmap_clipboard_loader.is_running()
             || self.bitmap_session.is_some()
@@ -322,6 +354,9 @@ impl RomMap16Editor {
                 || self.selected_persistence.is_running()
                 || self.legacy_page_loader.is_running()
                 || self.legacy_page_persistence.is_running()
+                || self.associated_sidecar_loader.is_running()
+                || self.associated_sidecar_persistence.is_running()
+                || self.pending_sidecar_export.is_some()
                 || self.bitmap_loader.is_running()
                 || self.bitmap_clipboard_loader.is_running()
                 || self.bitmap_session.is_some()
@@ -335,6 +370,9 @@ impl RomMap16Editor {
             stale
                 || self.selected_loader.is_running()
                 || self.selected_persistence.is_running()
+                || self.associated_sidecar_loader.is_running()
+                || self.associated_sidecar_persistence.is_running()
+                || self.pending_sidecar_export.is_some()
                 || self.bitmap_loader.is_running()
                 || self.bitmap_clipboard_loader.is_running()
                 || self.bitmap_session.is_some()
@@ -344,6 +382,7 @@ impl RomMap16Editor {
         );
         self.bitmap_import_controls(ui, edit_blocked, project_revision);
         self.snes_tileset_controls(ui, edit_blocked, project_revision);
+        self.sidecar_export_controls(ui, edit_blocked, project_revision, active_sidecar);
         self.commit_controls(ui, edit_blocked, project_revision, commit_shortcut)
     }
     fn visual_page(&mut self, ui: &mut egui::Ui) {

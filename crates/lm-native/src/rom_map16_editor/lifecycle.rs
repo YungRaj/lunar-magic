@@ -14,6 +14,7 @@ impl RomMap16Editor {
         match decode(app) {
             Ok(workspace) => {
                 let logical_len = workspace.image.logical_len();
+                let document_path = app.document_path.clone();
                 self.workspace = Some(workspace);
                 self.page = 0;
                 self.tile = 0;
@@ -37,6 +38,7 @@ impl RomMap16Editor {
                 self.selected_height = "1".into();
                 self.selected_use_file_origin = true;
                 self.pending_legacy_import = None;
+                self.initialize_associated_sidecars(document_path);
                 self.pending_bitmap_import = None;
                 self.clipboard_paste_target = None;
                 self.rectangle_clipboard_paste_target = None;
@@ -105,6 +107,21 @@ impl RomMap16Editor {
         }
         if self.legacy_page_persistence.is_running() {
             self.error = Some("wait for Map16 page saving to finish before closing".into());
+            return false;
+        }
+        if self.associated_sidecar_loader.is_running() {
+            self.error =
+                Some("wait for associated Map16 sidecars to finish loading before closing".into());
+            return false;
+        }
+        if self.associated_sidecar_persistence.is_running() {
+            self.error =
+                Some("wait for associated Map16 sidecar export to finish before closing".into());
+            return false;
+        }
+        if self.pending_sidecar_export.is_some() {
+            self.error =
+                Some("answer the associated Map16 sidecar export prompt before closing".into());
             return false;
         }
         if self.snes_tileset_loader.is_running() {
@@ -176,6 +193,11 @@ impl RomMap16Editor {
         self.pending_complete_revision = None;
         self.pending_selected_import = None;
         self.pending_legacy_import = None;
+        self.associated_sidecar_paths = None;
+        self.associated_m16 = None;
+        self.associated_s16 = None;
+        self.pending_sidecar_export = None;
+        self.sidecar_export_in_flight = None;
         self.pending_bitmap_import = None;
         self.pending_snes_tileset = None;
         self.snes_tileset_preview = None;

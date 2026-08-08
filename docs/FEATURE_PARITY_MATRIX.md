@@ -136,6 +136,15 @@ object-tileset substitutions, and applies the pristine line-guide `$76..$99` loo
 strengthens the Configuration toolbar GUI evidence but does not promote that workflow while the
 remaining internal command table and toolbar variants are incomplete.
 
+Current Map16 transfer evidence also covers F9's original three-way dispatch: unmodified commit,
+Ctrl+F9 ROM-sibling `.m16` export, and Ctrl+Shift+F9 ROM-sibling `.s16` export. The native path
+snapshots a matching live sidecar document or the ROM-associated buffer, preserves the exact
+`0x2000` M16 shape and last-nonzero/`0x800`-rounded S16 shape, confirms before writing, and permits
+only atomic creation or replacement of regular files. The focused
+`rom_map16_editor::sidecar_export::tests` bind the shortcut, path, buffer, shape, and target gates.
+This strengthens the Map16 transfer GUI evidence but does not promote its row while complete
+original prompt gestures and Wine interaction remain incomplete.
+
 ## Workflow ledger
 
 | Area | Original Lunar Magic workflow | Model | Tx | GUI | Oracle | Variants | Status | Primary evidence / next gap |

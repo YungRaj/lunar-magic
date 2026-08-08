@@ -1329,8 +1329,15 @@ event once.
 The same recovered table maps actual F9 through case `$0F`: unmodified F9 calls
 `CommitAllMap16ChangesToRom`, Ctrl+F9 writes the `.m16` sidecar after confirmation, and
 Ctrl+Shift+F9 writes the `.s16` sidecar after confirmation. The native installed-ROM Map16 editor
-now routes only unmodified F9 through its existing revision-checked complete-set commit transaction;
-the modified chords remain available for their distinct sidecar workflows.
+routes unmodified F9 through its existing revision-checked complete-set commit transaction and the
+two modified chords through distinct confirmation-backed sidecar exports. Both names replace the
+opened ROM's extension. The `.m16` export snapshots exactly `0x2000` bytes; `.s16` snapshots the
+full `0x1C000`-byte working buffer and applies the recovered last-nonzero, `0x800`-rounding, and
+minimum-`0x800` canonical writer. When the standalone editor has a matching live sidecar document,
+that staged document is the exported buffer; otherwise the ROM-associated buffer loaded on editor
+open is used. Missing siblings retain the original default `.m16` and zero `.s16` buffers. Loading
+and atomic create/replace persistence are bounded and revision-tagged, and malformed or non-regular
+targets cannot partially publish an export.
 
 Cases `$03/$04` are actual Up/Down. Their assembly reads the current row-aligned Map16 position:
 Up aligns to the current page boundary or subtracts `$10` rows when already aligned, while Down
