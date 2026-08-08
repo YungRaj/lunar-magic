@@ -146,6 +146,56 @@ fn original_map16_page_shortcuts_accept_up_and_down_with_all_modifiers() {
 }
 
 #[test]
+fn original_map16_f8_grid_shortcut_separates_visibility_and_color_chords() {
+    fn observed(modifiers: egui::Modifiers) -> Option<Map16GridShortcut> {
+        let context = egui::Context::default();
+        let mut shortcut = None;
+        let _ = context.run(
+            egui::RawInput {
+                events: vec![egui::Event::Key {
+                    key: egui::Key::F8,
+                    physical_key: None,
+                    pressed: true,
+                    repeat: false,
+                    modifiers,
+                }],
+                modifiers,
+                ..Default::default()
+            },
+            |context| {
+                egui::CentralPanel::default().show(context, |ui| {
+                    shortcut = take_map16_grid_shortcut(ui);
+                });
+            },
+        );
+        shortcut
+    }
+
+    for modifiers in [
+        egui::Modifiers::NONE,
+        egui::Modifiers::CTRL,
+        egui::Modifiers::ALT,
+        egui::Modifiers::SHIFT,
+        egui::Modifiers::CTRL | egui::Modifiers::SHIFT,
+        egui::Modifiers::ALT | egui::Modifiers::SHIFT,
+    ] {
+        assert_eq!(observed(modifiers), Some(Map16GridShortcut::Toggle));
+    }
+    for modifiers in [
+        egui::Modifiers::CTRL | egui::Modifiers::ALT,
+        egui::Modifiers::CTRL | egui::Modifiers::ALT | egui::Modifiers::SHIFT,
+    ] {
+        assert_eq!(observed(modifiers), Some(Map16GridShortcut::ToggleColor));
+    }
+
+    let (mut visible, mut dark) = (false, false);
+    apply_map16_grid_shortcut(&mut visible, &mut dark, Map16GridShortcut::ToggleColor);
+    assert_eq!((visible, dark), (false, true));
+    apply_map16_grid_shortcut(&mut visible, &mut dark, Map16GridShortcut::Toggle);
+    assert_eq!((visible, dark), (true, true));
+}
+
+#[test]
 fn unmodified_f9_routes_through_the_existing_map16_commit_transaction() {
     let mut app = AppState::default();
     app.load_rom(pristine_fixture()).unwrap();

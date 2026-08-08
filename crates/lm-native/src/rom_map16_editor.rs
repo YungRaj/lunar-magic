@@ -29,6 +29,12 @@ enum Map16PageShortcut {
     Next,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Map16GridShortcut {
+    Toggle,
+    ToggleColor,
+}
+
 struct Workspace {
     controller: Controller,
     profile: Option<RevisionProfile>,
@@ -136,6 +142,8 @@ pub(crate) struct RomMap16Editor {
     manifest_loader: crate::rom_ownership::RomOwnershipLoader,
     page_texture: Option<egui::TextureHandle>,
     page_texture_key: Option<(usize, u64, u16, u8, u8)>,
+    show_grid: bool,
+    dark_grid: bool,
     preview_level: String,
     preview_tileset: u8,
     preview_palette: u8,
@@ -261,6 +269,9 @@ impl RomMap16Editor {
             || self.snes_tileset_loader.is_running()
             || self.snes_tileset_preview.is_some();
         let edit_blocked = stale || file_busy;
+        if let Some(shortcut) = take_map16_grid_shortcut(ui) {
+            apply_map16_grid_shortcut(&mut self.show_grid, &mut self.dark_grid, shortcut);
+        }
         if let Some(shortcut) = take_map16_page_shortcut(ui) {
             let next_page = map16_page_after_shortcut(self.page, pages, shortcut);
             if next_page != self.page {
@@ -315,6 +326,11 @@ impl RomMap16Editor {
                 let palette = ui
                     .add(egui::Slider::new(&mut self.preview_palette, 0..=7).text("FG palette"))
                     .changed();
+                ui.checkbox(&mut self.show_grid, "16×16 grid")
+                    .on_hover_text("F8 toggles the grid; Ctrl+Alt+F8 switches white/black.");
+                if ui.button("Grid color").clicked() {
+                    self.dark_grid = !self.dark_grid;
+                }
                 level || tileset || palette
             })
             .inner;
@@ -381,6 +397,30 @@ impl RomMap16Editor {
                 .fit_to_exact_size(egui::Vec2::splat(256.0))
                 .sense(egui::Sense::click()),
         );
+        if self.show_grid {
+            let color = if self.dark_grid {
+                egui::Color32::BLACK
+            } else {
+                egui::Color32::WHITE
+            };
+            for cell in 1..16 {
+                let offset = cell as f32 * 16.0;
+                ui.painter().line_segment(
+                    [
+                        response.rect.left_top() + egui::vec2(offset, 0.0),
+                        response.rect.left_bottom() + egui::vec2(offset, 0.0),
+                    ],
+                    egui::Stroke::new(1.0_f32, color),
+                );
+                ui.painter().line_segment(
+                    [
+                        response.rect.left_top() + egui::vec2(0.0, offset),
+                        response.rect.right_top() + egui::vec2(0.0, offset),
+                    ],
+                    egui::Stroke::new(1.0_f32, color),
+                );
+            }
+        }
         if response.clicked()
             && let Some(position) = response.interact_pointer_pos()
             && let Some(tile) = crate::map16_editor_render::selected_tile(response.rect, position)
@@ -781,6 +821,26 @@ fn take_map16_page_shortcut(ui: &mut egui::Ui) -> Option<Map16PageShortcut> {
             None
         }
     })
+}
+
+fn take_map16_grid_shortcut(ui: &mut egui::Ui) -> Option<Map16GridShortcut> {
+    ui.input_mut(|input| {
+        let modifiers = input.modifiers;
+        if !input.consume_key(modifiers, egui::Key::F8) {
+            None
+        } else if modifiers.ctrl && modifiers.alt {
+            Some(Map16GridShortcut::ToggleColor)
+        } else {
+            Some(Map16GridShortcut::Toggle)
+        }
+    })
+}
+
+fn apply_map16_grid_shortcut(visible: &mut bool, dark: &mut bool, shortcut: Map16GridShortcut) {
+    match shortcut {
+        Map16GridShortcut::Toggle => *visible = !*visible,
+        Map16GridShortcut::ToggleColor => *dark = !*dark,
+    }
 }
 
 fn map16_page_after_shortcut(current: usize, pages: usize, shortcut: Map16PageShortcut) -> usize {

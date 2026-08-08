@@ -1339,6 +1339,13 @@ scrolls to the aligned page, and updates the hexadecimal page status. Neither br
 modifier. The native editor therefore consumes Up/Down with every modifier state and moves one
 bounded page while retaining the selected within-page tile.
 
+Case `$0E` is actual F8. Every modifier state except simultaneous Ctrl+Alt sends `BM_CLICK` to the
+16×16-grid control; Ctrl+Alt (with or without Shift) instead toggles `DAT_005E553C` between the
+original white and black grid colors and refreshes the view. `DrawMap16PageBoundaryGrid` at
+`$004F9790` draws the configured color at each 16-pixel boundary. The native rendered-page canvas
+now exposes the same initially hidden grid, fixed F8 gesture, independent color gesture, and visible
+white/black control while keeping the selected-tile outline above the grid.
+
 The separate Map16 tile-selector/viewer subsystem through `004e99c0` is now named. It consists of an outer selector window, a scrollable 256x256 tile-view child, and a status bar. Recovered behavior includes DPI-aware percentage scaling, client/outer size calculation, horizontal and vertical scroll state, mouse-wheel page motion, hover and primary/secondary selection highlighting, keyboard page navigation, foreground-page unlocking, palette-context changes, and top-down 32-bit DIB cache creation/rendering/cleanup. Typed and named the current/maximum selector page, selected and hovered absolute tile numbers, palette context, and backing pixel pointer.
 
 The outer Layer 1 selector creator and the beginning of the main level-editor presentation layer through `004eac40` are now named. This includes renderer/file-error reporting, status-bar sizing and DPI handling, horizontal/vertical level-editor scroll state, backing-cache and auxiliary-buffer cleanup, and the toolbar icon system. The toolbar uses a 24-entry command table with parallel enabled/disabled icon arrays, supports an external `Lunar Magic.ff5` bitmap, compressed and built-in fallbacks, per-window DPI scaling, right-to-left mirroring, and a separately rebuilt alternate mode cache.
