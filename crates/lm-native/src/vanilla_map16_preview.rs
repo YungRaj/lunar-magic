@@ -116,6 +116,133 @@ const LAYER1_SPRITE_SLOT_STRIDE: usize = LAYER1_SPRITE_SLOT_TILES;
 const LAYER1_SPRITE_GLOBAL_TILES: usize = 4 * LAYER1_SPRITE_SLOT_STRIDE;
 const GFX33_DECODED_TILE_PADDING: usize = 0x30;
 
+pub(crate) const INTERNAL_GRAPHICS_CACHE_TILES: usize = 0x4000;
+const INTERNAL_FOREGROUND_START: usize = 0x0000;
+const INTERNAL_SPRITE_START: usize = 0x0400;
+const INTERNAL_GFX33_START: usize = 0x0600;
+const INTERNAL_GFX33_TILES: usize = 0x0180;
+const INTERNAL_AUXILIARY_ANIMATION_START: usize = 0x0780;
+const INTERNAL_AUXILIARY_ANIMATION_TILES: usize = 0x0100;
+const INTERNAL_GFX32_START: usize = 0x0900;
+const INTERNAL_GFX32_TILES: usize = 0x02e8;
+const INTERNAL_EXANIMATION_START: usize = 0x0c00;
+const INTERNAL_EXANIMATION_TILES: usize = 0x1000;
+const INTERNAL_LAYER3_START: usize = 0x1c00;
+const INTERNAL_LAYER3_TILES: usize = 0x0400;
+const INTERNAL_EXTERNAL_SPRITE_START: usize = 0x2000;
+const INTERNAL_EXTERNAL_SPRITE_TILES: usize = 0x2000;
+
+/// Lunar Magic's complete decoded `$006204B0` graphics workspace.
+///
+/// The ordinary editor exposes only pages `$00-$05`. Its diagnostic Ctrl+Shift+PageDown command
+/// raises the page limit to `$3F`, revealing the remaining banks represented here. Installed
+/// ExAnimation and external-file banks are deliberately left for their owning loaders; this
+/// constructor covers the exact pristine-ROM population rather than fabricating those sources.
+pub(crate) struct VanillaInternalGraphicsCache {
+    pub(crate) tiles: Vec<IndexedTile>,
+}
+
+pub(crate) fn load_pristine_internal_graphics_cache(
+    rom_bytes: Vec<u8>,
+    level: u16,
+    header: LegacyLevelHeader,
+    special_world_passed: bool,
+) -> Result<VanillaInternalGraphicsCache, String> {
+    let rom = RomImage::from_bytes(rom_bytes).map_err(|error| error.to_string())?;
+    let project = Project::new(rom);
+    let blank = IndexedTile::new([0; IndexedTile::PIXEL_COUNT]);
+    let mut cache = vec![blank; INTERNAL_GRAPHICS_CACHE_TILES];
+
+    let foreground_files = lm_profile::smw_us_v1_object_tileset_graphics_files(
+        &project.rom,
+        usize::from(header.object_tileset()),
+    )
+    .map_err(|error| error.to_string())?;
+    let foreground_slots = load_layer1_sprite_graphics_slots(&project, foreground_files)?;
+    let mut foreground = materialize_layer1_sprite_vram(&foreground_slots);
+    apply_vanilla_common_animation_frame(&project, &mut foreground, 0, header.object_tileset())?;
+    cache[INTERNAL_FOREGROUND_START..INTERNAL_FOREGROUND_START + foreground.len()]
+        .clone_from_slice(&foreground);
+
+    let mut sprite_files = lm_profile::smw_us_v1_sprite_tileset_graphics_files(
+        &project.rom,
+        usize::from(header.sprite_tileset()),
+    )
+    .map_err(|error| error.to_string())?;
+    if special_world_passed {
+        sprite_files[1] = 0x31;
+    }
+    let sprite_slots = load_layer1_sprite_graphics_slots(&project, sprite_files)?;
+    let sprites = materialize_layer1_sprite_vram(&sprite_slots);
+    cache[INTERNAL_SPRITE_START..INTERNAL_SPRITE_START + sprites.len()].clone_from_slice(&sprites);
+
+    let gfx33 = load_smw_us_v1_special_graphics_file(&project, true)?;
+    let gfx33 = lm_graphics::decode_planar_tiles(&gfx33, 3)
+        .map_err(|error| format!("cannot decode pristine internal GFX33: {error}"))?;
+    if gfx33.len() < INTERNAL_GFX33_TILES {
+        return Err(format!(
+            "pristine internal GFX33 has {} tiles instead of at least {INTERNAL_GFX33_TILES}",
+            gfx33.len()
+        ));
+    }
+    cache[INTERNAL_GFX33_START..INTERNAL_GFX33_START + INTERNAL_GFX33_TILES]
+        .clone_from_slice(&gfx33[..INTERNAL_GFX33_TILES]);
+
+    // The ordinary pristine path clears the selected auxiliary-animation slot and identifies it
+    // as file `$7F`; expanded settings may populate this range through a separate owned loader.
+    debug_assert!(
+        cache[INTERNAL_AUXILIARY_ANIMATION_START
+            ..INTERNAL_AUXILIARY_ANIMATION_START + INTERNAL_AUXILIARY_ANIMATION_TILES]
+            .iter()
+            .all(|tile| tile.pixels().iter().all(|&pixel| pixel == 0))
+    );
+
+    let gfx32 = load_smw_us_v1_special_graphics_file(&project, false)?;
+    let gfx32 = lm_graphics::decode_planar_tiles(&gfx32, 4)
+        .map_err(|error| format!("cannot decode pristine internal GFX32: {error}"))?;
+    if gfx32.len() < INTERNAL_GFX32_TILES {
+        return Err(format!(
+            "pristine internal GFX32 has {} tiles instead of at least {INTERNAL_GFX32_TILES}",
+            gfx32.len()
+        ));
+    }
+    cache[INTERNAL_GFX32_START..INTERNAL_GFX32_START + INTERNAL_GFX32_TILES]
+        .clone_from_slice(&gfx32[..INTERNAL_GFX32_TILES]);
+
+    // Pristine SMW has no four `$8000`-byte ExAnimation graphics allocations. Their decoded
+    // `$C00-$1BFF` destinations therefore retain the zero-filled initialization.
+    debug_assert!(
+        cache[INTERNAL_EXANIMATION_START..INTERNAL_EXANIMATION_START + INTERNAL_EXANIMATION_TILES]
+            .iter()
+            .all(|tile| tile.pixels().iter().all(|&pixel| pixel == 0))
+    );
+
+    let layer3 = load_layer3_tiles(
+        &project,
+        usize::from(level),
+        lm_profile::smw_us_v1_vanilla_graphics_layout(),
+    )?;
+    if layer3.len() != INTERNAL_LAYER3_TILES {
+        return Err(format!(
+            "pristine internal Layer 3 cache has {} tiles instead of {INTERNAL_LAYER3_TILES}",
+            layer3.len()
+        ));
+    }
+    cache[INTERNAL_LAYER3_START..INTERNAL_LAYER3_START + INTERNAL_LAYER3_TILES]
+        .clone_from_slice(&layer3);
+
+    // ExSpriteGFX00-07 are external project files, not ROM resources. With no external directory
+    // supplied, Lunar Magic zeroes all eight `$8000`-byte banks before their optional reads.
+    debug_assert!(
+        cache[INTERNAL_EXTERNAL_SPRITE_START
+            ..INTERNAL_EXTERNAL_SPRITE_START + INTERNAL_EXTERNAL_SPRITE_TILES]
+            .iter()
+            .all(|tile| tile.pixels().iter().all(|&pixel| pixel == 0))
+    );
+
+    Ok(VanillaInternalGraphicsCache { tiles: cache })
+}
+
 fn game_palette_header(level: u16, mut header: LegacyLevelHeader) -> LegacyLevelHeader {
     // Pristine level $001 (Cookie Mountain) stores selectors 6/6, although the stage's runtime
     // presentation uses the brown foreground and dark-blue backdrop at selectors 0/2. Keep the
@@ -1726,6 +1853,86 @@ mod tests {
     use super::*;
     use lm_graphics::{Bgr555, Rgb8};
     use std::{fs, path::PathBuf};
+
+    fn tile_is_blank(tile: &IndexedTile) -> bool {
+        tile.pixels().iter().all(|&pixel| pixel == 0)
+    }
+
+    #[test]
+    fn pristine_internal_graphics_cache_materializes_every_recovered_owned_bank() {
+        let bytes = crate::test_support::pristine_smw_us_rom_bytes();
+        let project = Project::new(RomImage::from_bytes(bytes.clone()).unwrap());
+        let level = project
+            .load_level_slot(
+                0x105,
+                lm_profile::smw_us_v1_vanilla_level_layout(),
+                &lm_level::SpriteLengthTable::standard(),
+            )
+            .unwrap();
+        let cache = load_pristine_internal_graphics_cache(bytes, 0x105, level.layer1.header, false)
+            .unwrap();
+
+        assert_eq!(cache.tiles.len(), INTERNAL_GRAPHICS_CACHE_TILES);
+        assert!(cache.tiles[..0x200].iter().any(|tile| !tile_is_blank(tile)));
+        assert!(cache.tiles[0x200..0x400].iter().all(tile_is_blank));
+        assert!(
+            cache.tiles[0x400..0x600]
+                .iter()
+                .any(|tile| !tile_is_blank(tile))
+        );
+
+        let gfx33 = load_smw_us_v1_special_graphics_file(&project, true).unwrap();
+        let gfx33 = lm_graphics::decode_planar_tiles(&gfx33, 3).unwrap();
+        assert_eq!(
+            &cache.tiles[INTERNAL_GFX33_START..INTERNAL_GFX33_START + INTERNAL_GFX33_TILES],
+            &gfx33[..INTERNAL_GFX33_TILES]
+        );
+        assert!(
+            cache.tiles[INTERNAL_AUXILIARY_ANIMATION_START
+                ..INTERNAL_AUXILIARY_ANIMATION_START + INTERNAL_AUXILIARY_ANIMATION_TILES]
+                .iter()
+                .all(tile_is_blank)
+        );
+        assert!(
+            cache.tiles[0x880..INTERNAL_GFX32_START]
+                .iter()
+                .all(tile_is_blank)
+        );
+
+        let gfx32 = load_smw_us_v1_special_graphics_file(&project, false).unwrap();
+        let gfx32 = lm_graphics::decode_planar_tiles(&gfx32, 4).unwrap();
+        assert_eq!(
+            &cache.tiles[INTERNAL_GFX32_START..INTERNAL_GFX32_START + INTERNAL_GFX32_TILES],
+            &gfx32[..INTERNAL_GFX32_TILES]
+        );
+        assert!(
+            cache.tiles[INTERNAL_GFX32_START + INTERNAL_GFX32_TILES..INTERNAL_EXANIMATION_START]
+                .iter()
+                .all(tile_is_blank)
+        );
+        assert!(
+            cache.tiles[INTERNAL_EXANIMATION_START
+                ..INTERNAL_EXANIMATION_START + INTERNAL_EXANIMATION_TILES]
+                .iter()
+                .all(tile_is_blank)
+        );
+
+        let layer3 = load_layer3_tiles(
+            &project,
+            0x105,
+            lm_profile::smw_us_v1_vanilla_graphics_layout(),
+        )
+        .unwrap();
+        assert_eq!(
+            &cache.tiles[INTERNAL_LAYER3_START..INTERNAL_LAYER3_START + INTERNAL_LAYER3_TILES],
+            layer3.as_slice()
+        );
+        assert!(
+            cache.tiles[INTERNAL_EXTERNAL_SPRITE_START..]
+                .iter()
+                .all(tile_is_blank)
+        );
+    }
 
     #[test]
     fn secondary_action_six_preserves_signed_left_boundary_without_primary_helper() {

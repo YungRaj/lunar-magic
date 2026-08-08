@@ -145,6 +145,17 @@ only atomic creation or replacement of regular files. The focused
 This strengthens the Map16 transfer GUI evidence but does not promote its row while complete
 original prompt gestures and Wine interaction remain incomplete.
 
+Current Graphics evidence additionally recovers the complete `$4000`-tile internal decoded-cache
+layout behind Ctrl+Shift+Page Down. The pristine native editor materializes the current FG/BG and
+sprite banks, GFX33, GFX32, and eight Layer 3 banks at their exact recovered destinations; absent
+auxiliary animation, ExAnimation, and external-sprite-file banks retain Lunar Magic's zero-filled
+initialization. The focused shortcut raises the visible limit from page `$05` to `$3F` and reports
+the original unlock status. `pristine_internal_graphics_cache_materializes_every_recovered_owned_bank`,
+`pristine_editor_loads_the_complete_diagnostic_cache_but_keeps_it_locked`, and
+`focused_grid_routes_native_modified_page_keys_to_palette_rows` bind the layout, lifecycle, and
+modifier split. Installed-bank population and the original's transient internal-cache mutation/save
+routing remain incomplete, so the Graphics workflow is not promoted.
+
 ## Workflow ledger
 
 | Area | Original Lunar Magic workflow | Model | Tx | GUI | Oracle | Variants | Status | Primary evidence / next gap |

@@ -8,9 +8,9 @@ use crate::{
         apply_tile_palette_keyboard, apply_tile_palette_step, color_selection_marker,
         graphics_navigation_controls, graphics_transform_controls, paint_tile,
         palette_pointer_action, shortcut_transform, take_graphics_character_shortcut,
-        take_graphics_refresh_shortcut, take_graphics_save_shortcut, take_tile_grid_shortcut,
-        take_tile_shift, tile_button, tile_coordinate, tile_page_range, tile_pixel_pointer_action,
-        tile_pointer_action,
+        take_graphics_refresh_shortcut, take_graphics_save_shortcut,
+        take_internal_graphics_cache_unlock, take_tile_grid_shortcut, take_tile_shift, tile_button,
+        tile_coordinate, tile_page_range, tile_pixel_pointer_action, tile_pointer_action,
     },
     level_graphics_export::{
         pristine_current_level_graphics_files, take_level_graphics_export_shortcut,
@@ -52,6 +52,8 @@ pub(crate) struct VanillaGraphicsEditor {
     error: Option<String>,
     pending_level_graphics_export: bool,
     graphics_batch: graphics_batch::GraphicsBatchWorker,
+    internal_cache: Option<crate::vanilla_map16_preview::VanillaInternalGraphicsCache>,
+    internal_cache_unlocked: bool,
 }
 
 impl VanillaGraphicsEditor {
@@ -93,7 +95,7 @@ impl VanillaGraphicsEditor {
             slot,
         };
         if self.key != Some(key) {
-            self.load(&snapshot, key);
+            self.load(&snapshot, key, app.current_level(), special_world_passed);
         }
         let file_work_running = self.graphics_batch.is_running();
         let pasted = ui.input(|input| {
@@ -102,7 +104,10 @@ impl VanillaGraphicsEditor {
                 _ => None,
             })
         });
-        if !file_work_running && let Some(text) = pasted {
+        if !file_work_running
+            && !self.internal_cache_unlocked
+            && let Some(text) = pasted
+        {
             self.paste_tile(&text);
         }
         ui.heading(format!("GFX{slot:02X} — built-in SMW graphics editor"));
@@ -175,10 +180,14 @@ impl VanillaGraphicsEditor {
             self.tile_list(
                 &mut columns[0],
                 &palette,
-                !file_work_running,
+                !file_work_running && !self.internal_cache_unlocked,
                 !file_work_running && app.current_level().is_some(),
             );
-            self.pixel_editor(&mut columns[1], &palette, !file_work_running);
+            self.pixel_editor(
+                &mut columns[1],
+                &palette,
+                !file_work_running && !self.internal_cache_unlocked,
+            );
         });
         self.status.show(ui);
         if let Some(error) = &self.error {
@@ -288,7 +297,13 @@ impl VanillaGraphicsEditor {
         }
     }
 
-    fn load(&mut self, snapshot: &lm_app::ControllerSnapshot, key: EditorKey) {
+    fn load(
+        &mut self,
+        snapshot: &lm_app::ControllerSnapshot,
+        key: EditorKey,
+        level: Option<u16>,
+        special_world_passed: bool,
+    ) {
         match GraphicsController::decode_editable(
             snapshot,
             lm_profile::smw_us_v1_vanilla_graphics_layout(),
@@ -303,9 +318,31 @@ impl VanillaGraphicsEditor {
                 self.clipboard_paste_target = None;
                 self.pixel_pointer_capture = TilePixelPointerCapture::None;
                 self.error = None;
+                self.internal_cache = level.and_then(|level| {
+                    let project = lm_project::Project::new(
+                        RomImage::from_bytes(snapshot.rom_bytes.clone()).ok()?,
+                    );
+                    let loaded = project
+                        .load_level_slot(
+                            usize::from(level),
+                            lm_profile::smw_us_v1_vanilla_level_layout(),
+                            &lm_level::SpriteLengthTable::standard(),
+                        )
+                        .ok()?;
+                    crate::vanilla_map16_preview::load_pristine_internal_graphics_cache(
+                        snapshot.rom_bytes.clone(),
+                        level,
+                        loaded.layer1.header,
+                        special_world_passed,
+                    )
+                    .ok()
+                });
+                self.internal_cache_unlocked = false;
             }
             Err(error) => {
                 self.controller = None;
+                self.internal_cache = None;
+                self.internal_cache_unlocked = false;
                 self.error = Some(error.to_string());
             }
         }
@@ -322,7 +359,17 @@ impl VanillaGraphicsEditor {
         let Some(controller) = &self.controller else {
             return;
         };
-        let tiles = &controller.graphics().tiles;
+        let tiles = if self.internal_cache_unlocked {
+            let Some(cache) = &self.internal_cache else {
+                self.internal_cache_unlocked = false;
+                self.error = Some("internal graphics cache is unavailable".into());
+                return;
+            };
+            ui.small("Internal GFX data — diagnostic working cache (read-only until owned-bank save routing is recovered)");
+            &cache.tiles
+        } else {
+            &controller.graphics().tiles
+        };
         let tile_count = tiles.len();
         self.selected_tile = self.selected_tile.min(tiles.len().saturating_sub(1));
         let page = tile_page_range(self.selected_tile, tile_count);
@@ -413,6 +460,8 @@ impl VanillaGraphicsEditor {
                 row_count,
             )
         };
+        let unlock_requested =
+            take_internal_graphics_cache_unlock(ui, self.selected_tile, &responses);
         self.status.update_tile_hover(
             &responses,
             page_start,
@@ -422,6 +471,17 @@ impl VanillaGraphicsEditor {
         );
         if let Some(status) = navigation_status.or(palette_status) {
             self.status.set(status);
+        }
+        if unlock_requested {
+            if self.internal_cache.is_some() {
+                self.internal_cache_unlocked = true;
+                self.status.set("Internal GFX data viewing unlocked.");
+            } else {
+                self.error = Some(
+                    "internal graphics data cannot be materialized without an active supported level"
+                        .into(),
+                );
+            }
         }
         if let Some(index) = selected_by_pointer {
             self.status.select_tile(index);
@@ -452,9 +512,16 @@ impl VanillaGraphicsEditor {
         edits_enabled: bool,
     ) {
         let tile = self
-            .controller
-            .as_ref()
-            .and_then(|controller| controller.graphics().tiles.get(self.selected_tile))
+            .internal_cache_unlocked
+            .then(|| self.internal_cache.as_ref())
+            .flatten()
+            .and_then(|cache| cache.tiles.get(self.selected_tile))
+            .or_else(|| {
+                (!self.internal_cache_unlocked)
+                    .then(|| self.controller.as_ref())
+                    .flatten()
+                    .and_then(|controller| controller.graphics().tiles.get(self.selected_tile))
+            })
             .cloned();
         let Some(mut tile) = tile else {
             ui.label("No tiles in this graphics file.");
@@ -586,6 +653,8 @@ impl VanillaGraphicsEditor {
     fn clear(&mut self) {
         self.key = None;
         self.controller = None;
+        self.internal_cache = None;
+        self.internal_cache_unlocked = false;
         self.error = None;
         self.pending_level_graphics_export = false;
         self.status = GraphicsEditorStatus::default();
@@ -695,6 +764,34 @@ fn prepare_commit(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn pristine_editor_loads_the_complete_diagnostic_cache_but_keeps_it_locked() {
+        let mut app = AppState::default();
+        app.load_rom(crate::test_support::pristine_smw_us_rom_bytes())
+            .unwrap();
+        app.dispatch(Command::ShowGraphics(0x14)).unwrap();
+        let snapshot = app.controller_snapshot().unwrap();
+        let key = EditorKey {
+            revision: snapshot.revision,
+            slot: 0x14,
+        };
+        let mut editor = VanillaGraphicsEditor::default();
+        editor.load(&snapshot, key, Some(0x105), false);
+
+        assert_eq!(editor.key, Some(key));
+        assert!(!editor.internal_cache_unlocked);
+        assert_eq!(
+            editor.internal_cache.as_ref().unwrap().tiles.len(),
+            crate::vanilla_map16_preview::INTERNAL_GRAPHICS_CACHE_TILES
+        );
+        assert_eq!(editor.selected_tile, 0);
+
+        editor.internal_cache_unlocked = true;
+        editor.clear();
+        assert!(editor.internal_cache.is_none());
+        assert!(!editor.internal_cache_unlocked);
+    }
 
     #[test]
     fn pristine_level_export_uses_exact_assignments_and_active_staged_slot() {

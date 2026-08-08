@@ -937,6 +937,23 @@ pub(crate) fn apply_tile_palette_keyboard(
     apply_tile_palette_step(display_palette, row_count, step?)
 }
 
+pub(crate) fn take_internal_graphics_cache_unlock(
+    ui: &mut egui::Ui,
+    selected: usize,
+    responses: &[egui::Response],
+) -> bool {
+    if !responses
+        .get(selected % GRAPHICS_PAGE_TILES)
+        .is_some_and(egui::Response::has_focus)
+    {
+        return false;
+    }
+    ui.input_mut(|input| {
+        let modifiers = input.modifiers;
+        modifiers.ctrl && modifiers.shift && input.consume_key(modifiers, egui::Key::PageDown)
+    })
+}
+
 pub(crate) fn apply_tile_palette_step(
     display_palette: &mut GraphicsDisplayPalette,
     row_count: usize,
@@ -2096,6 +2113,7 @@ mod tests {
             modifiers: control_shift,
             ..Default::default()
         };
+        let mut unlocked = false;
         let _ = context.run(input, |context| {
             egui::CentralPanel::default().show(context, |ui| {
                 let responses = (0..TEST_GRID_TILES)
@@ -2103,10 +2121,12 @@ mod tests {
                     .collect::<Vec<_>>();
                 status =
                     apply_tile_palette_keyboard(ui, selected, &responses, &mut display_palette, 8);
+                unlocked = take_internal_graphics_cache_unlock(ui, selected, &responses);
             });
         });
         assert_eq!(display_palette, GraphicsDisplayPalette::Row(6));
         assert_eq!(status, None);
+        assert!(unlocked);
     }
 
     #[test]
