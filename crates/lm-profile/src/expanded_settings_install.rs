@@ -4,19 +4,70 @@ use crate::{
     ExpandedSettingsAllocationFixupEncoding, ExpandedSettingsEntryContinuation,
     ExpandedSettingsRuntimeBundleError, ExpandedSettingsRuntimeLayout,
     SMW_US_V1_EXPANDED_SETTINGS_RUNTIME_ALLOCATION_FIXUPS,
-    SMW_US_V1_EXPANDED_SETTINGS_RUNTIME_BLOCKS, SmwUsV1ExpandedSettingsAllocation,
-    smw_us_v1_expanded_settings_fixed_writes,
+    SMW_US_V1_EXPANDED_SETTINGS_RUNTIME_BLOCKS, SMW_US_V1_EXPANDED_SETTINGS_RUNTIME_MARKER_OFFSET,
+    SmwUsV1ExpandedSettingsAllocation, SmwUsV1ExpandedSettingsAllocationError,
+    SmwUsV1ExpandedSettingsRecordGeneration, smw_us_v1_expanded_settings_fixed_writes,
+    smw_us_v1_upgrade_expanded_settings_record,
 };
 use lm_level::ExpandedOverworldSettings;
 use lm_project::{PatchFixup, PatchFixupEncoding, PatchPayload, RelocatablePatchPlan};
-use lm_rats::AllocationPolicy;
-use lm_rom::Mapper;
+use lm_rats::{AllocationPolicy, HeaderError, RatsBlock, parse_at};
+use lm_rom::{Mapper, RomError, snes_to_pc};
 
 pub const SMW_US_V1_EXPANDED_SETTINGS_ALLOCATION_SEARCH_START: usize = 0x08_7ff8;
 pub const SMW_US_V1_EXPANDED_SETTINGS_ALLOCATION_SEARCH_END: usize = 0x10_0000;
 pub const SMW_US_V1_GFX_EXPANDED_SETTINGS_ALLOCATION_START: usize = 0x08_0028;
 pub const SMW_US_V1_GFX_EXPANDED_SETTINGS_ALLOCATION_END: usize = 0x08_6e30;
 pub const SMW_US_V1_CHECKSUM_FIELD: usize = 0x00_7fdc;
+pub const SMW_US_V1_EXPANDED_SETTINGS_GENERATION_102_MARKER: [u8; 4] = [0x4c, 0x4d, 0x02, 0x01];
+
+const GENERATION_102_BLOCK_220_HEX: &str =
+    include_str!("assets/expanded_settings_runtime_generation_102_block_220.hex");
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SmwUsV1ExpandedSettingsGeneration102Migration {
+    pub plan: RelocatablePatchPlan,
+    pub previous_allocation: RatsBlock,
+}
+
+#[derive(Debug)]
+pub enum SmwUsV1ExpandedSettingsGeneration102MigrationError {
+    MissingGeneration,
+    MarkerMismatch,
+    InvalidRuntimePointer,
+    RuntimeAddress(RomError),
+    RuntimeBeforeHeader(usize),
+    RuntimeHeader(HeaderError),
+    RuntimeOwnership {
+        expected: usize,
+        actual: usize,
+    },
+    RuntimeLength(usize),
+    Allocation(SmwUsV1ExpandedSettingsAllocationError),
+    Runtime(ExpandedSettingsRuntimeBundleError),
+    FixedByteMismatch {
+        offset: usize,
+        expected: u8,
+        actual: Option<u8>,
+    },
+    EmbeddedRuntimeLength(usize),
+    Plan(ExpandedSettingsInstallPlanError),
+    SourceRange {
+        offset: usize,
+        len: usize,
+    },
+}
+
+impl std::fmt::Display for SmwUsV1ExpandedSettingsGeneration102MigrationError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            formatter,
+            "cannot migrate SMW-US expanded settings generation 1.02: {self:?}"
+        )
+    }
+}
+
+impl std::error::Error for SmwUsV1ExpandedSettingsGeneration102MigrationError {}
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ExpandedSettingsInstallPlanError {
@@ -197,11 +248,187 @@ fn smw_us_v1_expanded_settings_installation_plan_for_range(
     })
 }
 
+/// Authenticates and builds Lunar Magic's generation-1.02 whole-table migration.
+///
+/// The generation marker, exact RATS owner, complete fixed runtime family, and the historical
+/// descriptor `$220` body are all immutable identity evidence. Only after those checks pass are
+/// reference words in the 512 standard-level records normalized. The eight special records are
+/// retained byte-for-byte, matching `UpgradeLegacyExpandedLevelHeaderTable`.
+///
+/// # Errors
+///
+/// Rejects absent or modified generation-1.02 runtime evidence, malformed ownership/allocation,
+/// truncated source ranges, or an inconsistent current installation plan.
+pub fn smw_us_v1_expanded_settings_generation_102_migration(
+    bytes: &[u8],
+) -> Result<
+    SmwUsV1ExpandedSettingsGeneration102Migration,
+    SmwUsV1ExpandedSettingsGeneration102MigrationError,
+> {
+    let marker = bytes.get(
+        SMW_US_V1_EXPANDED_SETTINGS_RUNTIME_MARKER_OFFSET
+            ..SMW_US_V1_EXPANDED_SETTINGS_RUNTIME_MARKER_OFFSET + 4,
+    );
+    if marker.is_none_or(|marker| marker.iter().all(|byte| *byte == 0xff)) {
+        return Err(SmwUsV1ExpandedSettingsGeneration102MigrationError::MissingGeneration);
+    }
+    if marker != Some(&SMW_US_V1_EXPANDED_SETTINGS_GENERATION_102_MARKER) {
+        return Err(SmwUsV1ExpandedSettingsGeneration102MigrationError::MarkerMismatch);
+    }
+
+    let operand_offset = SMW_US_V1_EXPANDED_SETTINGS_RUNTIME_BLOCKS
+        .iter()
+        .position(|block| block.descriptor_index == 0x173)
+        .map(|slot| {
+            ExpandedSettingsRuntimeLayout::smw_us_v1(0, ExpandedSettingsEntryContinuation::Continue)
+                .destination_offsets[slot]
+                + 0x33
+        })
+        .ok_or(SmwUsV1ExpandedSettingsGeneration102MigrationError::InvalidRuntimePointer)?;
+    let operand = bytes
+        .get(operand_offset..operand_offset + 3)
+        .ok_or(SmwUsV1ExpandedSettingsGeneration102MigrationError::InvalidRuntimePointer)?;
+    let allocation_base_snes = u32::from_le_bytes([operand[0], operand[1], operand[2], 0]);
+    let payload_offset = snes_to_pc(Mapper::LoRom, allocation_base_snes)
+        .map_err(SmwUsV1ExpandedSettingsGeneration102MigrationError::RuntimeAddress)?;
+    let header_offset = payload_offset.checked_sub(8).ok_or(
+        SmwUsV1ExpandedSettingsGeneration102MigrationError::RuntimeBeforeHeader(payload_offset),
+    )?;
+    let previous_allocation = parse_at(bytes, header_offset)
+        .map_err(SmwUsV1ExpandedSettingsGeneration102MigrationError::RuntimeHeader)?;
+    if previous_allocation.payload.start != payload_offset {
+        return Err(
+            SmwUsV1ExpandedSettingsGeneration102MigrationError::RuntimeOwnership {
+                expected: payload_offset,
+                actual: previous_allocation.payload.start,
+            },
+        );
+    }
+    if previous_allocation.payload.len() != crate::SMW_US_V1_EXPANDED_SETTINGS_ALLOCATION_LEN {
+        return Err(
+            SmwUsV1ExpandedSettingsGeneration102MigrationError::RuntimeLength(
+                previous_allocation.payload.len(),
+            ),
+        );
+    }
+    let mut allocation = SmwUsV1ExpandedSettingsAllocation::decode(
+        bytes.get(previous_allocation.payload.clone()).ok_or(
+            SmwUsV1ExpandedSettingsGeneration102MigrationError::SourceRange {
+                offset: previous_allocation.payload.start,
+                len: previous_allocation.payload.len(),
+            },
+        )?,
+    )
+    .map_err(SmwUsV1ExpandedSettingsGeneration102MigrationError::Allocation)?;
+
+    let layout = ExpandedSettingsRuntimeLayout::smw_us_v1(
+        allocation_base_snes,
+        ExpandedSettingsEntryContinuation::Continue,
+    );
+    let mut authenticated = smw_us_v1_expanded_settings_fixed_writes(layout)
+        .map_err(SmwUsV1ExpandedSettingsGeneration102MigrationError::Runtime)?;
+    let legacy_220 = decode_embedded_hex(GENERATION_102_BLOCK_220_HEX);
+    let block_220 = SMW_US_V1_EXPANDED_SETTINGS_RUNTIME_BLOCKS
+        .iter()
+        .position(|block| block.descriptor_index == 0x220)
+        .ok_or(SmwUsV1ExpandedSettingsGeneration102MigrationError::EmbeddedRuntimeLength(0))?;
+    if legacy_220.len() != SMW_US_V1_EXPANDED_SETTINGS_RUNTIME_BLOCKS[block_220].len {
+        return Err(
+            SmwUsV1ExpandedSettingsGeneration102MigrationError::EmbeddedRuntimeLength(
+                legacy_220.len(),
+            ),
+        );
+    }
+    for write in &mut authenticated {
+        if write.offset == SMW_US_V1_EXPANDED_SETTINGS_RUNTIME_MARKER_OFFSET {
+            write.replacement = SMW_US_V1_EXPANDED_SETTINGS_GENERATION_102_MARKER.to_vec();
+        } else if write.offset == layout.destination_offsets[block_220] {
+            write.replacement.clone_from(&legacy_220);
+        }
+        require_exact_generation_102(bytes, write.offset, &write.replacement)?;
+    }
+
+    for index in 0..crate::SMW_US_V1_EXPANDED_SETTINGS_STANDARD_LEVEL_COUNT {
+        let mut record = allocation
+            .record(index)
+            .map_err(SmwUsV1ExpandedSettingsGeneration102MigrationError::Allocation)?
+            .clone();
+        smw_us_v1_upgrade_expanded_settings_record(
+            &mut record,
+            SmwUsV1ExpandedSettingsRecordGeneration::LegacyReferenceLayout,
+        );
+        allocation
+            .set_record(index, record)
+            .map_err(SmwUsV1ExpandedSettingsGeneration102MigrationError::Allocation)?;
+    }
+
+    let mut plan = smw_us_v1_expanded_settings_installation_plan()
+        .map_err(SmwUsV1ExpandedSettingsGeneration102MigrationError::Plan)?;
+    plan.description = "migrate SMW US expanded settings generation 1.02".into();
+    plan.payloads[0].bytes = allocation.encode();
+    for write in &mut plan.writes {
+        let source = bytes
+            .get(write.offset..write.offset + write.expected.len())
+            .ok_or(
+                SmwUsV1ExpandedSettingsGeneration102MigrationError::SourceRange {
+                    offset: write.offset,
+                    len: write.expected.len(),
+                },
+            )?;
+        write.expected.copy_from_slice(source);
+    }
+    Ok(SmwUsV1ExpandedSettingsGeneration102Migration {
+        plan,
+        previous_allocation,
+    })
+}
+
+fn require_exact_generation_102(
+    bytes: &[u8],
+    offset: usize,
+    expected: &[u8],
+) -> Result<(), SmwUsV1ExpandedSettingsGeneration102MigrationError> {
+    for (index, expected) in expected.iter().copied().enumerate() {
+        let actual = bytes.get(offset + index).copied();
+        if actual != Some(expected) {
+            return Err(
+                SmwUsV1ExpandedSettingsGeneration102MigrationError::FixedByteMismatch {
+                    offset: offset + index,
+                    expected,
+                    actual,
+                },
+            );
+        }
+    }
+    Ok(())
+}
+
+fn decode_embedded_hex(source: &str) -> Vec<u8> {
+    let digits = source
+        .bytes()
+        .filter(|byte| !byte.is_ascii_whitespace())
+        .collect::<Vec<_>>();
+    digits
+        .chunks_exact(2)
+        .map(|pair| {
+            let nibble = |byte| match byte {
+                b'0'..=b'9' => byte - b'0',
+                b'a'..=b'f' => byte - b'a' + 10,
+                _ => unreachable!("embedded runtime is lowercase hexadecimal"),
+            };
+            (nibble(pair[0]) << 4) | nibble(pair[1])
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::{SMW_US_V1_EXPANDED_SETTINGS_PREFIX_LEN, SMW_US_V1_EXPANDED_SETTINGS_RECORD_COUNT};
-    use lm_project::{ExpandedLevelSettingsLayout, Project, RelocatablePatchError};
+    use lm_level::ExpandedLevelSettingsRecord;
+    use lm_project::{
+        ExpandedLevelSettingsLayout, Project, RatsOwnershipManifest, RelocatablePatchError,
+    };
     use lm_rom::{RomImage, SnesChecksum};
     use std::{fs, path::PathBuf};
 
@@ -385,5 +612,124 @@ mod tests {
         assert_eq!(result.blocks[0].payload.end, 0x08_6e30);
         project.undo().unwrap();
         assert_eq!(project.rom.logical_bytes(), original);
+    }
+
+    fn generation_102_fixture() -> Vec<u8> {
+        let mut bytes = crate::test_support::pristine_smw_us_rom_bytes();
+        bytes.resize(0x10_0000, 0xff);
+        let payload_offset = 0x08_01e0;
+        let header_offset = payload_offset - 8;
+        bytes[header_offset..payload_offset]
+            .copy_from_slice(&[b'S', b'T', b'A', b'R', 0xff, 0x6d, 0x00, 0x92]);
+
+        let mut allocation = SmwUsV1ExpandedSettingsAllocation::new_default();
+        let mut standard = [0; ExpandedLevelSettingsRecord::ENCODED_LEN];
+        for (index, value) in [(2, 0xf123_u16), (4, 0xffff), (8, 0xffff), (10, 0xabcd)] {
+            standard[index * 2..index * 2 + 2].copy_from_slice(&value.to_le_bytes());
+        }
+        allocation
+            .set_record(0, ExpandedLevelSettingsRecord::from_encoded(standard))
+            .unwrap();
+        let special = ExpandedLevelSettingsRecord::from_encoded([0xa5; 0x20]);
+        allocation.set_record(0x200, special).unwrap();
+        bytes[payload_offset..payload_offset + 0x6e00].copy_from_slice(&allocation.encode());
+
+        let layout = ExpandedSettingsRuntimeLayout::smw_us_v1(
+            0x10_81e0,
+            ExpandedSettingsEntryContinuation::Continue,
+        );
+        let block_220 = SMW_US_V1_EXPANDED_SETTINGS_RUNTIME_BLOCKS
+            .iter()
+            .position(|block| block.descriptor_index == 0x220)
+            .unwrap();
+        for mut write in smw_us_v1_expanded_settings_fixed_writes(layout).unwrap() {
+            if write.offset == SMW_US_V1_EXPANDED_SETTINGS_RUNTIME_MARKER_OFFSET {
+                write.replacement = SMW_US_V1_EXPANDED_SETTINGS_GENERATION_102_MARKER.to_vec();
+            } else if write.offset == layout.destination_offsets[block_220] {
+                write.replacement = decode_embedded_hex(GENERATION_102_BLOCK_220_HEX);
+            }
+            bytes[write.offset..write.offset + write.replacement.len()]
+                .copy_from_slice(&write.replacement);
+        }
+        bytes
+    }
+
+    #[test]
+    fn generation_102_migration_authenticates_normalizes_reclaims_and_undoes() {
+        let bytes = generation_102_fixture();
+        let before = bytes.clone();
+        let migration = smw_us_v1_expanded_settings_generation_102_migration(&bytes).unwrap();
+        assert_eq!(migration.previous_allocation.header_offset, 0x08_01d8);
+
+        let migrated =
+            SmwUsV1ExpandedSettingsAllocation::decode(&migration.plan.payloads[0].bytes).unwrap();
+        assert_eq!(migrated.record(0).unwrap().word(2).unwrap(), 0x0123);
+        assert_eq!(migrated.record(0).unwrap().word(4).unwrap(), 0x007f);
+        assert_eq!(migrated.record(0).unwrap().word(8).unwrap(), 0xffff);
+        assert_eq!(migrated.record(0).unwrap().word(10).unwrap(), 0x0bcd);
+        assert_eq!(migrated.record(0x200).unwrap().encoded(), &[0xa5; 0x20]);
+
+        let previous = migration.previous_allocation.clone();
+        let mut project = Project::new(RomImage::from_bytes(bytes).unwrap());
+        let result = project
+            .replace_relocatable_patch(
+                &migration.plan,
+                &RatsOwnershipManifest {
+                    owned: vec![previous],
+                    retained: Vec::new(),
+                },
+                0xff,
+            )
+            .unwrap();
+        assert_eq!(result.blocks[0].header_offset, 0x08_7ff8);
+        assert!(
+            crate::smw_us_v1_installed_expanded_settings_layout(&project)
+                .unwrap()
+                .is_some()
+        );
+        assert_eq!(project.history.undo_len(), 1);
+        project.undo().unwrap();
+        assert_eq!(project.rom.logical_bytes(), before);
+
+        let mut corrupt = before;
+        corrupt[0x07_fd80 + 7] ^= 1;
+        assert!(matches!(
+            smw_us_v1_expanded_settings_generation_102_migration(&corrupt),
+            Err(
+                SmwUsV1ExpandedSettingsGeneration102MigrationError::FixedByteMismatch {
+                    offset: 0x07_fd87,
+                    ..
+                }
+            )
+        ));
+    }
+
+    #[test]
+    fn external_generation_102_oracle_migrates_when_supplied() {
+        let Ok(path) = std::env::var("LM_EXPANDED_SETTINGS_102_ROM") else {
+            return;
+        };
+        let image = RomImage::from_bytes(fs::read(path).unwrap()).unwrap();
+        let before = image.as_file_bytes().to_vec();
+        let migration =
+            smw_us_v1_expanded_settings_generation_102_migration(image.logical_bytes()).unwrap();
+        let mut project = Project::new(image);
+        project
+            .replace_relocatable_patch(
+                &migration.plan,
+                &RatsOwnershipManifest {
+                    owned: vec![migration.previous_allocation],
+                    retained: Vec::new(),
+                },
+                0xff,
+            )
+            .unwrap();
+        assert!(
+            crate::smw_us_v1_installed_expanded_settings_layout(&project)
+                .unwrap()
+                .is_some()
+        );
+        project.undo().unwrap();
+        assert_eq!(project.rom.as_file_bytes(), before);
     }
 }

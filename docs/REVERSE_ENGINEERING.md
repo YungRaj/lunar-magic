@@ -2100,7 +2100,16 @@ and masks words 2–10 except non-reference word 8. `NormalizeExpandedLevelHeade
 (`00461ED0`) is the distinct field-reordering pass already modeled by the current normalizer.
 `SmwUsV1ExpandedSettingsRecordGeneration` now dispatches the exact composition for the four load
 branches, with exhaustive source/destination-word and untouched-field tests. Whole-ROM migration
-still requires authenticated legacy runtime fixtures and is not inferred from these record rules.
+is not inferred from these record rules. An official Lunar Magic 2.42 executable and a ROM created
+and saved by that executable now provide the authenticated `$0102` generation fixture. Its marker
+is exactly `4C 4D 02 01`; descriptor `$173+$33` resolves an exact `$6E00` RATS owner, and every
+fixed runtime destination matches the current family except the version marker, allocation
+operands, and historical descriptor `$220` body. Rust authenticates that complete immutable
+boundary, normalizes reference words 2–10 except word 8 across only the 512 standard records,
+preserves all eight trailing records byte-for-byte, reclaims the old owner only in staging, installs
+the current runtime/table, repairs the checksum, semantically reopens, and records one exact
+Undo/Redo operation. Corrupt marker, runtime, pointer, owner, length, or fill-prefix evidence rejects
+before mutation. Earlier `$0100/$0101` whole-ROM families remain evidence-gated work.
 
 Instruction-level inspection of `CheckLegacyGraphicsTablePatchState` (`004609D0`) and
 `CheckExpandedLevelHeaderPatchState` (`00460A30`) also recovered the previously omitted generation
