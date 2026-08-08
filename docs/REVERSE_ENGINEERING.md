@@ -1737,7 +1737,10 @@ they are not relative copies chosen by the active level/global animation setting
 uses the parallel eight-entry table for the final banks. The pristine Rust editor materializes the
 complete cache with exact ROM-owned banks, zeroes absent auxiliary/ExAnimation/external-file banks,
 retains the original locked default, and consumes Ctrl+Shift+Page Down only from the focused tile
-sheet to expose pages through `$3F` with the original status. The profile-backed installed editor
+sheet to expose pages through `$3F` with the original status. It refreshes on active-level and
+Special World changes while retaining ordinary staged file edits, accepts transient cache edits,
+applies the original `$000–$5FF` sheet-paste boundary, and routes its exact current-level slots to
+F9. The profile-backed installed editor
 additionally resolves the current level's legacy or six-slot bypass files, installed GFX32/GFX33
 and Layer 3 sources, loads reserved source files GFX60–GFX63 into the four exact ExAnimation banks,
 selects auxiliary bank `$780-$87F` from expanded-header field 0 when bit `$8000` is set or from the

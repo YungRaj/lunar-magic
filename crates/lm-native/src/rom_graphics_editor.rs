@@ -1200,11 +1200,11 @@ fn replace_internal_cache_tile(
     Ok(())
 }
 
-const fn diagnostic_sheet_paste_editable(index: usize) -> bool {
+pub(crate) const fn diagnostic_sheet_paste_editable(index: usize) -> bool {
     index <= 0x5ff
 }
 
-fn overlay_current_graphics_file(
+pub(crate) fn overlay_current_graphics_file(
     cache: &mut crate::vanilla_map16_preview::VanillaInternalGraphicsCache,
     assignments: &CurrentLevelGraphicsAssignments,
     file: usize,
@@ -1247,7 +1247,7 @@ fn overlay_current_graphics_file(
     Ok(())
 }
 
-fn internal_cache_level_graphics_overrides(
+pub(crate) fn internal_cache_level_graphics_overrides(
     cache: &crate::vanilla_map16_preview::VanillaInternalGraphicsCache,
     assignments: &CurrentLevelGraphicsAssignments,
 ) -> Result<Vec<(usize, Vec<u8>)>, String> {
@@ -1825,7 +1825,7 @@ mod tests {
         supports_exgraphics, supports_native_exgraphics,
     };
     use crate::{
-        level_graphics_export::{CurrentLevelGraphicsAssignments, legacy_level_graphics_files},
+        level_graphics_export::CurrentLevelGraphicsAssignments,
         vanilla_map16_preview::VanillaInternalGraphicsCache,
     };
     use lm_graphics::{GraphicsFile4bpp, IndexedTile};
@@ -1922,32 +1922,6 @@ mod tests {
         ensure_external_edit_revision(12, 12).unwrap();
         let error = ensure_external_edit_revision(12, 13).unwrap_err();
         assert!(error.contains("external graphics reload"), "{error}");
-    }
-
-    #[test]
-    fn legacy_level_export_uses_the_exact_object_then_sprite_assignment_order() {
-        let mut profile = lm_profile::test_support::profile();
-        profile.game = lm_rom::SupportedGame::SuperMarioWorld;
-        profile.region = lm_rom::Region::NorthAmerica;
-        profile.revision = 0;
-        let mut bytes = vec![0; 0x8000];
-        bytes[lm_profile::SMW_US_V1_OBJECT_TILESET_GRAPHICS_OFFSET
-            ..lm_profile::SMW_US_V1_OBJECT_TILESET_GRAPHICS_OFFSET + 4]
-            .copy_from_slice(&[0x14, 0x17, 0x19, 0x15]);
-        bytes[lm_profile::SMW_US_V1_SPRITE_TILESET_GRAPHICS_OFFSET
-            ..lm_profile::SMW_US_V1_SPRITE_TILESET_GRAPHICS_OFFSET + 4]
-            .copy_from_slice(&[0x00, 0x01, 0x13, 0x22]);
-        let image = RomImage::from_bytes(bytes).unwrap();
-        assert_eq!(
-            legacy_level_graphics_files(
-                &image,
-                &profile,
-                lm_level::LegacyLevelHeader::default(),
-                false,
-            )
-            .unwrap(),
-            [0x14, 0x17, 0x19, 0x15, 0x00, 0x01, 0x13, 0x22]
-        );
     }
 
     #[test]

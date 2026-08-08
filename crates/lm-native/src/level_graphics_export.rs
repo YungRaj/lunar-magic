@@ -275,6 +275,22 @@ pub(crate) fn pristine_current_level_graphics_files(
     level: u16,
     special_world_passed: bool,
 ) -> Result<Vec<usize>, String> {
+    let assignments =
+        pristine_current_level_graphics_assignments(image, level, special_world_passed)?;
+    Ok(collapse_duplicate_files(
+        assignments
+            .foreground_background
+            .into_iter()
+            .chain(assignments.sprites)
+            .collect(),
+    ))
+}
+
+pub(crate) fn pristine_current_level_graphics_assignments(
+    image: &RomImage,
+    level: u16,
+    special_world_passed: bool,
+) -> Result<CurrentLevelGraphicsAssignments, String> {
     let project = lm_project::Project::new(image.clone());
     let loaded_level = project
         .load_level_slot(
@@ -283,69 +299,26 @@ pub(crate) fn pristine_current_level_graphics_files(
             &SpriteLengthTable::standard(),
         )
         .map_err(|error| format!("cannot load level {level:03X} graphics settings: {error}"))?;
-    let foreground = lm_profile::smw_us_v1_object_tileset_graphics_files(
+    let mut foreground_background = lm_profile::smw_us_v1_object_tileset_graphics_files(
         image,
         usize::from(loaded_level.layer1.header.object_tileset()),
     )
-    .map_err(|error| error.to_string())?;
-    let sprites = lm_profile::smw_us_v1_sprite_tileset_graphics_files(
+    .map_err(|error| error.to_string())?
+    .to_vec();
+    foreground_background.extend([0x7f, 0x7f]);
+    let mut sprites = lm_profile::smw_us_v1_sprite_tileset_graphics_files(
         image,
         usize::from(loaded_level.layer1.header.sprite_tileset()),
     )
-    .map_err(|error| error.to_string())?;
-    Ok(collapse_duplicate_files(level_graphics_files(
-        foreground,
-        sprites,
-        special_world_passed,
-    )))
-}
-
-pub(crate) fn legacy_level_graphics_files(
-    image: &RomImage,
-    profile: &RevisionProfile,
-    header: LegacyLevelHeader,
-    special_world_passed: bool,
-) -> Result<Vec<usize>, String> {
-    if profile.game != SupportedGame::SuperMarioWorld
-        || profile.region != Region::NorthAmerica
-        || profile.revision != 0
-    {
-        return Err(format!(
-            "legacy level graphics assignment tables are not recovered for profile {}",
-            profile.name
-        ));
+    .map_err(|error| error.to_string())?
+    .to_vec();
+    if special_world_passed {
+        sprites[1] = 0x7f;
     }
-    let foreground = lm_profile::smw_us_v1_object_tileset_graphics_files(
-        image,
-        usize::from(header.object_tileset()),
-    )
-    .map_err(|error| error.to_string())?;
-    let sprites = lm_profile::smw_us_v1_sprite_tileset_graphics_files(
-        image,
-        usize::from(header.sprite_tileset()),
-    )
-    .map_err(|error| error.to_string())?;
-    Ok(level_graphics_files(
-        foreground,
+    Ok(CurrentLevelGraphicsAssignments {
+        foreground_background,
         sprites,
-        special_world_passed,
-    ))
-}
-
-fn level_graphics_files<const FOREGROUND: usize>(
-    foreground_background: [usize; FOREGROUND],
-    sprites: [usize; 4],
-    special_world_passed: bool,
-) -> Vec<usize> {
-    foreground_background
-        .into_iter()
-        .chain(
-            sprites
-                .into_iter()
-                .enumerate()
-                .filter_map(|(slot, file)| (!special_world_passed || slot != 1).then_some(file)),
-        )
-        .collect()
+    })
 }
 
 fn collapse_duplicate_files(files: Vec<usize>) -> Vec<usize> {
@@ -488,6 +461,12 @@ mod tests {
             pristine_current_level_graphics_files(&image, 0x105, true).unwrap(),
             [0x14, 0x17, 0x1b, 0x15, 0x00, 0x13, 0x20]
         );
+        let assignments = pristine_current_level_graphics_assignments(&image, 0x105, true).unwrap();
+        assert_eq!(
+            assignments.foreground_background,
+            [0x14, 0x17, 0x1b, 0x15, 0x7f, 0x7f]
+        );
+        assert_eq!(assignments.sprites, [0x00, 0x7f, 0x13, 0x20]);
     }
 
     #[test]
