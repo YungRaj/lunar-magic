@@ -574,7 +574,8 @@ fn apply_popularity_reduction_method_1(
     let green_end = green_start.wrapping_add(3).min(32);
     let blue_end = blue_start.wrapping_add(3).min(32);
 
-    for red in red_start..red_end {
+    let mut found = false;
+    'neighborhood: for red in red_start..red_end {
         for green in green_start..green_end {
             for blue in blue_start..blue_end {
                 let neighbor = (blue << 10) | (green << 5) | red;
@@ -586,12 +587,16 @@ fn apply_popularity_reduction_method_1(
                 if score > selected[index].1 {
                     selected[index] = (color, score);
                     bubble_popularity_color_up(selected, index, score);
+                    found = true;
+                    // A replacement restores every loop counter to its end bound and exits the
+                    // complete neighborhood scan.
+                    break 'neighborhood;
                 }
-                return true;
+                found = true;
             }
         }
     }
-    false
+    found
 }
 
 fn apply_popularity_reduction_method_2(
@@ -622,9 +627,9 @@ fn apply_popularity_reduction_method_2(
                 };
                 found = true;
                 if candidate_score >= score {
+                    // A strong neighbor cancels aggregation and exits the complete scan.
                     return true;
-                }
-                if weakest.is_none_or(|(_, weakest_score)| candidate_score < weakest_score) {
+                } else if weakest.is_none_or(|(_, weakest_score)| candidate_score < weakest_score) {
                     weakest = Some((index, candidate_score));
                 }
             }
@@ -646,7 +651,7 @@ fn apply_popularity_reduction_method_2(
 }
 
 const fn component_range_start(component: u16, radius: u16) -> u16 {
-    component.saturating_sub(radius)
+    component.wrapping_sub(radius)
 }
 
 fn bubble_popularity_color_up(selected: &mut [(u16, u32)], mut index: usize, score: u32) {
@@ -1473,30 +1478,53 @@ mod tests {
             0x0844,
             20
         ));
-        assert_eq!(selected, vec![(0x0843, 40), (0x0421, 30), (0x0c63, 10)]);
+        assert_eq!(selected, vec![(0x0843, 40), (0x0421, 30), (0x0844, 20)]);
     }
 
     #[test]
-    fn popularity_neighborhoods_clamp_at_zero_instead_of_wrapping_empty() {
-        assert_eq!(component_range_start(0, 1), 0);
-        assert_eq!(component_range_start(0, 2), 0);
-        assert_eq!(component_range_start(1, 2), 0);
+    fn popularity_neighborhoods_preserve_native_empty_underflow_scans() {
+        assert_eq!(component_range_start(0, 1), u16::MAX);
+        assert_eq!(component_range_start(0, 2), u16::MAX - 1);
+        assert_eq!(component_range_start(1, 2), u16::MAX);
 
         let mut method_1 = vec![(0x0001, 10)];
-        assert!(apply_popularity_reduction_method_1(
+        assert!(!apply_popularity_reduction_method_1(
             &mut method_1,
             0x0000,
             20
         ));
-        assert_eq!(method_1, vec![(0x0000, 20)]);
+        assert_eq!(method_1, vec![(0x0001, 10)]);
 
         let mut method_2 = vec![(0x0001, 10)];
-        assert!(apply_popularity_reduction_method_2(
+        assert!(!apply_popularity_reduction_method_2(
             &mut method_2,
             0x0000,
             20
         ));
-        assert_eq!(method_2, vec![(0x0000, 30)]);
+        assert_eq!(method_2, vec![(0x0001, 10)]);
+    }
+
+    #[test]
+    fn popularity_method_1_stops_after_its_first_weaker_replacement() {
+        let mut selected = vec![(0x0422, 30), (0x0424, 20), (0x7fff, 10)];
+        assert!(apply_popularity_reduction_method_1(
+            &mut selected,
+            0x0423,
+            40
+        ));
+        assert_eq!(selected, vec![(0x0423, 40), (0x0424, 20), (0x7fff, 10)]);
+    }
+
+    #[test]
+    fn popularity_method_2_rejects_on_the_first_strong_neighbor() {
+        // Red is the outer neighborhood loop, so $0421 is visited before $0422.
+        let mut selected = vec![(0x0421, 100), (0x0422, 40), (0x7fff, 20)];
+        assert!(apply_popularity_reduction_method_2(
+            &mut selected,
+            0x0423,
+            50
+        ));
+        assert_eq!(selected, vec![(0x0421, 100), (0x0422, 40), (0x7fff, 20)]);
     }
 
     #[test]

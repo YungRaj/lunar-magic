@@ -1483,13 +1483,15 @@ Popularity entry point now reproduces that admission and priority core and the a
 its actual destination palette.
 
 The two optional adjacent-color passes are now recovered from `004ec2b1..004ec65c` and represented
-independently. Method 1 scans a 3×3×3 RGB555 neighborhood in red/green/blue loop order, consumes the
-candidate when it encounters the first active selected neighbor, and replaces that neighbor only
-when the candidate's scored weight is greater before bubbling it toward the front. Method 2 uses
-the executable's asymmetric 5×4×3 window, rejects aggregation when any encountered neighbor is at
-least as strong as the candidate, otherwise selects the weakest neighbor, and combines only scores
-below `$80`. Its reorder comparison and moved-entry score use the incoming score rather than the
-combined score, matching the assembly at `004ec5f0..004ec655`. The Color Options dialog confirms
+independently. Their component starts use unsigned subtraction: a zero edge wraps and makes that
+component scan empty rather than clamping it. Method 1 scans a 3×3×3 RGB555 neighborhood in
+red/green/blue loop order. A stronger-or-equal selected neighbor marks the candidate consumed but
+the scan continues; the first weaker neighbor is replaced, bubbled toward the front, and exits the
+complete neighborhood scan. Method 2 uses the executable's asymmetric 5×4×3 window, exits without
+aggregation at the first neighbor at least as strong as the candidate, otherwise selects the
+weakest scanned neighbor, and combines only scores below `$80`. Its reorder comparison and
+moved-entry score use the incoming score rather than the combined score, matching the assembly at
+`004ec5f0..004ec655`. The Color Options dialog confirms
 method 1 defaults enabled and method 2 defaults disabled; both switches are now exposed by the
 native frontend and covered independently.
 The native dialog exposes the recovered reduction method, 1–128 limit, 1–4 priority, and all 128

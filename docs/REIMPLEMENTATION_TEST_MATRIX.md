@@ -1321,10 +1321,10 @@ selected row for every 8×8 tile into all four packed Map16 subtile descriptors 
 preview through those same rows; the original one-row path and complete ROM commit/reopen tests
 remain green. The native dialog exposes both reduction choices and the complete 8×16 state grid.
 Popularity also exposes both recovered high-color neighborhood methods, with method 1 enabled and
-method 2 disabled by default. Focused tests cover method 1's first-neighbor replacement and method
-2's sub-128 score aggregation and stronger-neighbor rejection. Both component windows clamp at
-zero; a focused boundary gate prevents unsigned underflow from turning a red/green/blue edge
-neighborhood into an empty scan. Median-cut currently uses the
+method 2 disabled by default. Focused tests cover method 1's first-weaker-neighbor replacement and
+method 2's sub-128 score aggregation and first-stronger-neighbor rejection. Component starts retain
+the original unsigned subtraction, so underflow at a zero red, green, or blue edge deliberately
+turns that neighborhood into an empty scan. Median-cut currently uses the
 bounded deterministic variance splitter. A disposable-process Wine audit now drives the original
 clipboard-bitmap dialog, captures its pre/post palette and planar graphics buffers, and verifies
 the conversion guard is restored. Its low-color fixture proves that the fast path and Popularity
