@@ -224,10 +224,14 @@ fn smw_us_v1_expanded_settings_installation_plan_for_range(
 ) -> Result<RelocatablePatchPlan, ExpandedSettingsInstallPlanError> {
     // The builder needs well-formed placeholder addresses; every allocation-dependent byte is
     // replaced by a typed transaction fixup before publication.
-    let layout = ExpandedSettingsRuntimeLayout::smw_us_v1(
-        0x00_8000,
-        ExpandedSettingsEntryContinuation::Continue,
-    );
+    let continuation = if overworld.is_some() {
+        // Lunar Magic's overworld-settings/complete-overworld route terminates the two runtime
+        // entry blocks directly. Its level/graphics prerequisite routes continue into the caller.
+        ExpandedSettingsEntryContinuation::Return
+    } else {
+        ExpandedSettingsEntryContinuation::Continue
+    };
+    let layout = ExpandedSettingsRuntimeLayout::smw_us_v1(0x00_8000, continuation);
     let mut writes = smw_us_v1_expanded_settings_fixed_writes(layout)?;
     for (slot, block) in SMW_US_V1_EXPANDED_SETTINGS_RUNTIME_BLOCKS
         .iter()
@@ -941,7 +945,7 @@ mod tests {
         for write in
             smw_us_v1_expanded_settings_fixed_writes(ExpandedSettingsRuntimeLayout::smw_us_v1(
                 allocation_base_snes,
-                ExpandedSettingsEntryContinuation::Continue,
+                ExpandedSettingsEntryContinuation::Return,
             ))
             .unwrap()
         {
