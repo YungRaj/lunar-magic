@@ -77,6 +77,7 @@ impl RomMap16Editor {
         blocked: bool,
         project_revision: u64,
     ) {
+        let import_shortcut = take_snes_tileset_import_shortcut(ui);
         ui.separator();
         ui.label("SNES graphics set + screen tile map");
         ui.horizontal(|ui| {
@@ -92,13 +93,14 @@ impl RomMap16Editor {
                 &mut self.snes_tileset_deduplicate,
                 "Optimize Map16 definitions",
             );
-            if ui
+            let load_clicked = ui
                 .add_enabled(
                     !blocked && self.page < 0x100,
-                    egui::Button::new("Load SNES tileset…"),
+                    egui::Button::new("Load SNES tileset…")
+                        .shortcut_text("Ctrl+Shift+Alt+F1+Insert"),
                 )
-                .clicked()
-            {
+                .clicked();
+            if !blocked && self.page < 0x100 && (load_clicked || import_shortcut) {
                 self.start_snes_tileset_load(project_revision);
             }
         });
@@ -444,6 +446,18 @@ impl RomMap16Editor {
     }
 }
 
+fn take_snes_tileset_import_shortcut(ui: &mut egui::Ui) -> bool {
+    ui.input_mut(|input| {
+        let modifiers = input.modifiers;
+        let insert = input.consume_key(modifiers, egui::Key::Insert);
+        insert
+            && modifiers.ctrl
+            && modifiers.shift
+            && modifiers.alt
+            && input.key_down(egui::Key::F1)
+    })
+}
+
 fn stage_background_index_grid(
     project: &mut Project,
     preview: &SnesTilesetPreview,
@@ -726,6 +740,61 @@ fn prepare_preview(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn original_insert_import_chord_requires_ctrl_shift_alt_and_f1() {
+        fn observed(modifiers: egui::Modifiers, f1_down: bool) -> bool {
+            let context = egui::Context::default();
+            let mut taken = false;
+            let mut events = Vec::new();
+            if f1_down {
+                events.push(egui::Event::Key {
+                    key: egui::Key::F1,
+                    physical_key: None,
+                    pressed: true,
+                    repeat: false,
+                    modifiers,
+                });
+            }
+            events.push(egui::Event::Key {
+                key: egui::Key::Insert,
+                physical_key: None,
+                pressed: true,
+                repeat: false,
+                modifiers,
+            });
+            let _ = context.run(
+                egui::RawInput {
+                    events,
+                    modifiers,
+                    ..Default::default()
+                },
+                |context| {
+                    egui::CentralPanel::default().show(context, |ui| {
+                        taken = take_snes_tileset_import_shortcut(ui);
+                    });
+                },
+            );
+            taken
+        }
+
+        let chord = egui::Modifiers::CTRL | egui::Modifiers::SHIFT | egui::Modifiers::ALT;
+        assert!(observed(chord, true));
+        assert!(observed(chord | egui::Modifiers::COMMAND, true));
+        assert!(!observed(chord, false));
+        assert!(!observed(
+            egui::Modifiers::CTRL | egui::Modifiers::SHIFT,
+            true
+        ));
+        assert!(!observed(
+            egui::Modifiers::CTRL | egui::Modifiers::ALT,
+            true
+        ));
+        assert!(!observed(
+            egui::Modifiers::SHIFT | egui::Modifiers::ALT,
+            true
+        ));
+    }
     use lm_app::{AppState, Command, LUNAR_MAGIC_BLANK_MAP16_WORD};
     use lm_graphics::{GraphicsFile4bpp, IndexedTile};
     use lm_level::{Map16Tile, Subtile};
