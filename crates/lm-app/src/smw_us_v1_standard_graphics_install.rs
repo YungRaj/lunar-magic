@@ -6,6 +6,9 @@ use lm_rom::{Mapper, RomImage};
 const TARGET_LOGICAL_LEN: usize = 0x10_0000;
 const CHECKSUM_FIELD: usize = 0x7fdc;
 const ROM_SIZE_FIELD: usize = 0x7fd7;
+const EXTENDED_EXGFX_POINTER_END: usize =
+    lm_profile::SMW_US_V1_EXTENDED_EXGFX_POINTER_OFFSET + 0xf00 * 3;
+const READY_EXGFX_EXPANSION_MARKER: [u8; 7] = [0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x1f];
 const FILE_SIZES: [usize; 0x34] = [
     0x1000, 0x1000, 0x1000, 0x1000, 0x1000, 0x1000, 0x1000, 0x1000, 0x1000, 0x1000, 0x1000, 0x1000,
     0x1000, 0x1000, 0x1000, 0x1000, 0x1000, 0x1000, 0x1000, 0x1000, 0x1000, 0x1000, 0x1000, 0x1000,
@@ -234,22 +237,49 @@ pub fn prepare_smw_us_v1_standard_graphics_install(
             ));
         }
     }
-    if image.logical_len() != 0x80_000 {
-        return Err(format!(
-            "first standard-GFX installation requires a 512 KiB pristine ROM, got {:#X} bytes",
-            image.logical_len()
-        ));
+    let legacy_upgrade = lm_profile::requires_smw_us_v1_4bpp_graphics_warning(&image);
+    if legacy_upgrade {
+        authenticate_installed_patches(&image)?;
+    } else {
+        if image.logical_len() != 0x80_000 {
+            return Err(format!(
+                "standard-GFX installation requires a 512 KiB pristine ROM or an authenticated legacy ExGFX runtime, got {:#X} bytes",
+                image.logical_len()
+            ));
+        }
+        authenticate_pristine_patches(&image)?;
     }
-    authenticate_patches(&image)?;
     let before = image.logical_bytes().to_vec();
+    let legacy_exgraphics_tables = legacy_upgrade
+        .then(|| snapshot_exgraphics_pointer_tables(&image))
+        .transpose()?;
     let mut project = Project::new(image);
-    project
-        .expand_rom(Mapper::LoRom, TARGET_LOGICAL_LEN, 0xff, CHECKSUM_FIELD)
-        .map_err(|error| error.to_string())?;
+    if !legacy_upgrade {
+        project
+            .expand_rom(Mapper::LoRom, TARGET_LOGICAL_LEN, 0x00, CHECKSUM_FIELD)
+            .map_err(|error| error.to_string())?;
+    }
     apply_runtime(&mut project)?;
+    if !legacy_upgrade {
+        project
+            .install_relocatable_patch(
+                &lm_profile::smw_us_v1_gfx_expanded_settings_installation_plan()
+                    .map_err(|error| error.to_string())?,
+            )
+            .map_err(|error| error.to_string())?;
+        project
+            .rom
+            .write(
+                lm_profile::SMW_US_V1_EXGFX_EXPANSION_MARKER_OFFSET,
+                &READY_EXGFX_EXPANSION_MARKER,
+            )
+            .map_err(|error| error.to_string())?;
+    }
 
+    let mut allocation = lm_rats::AllocationPolicy::lorom(0x80_028..project.rom.logical_len());
+    allocation.fill_bytes = vec![0x00, 0xff];
     let mut options = GraphicsSaveOptions {
-        allocation: lm_rats::AllocationPolicy::lorom(0x80_028..TARGET_LOGICAL_LEN),
+        allocation,
         previous_block: None,
         reuse_identical: true,
         erase_fill: 0xff,
@@ -258,6 +288,11 @@ pub fn prepare_smw_us_v1_standard_graphics_install(
         .allocation
         .protected
         .push(ProtectedRange(0x80_000..0x80_028));
+    if legacy_upgrade {
+        options.allocation.protected.push(ProtectedRange(
+            lm_profile::SMW_US_V1_EXTENDED_EXGFX_POINTER_OFFSET..EXTENDED_EXGFX_POINTER_END,
+        ));
+    }
     let ordinary = lm_profile::smw_us_v1_vanilla_graphics_layout();
     protect_layout(&mut options, ordinary)?;
     project
@@ -280,15 +315,20 @@ pub fn prepare_smw_us_v1_standard_graphics_install(
     project
         .apply_mutation(&special.description, &special.mutation)
         .map_err(|error| error.to_string())?;
-    project
-        .rom
-        .write(ROM_SIZE_FIELD, &[0x0a])
-        .map_err(|error| error.to_string())?;
+    if project.rom.logical_len() == TARGET_LOGICAL_LEN {
+        project
+            .rom
+            .write(ROM_SIZE_FIELD, &[0x0a])
+            .map_err(|error| error.to_string())?;
+    }
     project
         .rom
         .update_snes_checksum(CHECKSUM_FIELD)
         .map_err(|error| error.to_string())?;
     verify_reopen(&project.rom, files)?;
+    if let Some(expected) = legacy_exgraphics_tables {
+        verify_exgraphics_pointer_tables(&project.rom, &expected)?;
+    }
     let mutation = RomMutation::between(Mapper::LoRom, &before, project.rom.logical_bytes())
         .map_err(|error| error.to_string())?;
     Ok(PreparedRomCommit {
@@ -324,7 +364,7 @@ pub fn prepare_smw_us_v1_joined_standard_graphics_install(
     prepare_smw_us_v1_standard_graphics_install(expected_revision, image, &files)
 }
 
-fn authenticate_patches(image: &RomImage) -> Result<(), String> {
+fn authenticate_pristine_patches(image: &RomImage) -> Result<(), String> {
     for patch in PATCHES {
         let actual = image
             .read(patch.offset, patch.before.len())
@@ -342,6 +382,82 @@ fn authenticate_patches(image: &RomImage) -> Result<(), String> {
                 "unsupported graphics RAM reference at {offset:#08X}"
             ));
         }
+    }
+    Ok(())
+}
+
+fn authenticate_installed_patches(image: &RomImage) -> Result<(), String> {
+    for patch in PATCHES {
+        let actual = image
+            .read(patch.offset, patch.after.len())
+            .map_err(|error| error.to_string())?;
+        let legacy_format_marker = lm_profile::SMW_US_V1_4BPP_GRAPHICS_MARKER_OFFSETS
+            .contains(&patch.offset)
+            && actual == patch.before;
+        if actual != patch.after && !legacy_format_marker {
+            return Err(format!(
+                "unsupported installed standard-GFX runtime bytes at {:#08X}",
+                patch.offset
+            ));
+        }
+    }
+    for (offset, _, after) in RAM_REFERENCE_PATCHES {
+        if image.read(*offset, 2).map_err(|error| error.to_string())? != after {
+            return Err(format!(
+                "unsupported installed graphics RAM reference at {offset:#08X}"
+            ));
+        }
+    }
+    for (offset, expected) in [
+        (0x77c50, RUNTIME_A),
+        (0x77c80, RUNTIME_B),
+        (0x80000, RUNTIME_C),
+    ] {
+        if image
+            .read(offset, expected.len())
+            .map_err(|error| error.to_string())?
+            != expected
+        {
+            return Err(format!(
+                "unsupported installed standard-GFX runtime payload at {offset:#08X}"
+            ));
+        }
+    }
+    Ok(())
+}
+
+type ExGraphicsPointerTables = [Vec<u8>; 3];
+
+fn snapshot_exgraphics_pointer_tables(image: &RomImage) -> Result<ExGraphicsPointerTables, String> {
+    Ok([
+        image
+            .read(lm_profile::SMW_US_V1_RESERVED_EXGFX_POINTER_OFFSET, 4 * 3)
+            .map_err(|error| error.to_string())?
+            .to_vec(),
+        image
+            .read(
+                lm_profile::SMW_US_V1_ORDINARY_EXGFX_POINTER_OFFSET,
+                0x80 * 3,
+            )
+            .map_err(|error| error.to_string())?
+            .to_vec(),
+        image
+            .read(
+                lm_profile::SMW_US_V1_EXTENDED_EXGFX_POINTER_OFFSET,
+                0xf00 * 3,
+            )
+            .map_err(|error| error.to_string())?
+            .to_vec(),
+    ])
+}
+
+fn verify_exgraphics_pointer_tables(
+    image: &RomImage,
+    expected: &ExGraphicsPointerTables,
+) -> Result<(), String> {
+    let actual = snapshot_exgraphics_pointer_tables(image)?;
+    if actual != *expected {
+        return Err("legacy ExGFX pointer tables changed during standard-GFX migration".into());
     }
     Ok(())
 }

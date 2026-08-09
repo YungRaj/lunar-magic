@@ -1,5 +1,5 @@
 use lm_app::prepare_smw_us_v1_standard_graphics_install;
-use lm_project::Project;
+use lm_project::{GraphicsCompression, GraphicsRomLayout, LevelPointerTable, Project};
 use lm_rom::RomImage;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -28,10 +28,16 @@ impl Drop for TemporaryDirectory {
     }
 }
 
-fn run_export(wine: &Path, lunar_magic: &Path, directory: &Path, rom_name: &str) {
+fn run_export_operation(
+    wine: &Path,
+    lunar_magic: &Path,
+    directory: &Path,
+    operation: &str,
+    rom_name: &str,
+) {
     let output = Command::new(wine)
         .arg(lunar_magic)
-        .arg("-ExportGFX")
+        .arg(operation)
         .arg(rom_name)
         .current_dir(directory)
         .output()
@@ -41,6 +47,10 @@ fn run_export(wine: &Path, lunar_magic: &Path, directory: &Path, rom_name: &str)
         "Lunar Magic export failed: {}",
         String::from_utf8_lossy(&output.stderr)
     );
+}
+
+fn run_export(wine: &Path, lunar_magic: &Path, directory: &Path, rom_name: &str) {
+    run_export_operation(wine, lunar_magic, directory, "-ExportGFX", rom_name);
 }
 
 #[test]
@@ -92,4 +102,78 @@ fn lunar_magic_reexports_every_rust_first_install_standard_gfx_file() {
         let actual = fs::read(installed.0.join("Graphics").join(&name)).unwrap();
         assert_eq!(actual, expected, "{name}");
     }
+
+    let legacy = TemporaryDirectory::create("gfx-legacy-upgrade");
+    let mut legacy_project = project;
+    let exgfx80 = (0..0x800)
+        .map(|index| (index as u8).wrapping_mul(37).wrapping_add(11))
+        .collect::<Vec<_>>();
+    let exgfx_commit = lm_app::prepare_smw_us_v1_exgraphics_install(
+        0,
+        legacy_project.rom.clone(),
+        &[(0x80, exgfx80.clone())],
+    )
+    .unwrap();
+    legacy_project
+        .apply_mutation(&exgfx_commit.description, &exgfx_commit.mutation)
+        .unwrap();
+    for (offset, original) in lm_profile::SMW_US_V1_4BPP_GRAPHICS_MARKER_OFFSETS
+        .into_iter()
+        .zip([0x08, 0x1e])
+    {
+        legacy_project.rom.write(offset, &[original]).unwrap();
+    }
+    legacy_project.rom.update_snes_checksum(0x7fdc).unwrap();
+    assert!(lm_profile::requires_smw_us_v1_4bpp_graphics_warning(
+        &legacy_project.rom
+    ));
+    let legacy_before = legacy_project.rom.clone();
+    let legacy_commit =
+        prepare_smw_us_v1_standard_graphics_install(0, legacy_before.clone(), &files).unwrap();
+    legacy_project
+        .apply_mutation(&legacy_commit.description, &legacy_commit.mutation)
+        .unwrap();
+    assert_eq!(
+        legacy_project.rom.logical_len(),
+        legacy_before.logical_len()
+    );
+    assert!(lm_profile::has_smw_us_v1_4bpp_graphics_prerequisite(
+        &legacy_project.rom
+    ));
+    fs::write(
+        legacy.0.join("legacy-upgraded.smc"),
+        legacy_project.rom.as_file_bytes(),
+    )
+    .unwrap();
+    run_export(&wine, &lunar_magic, &legacy.0, "legacy-upgraded.smc");
+    for number in 0..0x34 {
+        let name = format!("GFX{number:02X}.bin");
+        assert_eq!(
+            fs::read(legacy.0.join("Graphics").join(&name)).unwrap(),
+            files[number],
+            "legacy-upgraded {name}"
+        );
+    }
+    let route = lm_profile::smw_us_v1_exgraphics_pointer(0x80).unwrap();
+    assert_eq!(
+        legacy_project
+            .load_decompressed_graphics_file(
+                0,
+                GraphicsRomLayout {
+                    mapper: lm_rom::Mapper::LoRom,
+                    pointers: LevelPointerTable {
+                        offset: route.pointer_offset,
+                        entries: 1,
+                        stride: 3,
+                    },
+                    split_pointer_planes: None,
+                    compression: GraphicsCompression::Lz2,
+                    maximum_compressed_len: 0x8000,
+                    maximum_decompressed_len: 0x1000,
+                },
+            )
+            .unwrap(),
+        exgfx80,
+        "legacy ExGFX80 changed during standard-GFX migration"
+    );
 }

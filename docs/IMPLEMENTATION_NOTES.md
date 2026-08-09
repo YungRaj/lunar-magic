@@ -4329,8 +4329,16 @@ format markers opens Lunar Magic 3.63's exact `Graphics Format Change Warning!` 
 is started. The pending request retains its already selected immutable source and directory or
 `AllGFX.bin` target. No/Escape drops it without reading a file or preparing a mutation; Yes dispatches
 that same request. Merely expanded, partially marked, truncated, or foreign-hook ROMs do not acquire
-the warning. This closes the prompt's detection/cancellation boundary while leaving the affirmative
-legacy 3bpp-to-4bpp modified-runtime migration as a separate open transaction gate.
+the warning. Yes authenticates every fixed patch, RAM reference, and runtime payload; snapshots the
+reserved, ordinary, and extended ExGFX pointer tables; preserves the existing ROM size; installs the
+52 replacement standard files; and rejects publication unless all three tables and every standard
+file reopen exactly. A live Wine gate clears only the two format markers in a Rust-created runtime,
+performs the migration, and requires Lunar Magic 3.63 to re-export all 52 standard files byte-for-byte
+while Rust reopens the retained `ExGFX80` payload unchanged. First installation now follows the
+original prerequisite order: zero-filled expansion, expanded-settings/runtime ownership, then GFX
+allocation, preventing standard files from consuming the later ExGFX settings range. Lunar Magic's
+`-ExportExGFX` still does not enumerate that Rust-created slot, so its attribution/feature-metadata
+recognition contract remains an explicit open interoperability gate.
 
 The installed graphics editor also owns a scoped external-edit round trip. It exports the current
 staged controller bytes—not a stale ROM decode—to a uniquely reserved private temporary directory

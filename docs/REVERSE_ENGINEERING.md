@@ -1930,8 +1930,15 @@ format marker, Lunar Magic displays `Graphics Format Change Warning!` and explai
 Choosing No returns before `InstallBulkGraphicsSystemPatches`. The Rust profile boundary now exposes
 `requires_smw_us_v1_4bpp_graphics_warning`: it requires an authenticated native ExGFX runtime and
 the absence of the complete two-byte-pair 4bpp marker, so ROM size, one coincidental `$32`, or a
-foreign hook cannot trigger the future migration route. The affirmative modified-runtime migration
-itself remains an open transaction/variant gate.
+foreign hook cannot trigger the migration route. `InstallBulkGraphicsSystemPatches` at `$0045C400`
+installs its shared relocation/runtime family before the 52 regular-GFX slots are removed and
+reallocated. Rust mirrors that ownership order for pristine installs and authenticates the installed
+family for the affirmative route. The migration preserves ROM size plus all reserved, ordinary, and
+extended ExGFX pointer bytes, restores the two 4bpp markers, checksum-repairs, and reopens all 52
+regular files and a retained `ExGFX80` payload. A live Lunar Magic 3.63 export matches all migrated
+regular files byte-for-byte. Lunar Magic's command-line ExGFX exporter does not yet enumerate the
+Rust-created slot, leaving `WriteLunarMagicRomMetadata` and any adjacent recognition state under
+active investigation rather than treating Rust-only semantic reopen as a complete oracle.
 A retained Lunar Magic 3.63 Wine oracle opens the original `Window8x8` through command `$232A` and
 posts F9 directly to that window. With all separate files replaced by equal-length sentinels, level
 `$105` changes exactly `$00,$01,$13,$14,$15,$17,$1B,$20`; removing `GFX33.bin` first produces
