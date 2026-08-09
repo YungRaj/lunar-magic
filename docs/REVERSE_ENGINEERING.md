@@ -286,6 +286,15 @@ controllers and refuses an unapproved transition before staged state changes.
 
 The `00414bb0`–`004178b0` range identifies interface/VRAM-patch option tooltips, the About dialog and URL clipboard path, and the beginning of the overworld ExAnimation subsystem. `AboutDialogProc` has a recovered Win32 callback prototype. Overworld animation address/frame conversions, remapping, submap selection, slot display, and duplicate-trigger checks are named separately from their level-editor counterparts.
 
+The 600-byte extended dialog template for About resource `$03F8` is now decoded into the retained
+`help-about/about-layout.tsv`: a 248×160-dialog-unit parent with ten exact child IDs, classes,
+positions, sizes, and roles. `AboutDialogProc` at `00415970` fills the identity, version, build,
+programmer, and website controls; website hover changes the link color/cursor, left-click launches
+the URL, and right-button release opens its Copy command. Command `$66` opens modal resource `$429`
+through procedure `004155C0`, `$67` opens Legal Notice resource `$42A` through `004156C0`, and ID 1
+ends only the About dialog. Rust now retains the recovered window proportions, version/build/source
+identity, direct URL and copy actions, both auxiliary clean-room notices, and explicit OK dismissal.
+
 The Help-file dispatch is now recovered separately. `OpenLunarMagicHelpFile` at `00440F90` first
 asks `BuildLocalizedHelpFilePath` (`004D6C10`) to replace the active language-module extension with
 `.chm`; if that file is absent it selects `Lunar Magic.chm` beside the executable. It attempts to

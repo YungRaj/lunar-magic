@@ -9,17 +9,26 @@ pub(crate) const PRODUCT_NAME: &str = "Lunar Magic Rust";
 pub(crate) const COMPATIBILITY_TARGET: &str = "Lunar Magic 3.63 workflow compatibility";
 pub(crate) const LICENSE: &str = "MIT OR Apache-2.0";
 pub(crate) const SOURCE_URL: &str = "https://github.com/YungRaj/lunar-magic";
+const ORIGINAL_ABOUT_DIALOG_UNITS: (f32, f32) = (248.0, 160.0);
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum AboutAuxiliary {
+    ThirdParty,
+    Legal,
+}
 
 #[derive(Default)]
 pub(crate) struct AboutDialog {
     open: bool,
     copied_source: bool,
+    auxiliary: Option<AboutAuxiliary>,
 }
 
 impl AboutDialog {
     pub(crate) fn open(&mut self) {
         self.open = true;
         self.copied_source = false;
+        self.auxiliary = None;
     }
 
     pub(crate) fn show(&mut self, context: &egui::Context, catalog: Option<&LocalizationCatalog>) {
@@ -30,16 +39,36 @@ impl AboutDialog {
         let product = localized_text(catalog, UiTextKey::AppTitle);
         let title = localized_text(catalog, UiTextKey::AboutWindowTitleFormat)
             .replace("{product}", &product);
+        let mut close_requested = false;
+        let mut auxiliary = self.auxiliary;
         egui::Window::new(title)
             .open(&mut self.open)
             .collapsible(false)
             .resizable(false)
+            .default_size([
+                ORIGINAL_ABOUT_DIALOG_UNITS.0 * 2.0,
+                ORIGINAL_ABOUT_DIALOG_UNITS.1 * 2.0,
+            ])
             .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
             .show(context, |ui| {
+                ui.set_min_width(480.0);
                 ui.heading(&product);
                 ui.label(
                     localized_text(catalog, UiTextKey::AboutVersionFormat)
                         .replace("{version}", env!("CARGO_PKG_VERSION")),
+                );
+                ui.label(
+                    localized_text(catalog, UiTextKey::AboutBuildFormat)
+                        .replace(
+                            "{build}",
+                            if cfg!(debug_assertions) {
+                                "Debug"
+                            } else {
+                                "Release"
+                            },
+                        )
+                        .replace("{os}", std::env::consts::OS)
+                        .replace("{arch}", std::env::consts::ARCH),
                 );
                 ui.label(localized_text(catalog, UiTextKey::AboutCleanRoomIdentity));
                 ui.label(localized_text(catalog, UiTextKey::AboutCompatibilityTarget));
@@ -61,8 +90,77 @@ impl AboutDialog {
                 if copied_source {
                     ui.label(localized_text(catalog, UiTextKey::AboutSourceCopied));
                 }
+                ui.add_space(8.0);
+                ui.horizontal(|ui| {
+                    if ui
+                        .button(localized_text(
+                            catalog,
+                            UiTextKey::AboutThirdPartyEnhancements,
+                        ))
+                        .clicked()
+                    {
+                        auxiliary = Some(AboutAuxiliary::ThirdParty);
+                    }
+                    if ui
+                        .button(localized_text(catalog, UiTextKey::AboutLegalNotice))
+                        .clicked()
+                    {
+                        auxiliary = Some(AboutAuxiliary::Legal);
+                    }
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        if ui
+                            .button(localized_text(catalog, UiTextKey::AboutOk))
+                            .clicked()
+                        {
+                            close_requested = true;
+                        }
+                    });
+                });
             });
+        if close_requested {
+            self.open = false;
+            auxiliary = None;
+        }
+        if !self.open {
+            auxiliary = None;
+        }
+        self.auxiliary = auxiliary;
         self.copied_source = copied_source;
+        self.show_auxiliary(context, catalog);
+    }
+
+    fn show_auxiliary(&mut self, context: &egui::Context, catalog: Option<&LocalizationCatalog>) {
+        let Some(auxiliary) = self.auxiliary else {
+            return;
+        };
+        let (title, body) = match auxiliary {
+            AboutAuxiliary::ThirdParty => (
+                UiTextKey::AboutThirdPartyTitle,
+                UiTextKey::AboutThirdPartyBody,
+            ),
+            AboutAuxiliary::Legal => (UiTextKey::AboutLegalTitle, UiTextKey::AboutLegalBody),
+        };
+        let mut open = true;
+        let mut close_requested = false;
+        egui::Window::new(localized_text(catalog, title))
+            .open(&mut open)
+            .collapsible(false)
+            .resizable(false)
+            .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+            .show(context, |ui| {
+                ui.set_max_width(480.0);
+                ui.label(localized_text(catalog, body));
+                ui.add_space(8.0);
+                if ui
+                    .button(localized_text(catalog, UiTextKey::AboutOk))
+                    .clicked()
+                {
+                    close_requested = true;
+                }
+            });
+        if !open || close_requested {
+            self.auxiliary = None;
+        }
     }
 }
 
@@ -190,10 +288,12 @@ mod tests {
         let mut dialog = AboutDialog::default();
         assert!(!dialog.open);
         dialog.copied_source = true;
+        dialog.auxiliary = Some(AboutAuxiliary::Legal);
         dialog.open();
         dialog.open();
         assert!(dialog.open);
         assert!(!dialog.copied_source);
+        assert_eq!(dialog.auxiliary, None);
     }
 
     #[test]
@@ -216,6 +316,38 @@ mod tests {
         }
         assert!(COMPATIBILITY_TARGET.contains("3.63"));
         assert_eq!(controls.lines().count(), 8);
+
+        let layout = include_str!("../../../docs/oracle-work/lm363/help-about/about-layout.tsv");
+        let rows = layout
+            .lines()
+            .skip(1)
+            .map(|line| line.split('\t').collect::<Vec<_>>())
+            .collect::<Vec<_>>();
+        assert_eq!(rows.len(), 11);
+        assert_eq!(
+            rows[0],
+            [
+                "dialog",
+                "Dialog",
+                "0",
+                "0",
+                "248",
+                "160",
+                "About Lunar Magic"
+            ]
+        );
+        for (id, role) in [
+            ("008A", "group"),
+            ("008B", "website"),
+            ("008D", "version"),
+            ("008E", "build"),
+            ("0066", "third-party"),
+            ("0067", "legal"),
+            ("0001", "ok"),
+        ] {
+            assert!(rows.iter().any(|row| row[0] == id && row[6] == role));
+        }
+        assert_eq!(ORIGINAL_ABOUT_DIALOG_UNITS, (248.0, 160.0));
     }
 
     #[test]

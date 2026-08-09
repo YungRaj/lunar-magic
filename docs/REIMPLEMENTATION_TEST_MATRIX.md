@@ -27,6 +27,15 @@ adjacent regular `Lunar Magic.chm`, constructs one direct platform command witho
 reports missing/non-file/process-start failures in the still-open Help window. Focused tests bind the
 fixture, adjacent-file rejection, exact process/argument boundary, all 314 index nodes, and search.
 
+About presentation is bound to the executable resource rather than inferred from the live labels.
+`help-about/about-layout.tsv` records the 248×160 parent and all ten controls from dialog `$03F8`;
+Ghidra `00415970` binds website launch/copy, explicit OK, and buttons `$66/$67` to modal resources
+`$429/$42A`. Rust exposes the same semantic control set with localized build/version identity,
+source launch/copy, clean-room third-party and legal notices, recovered proportions, and explicit
+dismissal. `retained_lunar_magic_about_oracle_matches_the_compatibility_target` validates both the
+live-control capture and exact resource-layout table, while `about_dialog_open_is_idempotent`
+requires every new open to discard stale auxiliary/copy state.
+
 Cached identity checksum evidence is revision-coherent: tests require checksum-valid writes,
 prepared commits, grouped payload saves, undo, and redo to refresh both stored and computed values.
 Unqualified projects remain explicitly without identity rather than fabricating checksum metadata.

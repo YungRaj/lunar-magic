@@ -11,6 +11,10 @@ Captured live on 2026-08-07 from the authenticated local 32-bit executable under
   281 routed entries and 275 distinct HTML routes.
 - Ghidra identifies `AboutDialogProc` at `00415970`, dialog resource `$03F8`, and the level-editor
   command dispatcher route `$25E5`.
+- `about-layout.tsv` decodes the executable's 600-byte extended dialog template exactly: the
+  248×160-dialog-unit parent and all ten child IDs, classes, positions, sizes, and roles. Ghidra
+  independently proves buttons `$66` and `$67` open modal resources `$429` and `$42A`, while ID 1
+  closes the About dialog.
 - Posting command `$25E5` to the live `LMFrame` created one modal `#32770` window titled
   `About Lunar Magic...`. `about-controls.tsv` retains its nonempty identity, version, build, URL,
   action, and dismissal controls. The long legal disclaimer body is intentionally not retained.

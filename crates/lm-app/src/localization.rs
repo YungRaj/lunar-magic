@@ -113,12 +113,20 @@ pub enum UiTextKey {
     HelpNoMatches,
     AboutWindowTitleFormat,
     AboutVersionFormat,
+    AboutBuildFormat,
     AboutCleanRoomIdentity,
     AboutCompatibilityTarget,
     AboutLicenseFormat,
     AboutSourceRepository,
     AboutCopySourceUrl,
     AboutSourceCopied,
+    AboutThirdPartyEnhancements,
+    AboutThirdPartyTitle,
+    AboutThirdPartyBody,
+    AboutLegalNotice,
+    AboutLegalTitle,
+    AboutLegalBody,
+    AboutOk,
     DiagnosticsWindowTitle,
     DiagnosticsIntroduction,
     DiagnosticsCopy,
@@ -298,12 +306,24 @@ impl UiTextKey {
             Self::HelpNoMatches => "No help topics match this search.",
             Self::AboutWindowTitleFormat => "About {product}",
             Self::AboutVersionFormat => "Version {version}",
+            Self::AboutBuildFormat => "{build} build for {os}/{arch}",
             Self::AboutCleanRoomIdentity => "Clean-room Rust reimplementation",
             Self::AboutCompatibilityTarget => "Lunar Magic 3.63 workflow compatibility",
             Self::AboutLicenseFormat => "License: {license}",
             Self::AboutSourceRepository => "Source repository",
             Self::AboutCopySourceUrl => "Copy source URL",
             Self::AboutSourceCopied => "Source URL copied.",
+            Self::AboutThirdPartyEnhancements => "Third Party Enhancements",
+            Self::AboutThirdPartyTitle => "Third Party Enhancements",
+            Self::AboutThirdPartyBody => {
+                "External tools, ROM patches, emulators, plugins, and proprietary Lunar Magic resources are separate third-party components. They are not bundled with Lunar Magic Rust and retain their own licenses and support boundaries."
+            }
+            Self::AboutLegalNotice => "Legal Notice",
+            Self::AboutLegalTitle => "Legal Notice",
+            Self::AboutLegalBody => {
+                "Lunar Magic Rust is an independent clean-room reimplementation licensed under MIT OR Apache-2.0. Super Mario World, Lunar Magic, and related names and assets belong to their respective owners. No proprietary game ROM, help text, or original executable is distributed with this project."
+            }
+            Self::AboutOk => "OK",
             Self::DiagnosticsWindowTitle => "Compatibility diagnostics",
             Self::DiagnosticsIntroduction => {
                 "Path-free build and ROM information for compatibility reports:"
@@ -401,7 +421,7 @@ impl UiTextKey {
         }
     }
 
-    pub const ALL: [Self; 175] = [
+    pub const ALL: [Self; 183] = [
         Self::AppTitle,
         Self::FileOpen,
         Self::FileSave,
@@ -503,12 +523,20 @@ impl UiTextKey {
         Self::HelpNoMatches,
         Self::AboutWindowTitleFormat,
         Self::AboutVersionFormat,
+        Self::AboutBuildFormat,
         Self::AboutCleanRoomIdentity,
         Self::AboutCompatibilityTarget,
         Self::AboutLicenseFormat,
         Self::AboutSourceRepository,
         Self::AboutCopySourceUrl,
         Self::AboutSourceCopied,
+        Self::AboutThirdPartyEnhancements,
+        Self::AboutThirdPartyTitle,
+        Self::AboutThirdPartyBody,
+        Self::AboutLegalNotice,
+        Self::AboutLegalTitle,
+        Self::AboutLegalBody,
+        Self::AboutOk,
         Self::DiagnosticsWindowTitle,
         Self::DiagnosticsIntroduction,
         Self::DiagnosticsCopy,

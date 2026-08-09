@@ -1,0 +1,12 @@
+id	class	x	y	width	height	role
+dialog	Dialog	0	0	248	160	About Lunar Magic
+008A	Button	12	4	224	132	group
+00D8	Static	20	17	208	51	information
+008D	Static	20	69	208	8	version
+008E	Static	20	77	208	8	build
+008C	Static	20	85	208	10	programmer
+008B	Static	20	95	208	8	website
+0066	Button	20	112	100	14	third-party
+0067	Button	128	112	100	14	legal
+0065	Static	12	140	16	8	reserved
+0001	Button	99	140	50	14	ok
