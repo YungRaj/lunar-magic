@@ -8,12 +8,22 @@ use lm_rom::{Mapper, RomError, RomImage, compute_snes_checksum, pc_to_snes, snes
 use lm_title::{TitleScreenRecording, TitleScreenRecordingError};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TitleRecordingExpansionWrite {
+    pub offset: usize,
+    pub bytes: &'static [u8],
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct TitleRecordingPatchLocator {
     pub mapper: Mapper,
     pub hook: usize,
     pub pristine_hook: [u8; Self::HOOK_LEN],
     pub hook_template: [u8; Self::HOOK_LEN],
     pub runtime_template: [u8; Self::RUNTIME_LEN],
+    /// Optional internal-header ROM-size byte updated when allocation expands the image.
+    pub rom_size_field: Option<usize>,
+    /// Fixed bytes initialized by Lunar Magic's confirmed vanilla-ROM expansion path.
+    pub expansion_writes: &'static [TitleRecordingExpansionWrite],
     /// Optional Lunar Magic checksum-compensation run used to preserve the stored checksum.
     pub checksum_compensation: Option<std::ops::Range<usize>>,
 }
@@ -269,6 +279,35 @@ fn stage_recording(
                 .ok_or(AllocationError::InvalidPolicy)?;
             image.expand(locator.mapper, requested_end, expansion_fill)?;
             staged = image.logical_bytes().to_vec();
+            if let Some(offset) = locator.rom_size_field {
+                let rom_size = u8::try_from(requested_end.ilog2().saturating_sub(10))
+                    .map_err(|_| RomError::InvalidExpansionSize(requested_end))?;
+                let image_len = staged.len();
+                *staged.get_mut(offset).ok_or(RomError::RangeOutOfBounds {
+                    offset,
+                    len: 1,
+                    image_len,
+                })? = rom_size;
+            }
+            for write in locator.expansion_writes {
+                let image_len = staged.len();
+                let end = write.offset.checked_add(write.bytes.len()).ok_or(
+                    RomError::RangeOutOfBounds {
+                        offset: write.offset,
+                        len: write.bytes.len(),
+                        image_len,
+                    },
+                )?;
+                let destination =
+                    staged
+                        .get_mut(write.offset..end)
+                        .ok_or(RomError::RangeOutOfBounds {
+                            offset: write.offset,
+                            len: write.bytes.len(),
+                            image_len,
+                        })?;
+                destination.copy_from_slice(write.bytes);
+            }
             policy.validate(staged.len())?;
             let blocks =
                 allocate_title_blocks(&mut staged, locator, storage, &policy, recording, fill)?;

@@ -271,8 +271,8 @@ pub use super_graphics_io::{
     LoadedSuperGraphicsBypass, LoadedSuperGraphicsSlot, SuperGraphicsIoError,
 };
 pub use title_recording_patch::{
-    LoadedTitleRecording, TitleRecordingPatchError, TitleRecordingPatchLocator,
-    TitleRecordingStorage,
+    LoadedTitleRecording, TitleRecordingExpansionWrite, TitleRecordingPatchError,
+    TitleRecordingPatchLocator, TitleRecordingStorage,
 };
 pub use title_recording_recorder::{
     TitleRecordingRecorderError, TitleRecordingRecorderLocator, TitleRecordingRecorderState,

@@ -3,8 +3,8 @@ use crate::{
     oracle_input::{read_bounded, read_rom},
 };
 use lm_profile::{
-    SMW_US_V1_CHECKSUM_FIELD, smw_us_v1_title_recording_allocation_policy,
-    smw_us_v1_title_recording_locator,
+    SMW_US_V1_CHECKSUM_FIELD, SMW_US_V1_TITLE_RECORDING_RECLAIM_FILL,
+    smw_us_v1_title_recording_allocation_policy, smw_us_v1_title_recording_locator,
 };
 use lm_project::Project;
 use lm_rom::{Mapper, Region, RomImage, SupportedGame};
@@ -92,7 +92,7 @@ fn install(
         &locator,
         &allocation,
         SMW_US_V1_CHECKSUM_FIELD,
-        0xff,
+        SMW_US_V1_TITLE_RECORDING_RECLAIM_FILL,
     )?;
     if project
         .load_title_recording_detected(&locator)?

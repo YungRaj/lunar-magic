@@ -9,9 +9,14 @@ use std::{
 const LUNAR_MAGIC_363_SHA256: &str =
     "b64998b637e553c9adb96dd893140b5b8d0303c7a0f46a1fdab5f887a1d46eff";
 const INPUT_ROM_SHA256: &str = "7300346506c982766ed3ae370c56a31e30ad7a9603706bc3c6b18051e70f41c7";
+const VANILLA_ROM_SHA256: &str = "5e3d55b019dd012e8db1498dda06b63ad1a304787625402b511e6d525946beaf";
 const INSTALLED_ROM_SHA256: &str =
     "758c41d8f849d2a96efa76f789f471b37e2843981f0b759e34c6a670cc936676";
 const ZSNES_STATE_SHA256: &str = "958059ec938e651410f01f6b692176c5037adc854f4fc218bbd051de782f0964";
+const VANILLA_INSTALLED_ROM_SHA256: &str =
+    "2002afa81216a4530b2b8074acdb66f606d92687a4de56d2e32cdbadda272421";
+const VANILLA_UPDATED_ROM_SHA256: &str =
+    "46079b7e14c90d89cc7b46a797bd05a48fabacaec7fc6d7e63134bc405d36bb0";
 
 fn run(prefix: Option<&Path>, arguments: &[&Path]) -> Output {
     let mut command = Command::new("wine");
@@ -36,6 +41,7 @@ fn lunar_magic_batch_import_export_and_rejections_match_rust() {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
     let executable = root.join("lm363/Lunar Magic.exe");
     let baseline = root.join("Super Mario World (USA).sfc");
+    let vanilla = root.join("sysLMRestore/smwOrig.smc");
     assert_eq!(
         lm_oracle::sha256_hex(&fs::read(&executable).unwrap()),
         LUNAR_MAGIC_363_SHA256
@@ -43,6 +49,10 @@ fn lunar_magic_batch_import_export_and_rejections_match_rust() {
     assert_eq!(
         lm_oracle::sha256_hex(&fs::read(&baseline).unwrap()),
         INPUT_ROM_SHA256
+    );
+    assert_eq!(
+        lm_oracle::sha256_hex(&fs::read(&vanilla).unwrap()),
+        VANILLA_ROM_SHA256
     );
     let prefix = std::env::var_os("LUNAR_MAGIC_WINEPREFIX").map(PathBuf::from);
     let nonce = SystemTime::now()
@@ -90,6 +100,64 @@ fn lunar_magic_batch_import_export_and_rejections_match_rust() {
     );
     assert!(export.status.success(), "{}", output_text(&export));
     assert_eq!(fs::read(&exported_state).unwrap(), state);
+
+    let vanilla_imported = directory.join("vanilla-imported.smc");
+    let vanilla_state = directory.join("vanilla-seven.zst");
+    fs::write(
+        &vanilla_state,
+        encode_zsnes_title_recording(
+            &TitleScreenRecording::from_bytes(vec![0x12, 0x12, 0x12, 0x12, 0x12, 0x12, 0xff])
+                .unwrap(),
+        ),
+    )
+    .unwrap();
+    fs::copy(&vanilla, &vanilla_imported).unwrap();
+    let vanilla_import = run(
+        prefix.as_deref(),
+        &[
+            &executable,
+            Path::new("-ImportTitleMoves"),
+            &vanilla_imported,
+            &vanilla_state,
+        ],
+    );
+    assert!(
+        vanilla_import.status.success(),
+        "{}",
+        output_text(&vanilla_import)
+    );
+    let vanilla_installed = fs::read(&vanilla_imported).unwrap();
+    assert_eq!(vanilla_installed.len(), 0x10_0200);
+    assert_eq!(
+        lm_oracle::sha256_hex(&vanilla_installed),
+        VANILLA_INSTALLED_ROM_SHA256
+    );
+    let updated_state = directory.join("vanilla-updated.zst");
+    let mut updated_bytes = vec![0x56; 0x101];
+    *updated_bytes.last_mut().unwrap() = 0xff;
+    fs::write(
+        &updated_state,
+        encode_zsnes_title_recording(&TitleScreenRecording::from_bytes(updated_bytes).unwrap()),
+    )
+    .unwrap();
+    let vanilla_update = run(
+        prefix.as_deref(),
+        &[
+            &executable,
+            Path::new("-ImportTitleMoves"),
+            &vanilla_imported,
+            &updated_state,
+        ],
+    );
+    assert!(
+        vanilla_update.status.success(),
+        "{}",
+        output_text(&vanilla_update)
+    );
+    assert_eq!(
+        lm_oracle::sha256_hex(&fs::read(&vanilla_imported).unwrap()),
+        VANILLA_UPDATED_ROM_SHA256
+    );
 
     let malformed = directory.join("malformed.zst");
     fs::write(&malformed, [0; 12]).unwrap();

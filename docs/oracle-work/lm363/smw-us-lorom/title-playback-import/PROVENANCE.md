@@ -22,3 +22,17 @@ the same complete ROM hash as the GUI and Rust. Batch export recreates the 134,1
 byte-for-byte. A 12-byte truncation emits the retained `Not a ZSNES Savestate!` rejection, exits 1,
 and leaves the ROM byte-identical. Export from the pristine ROM emits the retained
 `ASM code not detected!` rejection, exits 1, and creates no output.
+
+The same authenticated batch import was run against the byte-exact 524,800-byte copier-headered
+vanilla ROM. Lunar Magic emitted its not-enough-room prompt, selected `YES`, expanded to exactly
+1 MiB logical/1,049,088 physical bytes, initialized the recovered expansion metadata, installed
+the movement payload/runtime at the expansion boundary, and retained the copier prefix. The Rust
+transaction reproduces the complete output byte-for-byte at SHA-256
+`662f1f980bb02f8ec2f6ac1be27835f7269091336f0f07008499afe6717c058c`; Undo restores the exact
+vanilla image.
+
+A follow-up import replaces the seven-byte installed payload with a 257-byte recording. It proves
+that Lunar Magic zero-fills the reclaimed owner and that the additive compensation span continues
+through logical `$07F09F` (exclusive end `$07F0A0`), rather than stopping before the metadata
+padding. Rust again matches the complete copier-headered output at SHA-256
+`46079b7e14c90d89cc7b46a797bd05a48fabacaec7fc6d7e63134bc405d36bb0`.

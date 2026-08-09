@@ -4839,6 +4839,13 @@ Lunar Magic's `-ImportTitleMoves` and `-ExportTitleMoves` batch routes close the
 boundary: valid import reproduces the GUI/Rust ROM hash, export recreates the minimal ZSNES state
 byte-for-byte, a 12-byte state rejects without mutation, and export without installed playback
 creates no file.
+On a 512 KiB vanilla source, the same route follows Lunar Magic's confirmed 1 MiB expansion path:
+it updates the internal ROM-size byte, initializes the fixed metadata/padding family, allocates at
+the new boundary, retains the copier prefix and stored checksum through compensation, and produces
+the exact authenticated Lunar Magic output. Expansion and installation remain one undo operation.
+Replacement zero-fills the prior recording owner and may consume the entire compensation run
+through `$07F09F`; the retained 257-byte update matches Lunar Magic byte-for-byte and remains a
+second independently undoable transaction.
 
 ## ExLoROM standard graphics and ExGFX conversion parity
 

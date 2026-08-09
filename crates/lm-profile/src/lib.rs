@@ -513,8 +513,9 @@ pub use support_patch_b::{
 };
 pub use text::RevisionProfileError;
 pub use title_recording::{
-    SMW_US_V1_TITLE_RECORDING_HOOK_OFFSET, SMW_US_V1_TITLE_RECORDING_SEARCH_START,
-    smw_us_v1_title_recording_allocation_policy, smw_us_v1_title_recording_locator,
+    SMW_US_V1_TITLE_RECORDING_HOOK_OFFSET, SMW_US_V1_TITLE_RECORDING_RECLAIM_FILL,
+    SMW_US_V1_TITLE_RECORDING_SEARCH_START, smw_us_v1_title_recording_allocation_policy,
+    smw_us_v1_title_recording_locator,
 };
 pub use title_recording_recorder::{
     SMW_US_V1_TITLE_RECORDER_COMPENSATION_LEN, SMW_US_V1_TITLE_RECORDER_COMPENSATION_OFFSET,

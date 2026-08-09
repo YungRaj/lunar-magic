@@ -1,7 +1,8 @@
 use crate::{AppError, AppState, FrontendEffect};
 use lm_profile::{
-    SMW_US_V1_CHECKSUM_FIELD, smw_us_v1_title_recording_allocation_policy,
-    smw_us_v1_title_recording_locator, smw_us_v1_title_recording_recorder_allocation_policy,
+    SMW_US_V1_CHECKSUM_FIELD, SMW_US_V1_TITLE_RECORDING_RECLAIM_FILL,
+    smw_us_v1_title_recording_allocation_policy, smw_us_v1_title_recording_locator,
+    smw_us_v1_title_recording_recorder_allocation_policy,
     smw_us_v1_title_recording_recorder_locator,
 };
 use lm_rom::{Mapper, Region, SupportedGame};
@@ -45,7 +46,7 @@ impl AppState {
             &locator,
             &allocation,
             SMW_US_V1_CHECKSUM_FIELD,
-            0xff,
+            SMW_US_V1_TITLE_RECORDING_RECLAIM_FILL,
         )?;
         self.advance_project_revision()?;
         let description = "Replace native SMW title-screen recording".to_owned();
@@ -121,6 +122,8 @@ mod tests {
         let recording = TitleScreenRecording::from_bytes(vec![0x12, 0x34, 0x56, 0xff]).unwrap();
         app.dispatch(Command::ReplaceNativeTitleRecording { rev: 0, recording })
             .unwrap();
+        assert_eq!(app.project().unwrap().rom.logical_len(), 0x10_0000);
+        assert_eq!(app.project().unwrap().rom.logical_bytes()[0x7fd7], 0x0a);
         app.dispatch(Command::Undo).unwrap();
         assert_eq!(app.project().unwrap().save_snapshot(), original);
     }

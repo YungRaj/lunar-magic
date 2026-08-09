@@ -3110,6 +3110,15 @@ export recreates the complete minimal ZSNES V143 state byte-for-byte. Truncated 
 `Not a ZSNES Savestate!` before ROM mutation, while export from an uninstalled ROM exits with
 `ASM code not detected!` and creates no output.
 
+Against the authenticated 512 KiB vanilla ROM, batch import takes Lunar Magic's affirmative
+not-enough-room path and expands to exactly 1 MiB. It changes internal ROM-size byte `$07FD7` to
+`$0A`, initializes the fixed `$07F08E..$07F13F` metadata/padding and `$07FFE7..$07FFFF` feature
+record, then allocates recording-before-runtime at `$080000`. Rust reproduces all physical bytes,
+including the unchanged copier prefix and checksum-compensation distribution.
+Replacing that installed payload with a 257-byte recording proves the reclaim fill is `$00` and
+the compensation range is `$07EFA3..$07F09F` inclusive. The larger delta forces compensation into
+the final metadata-padding bytes and distinguishes that bound from the shorter apparent range.
+
 ### Lunar Magic ROM attribution and feature metadata
 
 `WriteLunarMagicRomMetadata` at `0047D3E0` is called by the real save path. Dynamic write tracing
