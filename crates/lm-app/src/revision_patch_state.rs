@@ -563,7 +563,9 @@ impl AppState {
     }
 }
 
-fn migrate_legacy_global_exanimations(project: &mut lm_project::Project) -> Result<(), AppError> {
+pub(crate) fn migrate_legacy_global_exanimations(
+    project: &mut lm_project::Project,
+) -> Result<(), AppError> {
     let detected = lm_profile::detect_smw_us_v1_legacy_global_exanimation_runtime(
         project.rom.logical_bytes(),
     )?;
@@ -1087,6 +1089,90 @@ mod tests {
         app.dispatch(Command::Undo).unwrap();
         assert_eq!(app.project().unwrap().save_snapshot(), original);
         assert!(!app.project().unwrap().history.can_undo());
+    }
+
+    #[test]
+    fn exgfx_insertion_migrates_legacy_global_exanimations_atomically() {
+        let mut image = RomImage::from_bytes(legacy_global_exanimation_fixture()).unwrap();
+        image
+            .write(
+                lm_profile::SMW_US_V1_EXGFX_RUNTIME_HOOK_OFFSET,
+                &lm_profile::SMW_US_V1_EXGFX_RUNTIME_HOOK,
+            )
+            .unwrap();
+        image
+            .write(
+                lm_profile::SMW_US_V1_EXGFX_TABLE_BASE_OPERAND_OFFSET,
+                &lm_profile::SMW_US_V1_EXGFX_TABLE_BASE_OPERAND,
+            )
+            .unwrap();
+        image
+            .write(
+                lm_profile::SMW_US_V1_EXGFX_EXPANSION_MARKER_OFFSET,
+                &[0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x1f],
+            )
+            .unwrap();
+        image
+            .write(
+                lm_profile::SMW_US_V1_EXPANDED_GRAPHICS_FORMAT_MARKER_OFFSET,
+                &lm_profile::SMW_US_V1_VANILLA_GRAPHICS_FORMAT_MARKER,
+            )
+            .unwrap();
+        for offset in lm_profile::SMW_US_V1_4BPP_GRAPHICS_MARKER_OFFSETS {
+            image
+                .write(offset, &[lm_profile::SMW_US_V1_4BPP_GRAPHICS_MARKER])
+                .unwrap();
+        }
+        image.update_snes_checksum(0x7fdc).unwrap();
+        assert_eq!(
+            lm_profile::probe_smw_us_v1_expanded_exanimation_runtime_generation(
+                image.logical_bytes()
+            )
+            .unwrap(),
+            lm_profile::SmwUsV1ExpandedExAnimationRuntimeGeneration::LegacyGlobalTable
+        );
+        let before = image.as_file_bytes().to_vec();
+        let prepared =
+            crate::prepare_smw_us_v1_exgraphics_install(17, image, &[(0x80, vec![0x80; 0x800])])
+                .unwrap();
+        let mut project = Project::new(RomImage::from_bytes(before.clone()).unwrap());
+        project
+            .apply_mutation(&prepared.description, &prepared.mutation)
+            .unwrap();
+        assert_eq!(prepared.expected_revision, 17);
+        assert_eq!(
+            lm_profile::probe_smw_us_v1_expanded_exanimation_runtime_generation(
+                project.rom.logical_bytes()
+            )
+            .unwrap(),
+            lm_profile::SmwUsV1ExpandedExAnimationRuntimeGeneration::Current
+        );
+        assert_eq!(
+            lm_profile::probe_smw_us_v1_exgraphics_runtime(&project.rom).unwrap(),
+            lm_profile::SmwUsV1ExGraphicsRuntimeState::Expanded
+        );
+        let route = lm_profile::smw_us_v1_exgraphics_pointer(0x80).unwrap();
+        assert_eq!(
+            project
+                .load_decompressed_graphics_file(
+                    0,
+                    lm_project::GraphicsRomLayout {
+                        mapper: Mapper::LoRom,
+                        pointers: LevelPointerTable {
+                            offset: route.pointer_offset,
+                            entries: 1,
+                            stride: 3,
+                        },
+                        split_pointer_planes: None,
+                        compression: lm_project::GraphicsCompression::Lz2,
+                        maximum_compressed_len: 0x8000,
+                        maximum_decompressed_len: 0x1000,
+                    },
+                )
+                .unwrap(),
+            vec![0x80; 0x800]
+        );
+        assert_ne!(project.rom.as_file_bytes(), before);
     }
 
     #[test]

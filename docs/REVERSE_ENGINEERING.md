@@ -1954,6 +1954,9 @@ The retained command-line oracle now crosses this complete transition with prese
 copier headers. Both Rust results have identical logical bytes; the headered path retains the exact
 input prefix, the headerless path remains headerless until Lunar Magic opens its copy, and both are
 recognized by Lunar Magic's GFX and ExGFX exporters.
+The native insertion transaction now follows that prerequisite relationship for older installed
+ROMs as well: authenticated 1.70-era pointer hooks and 1.65-era global-table records are migrated to
+the current ExAnimation generation in staging before any requested ExGFX pointer is published.
 A retained Lunar Magic 3.63 Wine oracle opens the original `Window8x8` through command `$232A` and
 posts F9 directly to that window. With all separate files replaced by equal-length sentinels, level
 `$105` changes exactly `$00,$01,$13,$14,$15,$17,$1B,$20`; removing `GFX33.bin` first produces

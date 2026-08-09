@@ -69,10 +69,18 @@ pub fn prepare_smw_us_v1_exgraphics_install(
                 .map_err(|error| error.to_string())?;
         }
         SmwUsV1ExpandedExAnimationRuntimeGeneration::Current => {}
-        generation => {
-            return Err(format!(
-                "native ExGFX insertion requires migration of the {generation:?} ExAnimation runtime"
-            ));
+        SmwUsV1ExpandedExAnimationRuntimeGeneration::LegacyPointerHooks => {
+            let migration = lm_profile::smw_us_v1_legacy_exanimation_hook_migration(
+                project.rom.logical_bytes(),
+            )
+            .map_err(|error| error.to_string())?;
+            project
+                .install_relocatable_patch(&migration.plan)
+                .map_err(|error| error.to_string())?;
+        }
+        SmwUsV1ExpandedExAnimationRuntimeGeneration::LegacyGlobalTable => {
+            crate::revision_patch_state::migrate_legacy_global_exanimations(&mut project)
+                .map_err(|error| error.to_string())?;
         }
     }
 
@@ -213,6 +221,72 @@ mod tests {
             probe_smw_us_v1_expanded_exanimation_runtime_generation(reopened.rom.logical_bytes())
                 .unwrap(),
             SmwUsV1ExpandedExAnimationRuntimeGeneration::Current
+        );
+    }
+
+    #[test]
+    fn insertion_migrates_authenticated_legacy_pointer_hooks_in_the_same_commit() {
+        let mut project = Project::new(ready_image());
+        let first = prepare_smw_us_v1_exgraphics_install(
+            0,
+            project.rom.clone(),
+            &[(0x80, vec![0x80; 0x800])],
+        )
+        .unwrap();
+        project
+            .apply_mutation(&first.description, &first.mutation)
+            .unwrap();
+        let runtime = lm_profile::detect_smw_us_v1_current_expanded_exanimation_runtime(
+            project.rom.logical_bytes(),
+        )
+        .unwrap();
+        project
+            .rom
+            .write(runtime.payload.start + 0x92, &[0x0f])
+            .unwrap();
+        project
+            .rom
+            .write(runtime.payload.start + 0x118, &[0x0f])
+            .unwrap();
+        project
+            .rom
+            .write(runtime.payload.start + 0x169, &[0x4c, 0x4d, 0x00, 0x01])
+            .unwrap();
+        project.rom.update_snes_checksum(0x7fdc).unwrap();
+        assert_eq!(
+            probe_smw_us_v1_expanded_exanimation_runtime_generation(project.rom.logical_bytes())
+                .unwrap(),
+            SmwUsV1ExpandedExAnimationRuntimeGeneration::LegacyPointerHooks
+        );
+
+        let before = project.rom.as_file_bytes().to_vec();
+        let second = prepare_smw_us_v1_exgraphics_install(
+            9,
+            project.rom.clone(),
+            &[(0x81, vec![0x81; 0x800])],
+        )
+        .unwrap();
+        assert_eq!(second.expected_revision, 9);
+        assert_eq!(
+            project.rom.as_file_bytes(),
+            before,
+            "preparation mutated the caller's image"
+        );
+        project
+            .apply_mutation(&second.description, &second.mutation)
+            .unwrap();
+        assert_eq!(
+            probe_smw_us_v1_expanded_exanimation_runtime_generation(project.rom.logical_bytes())
+                .unwrap(),
+            SmwUsV1ExpandedExAnimationRuntimeGeneration::Current
+        );
+        assert_eq!(
+            reopen_exgraphics_file(&project, smw_us_v1_exgraphics_pointer(0x80).unwrap()).unwrap(),
+            vec![0x80; 0x800]
+        );
+        assert_eq!(
+            reopen_exgraphics_file(&project, smw_us_v1_exgraphics_pointer(0x81).unwrap()).unwrap(),
+            vec![0x81; 0x800]
         );
     }
 }

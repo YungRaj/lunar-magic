@@ -4351,6 +4351,10 @@ The retained Wine transaction runs that full path twice from the same authentica
 once with Lunar Magic's canonical 512-byte copier prefix and once without it. Rust preserves the
 prefix byte-for-byte or preserves its absence, produces identical logical 2-MiB results, and Lunar
 Magic re-exports all 52 regular files plus `ExGFX80` from both outputs.
+An ExGFX insertion request also upgrades either authenticated legacy ExAnimation generation inside
+the same unpublished project. The pointer-hook generation advances its owned fragments before the
+new file is allocated; the global-table generation migrates its complete record set into current
+storage first. A failure in either migration prevents publication of the combined mutation.
 
 The installed graphics editor also owns a scoped external-edit round trip. It exports the current
 staged controller bytes—not a stale ROM decode—to a uniquely reserved private temporary directory
