@@ -70,8 +70,9 @@ level with real controller-A input, and requires a fresh Snes9x snapshot in game
 WRAM timer digits at `$0F31..$0F33` are exactly `4/5/6`. A bounded nonuniform gameplay screenshot
 is required alongside the state, so an idle boot or fabricated state-only report cannot pass. A
 second independent gate disables the custom command, sets ordinary five-byte-header time selector
-3 and music selector 5, and requires the same runtime boundary to expose exact digits `4/0/0`
-plus active song `$03` at WRAM `$0DDA`.
+3, music selector 5, sprite memory `$12`, and both buoyancy controls. The same runtime boundary
+must expose exact digits `4/0/0`, active song `$03` at WRAM `$0DDA`, sprite memory `$12` at
+`$1692`, and buoyancy flags `$C0` at `$190E`.
 
 Run the gates serially so GUI instances cannot share state:
 
@@ -112,7 +113,7 @@ cargo test -p lm-app --test snes9x_smoke \
 SNES9X_BIN=/absolute/path/to/snes9x_libretro.dylib \
 SNES9X_GAMEPLAY_DRIVER=/tmp/lm-snes9x-gameplay-driver \
 cargo test -p lm-app --test snes9x_smoke \
-  rust_standard_time_and_music_headers_are_applied_in_snes9x_gameplay -- --ignored --exact
+  rust_standard_time_music_and_sprite_headers_are_applied_in_snes9x_gameplay -- --ignored --exact
 ```
 
 Use `.so` for a Linux core. The adapter dynamically authenticates the libretro API and Snes9x

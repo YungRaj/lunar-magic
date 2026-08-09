@@ -5,8 +5,8 @@ use lm_app::{
 };
 use lm_graphics::{Bgr555, CompactExAnimation, Palette};
 use lm_level::{
-    CustomTimeSettings, Map16Address, Map16Quadrant, NativeLayer2Data, NativeSpriteStream,
-    ObjectEdit, SpriteLengthTable, SpriteToken, Subtile,
+    CustomTimeSettings, Map16Address, Map16Quadrant, NativeLayer2Data, NativeSpriteHeader,
+    NativeSpriteStream, ObjectEdit, SpriteLengthTable, SpriteToken, Subtile,
 };
 use lm_overworld::{
     EventReveal, EventRevealTable, OverworldEndpoint, OverworldLayer, OverworldMessage,
@@ -153,6 +153,8 @@ const SMW_MARIO_POSITION: usize = 0x1f17;
 const SMW_MARIO_GRID_POSITION: usize = 0x1f1f;
 const SMW_LEVEL_MODE: u8 = 0x14;
 const SMW_CURRENT_MUSIC: usize = 0x0dda;
+const SMW_SPRITE_MEMORY: usize = 0x1692;
+const SMW_SPRITE_BUOYANCY: usize = 0x190e;
 const SMW_TIMER_HUNDREDS: usize = 0x0f31;
 const MAX_GAMEPLAY_STATE_BYTES: u64 = 64 * 1024 * 1024;
 const MAX_GAMEPLAY_SCREENSHOT_BYTES: u64 = 16 * 1024 * 1024;
@@ -1077,7 +1079,7 @@ fn rust_custom_time_and_support_patch_b_are_applied_in_snes9x_gameplay() {
 
 #[test]
 #[ignore = "requires an official Snes9x libretro core, the gameplay driver, and the legally supplied SMW ROM"]
-fn rust_standard_time_and_music_headers_are_applied_in_snes9x_gameplay() {
+fn rust_standard_time_music_and_sprite_headers_are_applied_in_snes9x_gameplay() {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
     let snes9x = require_snes9x_binary();
     let layout = lm_profile::smw_us_v1_vanilla_level_layout();
@@ -1140,6 +1142,32 @@ fn rust_standard_time_and_music_headers_are_applied_in_snes9x_gameplay() {
         assert_eq!(reopened.layer1.header.time_limit_selector(), 3);
         assert_eq!(reopened.layer1.header.default_music_selector(), 5);
         assert_eq!(reopened.layer1.objects.custom_time(false), None);
+
+        let original = reopened;
+        let mut replacement = original.clone();
+        replacement.sprites.header = NativeSpriteHeader::from_raw(replacement.sprites.header)
+            .with_properties(0x12, true, true)
+            .expect("set sprite memory and both buoyancy flags")
+            .raw();
+        assert!(
+            project
+                .save_level_sprites_in_place_with_checksum(
+                    layout,
+                    &original,
+                    &replacement,
+                    &sprite_lengths,
+                    0x7fdc,
+                )
+                .expect("save starting-level sprite header in place")
+        );
+        assert_eq!(
+            project
+                .load_level_slot(level_number, layout, &sprite_lengths)
+                .expect("reopen starting-level sprite header")
+                .sprites
+                .header,
+            replacement.sprites.header
+        );
     }
 
     let directory = SmokeDirectory::create();
@@ -1147,6 +1175,8 @@ fn rust_standard_time_and_music_headers_are_applied_in_snes9x_gameplay() {
     fs::write(&output, project.save_snapshot()).expect("write standard-time ROM");
     let wram = require_level_header_gameplay_evidence(&snes9x, &output, 0x400);
     assert_eq!(wram[SMW_CURRENT_MUSIC], 0x03);
+    assert_eq!(wram[SMW_SPRITE_MEMORY], 0x12);
+    assert_eq!(wram[SMW_SPRITE_BUOYANCY], 0xc0);
 }
 
 #[test]

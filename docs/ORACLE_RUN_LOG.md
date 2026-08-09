@@ -546,12 +546,13 @@ driver:
 SNES9X_BIN=/tmp/lm-snes9x-libretro.dylib \
 SNES9X_GAMEPLAY_DRIVER=/tmp/lm-snes9x-gameplay-driver-2 \
 cargo test -p lm-app --test snes9x_smoke \
-  rust_standard_time_and_music_headers_are_applied_in_snes9x_gameplay \
+  rust_standard_time_music_and_sprite_headers_are_applied_in_snes9x_gameplay \
   -- --ignored --exact --nocapture
-test rust_standard_time_and_music_headers_are_applied_in_snes9x_gameplay ... ok
+test rust_standard_time_music_and_sprite_headers_are_applied_in_snes9x_gameplay ... ok
 test result: ok. 1 passed; 0 failed; finished in 0.93s
 ```
 
 That ROM contains no custom-time command in either candidate level. Both semantically reopen with
-ordinary time selector 3 and music selector 5. The captured gameplay state requires exact WRAM
-digits `4/0/0` plus active song `$03` at `$0DDA`.
+ordinary time selector 3, music selector 5, sprite memory `$12`, and both buoyancy controls. The
+captured gameplay state requires exact WRAM digits `4/0/0`, active song `$03` at `$0DDA`, sprite
+memory `$12` at `$1692`, and combined buoyancy flags `$C0` at `$190E`.
