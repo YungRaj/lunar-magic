@@ -7,7 +7,7 @@ use crate::{
     level_editor_forms,
 };
 use lm_app::{PaletteOwnershipFile, RevisionProfileControllers};
-use lm_graphics::{GraphicsFile4bpp, GraphicsInterchangeFile, IndexedTile};
+use lm_graphics::{Bgr555, GraphicsFile4bpp, GraphicsInterchangeFile, IndexedTile};
 use lm_level::Map16SetFile;
 use lm_project::Project;
 use lm_rom::RomImage;
@@ -22,6 +22,11 @@ const NATIVE_ANIMATED_SUBMAP_BASE: usize = 0x2a00;
 const NATIVE_ANIMATED_SUBMAP_STRIDE: usize = 0x100;
 const VANILLA_OVERWORLD_ANIMATION_TABLE_OFFSET: usize = 0x20000;
 const VANILLA_OVERWORLD_ANIMATION_TABLE_WORDS: usize = 3 + 8 * 8;
+const VANILLA_SHARED_PALETTE_TABLE_OFFSET: usize = 0x30a0;
+const VANILLA_LEVEL_DOT_CYCLE_OFFSETS: [usize; 2] = [0x56c, 0x57c];
+const VANILLA_LIGHTNING_DELAYS_OFFSET: usize = 0x276f8;
+const VANILLA_LIGHTNING_INITIAL_COLORS_OFFSET: usize = 0x27700;
+const VANILLA_LIGHTNING_SELECTORS_OFFSET: usize = 0x27708;
 
 impl RomOverworldEditor {
     pub(crate) fn handles(app: &AppState) -> bool {
@@ -336,6 +341,8 @@ fn decode_main_layer2_workspace(
             gfx32,
             gfx33,
             built_in_animation_addresses: load_builtin_overworld_animation_addresses(&project)?,
+            built_in_level_dot_palette: load_builtin_overworld_level_dot_palette(&project)?,
+            built_in_lightning: load_builtin_overworld_lightning(&project)?,
         },
     })
 }
@@ -476,7 +483,73 @@ fn decode_overworld_assets(
         gfx32,
         gfx33,
         built_in_animation_addresses: load_builtin_overworld_animation_addresses(&project)?,
+        built_in_level_dot_palette: load_builtin_overworld_level_dot_palette(&project)?,
+        built_in_lightning: load_builtin_overworld_lightning(&project)?,
     })
+}
+
+fn load_builtin_overworld_level_dot_palette(
+    project: &Project,
+) -> Result<Option<[[Bgr555; 8]; 2]>, String> {
+    let logical = project.rom.logical_bytes();
+    let mut cycles = [[Bgr555(0); 8]; 2];
+    for (cycle, relative) in cycles.iter_mut().zip(VANILLA_LEVEL_DOT_CYCLE_OFFSETS) {
+        let start = VANILLA_SHARED_PALETTE_TABLE_OFFSET + relative;
+        let bytes = logical
+            .get(start..start + 16)
+            .ok_or("vanilla overworld level-dot palette cycle is outside the ROM")?;
+        for (color, pair) in cycle.iter_mut().zip(bytes.chunks_exact(2)) {
+            *color = Bgr555(u16::from_le_bytes([pair[0], pair[1]]));
+        }
+    }
+    // The descriptor's shared-palette block is relocatable in installed ROMs. Until that
+    // descriptor is modeled, authenticate the vanilla table shape instead of animating from an
+    // unrelated region at the old address.
+    if cycles.iter().flatten().any(|color| color.0 & 0x8000 != 0)
+        || cycles
+            .iter()
+            .any(|cycle| cycle.iter().all(|color| *color == cycle[0]))
+    {
+        Ok(None)
+    } else {
+        Ok(Some(cycles))
+    }
+}
+
+fn load_builtin_overworld_lightning(
+    project: &Project,
+) -> Result<Option<crate::overworld_editor_render::BuiltInOverworldLightning>, String> {
+    let logical = project.rom.logical_bytes();
+    let delays: [u8; 8] = logical
+        .get(VANILLA_LIGHTNING_DELAYS_OFFSET..VANILLA_LIGHTNING_DELAYS_OFFSET + 8)
+        .ok_or("vanilla overworld lightning delay table is outside the ROM")?
+        .try_into()
+        .expect("fixed eight-byte lightning delay slice");
+    let initial_colors: [u8; 8] = logical
+        .get(VANILLA_LIGHTNING_INITIAL_COLORS_OFFSET..VANILLA_LIGHTNING_INITIAL_COLORS_OFFSET + 8)
+        .ok_or("vanilla overworld lightning color table is outside the ROM")?
+        .try_into()
+        .expect("fixed eight-byte lightning color slice");
+    let selectors: [u8; 128] = logical
+        .get(VANILLA_LIGHTNING_SELECTORS_OFFSET..VANILLA_LIGHTNING_SELECTORS_OFFSET + 128)
+        .ok_or("vanilla overworld lightning selector table is outside the ROM")?
+        .try_into()
+        .expect("fixed 128-byte lightning selector slice");
+    if delays.contains(&0)
+        || initial_colors.iter().any(|&color| !(1..=7).contains(&color))
+        // The selector deliberately aliases the first 128 bytes of the vanilla routine. These
+        // opcodes authenticate that we did not reinterpret a relocated/modified routine.
+        || selectors[..8] != [0xa9, 0xf7, 0x20, 0x82, 0xf8, 0xd0, 0x5f, 0xac]
+    {
+        return Ok(None);
+    }
+    Ok(Some(
+        crate::overworld_editor_render::BuiltInOverworldLightning {
+            selectors,
+            delays,
+            initial_colors,
+        },
+    ))
 }
 
 fn load_builtin_overworld_animation_addresses(project: &Project) -> Result<Vec<u16>, String> {
@@ -670,8 +743,9 @@ mod tests {
     use super::{
         TILES_PER_NATIVE_GRAPHICS_SLOT, append_overworld_graphics_slot,
         decode_main_layer2_workspace, decode_native_appearance_siblings,
-        load_builtin_overworld_animation_addresses, native_base_graphics_files,
-        native_sprite_graphics_files, parse_slot,
+        load_builtin_overworld_animation_addresses, load_builtin_overworld_level_dot_palette,
+        load_builtin_overworld_lightning, native_base_graphics_files, native_sprite_graphics_files,
+        parse_slot,
     };
     use lm_graphics::IndexedTile;
     use lm_project::Project;
@@ -814,6 +888,8 @@ mod tests {
             assert_eq!(workspace.assets.map16.set.pages.len(), 0x100);
             assert_eq!(workspace.assets.graphics.graphics.tiles.len(), 0x200);
             assert_eq!(workspace.assets.built_in_animation_addresses.len(), 67);
+            assert!(workspace.assets.built_in_level_dot_palette.is_some());
+            assert!(workspace.assets.built_in_lightning.is_some());
             assert_eq!(workspace.paths, workspace.original_paths);
             assert!(!workspace.paths.links.is_empty());
             let canvas = lm_render::render_smw_overworld_layer2_tilemap(
@@ -947,5 +1023,38 @@ mod tests {
         assert_eq!(addresses.len(), 67);
         assert_eq!(&addresses[..4], &[0xb480, 0xb498, 0xb4b0, 0xb300]);
         assert_eq!(addresses[4] - addresses[3], 0x18);
+    }
+
+    #[test]
+    fn authentic_pristine_rom_loads_exact_overworld_palette_animation_tables() {
+        let fixture = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../..")
+            .join("oracle-work/lm363/pristine-us/headered.smc");
+        let project = Project::new(RomImage::from_bytes(fs::read(fixture).unwrap()).unwrap());
+        let dots = load_builtin_overworld_level_dot_palette(&project)
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            dots[0].map(|color| color.0),
+            [
+                0x02df, 0x035f, 0x27ff, 0x5fff, 0x73ff, 0x5fff, 0x27ff, 0x035f,
+            ]
+        );
+        assert_eq!(
+            dots[1].map(|color| color.0),
+            [
+                0x01bf, 0x001f, 0x001b, 0x0018, 0x0018, 0x001b, 0x001f, 0x01bf,
+            ]
+        );
+        let lightning = load_builtin_overworld_lightning(&project).unwrap().unwrap();
+        assert_eq!(
+            lightning.delays,
+            [0x20, 0x58, 0x43, 0xcf, 0x18, 0x34, 0xa2, 0x5e]
+        );
+        assert_eq!(lightning.initial_colors, [7, 5, 6, 7, 4, 6, 7, 5]);
+        assert_eq!(
+            &lightning.selectors[..8],
+            &[0xa9, 0xf7, 0x20, 0x82, 0xf8, 0xd0, 0x5f, 0xac]
+        );
     }
 }

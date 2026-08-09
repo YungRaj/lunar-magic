@@ -12,6 +12,17 @@ pub(crate) struct OverworldAssets {
     pub(crate) gfx33: Vec<lm_graphics::IndexedTile>,
     /// Lunar Magic's three built-in overworld seeds followed by eight frames for eight groups.
     pub(crate) built_in_animation_addresses: Vec<u16>,
+    /// The two eight-color vanilla cycles copied to CGRAM $6D and $7D.
+    pub(crate) built_in_level_dot_palette: Option<[[lm_graphics::Bgr555; 8]; 2]>,
+    /// Vanilla's deterministic lightning scheduler and its two selector tables.
+    pub(crate) built_in_lightning: Option<BuiltInOverworldLightning>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct BuiltInOverworldLightning {
+    pub(crate) selectors: [u8; 128],
+    pub(crate) delays: [u8; 8],
+    pub(crate) initial_colors: [u8; 8],
 }
 
 #[derive(Clone, Debug)]
@@ -190,6 +201,13 @@ fn materialize_overworld_exanimation(
         &assets.built_in_animation_addresses,
         preview.tick,
     )?;
+    apply_builtin_overworld_palette_animation(
+        &mut palette,
+        assets.built_in_level_dot_palette.as_ref(),
+        assets.built_in_lightning.as_ref(),
+        usize::from(overworld.source_slot).min(6),
+        preview.tick,
+    )?;
     let mut triggers = preview.triggers.clone();
     triggers.overworld_event_manual = Some(std::array::from_fn(|index| {
         let manual = index + 8;
@@ -231,6 +249,92 @@ fn materialize_overworld_exanimation(
     let len = graphics.graphics.tiles.len();
     graphics.graphics.tiles.clone_from_slice(&cache[..len]);
     Ok((graphics, palette))
+}
+
+fn apply_builtin_overworld_palette_animation(
+    palette: &mut lm_graphics::Palette,
+    level_dot_colors: Option<&[[lm_graphics::Bgr555; 8]; 2]>,
+    lightning: Option<&BuiltInOverworldLightning>,
+    submap: usize,
+    timer_ticks: usize,
+) -> Result<(), String> {
+    const LEVEL_DOT_TARGETS: [usize; 2] = [0x6d, 0x7d];
+    const LIGHTNING_SUBMAP: usize = 4;
+    const LIGHTNING_TARGET: usize = 0x47;
+    const LIGHTNING_SOURCE_BASE: usize = 0x28;
+
+    if let Some(colors) = level_dot_colors {
+        // InitializeOverworldAnimationGraphicsCache refreshes with counter eight. At the normal
+        // 60 ms rate each subsequent timer callback consumes four substeps, and Refresh... uses
+        // `(counter >> 2) & 7` as the color phase.
+        let phase = timer_ticks.wrapping_add(2) & 7;
+        for (target, cycle) in LEVEL_DOT_TARGETS.into_iter().zip(colors) {
+            let palette_len = palette.colors.len();
+            *palette.colors.get_mut(target).ok_or_else(|| {
+                format!(
+                    "overworld palette has {palette_len:X} colors; built-in level-dot animation requires ${target:02X}"
+                )
+            })? = cycle[phase];
+        }
+    }
+
+    // Vanilla passes mask $F7 to the game's submap check, enabling lightning only where the
+    // corresponding bit is clear: Valley of Bowser (native submap four).
+    if submap == LIGHTNING_SUBMAP
+        && let Some(lightning) = lightning
+        && let Some(color_index) = materialize_builtin_lightning_color(lightning, timer_ticks)
+    {
+        let source = LIGHTNING_SOURCE_BASE + usize::from(color_index);
+        let palette_len = palette.colors.len();
+        let color = *palette.colors.get(source).ok_or_else(|| {
+            format!(
+                "overworld palette has {palette_len:X} colors; lightning requires source ${source:02X}"
+            )
+        })?;
+        *palette.colors.get_mut(LIGHTNING_TARGET).ok_or_else(|| {
+            format!(
+                "overworld palette has {palette_len:X} colors; lightning requires target ${LIGHTNING_TARGET:02X}"
+            )
+        })? = color;
+    }
+    Ok(())
+}
+
+fn materialize_builtin_lightning_color(
+    tables: &BuiltInOverworldLightning,
+    timer_ticks: usize,
+) -> Option<u8> {
+    let substeps = 8_usize.saturating_add(timer_ticks.saturating_mul(4));
+    let mut color_index = 0_u8;
+    let mut wait = 0_u8;
+    let mut duration = 0_u8;
+    let mut displayed = None;
+    for frame in 0..substeps {
+        let mut frame_color = color_index;
+        if color_index == 0 {
+            if frame & 1 == 0 {
+                continue;
+            }
+            wait = wait.wrapping_sub(1);
+            if wait != 0 {
+                continue;
+            }
+            let selector = usize::from(tables.selectors[(frame >> 1) & 0x7f] & 7);
+            wait = tables.delays[selector];
+            color_index = tables.initial_colors[selector];
+            frame_color = color_index;
+            duration = 8;
+        }
+        duration = duration.wrapping_sub(1);
+        if duration & 0x80 != 0 {
+            color_index = color_index.wrapping_sub(1);
+            duration = 4;
+        }
+        // AdvanceBuiltInOverworldPaletteAnimation saves the pre-decrement color selector before
+        // updating the state and publishes that saved selector into the displayed palette cache.
+        displayed = Some(frame_color);
+    }
+    displayed
 }
 
 fn apply_builtin_overworld_animation(
@@ -556,6 +660,8 @@ mod tests {
             gfx32: Vec::new(),
             gfx33,
             built_in_animation_addresses: Vec::new(),
+            built_in_level_dot_palette: None,
+            built_in_lightning: None,
         };
         (overworld, assets)
     }
@@ -653,5 +759,90 @@ mod tests {
         assert_eq!(tick_three[0x78].pixels(), &[0x41; 64]);
         assert_eq!(tick_three[0x7a].pixels(), graphics[0x7a].pixels());
         assert_eq!(tick_three[0x7b].pixels(), &[0x5a; 64]);
+    }
+
+    #[test]
+    fn built_in_palette_cycles_level_dots_and_valley_lightning_without_touching_other_submaps() {
+        let dot_cycles = [
+            std::array::from_fn(|index| Bgr555(0x1000 + index as u16)),
+            std::array::from_fn(|index| Bgr555(0x2000 + index as u16)),
+        ];
+        let lightning = BuiltInOverworldLightning {
+            selectors: [0; 128],
+            delays: [1; 8],
+            initial_colors: [7; 8],
+        };
+        let mut palette = Palette {
+            colors: (0..256).map(|index| Bgr555(index)).collect(),
+        };
+        apply_builtin_overworld_palette_animation(
+            &mut palette,
+            Some(&dot_cycles),
+            Some(&lightning),
+            0,
+            0,
+        )
+        .unwrap();
+        assert_eq!(palette.colors[0x6d], Bgr555(0x1002));
+        assert_eq!(palette.colors[0x7d], Bgr555(0x2002));
+        assert_eq!(palette.colors[0x47], Bgr555(0x47));
+
+        apply_builtin_overworld_palette_animation(
+            &mut palette,
+            Some(&dot_cycles),
+            Some(&lightning),
+            4,
+            126,
+        )
+        .unwrap();
+        assert_eq!(palette.colors[0x6d], Bgr555(0x1000));
+        assert_eq!(palette.colors[0x7d], Bgr555(0x2000));
+        assert_eq!(palette.colors[0x47], Bgr555(0x2f));
+    }
+
+    #[test]
+    fn custom_overworld_palette_record_overrides_a_built_in_destination() {
+        let (mut overworld, mut assets) = preview_fixture();
+        overworld.data.animation.records =
+            vec![ExAnimationRecord::new(0x13, 0, 0, 0x6d, false, &[0x1f, 0x00], false).unwrap()];
+        assets.built_in_level_dot_palette = Some([[Bgr555(0x1234); 8], [Bgr555(0x5678); 8]]);
+        let (_, palette) = materialize_overworld_exanimation(
+            &overworld,
+            &assets,
+            &OverworldExAnimationPreview {
+                tick: 0,
+                triggers: lm_graphics::ExAnimationTriggerPreviewState::default(),
+                events_passed: vec![false; 256],
+            },
+        )
+        .unwrap();
+        assert_eq!(palette.colors[0x6d], Bgr555(0x001f));
+        assert_eq!(palette.colors[0x7d], Bgr555(0x5678));
+    }
+
+    #[test]
+    fn lightning_uses_the_exact_wrapping_wait_and_predecrement_color_sequence() {
+        let lightning = BuiltInOverworldLightning {
+            selectors: [0; 128],
+            delays: [1; 8],
+            initial_colors: [2; 8],
+        };
+        assert_eq!(materialize_builtin_lightning_color(&lightning, 125), None);
+        assert_eq!(
+            materialize_builtin_lightning_color(&lightning, 126),
+            Some(2)
+        );
+        assert_eq!(
+            materialize_builtin_lightning_color(&lightning, 127),
+            Some(2)
+        );
+        assert_eq!(
+            materialize_builtin_lightning_color(&lightning, 128),
+            Some(2)
+        );
+        assert_eq!(
+            materialize_builtin_lightning_color(&lightning, 129),
+            Some(1)
+        );
     }
 }

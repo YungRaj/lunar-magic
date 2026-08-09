@@ -53,6 +53,8 @@ pub(super) fn pending_from_loaded(loaded: LoadedDocument) -> Result<PendingOpen,
             gfx32: Vec::new(),
             gfx33: Vec::new(),
             built_in_animation_addresses: Vec::new(),
+            built_in_level_dot_palette: None,
+            built_in_lightning: None,
         },
         maximum_records: "32".into(),
     })
