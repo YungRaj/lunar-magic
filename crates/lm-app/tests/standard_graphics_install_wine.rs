@@ -920,3 +920,78 @@ fn lunar_magic_reopens_rust_fast_lorom_lz3_across_copier_header_variants() {
         assert_eq!(project.rom.as_file_bytes(), bytes);
     }
 }
+
+#[test]
+#[ignore = "requires Wine, Lunar Magic 3.63, and an authentic expanded SA-1 Pack LZ2 ROM"]
+fn lunar_magic_reopens_rust_sa1_lz3_with_standard_and_exgfx_streams() {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let wine = std::env::var_os("WINE_BIN")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from("wine"));
+    let lunar_magic = std::env::var_os("LUNAR_MAGIC_EXE")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| root.join("lm363/Lunar Magic.exe"));
+    let source_path = PathBuf::from(
+        std::env::var_os("LM_SA1_LZ2_SPEED_ROM")
+            .expect("LM_SA1_LZ2_SPEED_ROM must name an expanded SA-1 Pack LZ2 ROM"),
+    );
+    let source_bytes = fs::read(source_path).unwrap();
+    let source = RomImage::from_bytes(source_bytes.clone()).unwrap();
+    assert_eq!(
+        lm_rom::detect_identity(&source).unwrap().mapper,
+        lm_rom::Mapper::Sa1
+    );
+
+    let baseline = TemporaryDirectory::create("sa1-lz3-baseline");
+    fs::write(baseline.0.join("base.smc"), &source_bytes).unwrap();
+    run_export(&wine, &lunar_magic, &baseline.0, "base.smc");
+    run_export_operation(&wine, &lunar_magic, &baseline.0, "-ExportExGFX", "base.smc");
+
+    let replacement = lm_profile::smw_us_v1_compact_graphics_compression_migration_plan(
+        &source,
+        0x7fdc,
+        lm_profile::SmwUsV1GraphicsCompressionMode::Lz3,
+    )
+    .unwrap();
+    let mut project = Project::new(source);
+    project
+        .replace_relocatable_patch(&replacement.plan, &replacement.obsolete, 0xff)
+        .unwrap();
+    assert_eq!(project.rom.logical_len(), 0x20_0000);
+    assert!(
+        lm_rom::detect_identity(&project.rom)
+            .unwrap()
+            .checksum_matches()
+    );
+
+    let rust = TemporaryDirectory::create("sa1-lz3-rust");
+    fs::write(rust.0.join("rust.smc"), project.rom.as_file_bytes()).unwrap();
+    run_export(&wine, &lunar_magic, &rust.0, "rust.smc");
+    run_export_operation(&wine, &lunar_magic, &rust.0, "-ExportExGFX", "rust.smc");
+    for number in 0..0x34 {
+        let name = format!("GFX{number:02X}.bin");
+        assert_eq!(
+            fs::read(baseline.0.join("Graphics").join(&name)).unwrap(),
+            fs::read(rust.0.join("Graphics").join(&name)).unwrap(),
+            "Lunar Magic re-export changed Rust SA-1 {name}"
+        );
+    }
+    let mut expected_exgfx = fs::read_dir(baseline.0.join("ExGraphics"))
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name())
+        .collect::<Vec<_>>();
+    let mut actual_exgfx = fs::read_dir(rust.0.join("ExGraphics"))
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name())
+        .collect::<Vec<_>>();
+    expected_exgfx.sort();
+    actual_exgfx.sort();
+    assert_eq!(actual_exgfx, expected_exgfx);
+    for name in expected_exgfx {
+        assert_eq!(
+            fs::read(baseline.0.join("ExGraphics").join(&name)).unwrap(),
+            fs::read(rust.0.join("ExGraphics").join(&name)).unwrap(),
+            "Lunar Magic re-export changed Rust SA-1 {name:?}"
+        );
+    }
+}

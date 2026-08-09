@@ -397,6 +397,35 @@ WINEDEBUG=-all cargo test -p lm-app --test standard_graphics_install_wine \
 1 passed; 0 failed; finished in 61.12s
 ```
 
+## 2026-08-09 — SA-1 graphics-compression migration
+
+The first SA-1 observation showed that an untouched SA-1 Pack image combines compression changes
+with the old-to-4bpp graphics-format upgrade. The isolated codec oracle therefore starts from the
+already-expanded 2-MiB 4bpp image containing `ExGFX80`. Lunar Magic's result and Rust's semantic
+result retain these hashes:
+
+```text
+SA-1 LZ2 source       ea4b793e51aac9f565ea904312d934dea00bb77541a4bea48b83723d7ac8f086
+Lunar Magic SA-1 LZ3 bf709d06c410a4dfd761b8f2731dc75880108101a519a88b8a916e212270e303
+Rust SA-1 LZ3        a781ee37666295ee6c5366610c906dc9ad69bde27062ed6bee47c1191ac49d33
+```
+
+The SA-1 LZ3 hook points into a standalone 780-byte RATS owner with immutable CRC-32 `$520EEB36`
+and trailer `LM 01 01`. The source LZ2 hook instead points at addend `$32BA` inside the existing
+`$4806` SA-1 owner; its bounded runtime suffix has CRC-32 `$5D9654D6`.
+
+```text
+LM_SA1_LZ2_SPEED_ROM=... LM_SA1_LZ3_ROM=... cargo test -p lm-profile \
+  sa1_codec_migration_preserves_all_standard_graphics_and_undoes \
+  -- --ignored --nocapture
+1 passed; 0 failed; finished in 5.21s
+
+LM_SA1_LZ2_SPEED_ROM=... cargo test -p lm-app --test standard_graphics_install_wine \
+  lunar_magic_reopens_rust_sa1_lz3_with_standard_and_exgfx_streams \
+  -- --ignored --nocapture
+1 passed; 0 failed; finished in 6.91s
+```
+
 The first gate proves identical Rust logical output across copier forms, map-mode `$30` retention,
 valid checksums, exact 52-file semantic equality with Lunar Magic's LZ3 result, and byte-exact Undo.
 The end-to-end Wine gate independently creates the original oracle, asks Lunar Magic to select LZ3

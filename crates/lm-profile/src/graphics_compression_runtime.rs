@@ -18,11 +18,18 @@ const INSTALLED_OPCODE: u8 = 0x22;
 const INSTALLED_RETURN: u8 = 0x60;
 const SPEED_RUNTIME_LEN: usize = 0x1c0;
 const LZ3_RUNTIME_LEN: usize = 0x2ab;
+const SA1_LZ3_RUNTIME_LEN: usize = 0x30c;
 const SPEED_RUNTIME_CRC32: u32 = 0x5d3c_ac46;
 const LZ3_RUNTIME_CRC32: u32 = 0xdcb7_727e;
+const SA1_LZ3_RUNTIME_CRC32: u32 = 0x520e_eb36;
+const SA1_LZ2_SPEED_OWNER_LEN: usize = 0x4806;
+const SA1_LZ2_SPEED_RUNTIME_ADDEND: usize = 0x32ba;
+const SA1_LZ2_SPEED_RUNTIME_LEN: usize = 0x154c;
+const SA1_LZ2_SPEED_RUNTIME_CRC32: u32 = 0x5d96_54d6;
 const RUNTIME_TRAILER: [u8; 4] = *b"LM\x01\x01";
 const SPEED_RUNTIME_HEX: &str = include_str!("assets/graphics_compression_lz2_speed.hex");
 const LZ3_RUNTIME_HEX: &str = include_str!("assets/graphics_compression_lz3.hex");
+const SA1_LZ3_RUNTIME_HEX: &str = include_str!("assets/graphics_compression_lz3_sa1.hex");
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum SmwUsV1GraphicsCompressionMode {
@@ -176,7 +183,7 @@ pub fn detect_smw_us_v1_graphics_compression_mode(
             ));
         }
     };
-    if mode == SmwUsV1GraphicsCompressionMode::Lz2Original {
+    if mode == SmwUsV1GraphicsCompressionMode::Lz2Original && mapper != Mapper::Sa1 {
         return (hook == ORIGINAL_HOOK).then_some(mode).ok_or(
             SmwUsV1GraphicsCompressionDetectError::OriginalHookMismatch(hook),
         );
@@ -186,6 +193,35 @@ pub fn detect_smw_us_v1_graphics_compression_mode(
     }
     let runtime_offset = snes_to_pc(mapper, u32::from_le_bytes([hook[1], hook[2], hook[3], 0]))
         .map_err(SmwUsV1GraphicsCompressionDetectError::RuntimeAddress)?;
+    if mapper == Mapper::Sa1 && mode != SmwUsV1GraphicsCompressionMode::Lz3 {
+        let owner = lm_rats::scan(bytes)
+            .into_iter()
+            .find(|block| block.payload.contains(&runtime_offset))
+            .ok_or(SmwUsV1GraphicsCompressionDetectError::RuntimeBeforeHeader(
+                runtime_offset,
+            ))?;
+        let expected = owner.payload.start + SA1_LZ2_SPEED_RUNTIME_ADDEND;
+        if owner.payload.len() != SA1_LZ2_SPEED_OWNER_LEN || runtime_offset != expected {
+            return Err(SmwUsV1GraphicsCompressionDetectError::RuntimeOwnership {
+                expected,
+                actual: runtime_offset,
+            });
+        }
+        let runtime = bytes
+            .get(runtime_offset..runtime_offset + SA1_LZ2_SPEED_RUNTIME_LEN)
+            .ok_or(SmwUsV1GraphicsCompressionDetectError::Truncated {
+                offset: runtime_offset,
+                len: SA1_LZ2_SPEED_RUNTIME_LEN,
+            })?;
+        let actual_crc = crc32(runtime);
+        if actual_crc != SA1_LZ2_SPEED_RUNTIME_CRC32 {
+            return Err(SmwUsV1GraphicsCompressionDetectError::RuntimeChecksum {
+                expected: SA1_LZ2_SPEED_RUNTIME_CRC32,
+                actual: actual_crc,
+            });
+        }
+        return Ok(mode);
+    }
     let header_offset = runtime_offset.checked_sub(HEADER_LEN).ok_or(
         SmwUsV1GraphicsCompressionDetectError::RuntimeBeforeHeader(runtime_offset),
     )?;
@@ -199,6 +235,9 @@ pub fn detect_smw_us_v1_graphics_compression_mode(
     }
     let (expected_len, expected_crc) = match mode {
         SmwUsV1GraphicsCompressionMode::Lz2Speed => (SPEED_RUNTIME_LEN, SPEED_RUNTIME_CRC32),
+        SmwUsV1GraphicsCompressionMode::Lz3 if mapper == Mapper::Sa1 => {
+            (SA1_LZ3_RUNTIME_LEN, SA1_LZ3_RUNTIME_CRC32)
+        }
         SmwUsV1GraphicsCompressionMode::Lz3 => (LZ3_RUNTIME_LEN, LZ3_RUNTIME_CRC32),
         SmwUsV1GraphicsCompressionMode::Lz2Original => unreachable!(),
     };
@@ -456,6 +495,9 @@ fn smw_us_v1_graphics_compression_installation_plan(
     let runtime = match target_mode {
         SmwUsV1GraphicsCompressionMode::Lz2Original => None,
         SmwUsV1GraphicsCompressionMode::Lz2Speed => Some(decode_hex(SPEED_RUNTIME_HEX)),
+        SmwUsV1GraphicsCompressionMode::Lz3 if mapper == Mapper::Sa1 => {
+            Some(decode_hex(SA1_LZ3_RUNTIME_HEX))
+        }
         SmwUsV1GraphicsCompressionMode::Lz3 => Some(decode_hex(LZ3_RUNTIME_HEX)),
     };
     let first_bank_end = allocation
@@ -516,7 +558,7 @@ fn smw_us_v1_graphics_compression_installation_plan(
     let bytes = image.logical_bytes();
     let mut writes = Vec::with_capacity(ordinary_layout.pointers.entries * 3 + 6);
     let target_len = image.logical_len().max(allocation.search.end);
-    let maximum_len = if mapper == Mapper::ExLoRom {
+    let maximum_len = if matches!(mapper, Mapper::ExLoRom | Mapper::Sa1) {
         0x80_0000
     } else {
         0x40_0000
@@ -577,7 +619,7 @@ fn smw_us_v1_graphics_compression_installation_plan(
             bank_pointer_encoding(mapper),
         ),
     ]);
-    for file_number in 0x80_u16..=0x0fff {
+    for file_number in 0x80_u16..=exgraphics_scan_end(image, mapper)? {
         let route = crate::smw_us_v1_exgraphics_pointer_in_rom(image, file_number, mapper)?;
         if route.encoding != crate::SmwUsV1ExGraphicsEncoding::Lz2 {
             continue;
@@ -623,18 +665,22 @@ fn smw_us_v1_graphics_compression_installation_plan(
             long_pointer_encoding(mapper),
         ));
     }
-    let event_tilemaps = crate::load_smw_us_v1_event_tilemaps_for_mapper(&project, mapper)?;
-    if let crate::SmwUsV1EventTilemapStorage::Installed(source_event_compression) =
-        event_tilemaps.storage
+    let event_tilemaps = (mapper != Mapper::Sa1)
+        .then(|| crate::load_smw_us_v1_event_tilemaps_for_mapper(&project, mapper))
+        .transpose()?;
+    if let Some(crate::LoadedSmwUsV1EventTilemaps {
+        buffers,
+        storage: crate::SmwUsV1EventTilemapStorage::Installed(source_event_compression),
+    }) = event_tilemaps
     {
         let primary_payload = payloads.len();
         payloads.push(PatchPayload {
-            bytes: encode(&event_tilemaps.buffers.encode_primary_stream()),
+            bytes: encode(&buffers.encode_primary_stream()),
             fixups: Vec::new(),
         });
         let secondary_payload = payloads.len();
         payloads.push(PatchPayload {
-            bytes: encode(&event_tilemaps.buffers.encode_secondary_high_stream()),
+            bytes: encode(&buffers.encode_secondary_high_stream()),
             fixups: Vec::new(),
         });
         for (low_offset, bank_offset, target_payload) in [
@@ -769,7 +815,7 @@ fn smw_us_v1_graphics_compression_ownership(
     push_pointer(special.gfx33.read_pointer(&project, 0)?)?;
     push_pointer(special.gfx32.read_pointer(&project, 0)?)?;
 
-    for file_number in 0x80_u16..=0x0fff {
+    for file_number in 0x80_u16..=exgraphics_scan_end(image, mapper)? {
         let route = crate::smw_us_v1_exgraphics_pointer_in_rom(image, file_number, mapper)?;
         if route.encoding != crate::SmwUsV1ExGraphicsEncoding::Lz2 {
             continue;
@@ -784,10 +830,12 @@ fn smw_us_v1_graphics_compression_ownership(
         )?;
     }
 
-    if matches!(
-        crate::load_smw_us_v1_event_tilemaps_for_mapper(&project, mapper)?.storage,
-        crate::SmwUsV1EventTilemapStorage::Installed(_)
-    ) {
+    if mapper != Mapper::Sa1
+        && matches!(
+            crate::load_smw_us_v1_event_tilemaps_for_mapper(&project, mapper)?.storage,
+            crate::SmwUsV1EventTilemapStorage::Installed(_)
+        )
+    {
         for (low_offset, bank_offset) in [
             (
                 base + crate::SMW_US_V1_EVENT_TILEMAP_PRIMARY_LOW_WORD,
@@ -818,10 +866,23 @@ fn smw_us_v1_graphics_compression_ownership(
 fn compression_mapper(image: &RomImage) -> Result<Mapper, SmwUsV1GraphicsCompressionDetectError> {
     let mapper = detect_identity(image).map_or(Mapper::LoRom, |identity| identity.mapper);
     match mapper {
-        Mapper::LoRom | Mapper::ExLoRom => Ok(mapper),
-        Mapper::Sa1 => Err(SmwUsV1GraphicsCompressionDetectError::UnsupportedMapper(
-            mapper,
-        )),
+        Mapper::LoRom | Mapper::ExLoRom | Mapper::Sa1 => Ok(mapper),
+    }
+}
+
+fn exgraphics_scan_end(
+    image: &RomImage,
+    mapper: Mapper,
+) -> Result<u16, crate::SmwUsV1ExGraphicsError> {
+    if mapper == Mapper::Sa1
+        && image.read(
+            crate::SMW_US_V1_EXPANDED_GRAPHICS_FORMAT_MARKER_OFFSET,
+            crate::SMW_US_V1_EXPANDED_GRAPHICS_FORMAT_MARKER.len(),
+        )? != crate::SMW_US_V1_EXPANDED_GRAPHICS_FORMAT_MARKER
+    {
+        Ok(0xff)
+    } else {
+        Ok(0x0fff)
     }
 }
 
@@ -916,8 +977,9 @@ mod tests {
     use lm_project::Project;
     use std::fs;
 
-    fn load_exlorom_graphics(
+    fn load_mapper_graphics(
         image: &RomImage,
+        mapper: Mapper,
         compression: GraphicsCompression,
     ) -> (
         Vec<lm_graphics::GraphicsFile4bpp>,
@@ -926,23 +988,21 @@ mod tests {
         Vec<(u16, Vec<u8>)>,
     ) {
         let project = Project::new(image.clone());
-        let mut ordinary_layout =
-            crate::smw_us_v1_vanilla_graphics_layout_for_mapper(Mapper::ExLoRom);
+        let mut ordinary_layout = crate::smw_us_v1_vanilla_graphics_layout_for_mapper(mapper);
         ordinary_layout.compression = compression;
         let ordinary = (0..ordinary_layout.pointers.entries)
             .map(|slot| project.load_graphics_file(slot, ordinary_layout).unwrap())
             .collect();
         let mut special =
-            crate::smw_us_v1_special_graphics_layouts_for_mapper(image, Mapper::ExLoRom).unwrap();
+            crate::smw_us_v1_special_graphics_layouts_for_mapper(image, mapper).unwrap();
         special.gfx33.compression = compression;
         special.gfx32.compression = compression;
         let gfx33 = project.load_graphics_file(0, special.gfx33).unwrap();
         let gfx32 = project.load_graphics_file(0, special.gfx32).unwrap();
         let mut exgfx = Vec::new();
-        for file_number in 0x80_u16..=0x0fff {
+        for file_number in 0x80_u16..=exgraphics_scan_end(image, mapper).unwrap() {
             let route =
-                crate::smw_us_v1_exgraphics_pointer_in_rom(image, file_number, Mapper::ExLoRom)
-                    .unwrap();
+                crate::smw_us_v1_exgraphics_pointer_in_rom(image, file_number, mapper).unwrap();
             if route.encoding != crate::SmwUsV1ExGraphicsEncoding::Lz2 {
                 continue;
             }
@@ -954,7 +1014,7 @@ mod tests {
                 .load_decompressed_graphics_file(
                     0,
                     GraphicsRomLayout {
-                        mapper: Mapper::ExLoRom,
+                        mapper,
                         pointers: LevelPointerTable {
                             offset: route.pointer_offset,
                             entries: 1,
@@ -990,9 +1050,9 @@ mod tests {
             detect_smw_us_v1_graphics_compression_mode(&lz3_oracle).unwrap(),
             SmwUsV1GraphicsCompressionMode::Lz3
         );
-        let expected = load_exlorom_graphics(&lz2, GraphicsCompression::Lz2);
+        let expected = load_mapper_graphics(&lz2, Mapper::ExLoRom, GraphicsCompression::Lz2);
         assert_eq!(
-            load_exlorom_graphics(&lz3_oracle, GraphicsCompression::Lz3),
+            load_mapper_graphics(&lz3_oracle, Mapper::ExLoRom, GraphicsCompression::Lz3),
             expected
         );
 
@@ -1027,7 +1087,7 @@ mod tests {
             identity.computed_checksum
         );
         assert_eq!(
-            load_exlorom_graphics(&project.rom, GraphicsCompression::Lz3),
+            load_mapper_graphics(&project.rom, Mapper::ExLoRom, GraphicsCompression::Lz3),
             expected
         );
         for range in [
@@ -1060,12 +1120,62 @@ mod tests {
             SmwUsV1GraphicsCompressionMode::Lz2Original
         );
         assert_eq!(
-            load_exlorom_graphics(&project.rom, GraphicsCompression::Lz2),
+            load_mapper_graphics(&project.rom, Mapper::ExLoRom, GraphicsCompression::Lz2),
             expected
         );
         project.history.undo(&mut project.rom).unwrap();
         project.history.undo(&mut project.rom).unwrap();
         assert_eq!(project.rom.as_file_bytes(), lz2_bytes);
+    }
+
+    #[test]
+    #[ignore = "requires retained authentic SA-1 Pack LZ2-Speed/LZ3 captures"]
+    fn sa1_codec_migration_preserves_all_standard_graphics_and_undoes() {
+        let source_bytes = fs::read(std::env::var_os("LM_SA1_LZ2_SPEED_ROM").unwrap()).unwrap();
+        let source = RomImage::from_bytes(source_bytes.clone()).unwrap();
+        let oracle =
+            RomImage::from_bytes(fs::read(std::env::var_os("LM_SA1_LZ3_ROM").unwrap()).unwrap())
+                .unwrap();
+        assert_eq!(detect_identity(&source).unwrap().mapper, Mapper::Sa1);
+        assert!(matches!(
+            detect_smw_us_v1_graphics_compression_mode(&source).unwrap(),
+            SmwUsV1GraphicsCompressionMode::Lz2Original | SmwUsV1GraphicsCompressionMode::Lz2Speed
+        ));
+        assert_eq!(
+            detect_smw_us_v1_graphics_compression_mode(&oracle).unwrap(),
+            SmwUsV1GraphicsCompressionMode::Lz3
+        );
+        let expected = load_mapper_graphics(&source, Mapper::Sa1, GraphicsCompression::Lz2);
+        assert_eq!(
+            load_mapper_graphics(&oracle, Mapper::Sa1, GraphicsCompression::Lz3),
+            expected
+        );
+        let replacement = smw_us_v1_compact_graphics_compression_migration_plan(
+            &source,
+            0x7fdc,
+            SmwUsV1GraphicsCompressionMode::Lz3,
+        )
+        .unwrap();
+        assert_eq!(replacement.plan.mapper, Mapper::Sa1);
+        let mut project = Project::new(source);
+        project
+            .replace_relocatable_patch(&replacement.plan, &replacement.obsolete, 0xff)
+            .unwrap();
+        assert_eq!(project.rom.logical_len(), 0x20_0000);
+        assert_eq!(
+            detect_smw_us_v1_graphics_compression_mode(&project.rom).unwrap(),
+            SmwUsV1GraphicsCompressionMode::Lz3
+        );
+        assert!(detect_identity(&project.rom).unwrap().checksum_matches());
+        assert_eq!(
+            load_mapper_graphics(&project.rom, Mapper::Sa1, GraphicsCompression::Lz3),
+            expected
+        );
+        if let Some(path) = std::env::var_os("LM_SA1_LZ3_RUST_OUTPUT") {
+            fs::write(path, project.rom.as_file_bytes()).unwrap();
+        }
+        project.history.undo(&mut project.rom).unwrap();
+        assert_eq!(project.rom.as_file_bytes(), source_bytes);
     }
 
     #[test]

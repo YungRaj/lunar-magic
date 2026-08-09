@@ -2046,6 +2046,18 @@ valid identity checksums, and two Undo operations restore the exact original ROM
 path exposes the transition as one revision and one Undo step, while original Lunar Magic reopens
 the Rust LZ3 result and re-exports all 54 streams byte-exactly. SA-1 and historical runtime-family
 variants remain separate compression gates.
+
+The authentic expanded SA-1 Pack family is now covered for standard graphics plus populated
+ordinary ExGFX. SA-1's LZ2 decoder is an allocation-relative subroutine inside the authenticated
+`$4806` owner rather than a standalone RATS block; both observed metadata forms (`0` and `1`) bind
+to that exact owner/addend/runtime checksum. Its LZ3 decoder is a distinct 780-byte `LM 01 01`
+runtime, not the 683-byte LoROM/ExLoROM payload. Mapper-aware plans preserve SA-1 pointer banks,
+reuse proven same-size ownership, and leave the original embedded LZ2 owner intact. A retained
+2-MiB 4bpp SA-1 project proves all 52 GFX files plus `ExGFX80` survive the Rust migration, the
+checksum remains valid, and Undo restores the exact copier-headered source. Original Lunar Magic
+reopens the Rust result and re-exports both directories byte-exactly. SA-1 installed overworld-event
+stream migration remains a separate gate because SA-1 Pack replaces the LoROM pristine event-code
+skeleton before Lunar Magic event storage is installed.
 The graphical **Tools** menu installs the same bounded `LMTOOLS1` configuration used by the
 application shell and lists tools in configuration order. Clicking a tool is the explicit execution
 boundary: placeholders are expanded by `lm-app`, while the native adapter launches the executable
