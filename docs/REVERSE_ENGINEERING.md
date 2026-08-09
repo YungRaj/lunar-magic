@@ -1913,6 +1913,25 @@ that entry's native length, and continues to route selectors `$34+` to `ExGraphi
 an ignored internal sentinel. Rust exposes and persists the same joined/separate choice, validates
 the exact existing joined shape plus every selected extended destination, patches the selected
 ranges, and publishes AllGFX plus ExGFX replacements as one recoverable group.
+
+The top-level transfer call matrix is now recovered as well. `HandleLevelEditorCommand` calls
+`ExtractAllGFXFiles` with bit 0 copied from the persisted joined-file option; its quick/quiet form
+also sets bit 1. `InsertAllGFXFiles` receives the same joined-file bit, with bit 1 suppressing the
+completion dialog, bit 2 suppressing the ordinary open/save wrapper, and bit 3 selecting the
+alternate progress target. `ImportExtendedGraphicsIntoRom` uses the corresponding quiet, wrapper,
+and progress bits but has no joined-file bit. The ordinary menu commands first run their separate
+confirmation resources; quick commands set bit 1 and bypass only the completion presentation, not
+validation or mutation behavior.
+
+Regular-GFX insertion has one format-transition warning before any graphics structures are erased.
+On a modified ROM with the ExGFX/ExAnimation support state present but without the expanded graphics
+format marker, Lunar Magic displays `Graphics Format Change Warning!` and explains that existing
+3bpp ExGFX will appear garbled until ExGFX is reinserted as 4bpp, ending with `Proceed anyway?`.
+Choosing No returns before `InstallBulkGraphicsSystemPatches`. The Rust profile boundary now exposes
+`requires_smw_us_v1_4bpp_graphics_warning`: it requires an authenticated native ExGFX runtime and
+the absence of the complete two-byte-pair 4bpp marker, so ROM size, one coincidental `$32`, or a
+foreign hook cannot trigger the future migration route. The affirmative modified-runtime migration
+itself remains an open transaction/variant gate.
 A retained Lunar Magic 3.63 Wine oracle opens the original `Window8x8` through command `$232A` and
 posts F9 directly to that window. With all separate files replaced by equal-length sentinels, level
 `$105` changes exactly `$00,$01,$13,$14,$15,$17,$1B,$20`; removing `GFX33.bin` first produces

@@ -4323,6 +4323,15 @@ the existing raw length for replacements, and admits new slots only at the nativ
 or `$1000` byte depths. Compression, allocation, pointer writes, checksum repair, and revision-bound
 publication remain one transaction; omitted slots and all pointer-table storage remain protected.
 
+The standard-directory and joined-file insertion entry points now also share the recovered legacy
+format-transition guard. An authenticated SMW-US ExGFX runtime without both `$32` regular-GFX
+format markers opens Lunar Magic 3.63's exact `Graphics Format Change Warning!` text before a worker
+is started. The pending request retains its already selected immutable source and directory or
+`AllGFX.bin` target. No/Escape drops it without reading a file or preparing a mutation; Yes dispatches
+that same request. Merely expanded, partially marked, truncated, or foreign-hook ROMs do not acquire
+the warning. This closes the prompt's detection/cancellation boundary while leaving the affirmative
+legacy 3bpp-to-4bpp modified-runtime migration as a separate open transaction gate.
+
 The installed graphics editor also owns a scoped external-edit round trip. It exports the current
 staged controller bytes—not a stale ROM decode—to a uniquely reserved private temporary directory
 under the canonical GFX/ExGFX filename. Persisted `LMTOOLS1` tools whose templates reference

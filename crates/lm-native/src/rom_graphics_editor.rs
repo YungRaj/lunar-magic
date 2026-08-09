@@ -68,6 +68,21 @@ enum PendingLoad {
     },
 }
 
+#[derive(Clone)]
+enum PendingGraphicsFormatWarningTarget {
+    Directory(std::path::PathBuf),
+    Joined(std::path::PathBuf),
+}
+
+#[derive(Clone)]
+struct PendingGraphicsFormatWarning {
+    source: graphics_import::GraphicsImportSource,
+    target: PendingGraphicsFormatWarningTarget,
+}
+
+const GRAPHICS_FORMAT_WARNING_TITLE: &str = "Graphics Format Change Warning!";
+const GRAPHICS_FORMAT_WARNING_BODY: &str = "The GFX are about to be inserted as 4bpp, but any ExGFX already in the ROM are still stored in 3bpp format.  Make sure to re-insert the ExGFX too after this so the program can store them as 4bpp as well (if you don't yet have an external copy of them, you should cancel this and extract the ExGFX first).  Unless for some reason you actually like looking at garbled graphics...\n\nProceed anyway?";
+
 #[derive(Default)]
 pub(crate) struct RomGraphicsEditor {
     workspace: Option<Workspace>,
@@ -97,6 +112,7 @@ pub(crate) struct RomGraphicsEditor {
     graphics_batch: graphics_batch::GraphicsBatchWorker,
     level_graphics_batch_running: bool,
     graphics_import: graphics_import::GraphicsImportWorker,
+    pending_graphics_format_warning: Option<PendingGraphicsFormatWarning>,
     external_editor: external_edit::ExternalGraphicsEditor,
     external_tool_id: Option<String>,
     internal_cache_unlocked: bool,
@@ -256,6 +272,7 @@ impl RomGraphicsEditor {
                 }
                 None => None,
             });
+        self.graphics_format_warning(context);
         if self.workspace.is_some() {
             egui::Window::new("ROM Graphics Editor")
                 .default_size([780.0, 680.0])
@@ -293,6 +310,7 @@ impl RomGraphicsEditor {
             || self.persistence.is_running()
             || self.graphics_batch.is_running()
             || self.graphics_import.is_running()
+            || self.pending_graphics_format_warning.is_some()
             || self.external_editor.is_running();
         if stale {
             ui.colored_label(
@@ -1642,10 +1660,10 @@ impl RomGraphicsEditor {
             smw_us_v1_exgraphics: false,
             exgraphics_names: false,
         };
-        match self.graphics_import.start(source, directory) {
-            Ok(()) => self.io_status = None,
-            Err(error) => self.error = Some(error),
-        }
+        self.start_graphics_import_or_warn(
+            source,
+            PendingGraphicsFormatWarningTarget::Directory(directory),
+        );
     }
 
     fn begin_all_gfx_export(&mut self) {
@@ -1718,10 +1736,10 @@ impl RomGraphicsEditor {
             smw_us_v1_exgraphics: false,
             exgraphics_names: false,
         };
-        match self.graphics_import.start_joined(source, path) {
-            Ok(()) => self.io_status = None,
-            Err(error) => self.error = Some(error),
-        }
+        self.start_graphics_import_or_warn(
+            source,
+            PendingGraphicsFormatWarningTarget::Joined(path),
+        );
     }
 
     fn begin_special_graphics_batch(&mut self) {
@@ -1878,6 +1896,67 @@ impl RomGraphicsEditor {
         match self.graphics_import.start(source, directory) {
             Ok(()) => self.io_status = None,
             Err(error) => self.error = Some(error),
+        }
+    }
+
+    fn start_graphics_import_or_warn(
+        &mut self,
+        source: graphics_import::GraphicsImportSource,
+        target: PendingGraphicsFormatWarningTarget,
+    ) {
+        if source.smw_us_v1_standard_install
+            && lm_profile::requires_smw_us_v1_4bpp_graphics_warning(&source.image)
+        {
+            self.pending_graphics_format_warning =
+                Some(PendingGraphicsFormatWarning { source, target });
+            self.io_status = None;
+            return;
+        }
+        self.start_graphics_import(source, target);
+    }
+
+    fn start_graphics_import(
+        &mut self,
+        source: graphics_import::GraphicsImportSource,
+        target: PendingGraphicsFormatWarningTarget,
+    ) {
+        let result = match target {
+            PendingGraphicsFormatWarningTarget::Directory(directory) => {
+                self.graphics_import.start(source, directory)
+            }
+            PendingGraphicsFormatWarningTarget::Joined(path) => {
+                self.graphics_import.start_joined(source, path)
+            }
+        };
+        match result {
+            Ok(()) => self.io_status = None,
+            Err(error) => self.error = Some(error),
+        }
+    }
+
+    fn graphics_format_warning(&mut self, context: &egui::Context) {
+        if self.pending_graphics_format_warning.is_none() {
+            return;
+        }
+        let mut proceed = false;
+        let mut cancel = false;
+        egui::Window::new(GRAPHICS_FORMAT_WARNING_TITLE)
+            .collapsible(false)
+            .resizable(false)
+            .show(context, |ui| {
+                ui.set_max_width(560.0);
+                ui.label(GRAPHICS_FORMAT_WARNING_BODY);
+                ui.horizontal(|ui| {
+                    proceed = ui.button("Yes").clicked();
+                    cancel = ui.button("No").clicked()
+                        || context.input(|input| input.key_pressed(egui::Key::Escape));
+                });
+            });
+        if cancel {
+            self.pending_graphics_format_warning = None;
+            self.io_status = Some("GFX insertion cancelled.".into());
+        } else if proceed && let Some(pending) = self.pending_graphics_format_warning.take() {
+            self.start_graphics_import(pending.source, pending.target);
         }
     }
 }

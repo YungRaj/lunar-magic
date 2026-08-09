@@ -67,6 +67,7 @@ impl RomGraphicsEditor {
             || self.persistence.is_running()
             || self.graphics_batch.is_running()
             || self.graphics_import.is_running()
+            || self.pending_graphics_format_warning.is_some()
             || self.external_editor.is_running()
         {
             self.error =
@@ -180,6 +181,7 @@ impl RomGraphicsEditor {
         self.pending_load = None;
         self.pending_close = None;
         self.pending_level_graphics_export = None;
+        self.pending_graphics_format_warning = None;
         self.clipboard_paste_target = None;
         self.pixel_pointer_capture = crate::graphics_painter::TilePixelPointerCapture::None;
         self.status = Default::default();

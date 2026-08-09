@@ -33,6 +33,18 @@ pub fn has_smw_us_v1_4bpp_graphics_prerequisite(rom: &RomImage) -> bool {
     })
 }
 
+/// Reports the exact legacy ExGFX state that makes Lunar Magic warn before inserting regular GFX.
+///
+/// Lunar Magic 3.63 shows its `Graphics Format Change Warning!` only when an authenticated ExGFX
+/// runtime is present while the two regular-GFX format markers still identify the old 3bpp
+/// representation. Keeping this predicate separate from the insertion transaction prevents a
+/// merely expanded ROM, a partial marker, or foreign bytes from enabling the destructive migration
+/// prompt.
+pub fn requires_smw_us_v1_4bpp_graphics_warning(rom: &RomImage) -> bool {
+    !has_smw_us_v1_4bpp_graphics_prerequisite(rom)
+        && probe_smw_us_v1_exgraphics_runtime(rom).is_ok()
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum SmwUsV1ExGraphicsEncoding {
     Raw2048,
@@ -384,6 +396,27 @@ mod tests {
             .write(SMW_US_V1_4BPP_GRAPHICS_MARKER_OFFSETS[1], &[0x32])
             .unwrap();
         assert!(has_smw_us_v1_4bpp_graphics_prerequisite(&image));
+    }
+
+    #[test]
+    fn format_change_warning_requires_authenticated_exgfx_and_old_graphics_markers() {
+        let mut image = ready_image();
+        assert!(requires_smw_us_v1_4bpp_graphics_warning(&image));
+
+        image
+            .write(SMW_US_V1_4BPP_GRAPHICS_MARKER_OFFSETS[0], &[0x32])
+            .unwrap();
+        assert!(requires_smw_us_v1_4bpp_graphics_warning(&image));
+        image
+            .write(SMW_US_V1_4BPP_GRAPHICS_MARKER_OFFSETS[1], &[0x32])
+            .unwrap();
+        assert!(!requires_smw_us_v1_4bpp_graphics_warning(&image));
+
+        let mut foreign = ready_image();
+        foreign
+            .write(SMW_US_V1_EXGFX_RUNTIME_HOOK_OFFSET, &[0xff; 5])
+            .unwrap();
+        assert!(!requires_smw_us_v1_4bpp_graphics_warning(&foreign));
     }
 
     fn ready_image() -> RomImage {
