@@ -76,6 +76,7 @@ pub enum SmwUsV1ExGraphicsError {
     UnsupportedExpansionMarker([u8; 7]),
     UnsupportedSa1RuntimeMarker,
     UnsupportedReservedPointer { index: usize },
+    UnsupportedExpandedSettingsOwner,
     UnsupportedGraphicsFormatMarker([u8; 2]),
     FileNumber(u16),
     PointerOffsetOverflow,
@@ -243,6 +244,7 @@ pub fn probe_smw_us_v1_exgraphics_runtime_for_mapper(
 /// written.
 pub fn smw_us_v1_sa1_exgraphics_runtime_installation_plan(
     rom: &RomImage,
+    first_file_number: u16,
 ) -> Result<RelocatablePatchPlan, SmwUsV1ExGraphicsError> {
     let direct = |offset: usize, expected: &[u8], replacement: &[u8]| PatchWrite {
         offset,
@@ -290,20 +292,41 @@ pub fn smw_us_v1_sa1_exgraphics_runtime_installation_plan(
             ],
         ),
     ];
-    let mut erased_runtime_marker = vec![0xff; 0x65];
-    erased_runtime_marker.extend_from_slice(&[0xa8, 0x00]);
-    let mut lunar_magic_standard_marker = vec![0; erased_runtime_marker.len()];
-    lunar_magic_standard_marker[0] = 0xf7;
-    let actual_runtime_marker = rom.read(0x07efb6, erased_runtime_marker.len())?;
-    if actual_runtime_marker != lunar_magic_standard_marker
-        && !actual_runtime_marker.iter().all(|byte| *byte == 0xff)
-    {
+    let (marker_offset, replacement) = match first_file_number {
+        0x60..=0x63 => {
+            let mut replacement = vec![0; 0x11];
+            replacement[0] = 0xb9;
+            (0x07efa7, replacement)
+        }
+        0x80..=0xff => {
+            let mut replacement = vec![0xff; 0x65];
+            replacement.extend_from_slice(&[0xa8, 0x00]);
+            (0x07efb6, replacement)
+        }
+        0x100..=0xfff => {
+            let mut replacement = vec![0xff; 0x68];
+            replacement.extend_from_slice(&[0xa8, 0x00]);
+            (0x07efb6, replacement)
+        }
+        _ => return Err(SmwUsV1ExGraphicsError::FileNumber(first_file_number)),
+    };
+    let actual_runtime_marker = rom.read(marker_offset, replacement.len())?;
+    let valid_standard_marker = if marker_offset == 0x07efa7 {
+        actual_runtime_marker[..0x0f]
+            .iter()
+            .all(|byte| *byte == 0xff)
+            && actual_runtime_marker[0x0f] == 0xf7
+            && actual_runtime_marker[0x10] == 0
+    } else {
+        actual_runtime_marker[0] == 0xf7 && actual_runtime_marker[1..].iter().all(|byte| *byte == 0)
+    };
+    if !valid_standard_marker && !actual_runtime_marker.iter().all(|byte| *byte == 0xff) {
         return Err(SmwUsV1ExGraphicsError::UnsupportedSa1RuntimeMarker);
     }
     writes.push(PatchWrite {
-        offset: 0x07efb6,
+        offset: marker_offset,
         expected: actual_runtime_marker.to_vec(),
-        replacement: erased_runtime_marker,
+        replacement,
         fixups: Vec::new(),
     });
     writes.push(PatchWrite {
@@ -371,6 +394,41 @@ pub fn smw_us_v1_exgraphics_pointer_for_mapper(
     })
 }
 
+/// Resolves an ExGFX pointer entry from the concrete ROM, including a relocated SA-1 expanded-
+/// settings owner.
+///
+/// # Errors
+///
+/// Rejects invalid file numbers, malformed allocation operands, non-owned or wrong-sized SA-1
+/// settings storage, and pointer arithmetic overflow.
+pub fn smw_us_v1_exgraphics_pointer_in_rom(
+    rom: &RomImage,
+    file_number: u16,
+    mapper: Mapper,
+) -> Result<SmwUsV1ExGraphicsPointer, SmwUsV1ExGraphicsError> {
+    let mut route = smw_us_v1_exgraphics_pointer_for_mapper(file_number, mapper)?;
+    if mapper != Mapper::Sa1 || file_number < 0x100 {
+        return Ok(route);
+    }
+    const EXPANDED_SETTINGS_BASE_OPERAND: usize = 0x07f873;
+    const EXPANDED_SETTINGS_ALLOCATION_LEN: usize = 0x6e00;
+    let operand = rom.read(EXPANDED_SETTINGS_BASE_OPERAND, 3)?;
+    let address = u32::from(operand[0]) | u32::from(operand[1]) << 8 | u32::from(operand[2]) << 16;
+    let payload = snes_to_pc(Mapper::Sa1, address)?;
+    let header = payload
+        .checked_sub(HEADER_LEN)
+        .ok_or(SmwUsV1ExGraphicsError::UnsupportedExpandedSettingsOwner)?;
+    let block = parse_at(rom.logical_bytes(), header)
+        .map_err(|_| SmwUsV1ExGraphicsError::UnsupportedExpandedSettingsOwner)?;
+    if block.payload.start != payload || block.payload.len() != EXPANDED_SETTINGS_ALLOCATION_LEN {
+        return Err(SmwUsV1ExGraphicsError::UnsupportedExpandedSettingsOwner);
+    }
+    route.pointer_offset = payload
+        .checked_add(usize::from(file_number - 0x100) * 3)
+        .ok_or(SmwUsV1ExGraphicsError::PointerOffsetOverflow)?;
+    Ok(route)
+}
+
 /// Builds one relocatable native ExGFX insertion plan for a single encoding domain.
 ///
 /// Reserved `$60..$63` files remain raw 0x800-byte RATS payloads. Ordinary `$80..$FFF` files are
@@ -405,7 +463,7 @@ pub fn smw_us_v1_exgraphics_installation_plan_for_mapper(
     }
     let routes = ordered
         .iter()
-        .map(|(file_number, _)| smw_us_v1_exgraphics_pointer_for_mapper(*file_number, mapper))
+        .map(|(file_number, _)| smw_us_v1_exgraphics_pointer_in_rom(rom, *file_number, mapper))
         .collect::<Result<Vec<_>, _>>()?;
     let encoding = routes[0].encoding;
     if routes.iter().any(|route| route.encoding != encoding) {
@@ -644,6 +702,37 @@ mod tests {
                 Err(SmwUsV1ExGraphicsError::FileNumber(value)) if value == invalid
             ));
         }
+    }
+
+    #[test]
+    fn sa1_extended_pointer_follows_the_authenticated_settings_owner() {
+        const HEADER: usize = 0x0a_d97f;
+        const PAYLOAD: usize = HEADER + HEADER_LEN;
+        let mut bytes = vec![0xff; 0x20_0000];
+        bytes[HEADER..PAYLOAD].copy_from_slice(b"STAR\xff\x6d\x00\x92");
+        let address = lm_rom::pc_to_snes(Mapper::Sa1, PAYLOAD).unwrap();
+        bytes[0x07f873..0x07f876].copy_from_slice(&address.to_le_bytes()[..3]);
+        let image = RomImage::from_bytes(bytes.clone()).unwrap();
+
+        assert_eq!(
+            smw_us_v1_exgraphics_pointer_in_rom(&image, 0x100, Mapper::Sa1)
+                .unwrap()
+                .pointer_offset,
+            PAYLOAD
+        );
+        assert_eq!(
+            smw_us_v1_exgraphics_pointer_in_rom(&image, 0x123, Mapper::Sa1)
+                .unwrap()
+                .pointer_offset,
+            PAYLOAD + 0x23 * 3
+        );
+
+        bytes[HEADER + 4] = 0xfe;
+        let foreign = RomImage::from_bytes(bytes).unwrap();
+        assert!(matches!(
+            smw_us_v1_exgraphics_pointer_in_rom(&foreign, 0x100, Mapper::Sa1),
+            Err(SmwUsV1ExGraphicsError::UnsupportedExpandedSettingsOwner)
+        ));
     }
 
     #[test]

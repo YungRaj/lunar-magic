@@ -5,7 +5,7 @@ use lm_profile::{
     probe_smw_us_v1_exgraphics_runtime_for_mapper,
     probe_smw_us_v1_expanded_exanimation_runtime_generation_for_mapper,
     smw_us_v1_exgraphics_installation_plan_for_mapper, smw_us_v1_exgraphics_pointer_for_mapper,
-    smw_us_v1_expanded_exanimation_runtime_installation_plan,
+    smw_us_v1_exgraphics_pointer_in_rom, smw_us_v1_expanded_exanimation_runtime_installation_plan,
     smw_us_v1_gfx_expanded_settings_installation_plan,
     smw_us_v1_sa1_exgraphics_runtime_installation_plan,
     smw_us_v1_sa1_expanded_settings_installation_plan,
@@ -58,12 +58,6 @@ pub fn prepare_smw_us_v1_exgraphics_install(
                         .into(),
                 );
             }
-            if mapper == Mapper::Sa1 && files.iter().all(|(number, _)| *number < 0x80) {
-                return Err(
-                    "first-time SA-1 ExGFX insertion currently requires an ordinary or extended compressed ExGFX file"
-                        .into(),
-                );
-            }
             let settings = if mapper == Mapper::Sa1 {
                 smw_us_v1_sa1_expanded_settings_installation_plan()
             } else {
@@ -74,8 +68,16 @@ pub fn prepare_smw_us_v1_exgraphics_install(
                 .install_relocatable_patch(&settings)
                 .map_err(|error| error.to_string())?;
             if mapper == Mapper::Sa1 {
-                let runtime = smw_us_v1_sa1_exgraphics_runtime_installation_plan(&project.rom)
-                    .map_err(|error| error.to_string())?;
+                let first_domain_file = files
+                    .iter()
+                    .map(|(number, _)| *number)
+                    .max()
+                    .expect("empty insertion was rejected before prerequisite planning");
+                let runtime = smw_us_v1_sa1_exgraphics_runtime_installation_plan(
+                    &project.rom,
+                    first_domain_file,
+                )
+                .map_err(|error| error.to_string())?;
                 project
                     .install_relocatable_patch(&runtime)
                     .map_err(|error| error.to_string())?;
@@ -193,7 +195,7 @@ pub fn prepare_smw_us_v1_exgraphics_install(
     }
 
     for (file_number, expected) in files {
-        let route = smw_us_v1_exgraphics_pointer_for_mapper(*file_number, mapper)
+        let route = smw_us_v1_exgraphics_pointer_in_rom(&project.rom, *file_number, mapper)
             .map_err(|error| error.to_string())?;
         let actual = reopen_exgraphics_file(&project, route, mapper)
             .map_err(|error| format!("ExGFX{file_number:02X}: {error}"))?;
@@ -369,24 +371,26 @@ mod tests {
         );
     }
 
-    #[test]
-    #[ignore = "requires retained authentic SA-1 Pack before/after first-ExGFX oracle images"]
-    fn authentic_sa1_first_exgfx80_install_is_byte_exact() {
+    fn assert_authentic_sa1_first_exgfx_is_byte_exact(file_number: u16, after_variable: &str) {
         let before = RomImage::from_bytes(
             std::fs::read(std::env::var_os("LM_SA1_EXGFX_BEFORE").expect("LM_SA1_EXGFX_BEFORE"))
                 .unwrap(),
         )
         .unwrap();
-        let oracle = RomImage::from_bytes(
-            std::fs::read(std::env::var_os("LM_SA1_EXGFX_AFTER").expect("LM_SA1_EXGFX_AFTER"))
+        let oracle =
+            RomImage::from_bytes(
+                std::fs::read(std::env::var_os(after_variable).unwrap_or_else(|| {
+                    panic!("{after_variable} must name an authentic after image")
+                }))
                 .unwrap(),
-        )
-        .unwrap();
+            )
+            .unwrap();
         let bytes = (0..0x800_usize)
             .map(|index| index.to_le_bytes()[0].wrapping_mul(37).wrapping_add(11))
             .collect::<Vec<_>>();
         let prepared =
-            prepare_smw_us_v1_exgraphics_install(0, before.clone(), &[(0x80, bytes)]).unwrap();
+            prepare_smw_us_v1_exgraphics_install(0, before.clone(), &[(file_number, bytes)])
+                .unwrap();
         let mut project = Project::new(before);
         project
             .apply_mutation(&prepared.description, &prepared.mutation)
@@ -408,6 +412,24 @@ mod tests {
             mismatches.len(),
             &mismatches[..mismatches.len().min(64)]
         );
+    }
+
+    #[test]
+    #[ignore = "requires retained authentic SA-1 Pack before/after first-ExGFX oracle images"]
+    fn authentic_sa1_first_exgfx60_install_is_byte_exact() {
+        assert_authentic_sa1_first_exgfx_is_byte_exact(0x60, "LM_SA1_EXGFX60_AFTER");
+    }
+
+    #[test]
+    #[ignore = "requires retained authentic SA-1 Pack before/after first-ExGFX oracle images"]
+    fn authentic_sa1_first_exgfx80_install_is_byte_exact() {
+        assert_authentic_sa1_first_exgfx_is_byte_exact(0x80, "LM_SA1_EXGFX_AFTER");
+    }
+
+    #[test]
+    #[ignore = "requires retained authentic SA-1 Pack before/after first-ExGFX oracle images"]
+    fn authentic_sa1_first_exgfx100_install_is_byte_exact() {
+        assert_authentic_sa1_first_exgfx_is_byte_exact(0x100, "LM_SA1_EXGFX100_AFTER");
     }
 
     #[test]

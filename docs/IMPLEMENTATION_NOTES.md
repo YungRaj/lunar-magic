@@ -4354,14 +4354,17 @@ Magic re-exports all 52 regular files plus `ExGFX80` from both outputs.
 The same live transaction now repeats under internal map mode `$30`; the Rust result retains its
 Fast-LoROM identity and checksum, and Lunar Magic re-exports the complete GFX/ExGFX set byte-exactly.
 The authentic SA-1 Pack v1.40 route is separate from the large-ROM mapper-compatible ExAnimation
-allocator. After Rust's verified standard-GFX installation, first `ExGFX80` installs the exact
-SA-1 expanded-settings owner at `$087FF8`, applies the compact fixed helper/table transition,
-initializes `$07F200..$07F77F`, preserves the erased extended table inside `$088000`, expands to
-2 MiB, and allocates the compressed file at `$0FFFF8` with pointer `$20:8000`. The LZ2 encoder now
-matches Lunar Magic's earliest-source tie break for equal-length dictionary matches. The retained
-before/after gate compares the complete logical ROM byte-for-byte, and a second live Wine gate
-requires Lunar Magic 3.63 to reopen the independently generated Rust result and re-export
-`ExGFX80.bin` exactly. First-time SA-1 reserved-only and extended-domain cases remain explicit gaps.
+allocator. After Rust's verified standard-GFX installation, first `ExGFX60`, `ExGFX80`, and
+`ExGFX100` reproduce the three distinct fixed-marker transitions and initialize
+`$07F200..$07F77F`. Reserved `$60` uses its exact raw RATS owner and `$10:CF7A` pointer. Ordinary
+`$80` expands to 2 MiB and allocates its LZ2 stream at `$0FFFF8` with pointer `$20:8000`. Extended
+`$100` stores its pointer at the start of the expanded-settings owner; Rust resolves the concrete
+owner from the authenticated SA-1 runtime operand at `$07F873`, so the route remains correct when
+the standard-GFX allocator moves the owner beyond canonical `$087FF8`. The LZ2 encoder matches
+Lunar Magic's earliest-source tie break for equal-length dictionary matches. Three retained
+before/after gates compare the complete logical ROM byte-for-byte, and the live Wine gate requires
+Lunar Magic 3.63 to reopen every independently generated Rust result and re-export all three files
+exactly.
 An ExGFX insertion request also upgrades either authenticated legacy ExAnimation generation inside
 the same unpublished project. The pointer-hook generation advances its owned fragments before the
 new file is allocated; the global-table generation migrates its complete record set into current

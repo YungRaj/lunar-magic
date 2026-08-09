@@ -244,23 +244,26 @@ the renderer remains green at 232/232.
   `926d28f2c8b0298b3b1744ac2d90c6e9a64260b7740eab5e195c0cbef38273c3`
 
 ```text
-LM_SA1_EXGFX_BEFORE=... LM_SA1_EXGFX_AFTER=... \
-  cargo test -p lm-app authentic_sa1_first_exgfx80_install_is_byte_exact -- --ignored
-1 passed; 0 failed
+LM_SA1_EXGFX_BEFORE=... LM_SA1_EXGFX60_AFTER=... \
+LM_SA1_EXGFX_AFTER=... LM_SA1_EXGFX100_AFTER=... \
+  cargo test -p lm-app authentic_sa1_first_exgfx -- --ignored --nocapture
+3 passed; 0 failed
 
 LM_SA1_PACK_ROM=... WINEDEBUG=-all cargo test -p lm-app \
   --test standard_graphics_install_wine \
   lunar_magic_reexports_rust_sa1_standard_graphics_install -- --ignored --nocapture
-1 passed; 0 failed; finished in 22.22s
+1 passed; 0 failed; finished in 18.45s
 
 cargo test -p lm-render
 232 passed; 0 failed
 ```
 
-The first gate compares Rust's complete result against an authentic Lunar Magic 3.63 first
-`ExGFX80` transition and is byte-identical across the 2-MiB logical ROM. This covers the SA-1
-expanded-settings owner at `$087FF8`, fixed helper/table family, `$20:8000` pointer, RATS payload,
-LZ2 stream, ROM-size byte, and checksum. The live Wine gate starts from the authentic SA-1 Pack,
-installs and verifies all 52 standard GFX files through Rust, inserts `ExGFX80` through Rust, then
-requires Lunar Magic to export the exact 2,048 source bytes. The renderer regression remains green
-at 232/232.
+The first gate compares Rust's complete results against authentic Lunar Magic 3.63 first
+`ExGFX60`, `ExGFX80`, and `ExGFX100` transitions; all three are byte-identical across their complete
+logical ROMs. This covers each domain marker, the raw reserved owner, fixed helper/table family,
+ordinary and expanded-settings pointer storage, RATS payloads, LZ2 streams, ROM-size byte, and
+checksum. The live Wine gate starts from the authentic SA-1 Pack, installs and verifies all 52
+standard GFX files through Rust, independently inserts each of the three ExGFX files through Rust,
+then requires Lunar Magic to export the exact 2,048 source bytes. The `ExGFX100` route also proves
+the pointer table follows a first-fit-relocated expanded-settings owner rather than assuming the
+canonical `$088000` payload. The renderer regression remains green at 232/232.

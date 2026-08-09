@@ -511,8 +511,9 @@ fn lunar_magic_reexports_rust_sa1_standard_graphics_install() {
         assert_eq!(actual, *expected, "SA-1 GFX{number:02X}");
     }
 
-    let exgfx80 = (0..0x800)
-        .map(|index| (index as u8).wrapping_mul(37).wrapping_add(11))
+    let standard_rom = project.rom.clone();
+    let exgfx80 = (0..0x800_usize)
+        .map(|index| index.to_le_bytes()[0].wrapping_mul(37).wrapping_add(11))
         .collect::<Vec<_>>();
     let exgfx = lm_app::prepare_smw_us_v1_exgraphics_install(
         0,
@@ -544,4 +545,41 @@ fn lunar_magic_reexports_rust_sa1_standard_graphics_install() {
         exgfx80,
         "Lunar Magic did not re-export Rust SA-1 ExGFX80"
     );
+
+    for file_number in [0x60_u16, 0x100] {
+        let mut variant_project = Project::new(standard_rom.clone());
+        let commit = lm_app::prepare_smw_us_v1_exgraphics_install(
+            0,
+            variant_project.rom.clone(),
+            &[(file_number, exgfx80.clone())],
+        )
+        .unwrap();
+        variant_project
+            .apply_mutation(&commit.description, &commit.mutation)
+            .unwrap();
+        let identity = lm_rom::detect_identity(&variant_project.rom).unwrap();
+        assert_eq!(identity.mapper, lm_rom::Mapper::Sa1);
+        assert!(identity.checksum_matches());
+        let variant = TemporaryDirectory::create(&format!("sa1-exgfx{file_number:02x}"));
+        let rom_name = format!("sa1-exgfx{file_number:02x}.smc");
+        fs::write(
+            variant.0.join(&rom_name),
+            variant_project.rom.as_file_bytes(),
+        )
+        .unwrap();
+        fs::create_dir(variant.0.join("ExGraphics")).unwrap();
+        run_export_operation(&wine, &lunar_magic, &variant.0, "-ExportExGFX", &rom_name);
+        let name = format!("ExGFX{file_number:02X}.bin");
+        let exported = fs::read(variant.0.join("ExGraphics").join(&name)).unwrap_or_else(|error| {
+            let entries = fs::read_dir(variant.0.join("ExGraphics"))
+                .unwrap()
+                .map(|entry| entry.unwrap().file_name())
+                .collect::<Vec<_>>();
+            panic!("SA-1 ExGFX{file_number:02X} export failed: {error}; entries: {entries:?}")
+        });
+        assert_eq!(
+            exported, exgfx80,
+            "Lunar Magic did not re-export Rust SA-1 {name}"
+        );
+    }
 }
