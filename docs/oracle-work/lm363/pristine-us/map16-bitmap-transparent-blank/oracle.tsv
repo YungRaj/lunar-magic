@@ -1,0 +1,5 @@
+use_blank_8x8	use_blank_map16	allocate_graphics	allocate_map16	graphics_branch	map16_branch
+0	0	1	1	004EE470	004EF2D0
+0	1	1	0	004EE470	004EF2D0
+1	0	0	1	004EE470	004EF2D0
+1	1	0	0	004EE470	004EF2D0

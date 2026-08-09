@@ -436,7 +436,12 @@ with and without a 512-byte copier prefix. Each result semantically reopens its 
 Map16 state, distinguishes the `$8200` definition route from the non-installing `$8000` reserved
 route, has a valid checksum, preserves the exact copier prefix, restores/reapplies exact physical
 images with Undo/Redo, and produces the same logical ROM across copier forms. An independently
-crossed live original-editor capture is still required for Oracle promotion.
+recovered original-program oracle now binds that product to `DeduplicateImportedGraphicsTiles` at
+`004EE470`, `AllocateImportedGraphicsTileSlots` at `004EEE40`, and
+`ImportBitmapAsDeduplicatedMap16Tiles` at `004EF2D0`. The retained truth table proves the first
+switch alone controls graphics-slot allocation and the second alone controls Map16-definition
+allocation. A live cross-process capture would strengthen the evidence but is no longer the sole
+source for the original decision semantics.
 
 Structured LM16 Map16 transfer covers both complete and selected-range containers. The compact
 selected form validates the recovered width/height/column/band-relative-row header fields, restores

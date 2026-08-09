@@ -1340,6 +1340,43 @@ mod tests {
         );
     }
 
+    fn transparent_blank_oracle(
+        requested_blank_8x8: bool,
+        requested_blank_map16: bool,
+    ) -> (bool, bool) {
+        let oracle = include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../docs/oracle-work/lm363/pristine-us/map16-bitmap-transparent-blank/oracle.tsv"
+        ));
+        let rows = oracle
+            .lines()
+            .skip(1)
+            .map(|line| line.split('\t').collect::<Vec<_>>())
+            .collect::<Vec<_>>();
+        assert_eq!(rows.len(), 4);
+        let rows = rows
+            .into_iter()
+            .map(|row| {
+                assert_eq!(row.len(), 6);
+                let flag = |value: &str| match value {
+                    "0" => false,
+                    "1" => true,
+                    _ => panic!("invalid retained blank-reuse oracle flag {value}"),
+                };
+                assert_eq!(row[4], "004EE470");
+                assert_eq!(row[5], "004EF2D0");
+                (flag(row[0]), flag(row[1]), flag(row[2]), flag(row[3]))
+            })
+            .collect::<Vec<_>>();
+        let (_, _, allocate_graphics, allocate_map16) = rows
+            .into_iter()
+            .find(|(blank_8x8, blank_map16, _, _)| {
+                *blank_8x8 == requested_blank_8x8 && *blank_map16 == requested_blank_map16
+            })
+            .expect("retained blank-reuse oracle must contain the requested option product");
+        (allocate_graphics, allocate_map16)
+    }
+
     #[test]
     fn transparent_source_crosses_blank_graphics_and_map16_switches_independently() {
         let mut app = AppState::default();
@@ -1348,6 +1385,8 @@ mod tests {
 
         for use_blank_8x8 in [false, true] {
             for use_blank_map16 in [false, true] {
+                let (allocate_graphics, allocate_map16) =
+                    transparent_blank_oracle(use_blank_8x8, use_blank_map16);
                 let mut session = NativeMap16BitmapImportSession::new_smw_us_v1(
                     app.controller_snapshot().unwrap(),
                     NativeMap16BitmapImportSessionRequest {
@@ -1395,26 +1434,26 @@ mod tests {
                 );
                 assert_eq!(
                     plan.newly_occupied_tiles,
-                    usize::from(!use_blank_8x8),
+                    usize::from(allocate_graphics),
                     "configured blank graphics must bypass allocation"
                 );
 
                 let allocated = session.allocated_pages().unwrap();
                 assert_eq!(
                     allocated.allocation.assignments,
-                    [if use_blank_map16 { 0x8000 } else { 0x8200 }]
+                    [if allocate_map16 { 0x8200 } else { 0x8000 }]
                 );
                 assert_eq!(
                     allocated.allocation.allocated_definitions,
-                    usize::from(!use_blank_map16),
+                    usize::from(allocate_map16),
                     "reserved blank Map16 routing must not consume a definition"
                 );
                 assert_eq!(
                     allocated.touched_pages,
-                    if use_blank_map16 {
-                        Vec::new()
-                    } else {
+                    if allocate_map16 {
                         vec![0x82]
+                    } else {
+                        Vec::new()
                     }
                 );
             }
@@ -1433,6 +1472,10 @@ mod tests {
 
         for use_blank_8x8 in [false, true] {
             for use_blank_map16 in [false, true] {
+                let (allocate_graphics, allocate_map16) =
+                    transparent_blank_oracle(use_blank_8x8, use_blank_map16);
+                assert_eq!(allocate_graphics, !use_blank_8x8);
+                assert_eq!(allocate_map16, !use_blank_map16);
                 let mut logical_outputs = Vec::new();
                 for headered in [false, true] {
                     let original = if headered {
