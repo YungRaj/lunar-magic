@@ -124,6 +124,14 @@ impl NativeCustomOverworldSpriteController {
         &self.table
     }
 
+    /// Returns the extension-byte width selected by the authenticated record-size table.
+    #[must_use]
+    pub fn required_extra_len(&self, id: u8) -> Option<usize> {
+        self.record_sizes
+            .get(usize::from(id))
+            .and_then(|size| usize::from(*size).checked_sub(3))
+    }
+
     #[must_use]
     pub fn is_modified(&self) -> bool {
         self.table != self.baseline

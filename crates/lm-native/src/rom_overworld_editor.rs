@@ -818,10 +818,35 @@ impl RomOverworldEditor {
                 self.load_native_sprite_form();
             }
             if ui.button("Use canvas selection").clicked() {
-                self.native_sprite.x = format!("{:04X}", self.x.saturating_mul(8));
-                self.native_sprite.y = format!("{:04X}", self.y.saturating_mul(8));
+                match native_sprite_canvas_position(self.native_sprite.map, self.x, self.y) {
+                    Some((x, y)) => {
+                        self.native_sprite.x = format!("{x:04X}");
+                        self.native_sprite.y = format!("{y:04X}");
+                    }
+                    None => {
+                        self.error =
+                            Some("the selected canvas cell is outside this map's plane".into())
+                    }
+                }
             }
         });
+        if let Ok(id) = level_editor_forms::parse_hex_u8(&self.native_sprite.id, "native sprite ID")
+            && let Some(required) = self
+                .workspace
+                .as_ref()
+                .and_then(|workspace| workspace.native_sprites.required_extra_len(id))
+        {
+            ui.horizontal(|ui| {
+                ui.label(format!(
+                    "ID {id:02X} requires {required} extension byte(s)."
+                ));
+                if ui.button("Fill extension with zeroes").clicked() {
+                    self.native_sprite.extra = std::iter::repeat_n("00", required)
+                        .collect::<Vec<_>>()
+                        .join(" ");
+                }
+            });
+        }
         let mut edit = None;
         ui.horizontal(|ui| {
             if ui
@@ -1960,6 +1985,20 @@ impl RomOverworldEditor {
     }
 }
 
+fn native_sprite_canvas_position(map: usize, x: usize, y: usize) -> Option<(u16, u16)> {
+    if map >= 7 || y >= 64 {
+        return None;
+    }
+    let local_x = if map == 0 {
+        (x < 64).then_some(x)?
+    } else if (64..128).contains(&x) {
+        x - 64
+    } else {
+        return None;
+    };
+    Some((u16::try_from(local_x * 8).ok()?, u16::try_from(y * 8).ok()?))
+}
+
 fn overworld_animation_preview_tick(seconds: f64, rate: OverworldAnimationRate) -> usize {
     if let Ok(tick) = std::env::var("LM_NATIVE_OVERWORLD_ANIMATION_TICK")
         && let Ok(tick) = tick.parse::<usize>()
@@ -2122,8 +2161,9 @@ mod canvas_tests {
         MainPathLinkForm, OverworldAnimationRate, OverworldControllerEdit, OverworldEndpoint,
         OverworldLayerId, OverworldPathDirection, OverworldPathLink, OverworldPathLinkTable,
         OverworldPathTarget, RomOverworldEditor, flood_fill_cells, grid_line,
-        overworld_animation_preview_tick, rectangle_cells, route_canvas_endpoint,
-        route_directional_canvas_endpoint, route_endpoint_canvas_pixel, stroke_edits,
+        native_sprite_canvas_position, overworld_animation_preview_tick, rectangle_cells,
+        route_canvas_endpoint, route_directional_canvas_endpoint, route_endpoint_canvas_pixel,
+        stroke_edits,
     };
     use crate::document_loader::BoundedRead;
     use eframe::egui;
@@ -2146,6 +2186,16 @@ mod canvas_tests {
                 extra: vec![1, 0xab, 0x7f],
             }
         );
+    }
+
+    #[test]
+    fn native_sprite_canvas_selection_maps_main_and_shared_planes_locally() {
+        assert_eq!(native_sprite_canvas_position(0, 63, 63), Some((504, 504)));
+        assert_eq!(native_sprite_canvas_position(1, 64, 2), Some((0, 16)));
+        assert_eq!(native_sprite_canvas_position(6, 127, 63), Some((504, 504)));
+        assert_eq!(native_sprite_canvas_position(0, 64, 0), None);
+        assert_eq!(native_sprite_canvas_position(2, 63, 0), None);
+        assert_eq!(native_sprite_canvas_position(7, 64, 0), None);
     }
 
     #[test]
