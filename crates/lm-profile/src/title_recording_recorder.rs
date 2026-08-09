@@ -1,6 +1,6 @@
 //! SMW US revision-0 temporary title-movement recorder runtime.
 
-use lm_project::TitleRecordingRecorderLocator;
+use lm_project::{TitleRecordingExpansionWrite, TitleRecordingRecorderLocator};
 use lm_rats::AllocationPolicy;
 use lm_rom::Mapper;
 
@@ -25,6 +25,22 @@ const RUNTIME: [u8; 0xb2] = [
     0x1b, 0x6b,
 ];
 
+const EXPANSION_METADATA_PADDING: [u8; 0x12] = [0; 0x12];
+const EXPANSION_WRITES: [TitleRecordingExpansionWrite; 3] = [
+    TitleRecordingExpansionWrite {
+        offset: 0x0007_f08e,
+        bytes: &EXPANSION_METADATA_PADDING,
+    },
+    TitleRecordingExpansionWrite {
+        offset: 0x0007_f0a0,
+        bytes: &crate::title_recording::EXPANSION_ATTRIBUTION,
+    },
+    TitleRecordingExpansionWrite {
+        offset: 0x0007_ffe7,
+        bytes: &crate::title_recording::EXPANSION_FEATURE_RECORD,
+    },
+];
+
 #[must_use]
 pub fn smw_us_v1_title_recording_recorder_locator() -> TitleRecordingRecorderLocator {
     TitleRecordingRecorderLocator {
@@ -39,6 +55,8 @@ pub fn smw_us_v1_title_recording_recorder_locator() -> TitleRecordingRecorderLoc
         second_hook_pointer: 1,
         second_runtime_offset: 0xa0,
         runtime_template: RUNTIME.to_vec(),
+        rom_size_field: Some(0x0000_7fd7),
+        expansion_writes: &EXPANSION_WRITES,
         compensation: SMW_US_V1_TITLE_RECORDER_COMPENSATION_OFFSET,
         compensation_len: SMW_US_V1_TITLE_RECORDER_COMPENSATION_LEN,
         checksum_field: crate::SMW_US_V1_CHECKSUM_FIELD,
@@ -47,7 +65,12 @@ pub fn smw_us_v1_title_recording_recorder_locator() -> TitleRecordingRecorderLoc
 
 #[must_use]
 pub fn smw_us_v1_title_recording_recorder_allocation_policy(image_len: usize) -> AllocationPolicy {
-    AllocationPolicy::lorom(SMW_US_V1_TITLE_RECORDER_SEARCH_START..image_len.max(0x10_0000))
+    let search_start = if image_len <= 0x08_0000 {
+        0x08_0000
+    } else {
+        SMW_US_V1_TITLE_RECORDER_SEARCH_START
+    };
+    AllocationPolicy::lorom(search_start..image_len.max(0x10_0000))
 }
 
 #[cfg(test)]
@@ -134,6 +157,10 @@ mod tests {
             lm_rom::detect_identity(&project.rom)
                 .unwrap()
                 .checksum_matches()
+        );
+        assert_eq!(
+            format!("{:x}", Sha256::digest(project.save_snapshot())),
+            "663f824b807c8addc81be50b35cd6d2b5f714427063107ddc52aa037c962341f"
         );
         project.undo().unwrap();
         assert_eq!(project.save_snapshot(), original);

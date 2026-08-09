@@ -23,7 +23,7 @@ use lm_project::{
 };
 use lm_rats::{AllocationPolicy, ProtectedRange};
 use lm_rom::{Mapper, RomImage};
-use lm_title::decode_snes9x_wram;
+use lm_title::{TitleScreenRecording, decode_snes9x_title_recording, decode_snes9x_wram};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
@@ -374,6 +374,89 @@ fn require_level_header_gameplay_evidence(
     let first = image.pixels.first().expect("nonempty gameplay screenshot");
     assert!(image.pixels.iter().any(|pixel| pixel != first));
     wram
+}
+
+fn require_title_recorder_gameplay_evidence(snes9x: &Path, rom: &Path) -> TitleScreenRecording {
+    let driver = std::env::var_os("SNES9X_GAMEPLAY_DRIVER")
+        .map(PathBuf::from)
+        .filter(|path| path.is_file())
+        .unwrap_or_else(|| {
+            panic!("SNES9X_GAMEPLAY_DRIVER must name the supplied deterministic libretro driver")
+        });
+    let directory = rom.parent().expect("temporary gameplay ROM parent");
+    let snapshot = directory.join("title-recorder-after.frz");
+    let screenshot = directory.join("title-recorder-after.png");
+    let child = Command::new(&driver)
+        .arg("--emulator")
+        .arg(snes9x)
+        .arg("--rom")
+        .arg(rom)
+        .arg("--scenario")
+        .arg("smw-title-recorder")
+        .arg("--snapshot")
+        .arg(&snapshot)
+        .arg("--screenshot")
+        .arg(&screenshot)
+        .stdin(Stdio::null())
+        .spawn()
+        .expect("launch title-recorder gameplay driver");
+    let mut child = ChildGuard(child);
+    let deadline = Instant::now() + GAMEPLAY_DRIVER_TIMEOUT;
+    let status = loop {
+        if let Some(status) = child.0.try_wait().expect("query title-recorder driver") {
+            break status;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "Snes9x title-recorder driver exceeded {GAMEPLAY_DRIVER_TIMEOUT:?}"
+        );
+        thread::sleep(Duration::from_millis(100));
+    };
+    assert!(status.success(), "title-recorder driver failed: {status}");
+    let snapshot = read_regular_bounded(
+        &snapshot,
+        MAX_GAMEPLAY_STATE_BYTES,
+        "title-recorder Snes9x snapshot",
+    );
+    let screenshot = read_regular_bounded(
+        &screenshot,
+        MAX_GAMEPLAY_SCREENSHOT_BYTES,
+        "title-recorder Snes9x screenshot",
+    );
+    let wram = decode_snes9x_wram(&snapshot).expect("decode title-recorder WRAM");
+    assert_eq!(wram[SMW_GAME_MODE], SMW_LEVEL_MODE);
+    let mut tagged = b"#!s9xsnp:0007\nRAM:131072:".to_vec();
+    tagged.extend_from_slice(&wram);
+    let recording = decode_snes9x_title_recording(&tagged)
+        .expect("decode emulator-captured title movement recording");
+    assert!(recording.bytes().len() >= 10);
+    assert_eq!(recording.bytes().last(), Some(&0xff));
+    let records = &recording.bytes()[..recording.bytes().len() - 1];
+    assert_eq!(records.len() % 3, 0);
+    assert_eq!(
+        recording.bytes(),
+        &[
+            0x00, 0x00, 0x00, // 256 idle frames
+            0x00, 0x00, 0x00, // 256 idle frames
+            0x00, 0x00, 0x58, // 88 idle frames
+            0x80, 0x08, 0x01, // B transition
+            0x80, 0x00, 0x0b, // B held
+            0x80, 0xc0, 0x01, // A transition
+            0x80, 0x80, 0x08, // A held
+            0x00, 0x00, 0x07, // released
+            0xff,
+        ]
+    );
+    let image =
+        decode_map16_bitmap_png_image(&screenshot).expect("decode title-recorder screenshot");
+    assert!((256..=512).contains(&image.width));
+    assert!((224..=478).contains(&image.height));
+    let first = image
+        .pixels
+        .first()
+        .expect("nonempty title-recorder screenshot");
+    assert!(image.pixels.iter().any(|pixel| pixel != first));
+    recording
 }
 
 fn synthetic_overworld_path_evidence(expected: OverworldEndpoint) -> (Vec<u8>, Vec<u8>) {
@@ -1001,6 +1084,42 @@ fn rust_layer1_object_edit_survives_snes9x_initialization() {
     let output = directory.0.join("Rust-Layer1-object-edited-SMW.sfc");
     fs::write(&output, project.save_snapshot()).expect("write Layer 1 object-edited ROM");
     require_snes9x_initialization(&snes9x, &output);
+}
+
+#[test]
+#[ignore = "requires an official Snes9x libretro core, the gameplay driver, and the legally supplied SMW ROM"]
+fn rust_title_recorder_captures_real_joypad_input_in_snes9x() {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let snes9x = require_snes9x_binary();
+    let source = fs::read(source_rom(&root)).expect("read source SMW ROM");
+    let mut recorder = AppState::default();
+    recorder.load_rom(source.clone()).expect("open source ROM");
+    recorder
+        .dispatch(AppCommand::InstallNativeTitleRecordingRecorder { rev: 0 })
+        .expect("install title movement recorder");
+    let directory = SmokeDirectory::create();
+    let output = directory.0.join("Rust-title-recorder-SMW.smc");
+    fs::write(&output, recorder.project().unwrap().save_snapshot())
+        .expect("write title-recorder ROM");
+    let recording = require_title_recorder_gameplay_evidence(&snes9x, &output);
+
+    let mut playback = AppState::default();
+    playback.load_rom(source).expect("reopen source ROM");
+    playback
+        .dispatch(AppCommand::ReplaceNativeTitleRecording {
+            rev: 0,
+            recording: recording.clone(),
+        })
+        .expect("install captured movement playback");
+    assert_eq!(
+        playback
+            .project()
+            .unwrap()
+            .load_title_recording_detected(&lm_profile::smw_us_v1_title_recording_locator())
+            .expect("reopen captured movement playback")
+            .recording,
+        Some(recording)
+    );
 }
 
 #[test]

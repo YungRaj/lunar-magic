@@ -77,6 +77,14 @@ at `$1692`, buoyancy flags `$00` at `$190E`, and disabled/conditional scroll byt
 `$1411/$1412`; the paired mode-2 observation is `$01/$02`. Those discriminating values differ from the
 previous live `$03/$12/$C0` tuple and therefore prove the edited level was entered.
 
+The title-recorder scenario installs Lunar Magic's exact temporary runtime into a pristine source,
+including the byte-identical 1 MiB vanilla expansion, then follows the same controller-driven boot
+path. After 600 level frames it supplies deterministic B, A, and release runs. Rust decodes the
+fresh Snes9x WRAM snapshot through the public savestate path and requires the exact 25-byte stream,
+the `$0042` publication marker, bounded length metadata, game mode `$14`, and a nonuniform gameplay
+PNG. The captured recording is then installed into the title-playback runtime and reopened from the
+resulting ROM, covering capture through playback publication rather than accepting synthetic data.
+
 Run the gates serially so GUI instances cannot share state:
 
 ```text
@@ -92,7 +100,8 @@ The route-traversal gate additionally requires `SNES9X_GAMEPLAY_DRIVER` to name 
 platform adapter. Its two scenario contracts are printed directly by the test source and use only
 separate process arguments: `--emulator`, `--rom`, `--scenario smw-overworld-path-link`, source and
 expected X/Y/submap fields, `--snapshot`, and `--screenshot`; or `--scenario smw-level-header`,
-`--expected-timer`, `--snapshot`, and `--screenshot`. The adapter owns input delivery and
+`--expected-timer`, `--snapshot`, and `--screenshot`; or `--scenario smw-title-recorder`,
+`--snapshot`, and `--screenshot`. The adapter owns input delivery and
 must return only after Snes9x has written both requested evidence files; Rust, not the adapter,
 decides whether they prove traversal. The test bounds execution to 120 seconds and its child guard
 kills and reaps the driver during timeout, failure, or panic; each adapter remains responsible for
@@ -117,6 +126,11 @@ SNES9X_BIN=/absolute/path/to/snes9x_libretro.dylib \
 SNES9X_GAMEPLAY_DRIVER=/tmp/lm-snes9x-gameplay-driver \
 cargo test -p lm-app --test snes9x_smoke \
   rust_standard_time_music_and_sprite_headers_are_applied_in_snes9x_gameplay -- --ignored --exact
+
+SNES9X_BIN=/absolute/path/to/snes9x_libretro.dylib \
+SNES9X_GAMEPLAY_DRIVER=/tmp/lm-snes9x-gameplay-driver \
+cargo test -p lm-app --test snes9x_smoke \
+  rust_title_recorder_captures_real_joypad_input_in_snes9x -- --ignored --exact
 ```
 
 Use `.so` for a Linux core. The adapter dynamically authenticates the libretro API and Snes9x

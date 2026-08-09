@@ -1,6 +1,6 @@
 //! Temporary Lunar Magic joypad-recorder runtime installation.
 
-use crate::{Project, payload::staging::commit_staged};
+use crate::{Project, TitleRecordingExpansionWrite, payload::staging::commit_staged};
 use lm_rats::{
     AllocationError, AllocationPolicy, FreeSpaceAllocator, ProtectedRange, RatsBlock, parse_at,
 };
@@ -19,6 +19,8 @@ pub struct TitleRecordingRecorderLocator {
     pub second_hook_pointer: usize,
     pub second_runtime_offset: usize,
     pub runtime_template: Vec<u8>,
+    pub rom_size_field: Option<usize>,
+    pub expansion_writes: &'static [TitleRecordingExpansionWrite],
     pub compensation: usize,
     pub compensation_len: usize,
     pub checksum_field: usize,
@@ -145,6 +147,36 @@ impl Project {
             image.expand(locator.mapper, allocation.search.end, 0)?;
         }
         let mut staged = image.logical_bytes().to_vec();
+        if staged.len() > original.len() {
+            if let Some(offset) = locator.rom_size_field {
+                let rom_size = u8::try_from(staged.len().ilog2().saturating_sub(10))
+                    .map_err(|_| RomError::InvalidExpansionSize(staged.len()))?;
+                let image_len = staged.len();
+                *staged.get_mut(offset).ok_or(RomError::RangeOutOfBounds {
+                    offset,
+                    len: 1,
+                    image_len,
+                })? = rom_size;
+            }
+            for write in locator.expansion_writes {
+                let image_len = staged.len();
+                let end = write.offset.checked_add(write.bytes.len()).ok_or(
+                    RomError::RangeOutOfBounds {
+                        offset: write.offset,
+                        len: write.bytes.len(),
+                        image_len,
+                    },
+                )?;
+                staged
+                    .get_mut(write.offset..end)
+                    .ok_or(RomError::RangeOutOfBounds {
+                        offset: write.offset,
+                        len: write.bytes.len(),
+                        image_len,
+                    })?
+                    .copy_from_slice(write.bytes);
+            }
+        }
         let mut policy = allocation.clone();
         protect_locator(&mut policy, locator);
         policy.validate(staged.len())?;

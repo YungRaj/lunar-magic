@@ -226,6 +226,8 @@ static bool parse_options(int argc, char **argv, struct options *options) {
     return argc == 23 && seen == 0x7ff;
   if (!strcmp(options->scenario, "smw-level-header"))
     return argc == 13 && seen == 0x81f;
+  if (!strcmp(options->scenario, "smw-title-recorder"))
+    return argc == 11 && seen == 0x1f;
   return false;
 }
 
@@ -370,6 +372,69 @@ static bool enter_current_level(struct core_api *api, uint8_t *ram,
   return false;
 }
 
+static bool capture_title_recording(struct core_api *api, uint8_t *ram,
+                                    struct snapshot *snapshot) {
+  unsigned previous_mode = 0xff;
+  unsigned mode_age = 0;
+  for (unsigned frame = 0; frame < 7200; frame++) {
+    held_buttons = 0;
+    if (ram[0x0100] == 0x06 && mode_age == 60)
+      held_buttons = (uint16_t)(1u << RETRO_START);
+    else if ((ram[0x0100] == 0x08 || ram[0x0100] == 0x0a) && mode_age == 60)
+      held_buttons = (uint16_t)(1u << RETRO_A);
+    else if (ram[0x0100] == 0x0e && mode_age >= 120 && mode_age % 30 == 0)
+      held_buttons = (uint16_t)(1u << RETRO_A);
+    api->run();
+    if (ram[0x0100] != previous_mode) {
+      previous_mode = ram[0x0100];
+      mode_age = 0;
+      fprintf(stderr, "title-recorder frame=%u mode=%02X\n", frame, previous_mode);
+    } else {
+      mode_age++;
+    }
+    if (ram[0x0100] != 0x14)
+      continue;
+
+    for (unsigned settle = 0; settle < 600; settle++) {
+      held_buttons = 0;
+      api->run();
+      if (ram[0x0100] != 0x14) {
+        fprintf(stderr, "SMW left level mode before title-recorder input sequence\n");
+        return false;
+      }
+    }
+
+    const struct { uint16_t buttons; unsigned frames; } sequence[] = {
+      {(uint16_t)(1u << RETRO_B), 12},
+      {(uint16_t)(1u << RETRO_A), 9},
+      {0, 7},
+    };
+    for (size_t run = 0; run < sizeof(sequence) / sizeof(sequence[0]); run++) {
+      for (unsigned age = 0; age < sequence[run].frames; age++) {
+        held_buttons = sequence[run].buttons;
+        api->run();
+        if (ram[0x0100] != 0x14) {
+          fprintf(stderr, "SMW left level mode during title-recorder input sequence\n");
+          return false;
+        }
+      }
+    }
+    held_buttons = 0;
+    uint8_t *bank7f = ram + 0x10000;
+    uint16_t encoded = get_u16(bank7f, 0xfff8);
+    uint16_t marker = get_u16(bank7f, 0xfffc);
+    if (marker != 0x0042 || encoded > 0x7ffcu || bank7f[encoded + 3] != 0xff) {
+      fprintf(stderr,
+              "title recorder did not publish bounded data: marker=%04X encoded=%04X term=%02X\n",
+              marker, encoded, encoded <= 0x7ffcu ? bank7f[encoded + 3] : 0);
+      return false;
+    }
+    return capture_snapshot(api, snapshot);
+  }
+  fprintf(stderr, "SMW title demo did not enter level mode within 7200 frames\n");
+  return false;
+}
+
 static uint32_t crc32_bytes(const uint8_t *data, size_t length) {
   uint32_t crc = 0xffffffffu;
   for (size_t i = 0; i < length; i++) {
@@ -475,7 +540,8 @@ int main(int argc, char **argv) {
   struct options options;
   if (!parse_options(argc, argv, &options)) {
     fprintf(stderr, "usage: driver --emulator CORE --rom ROM --scenario smw-overworld-path-link --source-x HEX --source-y HEX --source-submap HEX --expected-x HEX --expected-y HEX --expected-submap HEX --snapshot FILE --screenshot PNG\n"
-                    "   or: driver --emulator CORE --rom ROM --scenario smw-level-header --expected-timer BCD --snapshot FILE --screenshot PNG\n");
+                    "   or: driver --emulator CORE --rom ROM --scenario smw-level-header --expected-timer BCD --snapshot FILE --screenshot PNG\n"
+                    "   or: driver --emulator CORE --rom ROM --scenario smw-title-recorder --snapshot FILE --screenshot PNG\n");
     return 2;
   }
   struct stat metadata;
@@ -494,12 +560,15 @@ int main(int argc, char **argv) {
   uint8_t *ram = loaded ? api.get_memory_data(RETRO_MEMORY_SYSTEM_RAM) : NULL;
   struct snapshot snapshot = {0};
   bool scenario_ok = false;
-  if (loaded && ram && api.get_memory_size(RETRO_MEMORY_SYSTEM_RAM) == 128u * 1024u &&
-      enter_overworld(&api, ram)) {
-    if (!strcmp(options.scenario, "smw-overworld-path-link"))
-      scenario_ok = traverse(&api, ram, &options, &snapshot);
-    else if (!strcmp(options.scenario, "smw-level-header"))
-      scenario_ok = enter_current_level(&api, ram, &options, &snapshot);
+  if (loaded && ram && api.get_memory_size(RETRO_MEMORY_SYSTEM_RAM) == 128u * 1024u) {
+    if (!strcmp(options.scenario, "smw-title-recorder")) {
+      scenario_ok = capture_title_recording(&api, ram, &snapshot);
+    } else if (enter_overworld(&api, ram)) {
+      if (!strcmp(options.scenario, "smw-overworld-path-link"))
+        scenario_ok = traverse(&api, ram, &options, &snapshot);
+      else if (!strcmp(options.scenario, "smw-level-header"))
+        scenario_ok = enter_current_level(&api, ram, &options, &snapshot);
+    }
   }
   bool ok = loaded && ram && api.get_memory_size(RETRO_MEMORY_SYSTEM_RAM) == 128u * 1024u &&
             scenario_ok &&

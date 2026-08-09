@@ -4825,7 +4825,21 @@ original low-bank LoROM pointer convention, preserves the stored checksum throug
 `$07EFA3..$07F08D` additive run, and removes only a fully authenticated owner. Install, uninstall,
 Undo, Redo, stale revisions, and native warning text are covered. A retained PID-scoped Wine
 oracle binds the exact 347-byte Lunar Magic 3.63 mutation, complete output hash, reciprocal removal,
-and Cancel atomicity. Vanilla expansion prompting and emulator-driven input capture remain gates.
+and Cancel atomicity. The independent vanilla oracle additionally proves Lunar Magic's 1 MiB
+expansion shape: internal ROM-size byte, fixed metadata, boundary RATS allocation, checksum
+compensation, and complete headerless SHA-256
+`663f824b807c8addc81be50b35cd6d2b5f714427063107ddc52aa037c962341f`. Rust produces that exact
+image and undoes it byte-for-byte.
+
+The temporary runtime is now exercised rather than only inspected. The supplied deterministic
+libretro driver boots that exact Rust/original-equivalent image in an official Snes9x core, follows
+the real title/file/intro/overworld path into level mode, waits 600 frames, then supplies B, A, and
+release input. `rust_title_recorder_captures_real_joypad_input_in_snes9x` requires the runtime's
+`$0042` marker at WRAM `$7F:FFFC`, its bounded encoded length at `$7F:FFF8`, and the exact 25-byte
+recording `00 00 00 00 00 00 00 00 58 80 08 01 80 00 0B 80 C0 01 80 80 08 00 00 07 FF`.
+The three leading records prove the runtime's 256-frame zero-duration convention rather than
+mistaking it for malformed output. The gate also requires a bounded nonblank gameplay PNG, installs
+the captured bytes into the playback runtime, and semantically reopens the same recording.
 
 The playback-import half now has its own retained Lunar Magic 3.63 oracle. A deterministic
 four-byte movement payload inside a minimal ZSNES V143 state produces a 335-byte mutation whose

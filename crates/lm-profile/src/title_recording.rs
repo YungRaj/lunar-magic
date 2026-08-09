@@ -27,13 +27,13 @@ const RUNTIME_TEMPLATE: [u8; 0x60] = [
     0x85, 0x16, 0x98, 0x29, 0xb0, 0x85, 0x17, 0x98, 0x0a, 0x29, 0x80, 0x85, 0x18, 0x28, 0x6b, 0xff,
 ];
 
-const EXPANSION_ATTRIBUTION: [u8; 0xa0] =
+pub(crate) const EXPANSION_ATTRIBUTION: [u8; 0xa0] =
     *b"Lunar Magic Version 3.63 Public \xa92025 FuSoYa, Defender of Relm http://fusoya.eludevisibility.org                                I am Naaall, and I love fiiiish!";
-const EXPANSION_FEATURE_RECORD: [u8; 0x19] = [
+pub(crate) const EXPANSION_FEATURE_RECORD: [u8; 0x19] = [
     0x00, 0x00, 0xf8, 0xff, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x10, 0xff, 0x00, 0x02, 0x10, 0x00,
     0x02, 0x08, 0x00, 0x02, 0x04, 0x00, 0x02, 0x08, 0x00,
 ];
-const EXPANSION_WRITES: [TitleRecordingExpansionWrite; 2] = [
+pub(crate) const EXPANSION_WRITES: [TitleRecordingExpansionWrite; 2] = [
     TitleRecordingExpansionWrite {
         offset: 0x0007_f0a0,
         bytes: &EXPANSION_ATTRIBUTION,

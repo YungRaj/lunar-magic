@@ -576,3 +576,30 @@ This exhausts the original success/canonicalization surface while the Snes9x gat
 runtime-sensitive fields and the renderer covers mode, palette, and tileset consequences. The
 combined evidence promotes the level-header Oracle gate rather than treating one emulator snapshot
 as proof of the whole workflow.
+
+## Input-driven title-movement recording
+
+The supplied driver was rebuilt after adding the bounded `smw-title-recorder` scenario. The same
+official Snes9x libretro core identified above booted Rust's vanilla recorder output, whose complete
+headerless SHA-256 `663f824b807c8addc81be50b35cd6d2b5f714427063107ddc52aa037c962341f`
+is identical to Lunar Magic 3.63's retained expansion result.
+
+```text
+tools/build-snes9x-gameplay-driver.sh /tmp/lm-snes9x-gameplay-driver-title
+SNES9X_BIN=/tmp/lm-snes9x-libretro.dylib \
+SNES9X_GAMEPLAY_DRIVER=/tmp/lm-snes9x-gameplay-driver-title \
+cargo test -p lm-app --test snes9x_smoke \
+  rust_title_recorder_captures_real_joypad_input_in_snes9x \
+  -- --ignored --exact --nocapture
+test rust_title_recorder_captures_real_joypad_input_in_snes9x ... ok
+test result: ok. 1 passed; 0 failed; finished in 0.61s
+```
+
+The real boot traversed game modes `$00..$14`, entered the current level, idled for 600 frames, and
+then received B for 12 frames, A for 9, and no input for 7. The runtime published marker `$0042`, a
+bounded length, and exact bytes
+`00 00 00 00 00 00 00 00 58 80 08 01 80 00 0B 80 C0 01 80 80 08 00 00 07 FF`
+at WRAM `$7F:0000`. Rust decoded the genuine serialized state, required a nonblank gameplay PNG,
+installed those captured bytes into title playback, and reopened the same semantic recording. The
+state, screenshot, ROM, and proprietary core remain non-redistributed local release evidence; the
+deterministic expected stream and complete commands are retained here and in the automated gate.
