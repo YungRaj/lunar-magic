@@ -345,6 +345,7 @@ fn decode_main_layer2_workspace(
             built_in_lightning: load_builtin_overworld_lightning(&project)?,
             animation_options: crate::overworld_editor_render::vanilla_overworld_animation_options(
             ),
+            global_animation: None,
         },
     })
 }
@@ -488,7 +489,25 @@ fn decode_overworld_assets(
         built_in_level_dot_palette: load_builtin_overworld_level_dot_palette(&project)?,
         built_in_lightning: load_builtin_overworld_lightning(&project)?,
         animation_options: crate::overworld_editor_render::vanilla_overworld_animation_options(),
+        global_animation: load_global_overworld_exanimation(&project, &profiled.profile)?,
     })
+}
+
+fn load_global_overworld_exanimation(
+    project: &Project,
+    profile: &lm_profile::RevisionProfile,
+) -> Result<Option<lm_graphics::CompactExAnimation>, String> {
+    match project.load_installed_global_exanimation(
+        profile.exanimation_installation,
+        &profile.exanimation_double_size_modes,
+    ) {
+        Ok(lm_project::InstalledAsset::Present(animation)) => Ok(Some(animation)),
+        Ok(lm_project::InstalledAsset::SubsystemAbsent | lm_project::InstalledAsset::SlotEmpty) => {
+            Ok(None)
+        }
+        Err(lm_project::ExAnimationIoError::GlobalPointerLocatorUnavailable) => Ok(None),
+        Err(error) => Err(error.to_string()),
+    }
 }
 
 fn load_builtin_overworld_level_dot_palette(

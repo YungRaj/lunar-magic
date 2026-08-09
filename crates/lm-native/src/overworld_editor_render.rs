@@ -18,6 +18,8 @@ pub(crate) struct OverworldAssets {
     pub(crate) built_in_lightning: Option<BuiltInOverworldLightning>,
     /// The five animation switches selected independently for each of the seven maps.
     pub(crate) animation_options: [OverworldAnimationOptions; 7],
+    /// Lunar Magic's ROM-global ExAnimation set, resolved through the installed runtime.
+    pub(crate) global_animation: Option<lm_graphics::CompactExAnimation>,
 }
 
 /// Lossless semantic view of Lunar Magic's per-map animation controls.
@@ -279,43 +281,92 @@ fn materialize_overworld_exanimation(
                 .unwrap_or(false)
     }));
 
-    let records = if options
+    let local_records = if options
         .features
         .enabled(lm_graphics::ExAnimationFeature::LevelExAnimation)
     {
-        overworld.data.animation.records.as_slice()
+        &overworld.data.animation.records[..overworld.data.animation.records.len().min(32)]
     } else {
         &[]
     };
-    let mut state = lm_graphics::ExAnimationPreviewState::new(records.len());
+    let global_animation = options
+        .features
+        .enabled(lm_graphics::ExAnimationFeature::GlobalExAnimation)
+        .then_some(assets.global_animation.as_ref())
+        .flatten();
+    let global_records = global_animation
+        .map(|animation| &animation.records[..animation.records.len().min(32)])
+        .unwrap_or_default();
+    let global_relative_base = global_animation
+        .map(|animation| RELATIVE_BASES[usize::from(animation.setting & 3)])
+        .unwrap_or(relative_base);
+    let mut global_triggers = global_animation
+        .map(exanimation_trigger_preview_state)
+        .unwrap_or_default();
+    global_triggers.overworld_event_manual = triggers.overworld_event_manual;
+    let mut local_state = lm_graphics::ExAnimationPreviewState::new(local_records.len());
+    let mut global_state = lm_graphics::ExAnimationPreviewState::new(global_records.len());
     // Lunar Magic constructs a complete first-frame cache before showing the map.  Subsequent
     // updates retain the native eight-way slot interleave.
     for phase in 0..8_u8 {
         apply_overworld_phase(
-            records,
+            local_records,
             phase,
-            &mut state,
+            &mut local_state,
             &mut triggers,
             &mut cache,
             &mut palette,
             relative_base,
         )?;
     }
+    for phase in 0..8_u8 {
+        apply_overworld_phase(
+            global_records,
+            phase,
+            &mut global_state,
+            &mut global_triggers,
+            &mut cache,
+            &mut palette,
+            global_relative_base,
+        )?;
+    }
     for substep in 0..runtime_substeps {
         apply_overworld_phase(
-            records,
+            local_records,
             u8::try_from(substep & 7).expect("three-bit overworld animation phase"),
-            &mut state,
+            &mut local_state,
             &mut triggers,
             &mut cache,
             &mut palette,
             relative_base,
+        )?;
+        apply_overworld_phase(
+            global_records,
+            u8::try_from(substep & 7).expect("three-bit overworld animation phase"),
+            &mut global_state,
+            &mut global_triggers,
+            &mut cache,
+            &mut palette,
+            global_relative_base,
         )?;
     }
     let mut graphics = assets.graphics.clone();
     let len = graphics.graphics.tiles.len();
     graphics.graphics.tiles.clone_from_slice(&cache[..len]);
     Ok((graphics, palette))
+}
+
+fn exanimation_trigger_preview_state(
+    animation: &lm_graphics::CompactExAnimation,
+) -> lm_graphics::ExAnimationTriggerPreviewState {
+    let mut triggers = lm_graphics::ExAnimationTriggerPreviewState::default();
+    for index in 0..16 {
+        if animation.trigger_mask & (1 << index) != 0 {
+            triggers.manual_frames[index] = animation.trigger_values[index];
+            triggers.custom[index] = animation.trigger_values[index] != 0;
+        }
+    }
+    triggers
 }
 
 fn apply_builtin_overworld_palette_animation(
@@ -730,6 +781,7 @@ mod tests {
             built_in_level_dot_palette: None,
             built_in_lightning: None,
             animation_options: vanilla_overworld_animation_options(),
+            global_animation: None,
         };
         (overworld, assets)
     }
@@ -968,6 +1020,35 @@ mod tests {
         .unwrap();
         assert_eq!(graphics.graphics.tiles[0].pixels(), &[0; 64]);
         assert_eq!(palette.colors[5], Bgr555(0));
+    }
+
+    #[test]
+    fn enabled_global_overworld_records_run_after_local_records_and_obey_the_map_gate() {
+        let (overworld, mut assets) = preview_fixture();
+        assets.global_animation = Some(CompactExAnimation {
+            setting: 0,
+            header_value: 0,
+            trigger_mask: 0,
+            trigger_values: [0; 16],
+            records: vec![
+                ExAnimationRecord::new(0x13, 0, 0, 5, false, &[0x00, 0x7c], false).unwrap(),
+            ],
+        });
+        let preview = OverworldExAnimationPreview {
+            tick: 0,
+            substeps_per_tick: 4,
+            triggers: lm_graphics::ExAnimationTriggerPreviewState::default(),
+            events_passed: vec![false; 256],
+        };
+
+        let (_, palette) =
+            materialize_overworld_exanimation(&overworld, &assets, &preview).unwrap();
+        assert_eq!(palette.colors[5], Bgr555(0x7c00));
+
+        assets.animation_options[0] = OverworldAnimationOptions::decode(0x20, false);
+        let (_, palette) =
+            materialize_overworld_exanimation(&overworld, &assets, &preview).unwrap();
+        assert_eq!(palette.colors[5], Bgr555(0x001f));
     }
 
     #[test]
