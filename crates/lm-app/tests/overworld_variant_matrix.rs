@@ -1,21 +1,23 @@
 use lm_app::{
-    ControllerSnapshot, EditorMode, ExAnimationControllerEdit, OverworldController,
+    ControllerSnapshot, EditorMode, ExAnimationControllerEdit,
+    NativeCustomOverworldSpriteController, NativeCustomOverworldSpriteEdit, OverworldController,
     OverworldControllerEdit, OverworldLayerId,
 };
 use lm_graphics::{
     Bgr555, CompactExAnimation, ExAnimationRecord, Palette, PaletteChange, PaletteOwnership,
 };
 use lm_overworld::{
-    EventReveal, EventRevealTable, OverworldEndpoint, OverworldLayer, OverworldMessage,
-    OverworldSprite, Submap,
+    EventReveal, EventRevealTable, NativeCustomOverworldSprite, NativeCustomOverworldSpriteTable,
+    OverworldEndpoint, OverworldLayer, OverworldMessage, OverworldSprite, Submap,
 };
 use lm_project::{
     CompleteOverworldData, CompleteOverworldFile, CompleteOverworldRomLayout,
     CompleteOverworldSaveOptions, CompleteOverworldShape, EndpointRomLayout, EndpointSaveOptions,
     EventRevealRomLayout, EventRevealSaveOptions, ExAnimationRomLayout, ExAnimationSaveOptions,
-    LevelPointerTable, MessageRomLayout, MessageSaveOptions, OverworldLayers,
-    OverworldLayersRomLayout, OverworldSaveOptions, PaletteRomLayout, PaletteSaveOptions, Project,
-    SpriteRomLayout, SpriteSaveOptions,
+    LevelPointerTable, MessageRomLayout, MessageSaveOptions, NativeCustomOverworldSpriteRomLayout,
+    NativeCustomOverworldSpriteSaveOptions, OverworldLayers, OverworldLayersRomLayout,
+    OverworldSaveOptions, PaletteRomLayout, PaletteSaveOptions, Project, SpriteRomLayout,
+    SpriteSaveOptions,
 };
 use lm_rats::{AllocationPolicy, ProtectedRange};
 use lm_rom::{Mapper, RomImage, compute_snes_checksum, detect_identity};
@@ -430,6 +432,166 @@ fn edit_interactively_variant(physical: Vec<u8>, pointer_base: usize) -> Vec<u8>
     edited
 }
 
+fn native_sprite_layout(
+    mapper: Mapper,
+    pointer_offset: usize,
+) -> NativeCustomOverworldSpriteRomLayout {
+    NativeCustomOverworldSpriteRomLayout {
+        mapper,
+        pointer_offset,
+        maximum_payload_len: 0x0fff,
+    }
+}
+
+fn native_sprite(seed: u8, x: u16, y: u16) -> NativeCustomOverworldSprite {
+    NativeCustomOverworldSprite {
+        id: seed & 0x7f,
+        x,
+        y,
+        screen: (seed & 3) * 8,
+        extra: vec![seed.wrapping_add(0x40)],
+    }
+}
+
+fn native_sprite_table(seed: u8) -> NativeCustomOverworldSpriteTable {
+    NativeCustomOverworldSpriteTable {
+        maps: std::array::from_fn(|map| {
+            vec![native_sprite(
+                seed.wrapping_add(u8::try_from(map).unwrap()),
+                0x40 + u16::try_from(map).unwrap() * 8,
+                0x80 + u16::try_from(map).unwrap() * 8,
+            )]
+        }),
+    }
+}
+
+fn native_sprite_options(pointer_offset: usize) -> NativeCustomOverworldSpriteSaveOptions {
+    NativeCustomOverworldSpriteSaveOptions {
+        allocation: AllocationPolicy {
+            search: 0x7000..0x7f00,
+            bank_size: Some(0x8000),
+            fill_bytes: vec![0xff],
+            protected: vec![
+                ProtectedRange(pointer_offset..pointer_offset + 3),
+                ProtectedRange(0x7fdc..0x7fe0),
+            ],
+        },
+        previous_block: None,
+        reuse_identical: true,
+        erase_fill: 0xff,
+    }
+}
+
+fn native_sprite_variant_rom(
+    case: IdentityCase,
+    pointer_offset: usize,
+    copier_header: bool,
+) -> Vec<u8> {
+    let mut physical = variant_rom(case, 0x200, copier_header);
+    let image = RomImage::from_bytes(physical).unwrap();
+    let identity = detect_identity(&image).unwrap();
+    let mut project = Project::new(image);
+    project
+        .save_native_custom_overworld_sprites(
+            &native_sprite_table(1),
+            &[4; 128],
+            native_sprite_layout(identity.mapper, pointer_offset),
+            &native_sprite_options(pointer_offset),
+        )
+        .unwrap();
+    project
+        .refresh_checksum(identity.internal_header_offset + 0x1c)
+        .unwrap();
+    physical = project.save_snapshot();
+    assert!(detect_identity(&project.rom).unwrap().checksum_matches());
+    physical
+}
+
+fn edit_native_sprite_variant(physical: Vec<u8>, pointer_offset: usize) -> Vec<u8> {
+    let original = physical.clone();
+    let image = RomImage::from_bytes(physical.clone()).unwrap();
+    let identity = detect_identity(&image).unwrap();
+    let layout = native_sprite_layout(identity.mapper, pointer_offset);
+    let snapshot = ControllerSnapshot {
+        revision: 11,
+        mode: EditorMode::Overworld,
+        identity: identity.clone(),
+        document_path: None,
+        rom_bytes: physical.clone(),
+    };
+    let mut controller =
+        NativeCustomOverworldSpriteController::decode(&snapshot, layout, [4; 128]).unwrap();
+    controller
+        .apply_edits(&[
+            NativeCustomOverworldSpriteEdit::Insert {
+                map: 0,
+                index: 1,
+                sprite: native_sprite(0x21, 0x100, 0x120),
+            },
+            NativeCustomOverworldSpriteEdit::MoveBefore {
+                map: 0,
+                from: 1,
+                before: 0,
+            },
+            NativeCustomOverworldSpriteEdit::Replace {
+                map: 3,
+                index: 0,
+                sprite: native_sprite(0x32, 0x188, 0x1a0),
+            },
+            NativeCustomOverworldSpriteEdit::Remove { map: 6, index: 0 },
+        ])
+        .unwrap();
+    let expected = controller.table().clone();
+    assert_eq!(expected.maps[0][0].id, 0x21);
+    assert_eq!(expected.maps[0][1].id, 1);
+    assert_eq!(expected.maps[3][0].id, 0x32);
+    assert!(expected.maps[6].is_empty());
+
+    let prepared = controller
+        .prepare_commit(
+            "Native custom overworld sprite supported-variant matrix",
+            &native_sprite_options(pointer_offset),
+        )
+        .unwrap();
+    let mut project = Project::new(RomImage::from_bytes(physical).unwrap());
+    project
+        .apply_mutation(
+            "Native custom overworld sprite supported-variant matrix",
+            &prepared.mutation,
+        )
+        .unwrap();
+    assert_eq!(
+        project
+            .load_native_custom_overworld_sprites(layout, &[4; 128])
+            .unwrap()
+            .table,
+        expected
+    );
+    assert!(detect_identity(&project.rom).unwrap().checksum_matches());
+    let edited = project.save_snapshot();
+
+    let reopened_identity = detect_identity(&project.rom).unwrap();
+    let reopened = NativeCustomOverworldSpriteController::decode(
+        &ControllerSnapshot {
+            revision: 12,
+            mode: EditorMode::Overworld,
+            identity: reopened_identity,
+            document_path: None,
+            rom_bytes: edited.clone(),
+        },
+        layout,
+        [4; 128],
+    )
+    .unwrap();
+    assert_eq!(reopened.table(), &expected);
+
+    assert!(project.undo().unwrap());
+    assert_eq!(project.save_snapshot(), original);
+    assert!(project.redo().unwrap());
+    assert_eq!(project.save_snapshot(), edited);
+    edited
+}
+
 #[test]
 fn complete_overworld_transfer_matches_every_supported_identity_and_layout_variant() {
     const SMW: &[u8; 21] = b"SUPER MARIOWORLD     ";
@@ -471,6 +633,30 @@ fn interactive_overworld_edits_match_every_supported_identity_and_layout_variant
                 let headered = variant_rom(case, pointer_base, true);
                 let edited_headerless = edit_interactively_variant(headerless, pointer_base);
                 let edited_headered = edit_interactively_variant(headered, pointer_base);
+                assert_eq!(&edited_headered[..512], &COPIER_PREFIX);
+                assert_eq!(&edited_headered[512..], edited_headerless);
+            }
+        }
+    }
+}
+
+#[test]
+fn native_custom_sprite_edits_match_every_supported_identity_mapper_header_and_storage_variant() {
+    const SMW: &[u8; 21] = b"SUPER MARIOWORLD     ";
+    const ALL_STARS_WORLD: &[u8; 21] = b"ALL_STARS + WORLD    ";
+    let identities = [(SMW, 0), (SMW, 1), (ALL_STARS_WORLD, 1)];
+    for &(title, region) in &identities {
+        for map_mode in [0x20, 0x30, 0x23, 0x32] {
+            for pointer_offset in [0x600, 0x680] {
+                let case = IdentityCase {
+                    title,
+                    region,
+                    map_mode,
+                };
+                let headerless = native_sprite_variant_rom(case, pointer_offset, false);
+                let headered = native_sprite_variant_rom(case, pointer_offset, true);
+                let edited_headerless = edit_native_sprite_variant(headerless, pointer_offset);
+                let edited_headered = edit_native_sprite_variant(headered, pointer_offset);
                 assert_eq!(&edited_headered[..512], &COPIER_PREFIX);
                 assert_eq!(&edited_headered[512..], edited_headerless);
             }
