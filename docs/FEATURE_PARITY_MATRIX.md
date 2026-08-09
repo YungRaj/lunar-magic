@@ -244,6 +244,16 @@ reopen, checksum verification, copier-prefix preservation, exact physical Undo/R
 header equivalence. Other original-editor option products and format/interaction variants remain
 open, so the aggregate workflow remains Partial.
 
+Toolbar shortcut evidence update (2026-08-09): the original-compatible parser and portable
+`LMSHORT1` schema now preserve all five mouse buttons independently. Named `VK_LBUTTON`,
+`VK_RBUTTON`, `VK_MBUTTON`, `VK_XBUTTON1`, and `VK_XBUTTON2` tokens and raw virtual-key values
+`$01/$02/$04/$05/$06` map to append-only logical key kinds; egui primary, secondary, middle, and
+both extra-button press events enter the same shortcut stream and therefore reach both configured
+toolbar actions and original-compatible user-toolbar buttons. Keyboard kind numbers remain
+unchanged, and encode/decode plus editor-text tests cover all five appended values. This supersedes
+the toolbar row's older closing phrase for mouse shortcuts; Pause and numpad-operator physical-key
+distinctions remain open because the current frontend input abstraction does not expose them.
+
 ## Workflow ledger
 
 | Area | Original Lunar Magic workflow | Model | Tx | GUI | Oracle | Variants | Status | Primary evidence / next gap |

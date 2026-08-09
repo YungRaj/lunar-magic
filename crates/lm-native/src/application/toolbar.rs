@@ -646,6 +646,11 @@ fn parse_user_toolbar_key(value: &str) -> Option<ShortcutKey> {
         "VK_LEFT" => ShortcutKey::ArrowLeft,
         "VK_RIGHT" => ShortcutKey::ArrowRight,
         "VK_SPACE" => ShortcutKey::Space,
+        "VK_LBUTTON" => ShortcutKey::MouseLeft,
+        "VK_RBUTTON" => ShortcutKey::MouseRight,
+        "VK_MBUTTON" => ShortcutKey::MouseMiddle,
+        "VK_XBUTTON1" => ShortcutKey::MouseExtra1,
+        "VK_XBUTTON2" => ShortcutKey::MouseExtra2,
         value if value.starts_with("VK_NUMPAD") && value.len() == 10 => {
             ShortcutKey::Character(value.chars().last()?)
         }
@@ -658,6 +663,11 @@ fn parse_user_toolbar_key(value: &str) -> Option<ShortcutKey> {
 
 fn virtual_key(value: u8) -> Option<ShortcutKey> {
     Some(match value {
+        0x01 => ShortcutKey::MouseLeft,
+        0x02 => ShortcutKey::MouseRight,
+        0x04 => ShortcutKey::MouseMiddle,
+        0x05 => ShortcutKey::MouseExtra1,
+        0x06 => ShortcutKey::MouseExtra2,
         0x08 => ShortcutKey::Backspace,
         0x09 => ShortcutKey::Tab,
         0x0d => ShortcutKey::Enter,
@@ -1184,6 +1194,16 @@ mod user_toolbar_tests {
             parse_user_toolbar_key("0x41"),
             Some(ShortcutKey::Character('a'))
         );
+        for (token, numeric, key) in [
+            ("VK_LBUTTON", "0x01", ShortcutKey::MouseLeft),
+            ("VK_RBUTTON", "0x02", ShortcutKey::MouseRight),
+            ("VK_MBUTTON", "0x04", ShortcutKey::MouseMiddle),
+            ("VK_XBUTTON1", "0x05", ShortcutKey::MouseExtra1),
+            ("VK_XBUTTON2", "0x06", ShortcutKey::MouseExtra2),
+        ] {
+            assert_eq!(parse_user_toolbar_key(token), Some(key));
+            assert_eq!(parse_user_toolbar_key(numeric), Some(key));
+        }
         assert_eq!(parse_user_toolbar_key("VK_PAUSE"), None);
         assert!(user_toolbar_shortcut(&["'a'".into(), "'b'".into()]).is_none());
     }

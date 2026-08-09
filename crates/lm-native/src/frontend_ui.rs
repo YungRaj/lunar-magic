@@ -68,11 +68,30 @@ pub(crate) fn shortcut_gestures(context: &egui::Context) -> Vec<ShortcutGesture>
                         modifiers: translate_modifiers(input.modifiers),
                         key: translate_text_key(text)?,
                     },
+                    egui::Event::PointerButton {
+                        button,
+                        pressed: true,
+                        modifiers,
+                        ..
+                    } => ShortcutGesture {
+                        modifiers: translate_modifiers(*modifiers),
+                        key: translate_pointer_button(*button),
+                    },
                     _ => return None,
                 })
             })
             .collect()
     })
+}
+
+fn translate_pointer_button(button: egui::PointerButton) -> ShortcutKey {
+    match button {
+        egui::PointerButton::Primary => ShortcutKey::MouseLeft,
+        egui::PointerButton::Secondary => ShortcutKey::MouseRight,
+        egui::PointerButton::Middle => ShortcutKey::MouseMiddle,
+        egui::PointerButton::Extra1 => ShortcutKey::MouseExtra1,
+        egui::PointerButton::Extra2 => ShortcutKey::MouseExtra2,
+    }
 }
 
 fn translate_text_key(text: &str) -> Option<ShortcutKey> {
@@ -238,6 +257,52 @@ mod tests {
         assert_eq!(translate_text_key("界"), Some(ShortcutKey::Character('界')));
         assert_eq!(translate_text_key("ab"), None);
         assert_eq!(translate_text_key("\n"), None);
+    }
+
+    #[test]
+    fn pointer_translation_preserves_all_five_native_buttons() {
+        assert_eq!(
+            [
+                egui::PointerButton::Primary,
+                egui::PointerButton::Secondary,
+                egui::PointerButton::Middle,
+                egui::PointerButton::Extra1,
+                egui::PointerButton::Extra2,
+            ]
+            .map(translate_pointer_button),
+            [
+                ShortcutKey::MouseLeft,
+                ShortcutKey::MouseRight,
+                ShortcutKey::MouseMiddle,
+                ShortcutKey::MouseExtra1,
+                ShortcutKey::MouseExtra2,
+            ]
+        );
+    }
+
+    #[test]
+    fn pressed_pointer_event_reaches_the_shared_shortcut_stream_once() {
+        let context = egui::Context::default();
+        context.begin_pass(egui::RawInput {
+            events: vec![egui::Event::PointerButton {
+                pos: egui::pos2(8.0, 12.0),
+                button: egui::PointerButton::Extra1,
+                pressed: true,
+                modifiers: egui::Modifiers {
+                    alt: true,
+                    ..Default::default()
+                },
+            }],
+            ..Default::default()
+        });
+        assert_eq!(
+            shortcut_gestures(&context),
+            [ShortcutGesture {
+                modifiers: ShortcutModifiers::ALT,
+                key: ShortcutKey::MouseExtra1,
+            }]
+        );
+        let _ = context.end_pass();
     }
 
     #[test]

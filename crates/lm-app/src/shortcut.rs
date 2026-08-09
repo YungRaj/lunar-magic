@@ -47,6 +47,11 @@ pub enum ShortcutKey {
     PageDown,
     Tab,
     Space,
+    MouseLeft,
+    MouseRight,
+    MouseMiddle,
+    MouseExtra1,
+    MouseExtra2,
 }
 
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -226,6 +231,11 @@ fn encode_key(key: ShortcutKey) -> (u8, u32) {
         ShortcutKey::PageDown => (14, 0),
         ShortcutKey::Tab => (15, 0),
         ShortcutKey::Space => (16, 0),
+        ShortcutKey::MouseLeft => (17, 0),
+        ShortcutKey::MouseRight => (18, 0),
+        ShortcutKey::MouseMiddle => (19, 0),
+        ShortcutKey::MouseExtra1 => (20, 0),
+        ShortcutKey::MouseExtra2 => (21, 0),
     }
 }
 
@@ -237,7 +247,7 @@ fn decode_key(kind: u8, value: u32) -> Result<ShortcutKey, ShortcutError> {
         1 => u8::try_from(value)
             .map(ShortcutKey::Function)
             .map_err(|_| ShortcutError::InvalidFunctionKey(u8::MAX)),
-        2..=16 if value != 0 => Err(ShortcutError::UnknownKey(kind)),
+        2..=21 if value != 0 => Err(ShortcutError::UnknownKey(kind)),
         2 => Ok(ShortcutKey::Backspace),
         3 => Ok(ShortcutKey::Delete),
         4 => Ok(ShortcutKey::Enter),
@@ -253,6 +263,11 @@ fn decode_key(kind: u8, value: u32) -> Result<ShortcutKey, ShortcutError> {
         14 => Ok(ShortcutKey::PageDown),
         15 => Ok(ShortcutKey::Tab),
         16 => Ok(ShortcutKey::Space),
+        17 => Ok(ShortcutKey::MouseLeft),
+        18 => Ok(ShortcutKey::MouseRight),
+        19 => Ok(ShortcutKey::MouseMiddle),
+        20 => Ok(ShortcutKey::MouseExtra1),
+        21 => Ok(ShortcutKey::MouseExtra2),
         _ => Err(ShortcutError::UnknownKey(kind)),
     }
 }
@@ -379,5 +394,42 @@ mod tests {
             );
         }
         assert_eq!(encode_key(ShortcutKey::ArrowDown), (9, 0));
+    }
+
+    #[test]
+    fn appended_mouse_buttons_round_trip_without_renumbering_keyboard_keys() {
+        let keyboard = ShortcutConfig {
+            bindings: vec![ShortcutBinding {
+                gesture: ShortcutGesture {
+                    modifiers: ShortcutModifiers::default(),
+                    key: ShortcutKey::Space,
+                },
+                action: ToolbarAction::Open,
+            }],
+        }
+        .encode()
+        .unwrap();
+        assert_eq!(keyboard[11], 16);
+
+        for (key, kind) in [
+            (ShortcutKey::MouseLeft, 17),
+            (ShortcutKey::MouseRight, 18),
+            (ShortcutKey::MouseMiddle, 19),
+            (ShortcutKey::MouseExtra1, 20),
+            (ShortcutKey::MouseExtra2, 21),
+        ] {
+            let expected = ShortcutConfig {
+                bindings: vec![ShortcutBinding {
+                    gesture: ShortcutGesture {
+                        modifiers: ShortcutModifiers::ALT,
+                        key,
+                    },
+                    action: ToolbarAction::ShowMap16,
+                }],
+            };
+            let bytes = expected.encode().unwrap();
+            assert_eq!(bytes[11], kind);
+            assert_eq!(ShortcutConfig::decode(&bytes).unwrap(), expected);
+        }
     }
 }
