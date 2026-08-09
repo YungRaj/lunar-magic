@@ -3438,6 +3438,16 @@ the pointer, and begins dragging it. The Rust editor follows that evidence with 
 Delete, and a deferred right-drag duplicate batch; duplication and final positioning publish
 together as one application revision rather than exposing a partial copy between pointer frames.
 
+`EditCustomOverworldSpriteProperties` (`0055BE60`) proves the Alt variation is a separate action,
+not modified duplication. In pointer mode it bounds the combined grid, hit-tests exactly one
+painter-topmost custom sprite, copies that record into the property-dialog buffer, and opens the
+modal. Accept writes the edited ID, vertical extent, and twelve-byte property buffer back to that
+record and publishes one Undo entry; cancel returns without modifying the record. Because the
+outer `PasteCustomOverworldSprites` condition skips duplication when that edit succeeds,
+Alt-right-click never creates a copy. The Rust canvas routes the same modifier/hit combinations
+through a dedicated property modal, blocks competing canvas/form/commit mutations while it is
+open, applies one typed `Replace` only on acceptance, and retains the prior multi-selection.
+
 ## Per-slot `ExAnimation` options
 
 `DecodeExAnimationSlotOptionFlags` (`004B3CB0`) and

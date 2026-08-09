@@ -75,6 +75,7 @@ struct Workspace {
     native_sprite_layout: lm_profile::SmwUsV1NativeCustomOverworldSpriteLayout,
 }
 
+#[derive(Clone)]
 struct NativeSpriteForm {
     map: usize,
     index: usize,
@@ -83,6 +84,10 @@ struct NativeSpriteForm {
     y: String,
     screen: String,
     extra: String,
+}
+
+struct NativeSpritePropertyDialog {
+    form: NativeSpriteForm,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -97,6 +102,12 @@ struct NativeSpriteDrag {
 enum NativeSpriteDragKind {
     Move,
     Duplicate,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum NativeSpriteSecondaryAction {
+    EditProperties(usize),
+    DuplicateSelection,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -219,6 +230,7 @@ pub(crate) struct RomOverworldEditor {
     native_sprite_selection: BTreeSet<usize>,
     native_sprite_drag: Option<NativeSpriteDrag>,
     native_sprite_marquee: Option<NativeSpriteMarquee>,
+    native_sprite_property_dialog: Option<NativeSpritePropertyDialog>,
     map16_page: usize,
     map16_rendered_key: Option<(u64, usize)>,
     map16_texture: Option<egui::TextureHandle>,
@@ -687,6 +699,27 @@ fn path_form_row(ui: &mut egui::Ui, label: &str, value: &mut String) {
     ui.end_row();
 }
 
+fn parse_native_sprite_form(
+    form: &NativeSpriteForm,
+) -> Result<lm_overworld::NativeCustomOverworldSprite, String> {
+    let extra = form
+        .extra
+        .split(|character: char| character.is_ascii_whitespace() || character == ',')
+        .filter(|value| !value.is_empty())
+        .enumerate()
+        .map(|(index, value)| {
+            level_editor_forms::parse_hex_u8(value, &format!("extension byte {index}"))
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(lm_overworld::NativeCustomOverworldSprite {
+        id: level_editor_forms::parse_hex_u8(&form.id, "native sprite ID")?,
+        x: level_editor_forms::parse_hex_u16(&form.x, "native sprite X")?,
+        y: level_editor_forms::parse_hex_u16(&form.y, "native sprite Y")?,
+        screen: level_editor_forms::parse_hex_u8(&form.screen, "native sprite screen")?,
+        extra,
+    })
+}
+
 impl RomOverworldEditor {
     fn contents(&mut self, ui: &mut egui::Ui, revision: u64) -> Option<Command> {
         let (
@@ -735,7 +768,8 @@ impl RomOverworldEditor {
             );
         }
         let transfer_busy = self.transfer_busy();
-        let editing_blocked = stale || transfer_busy;
+        let mutation_blocked = stale || transfer_busy;
+        let editing_blocked = mutation_blocked || self.native_sprite_property_dialog.is_some();
         if transfer_busy {
             ui.colored_label(
                 egui::Color32::YELLOW,
@@ -815,6 +849,7 @@ impl RomOverworldEditor {
         if runtime_command.is_some() {
             return runtime_command;
         }
+        self.show_native_sprite_property_dialog(ui.ctx(), mutation_blocked);
         self.commit_controls(ui, editing_blocked, revision)
     }
 
@@ -826,7 +861,7 @@ impl RomOverworldEditor {
         ui.heading("Native custom overworld sprite stream");
         ui.small("Seven map-local lists, variable record widths, and Lunar Magic's 24-sprite-per-map limit.");
         ui.small(
-            "Canvas: Ctrl/Command-click toggles, drag empty space selects, Ctrl/Command+A selects all, Delete removes, and right-drag duplicates the selected group.",
+            "Canvas: Ctrl/Command-click toggles, drag empty space selects, Ctrl/Command+A selects all, Delete removes, right-drag duplicates the selected group, and Alt-right-click edits one sprite.",
         );
         let previous_map = self.native_sprite.map;
         ui.add(egui::Slider::new(&mut self.native_sprite.map, 0..=6).text("Map"));
@@ -1018,26 +1053,68 @@ impl RomOverworldEditor {
     }
 
     fn parse_native_sprite(&self) -> Result<lm_overworld::NativeCustomOverworldSprite, String> {
-        let extra = self
-            .native_sprite
-            .extra
-            .split(|character: char| character.is_ascii_whitespace() || character == ',')
-            .filter(|value| !value.is_empty())
-            .enumerate()
-            .map(|(index, value)| {
-                level_editor_forms::parse_hex_u8(value, &format!("extension byte {index}"))
-            })
-            .collect::<Result<Vec<_>, _>>()?;
-        Ok(lm_overworld::NativeCustomOverworldSprite {
-            id: level_editor_forms::parse_hex_u8(&self.native_sprite.id, "native sprite ID")?,
-            x: level_editor_forms::parse_hex_u16(&self.native_sprite.x, "native sprite X")?,
-            y: level_editor_forms::parse_hex_u16(&self.native_sprite.y, "native sprite Y")?,
-            screen: level_editor_forms::parse_hex_u8(
-                &self.native_sprite.screen,
-                "native sprite screen",
-            )?,
-            extra,
-        })
+        parse_native_sprite_form(&self.native_sprite)
+    }
+
+    fn show_native_sprite_property_dialog(&mut self, context: &egui::Context, blocked: bool) {
+        let Some(mut dialog) = self.native_sprite_property_dialog.take() else {
+            return;
+        };
+        let mut open = true;
+        let mut accepted = false;
+        let mut cancelled = false;
+        egui::Window::new("Custom overworld sprite properties")
+            .collapsible(false)
+            .resizable(false)
+            .open(&mut open)
+            .show(context, |ui| {
+                ui.label(format!(
+                    "Map {} record {}",
+                    dialog.form.map, dialog.form.index
+                ));
+                egui::Grid::new("native-custom-overworld-sprite-property-dialog")
+                    .striped(true)
+                    .show(ui, |ui| {
+                        path_form_row(ui, "ID (hex)", &mut dialog.form.id);
+                        path_form_row(ui, "X pixels (hex)", &mut dialog.form.x);
+                        path_form_row(ui, "Y pixels (hex)", &mut dialog.form.y);
+                        path_form_row(ui, "Screen (hex)", &mut dialog.form.screen);
+                        path_form_row(ui, "Extension bytes (hex)", &mut dialog.form.extra);
+                    });
+                ui.horizontal(|ui| {
+                    accepted = ui
+                        .add_enabled(!blocked, egui::Button::new("Apply"))
+                        .clicked();
+                    cancelled = ui.button("Cancel").clicked();
+                });
+            });
+        if accepted {
+            let result = parse_native_sprite_form(&dialog.form).and_then(|sprite| {
+                self.workspace
+                    .as_mut()
+                    .ok_or_else(|| String::from("workspace is closed"))?
+                    .native_sprites
+                    .apply_edits(&[NativeCustomOverworldSpriteEdit::Replace {
+                        map: dialog.form.map,
+                        index: dialog.form.index,
+                        sprite,
+                    }])
+                    .map_err(|error| error.to_string())
+            });
+            match result {
+                Ok(()) => {
+                    self.native_sprite = dialog.form;
+                    self.rendered_key = None;
+                    self.texture = None;
+                }
+                Err(error) => {
+                    self.error = Some(error);
+                    self.native_sprite_property_dialog = Some(dialog);
+                }
+            }
+        } else if open && !cancelled {
+            self.native_sprite_property_dialog = Some(dialog);
+        }
     }
 
     fn layer_tile_controls(
@@ -1275,22 +1352,38 @@ impl RomOverworldEditor {
                         action = Some((MapPaintTool::Fill, (x, y)));
                     }
                     MapPaintTool::NativeSprite if !stale => {
-                        let toggle = ui.input(|input| {
-                            input.modifiers.ctrl || input.modifiers.command
-                        });
+                        let modifiers = ui.input(|input| input.modifiers);
+                        let toggle = modifiers.ctrl || modifiers.command;
                         if secondary_started {
                             self.native_sprite_marquee = None;
-                            if !self.native_sprite_selection.is_empty() {
-                                self.native_sprite_drag = Some(NativeSpriteDrag {
-                                    map: self.native_sprite.map,
-                                    anchor: canvas_pixel,
-                                    selected: self
-                                        .native_sprite_selection
-                                        .iter()
-                                        .copied()
-                                        .collect(),
-                                    kind: NativeSpriteDragKind::Duplicate,
-                                });
+                            let secondary_action = native_sprite_secondary_action(
+                                modifiers.alt,
+                                self.native_sprite_hit_test(canvas_pixel),
+                                !self.native_sprite_selection.is_empty(),
+                            );
+                            match secondary_action {
+                                Some(NativeSpriteSecondaryAction::EditProperties(index)) => {
+                                    self.native_sprite_drag = None;
+                                    self.native_sprite.index = index;
+                                    self.load_native_sprite_form();
+                                    self.native_sprite_property_dialog =
+                                        Some(NativeSpritePropertyDialog {
+                                            form: self.native_sprite.clone(),
+                                        });
+                                }
+                                Some(NativeSpriteSecondaryAction::DuplicateSelection) => {
+                                    self.native_sprite_drag = Some(NativeSpriteDrag {
+                                        map: self.native_sprite.map,
+                                        anchor: canvas_pixel,
+                                        selected: self
+                                            .native_sprite_selection
+                                            .iter()
+                                            .copied()
+                                            .collect(),
+                                        kind: NativeSpriteDragKind::Duplicate,
+                                    });
+                                }
+                                None => self.native_sprite_drag = None,
                             }
                         } else if primary_started {
                             let anchor = ui
@@ -2392,6 +2485,18 @@ fn toggle_native_sprite_selection(selection: &mut BTreeSet<usize>, index: usize)
     }
 }
 
+fn native_sprite_secondary_action(
+    alt: bool,
+    hit: Option<usize>,
+    has_selection: bool,
+) -> Option<NativeSpriteSecondaryAction> {
+    if alt {
+        hit.map(NativeSpriteSecondaryAction::EditProperties)
+    } else {
+        has_selection.then_some(NativeSpriteSecondaryAction::DuplicateSelection)
+    }
+}
+
 fn inclusive_canvas_rect(
     anchor: (usize, usize),
     current: (usize, usize),
@@ -2727,12 +2832,13 @@ fn flood_fill_cells(
 #[cfg(test)]
 mod canvas_tests {
     use super::{
-        MainPathLinkForm, NativeCustomOverworldSpriteEdit, OverworldAnimationRate,
-        OverworldControllerEdit, OverworldEndpoint, OverworldLayerId, OverworldPathDirection,
-        OverworldPathLink, OverworldPathLinkTable, OverworldPathTarget, RomOverworldEditor,
-        flood_fill_cells, grid_line, inclusive_canvas_rect, native_sprite_canvas_edit,
-        native_sprite_canvas_position, native_sprite_group_duplicate_edits,
-        native_sprite_group_move_edits, native_sprite_selection_remove_edits,
+        MainPathLinkForm, NativeCustomOverworldSpriteEdit, NativeSpriteSecondaryAction,
+        OverworldAnimationRate, OverworldControllerEdit, OverworldEndpoint, OverworldLayerId,
+        OverworldPathDirection, OverworldPathLink, OverworldPathLinkTable, OverworldPathTarget,
+        RomOverworldEditor, flood_fill_cells, grid_line, inclusive_canvas_rect,
+        native_sprite_canvas_edit, native_sprite_canvas_position,
+        native_sprite_group_duplicate_edits, native_sprite_group_move_edits,
+        native_sprite_secondary_action, native_sprite_selection_remove_edits,
         overworld_animation_preview_tick, rectangle_cells, route_canvas_endpoint,
         route_directional_canvas_endpoint, route_endpoint_canvas_pixel, stroke_edits,
         toggle_native_sprite_selection,
@@ -2800,6 +2906,16 @@ mod canvas_tests {
         assert_eq!(selected, std::collections::BTreeSet::from([3, 4]));
         assert_eq!(inclusive_canvas_rect((20, 30), (12, 9)), (12, 9, 21, 31));
         assert_eq!(inclusive_canvas_rect((7, 8), (7, 8)), (7, 8, 8, 9));
+        assert_eq!(
+            native_sprite_secondary_action(true, Some(5), true),
+            Some(NativeSpriteSecondaryAction::EditProperties(5))
+        );
+        assert_eq!(native_sprite_secondary_action(true, None, true), None);
+        assert_eq!(
+            native_sprite_secondary_action(false, Some(5), true),
+            Some(NativeSpriteSecondaryAction::DuplicateSelection)
+        );
+        assert_eq!(native_sprite_secondary_action(false, Some(5), false), None);
     }
 
     #[test]
