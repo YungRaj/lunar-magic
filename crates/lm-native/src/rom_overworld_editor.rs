@@ -39,6 +39,7 @@ enum MapPaintTool {
     Brush,
     Rectangle,
     Fill,
+    NativeSprite,
     RouteSource,
     RouteDestination,
 }
@@ -724,12 +725,18 @@ impl RomOverworldEditor {
         self.world_canvas(ui, shape, editing_blocked);
         self.layer_tile_controls(ui, shape, editing_blocked);
         ui.separator();
+        let previous_panel = self.panel;
         ui.horizontal(|ui| {
             ui.selectable_value(&mut self.panel, Panel::Records, "Records");
             ui.selectable_value(&mut self.panel, Panel::Palette, "Palette");
             ui.selectable_value(&mut self.panel, Panel::Animation, "Animation");
             ui.selectable_value(&mut self.panel, Panel::NativeSprites, "Native sprites");
         });
+        if previous_panel != self.panel && self.panel != Panel::NativeSprites {
+            if self.paint_tool == MapPaintTool::NativeSprite {
+                self.paint_tool = MapPaintTool::Select;
+            }
+        }
         let file = CompleteOverworldFile {
             source_slot: slot,
             shape,
@@ -1151,6 +1158,13 @@ impl RomOverworldEditor {
             ui.selectable_value(&mut self.paint_tool, MapPaintTool::Brush, "Brush");
             ui.selectable_value(&mut self.paint_tool, MapPaintTool::Rectangle, "Rectangle");
             ui.selectable_value(&mut self.paint_tool, MapPaintTool::Fill, "Fill");
+            if self.workspace.is_some() && self.panel == Panel::NativeSprites {
+                ui.selectable_value(
+                    &mut self.paint_tool,
+                    MapPaintTool::NativeSprite,
+                    "Place/move native sprite",
+                );
+            }
             if self.main_layer2_workspace.is_some() {
                 ui.selectable_value(
                     &mut self.paint_tool,
@@ -1165,6 +1179,7 @@ impl RomOverworldEditor {
             }
         });
         let mut action = None;
+        let mut native_sprite_position = None;
         egui::ScrollArea::both().max_height(420.0).show(ui, |ui| {
             let response = ui.add(egui::Image::new(&texture).sense(egui::Sense::click_and_drag()));
             if (response.clicked()
@@ -1190,6 +1205,9 @@ impl RomOverworldEditor {
                     MapPaintTool::Brush if !stale => action = Some((MapPaintTool::Brush, (x, y))),
                     MapPaintTool::Fill if !stale && response.clicked() => {
                         action = Some((MapPaintTool::Fill, (x, y)));
+                    }
+                    MapPaintTool::NativeSprite if !stale && response.clicked() => {
+                        native_sprite_position = Some((x, y));
                     }
                     MapPaintTool::Rectangle if !stale => {
                         if response.drag_started() {
@@ -1273,14 +1291,45 @@ impl RomOverworldEditor {
                 MapPaintTool::Rectangle => self.paint_rectangle_to(position),
                 MapPaintTool::Fill => self.fill_at(position),
                 MapPaintTool::Select
+                | MapPaintTool::NativeSprite
                 | MapPaintTool::RouteSource
                 | MapPaintTool::RouteDestination => {}
             }
+        }
+        if let Some(position) = native_sprite_position
+            && let Err(error) = self.place_native_sprite_at_canvas(position)
+        {
+            self.error = Some(error);
         }
         if self.paint_tool == MapPaintTool::Brush && !ui.input(|input| input.pointer.primary_down())
         {
             self.paint_anchor = None;
         }
+    }
+
+    fn place_native_sprite_at_canvas(&mut self, position: (usize, usize)) -> Result<(), String> {
+        let (x, y) = native_sprite_canvas_position(self.native_sprite.map, position.0, position.1)
+            .ok_or("the clicked canvas cell is outside the selected native sprite map")?;
+        self.native_sprite.x = format!("{x:04X}");
+        self.native_sprite.y = format!("{y:04X}");
+        let sprite = self.parse_native_sprite()?;
+        let workspace = self.workspace.as_mut().ok_or("workspace is closed")?;
+        let count = workspace.native_sprites.table().maps[self.native_sprite.map].len();
+        let edit = native_sprite_canvas_edit(
+            self.native_sprite.map,
+            self.native_sprite.index,
+            count,
+            sprite,
+            position,
+        )?;
+        workspace
+            .native_sprites
+            .apply_edits(&[edit])
+            .map_err(|error| error.to_string())?;
+        self.native_sprite.index = self.native_sprite.index.min(count);
+        self.rendered_key = None;
+        self.texture = None;
+        Ok(())
     }
 
     fn paint_main_route_overlay(&self, ui: &egui::Ui, rect: egui::Rect) {
@@ -1968,6 +2017,32 @@ fn native_sprite_canvas_position(map: usize, x: usize, y: usize) -> Option<(u16,
     Some((u16::try_from(local_x * 8).ok()?, u16::try_from(y * 8).ok()?))
 }
 
+fn native_sprite_canvas_edit(
+    map: usize,
+    selected: usize,
+    count: usize,
+    mut sprite: lm_overworld::NativeCustomOverworldSprite,
+    position: (usize, usize),
+) -> Result<NativeCustomOverworldSpriteEdit, String> {
+    let (x, y) = native_sprite_canvas_position(map, position.0, position.1)
+        .ok_or("the clicked canvas cell is outside the selected native sprite map")?;
+    sprite.x = x;
+    sprite.y = y;
+    Ok(if selected < count {
+        NativeCustomOverworldSpriteEdit::Replace {
+            map,
+            index: selected,
+            sprite,
+        }
+    } else {
+        NativeCustomOverworldSpriteEdit::Insert {
+            map,
+            index: count,
+            sprite,
+        }
+    })
+}
+
 fn overworld_animation_preview_tick(seconds: f64, rate: OverworldAnimationRate) -> usize {
     if let Ok(tick) = std::env::var("LM_NATIVE_OVERWORLD_ANIMATION_TICK")
         && let Ok(tick) = tick.parse::<usize>()
@@ -2127,12 +2202,12 @@ fn flood_fill_cells(
 #[cfg(test)]
 mod canvas_tests {
     use super::{
-        MainPathLinkForm, OverworldAnimationRate, OverworldControllerEdit, OverworldEndpoint,
-        OverworldLayerId, OverworldPathDirection, OverworldPathLink, OverworldPathLinkTable,
-        OverworldPathTarget, RomOverworldEditor, flood_fill_cells, grid_line,
-        native_sprite_canvas_position, overworld_animation_preview_tick, rectangle_cells,
-        route_canvas_endpoint, route_directional_canvas_endpoint, route_endpoint_canvas_pixel,
-        stroke_edits,
+        MainPathLinkForm, NativeCustomOverworldSpriteEdit, OverworldAnimationRate,
+        OverworldControllerEdit, OverworldEndpoint, OverworldLayerId, OverworldPathDirection,
+        OverworldPathLink, OverworldPathLinkTable, OverworldPathTarget, RomOverworldEditor,
+        flood_fill_cells, grid_line, native_sprite_canvas_edit, native_sprite_canvas_position,
+        overworld_animation_preview_tick, rectangle_cells, route_canvas_endpoint,
+        route_directional_canvas_endpoint, route_endpoint_canvas_pixel, stroke_edits,
     };
     use crate::document_loader::BoundedRead;
     use eframe::egui;
@@ -2165,6 +2240,27 @@ mod canvas_tests {
         assert_eq!(native_sprite_canvas_position(0, 64, 0), None);
         assert_eq!(native_sprite_canvas_position(2, 63, 0), None);
         assert_eq!(native_sprite_canvas_position(7, 64, 0), None);
+    }
+
+    #[test]
+    fn native_sprite_canvas_tool_inserts_at_end_or_replaces_selected_record() {
+        let sprite = lm_overworld::NativeCustomOverworldSprite {
+            id: 3,
+            x: 0,
+            y: 0,
+            screen: 8,
+            extra: vec![0xaa],
+        };
+        assert!(matches!(
+            native_sprite_canvas_edit(1, 4, 4, sprite.clone(), (70, 3)).unwrap(),
+            NativeCustomOverworldSpriteEdit::Insert { map: 1, index: 4, sprite }
+                if (sprite.x, sprite.y) == (48, 24)
+        ));
+        assert!(matches!(
+            native_sprite_canvas_edit(0, 2, 4, sprite, (10, 5)).unwrap(),
+            NativeCustomOverworldSpriteEdit::Replace { map: 0, index: 2, sprite }
+                if (sprite.x, sprite.y) == (80, 40)
+        ));
     }
 
     #[test]

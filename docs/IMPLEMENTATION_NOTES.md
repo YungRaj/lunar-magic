@@ -3956,6 +3956,10 @@ native stream now publish together: the stream allocator runs against the materi
 mutation, semantically reopens its result, repairs the final checksum, and returns one application
 mutation. A growth test places an earlier staged allocation directly after the old stream owner,
 proves the stream relocates around it, reopens both domains, and undoes both in one step.
+The map canvas also exposes a dedicated native-sprite tool while that panel is active. A click on
+the main plane or shared submap plane converts to the selected map's local `0..$1F8` coordinates,
+then replaces the selected record or inserts at the list end. Invalid cross-plane clicks are
+rejected, leaving the stream unchanged; leaving the panel returns the canvas to Select mode.
 
 `ExAnimation` slot options are also represented as their own native seven-byte table rather than
 being folded into animation records. Use

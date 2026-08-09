@@ -3395,6 +3395,10 @@ then allocates the native stream against that staged image and rebuilds one muta
 the immutable source. Existing stream and size-table owners are protected during ordinary payload
 planning; the authenticated stream owner becomes reclaimable only inside its own save. This avoids
 free-space collisions while preserving one application revision and one Undo step across domains.
+The installed editor's native-sprite canvas tool converts the 128×64 combined preview back into
+the stream's local coordinates: map zero owns columns `0..63`, while maps one through six share
+columns `64..127` and subtract 64 before the eight-pixel conversion. A click replaces the selected
+record or appends when the insertion cursor is selected; cross-plane clicks cannot mutate data.
 
 ## Per-slot `ExAnimation` options
 
