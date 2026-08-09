@@ -4336,9 +4336,11 @@ file reopen exactly. A live Wine gate clears only the two format markers in a Ru
 performs the migration, and requires Lunar Magic 3.63 to re-export all 52 standard files byte-for-byte
 while Rust reopens the retained `ExGFX80` payload unchanged. First installation now follows the
 original prerequisite order: zero-filled expansion, expanded-settings/runtime ownership, then GFX
-allocation, preventing standard files from consuming the later ExGFX settings range. Lunar Magic's
-`-ExportExGFX` still does not enumerate that Rust-created slot, so its attribution/feature-metadata
-recognition contract remains an explicit open interoperability gate.
+allocation. The allocator protects the complete `$088000..$08ACFF` extended pointer table; first
+compressed ExGFX insertion zero-initializes both compressed pointer domains and publishes the
+recovered `$002A47 = EA EA` expanded-format marker. The same Wine gate first verifies Lunar Magic's
+own import/export control, then proves `-ExportExGFX` enumerates and byte-matches the Rust-created
+`ExGFX80`, closing the original-tool recognition gap without copying unrelated ROM metadata.
 
 The installed graphics editor also owns a scoped external-edit round trip. It exports the current
 staged controller bytes—not a stale ROM decode—to a uniquely reserved private temporary directory

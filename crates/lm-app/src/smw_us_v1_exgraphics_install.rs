@@ -149,6 +149,9 @@ mod tests {
             ..SMW_US_V1_EXGFX_TABLE_BASE_OPERAND_OFFSET + 3]
             .copy_from_slice(&SMW_US_V1_EXGFX_TABLE_BASE_OPERAND);
         bytes[SMW_US_V1_EXGFX_EXPANSION_MARKER_OFFSET + 6] = 0x1f;
+        bytes[lm_profile::SMW_US_V1_EXPANDED_GRAPHICS_FORMAT_MARKER_OFFSET
+            ..lm_profile::SMW_US_V1_EXPANDED_GRAPHICS_FORMAT_MARKER_OFFSET + 2]
+            .copy_from_slice(&lm_profile::SMW_US_V1_VANILLA_GRAPHICS_FORMAT_MARKER);
         bytes[0x7fd7] = 0x0a;
         bytes[0x080000..0x080008].copy_from_slice(b"STAR\x1f\0\xe0\xff");
         RomImage::from_bytes(bytes).unwrap()

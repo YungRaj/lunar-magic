@@ -1935,10 +1935,14 @@ installs its shared relocation/runtime family before the 52 regular-GFX slots ar
 reallocated. Rust mirrors that ownership order for pristine installs and authenticates the installed
 family for the affirmative route. The migration preserves ROM size plus all reserved, ordinary, and
 extended ExGFX pointer bytes, restores the two 4bpp markers, checksum-repairs, and reopens all 52
-regular files and a retained `ExGFX80` payload. A live Lunar Magic 3.63 export matches all migrated
-regular files byte-for-byte. Lunar Magic's command-line ExGFX exporter does not yet enumerate the
-Rust-created slot, leaving `WriteLunarMagicRomMetadata` and any adjacent recognition state under
-active investigation rather than treating Rust-only semantic reopen as a complete oracle.
+regular files and a retained `ExGFX80` payload. `SelectGraphicsPointerTableFormat` at `$0045C030`
+proves it selects the expanded table only when its descriptor-routed marker is `$EA`; live
+differential writes resolve the complete marker to logical `$002A47 = EA EA`. Protecting the
+`$088000..$08ACFF` extended table and zero-initializing both compressed pointer domains prevents
+standard payload allocation and `$FF` sentinels from masquerading as ExGFX entries. A live Lunar
+Magic 3.63 control performs original `-ImportGFX`, `-ImportExGFX`, and `-ExportExGFX`; the same gate
+then re-exports every Rust-migrated regular file and the Rust-created `ExGFX80` byte-for-byte.
+Metadata copying is neither used nor required for recognition.
 A retained Lunar Magic 3.63 Wine oracle opens the original `Window8x8` through command `$232A` and
 posts F9 directly to that window. With all separate files replaced by equal-length sentinels, level
 `$105` changes exactly `$00,$01,$13,$14,$15,$17,$1B,$20`; removing `GFX33.bin` first produces

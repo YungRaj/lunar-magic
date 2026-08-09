@@ -55,7 +55,7 @@ fn run_export(wine: &Path, lunar_magic: &Path, directory: &Path, rom_name: &str)
 
 #[test]
 #[ignore = "requires Wine, Lunar Magic 3.63, and the local legally obtained pristine SMW ROM"]
-fn lunar_magic_reexports_every_rust_first_install_standard_gfx_file() {
+fn lunar_magic_reexports_rust_standard_and_exgfx_across_legacy_migration() {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
     let wine = std::env::var_os("WINE_BIN")
         .map(PathBuf::from)
@@ -103,11 +103,54 @@ fn lunar_magic_reexports_every_rust_first_install_standard_gfx_file() {
         assert_eq!(actual, expected, "{name}");
     }
 
-    let legacy = TemporaryDirectory::create("gfx-legacy-upgrade");
-    let mut legacy_project = project;
     let exgfx80 = (0..0x800)
         .map(|index| (index as u8).wrapping_mul(37).wrapping_add(11))
         .collect::<Vec<_>>();
+    let oracle = TemporaryDirectory::create("gfx-original-exgfx-install");
+    fs::copy(&pristine, oracle.0.join("original-install.smc")).unwrap();
+    fs::create_dir(oracle.0.join("Graphics")).unwrap();
+    for (number, bytes) in files.iter().enumerate() {
+        fs::write(
+            oracle
+                .0
+                .join("Graphics")
+                .join(format!("GFX{number:02X}.bin")),
+            bytes,
+        )
+        .unwrap();
+    }
+    run_export_operation(
+        &wine,
+        &lunar_magic,
+        &oracle.0,
+        "-ImportGFX",
+        "original-install.smc",
+    );
+    fs::create_dir(oracle.0.join("ExGraphics")).unwrap();
+    fs::write(oracle.0.join("ExGraphics/ExGFX80.bin"), &exgfx80).unwrap();
+    run_export_operation(
+        &wine,
+        &lunar_magic,
+        &oracle.0,
+        "-ImportExGFX",
+        "original-install.smc",
+    );
+    fs::remove_file(oracle.0.join("ExGraphics/ExGFX80.bin")).unwrap();
+    run_export_operation(
+        &wine,
+        &lunar_magic,
+        &oracle.0,
+        "-ExportExGFX",
+        "original-install.smc",
+    );
+    assert_eq!(
+        fs::read(oracle.0.join("ExGraphics/ExGFX80.bin")).unwrap(),
+        exgfx80,
+        "Lunar Magic did not re-export its own ExGFX80 insertion"
+    );
+
+    let legacy = TemporaryDirectory::create("gfx-legacy-upgrade");
+    let mut legacy_project = project;
     let exgfx_commit = lm_app::prepare_smw_us_v1_exgraphics_install(
         0,
         legacy_project.rom.clone(),
@@ -154,6 +197,19 @@ fn lunar_magic_reexports_every_rust_first_install_standard_gfx_file() {
             "legacy-upgraded {name}"
         );
     }
+    fs::create_dir(legacy.0.join("ExGraphics")).unwrap();
+    run_export_operation(
+        &wine,
+        &lunar_magic,
+        &legacy.0,
+        "-ExportExGFX",
+        "legacy-upgraded.smc",
+    );
+    assert_eq!(
+        fs::read(legacy.0.join("ExGraphics/ExGFX80.bin")).unwrap(),
+        exgfx80,
+        "Lunar Magic did not re-export the retained ExGFX80 bytes"
+    );
     let route = lm_profile::smw_us_v1_exgraphics_pointer(0x80).unwrap();
     assert_eq!(
         legacy_project

@@ -14,6 +14,9 @@ pub const SMW_US_V1_ORDINARY_EXGFX_POINTER_OFFSET: usize = 0x07f600;
 pub const SMW_US_V1_EXTENDED_EXGFX_POINTER_OFFSET: usize = 0x088000;
 pub const SMW_US_V1_EXGFX_EXPANSION_MARKER_OFFSET: usize = 0x07efb1;
 pub const SMW_US_V1_EXGFX_EXPANSION_MARKER: [u8; 7] = [0x72, 0, 0, 0, 0, 0, 0];
+pub const SMW_US_V1_EXPANDED_GRAPHICS_FORMAT_MARKER_OFFSET: usize = 0x002a47;
+pub const SMW_US_V1_EXPANDED_GRAPHICS_FORMAT_MARKER: [u8; 2] = [0xea, 0xea];
+pub const SMW_US_V1_VANILLA_GRAPHICS_FORMAT_MARKER: [u8; 2] = [0xf0, 0x03];
 pub const SMW_US_V1_RESERVED_EXGFX_MARKER_OFFSET: usize = 0x07efb6;
 pub const SMW_US_V1_RESERVED_EXGFX_MARKER: [u8; 2] = [0x22, 0];
 pub const SMW_US_V1_ROM_SIZE_OFFSET: usize = 0x007fd7;
@@ -71,6 +74,7 @@ pub enum SmwUsV1ExGraphicsError {
     UnsupportedRuntimeHook,
     UnsupportedTableBase,
     UnsupportedExpansionMarker([u8; 7]),
+    UnsupportedGraphicsFormatMarker([u8; 2]),
     FileNumber(u16),
     PointerOffsetOverflow,
     EmptyFiles,
@@ -125,12 +129,48 @@ pub fn probe_smw_us_v1_exgraphics_runtime(
         .try_into()
         .expect("the exact marker length was requested");
     if marker == SMW_US_V1_EXGFX_EXPANSION_MARKER {
+        let format_marker: [u8; 2] = rom
+            .read(
+                SMW_US_V1_EXPANDED_GRAPHICS_FORMAT_MARKER_OFFSET,
+                SMW_US_V1_EXPANDED_GRAPHICS_FORMAT_MARKER.len(),
+            )?
+            .try_into()
+            .expect("the exact graphics-format marker length was requested");
+        if format_marker != SMW_US_V1_EXPANDED_GRAPHICS_FORMAT_MARKER {
+            return Err(SmwUsV1ExGraphicsError::UnsupportedGraphicsFormatMarker(
+                format_marker,
+            ));
+        }
         return Ok(SmwUsV1ExGraphicsRuntimeState::Expanded);
     }
     if marker == [0xff, 0xff, 0xff, 0xff, 0xff, 0x22, 0] {
+        let format_marker: [u8; 2] = rom
+            .read(
+                SMW_US_V1_EXPANDED_GRAPHICS_FORMAT_MARKER_OFFSET,
+                SMW_US_V1_VANILLA_GRAPHICS_FORMAT_MARKER.len(),
+            )?
+            .try_into()
+            .expect("the exact graphics-format marker length was requested");
+        if format_marker != SMW_US_V1_VANILLA_GRAPHICS_FORMAT_MARKER {
+            return Err(SmwUsV1ExGraphicsError::UnsupportedGraphicsFormatMarker(
+                format_marker,
+            ));
+        }
         return Ok(SmwUsV1ExGraphicsRuntimeState::ReservedOnly);
     }
     if marker == [0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x1f] {
+        let format_marker: [u8; 2] = rom
+            .read(
+                SMW_US_V1_EXPANDED_GRAPHICS_FORMAT_MARKER_OFFSET,
+                SMW_US_V1_VANILLA_GRAPHICS_FORMAT_MARKER.len(),
+            )?
+            .try_into()
+            .expect("the exact graphics-format marker length was requested");
+        if format_marker != SMW_US_V1_VANILLA_GRAPHICS_FORMAT_MARKER {
+            return Err(SmwUsV1ExGraphicsError::UnsupportedGraphicsFormatMarker(
+                format_marker,
+            ));
+        }
         return Ok(SmwUsV1ExGraphicsRuntimeState::Ready);
     }
     Err(SmwUsV1ExGraphicsError::UnsupportedExpansionMarker(marker))
@@ -253,6 +293,11 @@ pub fn smw_us_v1_exgraphics_installation_plan(
                 SMW_US_V1_EXGFX_EXPANSION_MARKER_OFFSET,
                 &SMW_US_V1_EXGFX_EXPANSION_MARKER,
             )?);
+            writes.push(marker_write(
+                rom,
+                SMW_US_V1_EXPANDED_GRAPHICS_FORMAT_MARKER_OFFSET,
+                &SMW_US_V1_EXPANDED_GRAPHICS_FORMAT_MARKER,
+            )?);
         }
         (SmwUsV1ExGraphicsEncoding::Raw2048, SmwUsV1ExGraphicsRuntimeState::Ready) => {
             writes.push(marker_write(
@@ -263,7 +308,48 @@ pub fn smw_us_v1_exgraphics_installation_plan(
         }
         _ => {}
     }
+    let initializes_compressed_tables = encoding == SmwUsV1ExGraphicsEncoding::Lz2
+        && matches!(
+            state,
+            SmwUsV1ExGraphicsRuntimeState::Ready | SmwUsV1ExGraphicsRuntimeState::ReservedOnly
+        );
+    if initializes_compressed_tables {
+        let mut ordinary = PatchWrite {
+            offset: SMW_US_V1_ORDINARY_EXGFX_POINTER_OFFSET,
+            expected: rom
+                .read(SMW_US_V1_ORDINARY_EXGFX_POINTER_OFFSET, 0x80 * 3)?
+                .to_vec(),
+            replacement: vec![0; 0x80 * 3],
+            fixups: Vec::new(),
+        };
+        let mut extended = PatchWrite {
+            offset: SMW_US_V1_EXTENDED_EXGFX_POINTER_OFFSET,
+            expected: rom
+                .read(SMW_US_V1_EXTENDED_EXGFX_POINTER_OFFSET, 0xf00 * 3)?
+                .to_vec(),
+            replacement: vec![0; 0xf00 * 3],
+            fixups: Vec::new(),
+        };
+        for (index, route) in routes.iter().enumerate() {
+            let (table, offset) = if route.file_number <= 0xff {
+                (&mut ordinary, usize::from(route.file_number - 0x80) * 3)
+            } else {
+                (&mut extended, usize::from(route.file_number - 0x100) * 3)
+            };
+            table.fixups.push(PatchFixup {
+                offset,
+                target_payload: index,
+                target_addend: 0,
+                encoding: PatchFixupEncoding::Long24LowBank,
+            });
+        }
+        writes.push(ordinary);
+        writes.push(extended);
+    }
     for (index, route) in routes.iter().enumerate() {
+        if initializes_compressed_tables {
+            continue;
+        }
         writes.push(PatchWrite {
             offset: route.pointer_offset,
             expected: rom.read(route.pointer_offset, 3)?.to_vec(),
@@ -357,6 +443,9 @@ mod tests {
             ..SMW_US_V1_EXGFX_TABLE_BASE_OPERAND_OFFSET + 3]
             .copy_from_slice(&SMW_US_V1_EXGFX_TABLE_BASE_OPERAND);
         bytes[SMW_US_V1_EXGFX_EXPANSION_MARKER_OFFSET + 6] = 0x1f;
+        bytes[SMW_US_V1_EXPANDED_GRAPHICS_FORMAT_MARKER_OFFSET
+            ..SMW_US_V1_EXPANDED_GRAPHICS_FORMAT_MARKER_OFFSET + 2]
+            .copy_from_slice(&SMW_US_V1_VANILLA_GRAPHICS_FORMAT_MARKER);
         let mut image = RomImage::from_bytes(bytes).unwrap();
         assert_eq!(
             probe_smw_us_v1_exgraphics_runtime(&image).unwrap(),
@@ -376,6 +465,12 @@ mod tests {
             .write(
                 SMW_US_V1_EXGFX_EXPANSION_MARKER_OFFSET,
                 &SMW_US_V1_EXGFX_EXPANSION_MARKER,
+            )
+            .unwrap();
+        image
+            .write(
+                SMW_US_V1_EXPANDED_GRAPHICS_FORMAT_MARKER_OFFSET,
+                &SMW_US_V1_EXPANDED_GRAPHICS_FORMAT_MARKER,
             )
             .unwrap();
         assert_eq!(
@@ -427,6 +522,9 @@ mod tests {
             ..SMW_US_V1_EXGFX_TABLE_BASE_OPERAND_OFFSET + 3]
             .copy_from_slice(&SMW_US_V1_EXGFX_TABLE_BASE_OPERAND);
         bytes[SMW_US_V1_EXGFX_EXPANSION_MARKER_OFFSET + 6] = 0x1f;
+        bytes[SMW_US_V1_EXPANDED_GRAPHICS_FORMAT_MARKER_OFFSET
+            ..SMW_US_V1_EXPANDED_GRAPHICS_FORMAT_MARKER_OFFSET + 2]
+            .copy_from_slice(&SMW_US_V1_VANILLA_GRAPHICS_FORMAT_MARKER);
         bytes[SMW_US_V1_ROM_SIZE_OFFSET] = 0x0a;
         bytes[0x080000..0x080008].copy_from_slice(b"STAR\x1f\0\xe0\xff");
         RomImage::from_bytes(bytes).unwrap()
@@ -456,6 +554,29 @@ mod tests {
                 .read(SMW_US_V1_EXGFX_EXPANSION_MARKER_OFFSET, 7)
                 .unwrap(),
             SMW_US_V1_EXGFX_EXPANSION_MARKER
+        );
+        assert_eq!(
+            project
+                .rom
+                .read(SMW_US_V1_EXPANDED_GRAPHICS_FORMAT_MARKER_OFFSET, 2)
+                .unwrap(),
+            SMW_US_V1_EXPANDED_GRAPHICS_FORMAT_MARKER
+        );
+        assert!(
+            project
+                .rom
+                .read(SMW_US_V1_ORDINARY_EXGFX_POINTER_OFFSET + 3, 0x7f * 3)
+                .unwrap()
+                .iter()
+                .all(|byte| *byte == 0)
+        );
+        assert!(
+            project
+                .rom
+                .read(SMW_US_V1_EXTENDED_EXGFX_POINTER_OFFSET, 0xf00 * 3)
+                .unwrap()
+                .iter()
+                .all(|byte| *byte == 0)
         );
         assert_eq!(project.rom.logical_len(), SMW_US_V1_EXGFX_LOGICAL_LEN);
         project.undo().unwrap();

@@ -288,11 +288,9 @@ pub fn prepare_smw_us_v1_standard_graphics_install(
         .allocation
         .protected
         .push(ProtectedRange(0x80_000..0x80_028));
-    if legacy_upgrade {
-        options.allocation.protected.push(ProtectedRange(
-            lm_profile::SMW_US_V1_EXTENDED_EXGFX_POINTER_OFFSET..EXTENDED_EXGFX_POINTER_END,
-        ));
-    }
+    options.allocation.protected.push(ProtectedRange(
+        lm_profile::SMW_US_V1_EXTENDED_EXGFX_POINTER_OFFSET..EXTENDED_EXGFX_POINTER_END,
+    ));
     let ordinary = lm_profile::smw_us_v1_vanilla_graphics_layout();
     protect_layout(&mut options, ordinary)?;
     project
