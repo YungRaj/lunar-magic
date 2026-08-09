@@ -90,6 +90,13 @@ struct NativeSpriteDrag {
     map: usize,
     anchor: (usize, usize),
     selected: Vec<usize>,
+    kind: NativeSpriteDragKind,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum NativeSpriteDragKind {
+    Move,
+    Duplicate,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -818,6 +825,9 @@ impl RomOverworldEditor {
         let Some(counts) = counts else { return };
         ui.heading("Native custom overworld sprite stream");
         ui.small("Seven map-local lists, variable record widths, and Lunar Magic's 24-sprite-per-map limit.");
+        ui.small(
+            "Canvas: Ctrl/Command-click toggles, drag empty space selects, Ctrl/Command+A selects all, Delete removes, and right-drag duplicates the selected group.",
+        );
         let previous_map = self.native_sprite.map;
         ui.add(egui::Slider::new(&mut self.native_sprite.map, 0..=6).text("Map"));
         if self.native_sprite.map != previous_map {
@@ -978,8 +988,9 @@ impl RomOverworldEditor {
             }
         }
         ui.label(format!(
-            "Map {}: {count}/24 records",
-            self.native_sprite.map
+            "Map {}: {count}/24 records; {} selected",
+            self.native_sprite.map,
+            self.native_sprite_selection.len()
         ));
     }
 
@@ -1219,12 +1230,23 @@ impl RomOverworldEditor {
         }
         let mut action = None;
         let mut native_sprite_group_destination = None;
+        let mut delete_native_sprite_selection = false;
         egui::ScrollArea::both().max_height(420.0).show(ui, |ui| {
             let response = ui.add(egui::Image::new(&texture).sense(egui::Sense::click_and_drag()));
+            let primary_started = response.drag_started_by(egui::PointerButton::Primary);
+            let primary_stopped = response.drag_stopped_by(egui::PointerButton::Primary);
+            let secondary_started = response.drag_started_by(egui::PointerButton::Secondary);
+            let secondary_stopped = response.drag_stopped_by(egui::PointerButton::Secondary);
+            if primary_started || secondary_started {
+                response.request_focus();
+            }
             if (response.clicked()
+                || response.secondary_clicked()
                 || response.dragged()
-                || response.drag_started()
-                || response.drag_stopped())
+                || primary_started
+                || primary_stopped
+                || secondary_started
+                || secondary_stopped)
                 && let Some(position) = response.interact_pointer_pos()
                 && let Some((x, y)) = overworld_editor_render::selected_tile(
                     response.rect,
@@ -1256,7 +1278,21 @@ impl RomOverworldEditor {
                         let toggle = ui.input(|input| {
                             input.modifiers.ctrl || input.modifiers.command
                         });
-                        if response.drag_started() {
+                        if secondary_started {
+                            self.native_sprite_marquee = None;
+                            if !self.native_sprite_selection.is_empty() {
+                                self.native_sprite_drag = Some(NativeSpriteDrag {
+                                    map: self.native_sprite.map,
+                                    anchor: canvas_pixel,
+                                    selected: self
+                                        .native_sprite_selection
+                                        .iter()
+                                        .copied()
+                                        .collect(),
+                                    kind: NativeSpriteDragKind::Duplicate,
+                                });
+                            }
+                        } else if primary_started {
                             let anchor = ui
                                 .input(|input| input.pointer.press_origin())
                                 .and_then(|origin| {
@@ -1290,6 +1326,7 @@ impl RomOverworldEditor {
                                             .iter()
                                             .copied()
                                             .collect(),
+                                        kind: NativeSpriteDragKind::Move,
                                     });
                                 }
                                 self.native_sprite_marquee = None;
@@ -1327,7 +1364,7 @@ impl RomOverworldEditor {
                                 }
                                 self.native_sprite_selection = selection;
                             }
-                        } else if response.drag_stopped() {
+                        } else if primary_stopped || secondary_stopped {
                             if let Some(drag) = self.native_sprite_drag.take() {
                                 self.native_sprite.map = drag.map;
                                 native_sprite_group_destination = Some((drag, canvas_pixel));
@@ -1427,6 +1464,23 @@ impl RomOverworldEditor {
             }
             self.paint_main_route_overlay(ui, response.rect);
             self.paint_native_sprite_selection_overlay(ui, response.rect, shape);
+            if self.paint_tool == MapPaintTool::NativeSprite
+                && response.has_focus()
+                && !stale
+            {
+                let select_all = ui.input(|input| {
+                    (input.modifiers.ctrl || input.modifiers.command)
+                        && input.key_pressed(egui::Key::A)
+                });
+                if select_all {
+                    let count = self.workspace.as_ref().map_or(0, |workspace| {
+                        workspace.native_sprites.table().maps[self.native_sprite.map].len()
+                    });
+                    self.native_sprite_selection = (0..count).collect();
+                }
+                delete_native_sprite_selection =
+                    ui.input(|input| input.key_pressed(egui::Key::Delete));
+            }
         });
         if let Some((tool, position)) = action {
             match tool {
@@ -1440,7 +1494,11 @@ impl RomOverworldEditor {
             }
         }
         if let Some((drag, destination)) = native_sprite_group_destination
-            && let Err(error) = self.move_native_sprite_group(&drag, destination)
+            && let Err(error) = self.finish_native_sprite_drag(&drag, destination)
+        {
+            self.error = Some(error);
+        }
+        if delete_native_sprite_selection && let Err(error) = self.delete_native_sprite_selection()
         {
             self.error = Some(error);
         }
@@ -1485,7 +1543,7 @@ impl RomOverworldEditor {
         )
     }
 
-    fn move_native_sprite_group(
+    fn finish_native_sprite_drag(
         &mut self,
         drag: &NativeSpriteDrag,
         destination: (usize, usize),
@@ -1497,13 +1555,18 @@ impl RomOverworldEditor {
             .maps
             .get(drag.map)
             .ok_or("native sprite map is out of range")?;
-        let edits = native_sprite_group_move_edits(
-            drag.map,
-            records,
-            &drag.selected,
-            drag.anchor,
-            destination,
-        )?;
+        let edits = match drag.kind {
+            NativeSpriteDragKind::Move => native_sprite_group_move_edits(
+                drag.map,
+                records,
+                &drag.selected,
+                drag.anchor,
+                destination,
+            )?,
+            NativeSpriteDragKind::Duplicate => {
+                native_sprite_group_duplicate_edits(drag.map, records, &drag.selected, destination)?
+            }
+        };
         if edits.is_empty() {
             return Ok(());
         }
@@ -1511,10 +1574,38 @@ impl RomOverworldEditor {
             .native_sprites
             .apply_edits(&edits)
             .map_err(|error| error.to_string())?;
-        if let Some(index) = drag.selected.first().copied() {
+        if drag.kind == NativeSpriteDragKind::Duplicate {
+            let count = workspace.native_sprites.table().maps[drag.map].len();
+            self.native_sprite_selection =
+                (count.saturating_sub(drag.selected.len())..count).collect();
+        }
+        if let Some(index) = self.native_sprite_selection.first().copied() {
             self.native_sprite.index = index;
             self.load_native_sprite_form();
         }
+        self.rendered_key = None;
+        self.texture = None;
+        Ok(())
+    }
+
+    fn delete_native_sprite_selection(&mut self) -> Result<(), String> {
+        if self.native_sprite_selection.is_empty() {
+            return Ok(());
+        }
+        let map = self.native_sprite.map;
+        let edits = native_sprite_selection_remove_edits(map, &self.native_sprite_selection);
+        let workspace = self.workspace.as_mut().ok_or("workspace is closed")?;
+        workspace
+            .native_sprites
+            .apply_edits(&edits)
+            .map_err(|error| error.to_string())?;
+        self.native_sprite_selection.clear();
+        self.native_sprite.index = self
+            .native_sprite
+            .index
+            .min(workspace.native_sprites.table().maps[map].len());
+        self.native_sprite_drag = None;
+        self.native_sprite_marquee = None;
         self.rendered_key = None;
         self.texture = None;
         Ok(())
@@ -2362,6 +2453,91 @@ fn native_sprite_group_move_edits(
         .collect()
 }
 
+fn native_sprite_group_duplicate_edits(
+    map: usize,
+    records: &[lm_overworld::NativeCustomOverworldSprite],
+    selected: &[usize],
+    destination: (usize, usize),
+) -> Result<Vec<NativeCustomOverworldSpriteEdit>, String> {
+    const MAXIMUM_SPRITES_PER_MAP: usize = 24;
+    let selected = selected.iter().copied().collect::<BTreeSet<_>>();
+    if selected.is_empty() {
+        return Ok(Vec::new());
+    }
+    if records.len().saturating_add(selected.len()) > MAXIMUM_SPRITES_PER_MAP {
+        return Err(format!(
+            "duplicating {} selected native sprite(s) would exceed the 24-sprite map limit",
+            selected.len()
+        ));
+    }
+    let sprites = selected
+        .iter()
+        .map(|index| {
+            records
+                .get(*index)
+                .map(|sprite| (*index, sprite))
+                .ok_or_else(|| format!("native sprite index {index} is out of range"))
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    let plane_x = if map == 0 { 0 } else { 512 };
+    let destination_x = destination
+        .0
+        .checked_sub(plane_x)
+        .filter(|x| *x < 512)
+        .ok_or("the duplicate target is outside the selected native sprite map")?;
+    if destination.1 >= 512 {
+        return Err("the duplicate target is outside the selected native sprite map".into());
+    }
+    let Some((_, anchor)) = sprites.iter().min_by_key(|(index, sprite)| {
+        (
+            usize::from(sprite.x / 8) + usize::from(sprite.y / 8),
+            *index,
+        )
+    }) else {
+        return Ok(Vec::new());
+    };
+    let desired_x = snapped_pointer_delta(usize::from(anchor.x), destination_x);
+    let desired_y = snapped_pointer_delta(usize::from(anchor.y), destination.1);
+    let delta_x = constrain_native_sprite_axis(
+        desired_x,
+        sprites.iter().map(|(_, sprite)| i32::from(sprite.x)),
+        504,
+    );
+    let delta_y = constrain_native_sprite_axis(
+        desired_y,
+        sprites.iter().map(|(_, sprite)| i32::from(sprite.y)),
+        504,
+    );
+    sprites
+        .into_iter()
+        .enumerate()
+        .map(|(offset, (_, sprite))| {
+            let mut sprite = sprite.clone();
+            sprite.x = u16::try_from(i32::from(sprite.x) + delta_x)
+                .map_err(|_| "constrained duplicate native sprite X is out of range")?;
+            sprite.y = u16::try_from(i32::from(sprite.y) + delta_y)
+                .map_err(|_| "constrained duplicate native sprite Y is out of range")?;
+            Ok(NativeCustomOverworldSpriteEdit::Insert {
+                map,
+                index: records.len() + offset,
+                sprite,
+            })
+        })
+        .collect()
+}
+
+fn native_sprite_selection_remove_edits(
+    map: usize,
+    selected: &BTreeSet<usize>,
+) -> Vec<NativeCustomOverworldSpriteEdit> {
+    selected
+        .iter()
+        .rev()
+        .copied()
+        .map(|index| NativeCustomOverworldSpriteEdit::Remove { map, index })
+        .collect()
+}
+
 fn snapped_pointer_delta(anchor: usize, destination: usize) -> i32 {
     let anchor = i64::try_from(anchor / 8).unwrap_or(i64::MAX);
     let destination = i64::try_from(destination / 8).unwrap_or(i64::MAX);
@@ -2555,7 +2731,8 @@ mod canvas_tests {
         OverworldControllerEdit, OverworldEndpoint, OverworldLayerId, OverworldPathDirection,
         OverworldPathLink, OverworldPathLinkTable, OverworldPathTarget, RomOverworldEditor,
         flood_fill_cells, grid_line, inclusive_canvas_rect, native_sprite_canvas_edit,
-        native_sprite_canvas_position, native_sprite_group_move_edits,
+        native_sprite_canvas_position, native_sprite_group_duplicate_edits,
+        native_sprite_group_move_edits, native_sprite_selection_remove_edits,
         overworld_animation_preview_tick, rectangle_cells, route_canvas_endpoint,
         route_directional_canvas_endpoint, route_endpoint_canvas_pixel, stroke_edits,
         toggle_native_sprite_selection,
@@ -2666,6 +2843,46 @@ mod canvas_tests {
                 .is_empty()
         );
         assert!(native_sprite_group_move_edits(0, &records, &[9], (0, 0), (8, 0)).is_err());
+    }
+
+    #[test]
+    fn native_sprite_right_drag_duplicates_the_complete_group_and_delete_is_descending() {
+        let sprite = |id, x, y| lm_overworld::NativeCustomOverworldSprite {
+            id,
+            x,
+            y,
+            screen: id,
+            extra: vec![id],
+        };
+        let records = vec![sprite(1, 16, 24), sprite(2, 40, 8), sprite(3, 80, 80)];
+        let edits =
+            native_sprite_group_duplicate_edits(1, &records, &[1, 0], (512 + 64, 40)).unwrap();
+        assert_eq!(edits.len(), 2);
+        assert!(matches!(
+            &edits[0],
+            NativeCustomOverworldSpriteEdit::Insert { map: 1, index: 3, sprite }
+                if (sprite.id, sprite.x, sprite.y, sprite.extra.as_slice())
+                    == (1, 64, 40, &[1])
+        ));
+        assert!(matches!(
+            &edits[1],
+            NativeCustomOverworldSpriteEdit::Insert { map: 1, index: 4, sprite }
+                if (sprite.id, sprite.x, sprite.y) == (2, 88, 24)
+        ));
+        assert!(native_sprite_group_duplicate_edits(0, &records, &[0], (520, 40)).is_err());
+        let full = vec![sprite(4, 0, 0); 24];
+        assert!(native_sprite_group_duplicate_edits(0, &full, &[0], (0, 0)).is_err());
+
+        let selected = std::collections::BTreeSet::from([1, 3, 7]);
+        let deletes = native_sprite_selection_remove_edits(2, &selected);
+        assert!(matches!(
+            deletes.as_slice(),
+            [
+                NativeCustomOverworldSpriteEdit::Remove { map: 2, index: 7 },
+                NativeCustomOverworldSpriteEdit::Remove { map: 2, index: 3 },
+                NativeCustomOverworldSpriteEdit::Remove { map: 2, index: 1 }
+            ]
+        ));
     }
 
     #[test]

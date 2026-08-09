@@ -3425,6 +3425,19 @@ installed editor mirrors this with exact rendered-footprint marquee selection, C
 toggle, retained multi-selection, common snapped boundary fallback, and one ordered controller
 batch on release.
 
+The original keyboard dispatcher closes the remaining shortcut ambiguity.
+`HandleOverworldEditorKeyboardShortcut` (`005510D0`) sends Ctrl+A through command `$245D`, whose
+sprite-mode branch calls `SelectAllOverworldSprites`; unmodified Delete sends `$245B`, whose
+sprite-mode branch calls `DeleteSelectedUnsupportedOverworldSprites` (`0055A990`). Ctrl+C
+(`$2455`) and Ctrl+V (`$2456`) explicitly return without action in sprite mode: those clipboard
+commands are limited to Layer 2 and Layer 1 tiles. Right-button down (`WM_RBUTTONDOWN`, `$0204`)
+instead routes sprite mode to `PasteCustomOverworldSprites` (`0055C350`). That calls
+`DuplicateCustomOverworldSpritesAtPosition` (`0055C140`), which copies every selected custom
+sprite in stable slot order, clears the old selection, selects the copies, constrains the group at
+the pointer, and begins dragging it. The Rust editor follows that evidence with focused Ctrl/Command+A,
+Delete, and a deferred right-drag duplicate batch; duplication and final positioning publish
+together as one application revision rather than exposing a partial copy between pointer frames.
+
 ## Per-slot `ExAnimation` options
 
 `DecodeExAnimationSlotOptionFlags` (`004B3CB0`) and
