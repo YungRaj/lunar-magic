@@ -4801,3 +4801,20 @@ tables, upgrades a converted relocated `$C30` expanded-ExAnimation runtime to th
 before publication. The live Wine gate covers headered, headerless, Fast LoROM, and the complete
 8 MiB ExLoROM transition, requiring Lunar Magic 3.63 to export all 52 GFX files plus `ExGFX80` and
 newly inserted `ExGFX81` byte-for-byte.
+
+## Historical optimized-LZ2 runtime generation
+
+A patch-derived 2 MiB LoROM supplies an exact pre-3.63 optimized-LZ2 runtime generation. Its
+metadata value 1 and `$0038E3` hook select a `$1AF`-byte RATS payload with CRC-32 `b5f7eda1` and
+the generation trailer `LM 00 01`. Detection now accepts that exact length/checksum/trailer tuple
+alongside the current `$1C0`/`LM 01 01` tuple; it does not weaken authentication to metadata or a
+trailer prefix. Synthetic corruption and wrong-generation tests reject, while the opt-in authentic
+ROM gate decodes all 50 ordinary files plus GFX33/GFX32 without changing the image.
+
+Original Lunar Magic 3.63 accepts the historical ROM and converts it to LZ3, but its conversion is
+not codec-only. All 54 ExGFX exports and 51 standard GFX exports remain exact, while GFX17 gains
+legacy fourth-plane data. Rust therefore does not yet offer this generation as a migration source:
+the legacy ExGFX pointer/table layout and coupled graphics-format upgrade must be modeled and
+verified together before conversion can be claimed failure-atomic or byte-compatible. Exact
+provenance and hashes are retained in
+`oracle-work/graphics-compression-lz2-speed-generation-100.md`.

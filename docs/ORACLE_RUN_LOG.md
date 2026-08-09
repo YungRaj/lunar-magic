@@ -450,3 +450,27 @@ The end-to-end Wine gate independently creates the original oracle, asks Lunar M
 again on each Rust output, verifies no logical byte changes, and compares every original re-export
 with the source graphics. The original adds its canonical copier prefix to the headerless file, so
 that case compares the unchanged logical body while the headered case remains physically identical.
+
+## Historical optimized-LZ2 generation authentication
+
+The retained exact-runtime test authenticates the `$1AF`/`LM 00 01` generation and proves both
+payload corruption and a mismatched current-generation trailer reject:
+
+```text
+cargo test -p lm-profile historical_lz2_speed_runtime_is_exactly_authenticated
+test graphics_compression_runtime::tests::historical_lz2_speed_runtime_is_exactly_authenticated ... ok
+test result: ok. 1 passed; 0 failed
+```
+
+The non-redistributed patch-derived ROM is supplied explicitly for the corpus gate:
+
+```text
+LM_HISTORICAL_LZ2_SPEED_ROM=/tmp/AVSMWFinal.smc cargo test -p lm-profile \
+  historical_lz2_speed_rom_authenticates_and_decodes_standard_graphics -- --ignored --nocapture
+test graphics_compression_runtime::tests::historical_lz2_speed_rom_authenticates_and_decodes_standard_graphics ... ok
+test result: ok. 1 passed; 0 failed
+```
+
+The corpus run authenticates the complete runtime owner and reads all 52 standard graphics streams
+without mutating the source. See
+`oracle-work/graphics-compression-lz2-speed-generation-100.md` for source and conversion hashes.

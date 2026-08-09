@@ -17,9 +17,11 @@ const ORIGINAL_HOOK: [u8; 5] = [0x20, 0x83, 0xb9, 0xc9, 0xff];
 const INSTALLED_OPCODE: u8 = 0x22;
 const INSTALLED_RETURN: u8 = 0x60;
 const SPEED_RUNTIME_LEN: usize = 0x1c0;
+const LEGACY_SPEED_RUNTIME_LEN: usize = 0x1af;
 const LZ3_RUNTIME_LEN: usize = 0x2ab;
 const SA1_LZ3_RUNTIME_LEN: usize = 0x30c;
 const SPEED_RUNTIME_CRC32: u32 = 0x5d3c_ac46;
+const LEGACY_SPEED_RUNTIME_CRC32: u32 = 0xb5f7_eda1;
 const LZ3_RUNTIME_CRC32: u32 = 0xdcb7_727e;
 const SA1_LZ3_RUNTIME_CRC32: u32 = 0x520e_eb36;
 const SA1_LZ2_SPEED_OWNER_LEN: usize = 0x4806;
@@ -27,7 +29,11 @@ const SA1_LZ2_SPEED_RUNTIME_ADDEND: usize = 0x32ba;
 const SA1_LZ2_SPEED_RUNTIME_LEN: usize = 0x154c;
 const SA1_LZ2_SPEED_RUNTIME_CRC32: u32 = 0x5d96_54d6;
 const RUNTIME_TRAILER: [u8; 4] = *b"LM\x01\x01";
+const LEGACY_RUNTIME_TRAILER: [u8; 4] = *b"LM\x00\x01";
 const SPEED_RUNTIME_HEX: &str = include_str!("assets/graphics_compression_lz2_speed.hex");
+#[cfg(test)]
+const LEGACY_SPEED_RUNTIME_HEX: &str =
+    include_str!("assets/graphics_compression_lz2_speed_legacy.hex");
 const LZ3_RUNTIME_HEX: &str = include_str!("assets/graphics_compression_lz3.hex");
 const SA1_LZ3_RUNTIME_HEX: &str = include_str!("assets/graphics_compression_lz3_sa1.hex");
 
@@ -233,22 +239,38 @@ pub fn detect_smw_us_v1_graphics_compression_mode(
             actual: block.payload.start,
         });
     }
-    let (expected_len, expected_crc) = match mode {
-        SmwUsV1GraphicsCompressionMode::Lz2Speed => (SPEED_RUNTIME_LEN, SPEED_RUNTIME_CRC32),
-        SmwUsV1GraphicsCompressionMode::Lz3 if mapper == Mapper::Sa1 => {
-            (SA1_LZ3_RUNTIME_LEN, SA1_LZ3_RUNTIME_CRC32)
+    let candidates: &[(usize, u32, [u8; 4])] = match mode {
+        SmwUsV1GraphicsCompressionMode::Lz2Speed if mapper == Mapper::LoRom => &[
+            (SPEED_RUNTIME_LEN, SPEED_RUNTIME_CRC32, RUNTIME_TRAILER),
+            (
+                LEGACY_SPEED_RUNTIME_LEN,
+                LEGACY_SPEED_RUNTIME_CRC32,
+                LEGACY_RUNTIME_TRAILER,
+            ),
+        ],
+        SmwUsV1GraphicsCompressionMode::Lz2Speed => {
+            &[(SPEED_RUNTIME_LEN, SPEED_RUNTIME_CRC32, RUNTIME_TRAILER)]
         }
-        SmwUsV1GraphicsCompressionMode::Lz3 => (LZ3_RUNTIME_LEN, LZ3_RUNTIME_CRC32),
+        SmwUsV1GraphicsCompressionMode::Lz3 if mapper == Mapper::Sa1 => {
+            &[(SA1_LZ3_RUNTIME_LEN, SA1_LZ3_RUNTIME_CRC32, RUNTIME_TRAILER)]
+        }
+        SmwUsV1GraphicsCompressionMode::Lz3 => {
+            &[(LZ3_RUNTIME_LEN, LZ3_RUNTIME_CRC32, RUNTIME_TRAILER)]
+        }
         SmwUsV1GraphicsCompressionMode::Lz2Original => unreachable!(),
     };
-    if block.payload.len() != expected_len {
+    let Some((_expected_len, expected_crc, expected_trailer)) = candidates
+        .iter()
+        .copied()
+        .find(|(length, _, _)| block.payload.len() == *length)
+    else {
         return Err(SmwUsV1GraphicsCompressionDetectError::RuntimeLength {
-            expected: expected_len,
+            expected: candidates[0].0,
             actual: block.payload.len(),
         });
-    }
+    };
     let runtime = &bytes[block.payload];
-    if !runtime.ends_with(&RUNTIME_TRAILER) {
+    if !runtime.ends_with(&expected_trailer) {
         return Err(SmwUsV1GraphicsCompressionDetectError::RuntimeTrailer);
     }
     let actual_crc = crc32(runtime);
@@ -975,6 +997,31 @@ mod tests {
     use lm_project::Project;
     use std::fs;
 
+    fn legacy_lz2_speed_runtime_image() -> RomImage {
+        let runtime = decode_hex(LEGACY_SPEED_RUNTIME_HEX);
+        assert_eq!(runtime.len(), LEGACY_SPEED_RUNTIME_LEN);
+        assert_eq!(crc32(&runtime), LEGACY_SPEED_RUNTIME_CRC32);
+        let mut image = RomImage::from_bytes(vec![0xff; 0x10_0000]).unwrap();
+        let length_minus_one = u16::try_from(runtime.len() - 1).unwrap();
+        let complement = !length_minus_one;
+        let mut owner = Vec::with_capacity(HEADER_LEN + runtime.len());
+        owner.extend_from_slice(b"STAR");
+        owner.extend_from_slice(&length_minus_one.to_le_bytes());
+        owner.extend_from_slice(&complement.to_le_bytes());
+        owner.extend_from_slice(&runtime);
+        image.write(0x80_000, &owner).unwrap();
+        image
+            .write(
+                SMW_US_V1_GRAPHICS_COMPRESSION_HOOK_OFFSET,
+                &[INSTALLED_OPCODE, 0x08, 0x80, 0x90, INSTALLED_RETURN],
+            )
+            .unwrap();
+        image
+            .write(SMW_US_V1_GRAPHICS_COMPRESSION_METADATA_OFFSET, &[1])
+            .unwrap();
+        image
+    }
+
     fn load_mapper_graphics(
         image: &RomImage,
         mapper: Mapper,
@@ -1237,6 +1284,60 @@ mod tests {
             detect_smw_us_v1_graphics_compression_mode(&image),
             Err(SmwUsV1GraphicsCompressionDetectError::UnknownMetadata(3))
         );
+    }
+
+    #[test]
+    fn historical_lz2_speed_runtime_is_exactly_authenticated() {
+        let image = legacy_lz2_speed_runtime_image();
+        assert_eq!(
+            detect_smw_us_v1_graphics_compression_mode(&image).unwrap(),
+            SmwUsV1GraphicsCompressionMode::Lz2Speed
+        );
+
+        let mut corrupt = image.clone();
+        corrupt.write(0x80_008 + 0x80, &[0]).unwrap();
+        assert!(matches!(
+            detect_smw_us_v1_graphics_compression_mode(&corrupt),
+            Err(SmwUsV1GraphicsCompressionDetectError::RuntimeChecksum { .. })
+        ));
+
+        let mut wrong_generation = image;
+        wrong_generation
+            .write(
+                0x80_008 + LEGACY_SPEED_RUNTIME_LEN - LEGACY_RUNTIME_TRAILER.len(),
+                &RUNTIME_TRAILER,
+            )
+            .unwrap();
+        assert_eq!(
+            detect_smw_us_v1_graphics_compression_mode(&wrong_generation),
+            Err(SmwUsV1GraphicsCompressionDetectError::RuntimeTrailer)
+        );
+    }
+
+    #[test]
+    #[ignore = "requires an authenticated patch-derived historical LZ2-Speed ROM"]
+    fn historical_lz2_speed_rom_authenticates_and_decodes_standard_graphics() {
+        let source_bytes = fs::read(
+            std::env::var_os("LM_HISTORICAL_LZ2_SPEED_ROM").expect("LM_HISTORICAL_LZ2_SPEED_ROM"),
+        )
+        .unwrap();
+        let source = RomImage::from_bytes(source_bytes.clone()).unwrap();
+        assert_eq!(
+            detect_smw_us_v1_graphics_compression_mode(&source).unwrap(),
+            SmwUsV1GraphicsCompressionMode::Lz2Speed
+        );
+        let project = Project::new(source);
+        let mut ordinary = crate::smw_us_v1_vanilla_graphics_layout();
+        ordinary.compression = GraphicsCompression::Lz2;
+        for slot in 0..ordinary.pointers.entries {
+            project.load_graphics_file(slot, ordinary).unwrap();
+        }
+        let mut special = crate::smw_us_v1_special_graphics_layouts(&project.rom).unwrap();
+        special.gfx33.compression = GraphicsCompression::Lz2;
+        special.gfx32.compression = GraphicsCompression::Lz2;
+        project.load_graphics_file(0, special.gfx33).unwrap();
+        project.load_graphics_file(0, special.gfx32).unwrap();
+        assert_eq!(project.rom.as_file_bytes(), source_bytes);
     }
 
     #[test]

@@ -4465,3 +4465,13 @@ publication. The live Wine gate changes GFX00, installs the Rust result, and req
 to export all 52 files byte-for-byte while retaining SA-1 identity and a valid checksum. ExGFX
 first installation remains a separate mapper gate because Lunar Magic installs expanded-settings
 storage and descriptor-routed extended tables at SA-1-specific locations.
+
+An independently sourced historical optimized-LZ2 LoROM identifies a second authenticated runtime
+generation at the fixed graphics hook. Its exact `$1AF`-byte RATS payload has CRC-32 `b5f7eda1`,
+SHA-256 `7aaeae2444099f92a3f08406a92729cfaf5072e1988c9acc3dced1408ca5ee02`, and trailer
+`LM 00 01`; the current LoROM optimized runtime remains the distinct `$1C0`/`LM 01 01` family.
+Lunar Magic 3.63 converts the older ROM while also upgrading GFX17's legacy fourth plane. The
+unchanged 54-file ExGFX export set shows that the editor understands the old ExGFX table even
+though the current Rust table resolver does not. This establishes the next migration boundary as
+the coupled legacy graphics-format and pointer-table transition, not merely another decompressor
+payload replacement.
