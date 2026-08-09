@@ -50,6 +50,12 @@ also proves exhaustion is prefix-preserving: Lunar Magic commits the one availab
 retains palette/graphics conversion, and reports its exact partial-import warning. Transparent-source
 blank reuse plus complete original interaction coverage remain open.
 
+Three additional low-color captures close an ambiguity that the larger fixtures could not expose.
+Opaque black is not automatically transparent: an exact black already present in a usable nonzero
+palette cell bypasses the generated-color limit, stays at its original row/index, and materializes
+as a real graphics tile. This remains true with a one-color limit and with Maintain Detail enabled;
+Rust now matches all three complete palette, graphics, and Map16 workspaces exactly.
+
 Current Layer 1 import evidence also distinguishes extent from ordering. MWL import recomputes the
 five-bit stored last-screen field from the highest visible Layer 1 object or sprite, but preserves
 raw backward screen-jump order. `lunar_magic_recomputes_extent_but_preserves_raw_layer1_order`

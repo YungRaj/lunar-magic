@@ -415,6 +415,14 @@ the expected exhaustion state from the capture manifest and still compares all 5
 workspace bytes; the native session test independently proves the one-definition prefix and
 preserved destination Acts-Like field.
 
+Low-color differential coverage includes an opaque 16×16 black source and a 32×16 black/red
+source under a one-generated-color limit, both with ordinary reduction and Maintain Detail. These
+prove exact usable black bypasses the generated-color limit and the zero sentinel, retains its
+nonzero destination palette index without installing a duplicate, and produces a real `$200`
+graphics tile. `exact_usable_black_bypasses_the_generated_color_limit`,
+`exact_free_row_color_is_used_without_installing_a_duplicate`, and
+`maintain_detail_exact_existing_black_bypasses_the_zero_sentinel` lock the recovered substeps.
+
 Structured LM16 Map16 transfer covers both complete and selected-range containers. The compact
 selected form validates the recovered width/height/column/band-relative-row header fields, restores
 all three ambiguous `$4000`-tile bands through flags 4/8, requires exact row-major definition and

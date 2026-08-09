@@ -213,7 +213,7 @@ fn reduce_bitmap_palette_internal(
             .entry(lunar_magic_bitmap_color(*pixel).0)
             .or_default() += 1;
     }
-    let colors = if options.allow_modifying_unmarked_colors {
+    let mut colors = if options.allow_modifying_unmarked_colors {
         reduce_installable_colors(&opaque, &histogram, original, options)?
     } else {
         collect_unique_available_palette_colors(
@@ -221,8 +221,35 @@ fn reduce_bitmap_palette_internal(
             options,
         )?
     };
+    let mut exact_existing = Vec::new();
+    if options.prioritize_exact_palette_matches
+        && let Some(original) = original
+    {
+        // Opaque black already present in a usable, nonzero destination entry bypasses the
+        // generated-color limit. Lunar Magic retains that cell before reducing the remaining
+        // colors; this is observable with a one-color limit and separate black/red blocks.
+        for color in histogram.keys().copied() {
+            let available = options
+                .entries
+                .iter()
+                .zip(&original.colors)
+                .enumerate()
+                .any(|(index, (state, candidate))| {
+                    index % Palette::COLORS_PER_ROW != 0
+                        && *state != BitmapPaletteEntryState::Reserved
+                        && candidate.0 == color
+                });
+            let already_reduced = colors.iter().any(|candidate| candidate.0 == color);
+            if available && color == 0 && !already_reduced {
+                colors.push(Bgr555(color));
+            }
+            if available && color == 0 {
+                exact_existing.push(color);
+            }
+        }
+    }
     let opaque_indices = if options.maintain_detail {
-        maintain_detail_palette_indices(&opaque, &colors)?
+        maintain_detail_palette_indices(&opaque, &colors, &exact_existing)?
     } else {
         nearest_lunar_magic_palette_indices(&opaque, &colors)?
     };
@@ -340,7 +367,15 @@ fn nearest_lunar_magic_palette_indices(
                         .enumerate()
                         .map(|(index, color)| (index + 1, color.0)),
                 )
-                .min_by_key(|(index, color)| (lunar_magic_color_distance(source, *color), *index))
+                // An exact generated color wins a tie with the zero sentinel. Otherwise the
+                // ordinary path retains Lunar Magic's zero fallback.
+                .min_by_key(|(index, color)| {
+                    (
+                        lunar_magic_color_distance(source, *color),
+                        *index == 0,
+                        *index,
+                    )
+                })
                 .and_then(|(index, _)| u8::try_from(index).ok())
                 .ok_or(BitmapPaletteReductionError::IndexOverflow)
         })
@@ -471,6 +506,7 @@ fn reusable_color_matches(selected: u16, reusable: u16, hue_tolerance: u16) -> b
 fn maintain_detail_palette_indices(
     opaque: &[Rgb8],
     colors: &[Bgr555],
+    exact_existing: &[u16],
 ) -> Result<Vec<u8>, BitmapPaletteReductionError> {
     if colors.is_empty() {
         return Err(BitmapPaletteReductionError::EmptyOpaquePalette);
@@ -487,6 +523,9 @@ fn maintain_detail_palette_indices(
     let mut source_assignments = BTreeMap::<u16, u8>::new();
     let mut palette_assigned = vec![false; candidates.len()];
     for (palette_index, color) in candidates.iter().copied().enumerate() {
+        if palette_index == 0 && exact_existing.binary_search(&color).is_ok() {
+            continue;
+        }
         if sources.binary_search(&color).is_ok() && !source_assignments.contains_key(&color) {
             source_assignments.insert(
                 color,
@@ -802,6 +841,12 @@ pub fn allocate_bitmap_palette_rows(
     )?;
     let tile_sets = build_tile_color_sets(&reduced, width, tiles_wide, tiles_high)?;
     let mut records = build_color_set_records(&tile_sets);
+    if options.prioritize_exact_palette_matches && options.allow_modifying_unmarked_colors {
+        retain_exact_existing_color_sets(&mut records, &mut rows);
+        for row in &mut rows {
+            row.discard_unclaimed_free_colors();
+        }
+    }
     if options.allow_modifying_unmarked_colors {
         assign_color_set_records(&mut records, &mut rows)?;
     } else {
@@ -843,6 +888,32 @@ pub fn allocate_bitmap_palette_rows(
         tile_rows,
         generated_colors,
     })
+}
+
+fn retain_exact_existing_color_sets(
+    records: &mut BTreeMap<Vec<u16>, ColorSetRecord>,
+    rows: &mut [PaletteRowAllocation; BITMAP_PALETTE_ROWS],
+) {
+    for record in records.values_mut() {
+        if record.assigned_row.is_some() || record.colors.is_empty() {
+            continue;
+        }
+        if record.colors.iter().any(|color| *color != 0) {
+            continue;
+        }
+        let Some(row) = rows.iter().position(|row| {
+            record.colors.iter().all(|color| {
+                row.entries.iter().any(
+                    |entry| matches!(entry, RowEntry::Free(Some(value)) if value == color),
+                )
+            })
+        }) else {
+            continue;
+        };
+        rows[row].claim_exact_free_colors(&record.colors);
+        record.assigned_row = Some(row);
+    }
+    recompute_color_set_aggregate_weights(records);
 }
 
 fn reduce_tiles_to_native_row_capacity(
@@ -1512,6 +1583,7 @@ enum RowEntry {
     Free(Option<u16>),
     Reusable(u16),
     Retained(u16),
+    Exact(u16),
     Assigned(u16),
 }
 
@@ -1528,6 +1600,26 @@ struct RowScore {
 }
 
 impl PaletteRowAllocation {
+    fn claim_exact_free_colors(&mut self, colors: &[u16]) {
+        for color in colors {
+            if let Some(entry) = self
+                .entries
+                .iter_mut()
+                .find(|entry| matches!(entry, RowEntry::Free(Some(value)) if value == color))
+            {
+                *entry = RowEntry::Exact(*color);
+            }
+        }
+    }
+
+    fn discard_unclaimed_free_colors(&mut self) {
+        for entry in &mut self.entries {
+            if matches!(entry, RowEntry::Free(Some(_))) {
+                *entry = RowEntry::Free(None);
+            }
+        }
+    }
+
     fn new(row: usize, original: &Palette, options: &BitmapPaletteColorOptions) -> Self {
         let first = row * Palette::COLORS_PER_ROW;
         let first_reusable_color = (options.entries[first] == BitmapPaletteEntryState::Reusable)
@@ -1535,9 +1627,11 @@ impl PaletteRowAllocation {
         let entries = std::array::from_fn(|entry| {
             let index = row * Palette::COLORS_PER_ROW + entry;
             match options.entries[index] {
-                BitmapPaletteEntryState::Free if entry != 0 => RowEntry::Free(
-                    (!options.allow_modifying_unmarked_colors).then_some(original.colors[index].0),
-                ),
+                // Retain the live value until the black exact-match prepass is complete. The
+                // ordinary modifiable path clears every unclaimed value before row allocation.
+                BitmapPaletteEntryState::Free if entry != 0 => {
+                    RowEntry::Free(Some(original.colors[index].0))
+                }
                 BitmapPaletteEntryState::Reusable if entry != 0 => {
                     RowEntry::Reusable(original.colors[index].0)
                 }
@@ -1680,7 +1774,7 @@ impl PaletteRowAllocation {
         self.entries
             .iter()
             .position(|entry| {
-                matches!(entry, RowEntry::Free(Some(value)) | RowEntry::Reusable(value) | RowEntry::Retained(value) | RowEntry::Assigned(value) if *value == color)
+                matches!(entry, RowEntry::Free(Some(value)) | RowEntry::Reusable(value) | RowEntry::Retained(value) | RowEntry::Exact(value) | RowEntry::Assigned(value) if *value == color)
             })
             .and_then(|entry| u8::try_from(entry).ok())
     }
@@ -1689,7 +1783,7 @@ impl PaletteRowAllocation {
         self.entries
             .iter()
             .position(|entry| {
-                matches!(entry, RowEntry::Reusable(value) | RowEntry::Retained(value) | RowEntry::Assigned(value) if *value == color)
+                matches!(entry, RowEntry::Reusable(value) | RowEntry::Retained(value) | RowEntry::Exact(value) | RowEntry::Assigned(value) if *value == color)
             })
             .and_then(|entry| u8::try_from(entry).ok())
     }
@@ -1702,6 +1796,7 @@ impl PaletteRowAllocation {
                 RowEntry::Free(Some(value))
                 | RowEntry::Reusable(value)
                 | RowEntry::Retained(value)
+                | RowEntry::Exact(value)
                 | RowEntry::Assigned(value) => {
                     let index = u8::try_from(entry).ok()?;
                     Some((index, lunar_magic_color_distance(color, *value)))
@@ -1727,7 +1822,7 @@ impl PaletteRowAllocation {
                 RowEntry::Reusable(color)
                 | RowEntry::Retained(color)
                 | RowEntry::Assigned(color) => Some(*color),
-                RowEntry::Reserved | RowEntry::Free(_) => None,
+                RowEntry::Reserved | RowEntry::Free(_) | RowEntry::Exact(_) => None,
             })
             .collect::<Vec<_>>();
         colors.sort_unstable();
@@ -1739,7 +1834,11 @@ impl PaletteRowAllocation {
 const fn assigned_color(entry: RowEntry) -> Option<u16> {
     match entry {
         RowEntry::Assigned(color) => Some(color),
-        RowEntry::Reserved | RowEntry::Free(_) | RowEntry::Reusable(_) | RowEntry::Retained(_) => {
+        RowEntry::Reserved
+        | RowEntry::Free(_)
+        | RowEntry::Reusable(_)
+        | RowEntry::Retained(_)
+        | RowEntry::Exact(_) => {
             None
         }
     }
@@ -2567,7 +2666,7 @@ mod tests {
     fn maintain_detail_claims_one_distinct_source_color_per_palette_color() {
         let opaque = [Bgr555(0).to_rgb8(), Bgr555(2).to_rgb8()];
         let colors = [Bgr555(0), Bgr555(0x001f)];
-        let detailed = maintain_detail_palette_indices(&opaque, &colors).unwrap();
+        let detailed = maintain_detail_palette_indices(&opaque, &colors, &[]).unwrap();
         let nearest = Palette {
             colors: colors.to_vec(),
         }
@@ -2588,9 +2687,94 @@ mod tests {
         ];
 
         assert_eq!(
-            maintain_detail_palette_indices(&opaque, &colors).unwrap(),
+            maintain_detail_palette_indices(&opaque, &colors, &[]).unwrap(),
             [1, 2, 0]
         );
+    }
+
+    #[test]
+    fn maintain_detail_exact_existing_black_bypasses_the_zero_sentinel() {
+        let colors = [Bgr555(0x0010), Bgr555(0)];
+        let opaque = [Bgr555(0).to_rgb8(), Bgr555(0x001f).to_rgb8()];
+        assert_eq!(
+            maintain_detail_palette_indices(&opaque, &colors, &[0]).unwrap(),
+            [2, 1]
+        );
+    }
+
+    #[test]
+    fn ordinary_reduction_prefers_an_exact_color_but_retains_the_zero_fallback() {
+        let opaque = [Bgr555(0).to_rgb8(), Bgr555(0x7fff).to_rgb8()];
+        assert_eq!(
+            nearest_lunar_magic_palette_indices(&opaque, &[Bgr555(0x7fff)]).unwrap(),
+            [0, 1]
+        );
+        assert_eq!(
+            nearest_lunar_magic_palette_indices(&opaque[..1], &[Bgr555(0)]).unwrap(),
+            [1]
+        );
+    }
+
+    #[test]
+    fn exact_usable_black_bypasses_the_generated_color_limit() {
+        let black = Bgr555(0);
+        let red = Bgr555(0x001f);
+        let mut original = Palette {
+            colors: vec![Bgr555(0x7fff); BITMAP_PALETTE_COLORS],
+        };
+        original.colors[13] = black;
+        let mut options = BitmapPaletteColorOptions::lunar_magic_initial();
+        options.maximum_colors = 1;
+        options.entries.fill(BitmapPaletteEntryState::Reserved);
+        options.entries[0] = BitmapPaletteEntryState::Reusable;
+        options.entries[13] = BitmapPaletteEntryState::Free;
+        options.entries[16] = BitmapPaletteEntryState::Reusable;
+        options.entries[17] = BitmapPaletteEntryState::Free;
+        let pixels = [black.to_rgb8(), red.to_rgb8()].map(|pixel| Rgba8 {
+            red: pixel.red,
+            green: pixel.green,
+            blue: pixel.blue,
+            alpha: 255,
+        });
+
+        let reduced = reduce_bitmap_palette_with_palette(&pixels, &original, &options).unwrap();
+        assert_eq!(reduced.colors.len(), 2);
+        assert!(reduced.colors.contains(&black));
+        assert_ne!(reduced.indices[0], 0);
+        assert_ne!(reduced.indices[1], 0);
+    }
+
+    #[test]
+    fn exact_free_row_color_is_used_without_installing_a_duplicate() {
+        let black = Bgr555(0);
+        let generated = Bgr555(0x0010);
+        let mut original = Palette {
+            colors: vec![Bgr555(0x7fff); BITMAP_PALETTE_COLORS],
+        };
+        original.colors[13] = black;
+        let mut options = BitmapPaletteColorOptions::lunar_magic_initial();
+        options.entries.fill(BitmapPaletteEntryState::Reserved);
+        options.entries[0] = BitmapPaletteEntryState::Reusable;
+        options.entries[13] = BitmapPaletteEntryState::Free;
+        options.entries[16] = BitmapPaletteEntryState::Reusable;
+        options.entries[17] = BitmapPaletteEntryState::Free;
+        let reduced = ReducedBitmapPalette {
+            colors: vec![generated, black],
+            indices: (0..128)
+                .map(|pixel| if pixel % 16 < 8 { 2 } else { 1 })
+                .collect(),
+        };
+
+        let allocated =
+            allocate_bitmap_palette_rows(&reduced, 16, 8, &original, &options).unwrap();
+        assert_eq!(allocated.generated_colors, 1);
+        assert_eq!(allocated.palette.colors[13], black);
+        assert_eq!(allocated.palette.colors[17], generated);
+        assert_eq!(allocated.tile_rows, [0, 1]);
+        assert!(allocated.indices.chunks_exact(16).all(|row| {
+            row[..8].iter().all(|index| *index == 13)
+                && row[8..].iter().all(|index| *index == 1)
+        }));
     }
 
     #[test]

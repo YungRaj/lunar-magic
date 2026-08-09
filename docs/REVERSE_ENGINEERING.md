@@ -1449,6 +1449,16 @@ weren't enough blank 16x16 tiles remaining to import this bitmap.  Only some of 
 imported.` The pre/post 524,288-byte definition capture differs at seven bytes, all inside the
 single `$8FFF` record, and matches the Rust prefix allocator exactly.
 
+Opaque black exposes a separate exact-match prepass. With a solid black source, Lunar Magic keeps
+the existing usable black at row 0/index `$D`, encodes every source pixel as `$D`, and writes a real
+tile at graphics `$200`; it does not route the source through transparent index zero. A 32×16
+black/red fixture with the generated-color limit reduced to one proves that exact black does not
+consume that limit: black still uses row 0/index `$D`, while the one generated median color occupies
+row 1/index 1. Maintain Detail retains the same exact-black bypass before its distinct-source
+sentinel pass. Rust now preserves free-cell values only for this prepass, marks the claimed entry
+without seeding it into later row proposals, and clears every unclaimed modifiable value before the
+ordinary allocator.
+
 The live 524,288-byte definition workspace at `00777e58` stores each tile's four graphics words in
 column-major order (`top-left`, `bottom-left`, `top-right`, `bottom-right`). ROM and Map16 file
 definitions remain row-major. Three full-workspace Wine captures distinguish this adapter detail

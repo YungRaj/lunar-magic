@@ -691,3 +691,26 @@ The after-state SHA-256 values are
 workspace). Exactly seven Map16 bytes changed, all within definition `$8FFF`. The native session
 test `pristine_map16_exhaustion_retains_only_the_successful_preview_prefix` independently proves
 the same one-of-four allocation outcome.
+
+## Map16 opaque-black exact-match retention
+
+Three isolated-process captures bind the low-color boundary that was invisible in prior high-color
+fixtures. The 16×16 solid-black BMP has SHA-256
+`5fdab72d1cb204c38e54c3593ffb0d81ff3708c45fc55b6cbbad4dad9a3fce0b`; the 32×16 black/red
+BMP has SHA-256 `37ae916834944a216a5e7665fb9bdf1be0ed07e94b042ca70379101b65cacd11`.
+The latter was captured with a one-color limit in both ordinary and Maintain Detail modes.
+
+All three exact Wine comparisons pass. Their palette/graphics/Map16 after-state SHA-256 triples are:
+
+- solid black: `a5ac19bd9cc5ff1ed0be245dd26898b7d6d114873f770d02a1d246889055badd`,
+  `ccdfb6d920e3ac76312cb0dfb1ac16e3ad6e72ebc7551d2a52c79021fde22e3d`,
+  `a6b80e0e6bf3e69783ff811bfda66d1529db648ba9de8304301fabf72679a738`;
+- one-color ordinary: `ea727d06d55680f52fbcc73a3210605b47a4968915d8839e0da3ed010197602a`,
+  `ccdfb6d920e3ac76312cb0dfb1ac16e3ad6e72ebc7551d2a52c79021fde22e3d`,
+  `34f28ddcff58cd75cf929cfc7ab810975c361094451f3c4c8c8c4677edfffb79`;
+- one-color Maintain Detail: `7474781e87653ebcf38b69e64ec130cdcbb460d1ea2e286239ef4d19c3acdc90`,
+  `ccdfb6d920e3ac76312cb0dfb1ac16e3ad6e72ebc7551d2a52c79021fde22e3d`,
+  `d387c3c658303c5dd961db6497b72236b3c3c691631d1816cd899a4c2d2a5c18`.
+
+Together they prove Lunar Magic retains row 0/index `$D` black without consuming the single
+generated-color slot and materializes graphics tile `$200` in both reduction modes.
