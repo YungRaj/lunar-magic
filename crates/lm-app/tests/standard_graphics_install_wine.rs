@@ -582,4 +582,43 @@ fn lunar_magic_reexports_rust_sa1_standard_graphics_install() {
             "Lunar Magic did not re-export Rust SA-1 {name}"
         );
     }
+
+    let mut mixed_project = Project::new(standard_rom);
+    let mixed_files = [
+        (0x60, exgfx80.clone()),
+        (0x80, exgfx80.clone()),
+        (0x100, exgfx80.clone()),
+    ];
+    let mixed =
+        lm_app::prepare_smw_us_v1_exgraphics_install(0, mixed_project.rom.clone(), &mixed_files)
+            .unwrap();
+    mixed_project
+        .apply_mutation(&mixed.description, &mixed.mutation)
+        .unwrap();
+    let mixed_directory = TemporaryDirectory::create("sa1-exgfx-mixed");
+    fs::write(
+        mixed_directory.0.join("sa1-exgfx-mixed.smc"),
+        mixed_project.rom.as_file_bytes(),
+    )
+    .unwrap();
+    fs::create_dir(mixed_directory.0.join("ExGraphics")).unwrap();
+    run_export_operation(
+        &wine,
+        &lunar_magic,
+        &mixed_directory.0,
+        "-ExportExGFX",
+        "sa1-exgfx-mixed.smc",
+    );
+    for (file_number, expected) in mixed_files {
+        assert_eq!(
+            fs::read(
+                mixed_directory
+                    .0
+                    .join(format!("ExGraphics/ExGFX{file_number:02X}.bin")),
+            )
+            .unwrap(),
+            expected,
+            "Lunar Magic did not re-export mixed Rust SA-1 ExGFX{file_number:02X}"
+        );
+    }
 }

@@ -4364,7 +4364,15 @@ the standard-GFX allocator moves the owner beyond canonical `$087FF8`. The LZ2 e
 Lunar Magic's earliest-source tie break for equal-length dictionary matches. Three retained
 before/after gates compare the complete logical ROM byte-for-byte, and the live Wine gate requires
 Lunar Magic 3.63 to reopen every independently generated Rust result and re-export all three files
-exactly.
+exactly. The first-import transition is selected from the complete seven-case domain mask rather
+than merely the highest file number. Four additional byte-exact oracles cover `$60+$80`,
+`$60+$100`, `$80+$100`, and `$60+$80+$100`. They prove that a reserved file changes ordinary
+allocation to the lower first-fit gap, while an import without reserved files allocates extended
+before ordinary storage. The original editor re-exports all three files from Rust's mixed result.
+Subsequent full-directory synchronization remains separate: a retained replacement capture proves
+Lunar Magic reclaims and republishes present owners and clears pointers for omitted files, whereas
+the current sparse Rust insertion API intentionally retains omitted entries. That mismatch remains
+open rather than being hidden by the completed first-import evidence.
 An ExGFX insertion request also upgrades either authenticated legacy ExAnimation generation inside
 the same unpublished project. The pointer-hook generation advances its owned fragments before the
 new file is allocated; the global-table generation migrates its complete record set into current

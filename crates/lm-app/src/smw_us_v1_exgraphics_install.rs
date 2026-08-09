@@ -68,14 +68,11 @@ pub fn prepare_smw_us_v1_exgraphics_install(
                 .install_relocatable_patch(&settings)
                 .map_err(|error| error.to_string())?;
             if mapper == Mapper::Sa1 {
-                let first_domain_file = files
-                    .iter()
-                    .map(|(number, _)| *number)
-                    .max()
-                    .expect("empty insertion was rejected before prerequisite planning");
+                let first_domain_files =
+                    files.iter().map(|(number, _)| *number).collect::<Vec<_>>();
                 let runtime = smw_us_v1_sa1_exgraphics_runtime_installation_plan(
                     &project.rom,
-                    first_domain_file,
+                    &first_domain_files,
                 )
                 .map_err(|error| error.to_string())?;
                 project
@@ -174,16 +171,25 @@ pub fn prepare_smw_us_v1_exgraphics_install(
 
     let mut reserved = Vec::new();
     let mut compressed = Vec::new();
+    let mut extended = Vec::new();
     for file in files.iter().cloned() {
         match smw_us_v1_exgraphics_pointer_for_mapper(file.0, mapper)
             .map_err(|error| error.to_string())?
             .encoding
         {
             SmwUsV1ExGraphicsEncoding::Raw2048 => reserved.push(file),
+            SmwUsV1ExGraphicsEncoding::Lz2 if mapper == Mapper::Sa1 && file.0 >= 0x100 => {
+                extended.push(file);
+            }
             SmwUsV1ExGraphicsEncoding::Lz2 => compressed.push(file),
         }
     }
-    for group in [&reserved, &compressed] {
+    let compressed_groups = if mapper == Mapper::Sa1 && reserved.is_empty() {
+        [&extended, &compressed]
+    } else {
+        [&compressed, &extended]
+    };
+    for group in std::iter::once(&reserved).chain(compressed_groups) {
         if group.is_empty() {
             continue;
         }
@@ -430,6 +436,60 @@ mod tests {
     #[ignore = "requires retained authentic SA-1 Pack before/after first-ExGFX oracle images"]
     fn authentic_sa1_first_exgfx100_install_is_byte_exact() {
         assert_authentic_sa1_first_exgfx_is_byte_exact(0x100, "LM_SA1_EXGFX100_AFTER");
+    }
+
+    #[test]
+    #[ignore = "requires retained authentic SA-1 Pack before/after mixed first-ExGFX oracle images"]
+    fn authentic_sa1_first_mixed_exgfx_domains_are_byte_exact() {
+        let before = RomImage::from_bytes(
+            std::fs::read(std::env::var_os("LM_SA1_EXGFX_BEFORE").expect("LM_SA1_EXGFX_BEFORE"))
+                .unwrap(),
+        )
+        .unwrap();
+        let bytes = (0..0x800_usize)
+            .map(|index| index.to_le_bytes()[0].wrapping_mul(37).wrapping_add(11))
+            .collect::<Vec<_>>();
+        for (variable, numbers) in [
+            ("LM_SA1_EXGFX60_80_AFTER", &[0x60, 0x80][..]),
+            ("LM_SA1_EXGFX60_100_AFTER", &[0x60, 0x100][..]),
+            ("LM_SA1_EXGFX80_100_AFTER", &[0x80, 0x100][..]),
+            ("LM_SA1_EXGFX_MIXED_AFTER", &[0x60, 0x80, 0x100][..]),
+        ] {
+            let oracle = RomImage::from_bytes(
+                std::fs::read(
+                    std::env::var_os(variable)
+                        .unwrap_or_else(|| panic!("{variable} must name an authentic after image")),
+                )
+                .unwrap(),
+            )
+            .unwrap();
+            let files = numbers
+                .iter()
+                .map(|number| (*number, bytes.clone()))
+                .collect::<Vec<_>>();
+            let prepared = prepare_smw_us_v1_exgraphics_install(0, before.clone(), &files).unwrap();
+            let mut project = Project::new(before.clone());
+            project
+                .apply_mutation(&prepared.description, &prepared.mutation)
+                .unwrap();
+            let actual = project.rom.logical_bytes();
+            let expected = oracle.logical_bytes();
+            let mismatches = actual
+                .iter()
+                .zip(expected)
+                .enumerate()
+                .filter_map(|(offset, (actual, expected))| {
+                    (actual != expected).then_some((offset, *actual, *expected))
+                })
+                .collect::<Vec<_>>();
+            assert_eq!(actual.len(), expected.len(), "{variable}");
+            assert!(
+                mismatches.is_empty(),
+                "{variable}: {} mismatches; first: {:02X?}",
+                mismatches.len(),
+                &mismatches[..mismatches.len().min(64)]
+            );
+        }
     }
 
     #[test]

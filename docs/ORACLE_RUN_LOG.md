@@ -267,3 +267,36 @@ standard GFX files through Rust, independently inserts each of the three ExGFX f
 then requires Lunar Magic to export the exact 2,048 source bytes. The `ExGFX100` route also proves
 the pointer table follows a first-fit-relocated expanded-settings owner rather than assuming the
 canonical `$088000` payload. The renderer regression remains green at 232/232.
+
+## 2026-08-08 — SA-1 mixed-domain first-ExGFX matrix
+
+The same authenticated standard-GFX source was imported by Lunar Magic with each multi-domain
+combination. Retained complete-ROM SHA-256 values are:
+
+```text
+$60+$80       def974231c41608acd782aebba9854e43c7ca31c964f73abce6a366027fcac09
+$60+$100      d2ff9867269b920e903703a9123eaaf4038dbd055595af9c90a5d494618ca5bc
+$80+$100      8a8ababe0405963227d8fc98168e439c65b25ea17ad0fbd543460329d8cc7c20
+$60+$80+$100  5719e8a7dfc2549dfe188fb5cdadb3b76456af7bf6840342e9f18c4a4e6e0b4c
+```
+
+```text
+LM_SA1_EXGFX_BEFORE=... LM_SA1_EXGFX60_80_AFTER=... \
+LM_SA1_EXGFX60_100_AFTER=... LM_SA1_EXGFX80_100_AFTER=... \
+LM_SA1_EXGFX_MIXED_AFTER=... \
+  cargo test -p lm-app authentic_sa1_first_mixed_exgfx_domains_are_byte_exact \
+  -- --ignored --nocapture
+1 passed; 0 failed
+
+LM_SA1_PACK_ROM=... WINEDEBUG=-all cargo test -p lm-app \
+  --test standard_graphics_install_wine \
+  lunar_magic_reexports_rust_sa1_standard_graphics_install -- --ignored --nocapture
+1 passed; 0 failed; finished in 13.74s
+```
+
+All four Rust outputs are complete-ROM byte matches. The three-domain gate additionally requires
+Lunar Magic to re-export exact `ExGFX60`, `ExGFX80`, and `ExGFX100` source bytes from the Rust ROM.
+This recovered the seven distinct first-import marker forms and the domain-dependent allocator
+ordering. A separate retained subsequent-import capture shows that Lunar Magic treats the directory
+as a synchronized set, reclaiming replaced owners and removing omitted entries; that follow-up
+behavior remains an explicit open gate.

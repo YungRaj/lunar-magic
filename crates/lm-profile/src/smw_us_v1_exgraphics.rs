@@ -82,6 +82,7 @@ pub enum SmwUsV1ExGraphicsError {
     PointerOffsetOverflow,
     EmptyFiles,
     MixedEncoding,
+    MixedSa1CompressedDomains,
     DuplicateFileNumber(u16),
     InvalidRawLength { file_number: u16, actual: usize },
     InvalidReservedLength { file_number: u16, actual: usize },
@@ -239,12 +240,17 @@ pub fn probe_smw_us_v1_exgraphics_runtime_for_mapper(
 /// Builds Lunar Magic's compact first-ExGFX runtime transition for a 1--2 MiB SA-1 Pack ROM.
 ///
 /// Unlike the large mapper-compatible ExAnimation family, this route uses the fixed SA-1 Pack
-/// helper area and initializes only the ordinary `$80..$FF` pointer domain. The expanded-settings
-/// payload at `$088000` remains the erased sentinel for the `$100..$FFF` domain until an entry is
-/// written.
+/// helper area and initializes the ordinary `$80..$FF` pointer domain. The complete first-import
+/// file-number set selects one of Lunar Magic's seven reserved/ordinary/extended cleanup markers;
+/// the expanded-settings payload retains the `$100..$FFF` domain until an entry is written.
+///
+/// # Errors
+///
+/// Rejects an empty or invalid file-number set, truncated fixed storage, or an unrecognized
+/// pre-install marker.
 pub fn smw_us_v1_sa1_exgraphics_runtime_installation_plan(
     rom: &RomImage,
-    first_file_number: u16,
+    first_file_numbers: &[u16],
 ) -> Result<RelocatablePatchPlan, SmwUsV1ExGraphicsError> {
     let direct = |offset: usize, expected: &[u8], replacement: &[u8]| PatchWrite {
         offset,
@@ -292,23 +298,29 @@ pub fn smw_us_v1_sa1_exgraphics_runtime_installation_plan(
             ],
         ),
     ];
-    let (marker_offset, replacement) = match first_file_number {
-        0x60..=0x63 => {
+    let mut domains = 0_u8;
+    for file_number in first_file_numbers {
+        domains |= match file_number {
+            0x60..=0x63 => 1,
+            0x80..=0xff => 2,
+            0x100..=0xfff => 4,
+            _ => return Err(SmwUsV1ExGraphicsError::FileNumber(*file_number)),
+        };
+    }
+    let (marker_offset, replacement) = match domains {
+        0 => return Err(SmwUsV1ExGraphicsError::EmptyFiles),
+        1 => {
             let mut replacement = vec![0; 0x11];
             replacement[0] = 0xb9;
             (0x07efa7, replacement)
         }
-        0x80..=0xff => {
-            let mut replacement = vec![0xff; 0x65];
-            replacement.extend_from_slice(&[0xa8, 0x00]);
-            (0x07efb6, replacement)
-        }
-        0x100..=0xfff => {
-            let mut replacement = vec![0xff; 0x68];
-            replacement.extend_from_slice(&[0xa8, 0x00]);
-            (0x07efb6, replacement)
-        }
-        _ => return Err(SmwUsV1ExGraphicsError::FileNumber(first_file_number)),
+        2 => (0x07efb6, sa1_domain_marker(0x65, 0xa8)),
+        3 => (0x07efb6, sa1_domain_marker(0x67, 0x4d)),
+        4 => (0x07efb6, sa1_domain_marker(0x68, 0xa8)),
+        5 => (0x07efb6, sa1_domain_marker(0x6b, 0x17)),
+        6 => (0x07efb6, sa1_domain_marker(0xde, 0xf1)),
+        7 => (0x07efb6, sa1_domain_marker(0xe0, 0xaa)),
+        _ => unreachable!("three ExGFX domain bits exhaust a u8 mask"),
     };
     let actual_runtime_marker = rom.read(marker_offset, replacement.len())?;
     let valid_standard_marker = if marker_offset == 0x07efa7 {
@@ -345,6 +357,12 @@ pub fn smw_us_v1_sa1_exgraphics_runtime_installation_plan(
         payloads: Vec::new(),
         writes,
     })
+}
+
+fn sa1_domain_marker(erased_len: usize, final_byte: u8) -> Vec<u8> {
+    let mut marker = vec![0xff; erased_len];
+    marker.extend_from_slice(&[final_byte, 0]);
+    marker
 }
 
 /// Resolves Lunar Magic's three disjoint native ExGFX pointer domains.
@@ -468,6 +486,13 @@ pub fn smw_us_v1_exgraphics_installation_plan_for_mapper(
     let encoding = routes[0].encoding;
     if routes.iter().any(|route| route.encoding != encoding) {
         return Err(SmwUsV1ExGraphicsError::MixedEncoding);
+    }
+    let has_sa1_ordinary =
+        mapper == Mapper::Sa1 && routes.iter().any(|route| route.file_number <= 0xff);
+    let has_sa1_extended =
+        mapper == Mapper::Sa1 && routes.iter().any(|route| route.file_number >= 0x100);
+    if has_sa1_ordinary && has_sa1_extended && sa1_reserved_domain_is_populated(rom)? {
+        return Err(SmwUsV1ExGraphicsError::MixedSa1CompressedDomains);
     }
     let payloads = ordered
         .iter()
@@ -599,6 +624,11 @@ pub fn smw_us_v1_exgraphics_installation_plan_for_mapper(
         allocation: AllocationPolicy {
             search: match encoding {
                 SmwUsV1ExGraphicsEncoding::Raw2048 => 0x08_0028..SMW_US_V1_EXGFX_LOGICAL_LEN,
+                SmwUsV1ExGraphicsEncoding::Lz2
+                    if has_sa1_ordinary && sa1_reserved_domain_is_populated(rom)? =>
+                {
+                    0x08_0028..SMW_US_V1_EXGFX_LOGICAL_LEN
+                }
                 SmwUsV1ExGraphicsEncoding::Lz2 => 0x0f_fff8..SMW_US_V1_EXGFX_LOGICAL_LEN,
             },
             bank_size: None,
@@ -610,6 +640,13 @@ pub fn smw_us_v1_exgraphics_installation_plan_for_mapper(
         payloads,
         writes,
     })
+}
+
+fn sa1_reserved_domain_is_populated(rom: &RomImage) -> Result<bool, SmwUsV1ExGraphicsError> {
+    Ok(rom
+        .read(SMW_US_V1_RESERVED_EXGFX_POINTER_OFFSET, 4 * 3)?
+        .chunks_exact(3)
+        .any(|pointer| pointer != [0, 0, 0] && pointer != [0xff, 0xff, 0xff]))
 }
 
 fn mapper_rom_offset(mapper: Mapper, lorom_offset: usize) -> usize {
