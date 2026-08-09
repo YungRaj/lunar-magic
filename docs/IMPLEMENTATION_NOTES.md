@@ -4976,3 +4976,15 @@ clicks on palette colors and the rendered 8x8 graphics cache select the exact ow
 use a read-only global form in this aggregate editor, preventing a global record from entering the
 local-overworld edit command; ordinary local owners remain editable. Alt is intentionally ignored
 for this chord, matching the two independent native Ctrl/Shift key-state tests.
+
+## Native overworld sprite canvas-plane routing and selection
+
+The installed-overworld renderer must translate native custom-sprite coordinates differently from
+ordinary overworld records. Map 0 owns canvas pixels `0..=511`; maps 1–6 share the right-hand
+canvas plane and therefore add 512 to their map-local X coordinate only while rendering. The ROM
+model remains map-local, so saving and reopening do not absorb that visual offset.
+
+The native-sprite canvas tool now hit-tests the active map's anchor cells in reverse record order.
+An occupied click selects the last/topmost matching record and reloads its complete variable-width
+form. A drag captures that record identity and stages exactly one replacement at release; an empty
+click retains insert/move behavior. Cross-plane points cannot select or mutate a record.

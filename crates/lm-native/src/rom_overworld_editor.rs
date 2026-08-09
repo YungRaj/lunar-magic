@@ -84,6 +84,12 @@ struct NativeSpriteForm {
     extra: String,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct NativeSpriteDrag {
+    map: usize,
+    index: usize,
+}
+
 impl Default for NativeSpriteForm {
     fn default() -> Self {
         Self {
@@ -193,6 +199,7 @@ pub(crate) struct RomOverworldEditor {
     animation_preview_event: usize,
     animation_option_map: usize,
     native_sprite: NativeSpriteForm,
+    native_sprite_drag: Option<NativeSpriteDrag>,
     map16_page: usize,
     map16_rendered_key: Option<(u64, usize)>,
     map16_texture: Option<egui::TextureHandle>,
@@ -1178,6 +1185,9 @@ impl RomOverworldEditor {
                 );
             }
         });
+        if self.paint_tool != MapPaintTool::NativeSprite {
+            self.native_sprite_drag = None;
+        }
         let mut action = None;
         let mut native_sprite_position = None;
         egui::ScrollArea::both().max_height(420.0).show(ui, |ui| {
@@ -1206,8 +1216,32 @@ impl RomOverworldEditor {
                     MapPaintTool::Fill if !stale && response.clicked() => {
                         action = Some((MapPaintTool::Fill, (x, y)));
                     }
-                    MapPaintTool::NativeSprite if !stale && response.clicked() => {
-                        native_sprite_position = Some((x, y));
+                    MapPaintTool::NativeSprite if !stale => {
+                        if response.drag_started() {
+                            if let Some(index) = self.native_sprite_hit_test((x, y)) {
+                                self.native_sprite.index = index;
+                                self.load_native_sprite_form();
+                                self.native_sprite_drag = Some(NativeSpriteDrag {
+                                    map: self.native_sprite.map,
+                                    index,
+                                });
+                            } else {
+                                self.native_sprite_drag = None;
+                            }
+                        } else if response.drag_stopped() {
+                            if let Some(drag) = self.native_sprite_drag.take() {
+                                self.native_sprite.map = drag.map;
+                                self.native_sprite.index = drag.index;
+                                native_sprite_position = Some((x, y));
+                            }
+                        } else if response.clicked() {
+                            if let Some(index) = self.native_sprite_hit_test((x, y)) {
+                                self.native_sprite.index = index;
+                                self.load_native_sprite_form();
+                            } else {
+                                native_sprite_position = Some((x, y));
+                            }
+                        }
                     }
                     MapPaintTool::Rectangle if !stale => {
                         if response.drag_started() {
@@ -1330,6 +1364,15 @@ impl RomOverworldEditor {
         self.rendered_key = None;
         self.texture = None;
         Ok(())
+    }
+
+    fn native_sprite_hit_test(&self, position: (usize, usize)) -> Option<usize> {
+        let workspace = self.workspace.as_ref()?;
+        native_sprite_canvas_hit_test(
+            &workspace.native_sprites.table().maps,
+            self.native_sprite.map,
+            position,
+        )
     }
 
     fn paint_main_route_overlay(&self, ui: &egui::Ui, rect: egui::Rect) {
@@ -2043,6 +2086,17 @@ fn native_sprite_canvas_edit(
     })
 }
 
+fn native_sprite_canvas_hit_test(
+    maps: &[Vec<lm_overworld::NativeCustomOverworldSprite>; 7],
+    map: usize,
+    position: (usize, usize),
+) -> Option<usize> {
+    let (x, y) = native_sprite_canvas_position(map, position.0, position.1)?;
+    maps.get(map)?
+        .iter()
+        .rposition(|sprite| sprite.x == x && sprite.y == y)
+}
+
 fn overworld_animation_preview_tick(seconds: f64, rate: OverworldAnimationRate) -> usize {
     if let Ok(tick) = std::env::var("LM_NATIVE_OVERWORLD_ANIMATION_TICK")
         && let Ok(tick) = tick.parse::<usize>()
@@ -2205,9 +2259,10 @@ mod canvas_tests {
         MainPathLinkForm, NativeCustomOverworldSpriteEdit, OverworldAnimationRate,
         OverworldControllerEdit, OverworldEndpoint, OverworldLayerId, OverworldPathDirection,
         OverworldPathLink, OverworldPathLinkTable, OverworldPathTarget, RomOverworldEditor,
-        flood_fill_cells, grid_line, native_sprite_canvas_edit, native_sprite_canvas_position,
-        overworld_animation_preview_tick, rectangle_cells, route_canvas_endpoint,
-        route_directional_canvas_endpoint, route_endpoint_canvas_pixel, stroke_edits,
+        flood_fill_cells, grid_line, native_sprite_canvas_edit, native_sprite_canvas_hit_test,
+        native_sprite_canvas_position, overworld_animation_preview_tick, rectangle_cells,
+        route_canvas_endpoint, route_directional_canvas_endpoint, route_endpoint_canvas_pixel,
+        stroke_edits,
     };
     use crate::document_loader::BoundedRead;
     use eframe::egui;
@@ -2261,6 +2316,32 @@ mod canvas_tests {
             NativeCustomOverworldSpriteEdit::Replace { map: 0, index: 2, sprite }
                 if (sprite.x, sprite.y) == (80, 40)
         ));
+    }
+
+    #[test]
+    fn native_sprite_canvas_hit_test_selects_topmost_record_on_the_active_plane() {
+        let sprite = |id, x, y| lm_overworld::NativeCustomOverworldSprite {
+            id,
+            x,
+            y,
+            screen: 0,
+            extra: Vec::new(),
+        };
+        let maps = [
+            vec![sprite(1, 80, 40), sprite(2, 80, 40)],
+            vec![sprite(3, 48, 24)],
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+        ];
+
+        assert_eq!(native_sprite_canvas_hit_test(&maps, 0, (10, 5)), Some(1));
+        assert_eq!(native_sprite_canvas_hit_test(&maps, 1, (70, 3)), Some(0));
+        assert_eq!(native_sprite_canvas_hit_test(&maps, 0, (70, 3)), None);
+        assert_eq!(native_sprite_canvas_hit_test(&maps, 1, (10, 5)), None);
+        assert_eq!(native_sprite_canvas_hit_test(&maps, 7, (64, 0)), None);
     }
 
     #[test]

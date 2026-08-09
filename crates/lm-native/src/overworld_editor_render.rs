@@ -362,29 +362,7 @@ pub(crate) fn render_texture_with_preview(
     )
     .map_err(|error| error.to_string())?;
     if let Some(native) = native_appearances {
-        let mut placements = overworld
-            .data
-            .sprites
-            .iter()
-            .map(|sprite| lm_render::NativeOverworldSpritePlacement {
-                id: sprite.id,
-                x: i32::from(sprite.x),
-                y: i32::from(sprite.y),
-                submap: sprite.submap.encoded(),
-            })
-            .collect::<Vec<_>>();
-        if let Some(custom) = native_custom_sprites {
-            placements.extend(custom.maps.iter().enumerate().flat_map(|(map, sprites)| {
-                sprites
-                    .iter()
-                    .map(move |sprite| lm_render::NativeOverworldSpritePlacement {
-                        id: u16::from(sprite.id),
-                        x: i32::from(sprite.x),
-                        y: i32::from(sprite.y),
-                        submap: u8::try_from(map).unwrap_or_default(),
-                    })
-            }));
-        }
+        let placements = native_overworld_sprite_placements(overworld, native_custom_sprites);
         let elements = lm_render::resolve_native_overworld_sprite_elements(
             &placements,
             &native.definitions,
@@ -405,6 +383,36 @@ pub(crate) fn render_texture_with_preview(
     }
     let image = egui::ColorImage::from_rgba_unmultiplied([canvas.width(), canvas.height()], &rgba);
     Ok(context.load_texture("portable-overworld", image, egui::TextureOptions::NEAREST))
+}
+
+fn native_overworld_sprite_placements(
+    overworld: &CompleteOverworldFile,
+    native_custom_sprites: Option<&lm_overworld::NativeCustomOverworldSpriteTable>,
+) -> Vec<lm_render::NativeOverworldSpritePlacement> {
+    let mut placements = overworld
+        .data
+        .sprites
+        .iter()
+        .map(|sprite| lm_render::NativeOverworldSpritePlacement {
+            id: sprite.id,
+            x: i32::from(sprite.x),
+            y: i32::from(sprite.y),
+            submap: sprite.submap.encoded(),
+        })
+        .collect::<Vec<_>>();
+    if let Some(custom) = native_custom_sprites {
+        placements.extend(custom.maps.iter().enumerate().flat_map(|(map, sprites)| {
+            sprites
+                .iter()
+                .map(move |sprite| lm_render::NativeOverworldSpritePlacement {
+                    id: u16::from(sprite.id),
+                    x: i32::from(sprite.x) + if map == 0 { 0 } else { 512 },
+                    y: i32::from(sprite.y),
+                    submap: u8::try_from(map).unwrap_or_default(),
+                })
+        }));
+    }
+    placements
 }
 
 fn materialize_overworld_exanimation(
@@ -905,7 +913,10 @@ mod tests {
     use super::*;
     use lm_graphics::{Bgr555, CompactExAnimation, ExAnimationRecord, GraphicsFile4bpp, Palette};
     use lm_level::{Map16Set, Map16SetFile};
-    use lm_overworld::{EventRevealTable, OverworldLayer};
+    use lm_overworld::{
+        EventRevealTable, NativeCustomOverworldSprite, NativeCustomOverworldSpriteTable,
+        OverworldLayer,
+    };
     use lm_project::{CompleteOverworldData, CompleteOverworldShape, OverworldLayers};
 
     #[test]
@@ -984,6 +995,30 @@ mod tests {
             global_animation: None,
         };
         (overworld, assets)
+    }
+
+    #[test]
+    fn native_custom_sprite_placements_route_every_map_to_its_canvas_plane() {
+        let (overworld, _) = preview_fixture();
+        let custom = NativeCustomOverworldSpriteTable {
+            maps: std::array::from_fn(|map| {
+                vec![NativeCustomOverworldSprite {
+                    id: u8::try_from(map).unwrap(),
+                    x: 24,
+                    y: 40,
+                    screen: 0,
+                    extra: Vec::new(),
+                }]
+            }),
+        };
+
+        let placements = native_overworld_sprite_placements(&overworld, Some(&custom));
+        assert_eq!(placements.len(), 7);
+        assert_eq!((placements[0].x, placements[0].y), (24, 40));
+        for (map, placement) in placements.iter().enumerate().skip(1) {
+            assert_eq!((placement.x, placement.y), (536, 40));
+            assert_eq!(usize::from(placement.submap), map);
+        }
     }
 
     #[test]
