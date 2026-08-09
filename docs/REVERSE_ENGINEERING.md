@@ -4382,3 +4382,13 @@ the sprite header. The saved image passes identity/checksum detection, semantica
 field, preserves the exact physical prefix, traverses byte-exact Undo/Redo, and is logically
 identical between headered and headerless forms. Original gameplay assertions remain a separate
 Oracle requirement rather than being inferred from this persistence product.
+
+The graphics 8×8 editor's retained observations are now one executable isolated-Wine gate.
+It opens `Window8x8`, reproduces the complete pixel-buffer and guarded cache-paste TSVs through
+actual window messages, verifies the singular `Lunar Magic 8x8 Tile` clipboard allocation at
+exactly `$40` bytes in both directions, and confirms no ROM byte changes. The controlled
+diagnostic-page setup changes only maximum-page global `005E54F0`; every observed flip, paint,
+selection, clipboard, accepted paste, and rejected paste then traverses the original window or
+named clipboard entry point. The dedicated helpers accept either the historical numeric process
+ID or an exact executable name so isolated automation cannot attach to another Lunar Magic
+session.

@@ -14,11 +14,12 @@ only Lunar Magic's decoded working graphics cache.
 - expanded working ROM SHA-256:
   `f8d7c8c85306115dbfcd41386ca73674e52f76760ccdebf0a6b66881ce51f288`
 - `tools/wine-graphics-cache-oracle.c` SHA-256:
-  `808c3a07d4f5687c3682e4e3f2b795ee8a7aacdc1741c05c18043a74028d7a81`
+  `5e2d3dff3eb0a2fc711941a4ebf0b3d75f9b8dfae1d1919aadab136199ff5686`
 - compiled 32-bit helper SHA-256:
-  `70a42d2917218d94160865fb09671fe04b82944af00d34c08fb2fcb2c547070c`
+  `13ad39a4f8bc0bcb666fcb761cdff2e5a1a9cca640b6db9740fb6d8f22567ad5`
 
-The helper accepts an explicit Windows process ID, locates only that process's `Window8x8`, and
+The helper accepts an explicit Windows process ID or exact executable name, locates only that
+process's `Window8x8`, and
 records direct `WM_LBUTTONDOWN/UP` and `WM_RBUTTONDOWN/UP` transitions. It reads the active page,
 feature flags, and planar graphics buffers with `ReadProcessMemory`; it changes only the transient
 page selector while visiting pages and restores the original selector before exit.

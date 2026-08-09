@@ -14,11 +14,12 @@ upper-left pixel with foreground color 1 and restored it with background color 0
 - expanded working ROM SHA-256:
   `f8d7c8c85306115dbfcd41386ca73674e52f76760ccdebf0a6b66881ce51f288`
 - `tools/wine-graphics-pixel-oracle.c` SHA-256:
-  `33605e76e9dac1e70b8be6516d180ae6b43ec8040c0599434e6032fdfd4fa994`
+  `5cf104e5d95e8a9ed0055c2d5f566817bfd89886976dab100260d3402111c640`
 - compiled 32-bit helper SHA-256:
-  `0d6366217b708bce5269324527aca4fd012537fc7e1750283334c371a81e6320`
+  `bc82ea5b46db941379223d646cb6527122af7dba728226d5473f9238c630fed2`
 
-The helper accepts an explicit Windows process ID and locates only that process's `Window8x8`.
+The helper accepts an explicit Windows process ID or exact executable name and locates only that
+process's `Window8x8`.
 It uses `ReadProcessMemory` to compare Lunar Magic's 64-byte selected-tile edit buffer at
 `$00ACF908` with the decoded and planar backing caches for tile `$600`. It restores the original
 page selector before exiting and does not commit or alter the working ROM.

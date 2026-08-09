@@ -208,3 +208,32 @@ that both original export entry points produce the same `$810` bytes with SHA-25
 Rust independently round-trips both exact backends, installs legacy data into expanded storage,
 rejects unsafe downgrade atomically, reopens the installed data, and passes the two built-CLI
 process tests. The renderer regression remains green at 232/232 tests.
+
+## 2026-08-08 — Graphics 8×8 editor interaction audit
+
+- Lunar Magic executable SHA-256:
+  `b64998b637e553c9adb96dd893140b5b8d0303c7a0f46a1fdab5f887a1d46eff`
+- Authenticated installed level-105 ROM SHA-256:
+  `69cc6693ccd83f67369479314466b53c50e57569d319d9f8078667cfc025928e`
+
+```text
+cargo test -p lm-app --test graphics_editor_wine \
+  original_graphics_editor_gestures_preserve_private_buffer_and_guard_sheet_paste \
+  -- --ignored --exact --nocapture
+1 passed; 0 failed; finished in 30.95s
+```
+
+The isolated gate opens Lunar Magic 3.63's original `Window8x8`, uses a controlled diagnostic-page
+maximum to expose the same internal cache as the retained observations, and then performs real
+window flip, foreground/background paint, selection, and right-paste gestures. Its pixel-buffer
+output exactly matches `graphics-pixel-buffer/oracle.tsv`: transforms and paint change only the
+64-byte private edit tile until an eligible sheet paste. Its sheet output exactly matches
+`graphics-cache-paste/oracle.tsv`: `$002` and `$5FF` change to the source, while fixed-animation
+`$041`, unused non-bypass `$300`, and first out-of-range `$600` remain unchanged.
+
+The same fresh process invokes the original registered-clipboard entry points. Initial copy emits
+exactly 64 zero pixels; publishing four asymmetric `00..0F` rows, pasting, and copying returns all
+64 bytes exactly. The complete working ROM remains byte-identical, proving these are transient
+editor operations. Twenty-nine native graphics-editor tests and two native clipboard tests cover
+the portable, pristine, installed, ownership, revision, worker, cache, and publication variants;
+the renderer remains green at 232/232.

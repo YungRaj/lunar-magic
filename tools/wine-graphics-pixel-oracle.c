@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <tlhelp32.h>
 
 struct window_search {
     DWORD process_id;
@@ -34,18 +35,41 @@ static int write_u32(HANDLE process, uintptr_t address, uint32_t value) {
            written == sizeof(value);
 }
 
+static DWORD find_process(const char *name) {
+    HANDLE snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+    PROCESSENTRY32 entry = {.dwSize = sizeof(entry)};
+    DWORD process_id = 0;
+    if (snapshot != INVALID_HANDLE_VALUE && Process32First(snapshot, &entry)) {
+        do {
+            if (_stricmp(entry.szExeFile, name) == 0) {
+                process_id = entry.th32ProcessID;
+                break;
+            }
+        } while (Process32Next(snapshot, &entry));
+    }
+    if (snapshot != INVALID_HANDLE_VALUE) {
+        CloseHandle(snapshot);
+    }
+    return process_id;
+}
+
 int main(int argc, char **argv) {
     if (argc != 2) {
-        fprintf(stderr, "usage: wine-graphics-pixel-oracle.exe WINDOWS_PROCESS_ID\n");
+        fprintf(stderr, "usage: wine-graphics-pixel-oracle.exe WINDOWS_PROCESS_ID|PROCESS_NAME\n");
         return 2;
     }
     char *end = NULL;
     unsigned long parsed = strtoul(argv[1], &end, 0);
-    if (end == argv[1] || *end != '\0' || parsed == 0 || parsed > UINT32_MAX) {
-        fprintf(stderr, "invalid process id: %s\n", argv[1]);
+    DWORD process_id = 0;
+    if (end != argv[1] && *end == '\0' && parsed > 0 && parsed <= UINT32_MAX) {
+        process_id = (DWORD)parsed;
+    } else {
+        process_id = find_process(argv[1]);
+    }
+    if (process_id == 0) {
+        fprintf(stderr, "process not found: %s\n", argv[1]);
         return 2;
     }
-    DWORD process_id = (DWORD)parsed;
     struct window_search search = {.process_id = process_id, .window = NULL};
     EnumWindows(find_graphics_window, (LPARAM)&search);
     if (search.window == NULL) {
