@@ -19,6 +19,10 @@ const LUNAR_MAGIC_GRAPHICS_TILE_FORMAT: &str = "Lunar Magic 8x8 Tile";
 const LUNAR_MAGIC_GRAPHICS_TILE_BYTES: usize = 64;
 const LUNAR_MAGIC_MAP16_TILE_FORMAT: &str = "Lunar Magic 16x16 Tile";
 const LUNAR_MAGIC_MAP16_TILE_BYTES: usize = 10;
+const LUNAR_MAGIC_COLOR_V2_FORMAT: &str = "Lunar Magic Color V2";
+const LUNAR_MAGIC_COLOR_V2_BYTES: usize = 12;
+const LUNAR_MAGIC_COLOR_ROW_V2_FORMAT: &str = "Lunar Magic Color Row V2";
+const LUNAR_MAGIC_COLOR_ROW_V2_BYTES: usize = 132;
 
 /// Publishes Lunar Magic's native 64-byte graphics-tile record and a Unicode text fallback in one
 /// clipboard transaction. The custom allocation is transferred to Windows only after
@@ -45,6 +49,22 @@ pub fn write_map16_tile_clipboard(tile: &[u8], fallback_text: &str) -> Result<()
         return Err("Lunar Magic Map16 clipboard tile must contain exactly 10 bytes".into());
     }
     write_registered_clipboard(LUNAR_MAGIC_MAP16_TILE_FORMAT, tile, fallback_text)
+}
+
+/// Publishes Lunar Magic's exact 12-byte Color V2 record and a Unicode typed-text fallback.
+pub fn write_palette_color_clipboard(color: &[u8], fallback_text: &str) -> Result<(), String> {
+    if color.len() != LUNAR_MAGIC_COLOR_V2_BYTES {
+        return Err("Lunar Magic Color V2 data must contain exactly 12 bytes".into());
+    }
+    write_registered_clipboard(LUNAR_MAGIC_COLOR_V2_FORMAT, color, fallback_text)
+}
+
+/// Publishes Lunar Magic's exact 132-byte Color Row V2 record and a Unicode typed-text fallback.
+pub fn write_palette_row_clipboard(row: &[u8], fallback_text: &str) -> Result<(), String> {
+    if row.len() != LUNAR_MAGIC_COLOR_ROW_V2_BYTES {
+        return Err("Lunar Magic Color Row V2 data must contain exactly 132 bytes".into());
+    }
+    write_registered_clipboard(LUNAR_MAGIC_COLOR_ROW_V2_FORMAT, row, fallback_text)
 }
 
 fn write_registered_clipboard(
@@ -128,6 +148,21 @@ pub fn read_graphics_tile_clipboard() -> Result<Option<[u8; 64]>, String> {
 pub fn read_map16_tile_clipboard() -> Result<Option<[u8; 10]>, String> {
     read_registered_clipboard(LUNAR_MAGIC_MAP16_TILE_FORMAT, LUNAR_MAGIC_MAP16_TILE_BYTES)
         .map(|bytes| bytes.map(|bytes| bytes.try_into().expect("requested exactly 10 bytes")))
+}
+
+/// Reads the preferred Color V2 payload, accepting larger allocations like Lunar Magic 3.63.
+pub fn read_palette_color_clipboard() -> Result<Option<[u8; 12]>, String> {
+    read_registered_clipboard(LUNAR_MAGIC_COLOR_V2_FORMAT, LUNAR_MAGIC_COLOR_V2_BYTES)
+        .map(|bytes| bytes.map(|bytes| bytes.try_into().expect("requested exactly 12 bytes")))
+}
+
+/// Reads the preferred Color Row V2 payload, accepting larger allocations like Lunar Magic 3.63.
+pub fn read_palette_row_clipboard() -> Result<Option<[u8; 132]>, String> {
+    read_registered_clipboard(
+        LUNAR_MAGIC_COLOR_ROW_V2_FORMAT,
+        LUNAR_MAGIC_COLOR_ROW_V2_BYTES,
+    )
+    .map(|bytes| bytes.map(|bytes| bytes.try_into().expect("requested exactly 132 bytes")))
 }
 
 fn read_registered_clipboard(

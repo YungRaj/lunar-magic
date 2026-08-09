@@ -9,6 +9,11 @@ enum PasteTarget {
     Row,
 }
 
+enum NativePaste {
+    Color(Bgr555),
+    Row([Bgr555; 16]),
+}
+
 #[derive(Default)]
 pub(crate) struct OverworldPalettePanel {
     selected: usize,
@@ -23,7 +28,8 @@ impl OverworldPalettePanel {
         ownership: &PaletteOwnership,
     ) -> Option<Result<OverworldControllerEdit, String>> {
         self.selected = self.selected.min(palette.colors.len().saturating_sub(1));
-        let mut copy_result = self.palette_clipboard_grid(ui, palette);
+        let (mut copy_result, grid_paste) = self.palette_clipboard_grid(ui, palette);
+        let mut native_paste = None;
         let color = palette.colors.get(self.selected).copied()?;
         ui.label(format!(
             "Color {:03X} — BGR555 {:04X}",
@@ -37,6 +43,18 @@ impl OverworldPalettePanel {
             (start..start + 16)
                 .all(|index| ownership.owner(index) == Some(PaletteEntryOwner::Editable))
         });
+        if let Some(result) = grid_paste {
+            native_paste = Some(result.and_then(|paste| match paste {
+                NativePaste::Color(color) if editable => Ok(vec![PaletteChange {
+                    index: self.selected,
+                    color,
+                }]),
+                NativePaste::Row(colors) if row_editable => {
+                    row_color_changes(colors, self.selected, palette.colors.len())
+                }
+                _ => Err("selected palette entries are read-only".into()),
+            }));
+        }
         ui.label(match owner {
             Some(PaletteEntryOwner::Editable) => "Ownership: editable".into(),
             Some(PaletteEntryOwner::Fixed) => "Ownership: fixed (read-only)".into(),
@@ -47,21 +65,32 @@ impl OverworldPalettePanel {
         });
         ui.horizontal(|ui| {
             if ui.button("Copy color").clicked() {
-                copy_result = Some(native_clipboard::encode_palette_color(color));
+                copy_result = Some(native_clipboard::copy_palette_color_to_system(
+                    ui.ctx(),
+                    color,
+                ));
             }
             if ui
                 .add_enabled(editable, egui::Button::new("Paste color"))
                 .clicked()
             {
-                self.paste_target = Some(PasteTarget::Color);
-                ui.ctx()
-                    .send_viewport_cmd(egui::ViewportCommand::RequestPaste);
+                match native_clipboard::request_palette_color_paste(ui.ctx()) {
+                    Ok(Some(color)) => {
+                        native_paste = Some(Ok(vec![PaletteChange {
+                            index: self.selected,
+                            color,
+                        }]))
+                    }
+                    Ok(None) => self.paste_target = Some(PasteTarget::Color),
+                    Err(error) => native_paste = Some(Err(error)),
+                }
             }
             if ui
                 .add_enabled(row.is_some(), egui::Button::new("Copy row"))
                 .clicked()
             {
-                copy_result = Some(native_clipboard::encode_palette_row(
+                copy_result = Some(native_clipboard::copy_palette_row_to_system(
+                    ui.ctx(),
                     row.expect("enabled row is complete"),
                 ));
             }
@@ -69,17 +98,28 @@ impl OverworldPalettePanel {
                 .add_enabled(row_editable, egui::Button::new("Paste row"))
                 .clicked()
             {
-                self.paste_target = Some(PasteTarget::Row);
-                ui.ctx()
-                    .send_viewport_cmd(egui::ViewportCommand::RequestPaste);
+                match native_clipboard::request_palette_row_paste(ui.ctx()) {
+                    Ok(Some(colors)) => {
+                        native_paste = Some(row_color_changes(
+                            colors,
+                            self.selected,
+                            palette.colors.len(),
+                        ))
+                    }
+                    Ok(None) => self.paste_target = Some(PasteTarget::Row),
+                    Err(error) => native_paste = Some(Err(error)),
+                }
             }
         });
         ui.small("Ctrl+left/right copies or pastes a color; add Alt for its complete row.");
         if let Some(result) = copy_result {
             match result {
-                Ok(text) => ui.ctx().copy_text(text),
+                Ok(()) => {}
                 Err(error) => return Some(Err(error)),
             }
+        }
+        if let Some(changes) = native_paste {
+            return Some(changes.map(OverworldControllerEdit::PaletteChanges));
         }
         if let Some(text) = pasted_text(ui) {
             let changes = match self.paste_target.take() {
@@ -121,8 +161,12 @@ impl OverworldPalettePanel {
         &mut self,
         ui: &mut egui::Ui,
         palette: &Palette,
-    ) -> Option<Result<String, String>> {
+    ) -> (
+        Option<Result<(), String>>,
+        Option<Result<NativePaste, String>>,
+    ) {
         let mut copy_result = None;
+        let mut native_paste = None;
         egui::ScrollArea::vertical().show(ui, |ui| {
             egui::Grid::new("overworld-palette-grid")
                 .spacing([3.0, 3.0])
@@ -138,22 +182,35 @@ impl OverworldPalettePanel {
                             let modifiers = ui.input(|input| input.modifiers);
                             if modifiers.ctrl {
                                 copy_result = Some(if modifiers.alt {
-                                    palette_row(&palette.colors, index)
-                                        .and_then(native_clipboard::encode_palette_row)
+                                    palette_row(&palette.colors, index).and_then(|row| {
+                                        native_clipboard::copy_palette_row_to_system(ui.ctx(), row)
+                                    })
                                 } else {
-                                    native_clipboard::encode_palette_color(color)
+                                    native_clipboard::copy_palette_color_to_system(ui.ctx(), color)
                                 });
                             }
                         }
                         if response.secondary_clicked() && ui.input(|input| input.modifiers.ctrl) {
                             self.selected = index;
-                            self.paste_target = Some(if ui.input(|input| input.modifiers.alt) {
-                                PasteTarget::Row
+                            let row = ui.input(|input| input.modifiers.alt);
+                            let result = if row {
+                                native_clipboard::request_palette_row_paste(ui.ctx())
+                                    .map(|value| value.map(NativePaste::Row))
                             } else {
-                                PasteTarget::Color
-                            });
-                            ui.ctx()
-                                .send_viewport_cmd(egui::ViewportCommand::RequestPaste);
+                                native_clipboard::request_palette_color_paste(ui.ctx())
+                                    .map(|value| value.map(NativePaste::Color))
+                            };
+                            match result {
+                                Ok(Some(paste)) => native_paste = Some(Ok(paste)),
+                                Ok(None) => {
+                                    self.paste_target = Some(if row {
+                                        PasteTarget::Row
+                                    } else {
+                                        PasteTarget::Color
+                                    });
+                                }
+                                Err(error) => native_paste = Some(Err(error)),
+                            }
                         }
                         if index % 16 == 15 {
                             ui.end_row();
@@ -161,7 +218,7 @@ impl OverworldPalettePanel {
                     }
                 });
         });
-        copy_result
+        (copy_result, native_paste)
     }
 }
 
@@ -177,11 +234,23 @@ fn palette_row_changes(
     selected: usize,
     color_count: usize,
 ) -> Result<Vec<PaletteChange>, String> {
+    row_color_changes(
+        native_clipboard::decode_palette_row(text)?,
+        selected,
+        color_count,
+    )
+}
+
+fn row_color_changes(
+    colors: [Bgr555; 16],
+    selected: usize,
+    color_count: usize,
+) -> Result<Vec<PaletteChange>, String> {
     let start = selected / 16 * 16;
     if start.saturating_add(16) > color_count {
         return Err("selected color does not belong to a complete palette row".into());
     }
-    Ok(native_clipboard::decode_palette_row(text)?
+    Ok(colors
         .into_iter()
         .enumerate()
         .map(|(offset, color)| PaletteChange {

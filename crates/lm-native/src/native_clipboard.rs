@@ -82,6 +82,154 @@ pub(crate) fn decode_palette_row(text: &str) -> Result<[Bgr555; 16], String> {
         .map_err(|_| "palette-row paste requires exactly 16 colors".to_string())
 }
 
+pub(crate) fn copy_palette_color_to_system(
+    context: &eframe::egui::Context,
+    color: Bgr555,
+) -> Result<(), String> {
+    let fallback = encode_palette_color(color)?;
+    #[cfg(windows)]
+    {
+        lm_windows::write_palette_color_clipboard(
+            &encode_lunar_magic_palette_color(color),
+            &fallback,
+        )
+    }
+    #[cfg(not(windows))]
+    {
+        context.copy_text(fallback);
+        Ok(())
+    }
+}
+
+pub(crate) fn copy_palette_row_to_system(
+    context: &eframe::egui::Context,
+    colors: &[Bgr555],
+) -> Result<(), String> {
+    let fallback = encode_palette_row(colors)?;
+    #[cfg(windows)]
+    {
+        let colors = <[Bgr555; 16]>::try_from(colors)
+            .map_err(|_| "palette-row copy requires exactly 16 colors".to_string())?;
+        lm_windows::write_palette_row_clipboard(&encode_lunar_magic_palette_row(&colors), &fallback)
+    }
+    #[cfg(not(windows))]
+    {
+        context.copy_text(fallback);
+        Ok(())
+    }
+}
+
+pub(crate) fn request_palette_color_paste(
+    context: &eframe::egui::Context,
+) -> Result<Option<Bgr555>, String> {
+    #[cfg(windows)]
+    if let Some(bytes) = lm_windows::read_palette_color_clipboard()? {
+        return decode_lunar_magic_palette_color(&bytes).map(Some);
+    }
+    context.send_viewport_cmd(eframe::egui::ViewportCommand::RequestPaste);
+    Ok(None)
+}
+
+pub(crate) fn request_palette_row_paste(
+    context: &eframe::egui::Context,
+) -> Result<Option<[Bgr555; 16]>, String> {
+    #[cfg(windows)]
+    if let Some(bytes) = lm_windows::read_palette_row_clipboard()? {
+        return decode_lunar_magic_palette_row(&bytes).map(Some);
+    }
+    context.send_viewport_cmd(eframe::egui::ViewportCommand::RequestPaste);
+    Ok(None)
+}
+
+#[cfg_attr(not(any(windows, test)), allow(dead_code))]
+pub(crate) fn encode_lunar_magic_palette_color(color: Bgr555) -> [u8; 12] {
+    let mut bytes = [0; 12];
+    bytes[4..8].copy_from_slice(&lunar_magic_rgb(color).to_le_bytes());
+    bytes[8..12].copy_from_slice(&u32::from(color.0 & 0x7fff).to_le_bytes());
+    bytes
+}
+
+#[cfg_attr(not(any(windows, test)), allow(dead_code))]
+pub(crate) fn decode_lunar_magic_palette_color(bytes: &[u8]) -> Result<Bgr555, String> {
+    let record = bytes
+        .get(..12)
+        .ok_or_else(|| "Lunar Magic Color V2 data is shorter than 12 bytes".to_string())?;
+    let flags = u32::from_le_bytes(record[..4].try_into().expect("four-byte flag"));
+    if flags & 1 == 0 {
+        return decode_snes_color_dword(&record[8..12]);
+    }
+    Ok(rgb_dword_to_bgr555(u32::from_le_bytes(
+        record[4..8].try_into().expect("four-byte RGB value"),
+    )))
+}
+
+#[cfg_attr(not(any(windows, test)), allow(dead_code))]
+pub(crate) fn encode_lunar_magic_palette_row(colors: &[Bgr555; 16]) -> [u8; 132] {
+    let mut bytes = [0; 132];
+    for (index, color) in colors.iter().copied().enumerate() {
+        let rgb_start = 4 + index * 4;
+        bytes[rgb_start..rgb_start + 4].copy_from_slice(&lunar_magic_rgb(color).to_le_bytes());
+        let snes_start = 68 + index * 4;
+        bytes[snes_start..snes_start + 4]
+            .copy_from_slice(&u32::from(color.0 & 0x7fff).to_le_bytes());
+    }
+    bytes
+}
+
+#[cfg_attr(not(any(windows, test)), allow(dead_code))]
+pub(crate) fn decode_lunar_magic_palette_row(bytes: &[u8]) -> Result<[Bgr555; 16], String> {
+    let record = bytes
+        .get(..132)
+        .ok_or_else(|| "Lunar Magic Color Row V2 data is shorter than 132 bytes".to_string())?;
+    let flags = u32::from_le_bytes(record[..4].try_into().expect("four-byte flag"));
+    let mut colors = [Bgr555(0); 16];
+    for (index, color) in colors.iter_mut().enumerate() {
+        let start = if flags & 1 == 0 {
+            68 + index * 4
+        } else {
+            4 + index * 4
+        };
+        *color = if flags & 1 == 0 {
+            decode_snes_color_dword(&record[start..start + 4])
+        } else {
+            Ok(rgb_dword_to_bgr555(u32::from_le_bytes(
+                record[start..start + 4]
+                    .try_into()
+                    .expect("four-byte RGB value"),
+            )))
+        }?;
+    }
+    Ok(colors)
+}
+
+fn decode_snes_color_dword(bytes: &[u8]) -> Result<Bgr555, String> {
+    let value = u32::from_le_bytes(bytes.try_into().expect("four-byte SNES value"));
+    Ok(Bgr555((value & 0x7fff) as u16))
+}
+
+fn lunar_magic_rgb(color: Bgr555) -> u32 {
+    let rgb = color.to_rgb8();
+    u32::from(rgb.blue) | (u32::from(rgb.green) << 8) | (u32::from(rgb.red) << 16)
+}
+
+fn rgb_dword_to_bgr555(value: u32) -> Bgr555 {
+    let five_bit = |channel: u8| {
+        (0_u16..=0x1f)
+            .min_by_key(|candidate| {
+                let expanded = ((*candidate << 3) | (*candidate >> 2)) as i16;
+                (
+                    (i16::from(channel) - expanded).unsigned_abs(),
+                    0x1f - *candidate,
+                )
+            })
+            .expect("the five-bit color range is nonempty")
+    };
+    let red = five_bit((value >> 16) as u8);
+    let green = five_bit((value >> 8) as u8);
+    let blue = five_bit(value as u8);
+    Bgr555(red | green << 5 | blue << 10)
+}
+
 pub(crate) fn encode_graphics_tile(tile: &IndexedTile) -> Result<String, String> {
     encode(&ClipboardPayload::from_graphics_tiles(
         std::slice::from_ref(tile),
@@ -583,6 +731,88 @@ mod tests {
         assert_eq!(decode_palette_row(&text).unwrap(), colors);
         assert!(encode_palette_row(&colors[..15]).is_err());
         assert!(decode_palette_row(&encode_palette_color(Bgr555(1)).unwrap()).is_err());
+    }
+
+    #[test]
+    fn lunar_magic_color_v2_matches_the_recovered_twelve_byte_record() {
+        let color = Bgr555(0x7fdd);
+        let encoded = encode_lunar_magic_palette_color(color);
+        assert_eq!(encoded, [0, 0, 0, 0, 0xff, 0xf7, 0xef, 0, 0xdd, 0x7f, 0, 0]);
+        assert_eq!(decode_lunar_magic_palette_color(&encoded).unwrap(), color);
+
+        let mut rgb_record = encoded;
+        rgb_record[..4].copy_from_slice(&1_u32.to_le_bytes());
+        rgb_record[4..8].copy_from_slice(&0x00_ef_f7_ff_u32.to_le_bytes());
+        rgb_record[8..12].fill(0xff);
+        assert_eq!(
+            decode_lunar_magic_palette_color(&rgb_record).unwrap(),
+            color
+        );
+        rgb_record[4..8].copy_from_slice(&0x00_77_77_77_u32.to_le_bytes());
+        assert_eq!(
+            decode_lunar_magic_palette_color(&rgb_record).unwrap(),
+            Bgr555(0x3def)
+        );
+        assert!(decode_lunar_magic_palette_color(&encoded[..11]).is_err());
+    }
+
+    #[test]
+    fn lunar_magic_color_row_v2_has_rgb_then_snes_planes_and_prefers_snes() {
+        let colors = std::array::from_fn(|index| Bgr555((index as u16 * 0x421) & 0x7fff));
+        let encoded = encode_lunar_magic_palette_row(&colors);
+        assert_eq!(encoded.len(), 132);
+        assert_eq!(&encoded[..4], &[0; 4]);
+        for (index, color) in colors.iter().copied().enumerate() {
+            let rgb = 4 + index * 4;
+            assert_eq!(
+                u32::from_le_bytes(encoded[rgb..rgb + 4].try_into().unwrap()),
+                lunar_magic_rgb(color)
+            );
+            let snes = 68 + index * 4;
+            assert_eq!(
+                u32::from_le_bytes(encoded[snes..snes + 4].try_into().unwrap()),
+                u32::from(color.0)
+            );
+        }
+        assert_eq!(decode_lunar_magic_palette_row(&encoded).unwrap(), colors);
+
+        let mut invalid = encoded;
+        invalid[68..72].copy_from_slice(&0x8000_u32.to_le_bytes());
+        let masked = decode_lunar_magic_palette_row(&invalid).unwrap();
+        assert_eq!(masked[0], Bgr555(0));
+        assert!(decode_lunar_magic_palette_row(&encoded[..131]).is_err());
+    }
+
+    #[test]
+    fn retained_lunar_magic_palette_clipboard_oracle_matches_both_v2_records() {
+        let oracle = include_str!(
+            "../../../docs/oracle-work/lm363/pristine-us/palette-clipboard/oracle.tsv"
+        );
+        let fields = oracle
+            .lines()
+            .skip(1)
+            .filter_map(|line| line.split_once('\t'))
+            .collect::<std::collections::BTreeMap<_, _>>();
+        let oracle_bytes = |field: &str| {
+            fields[field]
+                .as_bytes()
+                .chunks_exact(2)
+                .map(|pair| u8::from_str_radix(std::str::from_utf8(pair).unwrap(), 16).unwrap())
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(fields["color_v2_format"], "Lunar Magic Color V2");
+        assert_eq!(fields["color_v2_size"], "12");
+        assert_eq!(
+            oracle_bytes("color_v2_bytes"),
+            encode_lunar_magic_palette_color(Bgr555(0x7fdd))
+        );
+        assert_eq!(fields["row_v2_format"], "Lunar Magic Color Row V2");
+        assert_eq!(fields["row_v2_size"], "132");
+        let oracle_row = oracle_bytes("row_v2_bytes");
+        let colors = decode_lunar_magic_palette_row(&oracle_row).unwrap();
+        let encoded = encode_lunar_magic_palette_row(&colors);
+        assert_eq!(&encoded[68..], &oracle_row[68..]);
+        assert_eq!(colors[7], Bgr555(0x3def));
     }
 
     #[test]

@@ -28,6 +28,11 @@ enum PasteTarget {
     Row,
 }
 
+enum NativePaste {
+    Color(Bgr555),
+    Row([Bgr555; 16]),
+}
+
 #[derive(Default)]
 pub(crate) struct RomSharedPaletteEditor {
     workspace: Option<Workspace>,
@@ -153,7 +158,15 @@ impl RomSharedPaletteEditor {
         self.complete_file_controls(ui, stale, project_revision);
         let palette_locked = stale || self.transfer_loader.is_running();
         ui.add_enabled_ui(!palette_locked, |ui| {
-            self.show_palette_grid(ui, &colors, pages, palette_locked);
+            if let Some(result) = self.show_palette_grid(ui, &colors, pages, palette_locked) {
+                let result = result.and_then(|paste| match paste {
+                    NativePaste::Color(color) => self.paste_color(color),
+                    NativePaste::Row(colors) => self.paste_row(colors),
+                });
+                if let Err(error) = result {
+                    self.error = Some(error);
+                }
+            }
             if let Some(text) = pasted {
                 if palette_locked {
                     if self.paste_target.take().is_some() {
@@ -198,7 +211,8 @@ impl RomSharedPaletteEditor {
         colors: &[Bgr555],
         pages: usize,
         stale: bool,
-    ) {
+    ) -> Option<Result<NativePaste, String>> {
+        let mut native_paste = None;
         ui.horizontal(|ui| {
             ui.label("Page");
             ui.add(
@@ -233,13 +247,14 @@ impl RomSharedPaletteEditor {
                         let modifiers = ui.input(|input| input.modifiers);
                         if modifiers.ctrl {
                             let encoded = if modifiers.alt {
-                                palette_row(colors, index)
-                                    .and_then(native_clipboard::encode_palette_row)
+                                palette_row(colors, index).and_then(|row| {
+                                    native_clipboard::copy_palette_row_to_system(ui.ctx(), row)
+                                })
                             } else {
-                                native_clipboard::encode_palette_color(*color)
+                                native_clipboard::copy_palette_color_to_system(ui.ctx(), *color)
                             };
                             match encoded {
-                                Ok(text) => ui.ctx().copy_text(text),
+                                Ok(()) => {}
                                 Err(error) => self.error = Some(error),
                             }
                         }
@@ -252,13 +267,25 @@ impl RomSharedPaletteEditor {
                         if let Err(error) = self.load_selected() {
                             self.error = Some(error);
                         } else {
-                            self.paste_target = Some(if ui.input(|input| input.modifiers.alt) {
-                                PasteTarget::Row
+                            let row = ui.input(|input| input.modifiers.alt);
+                            let result = if row {
+                                native_clipboard::request_palette_row_paste(ui.ctx())
+                                    .map(|value| value.map(NativePaste::Row))
                             } else {
-                                PasteTarget::Color
-                            });
-                            ui.ctx()
-                                .send_viewport_cmd(egui::ViewportCommand::RequestPaste);
+                                native_clipboard::request_palette_color_paste(ui.ctx())
+                                    .map(|value| value.map(NativePaste::Color))
+                            };
+                            match result {
+                                Ok(Some(paste)) => native_paste = Some(Ok(paste)),
+                                Ok(None) => {
+                                    self.paste_target = Some(if row {
+                                        PasteTarget::Row
+                                    } else {
+                                        PasteTarget::Color
+                                    });
+                                }
+                                Err(error) => native_paste = Some(Err(error)),
+                            }
                         }
                     }
                     if (index - start) % 16 == 15 {
@@ -266,6 +293,7 @@ impl RomSharedPaletteEditor {
                     }
                 }
             });
+        native_paste
     }
 
     fn show_color_form(&mut self, ui: &mut egui::Ui, stale: bool) {
@@ -328,36 +356,49 @@ impl RomSharedPaletteEditor {
                 .add_enabled(row.is_some(), egui::Button::new("Copy row"))
                 .clicked()
             {
-                match native_clipboard::encode_palette_row(
+                if let Err(error) = native_clipboard::copy_palette_row_to_system(
+                    ui.ctx(),
                     row.as_ref().expect("enabled row is complete"),
                 ) {
-                    Ok(text) => ui.ctx().copy_text(text),
-                    Err(error) => self.error = Some(error),
+                    self.error = Some(error);
                 }
             }
             if ui
                 .add_enabled(!stale && row.is_some(), egui::Button::new("Paste row"))
                 .clicked()
             {
-                self.paste_target = Some(PasteTarget::Row);
-                ui.ctx()
-                    .send_viewport_cmd(egui::ViewportCommand::RequestPaste);
+                match native_clipboard::request_palette_row_paste(ui.ctx()) {
+                    Ok(Some(colors)) => {
+                        if let Err(error) = self.paste_row(colors) {
+                            self.error = Some(error);
+                        }
+                    }
+                    Ok(None) => self.paste_target = Some(PasteTarget::Row),
+                    Err(error) => self.error = Some(error),
+                }
             }
         });
         ui.horizontal(|ui| {
             if ui.button("Copy color").clicked() {
-                match native_clipboard::encode_palette_color(Bgr555(self.form.word)) {
-                    Ok(text) => ui.ctx().copy_text(text),
-                    Err(error) => self.error = Some(error),
+                if let Err(error) =
+                    native_clipboard::copy_palette_color_to_system(ui.ctx(), Bgr555(self.form.word))
+                {
+                    self.error = Some(error);
                 }
             }
             if ui
                 .add_enabled(!stale, egui::Button::new("Paste color"))
                 .clicked()
             {
-                self.paste_target = Some(PasteTarget::Color);
-                ui.ctx()
-                    .send_viewport_cmd(egui::ViewportCommand::RequestPaste);
+                match native_clipboard::request_palette_color_paste(ui.ctx()) {
+                    Ok(Some(color)) => {
+                        if let Err(error) = self.paste_color(color) {
+                            self.error = Some(error);
+                        }
+                    }
+                    Ok(None) => self.paste_target = Some(PasteTarget::Color),
+                    Err(error) => self.error = Some(error),
+                }
             }
             ui.small("Ctrl+left/right uses the swatches; add Alt for a complete row.");
         });
@@ -426,20 +467,29 @@ impl RomSharedPaletteEditor {
         let Some(target) = self.paste_target.take() else {
             return Ok(());
         };
-        let workspace = self
-            .workspace
-            .as_mut()
-            .ok_or_else(|| "shared-palette workspace is closed".to_owned())?;
         match target {
             PasteTarget::Color => {
-                workspace
-                    .replace_color(self.selected, native_clipboard::decode_palette_color(text)?)?;
+                self.paste_color(native_clipboard::decode_palette_color(text)?)?
             }
-            PasteTarget::Row => {
-                let start = self.selected / 16 * 16;
-                workspace.replace_row(start, native_clipboard::decode_palette_row(text)?)?;
-            }
+            PasteTarget::Row => self.paste_row(native_clipboard::decode_palette_row(text)?)?,
         }
+        Ok(())
+    }
+
+    fn paste_color(&mut self, color: Bgr555) -> Result<(), String> {
+        self.workspace
+            .as_mut()
+            .ok_or_else(|| "shared-palette workspace is closed".to_owned())?
+            .replace_color(self.selected, color)?;
+        self.load_selected()
+    }
+
+    fn paste_row(&mut self, colors: [Bgr555; 16]) -> Result<(), String> {
+        let start = self.selected / 16 * 16;
+        self.workspace
+            .as_mut()
+            .ok_or_else(|| "shared-palette workspace is closed".to_owned())?
+            .replace_row(start, colors)?;
         self.load_selected()
     }
 

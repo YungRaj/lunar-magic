@@ -271,21 +271,26 @@ impl PaletteEditor {
 
 fn clipboard_controls(
     ui: &mut egui::Ui,
-    controller: &PaletteDocumentController,
+    controller: &mut PaletteDocumentController,
     selected: usize,
     error_slot: &mut Option<String>,
 ) {
     if ui.button("Copy color").clicked()
         && let Some(color) = controller.value().palette.colors.get(selected)
     {
-        match native_clipboard::encode_palette_color(*color) {
-            Ok(text) => ui.ctx().copy_text(text),
-            Err(error) => *error_slot = Some(error),
+        if let Err(error) = native_clipboard::copy_palette_color_to_system(ui.ctx(), *color) {
+            *error_slot = Some(error);
         }
     }
     if ui.button("Paste color").clicked() {
-        ui.ctx()
-            .send_viewport_cmd(egui::ViewportCommand::RequestPaste);
+        match native_clipboard::request_palette_color_paste(ui.ctx()) {
+            Ok(Some(color)) => {
+                let color_count = controller.value().palette.colors.len();
+                apply_color(controller, selected, color_count, color, error_slot);
+            }
+            Ok(None) => {}
+            Err(error) => *error_slot = Some(error),
+        }
     }
 }
 
@@ -297,17 +302,25 @@ fn apply_pasted_color(
     error_slot: &mut Option<String>,
 ) {
     match native_clipboard::decode_palette_color(text) {
-        Ok(color) => {
-            let ownership = PaletteOwnership::editable(color_count);
-            let edit = PaletteControllerEdit::ApplyChanges(vec![PaletteChange {
-                index: selected,
-                color,
-            }]);
-            if let Err(error) = controller.apply_edits(controller.revision(), &ownership, &[edit]) {
-                *error_slot = Some(error.to_string());
-            }
-        }
+        Ok(color) => apply_color(controller, selected, color_count, color, error_slot),
         Err(error) => *error_slot = Some(error),
+    }
+}
+
+fn apply_color(
+    controller: &mut PaletteDocumentController,
+    selected: usize,
+    color_count: usize,
+    color: Bgr555,
+    error_slot: &mut Option<String>,
+) {
+    let ownership = PaletteOwnership::editable(color_count);
+    let edit = PaletteControllerEdit::ApplyChanges(vec![PaletteChange {
+        index: selected,
+        color,
+    }]);
+    if let Err(error) = controller.apply_edits(controller.revision(), &ownership, &[edit]) {
+        *error_slot = Some(error.to_string());
     }
 }
 
