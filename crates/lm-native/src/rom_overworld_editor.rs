@@ -33,6 +33,59 @@ enum Panel {
     NativeSprites,
 }
 
+#[cfg(test)]
+mod overworld_sprite_gesture_oracle_tests {
+    use std::{fs, path::PathBuf};
+
+    const FIXTURES: [(&str, &str); 3] = [
+        (
+            "selected-two.png",
+            "03e534d27b83d07478eb4dc3e663884318d6e1476f0c265f91d91c54f53e27cc",
+        ),
+        (
+            "alt-property-dialog.png",
+            "68c267ae6b6fd3bb42182038e74b4aaa0f509d87ca5c32543f93bcb2b73838de",
+        ),
+        (
+            "right-drag-group.png",
+            "b2d40f58ded2df2cae8c2bd70f14addc5c706346a6485455e41981d11ce8b969",
+        ),
+    ];
+
+    fn fixture_directory() -> PathBuf {
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../docs/oracle-work/lm363/pristine-us/overworld-sprite-gestures")
+    }
+
+    #[test]
+    fn retained_lunar_magic_overworld_sprite_gestures_are_hash_and_structure_bound() {
+        for (name, expected_sha256) in FIXTURES {
+            let bytes = fs::read(fixture_directory().join(name)).unwrap();
+            assert_eq!(lm_oracle::sha256_hex(&bytes), expected_sha256, "{name}");
+            assert_eq!(
+                bytes.get(..8),
+                Some(b"\x89PNG\r\n\x1a\n".as_slice()),
+                "{name}"
+            );
+            assert_eq!(bytes.get(12..16), Some(b"IHDR".as_slice()), "{name}");
+            assert_eq!(
+                u32::from_be_bytes(bytes[16..20].try_into().unwrap()),
+                1202,
+                "{name}"
+            );
+            assert_eq!(
+                u32::from_be_bytes(bytes[20..24].try_into().unwrap()),
+                1252,
+                "{name}"
+            );
+            assert_eq!(bytes[24], 8, "{name}");
+            assert_eq!(bytes[25], 6, "{name}");
+            assert!(bytes.windows(4).any(|chunk| chunk == b"IDAT"), "{name}");
+            assert_eq!(&bytes[bytes.len() - 8..bytes.len() - 4], b"IEND", "{name}");
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 enum MapPaintTool {
     #[default]
