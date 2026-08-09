@@ -145,6 +145,14 @@ pub enum ExpandedSettingsInstallPlanError {
     UnexpectedRuntimeFixups {
         descriptor_index: usize,
     },
+    MissingSa1RuntimeByte {
+        offset: usize,
+    },
+    Sa1RuntimeByteMismatch {
+        offset: usize,
+        expected: u8,
+        actual: u8,
+    },
     SpecialRecordIndex(usize),
 }
 
@@ -179,6 +187,85 @@ impl From<ExpandedSettingsRuntimeBundleError> for ExpandedSettingsInstallPlanErr
 pub fn smw_us_v1_expanded_settings_installation_plan()
 -> Result<RelocatablePatchPlan, ExpandedSettingsInstallPlanError> {
     smw_us_v1_expanded_settings_installation_plan_with_overworld_settings(None)
+}
+
+/// Builds the current expanded-settings prerequisite against Lunar Magic's authenticated SA-1
+/// Pack hook skeleton.
+///
+/// SA-1 uses the ordinary `$087FF8..$0FFFFF` first-fit range, but its two pre-install hook bodies
+/// differ from pristine SMW and allocation-dependent pointers must retain the mapper's canonical
+/// bank. All other fixed-write preconditions are shared with the recovered SMW-US runtime.
+///
+/// # Errors
+///
+/// Propagates the same generated-runtime and relocation validation as the LoROM constructor.
+pub fn smw_us_v1_sa1_expanded_settings_installation_plan()
+-> Result<RelocatablePatchPlan, ExpandedSettingsInstallPlanError> {
+    const SA1_RUNTIME_BYTES: &[(usize, u8, u8)] = &[
+        (0x07f192, 0x01, 0x61),
+        (0x07f7a3, 0x01, 0x61),
+        (0x07f82f, 0x19, 0x79),
+        (0x07f9c7, 0x13, 0x73),
+        (0x07f9e2, 0x01, 0x61),
+        (0x07f9f7, 0x18, 0x60),
+        (0x07faf2, 0x1f, 0x7f),
+        (0x07faf5, 0x1f, 0x7f),
+        (0x07fafc, 0x01, 0x61),
+        (0x07fb20, 0x80, 0x3b),
+        (0x07fb21, 0x21, 0xeb),
+        (0x07fb45, 0x07, 0x67),
+        (0x07fb48, 0x08, 0x68),
+        (0x07fb4b, 0x0d, 0x6d),
+        (0x07fb4e, 0x1f, 0x7f),
+        (0x07fbd6, 0x18, 0x38),
+        (0x07fc9b, 0x07, 0x67),
+        (0x07fd90, 0x14, 0x74),
+        (0x07fddf, 0x14, 0x74),
+    ];
+    let mut plan = smw_us_v1_expanded_settings_installation_plan()?;
+    plan.description = "install SMW US SA-1 expanded level settings".into();
+    plan.mapper = Mapper::Sa1;
+    for write in &mut plan.writes {
+        match write.offset {
+            0x001471 => write.expected = vec![0xae, 0xc6, 0x73, 0xa9, 0x18],
+            0x0283b8 => write.expected = vec![0xad, 0x25, 0x79, 0xc9, 0x09],
+            _ => {}
+        }
+        for fixup in &mut write.fixups {
+            fixup.encoding = canonical_mapper_fixup(fixup.encoding);
+        }
+    }
+    for &(offset, expected, replacement) in SA1_RUNTIME_BYTES {
+        let write = plan
+            .writes
+            .iter_mut()
+            .find(|write| write.offset <= offset && offset < write.offset + write.replacement.len())
+            .ok_or(ExpandedSettingsInstallPlanError::MissingSa1RuntimeByte { offset })?;
+        let local = offset - write.offset;
+        let actual = write.replacement[local];
+        if actual != expected {
+            return Err(ExpandedSettingsInstallPlanError::Sa1RuntimeByteMismatch {
+                offset,
+                expected,
+                actual,
+            });
+        }
+        write.replacement[local] = replacement;
+    }
+    for payload in &mut plan.payloads {
+        for fixup in &mut payload.fixups {
+            fixup.encoding = canonical_mapper_fixup(fixup.encoding);
+        }
+    }
+    Ok(plan)
+}
+
+fn canonical_mapper_fixup(encoding: PatchFixupEncoding) -> PatchFixupEncoding {
+    match encoding {
+        PatchFixupEncoding::Long24LowBank => PatchFixupEncoding::Long24,
+        PatchFixupEncoding::Bank8LowBank => PatchFixupEncoding::Bank8,
+        other => other,
+    }
 }
 
 /// Builds the complete installation plan with optional exact records for submaps zero through six.
@@ -839,6 +926,46 @@ mod tests {
         )
         .unwrap();
         (after, RomImage::from_bytes(before).unwrap())
+    }
+
+    #[test]
+    #[ignore = "requires retained authentic SA-1 Pack before/after first-ExGFX oracle images"]
+    fn authentic_sa1_expanded_settings_owned_family_is_reproduced_exactly() {
+        let before = RomImage::from_bytes(
+            fs::read(std::env::var_os("LM_SA1_EXGFX_BEFORE").expect("LM_SA1_EXGFX_BEFORE"))
+                .unwrap(),
+        )
+        .unwrap();
+        let oracle = RomImage::from_bytes(
+            fs::read(std::env::var_os("LM_SA1_EXGFX_AFTER").expect("LM_SA1_EXGFX_AFTER")).unwrap(),
+        )
+        .unwrap();
+        let plan = smw_us_v1_sa1_expanded_settings_installation_plan().unwrap();
+        let write_ranges = plan
+            .writes
+            .iter()
+            .map(|write| write.offset..write.offset + write.replacement.len())
+            .collect::<Vec<_>>();
+        let mut project = Project::new(before);
+        project.install_relocatable_patch(&plan).unwrap();
+        assert_eq!(
+            project.rom.read(0x087ff8, 0x6e08).unwrap(),
+            oracle.read(0x087ff8, 0x6e08).unwrap()
+        );
+        let mut mismatches = Vec::new();
+        for range in write_ranges {
+            let actual = project
+                .rom
+                .read(range.start, range.end - range.start)
+                .unwrap();
+            let expected = oracle.read(range.start, range.end - range.start).unwrap();
+            mismatches.extend(actual.iter().zip(expected).enumerate().filter_map(
+                |(index, (actual, expected))| {
+                    (actual != expected).then_some((range.start + index, *actual, *expected))
+                },
+            ));
+        }
+        assert!(mismatches.is_empty(), "mismatches: {mismatches:02X?}");
     }
 
     #[test]

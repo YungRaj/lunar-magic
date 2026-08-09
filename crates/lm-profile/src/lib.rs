@@ -172,6 +172,7 @@ pub use expanded_settings_install::{
     smw_us_v1_expanded_settings_installation_plan,
     smw_us_v1_expanded_settings_installation_plan_with_overworld_settings,
     smw_us_v1_gfx_expanded_settings_installation_plan,
+    smw_us_v1_sa1_expanded_settings_installation_plan,
 };
 pub use expanded_settings_runtime::{
     ExpandedSettingsEntryContinuation, ExpandedSettingsRelocation,
@@ -493,7 +494,7 @@ pub use smw_us_v1_exgraphics::{
     probe_smw_us_v1_exgraphics_runtime, probe_smw_us_v1_exgraphics_runtime_for_mapper,
     requires_smw_us_v1_4bpp_graphics_warning, smw_us_v1_exgraphics_installation_plan,
     smw_us_v1_exgraphics_installation_plan_for_mapper, smw_us_v1_exgraphics_pointer,
-    smw_us_v1_exgraphics_pointer_for_mapper,
+    smw_us_v1_exgraphics_pointer_for_mapper, smw_us_v1_sa1_exgraphics_runtime_installation_plan,
 };
 pub use sprite19_fix::{
     SMW_US_V1_SPRITE19_FIX_BRANCH_OFFSET, SMW_US_V1_SPRITE19_FIX_HOOK_OFFSET,

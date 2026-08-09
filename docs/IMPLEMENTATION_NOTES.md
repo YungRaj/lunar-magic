@@ -4353,6 +4353,15 @@ prefix byte-for-byte or preserves its absence, produces identical logical 2-MiB 
 Magic re-exports all 52 regular files plus `ExGFX80` from both outputs.
 The same live transaction now repeats under internal map mode `$30`; the Rust result retains its
 Fast-LoROM identity and checksum, and Lunar Magic re-exports the complete GFX/ExGFX set byte-exactly.
+The authentic SA-1 Pack v1.40 route is separate from the large-ROM mapper-compatible ExAnimation
+allocator. After Rust's verified standard-GFX installation, first `ExGFX80` installs the exact
+SA-1 expanded-settings owner at `$087FF8`, applies the compact fixed helper/table transition,
+initializes `$07F200..$07F77F`, preserves the erased extended table inside `$088000`, expands to
+2 MiB, and allocates the compressed file at `$0FFFF8` with pointer `$20:8000`. The LZ2 encoder now
+matches Lunar Magic's earliest-source tie break for equal-length dictionary matches. The retained
+before/after gate compares the complete logical ROM byte-for-byte, and a second live Wine gate
+requires Lunar Magic 3.63 to reopen the independently generated Rust result and re-export
+`ExGFX80.bin` exactly. First-time SA-1 reserved-only and extended-domain cases remain explicit gaps.
 An ExGFX insertion request also upgrades either authenticated legacy ExAnimation generation inside
 the same unpublished project. The pointer-hook generation advances its owned fragments before the
 new file is allocated; the global-table generation migrates its complete record set into current

@@ -2,8 +2,8 @@
 
 use lm_codec::encode_lz2;
 use lm_project::{PatchFixup, PatchFixupEncoding, PatchPayload, PatchWrite, RelocatablePatchPlan};
-use lm_rats::AllocationPolicy;
-use lm_rom::{Mapper, RomError, RomImage};
+use lm_rats::{AllocationPolicy, HEADER_LEN, parse_at};
+use lm_rom::{Mapper, RomError, RomImage, snes_to_pc};
 
 pub const SMW_US_V1_EXGFX_RUNTIME_HOOK_OFFSET: usize = 0x001471;
 pub const SMW_US_V1_EXGFX_RUNTIME_HOOK: [u8; 5] = [0x22, 0xc0, 0xf9, 0x0f, 0xea];
@@ -74,6 +74,8 @@ pub enum SmwUsV1ExGraphicsError {
     UnsupportedRuntimeHook,
     UnsupportedTableBase,
     UnsupportedExpansionMarker([u8; 7]),
+    UnsupportedSa1RuntimeMarker,
+    UnsupportedReservedPointer { index: usize },
     UnsupportedGraphicsFormatMarker([u8; 2]),
     FileNumber(u16),
     PointerOffsetOverflow,
@@ -126,6 +128,53 @@ pub fn probe_smw_us_v1_exgraphics_runtime_for_mapper(
         != SMW_US_V1_EXGFX_TABLE_BASE_OPERAND
     {
         return Err(SmwUsV1ExGraphicsError::UnsupportedTableBase);
+    }
+    if mapper == Mapper::Sa1 {
+        let format_marker: [u8; 2] = rom
+            .read(
+                SMW_US_V1_EXPANDED_GRAPHICS_FORMAT_MARKER_OFFSET,
+                SMW_US_V1_EXPANDED_GRAPHICS_FORMAT_MARKER.len(),
+            )?
+            .try_into()
+            .expect("the exact graphics-format marker length was requested");
+        return match format_marker {
+            SMW_US_V1_EXPANDED_GRAPHICS_FORMAT_MARKER => {
+                Ok(SmwUsV1ExGraphicsRuntimeState::Expanded)
+            }
+            SMW_US_V1_VANILLA_GRAPHICS_FORMAT_MARKER => {
+                let reserved = rom.read(SMW_US_V1_RESERVED_EXGFX_POINTER_OFFSET, 0x0c)?;
+                if reserved.iter().all(|byte| *byte == 0xff) {
+                    Ok(SmwUsV1ExGraphicsRuntimeState::Ready)
+                } else {
+                    for (index, pointer) in reserved.chunks_exact(3).enumerate() {
+                        if pointer == [0xff; 3] {
+                            continue;
+                        }
+                        let address = u32::from(pointer[0])
+                            | u32::from(pointer[1]) << 8
+                            | u32::from(pointer[2]) << 16;
+                        let payload = snes_to_pc(Mapper::Sa1, address).map_err(|_| {
+                            SmwUsV1ExGraphicsError::UnsupportedReservedPointer { index }
+                        })?;
+                        let header = payload
+                            .checked_sub(HEADER_LEN)
+                            .ok_or(SmwUsV1ExGraphicsError::UnsupportedReservedPointer { index })?;
+                        let block = parse_at(rom.logical_bytes(), header).map_err(|_| {
+                            SmwUsV1ExGraphicsError::UnsupportedReservedPointer { index }
+                        })?;
+                        if block.payload.start != payload || block.payload.len() != 0x800 {
+                            return Err(SmwUsV1ExGraphicsError::UnsupportedReservedPointer {
+                                index,
+                            });
+                        }
+                    }
+                    Ok(SmwUsV1ExGraphicsRuntimeState::ReservedOnly)
+                }
+            }
+            marker => Err(SmwUsV1ExGraphicsError::UnsupportedGraphicsFormatMarker(
+                marker,
+            )),
+        };
     }
     let expansion_marker = mapper_rom_offset(mapper, SMW_US_V1_EXGFX_EXPANSION_MARKER_OFFSET);
     let marker: [u8; 7] = rom
@@ -184,6 +233,95 @@ pub fn probe_smw_us_v1_exgraphics_runtime_for_mapper(
         return Ok(SmwUsV1ExGraphicsRuntimeState::Ready);
     }
     Err(SmwUsV1ExGraphicsError::UnsupportedExpansionMarker(marker))
+}
+
+/// Builds Lunar Magic's compact first-ExGFX runtime transition for a 1--2 MiB SA-1 Pack ROM.
+///
+/// Unlike the large mapper-compatible ExAnimation family, this route uses the fixed SA-1 Pack
+/// helper area and initializes only the ordinary `$80..$FF` pointer domain. The expanded-settings
+/// payload at `$088000` remains the erased sentinel for the `$100..$FFF` domain until an entry is
+/// written.
+pub fn smw_us_v1_sa1_exgraphics_runtime_installation_plan(
+    rom: &RomImage,
+) -> Result<RelocatablePatchPlan, SmwUsV1ExGraphicsError> {
+    let direct = |offset: usize, expected: &[u8], replacement: &[u8]| PatchWrite {
+        offset,
+        expected: expected.to_vec(),
+        replacement: replacement.to_vec(),
+        fixups: Vec::new(),
+    };
+    let mut writes = vec![
+        direct(0x002149, &[0x22, 0x28, 0xba, 0x00], &[0xea; 4]),
+        direct(
+            0x0026b8,
+            &[0x84, 0x76, 0x84, 0x89],
+            &[0x22, 0x60, 0xf5, 0x0e],
+        ),
+        direct(0x002a47, &[0xf0, 0x03], &[0xea, 0xea]),
+        direct(0x002a54, &[0x9d], &[0x60]),
+        direct(0x002a6c, &[0x28, 0xba, 0x00], &[0x60, 0xf1, 0x0f]),
+        direct(
+            0x02d8e2,
+            &[0xa5, 0x0e, 0x0a, 0xa8],
+            &[0x22, 0x50, 0xf5, 0x0e],
+        ),
+        direct(0x06a4be, &[0xe3, 0xb3, 0x0d], &[0xe0, 0xf0, 0x0d]),
+        direct(0x06c203, &[0xe3, 0xb3, 0x0d], &[0xe0, 0xf0, 0x0d]),
+        direct(0x06ce03, &[0xe3, 0xb3, 0x0d], &[0xe0, 0xf0, 0x0d]),
+        direct(0x06da03, &[0xe3, 0xb3, 0x0d], &[0xe0, 0xf0, 0x0d]),
+        direct(0x06e903, &[0xe3, 0xb3, 0x0d], &[0xe0, 0xf0, 0x0d]),
+        direct(
+            0x06f0e0,
+            &[0xff; 9],
+            &[0xa5, 0x57, 0x85, 0xfd, 0xa5, 0x59, 0x85, 0xfc, 0x60],
+        ),
+        direct(
+            0x077550,
+            &[0xff; 0x0d],
+            &[
+                0xa5, 0x0e, 0x8d, 0x0b, 0x61, 0x1a, 0x85, 0xfe, 0x3a, 0x0a, 0xa8, 0x6b, 0xff,
+            ],
+        ),
+        direct(
+            0x077560,
+            &[0xff; 0x0d],
+            &[
+                0x9c, 0xcd, 0x73, 0x64, 0xfe, 0x64, 0xff, 0x84, 0x76, 0x84, 0x89, 0x6b, 0xff,
+            ],
+        ),
+    ];
+    let mut erased_runtime_marker = vec![0xff; 0x65];
+    erased_runtime_marker.extend_from_slice(&[0xa8, 0x00]);
+    let mut lunar_magic_standard_marker = vec![0; erased_runtime_marker.len()];
+    lunar_magic_standard_marker[0] = 0xf7;
+    let actual_runtime_marker = rom.read(0x07efb6, erased_runtime_marker.len())?;
+    if actual_runtime_marker != lunar_magic_standard_marker
+        && !actual_runtime_marker.iter().all(|byte| *byte == 0xff)
+    {
+        return Err(SmwUsV1ExGraphicsError::UnsupportedSa1RuntimeMarker);
+    }
+    writes.push(PatchWrite {
+        offset: 0x07efb6,
+        expected: actual_runtime_marker.to_vec(),
+        replacement: erased_runtime_marker,
+        fixups: Vec::new(),
+    });
+    writes.push(PatchWrite {
+        offset: 0x07f200,
+        expected: vec![0xff; 0x580],
+        replacement: vec![0; 0x580],
+        fixups: Vec::new(),
+    });
+    writes.sort_unstable_by_key(|write| write.offset);
+    Ok(RelocatablePatchPlan {
+        description: "install SMW US SA-1 first-ExGFX runtime".into(),
+        mapper: Mapper::Sa1,
+        allocation: AllocationPolicy::lorom(0..rom.logical_len()),
+        checksum_field: 0x007fdc,
+        expansion_fill: 0xff,
+        payloads: Vec::new(),
+        writes,
+    })
 }
 
 /// Resolves Lunar Magic's three disjoint native ExGFX pointer domains.
@@ -549,6 +687,42 @@ mod tests {
             .unwrap();
         assert_eq!(
             probe_smw_us_v1_exgraphics_runtime(&image).unwrap(),
+            SmwUsV1ExGraphicsRuntimeState::Expanded
+        );
+    }
+
+    #[test]
+    fn sa1_probe_uses_format_and_authenticated_reserved_pointers_without_lorom_marker() {
+        let mut bytes = vec![0xff; 0x09_0000];
+        bytes[SMW_US_V1_EXGFX_RUNTIME_HOOK_OFFSET
+            ..SMW_US_V1_EXGFX_RUNTIME_HOOK_OFFSET + SMW_US_V1_EXGFX_RUNTIME_HOOK.len()]
+            .copy_from_slice(&SMW_US_V1_EXGFX_RUNTIME_HOOK);
+        bytes[SMW_US_V1_EXGFX_TABLE_BASE_OPERAND_OFFSET
+            ..SMW_US_V1_EXGFX_TABLE_BASE_OPERAND_OFFSET + SMW_US_V1_EXGFX_TABLE_BASE_OPERAND.len()]
+            .copy_from_slice(&SMW_US_V1_EXGFX_TABLE_BASE_OPERAND);
+        bytes[SMW_US_V1_EXPANDED_GRAPHICS_FORMAT_MARKER_OFFSET
+            ..SMW_US_V1_EXPANDED_GRAPHICS_FORMAT_MARKER_OFFSET + 2]
+            .copy_from_slice(&SMW_US_V1_VANILLA_GRAPHICS_FORMAT_MARKER);
+        let mut image = RomImage::from_bytes(bytes).unwrap();
+        assert_eq!(
+            probe_smw_us_v1_exgraphics_runtime_for_mapper(&image, Mapper::Sa1).unwrap(),
+            SmwUsV1ExGraphicsRuntimeState::Ready
+        );
+        image
+            .write(SMW_US_V1_RESERVED_EXGFX_POINTER_OFFSET, &[0, 0, 0])
+            .unwrap();
+        assert!(matches!(
+            probe_smw_us_v1_exgraphics_runtime_for_mapper(&image, Mapper::Sa1),
+            Err(SmwUsV1ExGraphicsError::UnsupportedReservedPointer { index: 0 })
+        ));
+        image
+            .write(
+                SMW_US_V1_EXPANDED_GRAPHICS_FORMAT_MARKER_OFFSET,
+                &SMW_US_V1_EXPANDED_GRAPHICS_FORMAT_MARKER,
+            )
+            .unwrap();
+        assert_eq!(
+            probe_smw_us_v1_exgraphics_runtime_for_mapper(&image, Mapper::Sa1).unwrap(),
             SmwUsV1ExGraphicsRuntimeState::Expanded
         );
     }

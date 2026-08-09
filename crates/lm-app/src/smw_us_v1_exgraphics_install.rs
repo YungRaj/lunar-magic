@@ -7,6 +7,8 @@ use lm_profile::{
     smw_us_v1_exgraphics_installation_plan_for_mapper, smw_us_v1_exgraphics_pointer_for_mapper,
     smw_us_v1_expanded_exanimation_runtime_installation_plan,
     smw_us_v1_gfx_expanded_settings_installation_plan,
+    smw_us_v1_sa1_exgraphics_runtime_installation_plan,
+    smw_us_v1_sa1_expanded_settings_installation_plan,
 };
 use lm_project::{GraphicsCompression, GraphicsRomLayout, LevelPointerTable, Project, RomMutation};
 use lm_rats::ProtectedRange;
@@ -37,9 +39,15 @@ pub fn prepare_smw_us_v1_exgraphics_install(
         .unwrap_or(Mapper::LoRom);
     let mut project = Project::new(image);
     match probe_smw_us_v1_exgraphics_runtime_for_mapper(&project.rom, mapper) {
-        Ok(_) => {}
+        Ok(state) => {
+            if mapper == Mapper::Sa1 && state != SmwUsV1ExGraphicsRuntimeState::Expanded {
+                return Err(
+                    "SA-1 ready/reserved ExGFX runtime migration is not yet available".into(),
+                );
+            }
+        }
         Err(SmwUsV1ExGraphicsError::UnsupportedRuntimeHook) => {
-            if mapper != Mapper::LoRom {
+            if !matches!(mapper, Mapper::LoRom | Mapper::Sa1) {
                 return Err(format!(
                     "first-time ExGFX prerequisite installation is not yet available for {mapper:?}"
                 ));
@@ -50,97 +58,115 @@ pub fn prepare_smw_us_v1_exgraphics_install(
                         .into(),
                 );
             }
+            if mapper == Mapper::Sa1 && files.iter().all(|(number, _)| *number < 0x80) {
+                return Err(
+                    "first-time SA-1 ExGFX insertion currently requires an ordinary or extended compressed ExGFX file"
+                        .into(),
+                );
+            }
+            let settings = if mapper == Mapper::Sa1 {
+                smw_us_v1_sa1_expanded_settings_installation_plan()
+            } else {
+                smw_us_v1_gfx_expanded_settings_installation_plan()
+            }
+            .map_err(|error| error.to_string())?;
             project
-                .install_relocatable_patch(
-                    &smw_us_v1_gfx_expanded_settings_installation_plan()
-                        .map_err(|error| error.to_string())?,
-                )
+                .install_relocatable_patch(&settings)
                 .map_err(|error| error.to_string())?;
+            if mapper == Mapper::Sa1 {
+                let runtime = smw_us_v1_sa1_exgraphics_runtime_installation_plan(&project.rom)
+                    .map_err(|error| error.to_string())?;
+                project
+                    .install_relocatable_patch(&runtime)
+                    .map_err(|error| error.to_string())?;
+            }
             probe_smw_us_v1_exgraphics_runtime_for_mapper(&project.rom, mapper)
                 .map_err(|error| error.to_string())?;
         }
         Err(error) => return Err(error.to_string()),
     }
-    let mapper_runtime = lm_profile::smw_us_v1_expanded_exanimation_uses_mapper_runtime(
-        project.rom.logical_bytes(),
-        mapper,
-    )
-    .map_err(|error| error.to_string())?;
-    let mut generation = probe_smw_us_v1_expanded_exanimation_runtime_generation_for_mapper(
-        project.rom.logical_bytes(),
-        mapper,
-        mapper_runtime,
-    );
-    if generation.is_err()
-        && mapper != Mapper::LoRom
-        && mapper_runtime
-        && matches!(
-            probe_smw_us_v1_expanded_exanimation_runtime_generation_for_mapper(
-                project.rom.logical_bytes(),
-                mapper,
-                false,
-            ),
-            Ok(SmwUsV1ExpandedExAnimationRuntimeGeneration::Current)
+    if mapper != Mapper::Sa1 {
+        let mapper_runtime = lm_profile::smw_us_v1_expanded_exanimation_uses_mapper_runtime(
+            project.rom.logical_bytes(),
+            mapper,
         )
-    {
-        migrate_relocated_lorom_exanimation_runtime(&mut project, mapper)?;
-        generation = probe_smw_us_v1_expanded_exanimation_runtime_generation_for_mapper(
+        .map_err(|error| error.to_string())?;
+        let mut generation = probe_smw_us_v1_expanded_exanimation_runtime_generation_for_mapper(
             project.rom.logical_bytes(),
             mapper,
             mapper_runtime,
         );
-    }
-    match generation.map_err(|error| error.to_string())? {
-        SmwUsV1ExpandedExAnimationRuntimeGeneration::Absent => {
-            let mut plan = if mapper == Mapper::LoRom {
-                smw_us_v1_expanded_exanimation_runtime_installation_plan()
-                    .map_err(|error| error.to_string())?
-            } else {
-                let search = if mapper == Mapper::ExLoRom {
-                    0x10_0000..0x40_0000
-                } else {
-                    0x40_0000..project.rom.logical_len()
-                };
-                lm_profile::smw_us_v1_expanded_exanimation_runtime_installation_plan_for_mapper(
+        if generation.is_err()
+            && mapper != Mapper::LoRom
+            && mapper_runtime
+            && matches!(
+                probe_smw_us_v1_expanded_exanimation_runtime_generation_for_mapper(
+                    project.rom.logical_bytes(),
                     mapper,
-                    lm_rats::AllocationPolicy::lorom(search),
-                    mapper_runtime,
-                )
-                .map_err(|error| error.to_string())?
-            };
-            plan.allocation.fill_bytes = vec![0x00, 0xff];
-            let extended =
-                mapper_rom_offset(mapper, lm_profile::SMW_US_V1_EXTENDED_EXGFX_POINTER_OFFSET);
-            plan.allocation
-                .protected
-                .push(ProtectedRange(extended..extended + 0xf00 * 3));
-            project
-                .install_relocatable_patch(&plan)
-                .map_err(|error| error.to_string())?;
-        }
-        SmwUsV1ExpandedExAnimationRuntimeGeneration::Current => {}
-        SmwUsV1ExpandedExAnimationRuntimeGeneration::LegacyPointerHooks => {
-            if mapper != Mapper::LoRom {
-                return Err(format!(
-                    "legacy pointer-hook ExAnimation migration is not valid for {mapper:?}"
-                ));
-            }
-            let migration = lm_profile::smw_us_v1_legacy_exanimation_hook_migration(
-                project.rom.logical_bytes(),
+                    false,
+                ),
+                Ok(SmwUsV1ExpandedExAnimationRuntimeGeneration::Current)
             )
-            .map_err(|error| error.to_string())?;
-            project
-                .install_relocatable_patch(&migration.plan)
-                .map_err(|error| error.to_string())?;
+        {
+            migrate_relocated_lorom_exanimation_runtime(&mut project, mapper)?;
+            generation = probe_smw_us_v1_expanded_exanimation_runtime_generation_for_mapper(
+                project.rom.logical_bytes(),
+                mapper,
+                mapper_runtime,
+            );
         }
-        SmwUsV1ExpandedExAnimationRuntimeGeneration::LegacyGlobalTable => {
-            if mapper != Mapper::LoRom {
-                return Err(format!(
-                    "legacy global-table ExAnimation migration is not valid for {mapper:?}"
-                ));
+        match generation.map_err(|error| error.to_string())? {
+            SmwUsV1ExpandedExAnimationRuntimeGeneration::Absent => {
+                let mut plan = if mapper == Mapper::LoRom {
+                    smw_us_v1_expanded_exanimation_runtime_installation_plan()
+                        .map_err(|error| error.to_string())?
+                } else {
+                    let search = if mapper == Mapper::ExLoRom {
+                        0x10_0000..0x40_0000
+                    } else {
+                        0x40_0000..project.rom.logical_len()
+                    };
+                    lm_profile::smw_us_v1_expanded_exanimation_runtime_installation_plan_for_mapper(
+                        mapper,
+                        lm_rats::AllocationPolicy::lorom(search),
+                        mapper_runtime,
+                    )
+                    .map_err(|error| error.to_string())?
+                };
+                plan.allocation.fill_bytes = vec![0x00, 0xff];
+                let extended =
+                    mapper_rom_offset(mapper, lm_profile::SMW_US_V1_EXTENDED_EXGFX_POINTER_OFFSET);
+                plan.allocation
+                    .protected
+                    .push(ProtectedRange(extended..extended + 0xf00 * 3));
+                project
+                    .install_relocatable_patch(&plan)
+                    .map_err(|error| error.to_string())?;
             }
-            crate::revision_patch_state::migrate_legacy_global_exanimations(&mut project)
+            SmwUsV1ExpandedExAnimationRuntimeGeneration::Current => {}
+            SmwUsV1ExpandedExAnimationRuntimeGeneration::LegacyPointerHooks => {
+                if mapper != Mapper::LoRom {
+                    return Err(format!(
+                        "legacy pointer-hook ExAnimation migration is not valid for {mapper:?}"
+                    ));
+                }
+                let migration = lm_profile::smw_us_v1_legacy_exanimation_hook_migration(
+                    project.rom.logical_bytes(),
+                )
                 .map_err(|error| error.to_string())?;
+                project
+                    .install_relocatable_patch(&migration.plan)
+                    .map_err(|error| error.to_string())?;
+            }
+            SmwUsV1ExpandedExAnimationRuntimeGeneration::LegacyGlobalTable => {
+                if mapper != Mapper::LoRom {
+                    return Err(format!(
+                        "legacy global-table ExAnimation migration is not valid for {mapper:?}"
+                    ));
+                }
+                crate::revision_patch_state::migrate_legacy_global_exanimations(&mut project)
+                    .map_err(|error| error.to_string())?;
+            }
         }
     }
 
@@ -179,7 +205,9 @@ pub fn prepare_smw_us_v1_exgraphics_install(
     }
     let final_state = probe_smw_us_v1_exgraphics_runtime_for_mapper(&project.rom, mapper)
         .map_err(|error| error.to_string())?;
-    let expected_state = if compressed.is_empty() {
+    let expected_state = if mapper == Mapper::Sa1 {
+        SmwUsV1ExGraphicsRuntimeState::Expanded
+    } else if compressed.is_empty() {
         SmwUsV1ExGraphicsRuntimeState::ReservedOnly
     } else {
         SmwUsV1ExGraphicsRuntimeState::Expanded
@@ -338,6 +366,47 @@ mod tests {
             probe_smw_us_v1_expanded_exanimation_runtime_generation(reopened.rom.logical_bytes())
                 .unwrap(),
             SmwUsV1ExpandedExAnimationRuntimeGeneration::Current
+        );
+    }
+
+    #[test]
+    #[ignore = "requires retained authentic SA-1 Pack before/after first-ExGFX oracle images"]
+    fn authentic_sa1_first_exgfx80_install_is_byte_exact() {
+        let before = RomImage::from_bytes(
+            std::fs::read(std::env::var_os("LM_SA1_EXGFX_BEFORE").expect("LM_SA1_EXGFX_BEFORE"))
+                .unwrap(),
+        )
+        .unwrap();
+        let oracle = RomImage::from_bytes(
+            std::fs::read(std::env::var_os("LM_SA1_EXGFX_AFTER").expect("LM_SA1_EXGFX_AFTER"))
+                .unwrap(),
+        )
+        .unwrap();
+        let bytes = (0..0x800_usize)
+            .map(|index| index.to_le_bytes()[0].wrapping_mul(37).wrapping_add(11))
+            .collect::<Vec<_>>();
+        let prepared =
+            prepare_smw_us_v1_exgraphics_install(0, before.clone(), &[(0x80, bytes)]).unwrap();
+        let mut project = Project::new(before);
+        project
+            .apply_mutation(&prepared.description, &prepared.mutation)
+            .unwrap();
+        let actual = project.rom.logical_bytes();
+        let expected = oracle.logical_bytes();
+        let mismatches = actual
+            .iter()
+            .zip(expected)
+            .enumerate()
+            .filter_map(|(offset, (actual, expected))| {
+                (actual != expected).then_some((offset, *actual, *expected))
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(actual.len(), expected.len());
+        assert!(
+            mismatches.is_empty(),
+            "{} mismatches; first: {:02X?}",
+            mismatches.len(),
+            &mismatches[..mismatches.len().min(64)]
         );
     }
 

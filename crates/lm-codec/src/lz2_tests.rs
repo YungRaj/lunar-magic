@@ -56,6 +56,19 @@ fn overlapping_dictionary_match_compresses_repetition() {
 }
 
 #[test]
+fn equal_length_dictionary_matches_prefer_lunar_magics_earliest_source() {
+    let source = (0..0x800_usize)
+        .map(|index| index.to_le_bytes()[0].wrapping_mul(37).wrapping_add(11))
+        .collect::<Vec<_>>();
+    let encoded = encode_lz2(&source);
+    assert_eq!(
+        &encoded[encoded.len() - 9..],
+        &[0xf3, 0xff, 0, 0, 0xf2, 0xff, 0, 0, 0xff]
+    );
+    assert_eq!(decode_lz2(&encoded, source.len()).unwrap(), source);
+}
+
+#[test]
 fn prefix_decoder_reports_exact_stream_extent() {
     let stream = [0x01, 0x12, 0x34, 0xff, 0xaa, 0xbb];
     let decoded = decode_lz2_prefix(&stream, 2).unwrap();

@@ -114,11 +114,11 @@ fn best_dictionary(
                 (
                     candidate.len,
                     std::cmp::Reverse(candidate.command),
-                    candidate.source,
+                    std::cmp::Reverse(candidate.source),
                 ) > (
                     current.len,
                     std::cmp::Reverse(current.command),
-                    current.source,
+                    std::cmp::Reverse(current.source),
                 )
             }) {
                 best = Some(candidate);

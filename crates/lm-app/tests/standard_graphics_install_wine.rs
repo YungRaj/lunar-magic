@@ -103,8 +103,8 @@ fn lunar_magic_reexports_rust_standard_and_exgfx_across_legacy_migration() {
         assert_eq!(actual, expected, "{name}");
     }
 
-    let exgfx80 = (0..0x800)
-        .map(|index| (index as u8).wrapping_mul(37).wrapping_add(11))
+    let exgfx80 = (0..0x800_usize)
+        .map(|index| index.to_le_bytes()[0].wrapping_mul(37).wrapping_add(11))
         .collect::<Vec<_>>();
     let oracle = TemporaryDirectory::create("gfx-original-exgfx-install");
     fs::copy(&pristine, oracle.0.join("original-install.smc")).unwrap();
@@ -510,4 +510,38 @@ fn lunar_magic_reexports_rust_sa1_standard_graphics_install() {
         .unwrap();
         assert_eq!(actual, *expected, "SA-1 GFX{number:02X}");
     }
+
+    let exgfx80 = (0..0x800)
+        .map(|index| (index as u8).wrapping_mul(37).wrapping_add(11))
+        .collect::<Vec<_>>();
+    let exgfx = lm_app::prepare_smw_us_v1_exgraphics_install(
+        0,
+        project.rom.clone(),
+        &[(0x80, exgfx80.clone())],
+    )
+    .unwrap();
+    project
+        .apply_mutation(&exgfx.description, &exgfx.mutation)
+        .unwrap();
+    let identity = lm_rom::detect_identity(&project.rom).unwrap();
+    assert_eq!(identity.mapper, lm_rom::Mapper::Sa1);
+    assert!(identity.checksum_matches());
+    fs::write(
+        installed.0.join("sa1-rust-exgfx.smc"),
+        project.rom.as_file_bytes(),
+    )
+    .unwrap();
+    fs::create_dir(installed.0.join("ExGraphics")).unwrap();
+    run_export_operation(
+        &wine,
+        &lunar_magic,
+        &installed.0,
+        "-ExportExGFX",
+        "sa1-rust-exgfx.smc",
+    );
+    assert_eq!(
+        fs::read(installed.0.join("ExGraphics/ExGFX80.bin")).unwrap(),
+        exgfx80,
+        "Lunar Magic did not re-export Rust SA-1 ExGFX80"
+    );
 }
