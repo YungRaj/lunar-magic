@@ -254,6 +254,16 @@ unchanged, and encode/decode plus editor-text tests cover all five appended valu
 the toolbar row's older closing phrase for mouse shortcuts; Pause and numpad-operator physical-key
 distinctions remain open because the current frontend input abstraction does not expose them.
 
+Windows publication-safety update (2026-08-09): grouped, paired, replacement, and rollback cleanup
+no longer depend on Rust's unstable Windows `MetadataExt` file-identity methods. The safe
+`lm-windows::file_identity` boundary queries `GetFileInformationByHandle`, combines the volume
+serial with the complete 64-bit file index, and immediately closes the temporary handle. Every
+publication path captures that identity before rename/link operations and removes a rollback or
+staging path only when its current identity still matches, retaining the existing protection
+against deleting a racing unrelated replacement. The 20-test persistence family covers canonical
+aliases, distinct hard links, identity-guarded cleanup, rollback, collision, and grouped/paired
+publication; `cargo check -p lm-native --target x86_64-pc-windows-gnu` now completes successfully.
+
 ## Workflow ledger
 
 | Area | Original Lunar Magic workflow | Model | Tx | GUI | Oracle | Variants | Status | Primary evidence / next gap |

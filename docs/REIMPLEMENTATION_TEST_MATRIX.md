@@ -505,6 +505,14 @@ raw `$01/$02/$04/$05/$06` forms. `pointer_translation_preserves_all_five_native_
 `pressed_pointer_event_reaches_the_shared_shortcut_stream_once` bind every egui pointer button and
 modifier into the same activation stream consumed by portable and user-toolbar bindings.
 
+Windows rollback cleanup uses the same strong identity invariant as Unix. The safe Windows wrapper
+derives `(dwVolumeSerialNumber, nFileIndexHigh:nFileIndexLow)` from a live file handle, and the
+portable persistence layer snapshots that value before any rename or hard-link publication. A
+cleanup candidate is deleted only after its current identity equals the captured value. This
+replaces unstable standard-library metadata calls without weakening the race boundary;
+`identity_guard_removes_only_the_file_captured_for_cleanup`, the hard-link alias tests, all 20
+focused persistence tests, and a complete `x86_64-pc-windows-gnu` native compile gate cover it.
+
 The `LMENTAPP` application controller additionally proves atomic painter-order insert, replace,
 remove, and move batches; late index and palette failures; canonical reopen; stale revisions and
 save acknowledgements; saved-baseline undo/redo, stale history rejection, divergent redo

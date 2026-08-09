@@ -1,8 +1,12 @@
 //! Narrow safe wrappers around Windows APIs needed by the native frontend.
 
+use std::os::windows::io::AsRawHandle;
 use windows_sys::Win32::Foundation::GlobalFree;
 use windows_sys::Win32::Globalization::{
     GetThreadPreferredUILanguages, GetUserDefaultUILanguage, LCIDToLocaleName,
+};
+use windows_sys::Win32::Storage::FileSystem::{
+    BY_HANDLE_FILE_INFORMATION, GetFileInformationByHandle,
 };
 use windows_sys::Win32::System::{
     DataExchange::{
@@ -12,6 +16,39 @@ use windows_sys::Win32::System::{
     Memory::{GMEM_MOVEABLE, GlobalAlloc, GlobalLock, GlobalSize, GlobalUnlock},
     Ole::CF_UNICODETEXT,
 };
+
+/// Stable identity of one Windows filesystem object while it exists.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct FileIdentity {
+    volume_serial_number: u32,
+    file_index: u64,
+}
+
+/// Reads the volume serial and 64-bit file index from an open file handle.
+///
+/// This is the stable Win32 equivalent of Rust's currently unstable Windows
+/// `MetadataExt::{volume_serial_number, file_index}` methods.
+///
+/// # Errors
+///
+/// Returns the last Windows error if the handle information cannot be queried.
+pub fn file_identity(file: &std::fs::File) -> std::io::Result<FileIdentity> {
+    let mut information = std::mem::MaybeUninit::<BY_HANDLE_FILE_INFORMATION>::zeroed();
+    // SAFETY: `file` owns a live kernel handle for the duration of the call and `information`
+    // points to writable storage of the exact structure requested by the API.
+    if unsafe { GetFileInformationByHandle(file.as_raw_handle().cast(), information.as_mut_ptr()) }
+        == 0
+    {
+        return Err(std::io::Error::last_os_error());
+    }
+    // SAFETY: A nonzero return initializes the complete output structure.
+    let information = unsafe { information.assume_init() };
+    Ok(FileIdentity {
+        volume_serial_number: information.dwVolumeSerialNumber,
+        file_index: u64::from(information.nFileIndexHigh) << 32
+            | u64::from(information.nFileIndexLow),
+    })
+}
 
 const MERGED_USER_AND_SYSTEM_FALLBACKS: u32 = 0x30;
 const MAX_LANGUAGE_LIST_UTF16_UNITS: u32 = 0x600;

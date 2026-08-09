@@ -240,14 +240,15 @@ fn identity_guard_removes_only_the_file_captured_for_cleanup() {
     let candidate = directory.0.join("candidate");
     fs::write(&captured, b"ours").unwrap();
     let captured_metadata = fs::metadata(&captured).unwrap();
+    let captured_identity = capture_file_identity(&captured, &captured_metadata).unwrap();
 
     fs::write(&candidate, b"replacement").unwrap();
-    remove_if_same_file(&candidate, &captured_metadata).unwrap();
+    remove_if_same_file(&candidate, &captured_identity).unwrap();
     assert_eq!(fs::read(&candidate).unwrap(), b"replacement");
 
     fs::remove_file(&candidate).unwrap();
     fs::hard_link(&captured, &candidate).unwrap();
-    remove_if_same_file(&candidate, &captured_metadata).unwrap();
+    remove_if_same_file(&candidate, &captured_identity).unwrap();
     assert!(!candidate.exists());
     assert_eq!(fs::read(&captured).unwrap(), b"ours");
 }

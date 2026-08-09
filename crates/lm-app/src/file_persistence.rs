@@ -76,9 +76,13 @@ pub fn write_new_removing_existing(
         }
         Err(error) => return Err(error),
     };
+    let obsolete_identity = capture_file_identity(obsolete, &obsolete_metadata)?;
 
     let staged = stage(destination, bytes, None)?;
     let staged_metadata = fs::metadata(&staged).inspect_err(|_| {
+        let _ = fs::remove_file(&staged);
+    })?;
+    let staged_identity = capture_file_identity(&staged, &staged_metadata).inspect_err(|_| {
         let _ = fs::remove_file(&staged);
     })?;
     let backup = unused_backup_path(obsolete).inspect_err(|_| {
@@ -102,8 +106,8 @@ pub fn write_new_removing_existing(
             )),
         };
     }
-    let _ = remove_if_same_file(&staged, &staged_metadata);
-    let _ = remove_if_same_file(&backup, &obsolete_metadata);
+    let _ = remove_if_same_file(&staged, &staged_identity);
+    let _ = remove_if_same_file(&backup, &obsolete_identity);
     Ok(())
 }
 
@@ -191,10 +195,19 @@ impl NewFileGroup {
                 "grouped save requires at least one document",
             ));
         }
-        let mut published: Vec<(PathBuf, fs::Metadata)> = Vec::with_capacity(self.entries.len());
+        let mut published: Vec<(PathBuf, FileIdentity)> = Vec::with_capacity(self.entries.len());
         for (destination, staged_path) in &self.entries {
             let metadata = match fs::metadata(staged_path) {
                 Ok(metadata) => metadata,
+                Err(error) => {
+                    for (path, expected) in &published {
+                        let _ = remove_if_same_file(path, expected);
+                    }
+                    return Err(error);
+                }
+            };
+            let identity = match capture_file_identity(staged_path, &metadata) {
+                Ok(identity) => identity,
                 Err(error) => {
                     for (path, expected) in &published {
                         let _ = remove_if_same_file(path, expected);
@@ -208,7 +221,7 @@ impl NewFileGroup {
                 }
                 return Err(error);
             }
-            published.push((destination.clone(), metadata));
+            published.push((destination.clone(), identity));
         }
         self.cleanup();
         Ok(())
@@ -332,8 +345,9 @@ pub fn replace_or_create_group(documents: &[(&Path, &[u8])]) -> io::Result<()> {
     struct Entry<'a> {
         destination: &'a Path,
         original: Option<fs::Metadata>,
+        original_identity: Option<FileIdentity>,
         staged: PathBuf,
-        staged_metadata: fs::Metadata,
+        staged_identity: FileIdentity,
         backup: Option<PathBuf>,
     }
 
@@ -437,6 +451,21 @@ pub fn replace_or_create_group(documents: &[(&Path, &[u8])]) -> io::Result<()> {
                 }
             }
         }
+        let original_identity = match original.as_ref() {
+            Some(metadata) => match capture_file_identity(destination, metadata) {
+                Ok(identity) => Some(identity),
+                Err(error) => {
+                    cleanup_paths(
+                        &entries
+                            .iter()
+                            .map(|entry| entry.staged.as_path())
+                            .collect::<Vec<_>>(),
+                    );
+                    return Err(error);
+                }
+            },
+            None => None,
+        };
         let staged = match stage(
             destination,
             bytes,
@@ -462,6 +491,16 @@ pub fn replace_or_create_group(documents: &[(&Path, &[u8])]) -> io::Result<()> {
                     .collect::<Vec<_>>(),
             );
         })?;
+        let staged_identity =
+            capture_file_identity(&staged, &staged_metadata).inspect_err(|_| {
+                let _ = fs::remove_file(&staged);
+                cleanup_paths(
+                    &entries
+                        .iter()
+                        .map(|entry| entry.staged.as_path())
+                        .collect::<Vec<_>>(),
+                );
+            })?;
         let backup = if original.is_some() {
             match unused_backup_path(destination) {
                 Ok(path) => Some(path),
@@ -482,8 +521,9 @@ pub fn replace_or_create_group(documents: &[(&Path, &[u8])]) -> io::Result<()> {
         entries.push(Entry {
             destination,
             original,
+            original_identity,
             staged,
-            staged_metadata,
+            staged_identity,
             backup,
         });
     }
@@ -514,7 +554,7 @@ pub fn replace_or_create_group(documents: &[(&Path, &[u8])]) -> io::Result<()> {
     for (index, entry) in entries.iter().enumerate() {
         if let Err(error) = fs::rename(&entry.staged, entry.destination) {
             for published in entries[..index].iter().rev() {
-                let _ = remove_if_same_file(published.destination, &published.staged_metadata);
+                let _ = remove_if_same_file(published.destination, &published.staged_identity);
             }
             for original in entries.iter().rev() {
                 if let Some(backup) = &original.backup
@@ -546,8 +586,8 @@ pub fn replace_or_create_group(documents: &[(&Path, &[u8])]) -> io::Result<()> {
     }
 
     for entry in &entries {
-        if let (Some(backup), Some(original)) = (&entry.backup, &entry.original) {
-            let _ = remove_if_same_file(backup, original);
+        if let (Some(backup), Some(original_identity)) = (&entry.backup, &entry.original_identity) {
+            let _ = remove_if_same_file(backup, original_identity);
         }
     }
     Ok(())
@@ -579,10 +619,16 @@ pub fn replace_existing_pair(first: (&Path, &[u8]), second: (&Path, &[u8])) -> i
             "paired save destinations must not alias the same file",
         ));
     }
+    let first_identity = capture_file_identity(first.0, &first_metadata)?;
+    let second_identity = capture_file_identity(second.0, &second_metadata)?;
     let first_staged = stage(first.0, first.1, Some(first_metadata.permissions()))?;
     let first_staged_metadata = fs::metadata(&first_staged).inspect_err(|_| {
         let _ = fs::remove_file(&first_staged);
     })?;
+    let first_staged_identity = capture_file_identity(&first_staged, &first_staged_metadata)
+        .inspect_err(|_| {
+            let _ = fs::remove_file(&first_staged);
+        })?;
     let second_staged = match stage(second.0, second.1, Some(second_metadata.permissions())) {
         Ok(staged) => staged,
         Err(error) => {
@@ -622,7 +668,7 @@ pub fn replace_existing_pair(first: (&Path, &[u8]), second: (&Path, &[u8])) -> i
         );
     }
     if let Err(error) = fs::rename(&second_staged, second.0) {
-        let _ = remove_if_same_file(first.0, &first_staged_metadata);
+        let _ = remove_if_same_file(first.0, &first_staged_identity);
         return rollback_pair(
             error,
             first.0,
@@ -632,8 +678,8 @@ pub fn replace_existing_pair(first: (&Path, &[u8]), second: (&Path, &[u8])) -> i
             None,
         );
     }
-    let _ = remove_if_same_file(&first_backup, &first_metadata);
-    let _ = remove_if_same_file(&second_backup, &second_metadata);
+    let _ = remove_if_same_file(&first_backup, &first_identity);
+    let _ = remove_if_same_file(&second_backup, &second_identity);
     Ok(())
 }
 
@@ -646,12 +692,13 @@ fn same_existing_file(
     if fs::canonicalize(first)? == fs::canonicalize(second)? {
         return Ok(true);
     }
-    Ok(same_file_metadata(first_metadata, second_metadata))
+    Ok(capture_file_identity(first, first_metadata)?
+        == capture_file_identity(second, second_metadata)?)
 }
 
-fn remove_if_same_file(path: &Path, expected: &fs::Metadata) -> io::Result<()> {
+fn remove_if_same_file(path: &Path, expected: &FileIdentity) -> io::Result<()> {
     let actual = fs::metadata(path)?;
-    if same_file_metadata(&actual, expected) {
+    if &capture_file_identity(path, &actual)? == expected {
         fs::remove_file(path)
     } else {
         Ok(())
@@ -659,23 +706,36 @@ fn remove_if_same_file(path: &Path, expected: &fs::Metadata) -> io::Result<()> {
 }
 
 #[cfg(unix)]
-fn same_file_metadata(first: &fs::Metadata, second: &fs::Metadata) -> bool {
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct FileIdentity {
+    device: u64,
+    inode: u64,
+}
+
+#[cfg(unix)]
+fn capture_file_identity(_path: &Path, metadata: &fs::Metadata) -> io::Result<FileIdentity> {
     use std::os::unix::fs::MetadataExt;
-    first.dev() == second.dev() && first.ino() == second.ino()
+    Ok(FileIdentity {
+        device: metadata.dev(),
+        inode: metadata.ino(),
+    })
 }
 
 #[cfg(windows)]
-fn same_file_metadata(first: &fs::Metadata, second: &fs::Metadata) -> bool {
-    use std::os::windows::fs::MetadataExt;
-    first.volume_serial_number().is_some()
-        && first.volume_serial_number() == second.volume_serial_number()
-        && first.file_index().is_some()
-        && first.file_index() == second.file_index()
+type FileIdentity = lm_windows::FileIdentity;
+
+#[cfg(windows)]
+fn capture_file_identity(path: &Path, _metadata: &fs::Metadata) -> io::Result<FileIdentity> {
+    lm_windows::file_identity(&fs::File::open(path)?)
 }
 
 #[cfg(not(any(unix, windows)))]
-fn same_file_metadata(_first: &fs::Metadata, _second: &fs::Metadata) -> bool {
-    false
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct FileIdentity(PathBuf);
+
+#[cfg(not(any(unix, windows)))]
+fn capture_file_identity(path: &Path, _metadata: &fs::Metadata) -> io::Result<FileIdentity> {
+    fs::canonicalize(path).map(FileIdentity)
 }
 
 fn regular_file_metadata(path: &Path) -> io::Result<fs::Metadata> {
@@ -725,11 +785,12 @@ fn replace_with_backup(
     staged: &Path,
     original_metadata: &fs::Metadata,
 ) -> io::Result<()> {
+    let original_identity = capture_file_identity(destination, original_metadata)?;
     let backup = unused_backup_path(destination)?;
     fs::rename(destination, &backup)?;
     match fs::rename(staged, destination) {
         Ok(()) => {
-            let _ = remove_if_same_file(&backup, original_metadata);
+            let _ = remove_if_same_file(&backup, &original_identity);
             Ok(())
         }
         Err(publish_error) => match fs::rename(&backup, destination) {
