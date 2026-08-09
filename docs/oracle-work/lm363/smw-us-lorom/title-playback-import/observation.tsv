@@ -26,3 +26,20 @@ rom_grew	false
 stored_checksum_preserved	true
 confirmation_cancel_byte_identical	true
 file_dialog_cancel_byte_identical	true
+batch_import_switch	-ImportTitleMoves
+batch_export_switch	-ExportTitleMoves
+batch_valid_import_exit	0
+batch_valid_import_output_sha256	758c41d8f849d2a96efa76f789f471b37e2843981f0b759e34c6a670cc936676
+batch_export_exit	0
+batch_export_size	134163
+batch_export_sha256	958059ec938e651410f01f6b692176c5037adc854f4fc218bbd051de782f0964
+batch_export_byte_identical_to_input	true
+batch_malformed_size	12
+batch_malformed_title	Not a ZSNES Savestate!
+batch_malformed_message	This does not appear to be a valid ZSNES savestate.
+batch_malformed_exit	1
+batch_malformed_rom_byte_identical	true
+batch_absent_export_title	ASM code not detected!
+batch_absent_export_message	The ASM code for playback was not detected in the ROM... there is nothing to export.
+batch_absent_export_exit	1
+batch_absent_export_created_output	false

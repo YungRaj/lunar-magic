@@ -14,4 +14,11 @@ The original output was compared with a Rust import of the same generated state.
 files are byte-identical, not merely semantically equivalent. This binds allocation order and
 location, all runtime and pointer bytes, the unchanged physical length, the stored checksum, and
 the compensation run. Confirmation Cancel and file-dialog Cancel each leave the input hash
-unchanged. Malformed-input and export observations remain separate open evidence gates.
+unchanged.
+
+The executable's authenticated `-ImportTitleMoves` and `-ExportTitleMoves` batch routes provide the
+noninteractive file boundaries without opening a second editor window. Valid batch import produces
+the same complete ROM hash as the GUI and Rust. Batch export recreates the 134,163-byte input state
+byte-for-byte. A 12-byte truncation emits the retained `Not a ZSNES Savestate!` rejection, exits 1,
+and leaves the ROM byte-identical. Export from the pristine ROM emits the retained
+`ASM code not detected!` rejection, exits 1, and creates no output.

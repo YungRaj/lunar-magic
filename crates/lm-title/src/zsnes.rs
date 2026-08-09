@@ -103,4 +103,12 @@ mod tests {
         assert_eq!(&state[..OUTPUT_HEADER.len()], OUTPUT_HEADER);
         assert_eq!(decode_zsnes_title_recording(&state).unwrap(), recording);
     }
+
+    #[test]
+    fn lunar_magic_truncated_batch_fixture_rejects_before_payload_access() {
+        assert_eq!(
+            decode_zsnes_title_recording(&[0; 12]),
+            Err(ZsnesTitleRecordingError::Truncated(12))
+        );
+    }
 }

@@ -4835,6 +4835,10 @@ only zero-filled expanded-ROM space at or above the original 512 KiB boundary is
 already expanded ROM is not grown merely because the fallback search range permits another bank.
 The transaction also uses Lunar Magic's checksum-compensation run to retain the stored checksum.
 Both the confirmation Cancel and common-file-dialog Cancel paths are byte-identical.
+Lunar Magic's `-ImportTitleMoves` and `-ExportTitleMoves` batch routes close the remaining file
+boundary: valid import reproduces the GUI/Rust ROM hash, export recreates the minimal ZSNES state
+byte-for-byte, a 12-byte state rejects without mutation, and export without installed playback
+creates no file.
 
 ## ExLoROM standard graphics and ExGFX conversion parity
 

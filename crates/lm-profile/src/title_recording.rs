@@ -57,7 +57,7 @@ mod tests {
     use crate::SMW_US_V1_CHECKSUM_FIELD;
     use lm_project::TitleRecordingStorage;
     use lm_rom::RomImage;
-    use lm_title::TitleScreenRecording;
+    use lm_title::{TitleScreenRecording, encode_zsnes_title_recording};
     use sha2::{Digest, Sha256};
     use std::path::PathBuf;
 
@@ -165,7 +165,13 @@ mod tests {
                 .load_title_recording_detected(&locator)
                 .unwrap()
                 .recording,
-            Some(recording)
+            Some(recording.clone())
+        );
+        let exported = encode_zsnes_title_recording(&recording);
+        assert_eq!(exported.len(), 134_163);
+        assert_eq!(
+            format!("{:x}", Sha256::digest(&exported)),
+            "958059ec938e651410f01f6b692176c5037adc854f4fc218bbd051de782f0964"
         );
         let observation = include_str!(
             "../../../docs/oracle-work/lm363/smw-us-lorom/title-playback-import/observation.tsv"
@@ -176,6 +182,9 @@ mod tests {
             "changed_bytes\t335",
             "confirmation_cancel_byte_identical\ttrue",
             "file_dialog_cancel_byte_identical\ttrue",
+            "batch_export_byte_identical_to_input\ttrue",
+            "batch_malformed_rom_byte_identical\ttrue",
+            "batch_absent_export_created_output\tfalse",
         ] {
             assert!(observation.lines().any(|line| line == required));
         }

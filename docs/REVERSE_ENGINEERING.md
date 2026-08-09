@@ -3104,6 +3104,12 @@ publication, checksum repair, semantic reopen, and history commit are failure-at
 separates movement/container parsing from ROM mutation, while CLI and application workflows expose
 native, ZSNES, and Snes9x import/export without platform APIs.
 
+The original executable exposes `-ImportTitleMoves` and `-ExportTitleMoves` as authenticated batch
+front ends to the same subsystem. A retained valid import produces the exact GUI/Rust ROM hash;
+export recreates the complete minimal ZSNES V143 state byte-for-byte. Truncated input exits with
+`Not a ZSNES Savestate!` before ROM mutation, while export from an uninstalled ROM exits with
+`ASM code not detected!` and creates no output.
+
 ### Lunar Magic ROM attribution and feature metadata
 
 `WriteLunarMagicRomMetadata` at `0047D3E0` is called by the real save path. Dynamic write tracing
