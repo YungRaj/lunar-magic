@@ -1954,6 +1954,8 @@ The retained command-line oracle now crosses this complete transition with prese
 copier headers. Both Rust results have identical logical bytes; the headered path retains the exact
 input prefix, the headerless path remains headerless until Lunar Magic opens its copy, and both are
 recognized by Lunar Magic's GFX and ExGFX exporters.
+Repeating that pipeline with map mode `$30` proves Fast LoROM shares the ordinary LoROM graphics
+addressing path: the final identity remains Fast LoROM and both original exporters accept it.
 The native insertion transaction now follows that prerequisite relationship for older installed
 ROMs as well: authenticated 1.70-era pointer hooks and 1.65-era global-table records are migrated to
 the current ExAnimation generation in staging before any requested ExGFX pointer is published.

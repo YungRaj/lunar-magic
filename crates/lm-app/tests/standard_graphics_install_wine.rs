@@ -325,4 +325,69 @@ fn lunar_magic_reexports_rust_standard_and_exgfx_across_legacy_migration() {
         exgfx80,
         "Lunar Magic did not re-export headerless ExGFX80"
     );
+
+    let mut fast_source = RomImage::from_bytes(retained_source.logical_bytes().to_vec()).unwrap();
+    fast_source.write(0x7fd5, &[0x30]).unwrap();
+    fast_source.update_snes_checksum(0x7fdc).unwrap();
+    let fast_standard =
+        prepare_smw_us_v1_standard_graphics_install(0, fast_source.clone(), &files).unwrap();
+    let mut fast_project = Project::new(fast_source);
+    fast_project
+        .apply_mutation(&fast_standard.description, &fast_standard.mutation)
+        .unwrap();
+    let fast_exgfx = lm_app::prepare_smw_us_v1_exgraphics_install(
+        0,
+        fast_project.rom.clone(),
+        &[(0x80, exgfx80.clone())],
+    )
+    .unwrap();
+    fast_project
+        .apply_mutation(&fast_exgfx.description, &fast_exgfx.mutation)
+        .unwrap();
+    for (offset, original) in lm_profile::SMW_US_V1_4BPP_GRAPHICS_MARKER_OFFSETS
+        .into_iter()
+        .zip([0x08, 0x1e])
+    {
+        fast_project.rom.write(offset, &[original]).unwrap();
+    }
+    fast_project.rom.update_snes_checksum(0x7fdc).unwrap();
+    let fast_migration =
+        prepare_smw_us_v1_standard_graphics_install(0, fast_project.rom.clone(), &files).unwrap();
+    fast_project
+        .apply_mutation(&fast_migration.description, &fast_migration.mutation)
+        .unwrap();
+    assert_eq!(fast_project.rom.copier_header(), CopierHeader::Absent);
+    assert_eq!(fast_project.rom.read(0x7fd5, 1).unwrap(), [0x30]);
+    assert!(
+        lm_rom::detect_identity(&fast_project.rom)
+            .unwrap()
+            .checksum_matches()
+    );
+    let fast = TemporaryDirectory::create("gfx-fast-lorom-variant");
+    fs::write(
+        fast.0.join("fast-lorom.smc"),
+        fast_project.rom.as_file_bytes(),
+    )
+    .unwrap();
+    run_export(&wine, &lunar_magic, &fast.0, "fast-lorom.smc");
+    run_export_operation(
+        &wine,
+        &lunar_magic,
+        &fast.0,
+        "-ExportExGFX",
+        "fast-lorom.smc",
+    );
+    for number in 0..0x34 {
+        let name = format!("GFX{number:02X}.bin");
+        assert_eq!(
+            fs::read(fast.0.join("Graphics").join(&name)).unwrap(),
+            files[number],
+            "Fast LoROM {name}"
+        );
+    }
+    assert_eq!(
+        fs::read(fast.0.join("ExGraphics/ExGFX80.bin")).unwrap(),
+        exgfx80,
+        "Lunar Magic did not re-export Fast-LoROM ExGFX80"
+    );
 }
