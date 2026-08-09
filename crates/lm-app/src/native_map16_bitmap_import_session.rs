@@ -1422,6 +1422,112 @@ mod tests {
     }
 
     #[test]
+    fn transparent_blank_switch_product_commits_reopens_and_undoes_across_copier_forms() {
+        let pristine = crate::test_support::pristine_smw_us_rom_bytes();
+        let copier_prefix = {
+            let mut prefix = vec![0_u8; 512];
+            prefix[0] = 0x40;
+            prefix[8..11].copy_from_slice(&[0xaa, 0xbb, 0x04]);
+            prefix
+        };
+
+        for use_blank_8x8 in [false, true] {
+            for use_blank_map16 in [false, true] {
+                let mut logical_outputs = Vec::new();
+                for headered in [false, true] {
+                    let original = if headered {
+                        let mut physical = copier_prefix.clone();
+                        physical.extend_from_slice(&pristine);
+                        physical
+                    } else {
+                        pristine.clone()
+                    };
+                    let mut app = AppState::default();
+                    app.load_rom(original.clone()).unwrap();
+                    let mut session = NativeMap16BitmapImportSession::new_smw_us_v1(
+                        app.controller_snapshot().unwrap(),
+                        NativeMap16BitmapImportSessionRequest {
+                            level: 0x105,
+                            start_map16_tile: 0x8200,
+                            extra_graphics: [Some(0x20), Some(0x21)],
+                            pixels: vec![
+                                Rgba8 {
+                                    red: 0x42,
+                                    green: 0x84,
+                                    blue: 0xa5,
+                                    alpha: 0,
+                                };
+                                16 * 16
+                            ],
+                            width: 16,
+                            height: 16,
+                            palette_row: 4,
+                        },
+                    )
+                    .unwrap();
+                    let mut options = session.preview().options().clone();
+                    options.graphics.reuse_existing_tiles = false;
+                    options.graphics.optimize_new_tiles = true;
+                    options.graphics.blank_tile = use_blank_8x8.then_some(0x0f8);
+                    options.deduplicate_map16 = true;
+                    options.use_reserved_map16_for_blank = use_blank_map16;
+                    options.reserved_map16_tile = 0x8000;
+                    options.map16_allocation_start = 0x8200;
+                    session.set_options(options).unwrap();
+
+                    let expected_tile = session.preview().plan().map16_tiles[0];
+                    let allocation = session.map16_allocation().unwrap();
+                    assert_eq!(
+                        allocation.assignments,
+                        [if use_blank_map16 { 0x8000 } else { 0x8200 }]
+                    );
+                    let prepared = session.prepare_commit(0x80_000..0x10_0000).unwrap();
+                    app.dispatch(prepared.into_command()).unwrap();
+
+                    let committed = app.project().unwrap().save_snapshot();
+                    if headered {
+                        assert_eq!(&committed[..512], copier_prefix.as_slice());
+                    }
+                    assert!(
+                        app.project()
+                            .unwrap()
+                            .identity
+                            .as_ref()
+                            .unwrap()
+                            .checksum_matches()
+                    );
+                    let secondary =
+                        lm_profile::load_smw_us_v1_secondary_map16(app.project().unwrap()).unwrap();
+                    assert_eq!(secondary.installed, !use_blank_map16);
+                    if !use_blank_map16 {
+                        let at = 0x200 * 4;
+                        assert_eq!(
+                            &secondary.definitions[at..at + 4],
+                            &[
+                                expected_tile.top_left.0,
+                                expected_tile.top_right.0,
+                                expected_tile.bottom_left.0,
+                                expected_tile.bottom_right.0,
+                            ]
+                        );
+                    }
+
+                    app.dispatch(Command::Undo).unwrap();
+                    assert_eq!(app.project().unwrap().save_snapshot(), original);
+                    app.dispatch(Command::Redo).unwrap();
+                    assert_eq!(app.project().unwrap().save_snapshot(), committed);
+                    logical_outputs.push(if headered {
+                        committed[512..].to_vec()
+                    } else {
+                        committed
+                    });
+                }
+                assert_eq!(logical_outputs[0], logical_outputs[1]);
+            }
+        }
+    }
+
+    #[test]
     fn session_color_options_preserve_selected_live_palette_words() {
         let mut app = AppState::default();
         app.load_rom(crate::test_support::pristine_smw_us_rom_bytes())

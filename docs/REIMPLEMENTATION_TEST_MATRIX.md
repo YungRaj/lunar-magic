@@ -430,8 +430,13 @@ locks that distinction before tile allocation.
 installed-session product from a pristine ROM for all four option combinations. It proves the
 blank-8×8 switch alone selects `$0F8` and avoids graphics `$200`, while the blank-Map16 switch alone
 selects reserved definition `$8000` and leaves `$8200` untouched. This closes coupled-switch risk
-inside Rust; an independently crossed live original-editor capture is still required for Oracle
-promotion.
+inside Rust. `transparent_blank_switch_product_commits_reopens_and_undoes_across_copier_forms`
+extends that product through eight complete persistence transactions: all four switch combinations
+with and without a 512-byte copier prefix. Each result semantically reopens its installed secondary
+Map16 state, distinguishes the `$8200` definition route from the non-installing `$8000` reserved
+route, has a valid checksum, preserves the exact copier prefix, restores/reapplies exact physical
+images with Undo/Redo, and produces the same logical ROM across copier forms. An independently
+crossed live original-editor capture is still required for Oracle promotion.
 
 Structured LM16 Map16 transfer covers both complete and selected-range containers. The compact
 selected form validates the recovered width/height/column/band-relative-row header fields, restores

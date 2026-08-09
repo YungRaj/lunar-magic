@@ -238,7 +238,10 @@ source normalization, BGR equal-cut priority, x87/binary32 scoring, reusable-ent
 substitution-aware capacity retries, native palette-row allocation, and high-color
 per-tile capacity reduction with four-border weights. All nine captures match Lunar Magic's first
 32 active palette words and complete `$000–$2FF`
-graphics workspace byte-for-byte. Other option products and format/interaction variants remain
+graphics workspace byte-for-byte. The transparent-source blank-option product now also crosses all
+four blank-8×8/blank-Map16 combinations through complete headerless/headered Rust commits, semantic
+reopen, checksum verification, copier-prefix preservation, exact physical Undo/Redo, and logical
+header equivalence. Other original-editor option products and format/interaction variants remain
 open, so the aggregate workflow remains Partial.
 
 ## Workflow ledger
@@ -581,7 +584,8 @@ blank-option states. Rust matches the original palette, graphics, and complete 6
 workspace after correcting edge normalization: partial synthetic cells retain index zero, while
 wholly synthetic 8×8 cells are materialized after source palette reduction through the vanilla
 Map16 back-area selection (row 0, entry `$D`). A separate `$8FFF` boundary capture proves exact
-prefix-preserving allocation exhaustion and warning text. Transparent-source blank reuse remains
+prefix-preserving allocation exhaustion and warning text. Transparent-source blank reuse is fully
+crossed and persistence-bound inside Rust, but its independent live-original cross-product remains
 open, so the affected rows stay Partial.
 
 Whenever a row changes, its evidence must name the relevant Rust tests and, where applicable, the
