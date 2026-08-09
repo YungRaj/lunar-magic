@@ -149,6 +149,37 @@ workspace byte-for-byte. `captured_bitmap_components_produce_the_original_single
 `lunar_magic_bitmap_capture_matches_rust_palette_and_graphics` differential bind the recovered
 unit and end-to-end behavior.
 
+## 2026-08-09 — Complete Map16 bitmap-definition workspace audit
+
+- Lunar Magic executable SHA-256:
+  `b64998b637e553c9adb96dd893140b5b8d0303c7a0f46a1fdab5f887a1d46eff`
+- Pristine SMW-US ROM SHA-256:
+  `7300346506c982766ed3ae370c56a31e30ad7a9603706bc3c6b18051e70f41c7`
+- 32×32 BMP source SHA-256:
+  `7665fbb71678b38e73bfa36ac76428457d95e26f67e0ecdace57b4a97d72752b`
+
+The bitmap-import process harness now captures the complete 524,288-byte live Map16 definition
+workspace at `00777e58` before and after conversion, in addition to the palette, entry-state, and
+graphics planes. The ignored `map16_bitmap_wine_capture` gate reconstructs all 65,536 definitions
+and requires exact equality across the complete post-import workspace. The live workspace is
+column-major within each definition (`TL, BL, TR, BR`), unlike row-major ROM/file definitions.
+
+Three disposable original-tool captures pass. Default deduplicated allocation at `$8200` changes
+31 workspace bytes and produces post-image SHA-256
+`8157e3a8704f84817166404cd7beddb2dc8171a9456454e31ecfeaf4013e0d51`. Clearing Optimize 16x16
+also changes 31 bytes but places the 2×2 source spatially at `$8200/$8201/$8210/$8211`; its
+post-image SHA-256 is `575e2c1e74f6d2ed72153dcfd217629c26f9cad9c968e2d0d74582791b51ff21`.
+That capture exposed and corrected Rust's formerly flattened sequential placement. A third capture
+enables layer priority and starts at nondefault cursor `$83A5`; its post-image SHA-256 is
+`d5626f27e7737807600fd960142ba0e2ffb0e6b8e400846ae61b4e68d82fc892` and also matches exactly.
+
+Direct assembly inspection at `004EF090` independently proves the sequential source is divided
+into 16-column strips, each row starts at a destination stride of `$10`, and subsequent strips
+advance by `source_height * $10`. The native session now also applies Lunar Magic's exact allocation
+bound: `$8000` for a cursor below `$8000`, otherwise the next `$1000`-tile boundary. Foreground and
+background save/reopen/undo tests pass, the renderer's 232-test suite is green, and the complete
+512-slot pristine native-render dimension/empty-outcome gate passes after a clean rebuild.
+
 ## 2026-08-08 — Per-level palette transfer audit
 
 - Lunar Magic executable SHA-256:

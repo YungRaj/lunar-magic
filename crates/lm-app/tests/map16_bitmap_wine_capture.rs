@@ -1,11 +1,13 @@
 use lm_app::{
-    Map16BitmapImportOptions, Map16BitmapImportPlan, Map16BitmapImportRequest,
-    decode_map16_bitmap_image,
+    Map16BitmapAllocationMode, Map16BitmapAllocationOptions, Map16BitmapImportOptions,
+    Map16BitmapImportPlan, Map16BitmapImportRequest, allocate_bitmap_map16_tiles_sequential_grid,
+    allocate_bitmap_map16_tiles_with_reserved_sources, decode_map16_bitmap_image,
 };
 use lm_graphics::{
     Bgr555, BitmapPaletteColorOptions, BitmapPaletteEntryState, BitmapPaletteReduction,
     GraphicsFile4bpp, GraphicsOwnership, Palette, PaletteOwnership, Rgb8,
 };
+use lm_level::{Map16Tile, Subtile};
 use std::{collections::BTreeMap, fs, path::Path};
 
 const NATIVE_GRAPHICS_TILES: usize = 0x300;
@@ -27,11 +29,15 @@ fn lunar_magic_bitmap_capture_matches_rust_palette_and_graphics() {
     let palette_after = fs::read(capture_dir.join("palette-after.rgb32")).unwrap();
     let graphics_before = fs::read(capture_dir.join("graphics-before.bin")).unwrap();
     let graphics_after = fs::read(capture_dir.join("graphics-after.bin")).unwrap();
+    let map16_before = fs::read(capture_dir.join("map16-definitions-before.bin")).unwrap();
+    let map16_after = fs::read(capture_dir.join("map16-definitions-after.bin")).unwrap();
     assert_eq!(palette_before.len(), 0x400);
     assert_eq!(effective_palette.len(), 0x400);
     assert_eq!(palette_after.len(), 0x400);
     assert!(graphics_before.len() >= NATIVE_GRAPHICS_BYTES);
     assert!(graphics_after.len() >= NATIVE_GRAPHICS_BYTES);
+    assert_eq!(map16_before.len(), 0x8_0000);
+    assert_eq!(map16_after.len(), 0x8_0000);
 
     let palette = decode_rgb32_palette(&effective_palette);
     let graphics = GraphicsFile4bpp::decode(&graphics_before[..NATIVE_GRAPHICS_BYTES]).unwrap();
@@ -79,6 +85,110 @@ fn lunar_magic_bitmap_capture_matches_rust_palette_and_graphics() {
         graphics_differences.len(),
         &graphics_differences[..graphics_differences.len().min(16)],
     );
+
+    let mut expected_definitions = decode_map16_definitions(&map16_before);
+    let reserved_sources = options
+        .use_reserved_map16_for_blank
+        .then(|| {
+            plan.map16_tiles
+                .iter()
+                .map(|tile| {
+                    [
+                        tile.top_left,
+                        tile.top_right,
+                        tile.bottom_left,
+                        tile.bottom_right,
+                    ]
+                    .iter()
+                    .all(|subtile| {
+                        plan.graphics
+                            .tiles
+                            .get(usize::from(subtile.tile_number()))
+                            .is_some_and(|tile| tile.pixels().iter().all(|pixel| *pixel == 0))
+                    })
+                })
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    let definition_count = expected_definitions.len();
+    let allocation_end = if options.map16_allocation_start < 0x8000 {
+        definition_count.min(0x8000)
+    } else {
+        definition_count.min((options.map16_allocation_start & !0x0fff).saturating_add(0x1000))
+    };
+    let allocation_options = Map16BitmapAllocationOptions {
+        start: options.map16_allocation_start,
+        end: allocation_end,
+        reserved: options.reserved_map16_tile,
+        mode: if options.deduplicate_map16 {
+            Map16BitmapAllocationMode::Deduplicated
+        } else {
+            Map16BitmapAllocationMode::Sequential
+        },
+    };
+    let allocation = if options.deduplicate_map16 {
+        allocate_bitmap_map16_tiles_with_reserved_sources(
+            &mut expected_definitions,
+            &plan.map16_tiles,
+            &reserved_sources,
+            allocation_options,
+        )
+    } else {
+        allocate_bitmap_map16_tiles_sequential_grid(
+            &mut expected_definitions,
+            &plan.map16_tiles,
+            plan.width_in_map16_tiles,
+            allocation_options,
+        )
+    }
+    .unwrap();
+    assert!(!allocation.exhausted);
+    let expected_map16 = encode_map16_definitions(&expected_definitions);
+    let map16_differences = expected_map16
+        .iter()
+        .zip(&map16_after)
+        .enumerate()
+        .filter_map(|(offset, (expected, actual))| {
+            (expected != actual).then_some((offset, *expected, *actual))
+        })
+        .collect::<Vec<_>>();
+    assert!(
+        map16_differences.is_empty(),
+        "native complete Map16 definition workspace differs at {} bytes; first differences: {:?}",
+        map16_differences.len(),
+        &map16_differences[..map16_differences.len().min(64)]
+    );
+}
+
+fn decode_map16_definitions(bytes: &[u8]) -> Vec<Map16Tile> {
+    bytes
+        .chunks_exact(8)
+        .map(|tile| Map16Tile {
+            top_left: Subtile(u16::from_le_bytes([tile[0], tile[1]])),
+            // Lunar Magic's live definition workspace is column-major even
+            // though its ROM and file codecs are row-major.
+            bottom_left: Subtile(u16::from_le_bytes([tile[2], tile[3]])),
+            top_right: Subtile(u16::from_le_bytes([tile[4], tile[5]])),
+            bottom_right: Subtile(u16::from_le_bytes([tile[6], tile[7]])),
+            acts_like: 0,
+        })
+        .collect()
+}
+
+fn encode_map16_definitions(definitions: &[Map16Tile]) -> Vec<u8> {
+    definitions
+        .iter()
+        .flat_map(|tile| {
+            [
+                tile.top_left.0.to_le_bytes(),
+                tile.bottom_left.0.to_le_bytes(),
+                tile.top_right.0.to_le_bytes(),
+                tile.bottom_right.0.to_le_bytes(),
+            ]
+            .into_iter()
+            .flatten()
+        })
+        .collect()
 }
 
 fn parse_manifest(text: &str) -> BTreeMap<String, String> {

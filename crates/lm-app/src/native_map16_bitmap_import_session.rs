@@ -5,8 +5,9 @@ use crate::{
     Map16BitmapAllocationOptions, Map16BitmapImportError, Map16BitmapImportInputs,
     Map16BitmapImportOptions, Map16BitmapImportPreviewState, NativeMap16BitmapGraphicsWorkspace,
     NativeMap16BitmapWorkspaceError, NativeMap16BitmapWorkspaceLoadError, PreparedRomCommit,
-    RevisionProfile, allocate_bitmap_map16_tiles_with_reserved_sources,
-    native_map16_bitmap_import_options, prepare_map16_bitmap_rom_commit,
+    RevisionProfile, allocate_bitmap_map16_tiles_sequential_grid,
+    allocate_bitmap_map16_tiles_with_reserved_sources, native_map16_bitmap_import_options,
+    prepare_map16_bitmap_rom_commit,
 };
 use lm_graphics::{PaletteEntryOwner, PaletteImportError, PaletteOwnership, Rgba8};
 use lm_project::{
@@ -593,16 +594,7 @@ impl NativeMap16BitmapImportSession {
         } else {
             Map16BitmapAllocationMode::Sequential
         };
-        let end = if start < 0x8000
-            && self
-                .smw_secondary_map16
-                .as_ref()
-                .is_some_and(|secondary| !secondary.installed)
-        {
-            0x8000
-        } else {
-            definitions.len()
-        };
+        let end = bitmap_map16_allocation_end(start, definitions.len());
         let reserved_sources = self
             .preview
             .options()
@@ -633,17 +625,27 @@ impl NativeMap16BitmapImportSession {
             })
             .unwrap_or_default();
         let reserved_map16_tile = self.preview.options().reserved_map16_tile;
-        let allocation = allocate_bitmap_map16_tiles_with_reserved_sources(
-            &mut definitions,
-            &self.preview.plan().map16_tiles,
-            &reserved_sources,
-            Map16BitmapAllocationOptions {
-                start,
-                end,
-                reserved: reserved_map16_tile,
-                mode,
-            },
-        )
+        let allocation_options = Map16BitmapAllocationOptions {
+            start,
+            end,
+            reserved: reserved_map16_tile,
+            mode,
+        };
+        let allocation = if mode == Map16BitmapAllocationMode::Sequential {
+            allocate_bitmap_map16_tiles_sequential_grid(
+                &mut definitions,
+                &self.preview.plan().map16_tiles,
+                self.preview.plan().width_in_map16_tiles,
+                allocation_options,
+            )
+        } else {
+            allocate_bitmap_map16_tiles_with_reserved_sources(
+                &mut definitions,
+                &self.preview.plan().map16_tiles,
+                &reserved_sources,
+                allocation_options,
+            )
+        }
         .map_err(|error| NativeMap16BitmapImportSessionError::Map16(error.to_string()))?;
         let touched_pages = definitions
             .chunks_exact(lm_level::Map16Page::TILE_COUNT)
@@ -669,6 +671,23 @@ impl NativeMap16BitmapImportSession {
             touched_pages,
             allocation,
         })
+    }
+}
+
+const fn bitmap_map16_allocation_end(start: usize, definition_count: usize) -> usize {
+    if start < 0x8000 {
+        if definition_count < 0x8000 {
+            definition_count
+        } else {
+            0x8000
+        }
+    } else {
+        let next_block = (start & !0x0fff).saturating_add(0x1000);
+        if definition_count < next_block {
+            definition_count
+        } else {
+            next_block
+        }
     }
 }
 
@@ -997,6 +1016,16 @@ fn native_installed_palette(mut working: lm_graphics::Palette) -> lm_graphics::P
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn bitmap_allocation_bound_matches_lunar_magics_namespace_windows() {
+        assert_eq!(bitmap_map16_allocation_end(0x0200, 0x1_0000), 0x8000);
+        assert_eq!(bitmap_map16_allocation_end(0x7fff, 0x1_0000), 0x8000);
+        assert_eq!(bitmap_map16_allocation_end(0x8000, 0x1_0000), 0x9000);
+        assert_eq!(bitmap_map16_allocation_end(0x83a5, 0x1_0000), 0x9000);
+        assert_eq!(bitmap_map16_allocation_end(0xf123, 0x1_0000), 0x1_0000);
+        assert_eq!(bitmap_map16_allocation_end(0x83a5, 0x8800), 0x8800);
+    }
     use crate::{AppState, Command};
     use lm_graphics::{Bgr555, Palette};
 

@@ -1432,11 +1432,21 @@ The bitmap-import orchestration block through `004ef770` is now named and annota
 the exclusive bound in `DAT_009b9964`, skips the reserved index in `DAT_005e55f0`, and accepts an
 entry only when all four graphics words are exactly `0x1004`. It returns the accepted index (or the
 upper bound on exhaustion) in `EAX` and stores `EAX + 1` back through `EDI`. The sequential caller
-at `004ef090` allocates every source 2×2 block in source order, while the deduplicating caller at
-`004ef2d0` reuses an earlier imported four-word block and advances this global cursor only for a
-unique block. The import pipeline sets the upper bound to `0x8000` when the initial cursor is below
+at `004ef090` preserves the bitmap's spatial layout in destination strips up to 16 Map16 tiles
+wide. It starts each source row's blank search at `strip_base + row * 0x10`, then advances
+`strip_base` by `source_height * 0x10` for the next 16-column source strip. This is not a flat
+source-order allocation. The deduplicating caller at `004ef2d0` instead reuses an earlier imported
+four-word block and advances its global cursor only for a unique block. The import pipeline sets
+the upper bound to `0x8000` when the initial cursor is below
 `0x8000`; otherwise it rounds the initial cursor down to a `0x1000`-tile boundary and uses the next
 boundary as the exclusive limit.
+
+The live 524,288-byte definition workspace at `00777e58` stores each tile's four graphics words in
+column-major order (`top-left`, `bottom-left`, `top-right`, `bottom-right`). ROM and Map16 file
+definitions remain row-major. Three full-workspace Wine captures distinguish this adapter detail
+from allocation behavior: default deduplication at `$8200`, non-deduplicated 2×2 placement at
+`$8200/$8201/$8210/$8211`, and priority-enabled allocation from nondefault cursor `$83A5` all match
+the Rust reconstruction byte-for-byte.
 
 The executable's initialized option block at `005e55e0` contains a Map16 cursor of `0x8200` at
 `005e55e4` and reserved index `0x8000` at `005e55f0`; with the rule above this produces the

@@ -1388,6 +1388,16 @@ capture proves its complete pre-allocation source-color plane is byte-identical.
 coverage binds the recovered row-at-a-time exact pass, direct occurrence tie weights,
 unassigned-subset aggregation, and direct per-color partial-extension weights.
 
+The same ignored gate now also reconstructs Lunar Magic's complete 524,288-byte live Map16
+definition workspace, translating its column-major `TL, BL, TR, BR` words back into the canonical
+row-major model before comparison. Exact captures cover default deduplication at `$8200`,
+non-deduplicated 2×2 placement, and layer-priority placement from nondefault cursor `$83A5`. The
+non-deduplicated capture proves the source remains spatial: destination rows have a `$10`-tile
+stride (`$8200/$8201/$8210/$8211`) rather than flattening to four consecutive definitions. Native
+allocation now follows that recovered 16-column strip algorithm and the exact `$8000`/next-`$1000`
+exclusive bound. Foreground/background transaction reopen and Undo, all 232 renderer tests, and
+the complete 512-slot pristine render dimension/empty-outcome gate pass.
+
 Native main event-reveal coverage verifies the two descriptor-derived long operands at logical
 `$25A74/$25A84`, the pristine 112-entry fallback, little-endian source and big-endian destination
 planes, source normalization bounds, and the 255-entry editor maximum. Detection rejects mixed

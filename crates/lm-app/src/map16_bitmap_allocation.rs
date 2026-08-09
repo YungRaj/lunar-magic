@@ -43,6 +43,7 @@ pub enum Map16BitmapAllocationError {
     InvertedRange { start: usize, end: usize },
     EndOutOfRange { end: usize, definitions: usize },
     ReservedSourceCount { sources: usize, imported: usize },
+    InvalidSourceWidth { width: usize, imported: usize },
 }
 
 impl fmt::Display for Map16BitmapAllocationError {
@@ -89,24 +90,7 @@ pub fn allocate_bitmap_map16_tiles_with_reserved_sources(
     reserved_sources: &[bool],
     options: Map16BitmapAllocationOptions,
 ) -> Result<Map16BitmapAllocation, Map16BitmapAllocationError> {
-    if options.start > options.end {
-        return Err(Map16BitmapAllocationError::InvertedRange {
-            start: options.start,
-            end: options.end,
-        });
-    }
-    if options.end > definitions.len() {
-        return Err(Map16BitmapAllocationError::EndOutOfRange {
-            end: options.end,
-            definitions: definitions.len(),
-        });
-    }
-    if !reserved_sources.is_empty() && reserved_sources.len() != imported.len() {
-        return Err(Map16BitmapAllocationError::ReservedSourceCount {
-            sources: reserved_sources.len(),
-            imported: imported.len(),
-        });
-    }
+    validate_allocation_inputs(definitions, imported, reserved_sources, options)?;
 
     let mut cursor = options.start;
     let mut assignments = Vec::with_capacity(imported.len());
@@ -148,6 +132,127 @@ pub fn allocate_bitmap_map16_tiles_with_reserved_sources(
         allocated_definitions,
         exhausted: false,
     })
+}
+
+/// Applies Lunar Magic's non-deduplicating, spatial Map16 bitmap placement.
+///
+/// `ImportBitmapAsSequentialMap16Tiles` at `004ef090` divides the source into
+/// strips up to 16 Map16 tiles wide. Within each strip, the blank-tile search
+/// cursor starts at `base + row * 16`, preserving the bitmap's two-dimensional
+/// layout in the destination Map16 page instead of flattening source rows.
+///
+/// # Errors
+///
+/// Returns the same workspace errors as [`allocate_bitmap_map16_tiles`] and
+/// rejects zero width or a source length that is not an exact number of rows.
+pub fn allocate_bitmap_map16_tiles_sequential_grid(
+    definitions: &mut [Map16Tile],
+    imported: &[Map16Tile],
+    source_width: usize,
+    options: Map16BitmapAllocationOptions,
+) -> Result<Map16BitmapAllocation, Map16BitmapAllocationError> {
+    validate_allocation_inputs(definitions, imported, &[], options)?;
+    if source_width == 0 || !imported.len().is_multiple_of(source_width) {
+        return Err(Map16BitmapAllocationError::InvalidSourceWidth {
+            width: source_width,
+            imported: imported.len(),
+        });
+    }
+    if imported.is_empty() {
+        return Ok(Map16BitmapAllocation {
+            assignments: Vec::new(),
+            next_cursor: options.start,
+            allocated_definitions: 0,
+            exhausted: false,
+        });
+    }
+
+    let Some(mut strip_base) =
+        find_next_blank(definitions, options.start, options.end, options.reserved)
+    else {
+        return Ok(Map16BitmapAllocation {
+            assignments: Vec::new(),
+            next_cursor: options.end.saturating_add(1),
+            allocated_definitions: 0,
+            exhausted: true,
+        });
+    };
+    let source_height = imported.len() / source_width;
+    let mut assignments = vec![usize::MAX; imported.len()];
+    let mut allocated_definitions = 0;
+    let mut next_cursor = strip_base + 1;
+    for strip_start in (0..source_width).step_by(16) {
+        let strip_width = (source_width - strip_start).min(16);
+        for row in 0..source_height {
+            let Some(mut cursor) = strip_base.checked_add(row * 16) else {
+                return Ok(Map16BitmapAllocation {
+                    assignments: assignments
+                        .into_iter()
+                        .take_while(|assignment| *assignment != usize::MAX)
+                        .collect(),
+                    next_cursor: options.end.saturating_add(1),
+                    allocated_definitions,
+                    exhausted: true,
+                });
+            };
+            for column in 0..strip_width {
+                let source_index = row * source_width + strip_start + column;
+                let Some(target) =
+                    find_next_blank(definitions, cursor, options.end, options.reserved)
+                else {
+                    return Ok(Map16BitmapAllocation {
+                        assignments: assignments
+                            .into_iter()
+                            .take_while(|assignment| *assignment != usize::MAX)
+                            .collect(),
+                        next_cursor: options.end.saturating_add(1),
+                        allocated_definitions,
+                        exhausted: true,
+                    });
+                };
+                copy_graphics(&mut definitions[target], imported[source_index]);
+                assignments[source_index] = target;
+                allocated_definitions += 1;
+                cursor = target + 1;
+                next_cursor = cursor;
+            }
+        }
+        strip_base = strip_base.saturating_add(source_height * 16);
+    }
+
+    Ok(Map16BitmapAllocation {
+        assignments,
+        next_cursor,
+        allocated_definitions,
+        exhausted: false,
+    })
+}
+
+fn validate_allocation_inputs(
+    definitions: &[Map16Tile],
+    imported: &[Map16Tile],
+    reserved_sources: &[bool],
+    options: Map16BitmapAllocationOptions,
+) -> Result<(), Map16BitmapAllocationError> {
+    if options.start > options.end {
+        return Err(Map16BitmapAllocationError::InvertedRange {
+            start: options.start,
+            end: options.end,
+        });
+    }
+    if options.end > definitions.len() {
+        return Err(Map16BitmapAllocationError::EndOutOfRange {
+            end: options.end,
+            definitions: definitions.len(),
+        });
+    }
+    if !reserved_sources.is_empty() && reserved_sources.len() != imported.len() {
+        return Err(Map16BitmapAllocationError::ReservedSourceCount {
+            sources: reserved_sources.len(),
+            imported: imported.len(),
+        });
+    }
+    Ok(())
 }
 
 #[must_use]
@@ -315,6 +420,85 @@ mod tests {
         assert_eq!(result.assignments, [255, 256]);
         assert_eq!(definitions[255].top_left, source[0].top_left);
         assert_eq!(definitions[256].top_left, source[1].top_left);
+    }
+
+    #[test]
+    fn sequential_grid_preserves_source_rows_with_a_sixteen_tile_destination_stride() {
+        let mut definitions = vec![blank(0); 0x100];
+        let source = [
+            imported(0x100, 1),
+            imported(0x200, 2),
+            imported(0x300, 3),
+            imported(0x400, 4),
+        ];
+        let result = allocate_bitmap_map16_tiles_sequential_grid(
+            &mut definitions,
+            &source,
+            2,
+            Map16BitmapAllocationOptions {
+                start: 0x20,
+                end: 0x100,
+                reserved: usize::MAX,
+                mode: Map16BitmapAllocationMode::Sequential,
+            },
+        )
+        .unwrap();
+
+        assert_eq!(result.assignments, [0x20, 0x21, 0x30, 0x31]);
+        assert_eq!(result.next_cursor, 0x32);
+        assert_eq!(definitions[0x20].top_left, source[0].top_left);
+        assert_eq!(definitions[0x21].top_left, source[1].top_left);
+        assert_eq!(definitions[0x30].top_left, source[2].top_left);
+        assert_eq!(definitions[0x31].top_left, source[3].top_left);
+        assert!(is_lunar_magic_blank_map16_tile(definitions[0x22]));
+    }
+
+    #[test]
+    fn sequential_grid_rejects_non_rectangular_sources_without_modifying_definitions() {
+        let mut definitions = vec![blank(0); 8];
+        let before = definitions.clone();
+        assert_eq!(
+            allocate_bitmap_map16_tiles_sequential_grid(
+                &mut definitions,
+                &[imported(0x100, 0); 3],
+                2,
+                options(Map16BitmapAllocationMode::Sequential),
+            ),
+            Err(Map16BitmapAllocationError::InvalidSourceWidth {
+                width: 2,
+                imported: 3,
+            })
+        );
+        assert_eq!(definitions, before);
+    }
+
+    #[test]
+    fn sequential_grid_starts_each_wide_source_strip_after_the_preceding_strip_height() {
+        let mut definitions = vec![blank(0); 0x100];
+        let source = (0..34)
+            .map(|index| imported(0x200 + index * 4, 0))
+            .collect::<Vec<_>>();
+        let result = allocate_bitmap_map16_tiles_sequential_grid(
+            &mut definitions,
+            &source,
+            17,
+            Map16BitmapAllocationOptions {
+                start: 0x20,
+                end: 0x100,
+                reserved: usize::MAX,
+                mode: Map16BitmapAllocationMode::Sequential,
+            },
+        )
+        .unwrap();
+
+        assert_eq!(&result.assignments[..16], &(0x20..0x30).collect::<Vec<_>>());
+        assert_eq!(result.assignments[16], 0x40);
+        assert_eq!(
+            &result.assignments[17..33],
+            &(0x30..0x40).collect::<Vec<_>>()
+        );
+        assert_eq!(result.assignments[33], 0x50);
+        assert_eq!(result.next_cursor, 0x51);
     }
 
     #[test]

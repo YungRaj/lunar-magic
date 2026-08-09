@@ -292,9 +292,28 @@ read_buffer() {
         xxd -r -p >"$output"
 }
 
+read_buffer_chunks() {
+    address=$1
+    length=$2
+    output=$3
+    : >"$output"
+    offset=0
+    while [ "$offset" -lt "$length" ]; do
+        remaining=$((length - offset))
+        chunk_length=65536
+        if [ "$remaining" -lt "$chunk_length" ]; then
+            chunk_length=$remaining
+        fi
+        wine "$helper" "$target_executable" read "$((address + offset)),$chunk_length" \
+            2>/dev/null | xxd -r -p >>"$output"
+        offset=$((offset + chunk_length))
+    done
+}
+
 read_buffer 0x00758dd8 1024 "$output_dir/palette-before.rgb32"
 read_buffer 0x0086b7e8 65536 "$output_dir/graphics-before.bin"
 read_buffer 0x009b3f58 128 "$output_dir/palette-entry-states-before.bin"
+read_buffer_chunks 0x00777e58 524288 "$output_dir/map16-definitions-before.bin"
 
 bitmap_windows=$(winepath -w "$bitmap")
 wine "$helper" "$target_executable" write-byte 0x00e277cc,2 >/dev/null 2>&1
@@ -414,15 +433,21 @@ paste_pid=
 
 read_buffer 0x00758dd8 1024 "$output_dir/palette-after.rgb32"
 read_buffer 0x0086b7e8 65536 "$output_dir/graphics-after.bin"
+read_buffer_chunks 0x00777e58 524288 "$output_dir/map16-definitions-after.bin"
 
 palette_differences=$(cmp -l \
     "$output_dir/palette-before.rgb32" "$output_dir/palette-after.rgb32" | wc -l | tr -d ' ')
 graphics_differences=$(cmp -l \
     "$output_dir/graphics-before.bin" "$output_dir/graphics-after.bin" | wc -l | tr -d ' ')
+map16_differences=$(cmp -l \
+    "$output_dir/map16-definitions-before.bin" "$output_dir/map16-definitions-after.bin" |
+    wc -l | tr -d ' ')
 palette_before_sha=$(shasum -a 256 "$output_dir/palette-before.rgb32" | awk '{print $1}')
 palette_after_sha=$(shasum -a 256 "$output_dir/palette-after.rgb32" | awk '{print $1}')
 graphics_before_sha=$(shasum -a 256 "$output_dir/graphics-before.bin" | awk '{print $1}')
 graphics_after_sha=$(shasum -a 256 "$output_dir/graphics-after.bin" | awk '{print $1}')
+map16_before_sha=$(shasum -a 256 "$output_dir/map16-definitions-before.bin" | awk '{print $1}')
+map16_after_sha=$(shasum -a 256 "$output_dir/map16-definitions-after.bin" | awk '{print $1}')
 palette_entry_states_sha=$(shasum -a 256 "$output_dir/palette-entry-states.bin" | awk '{print $1}')
 
 {
@@ -461,9 +486,13 @@ palette_entry_states_sha=$(shasum -a 256 "$output_dir/palette-entry-states.bin" 
     printf 'palette_after_sha256\t%s\n' "$palette_after_sha"
     printf 'graphics_before_sha256\t%s\n' "$graphics_before_sha"
     printf 'graphics_after_sha256\t%s\n' "$graphics_after_sha"
+    printf 'map16_definition_byte_differences\t%s\n' "$map16_differences"
+    printf 'map16_definitions_before_sha256\t%s\n' "$map16_before_sha"
+    printf 'map16_definitions_after_sha256\t%s\n' "$map16_after_sha"
     printf 'palette_entry_states_sha256\t%s\n' "$palette_entry_states_sha"
 } >"$output_dir/manifest.tsv"
 
 echo "bitmap import audit: $output_dir"
 echo "palette byte differences: $palette_differences"
 echo "graphics byte differences: $graphics_differences"
+echo "Map16 definition byte differences: $map16_differences"
