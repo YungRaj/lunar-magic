@@ -22,15 +22,18 @@ fn lunar_magic_bitmap_capture_matches_rust_palette_and_graphics() {
     let manifest = parse_manifest(&fs::read_to_string(capture_dir.join("manifest.tsv")).unwrap());
 
     let palette_before = fs::read(capture_dir.join("palette-before.rgb32")).unwrap();
+    let effective_palette = fs::read(capture_dir.join("palette-effective.rgb32"))
+        .unwrap_or_else(|_| palette_before.clone());
     let palette_after = fs::read(capture_dir.join("palette-after.rgb32")).unwrap();
     let graphics_before = fs::read(capture_dir.join("graphics-before.bin")).unwrap();
     let graphics_after = fs::read(capture_dir.join("graphics-after.bin")).unwrap();
     assert_eq!(palette_before.len(), 0x400);
+    assert_eq!(effective_palette.len(), 0x400);
     assert_eq!(palette_after.len(), 0x400);
     assert!(graphics_before.len() >= NATIVE_GRAPHICS_BYTES);
     assert!(graphics_after.len() >= NATIVE_GRAPHICS_BYTES);
 
-    let palette = decode_rgb32_palette(&palette_before);
+    let palette = decode_rgb32_palette(&effective_palette);
     let graphics = GraphicsFile4bpp::decode(&graphics_before[..NATIVE_GRAPHICS_BYTES]).unwrap();
     let occupied = graphics
         .tiles

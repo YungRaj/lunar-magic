@@ -294,7 +294,7 @@ read_buffer() {
 
 read_buffer 0x00758dd8 1024 "$output_dir/palette-before.rgb32"
 read_buffer 0x0086b7e8 65536 "$output_dir/graphics-before.bin"
-read_buffer 0x009b3f58 128 "$output_dir/palette-entry-states.bin"
+read_buffer 0x009b3f58 128 "$output_dir/palette-entry-states-before.bin"
 
 bitmap_windows=$(winepath -w "$bitmap")
 wine "$helper" "$target_executable" write-byte 0x00e277cc,2 >/dev/null 2>&1
@@ -403,6 +403,11 @@ fi
 wine "$helper" "$target_executable" list '#32770' 2>/dev/null |
     sed -n '/title=Convert and Paste Bitmap (in hex)/,/title=16x16 Tile Map Editor/p' \
     >"$output_dir/dialog.txt"
+# Opening the bitmap workflow initializes and ownership-qualifies the palette usage map. Capture
+# the state and active RGB32 palette immediately before acceptance, after every options gesture,
+# rather than reusing the stale modeless-editor values observed before the workflow began.
+read_buffer 0x009b3f58 128 "$output_dir/palette-entry-states.bin"
+read_buffer 0x00758dd8 1024 "$output_dir/palette-effective.rgb32"
 wine "$helper" "$target_executable" click 1 >/dev/null 2>&1
 wait "$paste_pid"
 paste_pid=

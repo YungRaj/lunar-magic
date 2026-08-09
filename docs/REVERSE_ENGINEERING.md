@@ -1457,9 +1457,12 @@ color sets for each 8×8 source tile; `BuildPaletteColorSetSubsetLinks` and
 at `004ed390` distinguishes free from preserved slots, and `AssignColorsToBestPaletteRow` at
 `004ed4c0` chooses the row with greatest reusable-color overlap, then least required capacity,
 inserts only missing colors into state-zero entries, and returns that row for the tile words.
-`SelectPaletteColorSetsForCapacity` completes each capable row before seeding the next: within a row
-it prefers existing-color overlap, direct occurrence weight, larger sets, and earlier tile
-occurrence. `ExtendPaletteWithWeightedColorSets` then ranks remaining records by overlap and
+`SelectPaletteColorSetsForCapacity` repeatedly chooses a capacity seed by reusable count and free
+capacity, combines exact-fit records by existing-color overlap, direct occurrence weight, larger
+sets, and earlier tile occurrence, then offers the complete proposal to every capable row.
+`AssignColorsToBestPaletteRow` selects greatest overlap, then lower required capacity; row zero is
+also its no-result sentinel, so an otherwise equal row-zero/row-one final choice resolves to row
+one. `ExtendPaletteWithWeightedColorSets` then ranks remaining records by overlap and
 aggregate utility but chooses individual inserted colors by direct weight.
 `AssignImportedGraphicsToPaletteRows` finally records one row per 8×8 tile. The Rust multi-row model
 must retain these stages; merely quantizing an entire image to one 15-color row is not equivalent.
@@ -1481,11 +1484,13 @@ The global Median Cut request is likewise bounded by destination capacity rather
 using the dialog's maximum. `ProcessBitmapGraphicsImport` counts writable entries, retries the
 quantizer at `004eff17..004eff29` when the unmatched generated colors exceed that count, and
 credits distinct preserved reusable colors toward the installable total. This is observable in a
-32-color request with 21 free entries and eight identical reusable backdrop entries: the native
-quantizer receives an effective ceiling of 22, while requests through 16 remain unchanged. Rust
-now applies that destination-derived ceiling before Median Cut. The retained 32-color fixture is
-still an open end-to-end gate because its lower-tile row selection exposes a later allocator
-difference.
+32-color request with 21 free entries and eight identical reusable backdrop entries: the first
+native quantizer call receives an effective ceiling of 22. None of those 22 generated colors
+passes the preserved-backdrop substitution policy, so the original retry arithmetic lowers the
+ceiling to 21 and invokes the quantizer again. Rust now reproduces both the initial
+destination-derived ceiling and that substitution-aware retry. With that rule applied, the
+retained 32-color fixture matches all 32 active palette words and every byte of the complete
+`$000–$2FF` graphics workspace.
 
 The Rust application path now carries that per-8×8 row plane through graphics materialization,
 Map16 construction, and the converted preview. Each of a Map16 definition's four subtile words

@@ -213,10 +213,11 @@ feed F9 publication; broader original interaction/write fixtures remain incomple
 Graphics workflow remains Partial.
 
 The Map16 bitmap Oracle evidence now additionally includes Median Cut maximum-color settings
-1, 2, 4, 8, 9, and 16 plus maximum-one Popularity. These retained captures cover SNES-lattice
+1, 2, 4, 8, 9, 16, and 32 plus maximum-one Popularity. These retained captures cover SNES-lattice
 source normalization, BGR equal-cut priority, x87/binary32 scoring, reusable-entry exclusion,
-native palette-row ordering, and high-color per-tile capacity reduction with four-border weights.
-All eight captures match Lunar Magic's first 32 active palette words and complete `$000–$2FF`
+substitution-aware capacity retries, native palette-row allocation, and high-color
+per-tile capacity reduction with four-border weights. All nine captures match Lunar Magic's first
+32 active palette words and complete `$000–$2FF`
 graphics workspace byte-for-byte. Other option products and format/interaction variants remain
 open, so the aggregate workflow remains Partial.
 
