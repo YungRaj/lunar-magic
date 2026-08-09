@@ -1,6 +1,6 @@
 use lm_app::prepare_smw_us_v1_standard_graphics_install;
 use lm_project::{GraphicsCompression, GraphicsRomLayout, LevelPointerTable, Project};
-use lm_rom::RomImage;
+use lm_rom::{CopierHeader, RomImage};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -247,5 +247,82 @@ fn lunar_magic_reexports_rust_standard_and_exgfx_across_legacy_migration() {
             .unwrap(),
         exgfx80,
         "legacy ExGFX80 changed during standard-GFX migration"
+    );
+
+    let retained_source = RomImage::from_bytes(fs::read(&pristine).unwrap()).unwrap();
+    let retained_header = retained_source.copier_header_bytes().unwrap().to_vec();
+    let headerless_source = RomImage::from_bytes(retained_source.logical_bytes().to_vec()).unwrap();
+    let headerless_standard =
+        prepare_smw_us_v1_standard_graphics_install(0, headerless_source.clone(), &files).unwrap();
+    let mut headerless_project = Project::new(headerless_source);
+    headerless_project
+        .apply_mutation(
+            &headerless_standard.description,
+            &headerless_standard.mutation,
+        )
+        .unwrap();
+    let headerless_exgfx = lm_app::prepare_smw_us_v1_exgraphics_install(
+        0,
+        headerless_project.rom.clone(),
+        &[(0x80, exgfx80.clone())],
+    )
+    .unwrap();
+    headerless_project
+        .apply_mutation(&headerless_exgfx.description, &headerless_exgfx.mutation)
+        .unwrap();
+    for (offset, original) in lm_profile::SMW_US_V1_4BPP_GRAPHICS_MARKER_OFFSETS
+        .into_iter()
+        .zip([0x08, 0x1e])
+    {
+        headerless_project.rom.write(offset, &[original]).unwrap();
+    }
+    headerless_project.rom.update_snes_checksum(0x7fdc).unwrap();
+    let headerless_migration =
+        prepare_smw_us_v1_standard_graphics_install(0, headerless_project.rom.clone(), &files)
+            .unwrap();
+    headerless_project
+        .apply_mutation(
+            &headerless_migration.description,
+            &headerless_migration.mutation,
+        )
+        .unwrap();
+    assert_eq!(legacy_project.rom.copier_header(), CopierHeader::Present);
+    assert_eq!(
+        legacy_project.rom.copier_header_bytes(),
+        Some(retained_header.as_slice())
+    );
+    assert_eq!(headerless_project.rom.copier_header(), CopierHeader::Absent);
+    assert_eq!(headerless_project.rom.copier_header_bytes(), None);
+    assert_eq!(
+        headerless_project.rom.logical_bytes(),
+        legacy_project.rom.logical_bytes(),
+        "headered and headerless pipelines produced different logical ROMs"
+    );
+    let headerless = TemporaryDirectory::create("gfx-headerless-variant");
+    fs::write(
+        headerless.0.join("headerless.smc"),
+        headerless_project.rom.as_file_bytes(),
+    )
+    .unwrap();
+    run_export(&wine, &lunar_magic, &headerless.0, "headerless.smc");
+    run_export_operation(
+        &wine,
+        &lunar_magic,
+        &headerless.0,
+        "-ExportExGFX",
+        "headerless.smc",
+    );
+    for number in 0..0x34 {
+        let name = format!("GFX{number:02X}.bin");
+        assert_eq!(
+            fs::read(headerless.0.join("Graphics").join(&name)).unwrap(),
+            files[number],
+            "headerless {name}"
+        );
+    }
+    assert_eq!(
+        fs::read(headerless.0.join("ExGraphics/ExGFX80.bin")).unwrap(),
+        exgfx80,
+        "Lunar Magic did not re-export headerless ExGFX80"
     );
 }

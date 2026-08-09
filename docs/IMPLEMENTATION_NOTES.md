@@ -4347,6 +4347,10 @@ hooks in the same unpublished staging project. Allocation accepts the route's ze
 RATS owner, and protects the extended ExGFX table. Runtime detection no longer mistakes a legitimate
 reserved `$60..$63` pointer for corruption: nonzero entries must resolve to bounded RATS-owned
 payloads, while the four padding bytes and empty entries remain canonical zeroes.
+The retained Wine transaction runs that full path twice from the same authenticated logical ROM:
+once with Lunar Magic's canonical 512-byte copier prefix and once without it. Rust preserves the
+prefix byte-for-byte or preserves its absence, produces identical logical 2-MiB results, and Lunar
+Magic re-exports all 52 regular files plus `ExGFX80` from both outputs.
 
 The installed graphics editor also owns a scoped external-edit round trip. It exports the current
 staged controller bytes—not a stale ROM decode—to a uniquely reserved private temporary directory

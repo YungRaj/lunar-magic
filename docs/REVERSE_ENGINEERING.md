@@ -1950,6 +1950,10 @@ when that independently authenticated generation is absent. The live gate byte-m
 Magic's fixed `$0026B8` and `$02D8E2` hooks plus `$077550..$07756F` helpers, then requires the
 complete runtime detector to report `Current`. That detector permits populated reserved ExGFX
 entries only when their three-byte addresses resolve to real bounded RATS payloads.
+The retained command-line oracle now crosses this complete transition with present and absent
+copier headers. Both Rust results have identical logical bytes; the headered path retains the exact
+input prefix, the headerless path remains headerless until Lunar Magic opens its copy, and both are
+recognized by Lunar Magic's GFX and ExGFX exporters.
 A retained Lunar Magic 3.63 Wine oracle opens the original `Window8x8` through command `$232A` and
 posts F9 directly to that window. With all separate files replaced by equal-length sentinels, level
 `$105` changes exactly `$00,$01,$13,$14,$15,$17,$1B,$20`; removing `GFX33.bin` first produces
