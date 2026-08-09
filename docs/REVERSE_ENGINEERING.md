@@ -3397,8 +3397,33 @@ planning; the authenticated stream owner becomes reclaimable only inside its own
 free-space collisions while preserving one application revision and one Undo step across domains.
 The installed editor's native-sprite canvas tool converts the 128×64 combined preview back into
 the stream's local coordinates: map zero owns columns `0..63`, while maps one through six share
-columns `64..127` and subtract 64 before the eight-pixel conversion. A click replaces the selected
-record or appends when the insertion cursor is selected; cross-plane clicks cannot mutate data.
+columns `64..127` and subtract 64 before the eight-pixel conversion. The explicit canvas-cursor
+placement command replaces the selected record or appends when the insertion cursor is selected;
+cross-plane positions cannot mutate data.
+
+The original canvas interaction is now independently recovered from the live port-8089 program.
+`HandleOverworldSpriteLeftButtonDown` (`0055BFB0`) converts the pointer to eight-pixel grid
+coordinates. A plain hit selects the painter-topmost sprite (clearing the prior selection when the
+hit was not already selected) and begins dragging the complete selected set; `MK_CONTROL` (`$08`)
+instead toggles only the hit sprite. An empty plain press clears selection and begins a marquee,
+while an empty Ctrl press retains the baseline selection and begins an additive marquee.
+`ApplyOverworldSpriteSelectionRectangle` (`0055AFF0`) walks every render node intersecting the
+rectangle and sets its owner in the 512-entry boolean selection array, so overlapping sprites are
+all selected rather than only the hit-test winner. `HitTestOverworldSpriteAtGridPoint`
+(`004D2250`) walks the 8,192-cell render grid and lets later matching nodes overwrite earlier ones,
+which proves reverse-painter-order point selection.
+
+`BeginDraggingSelectedOverworldSprites` (`0055B440`) captures the selected set and pointer origin.
+`ConstrainOverworldSpriteMovePosition` (`0055B690`) derives a signed grid delta and validates every
+selected owner. `FindValidOverworldSpriteMoveOffset` (`0055B4C0`) searches candidate offsets back
+toward the origin; for custom IDs its compatibility condition is unconditional once the combined
+64×128 grid position is valid, so the custom-stream editor needs common group-boundary constraint,
+not collision rejection. `ApplyOverworldSpriteMoveAndRedraw` (`0055B860`) applies the common delta
+and rebuilds the render grid. Movement may redraw during the gesture, but
+`FinalizeOverworldSelectionInteraction` publishes one Undo record when the gesture ends. The Rust
+installed editor mirrors this with exact rendered-footprint marquee selection, Ctrl/Command
+toggle, retained multi-selection, common snapped boundary fallback, and one ordered controller
+batch on release.
 
 ## Per-slot `ExAnimation` options
 

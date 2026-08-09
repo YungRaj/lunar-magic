@@ -18,6 +18,7 @@ use lm_overworld::{
     OverworldPathTarget,
 };
 use lm_project::{CompleteOverworldFile, CompleteOverworldShape};
+use std::collections::BTreeSet;
 
 mod commit;
 mod lifecycle;
@@ -84,10 +85,19 @@ struct NativeSpriteForm {
     extra: String,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 struct NativeSpriteDrag {
     map: usize,
-    index: usize,
+    anchor: (usize, usize),
+    selected: Vec<usize>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct NativeSpriteMarquee {
+    map: usize,
+    anchor: (usize, usize),
+    baseline: BTreeSet<usize>,
+    current: (usize, usize),
 }
 
 impl Default for NativeSpriteForm {
@@ -199,7 +209,9 @@ pub(crate) struct RomOverworldEditor {
     animation_preview_event: usize,
     animation_option_map: usize,
     native_sprite: NativeSpriteForm,
+    native_sprite_selection: BTreeSet<usize>,
     native_sprite_drag: Option<NativeSpriteDrag>,
+    native_sprite_marquee: Option<NativeSpriteMarquee>,
     map16_page: usize,
     map16_rendered_key: Option<(u64, usize)>,
     map16_texture: Option<egui::TextureHandle>,
@@ -806,7 +818,13 @@ impl RomOverworldEditor {
         let Some(counts) = counts else { return };
         ui.heading("Native custom overworld sprite stream");
         ui.small("Seven map-local lists, variable record widths, and Lunar Magic's 24-sprite-per-map limit.");
+        let previous_map = self.native_sprite.map;
         ui.add(egui::Slider::new(&mut self.native_sprite.map, 0..=6).text("Map"));
+        if self.native_sprite.map != previous_map {
+            self.native_sprite_selection.clear();
+            self.native_sprite_drag = None;
+            self.native_sprite_marquee = None;
+        }
         let count = counts[self.native_sprite.map];
         ui.add(
             egui::Slider::new(&mut self.native_sprite.index, 0..=count)
@@ -842,6 +860,13 @@ impl RomOverworldEditor {
                             Some("the selected canvas cell is outside this map's plane".into())
                     }
                 }
+            }
+            if ui
+                .add_enabled(!blocked, egui::Button::new("Place at canvas cursor"))
+                .clicked()
+                && let Err(error) = self.place_native_sprite_at_canvas((self.x, self.y))
+            {
+                self.error = Some(error);
             }
         });
         if let Ok(id) = level_editor_forms::parse_hex_u8(&self.native_sprite.id, "native sprite ID")
@@ -943,6 +968,9 @@ impl RomOverworldEditor {
                     .map_err(|error| error.to_string())
             }) {
                 Ok(()) => {
+                    self.native_sprite_selection.clear();
+                    self.native_sprite_drag = None;
+                    self.native_sprite_marquee = None;
                     self.rendered_key = None;
                     self.texture = None;
                 }
@@ -1187,9 +1215,10 @@ impl RomOverworldEditor {
         });
         if self.paint_tool != MapPaintTool::NativeSprite {
             self.native_sprite_drag = None;
+            self.native_sprite_marquee = None;
         }
         let mut action = None;
-        let mut native_sprite_position = None;
+        let mut native_sprite_group_destination = None;
         egui::ScrollArea::both().max_height(420.0).show(ui, |ui| {
             let response = ui.add(egui::Image::new(&texture).sense(egui::Sense::click_and_drag()));
             if (response.clicked()
@@ -1224,29 +1253,101 @@ impl RomOverworldEditor {
                         action = Some((MapPaintTool::Fill, (x, y)));
                     }
                     MapPaintTool::NativeSprite if !stale => {
+                        let toggle = ui.input(|input| {
+                            input.modifiers.ctrl || input.modifiers.command
+                        });
                         if response.drag_started() {
+                            let anchor = ui
+                                .input(|input| input.pointer.press_origin())
+                                .and_then(|origin| {
+                                    overworld_editor_render::selected_tile(
+                                        response.rect,
+                                        origin,
+                                        shape.width.saturating_mul(8),
+                                        shape.height.saturating_mul(8),
+                                    )
+                                })
+                                .unwrap_or(canvas_pixel);
                             if let Some(index) = self.native_sprite_hit_test(canvas_pixel) {
                                 self.native_sprite.index = index;
                                 self.load_native_sprite_form();
-                                self.native_sprite_drag = Some(NativeSpriteDrag {
-                                    map: self.native_sprite.map,
-                                    index,
-                                });
+                                if toggle {
+                                    toggle_native_sprite_selection(
+                                        &mut self.native_sprite_selection,
+                                        index,
+                                    );
+                                    self.native_sprite_drag = None;
+                                } else {
+                                    if !self.native_sprite_selection.contains(&index) {
+                                        self.native_sprite_selection.clear();
+                                        self.native_sprite_selection.insert(index);
+                                    }
+                                    self.native_sprite_drag = Some(NativeSpriteDrag {
+                                        map: self.native_sprite.map,
+                                        anchor,
+                                        selected: self
+                                            .native_sprite_selection
+                                            .iter()
+                                            .copied()
+                                            .collect(),
+                                    });
+                                }
+                                self.native_sprite_marquee = None;
                             } else {
                                 self.native_sprite_drag = None;
+                                let baseline = if toggle {
+                                    self.native_sprite_selection.clone()
+                                } else {
+                                    BTreeSet::default()
+                                };
+                                if !toggle {
+                                    self.native_sprite_selection.clear();
+                                }
+                                self.native_sprite_marquee = Some(NativeSpriteMarquee {
+                                    map: self.native_sprite.map,
+                                    anchor,
+                                    baseline,
+                                    current: canvas_pixel,
+                                });
+                            }
+                        } else if response.dragged() {
+                            if let Some(marquee) = self.native_sprite_marquee.as_mut() {
+                                marquee.current = canvas_pixel;
+                                let rect = inclusive_canvas_rect(marquee.anchor, marquee.current);
+                                let mut selection = marquee.baseline.clone();
+                                if let Some(workspace) = self.workspace.as_ref() {
+                                    selection.extend(
+                                        overworld_editor_render::native_custom_sprite_indices_in_rect(
+                                            workspace.native_appearances.as_ref(),
+                                            workspace.native_sprites.table(),
+                                            marquee.map,
+                                            rect,
+                                        ),
+                                    );
+                                }
+                                self.native_sprite_selection = selection;
                             }
                         } else if response.drag_stopped() {
                             if let Some(drag) = self.native_sprite_drag.take() {
                                 self.native_sprite.map = drag.map;
-                                self.native_sprite.index = drag.index;
-                                native_sprite_position = Some((x, y));
+                                native_sprite_group_destination = Some((drag, canvas_pixel));
                             }
+                            self.native_sprite_marquee = None;
                         } else if response.clicked() {
                             if let Some(index) = self.native_sprite_hit_test(canvas_pixel) {
                                 self.native_sprite.index = index;
                                 self.load_native_sprite_form();
-                            } else {
-                                native_sprite_position = Some((x, y));
+                                if toggle {
+                                    toggle_native_sprite_selection(
+                                        &mut self.native_sprite_selection,
+                                        index,
+                                    );
+                                } else {
+                                    self.native_sprite_selection.clear();
+                                    self.native_sprite_selection.insert(index);
+                                }
+                            } else if !toggle {
+                                self.native_sprite_selection.clear();
                             }
                         }
                     }
@@ -1325,6 +1426,7 @@ impl RomOverworldEditor {
                 );
             }
             self.paint_main_route_overlay(ui, response.rect);
+            self.paint_native_sprite_selection_overlay(ui, response.rect, shape);
         });
         if let Some((tool, position)) = action {
             match tool {
@@ -1337,8 +1439,8 @@ impl RomOverworldEditor {
                 | MapPaintTool::RouteDestination => {}
             }
         }
-        if let Some(position) = native_sprite_position
-            && let Err(error) = self.place_native_sprite_at_canvas(position)
+        if let Some((drag, destination)) = native_sprite_group_destination
+            && let Err(error) = self.move_native_sprite_group(&drag, destination)
         {
             self.error = Some(error);
         }
@@ -1381,6 +1483,105 @@ impl RomOverworldEditor {
             self.native_sprite.map,
             point,
         )
+    }
+
+    fn move_native_sprite_group(
+        &mut self,
+        drag: &NativeSpriteDrag,
+        destination: (usize, usize),
+    ) -> Result<(), String> {
+        let workspace = self.workspace.as_mut().ok_or("workspace is closed")?;
+        let records = workspace
+            .native_sprites
+            .table()
+            .maps
+            .get(drag.map)
+            .ok_or("native sprite map is out of range")?;
+        let edits = native_sprite_group_move_edits(
+            drag.map,
+            records,
+            &drag.selected,
+            drag.anchor,
+            destination,
+        )?;
+        if edits.is_empty() {
+            return Ok(());
+        }
+        workspace
+            .native_sprites
+            .apply_edits(&edits)
+            .map_err(|error| error.to_string())?;
+        if let Some(index) = drag.selected.first().copied() {
+            self.native_sprite.index = index;
+            self.load_native_sprite_form();
+        }
+        self.rendered_key = None;
+        self.texture = None;
+        Ok(())
+    }
+
+    fn paint_native_sprite_selection_overlay(
+        &self,
+        ui: &egui::Ui,
+        rect: egui::Rect,
+        shape: CompleteOverworldShape,
+    ) {
+        if self.paint_tool != MapPaintTool::NativeSprite || shape.width == 0 || shape.height == 0 {
+            return;
+        }
+        let Some(workspace) = self.workspace.as_ref() else {
+            return;
+        };
+        let map = self.native_sprite.map;
+        let Some(records) = workspace.native_sprites.table().maps.get(map) else {
+            return;
+        };
+        let canvas_width = shape.width.saturating_mul(8);
+        let canvas_height = shape.height.saturating_mul(8);
+        let to_screen = |point: (usize, usize)| {
+            let point_x = f32::from(u16::try_from(point.0).unwrap_or(u16::MAX));
+            let point_y = f32::from(u16::try_from(point.1).unwrap_or(u16::MAX));
+            let canvas_width = f32::from(u16::try_from(canvas_width).unwrap_or(u16::MAX));
+            let canvas_height = f32::from(u16::try_from(canvas_height).unwrap_or(u16::MAX));
+            rect.min
+                + egui::vec2(
+                    point_x / canvas_width * rect.width(),
+                    point_y / canvas_height * rect.height(),
+                )
+        };
+        let plane_x = if map == 0 { 0 } else { 512 };
+        for index in &self.native_sprite_selection {
+            let Some(sprite) = records.get(*index) else {
+                continue;
+            };
+            let minimum = to_screen((usize::from(sprite.x) + plane_x, usize::from(sprite.y)));
+            let maximum = to_screen((
+                usize::from(sprite.x) + plane_x + 8,
+                usize::from(sprite.y) + 8,
+            ));
+            ui.painter().rect_stroke(
+                egui::Rect::from_min_max(minimum, maximum),
+                0.0,
+                egui::Stroke::new(2.0_f32, egui::Color32::YELLOW),
+                egui::StrokeKind::Inside,
+            );
+        }
+        if let Some(marquee) = self
+            .native_sprite_marquee
+            .as_ref()
+            .filter(|marquee| marquee.map == map)
+        {
+            let selection = inclusive_canvas_rect(marquee.anchor, marquee.current);
+            ui.painter().rect_stroke(
+                egui::Rect::from_min_max(
+                    to_screen((selection.0, selection.1)),
+                    to_screen((selection.2, selection.3)),
+                ),
+                0.0,
+                egui::Stroke::new(1.0_f32, egui::Color32::WHITE),
+                egui::StrokeKind::Inside,
+            );
+        }
     }
 
     fn paint_main_route_overlay(&self, ui: &egui::Ui, rect: egui::Rect) {
@@ -2094,6 +2295,103 @@ fn native_sprite_canvas_edit(
     })
 }
 
+fn toggle_native_sprite_selection(selection: &mut BTreeSet<usize>, index: usize) {
+    if !selection.remove(&index) {
+        selection.insert(index);
+    }
+}
+
+fn inclusive_canvas_rect(
+    anchor: (usize, usize),
+    current: (usize, usize),
+) -> (usize, usize, usize, usize) {
+    (
+        anchor.0.min(current.0),
+        anchor.1.min(current.1),
+        anchor.0.max(current.0).saturating_add(1),
+        anchor.1.max(current.1).saturating_add(1),
+    )
+}
+
+fn native_sprite_group_move_edits(
+    map: usize,
+    records: &[lm_overworld::NativeCustomOverworldSprite],
+    selected: &[usize],
+    anchor: (usize, usize),
+    destination: (usize, usize),
+) -> Result<Vec<NativeCustomOverworldSpriteEdit>, String> {
+    const MAXIMUM_POSITION: i32 = 504;
+    let selected = selected.iter().copied().collect::<BTreeSet<_>>();
+    if selected.is_empty() {
+        return Ok(Vec::new());
+    }
+    let sprites = selected
+        .iter()
+        .map(|index| {
+            records
+                .get(*index)
+                .map(|sprite| (*index, sprite))
+                .ok_or_else(|| format!("native sprite index {index} is out of range"))
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    let desired_x = snapped_pointer_delta(anchor.0, destination.0);
+    let desired_y = snapped_pointer_delta(anchor.1, destination.1);
+    let delta_x = constrain_native_sprite_axis(
+        desired_x,
+        sprites.iter().map(|(_, sprite)| i32::from(sprite.x)),
+        MAXIMUM_POSITION,
+    );
+    let delta_y = constrain_native_sprite_axis(
+        desired_y,
+        sprites.iter().map(|(_, sprite)| i32::from(sprite.y)),
+        MAXIMUM_POSITION,
+    );
+    if delta_x == 0 && delta_y == 0 {
+        return Ok(Vec::new());
+    }
+    sprites
+        .into_iter()
+        .map(|(index, sprite)| {
+            let mut sprite = sprite.clone();
+            sprite.x = u16::try_from(i32::from(sprite.x) + delta_x)
+                .map_err(|_| "constrained native sprite X is out of range")?;
+            sprite.y = u16::try_from(i32::from(sprite.y) + delta_y)
+                .map_err(|_| "constrained native sprite Y is out of range")?;
+            Ok(NativeCustomOverworldSpriteEdit::Replace { map, index, sprite })
+        })
+        .collect()
+}
+
+fn snapped_pointer_delta(anchor: usize, destination: usize) -> i32 {
+    let anchor = i64::try_from(anchor / 8).unwrap_or(i64::MAX);
+    let destination = i64::try_from(destination / 8).unwrap_or(i64::MAX);
+    i32::try_from((destination - anchor).saturating_mul(8)).unwrap_or({
+        if destination < anchor {
+            i32::MIN
+        } else {
+            i32::MAX
+        }
+    })
+}
+
+fn constrain_native_sprite_axis(
+    mut desired: i32,
+    positions: impl Iterator<Item = i32>,
+    maximum: i32,
+) -> i32 {
+    let positions = positions.collect::<Vec<_>>();
+    while desired != 0
+        && positions.iter().any(|position| {
+            position
+                .checked_add(desired)
+                .is_none_or(|moved| !(0..=maximum).contains(&moved))
+        })
+    {
+        desired += if desired < 0 { 8 } else { -8 };
+    }
+    desired
+}
+
 fn overworld_animation_preview_tick(seconds: f64, rate: OverworldAnimationRate) -> usize {
     if let Ok(tick) = std::env::var("LM_NATIVE_OVERWORLD_ANIMATION_TICK")
         && let Ok(tick) = tick.parse::<usize>()
@@ -2256,9 +2554,11 @@ mod canvas_tests {
         MainPathLinkForm, NativeCustomOverworldSpriteEdit, OverworldAnimationRate,
         OverworldControllerEdit, OverworldEndpoint, OverworldLayerId, OverworldPathDirection,
         OverworldPathLink, OverworldPathLinkTable, OverworldPathTarget, RomOverworldEditor,
-        flood_fill_cells, grid_line, native_sprite_canvas_edit, native_sprite_canvas_position,
+        flood_fill_cells, grid_line, inclusive_canvas_rect, native_sprite_canvas_edit,
+        native_sprite_canvas_position, native_sprite_group_move_edits,
         overworld_animation_preview_tick, rectangle_cells, route_canvas_endpoint,
         route_directional_canvas_endpoint, route_endpoint_canvas_pixel, stroke_edits,
+        toggle_native_sprite_selection,
     };
     use crate::document_loader::BoundedRead;
     use crate::overworld_editor_render;
@@ -2313,6 +2613,59 @@ mod canvas_tests {
             NativeCustomOverworldSpriteEdit::Replace { map: 0, index: 2, sprite }
                 if (sprite.x, sprite.y) == (80, 40)
         ));
+    }
+
+    #[test]
+    fn native_sprite_selection_toggle_and_marquee_rectangle_are_deterministic() {
+        let mut selected = std::collections::BTreeSet::from([1, 4]);
+        toggle_native_sprite_selection(&mut selected, 1);
+        toggle_native_sprite_selection(&mut selected, 3);
+        assert_eq!(selected, std::collections::BTreeSet::from([3, 4]));
+        assert_eq!(inclusive_canvas_rect((20, 30), (12, 9)), (12, 9, 21, 31));
+        assert_eq!(inclusive_canvas_rect((7, 8), (7, 8)), (7, 8, 8, 9));
+    }
+
+    #[test]
+    fn native_sprite_group_drag_is_one_ordered_constrained_edit_batch() {
+        let sprite = |id, x, y| lm_overworld::NativeCustomOverworldSprite {
+            id,
+            x,
+            y,
+            screen: id.wrapping_add(0x10),
+            extra: vec![id, 0xaa],
+        };
+        let records = vec![sprite(1, 8, 16), sprite(2, 496, 24), sprite(3, 40, 32)];
+        let edits =
+            native_sprite_group_move_edits(2, &records, &[2, 0, 2], (520, 16), (544, 40)).unwrap();
+        assert_eq!(edits.len(), 2);
+        assert!(matches!(
+            &edits[0],
+            NativeCustomOverworldSpriteEdit::Replace { map: 2, index: 0, sprite }
+                if (sprite.x, sprite.y, sprite.screen, sprite.extra.as_slice())
+                    == (32, 40, 0x11, &[1, 0xaa])
+        ));
+        assert!(matches!(
+            &edits[1],
+            NativeCustomOverworldSpriteEdit::Replace { map: 2, index: 2, sprite }
+                if (sprite.x, sprite.y) == (64, 56)
+        ));
+
+        let constrained =
+            native_sprite_group_move_edits(0, &records, &[0, 1], (8, 8), (80, 8)).unwrap();
+        assert!(matches!(
+            &constrained[0],
+            NativeCustomOverworldSpriteEdit::Replace { sprite, .. } if sprite.x == 16
+        ));
+        assert!(matches!(
+            &constrained[1],
+            NativeCustomOverworldSpriteEdit::Replace { sprite, .. } if sprite.x == 504
+        ));
+        assert!(
+            native_sprite_group_move_edits(0, &records, &[0], (8, 8), (9, 9))
+                .unwrap()
+                .is_empty()
+        );
+        assert!(native_sprite_group_move_edits(0, &records, &[9], (0, 0), (8, 0)).is_err());
     }
 
     #[test]

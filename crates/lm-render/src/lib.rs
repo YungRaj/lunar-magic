@@ -77,6 +77,7 @@ pub use native_overworld_sprite::{
     draw_resolved_native_overworld_sprite_resource_elements, export_native_overworld_appearances,
     hit_test_resolved_native_overworld_sprite_elements, import_native_overworld_appearances,
     lunar_magic_builtin_overworld_sprite_map16, resolve_native_overworld_sprite_elements,
+    resolved_native_overworld_sprite_elements_intersecting_rect,
 };
 pub use observe_editor_overlays::observe_editor_overlays;
 pub use observe_layer3_plane::observe_materialized_layer3_plane;

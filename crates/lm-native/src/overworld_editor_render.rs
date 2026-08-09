@@ -478,6 +478,84 @@ pub(crate) fn native_custom_sprite_hit_test(
     })
 }
 
+pub(crate) fn native_custom_sprite_indices_in_rect(
+    native: Option<&lm_render::NativeOverworldAppearancePair>,
+    custom: &lm_overworld::NativeCustomOverworldSpriteTable,
+    map: usize,
+    rect: (usize, usize, usize, usize),
+) -> std::collections::BTreeSet<usize> {
+    let Some(records) = custom.maps.get(map) else {
+        return std::collections::BTreeSet::default();
+    };
+    let canvas_x = if map == 0 { 0 } else { 512 };
+    let Ok(submap) = u8::try_from(map) else {
+        return std::collections::BTreeSet::default();
+    };
+    let placements = records
+        .iter()
+        .map(|sprite| lm_render::NativeOverworldSpritePlacement {
+            id: u16::from(sprite.id),
+            x: i32::from(sprite.x) + canvas_x,
+            y: i32::from(sprite.y),
+            submap,
+        })
+        .collect::<Vec<_>>();
+    let mut rendered = vec![false; records.len()];
+    let mut selected = std::collections::BTreeSet::new();
+    if let Some(native) = native {
+        let elements = lm_render::resolve_native_overworld_sprite_elements(
+            &placements,
+            &native.definitions,
+            lm_render::lunar_magic_builtin_overworld_sprite_map16(),
+            &native.sprite_map16,
+        );
+        for element in &elements {
+            let index = native_overworld_element_sprite_index(element);
+            if let Some(rendered) = rendered.get_mut(index) {
+                *rendered = true;
+            }
+        }
+        let rect = (
+            i32::try_from(rect.0).unwrap_or(i32::MAX),
+            i32::try_from(rect.1).unwrap_or(i32::MAX),
+            i32::try_from(rect.2).unwrap_or(i32::MAX),
+            i32::try_from(rect.3).unwrap_or(i32::MAX),
+        );
+        selected.extend(
+            lm_render::resolved_native_overworld_sprite_elements_intersecting_rect(&elements, rect),
+        );
+    }
+    let canvas_x = u16::try_from(canvas_x).unwrap_or_default();
+    for (index, sprite) in records.iter().enumerate() {
+        if rendered[index] {
+            continue;
+        }
+        let x = usize::from(sprite.x.saturating_add(canvas_x));
+        let y = usize::from(sprite.y);
+        if x < rect.2 && y < rect.3 && x.saturating_add(8) > rect.0 && y.saturating_add(8) > rect.1
+        {
+            selected.insert(index);
+        }
+    }
+    selected
+}
+
+fn native_overworld_element_sprite_index(
+    element: &lm_render::ResolvedNativeOverworldSpriteElement,
+) -> usize {
+    match element {
+        lm_render::ResolvedNativeOverworldSpriteElement::Tile { sprite_index, .. }
+        | lm_render::ResolvedNativeOverworldSpriteElement::Label { sprite_index, .. }
+        | lm_render::ResolvedNativeOverworldSpriteElement::EditorTextDefinition {
+            sprite_index,
+            ..
+        }
+        | lm_render::ResolvedNativeOverworldSpriteElement::UnresolvedMap16 {
+            sprite_index, ..
+        } => *sprite_index,
+    }
+}
+
 fn materialize_overworld_exanimation(
     overworld: &CompleteOverworldFile,
     assets: &OverworldAssets,
@@ -1141,6 +1219,24 @@ mod tests {
         assert_eq!(
             native_custom_sprite_hit_test(Some(&native), &custom, 1, (48, 24)),
             None
+        );
+        assert_eq!(
+            native_custom_sprite_indices_in_rect(Some(&native), &custom, 1, (544, 32, 545, 33)),
+            std::collections::BTreeSet::from([0])
+        );
+        assert!(
+            native_custom_sprite_indices_in_rect(Some(&native), &custom, 1, (560, 24, 568, 32))
+                .is_empty(),
+            "a rendered label must not also expose an invisible anchor target"
+        );
+        assert!(
+            native_custom_sprite_indices_in_rect(Some(&native), &custom, 0, (544, 32, 545, 33))
+                .is_empty()
+        );
+        assert_eq!(
+            native_custom_sprite_indices_in_rect(None, &custom, 1, (560, 24, 568, 32)),
+            std::collections::BTreeSet::from([0]),
+            "sprites without drawable appearance data retain the anchor fallback"
         );
     }
 

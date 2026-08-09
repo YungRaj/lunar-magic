@@ -393,32 +393,63 @@ pub fn hit_test_resolved_native_overworld_sprite_elements(
     point: (i32, i32),
 ) -> Option<usize> {
     elements.iter().rev().find_map(|element| {
-        let (sprite_index, x, y, width, height) = match element {
-            ResolvedNativeOverworldSpriteElement::Tile {
-                sprite_index, x, y, ..
-            }
-            | ResolvedNativeOverworldSpriteElement::EditorTextDefinition {
-                sprite_index,
-                x,
-                y,
-                ..
-            } => (*sprite_index, *x, *y, 8, 8),
-            ResolvedNativeOverworldSpriteElement::UnresolvedMap16 {
-                sprite_index, x, y, ..
-            } => (*sprite_index, *x, *y, 16, 16),
-            ResolvedNativeOverworldSpriteElement::Label {
-                sprite_index,
-                x,
-                y,
-                text,
-            } => {
-                let (width, height) =
-                    crate::native_level_raster::lunar_magic_editor_label_size(text);
-                (*sprite_index, *x, *y, width, height)
-            }
-        };
+        let (sprite_index, x, y, width, height) = rendered_element_region(element);
         point_in_rendered_region(point, x, y, width, height).then_some(sprite_index)
     })
+}
+
+/// Returns every sprite whose rendered footprint intersects a half-open selection rectangle.
+///
+/// The result is ordered by sprite index and contains each sprite once, matching the original
+/// editor's boolean selection slots when multiple rendered cells belong to one sprite.
+#[must_use]
+pub fn resolved_native_overworld_sprite_elements_intersecting_rect(
+    elements: &[ResolvedNativeOverworldSpriteElement],
+    rect: (i32, i32, i32, i32),
+) -> Vec<usize> {
+    let mut selected = std::collections::BTreeSet::new();
+    for element in elements {
+        let (sprite_index, x, y, width, height) = rendered_element_region(element);
+        let Ok(width) = i32::try_from(width) else {
+            continue;
+        };
+        let Ok(height) = i32::try_from(height) else {
+            continue;
+        };
+        if x < rect.2
+            && y < rect.3
+            && x.saturating_add(width) > rect.0
+            && y.saturating_add(height) > rect.1
+        {
+            selected.insert(sprite_index);
+        }
+    }
+    selected.into_iter().collect()
+}
+
+fn rendered_element_region(
+    element: &ResolvedNativeOverworldSpriteElement,
+) -> (usize, i32, i32, usize, usize) {
+    match element {
+        ResolvedNativeOverworldSpriteElement::Tile {
+            sprite_index, x, y, ..
+        }
+        | ResolvedNativeOverworldSpriteElement::EditorTextDefinition {
+            sprite_index, x, y, ..
+        } => (*sprite_index, *x, *y, 8, 8),
+        ResolvedNativeOverworldSpriteElement::UnresolvedMap16 {
+            sprite_index, x, y, ..
+        } => (*sprite_index, *x, *y, 16, 16),
+        ResolvedNativeOverworldSpriteElement::Label {
+            sprite_index,
+            x,
+            y,
+            text,
+        } => {
+            let (width, height) = crate::native_level_raster::lunar_magic_editor_label_size(text);
+            (*sprite_index, *x, *y, width, height)
+        }
+    }
 }
 
 fn point_in_rendered_region(
@@ -1040,6 +1071,24 @@ mod tests {
                 (50 + label_width as i32, 60),
             ),
             None
+        );
+        assert_eq!(
+            resolved_native_overworld_sprite_elements_intersecting_rect(&elements, (-4, 6, 4, 14),),
+            vec![2, 7]
+        );
+        assert_eq!(
+            resolved_native_overworld_sprite_elements_intersecting_rect(
+                &elements,
+                (35, 45, 36, 46),
+            ),
+            vec![9]
+        );
+        assert!(
+            resolved_native_overworld_sprite_elements_intersecting_rect(
+                &elements,
+                (36, 46, 50, 60),
+            )
+            .is_empty()
         );
     }
 
