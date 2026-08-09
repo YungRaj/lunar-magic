@@ -58,7 +58,27 @@ pub enum SmwUsV1OverworldAnimationRuntimeError {
         actual: usize,
     },
     RuntimeMismatch,
-    AuxiliaryMismatch,
+    AuxiliarySentinel {
+        submap: usize,
+    },
+    AuxiliaryPointer {
+        submap: usize,
+        source: RomError,
+    },
+    AuxiliaryBeforeHeader {
+        submap: usize,
+        target: usize,
+    },
+    AuxiliaryHeader {
+        submap: usize,
+        target: usize,
+        source: HeaderError,
+    },
+    AuxiliaryStart {
+        submap: usize,
+        expected: usize,
+        actual: usize,
+    },
 }
 
 impl fmt::Display for SmwUsV1OverworldAnimationRuntimeError {
@@ -416,6 +436,9 @@ pub struct SmwUsV1OverworldAnimationRuntime {
     pub runtime: RatsBlock,
     pub auxiliary: RatsBlock,
     pub options: RatsBlock,
+    /// RATS-owned compact ExAnimation payload selected by each of Lunar Magic's seven
+    /// overworld/submap pointer slots. `None` is encoded by the exact `FF 00 00` sentinel.
+    pub submap_animations: [Option<RatsBlock>; 7],
 }
 
 fn read_low_bank_pointer(
@@ -486,9 +509,11 @@ fn apply_materialized_fixups(
     Ok(())
 }
 
-/// Authenticates every fixed write, allocation owner, immutable auxiliary byte, and relocated
-/// runtime byte. The seven option bytes are deliberately mutable and are authenticated only by
-/// their exact seven-byte RATS owner and the runtime's `+$4A` pointer.
+/// Authenticates every fixed write, allocation owner, relocated runtime byte, and auxiliary
+/// submap-animation pointer. The seven option bytes and seven auxiliary pointer slots are
+/// deliberately mutable. Each nonempty auxiliary slot must resolve to the payload start of a
+/// valid RATS-owned compact-animation allocation; empty slots must use Lunar Magic's exact
+/// `FF 00 00` sentinel.
 pub fn detect_smw_us_v1_overworld_animation_runtime(
     bytes: &[u8],
 ) -> Result<Option<SmwUsV1OverworldAnimationRuntime>, SmwUsV1OverworldAnimationRuntimeError> {
@@ -551,17 +576,47 @@ pub fn detect_smw_us_v1_overworld_animation_runtime(
     if bytes.get(runtime.payload.clone()) != Some(expected_runtime.as_slice()) {
         return Err(SmwUsV1OverworldAnimationRuntimeError::RuntimeMismatch);
     }
-    let mut expected_auxiliary = vec![0; SMW_US_V1_OVERWORLD_ANIMATION_AUXILIARY_LEN];
-    for offset in (0..SMW_US_V1_OVERWORLD_ANIMATION_AUXILIARY_LEN).step_by(3) {
-        expected_auxiliary[offset] = 0xff;
-    }
-    if bytes.get(auxiliary.payload.clone()) != Some(expected_auxiliary.as_slice()) {
-        return Err(SmwUsV1OverworldAnimationRuntimeError::AuxiliaryMismatch);
+    let auxiliary_bytes = bytes.get(auxiliary.payload.clone()).ok_or(
+        SmwUsV1OverworldAnimationRuntimeError::FixedRange {
+            offset: auxiliary.payload.start,
+        },
+    )?;
+    let mut submap_animations: [Option<RatsBlock>; 7] = std::array::from_fn(|_| None);
+    for (submap, pointer) in auxiliary_bytes.chunks_exact(3).enumerate() {
+        if pointer == [0xff, 0x00, 0x00] {
+            continue;
+        }
+        if pointer[2] == 0 {
+            return Err(SmwUsV1OverworldAnimationRuntimeError::AuxiliarySentinel { submap });
+        }
+        let address = u32::from_le_bytes([pointer[0], pointer[1], pointer[2], 0]);
+        let target = snes_to_pc(Mapper::LoRom, address).map_err(|source| {
+            SmwUsV1OverworldAnimationRuntimeError::AuxiliaryPointer { submap, source }
+        })?;
+        let header = target.checked_sub(HEADER_LEN).ok_or(
+            SmwUsV1OverworldAnimationRuntimeError::AuxiliaryBeforeHeader { submap, target },
+        )?;
+        let block = parse_at(bytes, header).map_err(|source| {
+            SmwUsV1OverworldAnimationRuntimeError::AuxiliaryHeader {
+                submap,
+                target,
+                source,
+            }
+        })?;
+        if block.payload.start != target {
+            return Err(SmwUsV1OverworldAnimationRuntimeError::AuxiliaryStart {
+                submap,
+                expected: target,
+                actual: block.payload.start,
+            });
+        }
+        submap_animations[submap] = Some(block);
     }
     Ok(Some(SmwUsV1OverworldAnimationRuntime {
         runtime,
         auxiliary,
         options,
+        submap_animations,
     }))
 }
 
@@ -649,6 +704,101 @@ mod tests {
     }
 
     #[test]
+    fn authentic_lunar_magic_363_runtime_matches_every_owned_and_fixed_byte() {
+        const RUNTIME_HEADER: usize = 0x0008_bc66;
+        const AUXILIARY_HEADER: usize = 0x0008_c88e;
+        const OPTIONS_HEADER: usize = 0x0008_c8ab;
+        const ORACLE_END: usize = 0x0008_c8ba;
+        const SUBMAP_HEADER: usize = ORACLE_END;
+        const SUBMAP_PAYLOAD: usize = SUBMAP_HEADER + HEADER_LEN;
+
+        let mut oracle = decode_base64(include_str!(
+            "assets/overworld_animation_runtime_lm363_oracle.b64"
+        ))
+        .unwrap();
+        assert_eq!(oracle.len(), ORACLE_END - RUNTIME_HEADER);
+        assert_eq!(
+            format!("{:x}", Sha256::digest(&oracle)),
+            "04fb09d57cb18d8d6f6a07cc00c5f15767075a8764182cfb329c8253eb342b26"
+        );
+        let submap = decode_base64(include_str!(
+            "assets/overworld_animation_submap_lm363_oracle.b64"
+        ))
+        .unwrap();
+        assert_eq!(submap.len(), HEADER_LEN + 0x11);
+        assert_eq!(
+            format!("{:x}", Sha256::digest(&submap)),
+            "e6d3ad990be851cbb03cb9d1656eb05bfd0fa16dda71da82163ed3dfc50b980b"
+        );
+
+        let mut project = source();
+        project
+            .rom
+            .write(
+                SMW_US_V1_OVERWORLD_ANIMATION_SEARCH_START,
+                &vec![0x5a; RUNTIME_HEADER - SMW_US_V1_OVERWORLD_ANIMATION_SEARCH_START],
+            )
+            .unwrap();
+        let result = project
+            .install_relocatable_patch(
+                &smw_us_v1_overworld_animation_runtime_installation_plan().unwrap(),
+            )
+            .unwrap();
+        assert_eq!(result.blocks[0].header_offset, RUNTIME_HEADER);
+        assert_eq!(result.blocks[1].header_offset, AUXILIARY_HEADER);
+        assert_eq!(result.blocks[2].header_offset, OPTIONS_HEADER);
+
+        // The capture was taken after editing the first submap, so normalize its one mutable
+        // auxiliary pointer to the pristine installer sentinel before comparing every byte of
+        // all three core owners.
+        let first_pointer = AUXILIARY_HEADER + HEADER_LEN - RUNTIME_HEADER;
+        assert_eq!(
+            &oracle[first_pointer..first_pointer + 3],
+            &[0xc2, 0xc8, 0x11]
+        );
+        oracle[first_pointer..first_pointer + 3].copy_from_slice(&[0xff, 0x00, 0x00]);
+        let installed = project.rom.logical_bytes();
+        assert_eq!(&installed[RUNTIME_HEADER..ORACLE_END], oracle.as_slice());
+        assert_eq!(&installed[HOOK_A..HOOK_A + 4], &[0x22, 0x6e, 0xbc, 0x11]);
+        assert_eq!(&installed[HOOK_B..HOOK_B + 4], &[0x22, 0x5e, 0xbe, 0x11]);
+        assert_eq!(
+            &installed[HOOK_C_OPERAND..HOOK_C_OPERAND + 3],
+            &[0x6e, 0xc1, 0x11]
+        );
+        assert!(
+            MODE_BYTES
+                .iter()
+                .all(|offset| installed.get(*offset) == Some(&0x14))
+        );
+        let detected = detect_smw_us_v1_overworld_animation_runtime(installed)
+            .unwrap()
+            .unwrap();
+        assert_eq!(detected.runtime, result.blocks[0]);
+        assert_eq!(detected.auxiliary, result.blocks[1]);
+        assert_eq!(detected.options, result.blocks[2]);
+        assert_eq!(detected.submap_animations, std::array::from_fn(|_| None));
+
+        // Reapply the exact authentic edit: the auxiliary pointer selects the adjacent compact
+        // ExAnimation RATS payload. Detection must accept and expose that mutable owner chain.
+        project.rom.write(SUBMAP_HEADER, &submap).unwrap();
+        let pointer =
+            (pc_to_snes(Mapper::LoRom, SUBMAP_PAYLOAD).unwrap() & 0x7f_ffff).to_le_bytes();
+        project
+            .rom
+            .write(result.blocks[1].payload.start, &pointer[..3])
+            .unwrap();
+        assert_eq!(&pointer[..3], &[0xc2, 0xc8, 0x11]);
+        let detected = detect_smw_us_v1_overworld_animation_runtime(project.rom.logical_bytes())
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            detected.submap_animations[0].as_ref().unwrap(),
+            &parse_at(project.rom.logical_bytes(), SUBMAP_HEADER).unwrap()
+        );
+        assert!(detected.submap_animations[1..].iter().all(Option::is_none));
+    }
+
+    #[test]
     fn late_precondition_failure_is_atomic() {
         let mut project = source();
         project.rom.write(MODE_BYTES[2], &[0x12]).unwrap();
@@ -697,8 +847,23 @@ mod tests {
             .unwrap();
         assert!(matches!(
             detect_smw_us_v1_overworld_animation_runtime(project.rom.logical_bytes()),
-            Err(SmwUsV1OverworldAnimationRuntimeError::AuxiliaryMismatch)
+            Err(SmwUsV1OverworldAnimationRuntimeError::AuxiliarySentinel { submap: 0 })
         ));
+        let unowned_target = 0x0009_0000;
+        let pointer =
+            (pc_to_snes(Mapper::LoRom, unowned_target).unwrap() & 0x7f_ffff).to_le_bytes();
+        project
+            .rom
+            .write(result.blocks[1].payload.start, &pointer[..3])
+            .unwrap();
+        match detect_smw_us_v1_overworld_animation_runtime(project.rom.logical_bytes()) {
+            Err(SmwUsV1OverworldAnimationRuntimeError::AuxiliaryHeader {
+                submap: 0,
+                target,
+                ..
+            }) if target == unowned_target => {}
+            other => panic!("unexpected unowned auxiliary-pointer result: {other:?}"),
+        }
     }
 
     #[test]

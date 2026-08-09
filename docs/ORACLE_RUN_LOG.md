@@ -726,3 +726,22 @@ passes with after-state SHA-256 values
 `150abbbb9d4045b6467bcf7286888be31419d0c5565b9e1d543bc8ee29053cb4` (complete Map16
 workspace). Rust now materializes the temporary zero-color candidate as a nonzero reduced index;
 only source alpha produces transparent index zero.
+
+## Overworld ExAnimation runtime installation and mutable submap owner
+
+An isolated Lunar Magic 3.63 session started from the authenticated copier-headered pristine
+SMW-US ROM, opened level `$105` and the Overworld Editor, then created one local submap animation
+through `Edit Submap Extended Animation Frames (in hex)`: Type index 1, Destination `00A0`, Frames
+`00`, source frame `0500`. The helper accepted the explicit `Save overworld to ROM?` prompt.
+
+The saved ROM SHA-256 is
+`93e5daddf0229d34232e83f4e40c6d3d7321807dd92644981fe9d1211eb20d5b`. The three contiguous core
+RATS owners at logical headers `$08BC66/$08C88E/$08C8AB` have complete SHA-256
+`04fb09d57cb18d8d6f6a07cc00c5f15767075a8764182cfb329c8253eb342b26`; the adjacent edited compact
+owner at `$08C8BA` has SHA-256
+`e6d3ad990be851cbb03cb9d1656eb05bfd0fa16dda71da82163ed3dfc50b980b`.
+
+The capture disproved the prior assumption that all `$15` auxiliary bytes stay immutable: it is a
+seven-entry 24-bit pointer table. The authentic first pointer `C2 C8 11` resolves to the adjacent
+compact owner, while each empty slot remains exactly `FF 00 00`. Rust now authenticates the full
+runtime, fixed writes, and owner chain; the focused six-test runtime suite passes.
