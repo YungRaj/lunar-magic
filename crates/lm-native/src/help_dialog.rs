@@ -407,6 +407,29 @@ mod tests {
 
     #[test]
     fn retained_original_index_covers_every_routed_363_topic() {
+        let menu = include_str!("../../../docs/oracle-work/lm363/help-chm-dispatch/menu.tsv");
+        let rows = menu
+            .lines()
+            .skip(1)
+            .map(|line| line.split('\t').collect::<Vec<_>>())
+            .collect::<Vec<_>>();
+        assert_eq!(rows.len(), 2);
+        assert_eq!(
+            rows[0],
+            ["level", "00449DC0", "25E4", "25E5", "2", "Lunar Magic"]
+        );
+        assert_eq!(
+            rows[1],
+            [
+                "overworld",
+                "0054A420",
+                "25E4",
+                "2198",
+                "2",
+                "Overworld Editor"
+            ]
+        );
+
         let topics = original_topics();
         assert_eq!(topics.len(), 314);
         assert_eq!(

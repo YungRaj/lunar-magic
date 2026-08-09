@@ -36,6 +36,12 @@ dismissal. `retained_lunar_magic_about_oracle_matches_the_compatibility_target` 
 live-control capture and exact resource-layout table, while `about_dialog_open_is_idempotent`
 requires every new open to discard stale auxiliary/copy state.
 
+The retained `help-chm-dispatch/menu.tsv` closes the Help command inventory itself. Ghidra builders
+`00449DC0` and `0054A420` each append exactly two entries: shared Contents `$25E4`, plus main About
+`$25E5` or Overworld About `$2198`. No diagnostics entry exists in either original menu. The Rust
+Compatibility diagnostics dialog remains tested as an explicit path-free extension; it is not used
+as evidence for, or held open against, a nonexistent original command.
+
 Cached identity checksum evidence is revision-coherent: tests require checksum-valid writes,
 prepared commits, grouped payload saves, undo, and redo to refresh both stored and computed values.
 Unqualified projects remain explicitly without identity rather than fabricating checksum metadata.

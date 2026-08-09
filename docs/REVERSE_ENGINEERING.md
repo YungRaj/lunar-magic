@@ -307,6 +307,15 @@ original error-code presenter. The retained `help-chm-dispatch/oracle.tsv` binds
 constants. Rust preserves the in-process searchable topic index and launches only an installed
 adjacent regular CHM through one direct platform process, without bundling or altering that file.
 
+The complete original Help-menu inventory also removes a false diagnostic gap. At the end of
+`CreateMainApplicationMenu` (`00449DC0`), Lunar Magic creates one popup containing only command
+`$25E4` (Contents) and `$25E5` (About Lunar Magic). `CreateOverworldEditorMenuBar` (`0054A420`)
+contains only `$25E4` and `$2198` (About Overworld Editor). The retained
+`help-chm-dispatch/menu.tsv` binds both two-item lists. There is no original Help-menu compatibility
+diagnostics command; Scan ROM/RATS reporting belongs to independently mapped File/Options
+workflows. Rust's path-free Compatibility diagnostics report is therefore a native extension, not
+an unresolved interpretation of original Help behavior.
+
 The overworld ExAnimation editor is now named through `OverworldAnimatedTilesDialogProc` at `004188d0`, including its frame-edit subclass, record commit, shift/rotate behavior, and tooltips. The following functions through `0041ab70` identify overworld submap options and both combo-based and edit-field variants of the Layer 3 graphics settings editor.
 
 The `0041b410`–`0041e300` range identifies the analogous overworld foreground graphics editors, graphics-index list transfer, Overworld Options dialog, event reveal tile-pair editor, manual overworld sprite-command parser, and common error reporters. `OverworldOptionsDialogProc` has a recovered Win32 callback prototype. The 22-entry source/destination reveal arrays and their selected-row global are typed and named.
