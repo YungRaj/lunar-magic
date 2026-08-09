@@ -65,6 +65,7 @@ struct Workspace {
     image: lm_rom::RomImage,
     ownership: PaletteOwnership,
     assets: OverworldAssets,
+    baseline_animation_options: [crate::overworld_editor_render::OverworldAnimationOptions; 7],
     native_appearances: Option<lm_render::NativeOverworldAppearancePair>,
 }
 
@@ -160,6 +161,7 @@ pub(crate) struct RomOverworldEditor {
     animation_preview_trigger_kind: usize,
     animation_preview_trigger_index: usize,
     animation_preview_event: usize,
+    animation_option_map: usize,
     map16_page: usize,
     map16_rendered_key: Option<(u64, usize)>,
     map16_texture: Option<egui::TextureHandle>,
@@ -686,6 +688,7 @@ impl RomOverworldEditor {
             Panel::Palette => self.palette.show(ui, &file.data.palette, &ownership),
             Panel::Animation => {
                 self.animation_preview_controls(ui, &file.data.animation);
+                self.animation_option_controls(ui, editing_blocked);
                 self.animation
                     .show(ui, &file.data.animation, &modes, controller_revision)
             }
@@ -1201,7 +1204,11 @@ impl RomOverworldEditor {
             ui.label("..");
             ui.text_edit_singleline(&mut self.search_end);
         });
-        let modified = self
+        let modified = self.workspace.as_ref().is_some_and(|value| {
+            value.controller.is_modified()
+                || value.assets.animation_options != value.baseline_animation_options
+        });
+        let payloads_modified = self
             .workspace
             .as_ref()
             .is_some_and(|value| value.controller.is_modified());
@@ -1209,7 +1216,7 @@ impl RomOverworldEditor {
         if ui
             .add_enabled(
                 modified && !stale && !self.manifest_loader.is_running() && !transfer_busy,
-                egui::Button::new("Commit all nine overworld payloads"),
+                egui::Button::new("Commit overworld payloads and map animation options"),
             )
             .clicked()
         {
@@ -1222,7 +1229,7 @@ impl RomOverworldEditor {
         }
         if ui
             .add_enabled(
-                modified && !stale && !self.manifest_loader.is_running() && !transfer_busy,
+                payloads_modified && !stale && !self.manifest_loader.is_running() && !transfer_busy,
                 egui::Button::new("Commit and reclaim all nine"),
             )
             .clicked()
@@ -1237,6 +1244,61 @@ impl RomOverworldEditor {
             "No staged changes"
         });
         None
+    }
+
+    fn animation_option_controls(&mut self, ui: &mut egui::Ui, editing_blocked: bool) {
+        let Some(workspace) = self.workspace.as_mut() else {
+            return;
+        };
+        ui.separator();
+        ui.heading("Per-map animation options");
+        ui.add(
+            egui::Slider::new(&mut self.animation_option_map, 0..=6)
+                .text("Map (main, Yoshi, Vanilla, Forest, Valley, Special, Star)"),
+        );
+        let option = &mut workspace.assets.animation_options[self.animation_option_map];
+        let installed = workspace.assets.animation_options_runtime_installed;
+        let layout_supported = workspace.assets.animation_options_layout_supported;
+        let before = *option;
+        ui.add_enabled_ui(!editing_blocked && layout_supported, |ui| {
+            ui.add_enabled_ui(installed, |ui| {
+                for (label, feature) in [
+                    (
+                        "Original palette animation",
+                        lm_graphics::ExAnimationFeature::PaletteAnimation,
+                    ),
+                    (
+                        "Original animated tiles",
+                        lm_graphics::ExAnimationFeature::VanillaAnimation,
+                    ),
+                    (
+                        "Global ExAnimation",
+                        lm_graphics::ExAnimationFeature::GlobalExAnimation,
+                    ),
+                    (
+                        "This map's ExAnimation",
+                        lm_graphics::ExAnimationFeature::LevelExAnimation,
+                    ),
+                ] {
+                    let mut enabled = option.features.enabled(feature);
+                    if ui.checkbox(&mut enabled, label).changed() {
+                        option.features.set_enabled(feature, enabled);
+                    }
+                }
+            });
+            ui.checkbox(&mut option.original_lightning, "Original lightning");
+        });
+        if !layout_supported {
+            ui.small("Per-map option operands are not authenticated for this ROM profile.");
+        } else if !installed {
+            ui.small(
+                "The four feature switches require Lunar Magic's overworld animation runtime; original lightning is independently editable.",
+            );
+        }
+        if *option != before {
+            self.rendered_key = None;
+            self.texture = None;
+        }
     }
 
     fn apply(&mut self, edit: OverworldControllerEdit) {

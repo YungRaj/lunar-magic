@@ -1,6 +1,6 @@
 use super::{Command, RomOverworldEditor, Workspace};
 use crate::rom_allocation::parse_search_range;
-use lm_project::CompleteOverworldSaveOptions;
+use lm_project::{CompleteOverworldSaveOptions, Project, RomMutation};
 use lm_rats::{AllocationPolicy, ProtectedRange};
 
 impl RomOverworldEditor {
@@ -44,15 +44,29 @@ impl RomOverworldEditor {
 
     pub(super) fn prepare_commit(&self) -> Result<Command, String> {
         let workspace = self.workspace.as_ref().ok_or("workspace is closed")?;
-        let options = self.save_options(workspace)?;
-        workspace
-            .controller
-            .prepare_commit(
-                format!("Edit complete native overworld slot {:03X}", workspace.slot),
-                &options,
-            )
-            .map(lm_app::PreparedRomCommit::into_command)
-            .map_err(|error| error.to_string())
+        let prepared = if workspace.controller.is_modified() {
+            let options = self.save_options(workspace)?;
+            workspace
+                .controller
+                .prepare_commit(
+                    format!("Edit complete native overworld slot {:03X}", workspace.slot),
+                    &options,
+                )
+                .map_err(|error| error.to_string())?
+        } else {
+            lm_app::PreparedRomCommit {
+                expected_revision: workspace.controller.revision(),
+                description: format!(
+                    "Edit overworld animation options for slot {:03X}",
+                    workspace.slot
+                ),
+                mutation: RomMutation::unchanged(
+                    workspace.profiled.snapshot.identity.mapper,
+                    workspace.image.logical_bytes().len(),
+                ),
+            }
+        };
+        self.merge_animation_option_commit(workspace, prepared)
     }
 
     pub(super) fn prepare_commit_owned(
@@ -61,7 +75,7 @@ impl RomOverworldEditor {
     ) -> Result<Command, String> {
         let workspace = self.workspace.as_ref().ok_or("workspace is closed")?;
         let options = self.save_options(workspace)?;
-        workspace
+        let prepared = workspace
             .controller
             .prepare_commit_with_reclamation(
                 format!(
@@ -71,8 +85,29 @@ impl RomOverworldEditor {
                 &options,
                 manifest,
             )
-            .map(lm_app::PreparedRomCommit::into_command)
-            .map_err(|error| error.to_string())
+            .map_err(|error| error.to_string())?;
+        self.merge_animation_option_commit(workspace, prepared)
+    }
+
+    fn merge_animation_option_commit(
+        &self,
+        workspace: &Workspace,
+        mut prepared: lm_app::PreparedRomCommit,
+    ) -> Result<Command, String> {
+        if workspace.assets.animation_options == workspace.baseline_animation_options {
+            return Ok(prepared.into_command());
+        }
+        merge_animation_option_mutation(
+            &workspace.image,
+            workspace.profiled.snapshot.identity.mapper,
+            workspace.profiled.snapshot.identity.internal_header_offset + 0x1c,
+            workspace.slot,
+            workspace.assets.animation_options,
+            workspace.assets.animation_lightning_unused_low_bit,
+            &mut prepared,
+        )
+        .map_err(|error| error.to_string())?;
+        Ok(prepared.into_command())
     }
 
     fn save_options(&self, workspace: &Workspace) -> Result<CompleteOverworldSaveOptions, String> {
@@ -87,5 +122,125 @@ impl RomOverworldEditor {
             )
             .map(CompleteOverworldSaveOptions::uniform_allocation)
             .map_err(|error| error.to_string())
+    }
+}
+
+fn merge_animation_option_mutation(
+    image: &lm_rom::RomImage,
+    mapper: lm_rom::Mapper,
+    checksum_field: usize,
+    slot: u16,
+    options: [crate::overworld_editor_render::OverworldAnimationOptions; 7],
+    lightning_unused_low_bit: bool,
+    prepared: &mut lm_app::PreparedRomCommit,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let before = image.logical_bytes().to_vec();
+    let mut project = Project::new(image.clone());
+    project.apply_mutation("stage complete overworld payloads", &prepared.mutation)?;
+    let (features, lightning) = crate::overworld_editor_render::encode_overworld_animation_options(
+        options,
+        lightning_unused_low_bit,
+    );
+    project.save_installed_overworld_animation_options(
+        features,
+        lightning,
+        lm_profile::smw_us_v1_overworld_animation_options_layout(),
+        checksum_field,
+    )?;
+    prepared.description =
+        format!("Edit complete native overworld slot {slot:03X} and animation options");
+    prepared.mutation = RomMutation::between(mapper, &before, project.rom.logical_bytes())?;
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use lm_rom::{Mapper, RomImage, compute_snes_checksum, pc_to_snes};
+
+    fn write_pointer(image: &mut RomImage, operand: usize, target: usize) {
+        let address = pc_to_snes(Mapper::LoRom, target).unwrap();
+        image.write(operand, &address.to_le_bytes()[..3]).unwrap();
+    }
+
+    #[test]
+    fn map_options_merge_with_payload_edit_and_reopen_from_one_mutation() {
+        const RUNTIME: usize = 0x30000;
+        const TABLE: usize = 0x31000;
+        const CHECKSUM: usize = 0x7fdc;
+        let mut image = RomImage::from_bytes(vec![0xff; 0x40000]).unwrap();
+        image
+            .write(
+                lm_profile::SMW_US_V1_OVERWORLD_ANIMATION_RUNTIME_MARKER,
+                &[0x22],
+            )
+            .unwrap();
+        write_pointer(
+            &mut image,
+            lm_profile::SMW_US_V1_OVERWORLD_ANIMATION_RUNTIME_OPERAND,
+            RUNTIME,
+        );
+        write_pointer(
+            &mut image,
+            RUNTIME
+                + usize::try_from(
+                    lm_profile::SMW_US_V1_OVERWORLD_ANIMATION_FEATURE_OPERAND_DISPLACEMENT,
+                )
+                .unwrap(),
+            TABLE,
+        );
+        image.write(TABLE, &[0; 7]).unwrap();
+        image
+            .write(
+                lm_profile::SMW_US_V1_OVERWORLD_LIGHTNING_DISABLE_MASK,
+                &[0xf7],
+            )
+            .unwrap();
+        let before = image.logical_bytes().to_vec();
+        let mut options =
+            crate::overworld_editor_render::decode_overworld_animation_options([0; 7], 0xf7);
+        options[2]
+            .features
+            .set_enabled(lm_graphics::ExAnimationFeature::GlobalExAnimation, false);
+        options[2].original_lightning = true;
+        let mut prepared = lm_app::PreparedRomCommit {
+            expected_revision: 9,
+            description: "payload edit".into(),
+            mutation: RomMutation {
+                mapper: Mapper::LoRom,
+                expected_len: before.len(),
+                appended: Vec::new(),
+                writes: vec![lm_project::RomWrite {
+                    offset: 0x1234,
+                    bytes: vec![0x5a],
+                }],
+            },
+        };
+        merge_animation_option_mutation(
+            &image,
+            Mapper::LoRom,
+            CHECKSUM,
+            0x101,
+            options,
+            true,
+            &mut prepared,
+        )
+        .unwrap();
+
+        let mut reopened = Project::new(image);
+        reopened
+            .apply_mutation("combined commit", &prepared.mutation)
+            .unwrap();
+        assert_eq!(reopened.rom.read(0x1234, 1).unwrap(), [0x5a]);
+        let loaded = reopened
+            .load_installed_overworld_animation_options(
+                lm_profile::smw_us_v1_overworld_animation_options_layout(),
+            )
+            .unwrap();
+        assert_eq!(loaded.feature_bytes[2], 0x20);
+        assert_eq!(loaded.lightning_disable_mask, 0xd7);
+        let checksum = compute_snes_checksum(reopened.rom.logical_bytes(), CHECKSUM).unwrap();
+        assert_eq!(reopened.rom.read(CHECKSUM, 4).unwrap(), checksum.encoded());
+        assert_eq!(prepared.expected_revision, 9);
     }
 }

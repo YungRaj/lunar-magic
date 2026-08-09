@@ -240,6 +240,17 @@ mod tests {
         assert_eq!(loaded.feature_bytes, [0; 7]);
         assert_eq!(loaded.lightning_disable_mask, 0xf7);
         assert!(!loaded.runtime_installed);
+        assert!(
+            project
+                .save_installed_overworld_animation_options([0; 7], 0x77, layout(), CHECKSUM,)
+                .unwrap()
+        );
+        let lightning_only = project
+            .load_installed_overworld_animation_options(layout())
+            .unwrap();
+        assert_eq!(lightning_only.feature_bytes, [0; 7]);
+        assert_eq!(lightning_only.lightning_disable_mask, 0x77);
+        assert!(!lightning_only.runtime_installed);
         assert!(matches!(
             project.save_installed_overworld_animation_options(
                 [0x10, 0, 0, 0, 0, 0, 0],

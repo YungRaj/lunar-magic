@@ -18,6 +18,10 @@ pub(crate) struct OverworldAssets {
     pub(crate) built_in_lightning: Option<BuiltInOverworldLightning>,
     /// The five animation switches selected independently for each of the seven maps.
     pub(crate) animation_options: [OverworldAnimationOptions; 7],
+    /// Whether Lunar Magic's marker-gated four-feature option table is installed.
+    pub(crate) animation_options_runtime_installed: bool,
+    /// Whether the active revision profile authenticates the fixed SMW-US option operands.
+    pub(crate) animation_options_layout_supported: bool,
     /// Unconsumed low bit of the original lightning byte, retained for lossless save.
     pub(crate) animation_lightning_unused_low_bit: bool,
     /// Lunar Magic's ROM-global ExAnimation set, resolved through the installed runtime.
@@ -803,6 +807,8 @@ mod tests {
             built_in_level_dot_palette: None,
             built_in_lightning: None,
             animation_options: vanilla_overworld_animation_options(),
+            animation_options_runtime_installed: false,
+            animation_options_layout_supported: false,
             animation_lightning_unused_low_bit: true,
             global_animation: None,
         };

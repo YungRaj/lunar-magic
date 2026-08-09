@@ -57,6 +57,8 @@ pub(super) fn pending_from_loaded(loaded: LoadedDocument) -> Result<PendingOpen,
             built_in_lightning: None,
             animation_options: crate::overworld_editor_render::vanilla_overworld_animation_options(
             ),
+            animation_options_runtime_installed: false,
+            animation_options_layout_supported: false,
             animation_lightning_unused_low_bit: true,
             global_animation: None,
         },

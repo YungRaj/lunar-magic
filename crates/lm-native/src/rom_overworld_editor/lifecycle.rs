@@ -100,17 +100,15 @@ impl RomOverworldEditor {
             self.pending_open = None;
             return true;
         }
-        let modified = self
-            .workspace
+        let modified = self.workspace.as_ref().is_some_and(|workspace| {
+            workspace.controller.is_modified()
+                || workspace.assets.animation_options != workspace.baseline_animation_options
+        }) || self
+            .main_layer2_workspace
             .as_ref()
-            .is_some_and(|workspace| workspace.controller.is_modified())
-            || self
-                .main_layer2_workspace
-                .as_ref()
-                .is_some_and(|workspace| {
-                    workspace.controller.is_modified()
-                        || workspace.paths != workspace.original_paths
-                });
+            .is_some_and(|workspace| {
+                workspace.controller.is_modified() || workspace.paths != workspace.original_paths
+            });
         if !modified {
             self.clear();
             return true;
@@ -235,7 +233,7 @@ impl RomOverworldEditor {
                 ui.label(if self.main_layer2_workspace.is_some() {
                     "Playable terrain or route-link changes have not been committed."
                 } else {
-                    "Changes across the nine payloads have not been committed."
+                    "Overworld payload or per-map animation-option changes have not been committed."
                 });
                 ui.horizontal(|ui| {
                     if ui.button("Cancel").clicked() {
@@ -345,6 +343,8 @@ fn decode_main_layer2_workspace(
             built_in_lightning: load_builtin_overworld_lightning(&project)?,
             animation_options: crate::overworld_editor_render::vanilla_overworld_animation_options(
             ),
+            animation_options_runtime_installed: false,
+            animation_options_layout_supported: true,
             animation_lightning_unused_low_bit: true,
             global_animation: None,
         },
@@ -401,6 +401,7 @@ fn decode_loaded(
         decode_native_appearance_siblings(pending.open.rom_path.as_deref(), native_files)?;
     assets.external_sprite_assets =
         crate::ssc_sidecar_editor::decode_external_sprite_assets(external_files.into_iter())?;
+    let baseline_animation_options = assets.animation_options;
     Ok(Workspace {
         controller,
         profiled,
@@ -408,6 +409,7 @@ fn decode_loaded(
         image,
         ownership,
         assets,
+        baseline_animation_options,
         native_appearances,
     })
 }
@@ -471,11 +473,24 @@ fn decode_overworld_assets(
         append_overworld_graphics_slot(&mut tiles, file_number, slot)?;
     }
     let (gfx32, gfx33) = load_overworld_special_graphics(&project, profiled.profile.graphics)?;
-    let animation_options = project
-        .load_installed_overworld_animation_options(
-            lm_profile::smw_us_v1_overworld_animation_options_layout(),
-        )
-        .map_err(|error| error.to_string())?;
+    let animation_options_layout_supported = profiled.profile.game
+        == lm_rom::SupportedGame::SuperMarioWorld
+        && profiled.profile.region == lm_rom::Region::NorthAmerica
+        && profiled.profile.revision == 0
+        && profiled.profile.mapper == lm_rom::Mapper::LoRom;
+    let animation_options = if animation_options_layout_supported {
+        project
+            .load_installed_overworld_animation_options(
+                lm_profile::smw_us_v1_overworld_animation_options_layout(),
+            )
+            .map_err(|error| error.to_string())?
+    } else {
+        lm_project::LoadedOverworldAnimationOptions {
+            feature_bytes: [0; 7],
+            lightning_disable_mask: 0xf7,
+            runtime_installed: false,
+        }
+    };
     Ok(crate::overworld_editor_render::OverworldAssets {
         map16: Map16SetFile {
             set: map16.set().clone(),
@@ -498,6 +513,8 @@ fn decode_overworld_assets(
             animation_options.feature_bytes,
             animation_options.lightning_disable_mask,
         ),
+        animation_options_runtime_installed: animation_options.runtime_installed,
+        animation_options_layout_supported,
         animation_lightning_unused_low_bit: animation_options.lightning_disable_mask & 1 != 0,
         global_animation: load_global_overworld_exanimation(&project, &profiled.profile)?,
     })
