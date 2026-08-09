@@ -152,6 +152,7 @@ pub(crate) struct RomOverworldEditor {
     completed_reveals: usize,
     rendered_key: Option<(u64, usize, usize)>,
     texture: Option<egui::TextureHandle>,
+    animation_graphics_texture: Option<egui::TextureHandle>,
     animation_preview_paused: bool,
     animation_preview_origin: Option<f64>,
     animation_preview_tick: usize,
@@ -632,8 +633,20 @@ fn path_form_row(ui: &mut egui::Ui, label: &str, value: &mut String) {
 
 impl RomOverworldEditor {
     fn contents(&mut self, ui: &mut egui::Ui, revision: u64) -> Option<Command> {
-        let (stale, shape, slot, controller_revision, data, modes, ownership, native_summary) = {
+        let (
+            stale,
+            shape,
+            slot,
+            controller_revision,
+            data,
+            modes,
+            ownership,
+            animation_ownership,
+            global_animation,
+            native_summary,
+        ) = {
             let workspace = self.workspace.as_ref()?;
+            let map = usize::from(workspace.slot).min(6);
             (
                 workspace.controller.revision() != revision,
                 workspace.profiled.profile.overworld_shape,
@@ -642,6 +655,14 @@ impl RomOverworldEditor {
                 workspace.controller.data().clone(),
                 workspace.profiled.profile.exanimation_double_size_modes,
                 workspace.ownership.clone(),
+                overworld_editor_render::overworld_animation_ownership(
+                    &workspace.controller.data().animation,
+                    workspace.assets.global_animation.as_ref(),
+                    workspace.assets.animation_options[map],
+                    workspace.assets.graphics.graphics.tiles.len(),
+                    workspace.controller.data().palette.colors.len(),
+                ),
+                workspace.assets.global_animation.clone(),
                 workspace.native_appearances.as_ref().map(|pair| {
                     (
                         pair.definitions.appearances.len(),
@@ -687,13 +708,31 @@ impl RomOverworldEditor {
         let mut runtime_command = None;
         let edit = match self.panel {
             Panel::Records => self.records.show(ui, &file, controller_revision),
-            Panel::Palette => self.palette.show(ui, &file.data.palette, &ownership),
+            Panel::Palette => {
+                let edit = self.palette.show(
+                    ui,
+                    &file.data.palette,
+                    &ownership,
+                    &animation_ownership.palette,
+                );
+                if let Some(owner) = self.palette.take_navigation() {
+                    self.panel = Panel::Animation;
+                    self.animation.navigate(owner);
+                }
+                edit
+            }
             Panel::Animation => {
                 self.animation_preview_controls(ui, &file.data.animation);
                 self.animation_file_controls(ui, stale, revision);
                 runtime_command = self.animation_option_controls(ui, editing_blocked);
-                self.animation
-                    .show(ui, &file.data.animation, &modes, controller_revision)
+                self.animation_destination_controls(ui, &animation_ownership.graphics);
+                self.animation.show(
+                    ui,
+                    &file.data.animation,
+                    global_animation.as_ref(),
+                    &modes,
+                    controller_revision,
+                )
             }
         };
         if let Some(edit) = edit {
@@ -749,6 +788,60 @@ impl RomOverworldEditor {
                 Err(error) => self.error = Some(error),
             }
         }
+    }
+
+    fn animation_destination_controls(
+        &mut self,
+        ui: &mut egui::Ui,
+        owners: &[Option<overworld_editor_render::OverworldAnimationOwner>],
+    ) {
+        ui.collapsing("Rendered graphics destinations", |ui| {
+            ui.small(
+                "Ctrl+Shift+click an attributed 8x8 tile to select its last-writing local or global ExAnimation record.",
+            );
+            let Some(texture) = self.animation_graphics_texture.clone() else {
+                ui.label("The current animated graphics cache could not be rendered.");
+                return;
+            };
+            let columns = 16;
+            let rows = owners.len().div_ceil(columns);
+            let native = texture.size_vec2();
+            let width = (native.x * 2.0).min(ui.available_width()).max(native.x);
+            let response = ui.add(
+                egui::Image::new(&texture)
+                    .fit_to_exact_size(egui::vec2(width, width * native.y / native.x))
+                    .sense(egui::Sense::click()),
+            );
+            let pointed = response
+                .hover_pos()
+                .and_then(|position| {
+                    overworld_editor_render::selected_tile(
+                        response.rect,
+                        position,
+                        columns,
+                        rows,
+                    )
+                })
+                .and_then(|(x, y)| y.checked_mul(columns).and_then(|base| base.checked_add(x)));
+            if let Some(index) = pointed {
+                response.clone().on_hover_text(match owners.get(index).copied().flatten() {
+                    Some(owner) => format!(
+                        "Tile {index:03X}: {:?} ExAnimation record {:02X}",
+                        owner.domain, owner.record
+                    ),
+                    None => format!("Tile {index:03X}: no ExAnimation owner"),
+                });
+                if response.clicked()
+                    && let Some(owner) =
+                        overworld_editor_render::ctrl_shift_animation_navigation(
+                            ui.input(|input| input.modifiers),
+                            owners.get(index).copied().flatten(),
+                        )
+                {
+                    self.animation.navigate(owner);
+                }
+            }
+        });
     }
 
     fn map16_picker(&mut self, ui: &mut egui::Ui) {
@@ -1011,25 +1104,35 @@ impl RomOverworldEditor {
             shape: workspace.profiled.profile.overworld_shape,
             data: workspace.controller.data().clone(),
         };
+        let preview = overworld_editor_render::OverworldExAnimationPreview {
+            tick: self.animation_preview_tick,
+            substeps_per_tick: self.animation_preview_rate.substeps_per_tick(),
+            triggers: self.animation_preview_triggers.clone(),
+            events_passed: self.animation_preview_events_passed.clone(),
+        };
         match overworld_editor_render::render_texture_with_preview(
             context,
             &file,
             &workspace.assets,
             workspace.native_appearances.as_ref(),
             self.completed_reveals,
-            Some(&overworld_editor_render::OverworldExAnimationPreview {
-                tick: self.animation_preview_tick,
-                substeps_per_tick: self.animation_preview_rate.substeps_per_tick(),
-                triggers: self.animation_preview_triggers.clone(),
-                events_passed: self.animation_preview_events_passed.clone(),
-            }),
+            Some(&preview),
         ) {
             Ok(texture) => {
                 self.texture = Some(texture);
+                self.animation_graphics_texture =
+                    overworld_editor_render::render_exanimation_graphics_texture(
+                        context,
+                        &file,
+                        &workspace.assets,
+                        &preview,
+                    )
+                    .ok();
                 self.rendered_key = Some(key);
             }
             Err(error) => {
                 self.texture = None;
+                self.animation_graphics_texture = None;
                 self.rendered_key = Some(key);
                 self.error = Some(format!("could not render native overworld: {error}"));
             }

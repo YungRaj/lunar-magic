@@ -1,4 +1,4 @@
-use crate::native_clipboard;
+use crate::{native_clipboard, overworld_editor_render::OverworldAnimationOwner};
 use eframe::egui;
 use lm_app::OverworldControllerEdit;
 use lm_graphics::{Bgr555, Palette, PaletteChange, PaletteEntryOwner, PaletteOwnership, Rgb8};
@@ -18,6 +18,7 @@ enum NativePaste {
 pub(crate) struct OverworldPalettePanel {
     selected: usize,
     paste_target: Option<PasteTarget>,
+    navigation: Option<OverworldAnimationOwner>,
 }
 
 impl OverworldPalettePanel {
@@ -26,9 +27,11 @@ impl OverworldPalettePanel {
         ui: &mut egui::Ui,
         palette: &Palette,
         ownership: &PaletteOwnership,
+        animation_ownership: &[Option<OverworldAnimationOwner>],
     ) -> Option<Result<OverworldControllerEdit, String>> {
         self.selected = self.selected.min(palette.colors.len().saturating_sub(1));
-        let (mut copy_result, grid_paste) = self.palette_clipboard_grid(ui, palette);
+        let (mut copy_result, grid_paste) =
+            self.palette_clipboard_grid(ui, palette, animation_ownership);
         let mut native_paste = None;
         let color = palette.colors.get(self.selected).copied()?;
         ui.label(format!(
@@ -36,6 +39,7 @@ impl OverworldPalettePanel {
             self.selected, color.0
         ));
         let owner = ownership.owner(self.selected);
+        let animation_owner = animation_ownership.get(self.selected).copied().flatten();
         let editable = owner == Some(PaletteEntryOwner::Editable);
         let row = palette_row(&palette.colors, self.selected).ok();
         let row_editable = row.is_some_and(|_| {
@@ -55,13 +59,19 @@ impl OverworldPalettePanel {
                 _ => Err("selected palette entries are read-only".into()),
             }));
         }
-        ui.label(match owner {
-            Some(PaletteEntryOwner::Editable) => "Ownership: editable".into(),
-            Some(PaletteEntryOwner::Fixed) => "Ownership: fixed (read-only)".into(),
-            Some(PaletteEntryOwner::ExAnimation { record }) => {
-                format!("Ownership: ExAnimation record {record:04X} (read-only)")
-            }
-            None => "Ownership: invalid (read-only)".into(),
+        ui.label(match animation_owner {
+            Some(owner) => format!(
+                "Animation ownership: {:?} record {:02X} (Ctrl+Shift+click to navigate)",
+                owner.domain, owner.record
+            ),
+            None => match owner {
+                Some(PaletteEntryOwner::Editable) => "Ownership: editable".into(),
+                Some(PaletteEntryOwner::Fixed) => "Ownership: fixed (read-only)".into(),
+                Some(PaletteEntryOwner::ExAnimation { record }) => {
+                    format!("Ownership: ExAnimation record {record:04X} (read-only)")
+                }
+                None => "Ownership: invalid (read-only)".into(),
+            },
         });
         ui.horizontal(|ui| {
             if ui.button("Copy color").clicked() {
@@ -161,6 +171,7 @@ impl OverworldPalettePanel {
         &mut self,
         ui: &mut egui::Ui,
         palette: &Palette,
+        animation_ownership: &[Option<OverworldAnimationOwner>],
     ) -> (
         Option<Result<(), String>>,
         Option<Result<NativePaste, String>>,
@@ -180,7 +191,13 @@ impl OverworldPalettePanel {
                         if response.clicked() {
                             self.selected = index;
                             let modifiers = ui.input(|input| input.modifiers);
-                            if modifiers.ctrl {
+                            if modifiers.ctrl && modifiers.shift {
+                                self.navigation =
+                                    crate::overworld_editor_render::ctrl_shift_animation_navigation(
+                                        modifiers,
+                                        animation_ownership.get(index).copied().flatten(),
+                                    );
+                            } else if modifiers.ctrl {
                                 copy_result = Some(if modifiers.alt {
                                     palette_row(&palette.colors, index).and_then(|row| {
                                         native_clipboard::copy_palette_row_to_system(ui.ctx(), row)
@@ -219,6 +236,10 @@ impl OverworldPalettePanel {
                 });
         });
         (copy_result, native_paste)
+    }
+
+    pub(crate) fn take_navigation(&mut self) -> Option<OverworldAnimationOwner> {
+        self.navigation.take()
     }
 }
 

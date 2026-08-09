@@ -357,9 +357,10 @@ original tiles, level-dot palette cycling, lightning, and submap-local records i
 byte, every lightning mask including its unused low bit, and independent materialization. The
 descriptor-relative loader, installed-runtime save backend, and native per-map controls are now
 complete. Option-only and mixed nine-payload changes share one checksum-valid application
-mutation, while pristine lightning remains independently editable. Native runtime installation,
-alternate lightning sources, and ownership/import workflows remain open, so the row stays
-`Partial`.
+mutation, while pristine lightning remains independently editable. Alternate lightning routing,
+import/export, and ownership navigation are now closed by the destination-attribution gates.
+Complete original-ROM byte-differential evidence for the dedicated runtime installer remains open,
+so the row stays `Partial`.
 
 The Graphics row's older sentence that calls subsequent ExGFX directory synchronization open is
 superseded by the 2026-08-09 evidence above: the native directory route now authenticates and

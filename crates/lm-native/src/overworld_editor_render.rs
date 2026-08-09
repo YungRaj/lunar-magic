@@ -113,6 +113,152 @@ pub(crate) struct OverworldExAnimationPreview {
     pub(crate) events_passed: Vec<bool>,
 }
 
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub(crate) enum OverworldAnimationDomain {
+    #[default]
+    Local,
+    Global,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct OverworldAnimationOwner {
+    pub(crate) domain: OverworldAnimationDomain,
+    pub(crate) record: usize,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct OverworldAnimationOwnership {
+    pub(crate) graphics: Vec<Option<OverworldAnimationOwner>>,
+    pub(crate) palette: Vec<Option<OverworldAnimationOwner>>,
+}
+
+pub(crate) fn ctrl_shift_animation_navigation(
+    modifiers: egui::Modifiers,
+    owner: Option<OverworldAnimationOwner>,
+) -> Option<OverworldAnimationOwner> {
+    (modifiers.ctrl && modifiers.shift)
+        .then_some(owner)
+        .flatten()
+}
+
+/// Reconstructs the destination-attribution tables used by Lunar Magic's Ctrl+Shift navigation.
+///
+/// Records are visited in the same order as the preview painter: local slots first, then global
+/// slots, with later records replacing earlier attribution for overlapping destinations. Disabled
+/// domains contribute no owner, matching the per-map animation switches.
+pub(crate) fn overworld_animation_ownership(
+    local: &lm_graphics::CompactExAnimation,
+    global: Option<&lm_graphics::CompactExAnimation>,
+    options: OverworldAnimationOptions,
+    graphics_len: usize,
+    palette_len: usize,
+) -> OverworldAnimationOwnership {
+    let mut ownership = OverworldAnimationOwnership {
+        graphics: vec![None; graphics_len],
+        palette: vec![None; palette_len],
+    };
+    if options
+        .features
+        .enabled(lm_graphics::ExAnimationFeature::LevelExAnimation)
+    {
+        attribute_animation_records(
+            &mut ownership,
+            &local.records[..local.records.len().min(32)],
+            OverworldAnimationDomain::Local,
+        );
+    }
+    if options
+        .features
+        .enabled(lm_graphics::ExAnimationFeature::GlobalExAnimation)
+        && let Some(global) = global
+    {
+        attribute_animation_records(
+            &mut ownership,
+            &global.records[..global.records.len().min(32)],
+            OverworldAnimationDomain::Global,
+        );
+    }
+    ownership
+}
+
+fn attribute_animation_records(
+    ownership: &mut OverworldAnimationOwnership,
+    records: &[lm_graphics::ExAnimationRecord],
+    domain: OverworldAnimationDomain,
+) {
+    // Attribution depends only on the destination span. A large blank source keeps address
+    // validation independent of the currently loaded GFX files while reusing the exact transfer
+    // semantics used by the renderer.
+    static BLANK_SOURCE: std::sync::OnceLock<Vec<lm_graphics::IndexedTile>> =
+        std::sync::OnceLock::new();
+    let source = BLANK_SOURCE.get_or_init(|| {
+        let blank = lm_graphics::IndexedTile::new([0; lm_graphics::IndexedTile::PIXEL_COUNT]);
+        vec![blank; 0x4000]
+    });
+    let palette = vec![lm_graphics::Bgr555(0); ownership.palette.len().max(0x100)];
+    for (record_index, record) in records.iter().enumerate() {
+        let owner = Some(OverworldAnimationOwner {
+            domain,
+            record: record_index,
+        });
+        let second_bank = (8..=0x0f).contains(&record.trigger())
+            || lm_graphics::exanimation_trigger_has_second_bank(record.trigger());
+        if record.kind() < 0x13 {
+            let Ok(address) = lm_graphics::resolve_exanimation_graphics_address_with_banking(
+                record,
+                0,
+                lm_graphics::ExAnimationGraphicsAddressContext {
+                    two_bpp_enabled: (0x0f..=0x12).contains(&record.kind()),
+                    relative_source_base_tile: 0,
+                    relative_source_limit_bytes: 0x8000,
+                },
+                second_bank,
+            ) else {
+                continue;
+            };
+            let Ok(source_tile) = usize::try_from(address.source_tile) else {
+                continue;
+            };
+            let Ok(overrides) = lm_graphics::materialize_exanimation_graphics_transfer_with_banking(
+                record,
+                0,
+                source,
+                source_tile,
+                address.destination_tile,
+                address.two_bpp_destination,
+                second_bank,
+            ) else {
+                continue;
+            };
+            for entry in overrides {
+                if let Ok(index) = usize::try_from(entry.tile_index)
+                    && let Some(slot) = ownership.graphics.get_mut(index)
+                {
+                    *slot = owner;
+                }
+            }
+        } else if record.kind() <= 0x1b
+            && let Ok(lm_graphics::ExAnimationPaletteTransfer::Palette(overrides)) =
+                lm_graphics::materialize_exanimation_palette_transfer_with_banking(
+                    record,
+                    0,
+                    &palette,
+                    0,
+                    false,
+                    second_bank,
+                )
+        {
+            for entry in overrides {
+                if let Ok(index) = usize::try_from(entry.color_index)
+                    && let Some(slot) = ownership.palette.get_mut(index)
+                {
+                    *slot = owner;
+                }
+            }
+        }
+    }
+}
+
 pub(crate) fn render_layer_texture(
     context: &egui::Context,
     layer: &lm_overworld::OverworldLayer,
@@ -141,6 +287,16 @@ pub(crate) fn render_layer2_graphics_texture(
     )
     .map_err(|error| error.to_string())?;
     texture_from_canvas(context, "native-overworld-layer2-8x8", &canvas)
+}
+
+pub(crate) fn render_exanimation_graphics_texture(
+    context: &egui::Context,
+    overworld: &CompleteOverworldFile,
+    assets: &OverworldAssets,
+    preview: &OverworldExAnimationPreview,
+) -> Result<egui::TextureHandle, String> {
+    let (graphics, palette) = materialize_overworld_exanimation(overworld, assets, preview)?;
+    render_layer2_graphics_texture(context, &graphics, &palette, 0)
 }
 
 fn texture_from_canvas(
@@ -1082,6 +1238,130 @@ mod tests {
         let (_, palette) =
             materialize_overworld_exanimation(&overworld, &assets, &preview).unwrap();
         assert_eq!(palette.colors[5], Bgr555(0x001f));
+    }
+
+    #[test]
+    fn destination_ownership_matches_domain_gates_slot_limits_and_last_writer_precedence() {
+        let palette_record = |destination| {
+            ExAnimationRecord::new(0x13, 0, 0, destination, false, &[0x1f, 0x00], false).unwrap()
+        };
+        let graphics_record = |destination| {
+            ExAnimationRecord::new(1, 0, 0, destination, false, &[0x00, 0x00], false).unwrap()
+        };
+        let mut local_records = vec![palette_record(5), graphics_record(0x70)];
+        local_records.extend((2..33).map(|_| palette_record(9)));
+        let local = CompactExAnimation {
+            setting: 0,
+            header_value: 0,
+            trigger_mask: 0,
+            trigger_values: [0; 16],
+            records: local_records,
+        };
+        let global = CompactExAnimation {
+            setting: 0,
+            header_value: 0,
+            trigger_mask: 0,
+            trigger_values: [0; 16],
+            records: vec![palette_record(5), graphics_record(0x70), palette_record(10)],
+        };
+
+        let ownership = overworld_animation_ownership(
+            &local,
+            Some(&global),
+            OverworldAnimationOptions::VANILLA_ENABLED,
+            64,
+            32,
+        );
+        assert_eq!(
+            ownership.palette[5],
+            Some(OverworldAnimationOwner {
+                domain: OverworldAnimationDomain::Global,
+                record: 0,
+            })
+        );
+        assert_eq!(
+            ownership.graphics[7],
+            Some(OverworldAnimationOwner {
+                domain: OverworldAnimationDomain::Global,
+                record: 1,
+            })
+        );
+        assert_eq!(ownership.palette[10].unwrap().record, 2);
+        // Slot 32 is outside the native 32-record overworld window and cannot own color 9.
+        assert_eq!(ownership.palette[9].unwrap().record, 31);
+
+        let local_only = overworld_animation_ownership(
+            &local,
+            Some(&global),
+            OverworldAnimationOptions::decode(0x20, false),
+            64,
+            32,
+        );
+        assert_eq!(
+            local_only.palette[5],
+            Some(OverworldAnimationOwner {
+                domain: OverworldAnimationDomain::Local,
+                record: 0,
+            })
+        );
+        assert_eq!(
+            local_only.graphics[7],
+            Some(OverworldAnimationOwner {
+                domain: OverworldAnimationDomain::Local,
+                record: 1,
+            })
+        );
+
+        let disabled = overworld_animation_ownership(
+            &local,
+            Some(&global),
+            OverworldAnimationOptions::decode(0x30, false),
+            64,
+            32,
+        );
+        assert!(disabled.graphics.iter().all(Option::is_none));
+        assert!(disabled.palette.iter().all(Option::is_none));
+    }
+
+    #[test]
+    fn ownership_navigation_requires_ctrl_shift_accepts_alt_and_rejects_unowned_destinations() {
+        let owner = Some(OverworldAnimationOwner {
+            domain: OverworldAnimationDomain::Local,
+            record: 7,
+        });
+        assert_eq!(
+            ctrl_shift_animation_navigation(
+                egui::Modifiers {
+                    ctrl: true,
+                    shift: true,
+                    alt: true,
+                    ..Default::default()
+                },
+                owner,
+            ),
+            owner
+        );
+        assert_eq!(
+            ctrl_shift_animation_navigation(
+                egui::Modifiers {
+                    ctrl: true,
+                    ..Default::default()
+                },
+                owner,
+            ),
+            None
+        );
+        assert_eq!(
+            ctrl_shift_animation_navigation(
+                egui::Modifiers {
+                    ctrl: true,
+                    shift: true,
+                    ..Default::default()
+                },
+                None,
+            ),
+            None
+        );
     }
 
     #[test]

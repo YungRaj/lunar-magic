@@ -4943,3 +4943,12 @@ Focused lifecycle tests copy the authentic source family into every selected lay
 selected prologue, and retain other plausible families as decoys. Existing wrapping-counter,
 pre-decrement-color, submap-isolation, and authentic pristine gates keep the rendered sequence
 unchanged.
+
+Overworld ExAnimation ownership navigation is derived rather than supplied by a detached manifest.
+The native editor materializes each valid destination span with the renderer's transfer helpers,
+caps local and global domains at 32 records, applies the current map's enable switches, and records
+writers in painter order so later local records and then global records win overlaps. Ctrl+Shift
+clicks on palette colors and the rendered 8x8 graphics cache select the exact owner. Global owners
+use a read-only global form in this aggregate editor, preventing a global record from entering the
+local-overworld edit command; ordinary local owners remain editable. Alt is intentionally ignored
+for this chord, matching the two independent native Ctrl/Shift key-state tests.

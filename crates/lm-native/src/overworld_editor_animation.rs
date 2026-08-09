@@ -1,3 +1,4 @@
+use crate::overworld_editor_render::{OverworldAnimationDomain, OverworldAnimationOwner};
 use crate::{
     exanimation_form::{GlobalForm, RecordForm},
     native_clipboard,
@@ -25,6 +26,7 @@ pub(crate) struct OverworldAnimationPanel {
     trigger_enabled: bool,
     trigger_value: u8,
     paste_target: Option<PasteTarget>,
+    domain: OverworldAnimationDomain,
 }
 
 impl OverworldAnimationPanel {
@@ -34,14 +36,53 @@ impl OverworldAnimationPanel {
         self.paste_target = None;
     }
 
+    pub(crate) fn navigate(&mut self, owner: OverworldAnimationOwner) {
+        self.domain = owner.domain;
+        self.selected = owner.record;
+        self.loaded_record = None;
+        self.loaded_revision = None;
+    }
+
     pub(crate) fn show(
         &mut self,
         ui: &mut egui::Ui,
         animation: &CompactExAnimation,
+        global_animation: Option<&CompactExAnimation>,
         modes: &[bool; 256],
         revision: u64,
     ) -> Option<Result<OverworldControllerEdit, String>> {
-        self.load(animation, modes, revision);
+        if self.domain == OverworldAnimationDomain::Global && global_animation.is_none() {
+            self.domain = OverworldAnimationDomain::Local;
+        }
+        ui.horizontal(|ui| {
+            ui.selectable_value(
+                &mut self.domain,
+                OverworldAnimationDomain::Local,
+                "This map",
+            );
+            ui.add_enabled_ui(global_animation.is_some(), |ui| {
+                ui.selectable_value(&mut self.domain, OverworldAnimationDomain::Global, "Global");
+            });
+        });
+        let displayed = match self.domain {
+            OverworldAnimationDomain::Local => animation,
+            OverworldAnimationDomain::Global => global_animation.unwrap_or(animation),
+        };
+        let editable = self.domain == OverworldAnimationDomain::Local;
+        self.load(displayed, modes, revision);
+        if !editable {
+            ui.small("Global destination owner selected. This record is shown read-only here; use the ROM ExAnimation editor to modify the global domain.");
+        }
+        ui.add_enabled_ui(editable, |ui| self.domain_ui(ui, displayed, modes))
+            .inner
+    }
+
+    fn domain_ui(
+        &mut self,
+        ui: &mut egui::Ui,
+        animation: &CompactExAnimation,
+        modes: &[bool; 256],
+    ) -> Option<Result<OverworldControllerEdit, String>> {
         ui.horizontal(|ui| {
             ui.label("Setting (hex)");
             ui.text_edit_singleline(&mut self.global.setting);
@@ -250,11 +291,14 @@ impl OverworldAnimationPanel {
     }
 
     fn load(&mut self, animation: &CompactExAnimation, modes: &[bool; 256], revision: u64) {
-        if self.loaded_revision == Some(revision) {
+        let domain_revision = revision
+            .wrapping_mul(2)
+            .wrapping_add(u64::from(self.domain == OverworldAnimationDomain::Global));
+        if self.loaded_revision == Some(domain_revision) {
             return;
         }
         self.global = GlobalForm::load(animation.setting, animation.header_value);
-        self.loaded_revision = Some(revision);
+        self.loaded_revision = Some(domain_revision);
         self.loaded_record = None;
         self.load_trigger(animation);
         self.load_record(animation, modes);
@@ -299,4 +343,33 @@ enum RecordOperation {
     Append,
     Replace,
     Remove,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn ownership_navigation_selects_the_exact_local_or_global_record_and_invalidates_forms() {
+        let mut panel = OverworldAnimationPanel {
+            loaded_revision: Some(9),
+            loaded_record: Some(1),
+            ..Default::default()
+        };
+        panel.navigate(OverworldAnimationOwner {
+            domain: OverworldAnimationDomain::Global,
+            record: 0x1f,
+        });
+        assert_eq!(panel.domain, OverworldAnimationDomain::Global);
+        assert_eq!(panel.selected, 0x1f);
+        assert_eq!(panel.loaded_revision, None);
+        assert_eq!(panel.loaded_record, None);
+
+        panel.navigate(OverworldAnimationOwner {
+            domain: OverworldAnimationDomain::Local,
+            record: 3,
+        });
+        assert_eq!(panel.domain, OverworldAnimationDomain::Local);
+        assert_eq!(panel.selected, 3);
+    }
 }

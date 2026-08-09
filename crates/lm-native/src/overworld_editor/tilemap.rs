@@ -87,20 +87,33 @@ impl OverworldEditor {
             return;
         };
         let revision = document.controller.revision();
+        let animation_ownership = crate::overworld_editor_render::overworld_animation_ownership(
+            &document.controller.value().data.animation,
+            None,
+            crate::overworld_editor_render::OverworldAnimationOptions::VANILLA_ENABLED,
+            0,
+            document.controller.value().data.palette.colors.len(),
+        );
         let result = match self.panel {
             Panel::Records => self.records.show(ui, document.controller.value(), revision),
             Panel::Palette => self.palette.show(
                 ui,
                 &document.controller.value().data.palette,
                 &document.ownership,
+                &animation_ownership.palette,
             ),
             Panel::Animation => self.animation.show(
                 ui,
                 &document.controller.value().data.animation,
+                None,
                 &document.modes,
                 revision,
             ),
         };
+        if let Some(owner) = self.palette.take_navigation() {
+            self.panel = Panel::Animation;
+            self.animation.navigate(owner);
+        }
         if let Some(result) = result {
             match result {
                 Ok(edit) => self.apply_edit(&edit),
