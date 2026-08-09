@@ -426,6 +426,13 @@ The near-black/red exact capture additionally proves a sentinel-assigned opaque 
 nontransparent and reuses the nonzero black cell; `maintain_detail_materializes_the_opaque_zero_candidate`
 locks that distinction before tile allocation.
 
+`transparent_source_crosses_blank_graphics_and_map16_switches_independently` exercises the complete
+installed-session product from a pristine ROM for all four option combinations. It proves the
+blank-8×8 switch alone selects `$0F8` and avoids graphics `$200`, while the blank-Map16 switch alone
+selects reserved definition `$8000` and leaves `$8200` untouched. This closes coupled-switch risk
+inside Rust; an independently crossed live original-editor capture is still required for Oracle
+promotion.
+
 Structured LM16 Map16 transfer covers both complete and selected-range containers. The compact
 selected form validates the recovered width/height/column/band-relative-row header fields, restores
 all three ambiguous `$4000`-tile bands through flags 4/8, requires exact row-major definition and

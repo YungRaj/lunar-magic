@@ -1341,6 +1341,87 @@ mod tests {
     }
 
     #[test]
+    fn transparent_source_crosses_blank_graphics_and_map16_switches_independently() {
+        let mut app = AppState::default();
+        app.load_rom(crate::test_support::pristine_smw_us_rom_bytes())
+            .unwrap();
+
+        for use_blank_8x8 in [false, true] {
+            for use_blank_map16 in [false, true] {
+                let mut session = NativeMap16BitmapImportSession::new_smw_us_v1(
+                    app.controller_snapshot().unwrap(),
+                    NativeMap16BitmapImportSessionRequest {
+                        level: 0x105,
+                        start_map16_tile: 0x8200,
+                        extra_graphics: [Some(0x20), Some(0x21)],
+                        pixels: vec![
+                            Rgba8 {
+                                red: 0x42,
+                                green: 0x84,
+                                blue: 0xa5,
+                                alpha: 0,
+                            };
+                            16 * 16
+                        ],
+                        width: 16,
+                        height: 16,
+                        palette_row: 4,
+                    },
+                )
+                .unwrap();
+                let mut options = session.preview().options().clone();
+                options.graphics.reuse_existing_tiles = false;
+                options.graphics.optimize_new_tiles = true;
+                options.graphics.blank_tile = use_blank_8x8.then_some(0x0f8);
+                options.deduplicate_map16 = true;
+                options.use_reserved_map16_for_blank = use_blank_map16;
+                options.reserved_map16_tile = 0x8000;
+                options.map16_allocation_start = 0x8200;
+                session.set_options(options).unwrap();
+
+                let plan = session.preview().plan();
+                let subtiles = [
+                    plan.map16_tiles[0].top_left,
+                    plan.map16_tiles[0].top_right,
+                    plan.map16_tiles[0].bottom_left,
+                    plan.map16_tiles[0].bottom_right,
+                ];
+                let expected_graphics = if use_blank_8x8 { 0x0f8 } else { 0x200 };
+                assert!(
+                    subtiles
+                        .iter()
+                        .all(|subtile| usize::from(subtile.tile_number()) == expected_graphics),
+                    "blank 8x8 switch {use_blank_8x8} must select its own graphics product"
+                );
+                assert_eq!(
+                    plan.newly_occupied_tiles,
+                    usize::from(!use_blank_8x8),
+                    "configured blank graphics must bypass allocation"
+                );
+
+                let allocated = session.allocated_pages().unwrap();
+                assert_eq!(
+                    allocated.allocation.assignments,
+                    [if use_blank_map16 { 0x8000 } else { 0x8200 }]
+                );
+                assert_eq!(
+                    allocated.allocation.allocated_definitions,
+                    usize::from(!use_blank_map16),
+                    "reserved blank Map16 routing must not consume a definition"
+                );
+                assert_eq!(
+                    allocated.touched_pages,
+                    if use_blank_map16 {
+                        Vec::new()
+                    } else {
+                        vec![0x82]
+                    }
+                );
+            }
+        }
+    }
+
+    #[test]
     fn session_color_options_preserve_selected_live_palette_words() {
         let mut app = AppState::default();
         app.load_rom(crate::test_support::pristine_smw_us_rom_bytes())

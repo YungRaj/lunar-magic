@@ -1662,6 +1662,12 @@ configured reserved index without consuming a definition; sequential mode contin
 them normally. Existing-tile reuse retains Lunar Magic's unconditional flip search rather than
 exposing a native-only switch that does not exist in the original dialog.
 
+The installed-session cross-product gate keeps these two blank switches independent. Across all
+four combinations, transparent 16×16 source either references configured graphics `$0F8` without
+allocating `$200` or materializes `$200`, and independently either maps to reserved Map16 `$8000`
+without changing the workspace or consumes blank definition `$8200`. This also proves blank-Map16
+classification remains based on decoded pixels when configured blank-8×8 routing is disabled.
+
 The following controller and selection tooling through `004f5990` is now named. This includes the import-preview zoom menu and keyboard hook, the top-level bitmap import workflow, a textual remapping language that can transform graphics indexes, palette rows, Map16 indexes, and secondary-map values, and the custom registered `Lunar Magic 16x16 Tiles` clipboard serializer. Added the exact 0xA0-byte `LunarMagicTileClipboardHeader` with section offsets, selected count, rectangular dimensions, source Map16 index, flags, and explicitly represented reserved regions.
 
 Map16 import/export, history, and visible rendering through `004f9e40` are now named and annotated. Added exact 64-byte `Lm16Map16FileHeader` and `Lm16Map16SectionDirectory` structures for the structured `.map16` format. Added the exact 811,788-byte `Map16UndoSnapshot` and typed its live linked-list globals. Rendering names now distinguish decoded tile composition, Acts Like overlays, selected-tile highlighting, page frames and labels, page boundaries, and bounded versus drag-selection marching ants.

@@ -59,8 +59,10 @@ A fourth near-black/red Maintain Detail capture distinguishes exact black from t
 nearest-source assignment. Lunar Magic routes opaque near-black through row 0/index `$D` and emits
 graphics tile `$200`; Rust now preserves that opaque zero-color candidate through row allocation
 instead of collapsing it to transparent index zero. Its complete palette, graphics, and Map16
-workspaces also match exactly. Transparent-source blank reuse plus independently crossed blank
-8×8/Map16 option captures remain open.
+workspaces also match exactly. A pristine-ROM integration gate now crosses transparent source with
+all four blank-8×8/blank-Map16 switch combinations and proves the two products are independent:
+`$0F8` bypasses graphics allocation, while `$8000` bypasses definition `$8200`. Independently
+crossed original-editor captures remain open.
 
 Current Layer 1 import evidence also distinguishes extent from ordering. MWL import recomputes the
 five-bit stored last-screen field from the highest visible Layer 1 object or sprite, but preserves
