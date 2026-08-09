@@ -28,6 +28,7 @@ pub(crate) struct BuiltInOverworldLightning {
 #[derive(Clone, Debug)]
 pub(crate) struct OverworldExAnimationPreview {
     pub(crate) tick: usize,
+    pub(crate) substeps_per_tick: usize,
     pub(crate) triggers: lm_graphics::ExAnimationTriggerPreviewState,
     pub(crate) events_passed: Vec<bool>,
 }
@@ -195,18 +196,19 @@ fn materialize_overworld_exanimation(
         &assets.graphics.graphics.tiles,
     )?;
 
+    let runtime_substeps = preview.tick.saturating_mul(preview.substeps_per_tick);
     let mut palette = overworld.data.palette.clone();
     apply_builtin_overworld_animation(
         &mut cache,
         &assets.built_in_animation_addresses,
-        preview.tick,
+        runtime_substeps,
     )?;
     apply_builtin_overworld_palette_animation(
         &mut palette,
         assets.built_in_level_dot_palette.as_ref(),
         assets.built_in_lightning.as_ref(),
         usize::from(overworld.source_slot).min(6),
-        preview.tick,
+        runtime_substeps,
     )?;
     let mut triggers = preview.triggers.clone();
     triggers.overworld_event_manual = Some(std::array::from_fn(|index| {
@@ -234,10 +236,10 @@ fn materialize_overworld_exanimation(
             relative_base,
         )?;
     }
-    for tick in 0..preview.tick {
+    for substep in 0..runtime_substeps {
         apply_overworld_phase(
             records,
-            u8::try_from(tick & 7).expect("three-bit overworld animation phase"),
+            u8::try_from(substep & 7).expect("three-bit overworld animation phase"),
             &mut state,
             &mut triggers,
             &mut cache,
@@ -256,7 +258,7 @@ fn apply_builtin_overworld_palette_animation(
     level_dot_colors: Option<&[[lm_graphics::Bgr555; 8]; 2]>,
     lightning: Option<&BuiltInOverworldLightning>,
     submap: usize,
-    timer_ticks: usize,
+    runtime_substeps: usize,
 ) -> Result<(), String> {
     const LEVEL_DOT_TARGETS: [usize; 2] = [0x6d, 0x7d];
     const LIGHTNING_SUBMAP: usize = 4;
@@ -264,10 +266,10 @@ fn apply_builtin_overworld_palette_animation(
     const LIGHTNING_SOURCE_BASE: usize = 0x28;
 
     if let Some(colors) = level_dot_colors {
-        // InitializeOverworldAnimationGraphicsCache refreshes with counter eight. At the normal
-        // 60 ms rate each subsequent timer callback consumes four substeps, and Refresh... uses
-        // `(counter >> 2) & 7` as the color phase.
-        let phase = timer_ticks.wrapping_add(2) & 7;
+        // InitializeOverworldAnimationGraphicsCache refreshes with counter eight. Each timer rate
+        // contributes its recovered substep count, and Refresh... uses `(counter >> 2) & 7` as
+        // the color phase.
+        let phase = (8_usize.wrapping_add(runtime_substeps) >> 2) & 7;
         for (target, cycle) in LEVEL_DOT_TARGETS.into_iter().zip(colors) {
             let palette_len = palette.colors.len();
             *palette.colors.get_mut(target).ok_or_else(|| {
@@ -282,7 +284,7 @@ fn apply_builtin_overworld_palette_animation(
     // corresponding bit is clear: Valley of Bowser (native submap four).
     if submap == LIGHTNING_SUBMAP
         && let Some(lightning) = lightning
-        && let Some(color_index) = materialize_builtin_lightning_color(lightning, timer_ticks)
+        && let Some(color_index) = materialize_builtin_lightning_color(lightning, runtime_substeps)
     {
         let source = LIGHTNING_SOURCE_BASE + usize::from(color_index);
         let palette_len = palette.colors.len();
@@ -302,9 +304,9 @@ fn apply_builtin_overworld_palette_animation(
 
 fn materialize_builtin_lightning_color(
     tables: &BuiltInOverworldLightning,
-    timer_ticks: usize,
+    runtime_substeps: usize,
 ) -> Option<u8> {
-    let substeps = 8_usize.saturating_add(timer_ticks.saturating_mul(4));
+    let substeps = 8_usize.saturating_add(runtime_substeps);
     let mut color_index = 0_u8;
     let mut wait = 0_u8;
     let mut duration = 0_u8;
@@ -340,7 +342,7 @@ fn materialize_builtin_lightning_color(
 fn apply_builtin_overworld_animation(
     graphics: &mut [lm_graphics::IndexedTile],
     addresses: &[u16],
-    timer_ticks: usize,
+    runtime_substeps: usize,
 ) -> Result<(), String> {
     const ADDRESS_WORDS: usize = 3 + 8 * 8;
     const DESTINATION: usize = 0x75;
@@ -388,10 +390,9 @@ fn apply_builtin_overworld_animation(
         }
     }
 
-    // At the normal 60 ms editor rate Lunar Magic processes four animation substeps per timer
-    // callback. The initialized first frame has already consumed substeps 0..7, so callbacks 1/2,
-    // 3/4, ... cross successive eight-substep boundaries.
-    let boundaries = timer_ticks.saturating_add(1) / 2;
+    // Runtime substep zero advances the first built-in group. Thereafter each eight-way slot
+    // interleave advances it again; this works unchanged at all four native timer rates.
+    let boundaries = runtime_substeps.saturating_add(7) / 8;
     for boundary in 1..=boundaries {
         rotate_builtin_overworld_seed_tiles(&mut animated);
         for group in 0..8 {
@@ -671,6 +672,7 @@ mod tests {
         let (overworld, assets) = preview_fixture();
         let preview = |tick| OverworldExAnimationPreview {
             tick,
+            substeps_per_tick: 4,
             triggers: lm_graphics::ExAnimationTriggerPreviewState::default(),
             events_passed: vec![false; 256],
         };
@@ -683,11 +685,35 @@ mod tests {
         let (graphics, palette) =
             materialize_overworld_exanimation(&overworld, &assets, &preview(1)).unwrap();
         assert_eq!(graphics.graphics.tiles[0].pixels(), &[2; 64]);
-        assert_eq!(palette.colors[5], Bgr555(0x001f));
+        assert_eq!(palette.colors[5], Bgr555(0x03e0));
 
         let (_, palette) =
             materialize_overworld_exanimation(&overworld, &assets, &preview(2)).unwrap();
         assert_eq!(palette.colors[5], Bgr555(0x03e0));
+    }
+
+    #[test]
+    fn every_native_timer_rate_materializes_the_same_animation_substep() {
+        let (overworld, assets) = preview_fixture();
+        let render = |tick, substeps_per_tick| {
+            materialize_overworld_exanimation(
+                &overworld,
+                &assets,
+                &OverworldExAnimationPreview {
+                    tick,
+                    substeps_per_tick,
+                    triggers: lm_graphics::ExAnimationTriggerPreviewState::default(),
+                    events_passed: vec![false; 256],
+                },
+            )
+            .unwrap()
+        };
+        let expected = render(1, 8);
+        for (tick, substeps_per_tick) in [(1, 8), (2, 4), (4, 2), (8, 1)] {
+            let actual = render(tick, substeps_per_tick);
+            assert_eq!(actual.0.graphics.tiles, expected.0.graphics.tiles);
+            assert_eq!(actual.1, expected.1);
+        }
     }
 
     #[test]
@@ -701,6 +727,7 @@ mod tests {
         assets.gfx33.push(lm_graphics::IndexedTile::new([3; 64]));
         let preview = OverworldExAnimationPreview {
             tick: 0,
+            substeps_per_tick: 4,
             triggers: lm_graphics::ExAnimationTriggerPreviewState::default(),
             events_passed: vec![false; 256],
         };
@@ -740,7 +767,7 @@ mod tests {
         assert_eq!(first[0x7a].pixels(), graphics[0x7a].pixels());
 
         let mut tick_one = graphics.clone();
-        apply_builtin_overworld_animation(&mut tick_one, &addresses, 1).unwrap();
+        apply_builtin_overworld_animation(&mut tick_one, &addresses, 4).unwrap();
         assert_eq!(&tick_one[0x75].pixels()[..8], &[1, 2, 3, 4, 5, 6, 7, 0]);
         assert_eq!(
             &tick_one[0x75].pixels()[32..40],
@@ -750,12 +777,12 @@ mod tests {
         assert_eq!(tick_one[0x7a].pixels(), graphics[0x7a].pixels());
 
         let mut tick_two = graphics.clone();
-        apply_builtin_overworld_animation(&mut tick_two, &addresses, 2).unwrap();
+        apply_builtin_overworld_animation(&mut tick_two, &addresses, 8).unwrap();
         assert_eq!(tick_two[0x75].pixels(), tick_one[0x75].pixels());
         assert_eq!(tick_two[0x78].pixels(), &[0x41; 64]);
 
         let mut tick_three = graphics.clone();
-        apply_builtin_overworld_animation(&mut tick_three, &addresses, 3).unwrap();
+        apply_builtin_overworld_animation(&mut tick_three, &addresses, 12).unwrap();
         assert_eq!(tick_three[0x78].pixels(), &[0x41; 64]);
         assert_eq!(tick_three[0x7a].pixels(), graphics[0x7a].pixels());
         assert_eq!(tick_three[0x7b].pixels(), &[0x5a; 64]);
@@ -792,7 +819,7 @@ mod tests {
             Some(&dot_cycles),
             Some(&lightning),
             4,
-            126,
+            504,
         )
         .unwrap();
         assert_eq!(palette.colors[0x6d], Bgr555(0x1000));
@@ -811,6 +838,7 @@ mod tests {
             &assets,
             &OverworldExAnimationPreview {
                 tick: 0,
+                substeps_per_tick: 4,
                 triggers: lm_graphics::ExAnimationTriggerPreviewState::default(),
                 events_passed: vec![false; 256],
             },
@@ -827,21 +855,21 @@ mod tests {
             delays: [1; 8],
             initial_colors: [2; 8],
         };
-        assert_eq!(materialize_builtin_lightning_color(&lightning, 125), None);
+        assert_eq!(materialize_builtin_lightning_color(&lightning, 500), None);
         assert_eq!(
-            materialize_builtin_lightning_color(&lightning, 126),
+            materialize_builtin_lightning_color(&lightning, 504),
             Some(2)
         );
         assert_eq!(
-            materialize_builtin_lightning_color(&lightning, 127),
+            materialize_builtin_lightning_color(&lightning, 508),
             Some(2)
         );
         assert_eq!(
-            materialize_builtin_lightning_color(&lightning, 128),
+            materialize_builtin_lightning_color(&lightning, 512),
             Some(2)
         );
         assert_eq!(
-            materialize_builtin_lightning_color(&lightning, 129),
+            materialize_builtin_lightning_color(&lightning, 516),
             Some(1)
         );
     }

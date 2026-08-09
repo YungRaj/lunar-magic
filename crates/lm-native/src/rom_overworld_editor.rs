@@ -92,6 +92,46 @@ struct MainPathLinkForm {
     loaded: Option<usize>,
 }
 
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+enum OverworldAnimationRate {
+    Fps7_5,
+    #[default]
+    Fps15,
+    Fps30,
+    Fps60,
+}
+
+impl OverworldAnimationRate {
+    const ALL: [Self; 4] = [Self::Fps7_5, Self::Fps15, Self::Fps30, Self::Fps60];
+
+    const fn interval_seconds(self) -> f64 {
+        match self {
+            Self::Fps7_5 => 0.120,
+            Self::Fps15 => 0.060,
+            Self::Fps30 => 0.030,
+            Self::Fps60 => 0.015,
+        }
+    }
+
+    const fn substeps_per_tick(self) -> usize {
+        match self {
+            Self::Fps7_5 => 8,
+            Self::Fps15 => 4,
+            Self::Fps30 => 2,
+            Self::Fps60 => 1,
+        }
+    }
+
+    const fn label(self) -> &'static str {
+        match self {
+            Self::Fps7_5 => "7.5 fps",
+            Self::Fps15 => "15 fps",
+            Self::Fps30 => "30 fps",
+            Self::Fps60 => "60 fps",
+        }
+    }
+}
+
 #[derive(Default)]
 pub(crate) struct RomOverworldEditor {
     workspace: Option<Workspace>,
@@ -114,6 +154,7 @@ pub(crate) struct RomOverworldEditor {
     animation_preview_paused: bool,
     animation_preview_origin: Option<f64>,
     animation_preview_tick: usize,
+    animation_preview_rate: OverworldAnimationRate,
     animation_preview_triggers: lm_graphics::ExAnimationTriggerPreviewState,
     animation_preview_events_passed: Vec<bool>,
     animation_preview_trigger_kind: usize,
@@ -950,7 +991,8 @@ impl RomOverworldEditor {
         let key = (
             workspace.controller.revision(),
             self.completed_reveals,
-            self.animation_preview_tick,
+            self.animation_preview_tick
+                .saturating_mul(self.animation_preview_rate.substeps_per_tick()),
         );
         if self.rendered_key == Some(key) {
             return;
@@ -968,6 +1010,7 @@ impl RomOverworldEditor {
             self.completed_reveals,
             Some(&overworld_editor_render::OverworldExAnimationPreview {
                 tick: self.animation_preview_tick,
+                substeps_per_tick: self.animation_preview_rate.substeps_per_tick(),
                 triggers: self.animation_preview_triggers.clone(),
                 events_passed: self.animation_preview_events_passed.clone(),
             }),
@@ -1317,8 +1360,11 @@ impl RomOverworldEditor {
         }
         let seconds = context.input(|input| input.time);
         let origin = *self.animation_preview_origin.get_or_insert(seconds);
-        self.animation_preview_tick = overworld_animation_preview_tick(seconds - origin);
-        context.request_repaint_after(std::time::Duration::from_millis(60));
+        self.animation_preview_tick =
+            overworld_animation_preview_tick(seconds - origin, self.animation_preview_rate);
+        context.request_repaint_after(std::time::Duration::from_secs_f64(
+            self.animation_preview_rate.interval_seconds(),
+        ));
     }
 
     fn reset_animation_preview(&mut self) {
@@ -1361,8 +1407,10 @@ impl RomOverworldEditor {
                         self.animation_preview_origin = None;
                     } else {
                         let now = ui.input(|input| input.time);
-                        self.animation_preview_origin =
-                            Some(now - self.animation_preview_tick as f64 * 0.06);
+                        self.animation_preview_origin = Some(
+                            now - self.animation_preview_tick as f64
+                                * self.animation_preview_rate.interval_seconds(),
+                        );
                     }
                 }
                 if ui.button("Reset").clicked() {
@@ -1370,14 +1418,47 @@ impl RomOverworldEditor {
                     self.rendered_key = None;
                 }
                 if ui
-                    .add_enabled(self.animation_preview_paused, egui::Button::new("Step phase"))
+                    .add_enabled(self.animation_preview_paused, egui::Button::new("Step timer"))
                     .clicked()
                 {
                     self.animation_preview_tick = self.animation_preview_tick.saturating_add(1);
                     self.rendered_key = None;
                 }
-                ui.monospace(format!("phase {:X}, tick {}", self.animation_preview_tick & 7, self.animation_preview_tick));
+                ui.monospace(format!(
+                    "phase {:X}, tick {}",
+                    self.animation_preview_tick
+                        .saturating_mul(self.animation_preview_rate.substeps_per_tick())
+                        & 7,
+                    self.animation_preview_tick
+                ));
+                egui::ComboBox::from_id_salt("overworld-animation-preview-rate")
+                    .selected_text(self.animation_preview_rate.label())
+                    .show_ui(ui, |ui| {
+                        for rate in OverworldAnimationRate::ALL {
+                            if ui
+                                .selectable_value(
+                                    &mut self.animation_preview_rate,
+                                    rate,
+                                    rate.label(),
+                                )
+                                .changed()
+                            {
+                                self.animation_preview_origin = None;
+                                self.animation_preview_tick = 0;
+                                self.rendered_key = None;
+                            }
+                        }
+                    });
             });
+            ui.small(format!(
+                "The selected native timer advances {} animation substep{} per callback.",
+                self.animation_preview_rate.substeps_per_tick(),
+                if self.animation_preview_rate.substeps_per_tick() == 1 {
+                    ""
+                } else {
+                    "s"
+                }
+            ));
             ui.horizontal(|ui| {
                 egui::ComboBox::from_id_salt("overworld-preview-trigger-kind")
                     .selected_text(match self.animation_preview_trigger_kind {
@@ -1436,7 +1517,7 @@ impl RomOverworldEditor {
     }
 }
 
-fn overworld_animation_preview_tick(seconds: f64) -> usize {
+fn overworld_animation_preview_tick(seconds: f64, rate: OverworldAnimationRate) -> usize {
     if let Ok(tick) = std::env::var("LM_NATIVE_OVERWORLD_ANIMATION_TICK")
         && let Ok(tick) = tick.parse::<usize>()
     {
@@ -1446,7 +1527,7 @@ fn overworld_animation_preview_tick(seconds: f64) -> usize {
         return 0;
     }
     #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
-    let ticks = (seconds / 0.06).floor() as u64;
+    let ticks = (seconds / rate.interval_seconds()).floor() as u64;
     usize::try_from(ticks).unwrap_or(usize::MAX)
 }
 
@@ -1595,23 +1676,40 @@ fn flood_fill_cells(
 #[cfg(test)]
 mod canvas_tests {
     use super::{
-        MainPathLinkForm, OverworldControllerEdit, OverworldEndpoint, OverworldLayerId,
-        OverworldPathDirection, OverworldPathLink, OverworldPathLinkTable, OverworldPathTarget,
-        RomOverworldEditor, flood_fill_cells, grid_line, overworld_animation_preview_tick,
-        rectangle_cells, route_canvas_endpoint, route_directional_canvas_endpoint,
-        route_endpoint_canvas_pixel, stroke_edits,
+        MainPathLinkForm, OverworldAnimationRate, OverworldControllerEdit, OverworldEndpoint,
+        OverworldLayerId, OverworldPathDirection, OverworldPathLink, OverworldPathLinkTable,
+        OverworldPathTarget, RomOverworldEditor, flood_fill_cells, grid_line,
+        overworld_animation_preview_tick, rectangle_cells, route_canvas_endpoint,
+        route_directional_canvas_endpoint, route_endpoint_canvas_pixel, stroke_edits,
     };
     use crate::document_loader::BoundedRead;
     use eframe::egui;
 
     #[test]
     fn overworld_animation_clock_uses_the_authenticated_native_preview_cadence() {
-        assert_eq!(overworld_animation_preview_tick(f64::NAN), 0);
-        assert_eq!(overworld_animation_preview_tick(-1.0), 0);
-        assert_eq!(overworld_animation_preview_tick(0.0), 0);
-        assert_eq!(overworld_animation_preview_tick(0.059), 0);
-        assert_eq!(overworld_animation_preview_tick(0.06), 1);
-        assert_eq!(overworld_animation_preview_tick(0.48), 8);
+        assert_eq!(
+            overworld_animation_preview_tick(f64::NAN, OverworldAnimationRate::Fps15),
+            0
+        );
+        assert_eq!(
+            overworld_animation_preview_tick(-1.0, OverworldAnimationRate::Fps15),
+            0
+        );
+        assert_eq!(
+            overworld_animation_preview_tick(0.0, OverworldAnimationRate::Fps15),
+            0
+        );
+        for rate in OverworldAnimationRate::ALL {
+            let interval = rate.interval_seconds();
+            assert_eq!(overworld_animation_preview_tick(interval * 0.99, rate), 0);
+            assert_eq!(overworld_animation_preview_tick(interval, rate), 1);
+            let callbacks = 64 / rate.substeps_per_tick();
+            assert_eq!(overworld_animation_preview_tick(0.960, rate), callbacks);
+            assert_eq!(
+                rate.substeps_per_tick() * overworld_animation_preview_tick(0.960, rate),
+                64
+            );
+        }
     }
 
     #[test]
