@@ -134,3 +134,17 @@ only retains those words, and duplicate equal palette words choose the later ent
 After reproducing those rules, all 32 active palette words and the complete `$000–$2FF` graphics
 workspace match byte-for-byte. Focused tests independently lock later-row rebuilding and the
 duplicate-entry tie.
+
+A subsequent Median Cut sweep covers maximum-color settings 1, 2, 4, 8, 9, and 16, plus a
+Popularity maximum-one capture. Breakpoints at `004f0401` and `004f0769` recovered the previously
+missing high-color tile-capacity pass. The live 16-color run reported a 12-entry free-row capacity;
+tile `(8,16)` changed from 12 to 11 colors and tile `(16,16)` from 13 to 11 after the native
+first-entry reservation, border-frequency boosts, stable strongest-color selection, and nearest
+RGB555 remapping. The same run also proved that the quantizer receives source components already
+rounded onto the SNES lattice, retains equal-axis cuts in blue/green/red order, and maps every one
+of the 1,024 reduced pixels exactly. After implementing those boundaries, all eight retained
+captures match Lunar Magic's first 32 active palette words and complete `$000–$2FF` graphics
+workspace byte-for-byte. `captured_bitmap_components_produce_the_original_single_cluster_mean`,
+`exact_capacity_tile_without_the_reusable_first_color_drops_its_last_weak_tie`, and the ignored
+`lunar_magic_bitmap_capture_matches_rust_palette_and_graphics` differential bind the recovered
+unit and end-to-end behavior.

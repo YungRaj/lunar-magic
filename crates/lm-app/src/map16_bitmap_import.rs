@@ -3361,7 +3361,6 @@ mod tests {
         let mut color = BitmapPaletteColorOptions::lunar_magic_initial();
         color.entries.fill(BitmapPaletteEntryState::Reserved);
         for row in 0..2 {
-            color.entries[row * 16] = BitmapPaletteEntryState::Reusable;
             color.entries[row * 16 + 1] = BitmapPaletteEntryState::Free;
             color.entries[row * 16 + 2] = BitmapPaletteEntryState::Free;
         }

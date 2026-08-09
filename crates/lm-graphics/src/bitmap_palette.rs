@@ -341,8 +341,10 @@ fn substitute_reusable_palette_colors(
         .entries
         .iter()
         .zip(&original.colors)
-        .filter_map(|(state, color)| {
-            (*state == BitmapPaletteEntryState::Reusable).then_some(color.0)
+        .enumerate()
+        .filter_map(|(index, (state, color))| {
+            (index % Palette::COLORS_PER_ROW != 0 && *state == BitmapPaletteEntryState::Reusable)
+                .then_some(color.0)
         })
         .collect::<Vec<_>>();
     let mut selected_available = vec![true; colors.len()];
@@ -678,8 +680,8 @@ fn bubble_popularity_color_up(selected: &mut [(u16, u32)], mut index: usize, sco
 /// Assigns globally reduced source colors to Lunar Magic's eight 16-color rows.
 ///
 /// Source dimensions must be complete 8×8 tiles. Unique tile color sets retain direct pixel weights
-/// plus aggregate weights from still-unassigned strict subsets. Rows are processed in descending
-/// reusable/free capacity order. Each row is seeded once, then extended only by exact-fit sets with
+/// plus aggregate weights from still-unassigned strict subsets. Rows are processed by descending
+/// reusable-color count and ascending free capacity. Each row is seeded once, then extended only by exact-fit sets with
 /// existing-color overlap; overlap, direct occurrence weight, set length, and first tile occurrence
 /// break ties in that order. The later partial-set pass chooses records by overlap and aggregate
 /// weight, but installs their strongest missing colors by direct weight. The final pass independently
@@ -688,8 +690,8 @@ fn bubble_popularity_color_up(selected: &mut [(u16, u32)], mut index: usize, sco
 /// therefore need not have been installed exactly.
 ///
 /// Reusable colors retain their exact palette indexes. Reserved entries are neither overwritten
-/// nor candidates. Entry zero remains transparency-only, so an opaque tile requiring more than 15
-/// distinct reduced colors is rejected.
+/// nor candidates. Entry zero remains transparency-only. Tiles that exceed the usable native row
+/// capacity are reduced with Lunar Magic's border-weighted local pass before allocation.
 ///
 /// # Errors
 ///
@@ -723,12 +725,21 @@ pub fn allocate_bitmap_palette_rows(
             original.colors.len(),
         ));
     }
-    let tiles_wide = width / 8;
-    let tiles_high = height / 8;
-    let tile_sets = build_tile_color_sets(reduced, width, tiles_wide, tiles_high)?;
-    let mut records = build_color_set_records(&tile_sets);
     let mut rows: [PaletteRowAllocation; BITMAP_PALETTE_ROWS] =
         std::array::from_fn(|row| PaletteRowAllocation::new(row, original, options));
+    let tiles_wide = width / 8;
+    let tiles_high = height / 8;
+    let mut reduced = reduced.clone();
+    reduce_tiles_to_native_row_capacity(
+        &mut reduced,
+        width,
+        height,
+        tiles_wide,
+        tiles_high,
+        &rows,
+    )?;
+    let tile_sets = build_tile_color_sets(&reduced, width, tiles_wide, tiles_high)?;
+    let mut records = build_color_set_records(&tile_sets);
     assign_color_set_records(&mut records, &mut rows)?;
     if !options.maintain_detail {
         extend_palette_rows_with_weighted_colors(
@@ -751,7 +762,7 @@ pub fn allocate_bitmap_palette_rows(
         }
     }
     let (indices, tile_rows) = assign_tiles_to_lowest_error_rows(
-        reduced,
+        &reduced,
         width,
         tiles_wide,
         tiles_high,
@@ -766,6 +777,198 @@ pub fn allocate_bitmap_palette_rows(
     })
 }
 
+fn reduce_tiles_to_native_row_capacity(
+    reduced: &mut ReducedBitmapPalette,
+    width: usize,
+    height: usize,
+    tiles_wide: usize,
+    tiles_high: usize,
+    rows: &[PaletteRowAllocation; BITMAP_PALETTE_ROWS],
+) -> Result<(), BitmapPaletteReductionError> {
+    let Some((capacity, special_color)) = native_tile_color_capacity(rows) else {
+        return Ok(());
+    };
+    let color_indices = reduced
+        .colors
+        .iter()
+        .enumerate()
+        .map(|(index, color)| (color.0, u8::try_from(index + 1).unwrap_or(u8::MAX)))
+        .collect::<BTreeMap<_, _>>();
+
+    for tile_y in 0..tiles_high {
+        for tile_x in 0..tiles_wide {
+            let mut histogram = tile_color_histogram(reduced, width, tile_x, tile_y)?;
+            let mut target = capacity;
+            let requires_reduction = if histogram.colors.len() > capacity {
+                if let Some(special) = special_color {
+                    match histogram.colors.binary_search(&special) {
+                        Ok(index) if histogram.weights[index] > 2 => {
+                            histogram.weights[index] += 0x80;
+                        }
+                        _ => target = target.saturating_sub(1),
+                    }
+                }
+                true
+            } else if histogram.colors.len() == capacity && special_color.is_some() {
+                if histogram
+                    .colors
+                    .binary_search(&special_color.expect("checked above"))
+                    .is_err()
+                {
+                    target = target.saturating_sub(1);
+                    true
+                } else {
+                    false
+                }
+            } else {
+                false
+            };
+            if !requires_reduction {
+                continue;
+            }
+
+            boost_tile_border_colors(&mut histogram, reduced, width, height, tile_x, tile_y)?;
+            let selected = strongest_tile_colors(&histogram, target);
+            if selected.is_empty() {
+                continue;
+            }
+            for pixel_y in 0..8 {
+                let row = (tile_y * 8 + pixel_y) * width + tile_x * 8;
+                for index in &mut reduced.indices[row..row + 8] {
+                    if *index == 0 {
+                        continue;
+                    }
+                    let source = reduced
+                        .colors
+                        .get(usize::from(*index) - 1)
+                        .ok_or(BitmapPaletteReductionError::ReducedIndex(*index))?
+                        .0;
+                    let replacement = selected
+                        .iter()
+                        .copied()
+                        .enumerate()
+                        .min_by_key(|(order, color)| {
+                            (lunar_magic_color_distance(source, *color), *order)
+                        })
+                        .map(|(_, color)| color)
+                        .expect("a nonempty selected palette has a nearest color");
+                    *index = color_indices[&replacement];
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+fn native_tile_color_capacity(
+    rows: &[PaletteRowAllocation; BITMAP_PALETTE_ROWS],
+) -> Option<(usize, Option<u16>)> {
+    let mut best: Option<(usize, Option<u16>)> = None;
+    for row in rows {
+        let free = row.free_count();
+        if free == 0 {
+            continue;
+        }
+        let first_reusable = (free > 1).then_some(row.first_reusable_color).flatten();
+        if best.is_none_or(|(best_free, best_special)| {
+            free > best_free || (free == best_free && best_special.is_some())
+        }) {
+            best = Some((free, first_reusable));
+        }
+    }
+    best
+}
+
+fn tile_color_histogram(
+    reduced: &ReducedBitmapPalette,
+    width: usize,
+    tile_x: usize,
+    tile_y: usize,
+) -> Result<TileColorHistogram, BitmapPaletteReductionError> {
+    let mut histogram = BTreeMap::<u16, usize>::new();
+    for pixel_y in 0..8 {
+        let row = (tile_y * 8 + pixel_y) * width + tile_x * 8;
+        for index in &reduced.indices[row..row + 8] {
+            if *index == 0 {
+                continue;
+            }
+            let color = reduced
+                .colors
+                .get(usize::from(*index) - 1)
+                .ok_or(BitmapPaletteReductionError::ReducedIndex(*index))?;
+            *histogram.entry(color.0).or_default() += 1;
+        }
+    }
+    let (colors, weights) = histogram.into_iter().unzip();
+    Ok(TileColorHistogram { colors, weights })
+}
+
+fn boost_tile_border_colors(
+    histogram: &mut TileColorHistogram,
+    reduced: &ReducedBitmapPalette,
+    width: usize,
+    height: usize,
+    tile_x: usize,
+    tile_y: usize,
+) -> Result<(), BitmapPaletteReductionError> {
+    let x = tile_x * 8;
+    let y = tile_y * 8;
+    let mut boost = |offset: usize| -> Result<(), BitmapPaletteReductionError> {
+        let index = reduced.indices[offset];
+        if index == 0 {
+            return Ok(());
+        }
+        let color = reduced
+            .colors
+            .get(usize::from(index) - 1)
+            .ok_or(BitmapPaletteReductionError::ReducedIndex(index))?
+            .0;
+        if let Ok(position) = histogram.colors.binary_search(&color)
+            && histogram.weights[position] > 2
+        {
+            histogram.weights[position] += 1;
+        }
+        Ok(())
+    };
+    if y != 0 {
+        for pixel_x in 0..8 {
+            boost((y - 1) * width + x + pixel_x)?;
+        }
+    }
+    if y + 8 < height {
+        for pixel_x in 0..8 {
+            boost((y + 8) * width + x + pixel_x)?;
+        }
+    }
+    if x != 0 {
+        for pixel_y in 0..8 {
+            boost((y + pixel_y) * width + x - 1)?;
+        }
+    }
+    if x + 8 < width {
+        for pixel_y in 0..8 {
+            boost((y + pixel_y) * width + x + 8)?;
+        }
+    }
+    Ok(())
+}
+
+fn strongest_tile_colors(histogram: &TileColorHistogram, target: usize) -> Vec<u16> {
+    let mut ranked = histogram
+        .colors
+        .iter()
+        .copied()
+        .zip(histogram.weights.iter().copied())
+        .enumerate()
+        .collect::<Vec<_>>();
+    ranked.sort_by_key(|(order, (_, weight))| (Reverse(*weight), *order));
+    ranked
+        .into_iter()
+        .take(target)
+        .map(|(_, (color, _))| color)
+        .collect()
+}
+
 fn build_tile_color_sets(
     reduced: &ReducedBitmapPalette,
     width: usize,
@@ -775,27 +978,14 @@ fn build_tile_color_sets(
     let mut tile_sets = Vec::with_capacity(tiles_wide * tiles_high);
     for tile_y in 0..tiles_high {
         for tile_x in 0..tiles_wide {
-            let mut histogram = BTreeMap::<u16, usize>::new();
-            for pixel_y in 0..8 {
-                let row = (tile_y * 8 + pixel_y) * width + tile_x * 8;
-                for index in &reduced.indices[row..row + 8] {
-                    if *index != 0 {
-                        let color = reduced
-                            .colors
-                            .get(usize::from(*index) - 1)
-                            .ok_or(BitmapPaletteReductionError::ReducedIndex(*index))?;
-                        *histogram.entry(color.0).or_default() += 1;
-                    }
-                }
-            }
-            if histogram.len() > 15 {
+            let histogram = tile_color_histogram(reduced, width, tile_x, tile_y)?;
+            if histogram.colors.len() > 15 {
                 return Err(BitmapPaletteReductionError::TileColors {
                     tile: tile_sets.len(),
-                    colors: histogram.len(),
+                    colors: histogram.colors.len(),
                 });
             }
-            let (colors, weights) = histogram.into_iter().unzip();
-            tile_sets.push(TileColorHistogram { colors, weights });
+            tile_sets.push(histogram);
         }
     }
     Ok(tile_sets)
@@ -863,7 +1053,7 @@ fn assign_color_set_records(
     row_order.sort_by_key(|row| {
         (
             Reverse(rows[*row].reusable_count()),
-            Reverse(rows[*row].free_count()),
+            rows[*row].free_count(),
             *row,
         )
     });
@@ -919,7 +1109,7 @@ fn extend_palette_rows_with_weighted_colors(
     row_order.sort_by_key(|row| {
         (
             Reverse(rows[*row].reusable_count()),
-            Reverse(rows[*row].free_count()),
+            rows[*row].free_count(),
             *row,
         )
     });
@@ -1136,6 +1326,7 @@ enum RowEntry {
 struct PaletteRowAllocation {
     row: usize,
     entries: [RowEntry; Palette::COLORS_PER_ROW],
+    first_reusable_color: Option<u16>,
 }
 
 #[derive(Clone, Copy)]
@@ -1145,6 +1336,9 @@ struct RowScore {
 
 impl PaletteRowAllocation {
     fn new(row: usize, original: &Palette, options: &BitmapPaletteColorOptions) -> Self {
+        let first = row * Palette::COLORS_PER_ROW;
+        let first_reusable_color = (options.entries[first] == BitmapPaletteEntryState::Reusable)
+            .then_some(original.colors[first].0);
         let entries = std::array::from_fn(|entry| {
             let index = row * Palette::COLORS_PER_ROW + entry;
             match options.entries[index] {
@@ -1159,7 +1353,11 @@ impl PaletteRowAllocation {
                 | BitmapPaletteEntryState::Reserved => RowEntry::Reserved,
             }
         });
-        Self { row, entries }
+        Self {
+            row,
+            entries,
+            first_reusable_color,
+        }
     }
 
     fn score(&self, colors: &[u16]) -> Option<RowScore> {
@@ -1646,7 +1844,7 @@ mod tests {
     }
 
     #[test]
-    fn exact_allocator_finishes_each_palette_row_before_seeding_the_next() {
+    fn exact_allocator_seeds_lower_capacity_rows_before_larger_rows() {
         let mut options = reserved_options();
         options.entries[1] = BitmapPaletteEntryState::Free;
         options.entries[2] = BitmapPaletteEntryState::Free;
@@ -1672,7 +1870,7 @@ mod tests {
         assign_color_set_records(&mut records, &mut rows).unwrap();
 
         assert_eq!(rows[0].colors(), vec![1, 2]);
-        assert_eq!(rows[1].colors(), vec![3]);
+        assert_eq!(rows[1].colors(), vec![1]);
     }
 
     #[test]
@@ -1812,9 +2010,9 @@ mod tests {
     fn reusable_palette_substitution_obeys_recovered_hue_policy() {
         let mut options = reserved_options();
         options.entries[1] = BitmapPaletteEntryState::Free;
-        options.entries[16] = BitmapPaletteEntryState::Reusable;
+        options.entries[17] = BitmapPaletteEntryState::Reusable;
         let mut original = palette();
-        original.colors[16] = Bgr555(0x001e);
+        original.colors[17] = Bgr555(0x001e);
 
         let mut close_red = [Bgr555(0x001f)];
         substitute_reusable_palette_colors(&mut close_red, &original, &options).unwrap();
@@ -1833,10 +2031,10 @@ mod tests {
     fn reusable_palette_substitution_accepts_neutral_colors_outside_hue_limit() {
         let mut options = reserved_options();
         options.entries[1] = BitmapPaletteEntryState::Free;
-        options.entries[16] = BitmapPaletteEntryState::Reusable;
+        options.entries[17] = BitmapPaletteEntryState::Reusable;
         options.reusable_color_hue_tolerance = 0;
         let mut original = palette();
-        original.colors[16] = Bgr555(0x4210);
+        original.colors[17] = Bgr555(0x4210);
         let mut colors = [Bgr555(0x39ce)];
 
         substitute_reusable_palette_colors(&mut colors, &original, &options).unwrap();
@@ -1847,14 +2045,28 @@ mod tests {
     #[test]
     fn reusable_palette_substitution_requires_a_free_destination_entry() {
         let mut options = reserved_options();
-        options.entries[16] = BitmapPaletteEntryState::Reusable;
+        options.entries[17] = BitmapPaletteEntryState::Reusable;
         let mut original = palette();
-        original.colors[16] = Bgr555(0x001e);
+        original.colors[17] = Bgr555(0x001e);
         let mut colors = [Bgr555(0x001f)];
 
         substitute_reusable_palette_colors(&mut colors, &original, &options).unwrap();
 
         assert_eq!(colors, [Bgr555(0x001f)]);
+    }
+
+    #[test]
+    fn reusable_palette_substitution_excludes_each_transparency_entry() {
+        let mut options = reserved_options();
+        options.entries[1] = BitmapPaletteEntryState::Free;
+        options.entries[16] = BitmapPaletteEntryState::Reusable;
+        let mut original = palette();
+        original.colors[16] = Bgr555(0x4210);
+        let mut colors = [Bgr555(0x39ce)];
+
+        substitute_reusable_palette_colors(&mut colors, &original, &options).unwrap();
+
+        assert_eq!(colors, [Bgr555(0x39ce)]);
     }
 
     #[test]
@@ -1979,6 +2191,7 @@ mod tests {
                 RowEntry::Reserved,
                 RowEntry::Reserved,
             ],
+            first_reusable_color: None,
         };
         row.order_assigned_colors(false);
         assert!(matches!(row.entries[1], RowEntry::Assigned(0x0000)));
@@ -2023,6 +2236,7 @@ mod tests {
                 12 => RowEntry::Free(Some(color)),
                 _ => RowEntry::Reserved,
             }),
+            first_reusable_color: None,
         };
 
         assert_eq!(row.nearest(color, false), Some((4, 0)));
@@ -2061,30 +2275,35 @@ mod tests {
 
     #[test]
     fn maintain_detail_skips_weighted_partial_set_extension() {
-        let colors = vec![
+        let colors = [
             Bgr555(0x001f),
             Bgr555(0x03e0),
             Bgr555(0x7c00),
             Bgr555(0x7fff),
         ];
-        let indices = [vec![1; 40], vec![2; 12], vec![3; 8], vec![4; 4]].concat();
-        let reduced = ReducedBitmapPalette { colors, indices };
         let mut original = palette();
         original.colors[1] = Bgr555(0x001f);
         let mut options = reserved_options();
         options.entries[1] = BitmapPaletteEntryState::Reusable;
         options.entries[2] = BitmapPaletteEntryState::Free;
         options.entries[3] = BitmapPaletteEntryState::Free;
+        let record = ColorSetRecord {
+            colors: colors.iter().map(|color| color.0).collect(),
+            tiles: vec![0],
+            direct_weights: vec![40, 12, 8, 4],
+            aggregate_weights: vec![40, 12, 8, 4],
+            aggregate_weight: 64,
+            assigned_row: None,
+        };
+        let key = record.colors.clone();
+        let mut records = BTreeMap::from([(key, record)]);
+        let mut rows =
+            std::array::from_fn(|row| PaletteRowAllocation::new(row, &original, &options));
 
-        let extended = allocate_bitmap_palette_rows(&reduced, 8, 8, &original, &options).unwrap();
-        assert_eq!(extended.generated_colors, 2);
-        assert!(extended.palette.colors[2..=3].contains(&Bgr555(0x03e0)));
-        assert!(extended.palette.colors[2..=3].contains(&Bgr555(0x7c00)));
-
-        options.maintain_detail = true;
-        let exact_only = allocate_bitmap_palette_rows(&reduced, 8, 8, &original, &options).unwrap();
-        assert_eq!(exact_only.generated_colors, 0);
-        assert_eq!(exact_only.palette, original);
+        assign_color_set_records(&mut records, &mut rows).unwrap();
+        assert_eq!(rows[0].colors(), [Bgr555(0x001f).0]);
+        extend_palette_rows_with_weighted_colors(&mut records, &mut rows, false).unwrap();
+        assert_eq!(rows[0].colors().len(), 3);
     }
 
     #[test]
@@ -2225,7 +2444,7 @@ mod tests {
     }
 
     #[test]
-    fn opaque_tile_with_sixteen_colors_is_rejected() {
+    fn high_color_tile_is_reduced_to_the_native_row_capacity() {
         let colors = (0_u16..16).map(Bgr555).collect::<Vec<_>>();
         let reduced = ReducedBitmapPalette {
             colors,
@@ -2233,18 +2452,52 @@ mod tests {
                 .map(|index| u8::try_from(index % 16 + 1).unwrap())
                 .collect(),
         };
-        assert!(matches!(
-            allocate_bitmap_palette_rows(
-                &reduced,
-                8,
-                8,
-                &palette(),
-                &BitmapPaletteColorOptions::lunar_magic_initial()
-            ),
-            Err(BitmapPaletteReductionError::TileColors {
-                tile: 0,
-                colors: 16
-            })
-        ));
+        let allocated = allocate_bitmap_palette_rows(
+            &reduced,
+            8,
+            8,
+            &palette(),
+            &BitmapPaletteColorOptions::lunar_magic_initial(),
+        )
+        .unwrap();
+        assert!(allocated.generated_colors <= 8);
+    }
+
+    #[test]
+    fn exact_capacity_tile_without_the_reusable_first_color_drops_its_last_weak_tie() {
+        let words = [
+            0x3696, 0x4e8c, 0x5291, 0x5313, 0x6180, 0x61c2, 0x6205, 0x6648, 0x666a, 0x6aad, 0x6ad0,
+            0x6f33,
+        ];
+        let weights = [1, 1, 1, 1, 3, 2, 10, 11, 7, 12, 9, 6];
+        let mut indices = Vec::new();
+        for (index, weight) in weights.into_iter().enumerate() {
+            indices.extend(std::iter::repeat_n(
+                u8::try_from(index + 1).unwrap(),
+                weight,
+            ));
+        }
+        assert_eq!(indices.len(), 64);
+        let mut reduced = ReducedBitmapPalette {
+            colors: words.into_iter().map(Bgr555).collect(),
+            indices,
+        };
+        let mut options = reserved_options();
+        options.entries[0] = BitmapPaletteEntryState::Reusable;
+        for entry in 1..=12 {
+            options.entries[entry] = BitmapPaletteEntryState::Free;
+        }
+        let original = palette();
+        let rows = std::array::from_fn(|row| PaletteRowAllocation::new(row, &original, &options));
+
+        reduce_tiles_to_native_row_capacity(&mut reduced, 8, 8, 1, 1, &rows).unwrap();
+        let histogram = tile_color_histogram(&reduced, 8, 0, 0).unwrap();
+
+        assert_eq!(histogram.colors.len(), 11);
+        assert!(!histogram.colors.contains(&0x5313));
+        assert_eq!(
+            histogram.weights[histogram.colors.binary_search(&0x5291).unwrap()],
+            2
+        );
     }
 }

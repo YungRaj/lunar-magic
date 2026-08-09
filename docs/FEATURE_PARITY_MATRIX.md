@@ -212,6 +212,14 @@ source exists. The diagnostic cache is transiently editable and exact current-le
 feed F9 publication; broader original interaction/write fixtures remain incomplete, so the
 Graphics workflow remains Partial.
 
+The Map16 bitmap Oracle evidence now additionally includes Median Cut maximum-color settings
+1, 2, 4, 8, 9, and 16 plus maximum-one Popularity. These retained captures cover SNES-lattice
+source normalization, BGR equal-cut priority, x87/binary32 scoring, reusable-entry exclusion,
+native palette-row ordering, and high-color per-tile capacity reduction with four-border weights.
+All eight captures match Lunar Magic's first 32 active palette words and complete `$000–$2FF`
+graphics workspace byte-for-byte. Other option products and format/interaction variants remain
+open, so the aggregate workflow remains Partial.
+
 ## Workflow ledger
 
 | Area | Original Lunar Magic workflow | Model | Tx | GUI | Oracle | Variants | Status | Primary evidence / next gap |

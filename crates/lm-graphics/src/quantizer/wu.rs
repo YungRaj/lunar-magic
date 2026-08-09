@@ -66,6 +66,10 @@ pub(super) struct Split {
 pub(super) fn build_moments(pixels: &[Rgb8]) -> Vec<Moment> {
     let mut moments = vec![Moment::default(); MOMENT_COUNT];
     for pixel in pixels {
+        // Lunar Magic's bitmap loader first reduces each component to its rounded 5-bit SNES
+        // value, retained in the high five bits of an RGB32 component.  The quantizer therefore
+        // observes 0, 8, ... 248 rather than the bitmap's original byte values.
+        let pixel = snes_lattice_rgb(*pixel);
         let red = usize::from(pixel.red >> 3) + 1;
         let green = usize::from(pixel.green >> 3) + 1;
         let blue = usize::from(pixel.blue >> 3) + 1;
@@ -95,6 +99,23 @@ pub(super) fn build_moments(pixels: &[Rgb8]) -> Vec<Moment> {
         }
     }
     moments
+}
+
+pub(super) const fn snes_lattice_rgb(pixel: Rgb8) -> Rgb8 {
+    Rgb8 {
+        red: snes_lattice_channel(pixel.red),
+        green: snes_lattice_channel(pixel.green),
+        blue: snes_lattice_channel(pixel.blue),
+    }
+}
+
+const fn snes_lattice_channel(channel: u8) -> u8 {
+    let truncated = channel & 0xf8;
+    if channel & 4 != 0 && truncated < 0xf8 {
+        truncated + 8
+    } else {
+        truncated
+    }
 }
 
 pub(super) fn volume(moments: &[Moment], color_box: ColorBox) -> Moment {
@@ -155,9 +176,12 @@ pub(super) fn variance(moments: &[Moment], color_box: ColorBox) -> f32 {
     }
 }
 
+#[allow(clippy::cast_possible_truncation)]
 pub(super) fn best_split(moments: &[Moment], color_box: ColorBox) -> Option<Split> {
     let mut best: Option<(f32, Split)> = None;
-    for axis in [Axis::Red, Axis::Green, Axis::Blue] {
+    // The native RGB32 histogram is indexed in byte order: blue, green, red.  Equal split scores
+    // therefore retain a blue-axis candidate before green and red candidates.
+    for axis in [Axis::Blue, Axis::Green, Axis::Red] {
         let (low, high) = match axis {
             Axis::Red => (color_box.red_low, color_box.red_high),
             Axis::Green => (color_box.green_low, color_box.green_high),
@@ -170,7 +194,12 @@ pub(super) fn best_split(moments: &[Moment], color_box: ColorBox) -> Option<Spli
             if first.weight == 0 || second.weight == 0 {
                 continue;
             }
-            let score = mean_square(first) + mean_square(second);
+            // The x86 implementation computes the first quotient in the x87 register stack,
+            // rounds that half to binary32, then adds the second extended-precision quotient and
+            // rounds the combined score to binary32. This asymmetric rounding is observable for
+            // close cuts in larger palettes.
+            let first_score = mean_square_extended(first) as f32;
+            let score = (f64::from(first_score) + mean_square_extended(second)) as f32;
             if best
                 .as_ref()
                 .is_none_or(|(best_score, _)| score > *best_score)
@@ -187,11 +216,11 @@ fn index(red: usize, green: usize, blue: usize) -> usize {
 }
 
 #[allow(clippy::cast_precision_loss)]
-fn mean_square(moment: Moment) -> f32 {
-    ((moment.red as f32) * (moment.red as f32)
-        + (moment.green as f32) * (moment.green as f32)
-        + (moment.blue as f32) * (moment.blue as f32))
-        / (moment.weight as f32)
+fn mean_square_extended(moment: Moment) -> f64 {
+    let red = f64::from(moment.red);
+    let green = f64::from(moment.green);
+    let blue = f64::from(moment.blue);
+    (red * red + green * green + blue * blue) / f64::from(moment.weight)
 }
 
 #[derive(Clone, Copy)]

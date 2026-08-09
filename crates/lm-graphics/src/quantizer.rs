@@ -3,7 +3,7 @@ use std::fmt;
 
 mod wu;
 
-use wu::{ColorBox, best_split, build_moments, variance, volume};
+use wu::{ColorBox, best_split, build_moments, snes_lattice_rgb, variance, volume};
 
 const MAX_COLORS: usize = 256;
 const MAX_PIXELS: usize = 16 * 1024 * 1024;
@@ -87,8 +87,13 @@ impl WuQuantizer {
         }
         let colors = unique;
         let palette = Palette { colors };
+        let normalized_pixels = pixels
+            .iter()
+            .copied()
+            .map(snes_lattice_rgb)
+            .collect::<Vec<_>>();
         let indices = palette
-            .quantize(pixels)
+            .quantize(&normalized_pixels)
             .ok_or(QuantizerError::UnrepresentableResult)?
             .into_iter()
             .map(|index| u8::try_from(index).map_err(|_| QuantizerError::UnrepresentableResult))
@@ -219,7 +224,7 @@ mod tests {
     }
 
     #[test]
-    fn cluster_means_truncate_before_snes_rounding() {
+    fn source_channels_are_rounded_to_the_snes_lattice_before_cluster_averaging() {
         let result = WuQuantizer::quantize(
             &[
                 Rgb8 {
@@ -236,7 +241,25 @@ mod tests {
             1,
         )
         .unwrap();
-        assert_eq!(result.palette.colors, [Bgr555(0)]);
+        assert_eq!(result.palette.colors, [Bgr555(1)]);
+    }
+
+    #[test]
+    fn captured_bitmap_components_produce_the_original_single_cluster_mean() {
+        let pixels = [
+            Rgb8 {
+                red: 0,
+                green: 99,
+                blue: 189,
+            },
+            Rgb8 {
+                red: 135,
+                green: 165,
+                blue: 163,
+            },
+        ];
+        let result = WuQuantizer::quantize(&pixels, 1).unwrap();
+        assert_eq!(result.palette.colors, [Bgr555(0x5a29)]);
     }
 
     #[test]

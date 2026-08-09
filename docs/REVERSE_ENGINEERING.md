@@ -1464,6 +1464,19 @@ aggregate utility but chooses individual inserted colors by direct weight.
 `AssignImportedGraphicsToPaletteRows` finally records one row per 8×8 tile. The Rust multi-row model
 must retain these stages; merely quantizing an entire image to one 15-color row is not equivalent.
 
+The caller around `004f03d0..004f0784` also performs a distinct per-tile capacity reduction before
+creating those records. `BuildTileUniqueColorHistogram` returns the raw sorted colors and counts.
+If the count reaches the maximum free-row capacity and the chosen row's first reusable word is not
+present, the target loses one slot; counts above capacity use the same rule, while a qualifying
+first-entry match receives `$80` weight. `004ec7a0` and the four inline edge scans then increment
+only colors whose current weight exceeds two for matching pixels directly above, below, left, and
+right of the tile. `004ebe40` stably retains the strongest target colors, the caller maps all 64
+pixels to their nearest retained RGB555 words, rebuilds the histogram, and only then calls
+`FindOrCreatePaletteColorSetRecord`. A live 32×32/16-color trace proved capacity 12: the raw
+12-color tile at `(8,16)` became 11 colors by removing `$5313`, and the raw 13-color tile at
+`(16,16)` became 11 by removing `$264E/$4E8C`. Rust reproduces both the row-major mutation and
+border-weight threshold; its exact-capacity regression locks the stable weak-color tie.
+
 The Rust application path now carries that per-8×8 row plane through graphics materialization,
 Map16 construction, and the converted preview. Each of a Map16 definition's four subtile words
 receives the row selected for its own source 8×8 tile; no bitmap-wide or 16×16-wide row is inferred.

@@ -2535,9 +2535,10 @@ and scripted EOF. Bounded canonical history restores saved graphics revisions an
 after a divergent ownership-checked batch.
 
 Bitmap palette generation uses a focused variance-minimizing Wu quantizer over the 33×33×33
-cumulative RGB histogram recovered from Lunar Magic's import path. It deterministically chooses
-red/green/blue cuts, rounds representative colors onto SNES BGR555, removes duplicate rounded
-colors, and maps every source pixel to a one-byte palette index. Inputs are bounded to 16 Mi pixels
+cumulative RGB histogram recovered from Lunar Magic's import path. Lunar Magic first rounds every
+source component onto the 0, 8, …, 248 SNES lattice, retains equal-score cuts in native BGR byte
+order, and reproduces the x87-to-binary32 split-score boundary. It removes duplicate BGR555 cluster
+means and maps the same lattice-normalized pixels to one-byte palette indexes. Inputs are bounded to 16 Mi pixels
 and palettes to 256 colors. `quantize-rgb24` accepts packed RGB triples and atomically publishes a
 canonical `LMPAL1` palette with its raw index plane; partial pixels, aliases, invalid color counts,
 oversized inputs, and existing output paths fail before a partial output pair can remain.
@@ -2560,6 +2561,17 @@ before publication, so protected slots, malformed shapes or pixels, and late exh
 partially consume space. `import-indexed-map16` applies that planner to one 256×256 page, assembles
 all 256 Map16 definitions with the requested palette row and Acts Like value, then publishes the
 updated `LMGFX4BP`, canonical 0/1 occupancy map, and `LM16PAGE` together or leaves all absent.
+
+Before palette-row records are allocated, high-color 8×8 tiles cross a second native reduction
+boundary. The importer computes the largest free capacity among the eight rows. A tile at or above
+that capacity is reduced when the winning row's first reusable color cannot satisfy it: colors with
+more than two occurrences gain one point for each matching pixel immediately across the tile's
+top, bottom, left, and right borders; a qualifying exact first-entry color gains `$80`; the strongest
+colors are retained with stable source-color ties; and every tile pixel is remapped with the native
+`4R² + 3G² + 2B²` metric before color-set aggregation. Because tiles are processed row-major, an
+already reduced upper or left neighbor participates in the next tile's border score. This recovered
+stage prevents an impossible 12/13-color record from reaching a row with only 12 free entries and
+matches the retained Lunar Magic 16-color palette and complete graphics workspace byte-for-byte.
 
 `import-rgb-map16` completes that recovered pipeline for an opaque 256×256 RGB24 page. It runs the
 Wu quantizer at a 15-color ceiling, preserves palette entry zero as the SNES transparent color,
