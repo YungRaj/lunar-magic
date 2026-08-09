@@ -1,6 +1,9 @@
 use super::*;
 use crate::{AppError, AppState, Command, FrontendEffect};
-use lm_graphics::{Bgr555, CompactExAnimation, ExAnimationRecord, Palette, PaletteEntryOwner};
+use lm_graphics::{
+    Bgr555, CompactExAnimation, CompactExAnimationFile, ExAnimationRecord, Palette,
+    PaletteEntryOwner,
+};
 use lm_overworld::{
     EventRevealTable, OverworldLayer, OverworldMessage, Submap,
     decode_main_overworld_event_tile_index, encode_main_overworld_event_tile_index,
@@ -559,6 +562,48 @@ fn complete_file_replacement_is_atomic_validated_and_slot_agnostic() {
     );
     assert_eq!(controller.data(), &imported);
     assert_ne!(controller.data(), &baseline);
+}
+
+#[test]
+fn animation_file_replacement_is_domain_isolated_slot_agnostic_and_atomic() {
+    let mut app = AppState::default();
+    app.load_rom(test_rom()).unwrap();
+    app.dispatch(Command::ShowOverworld).unwrap();
+    let snapshot = app.controller_snapshot().unwrap();
+    let mut controller = OverworldController::decode(
+        &snapshot,
+        0,
+        layout(),
+        &MODES,
+        PaletteOwnership::editable(16),
+    )
+    .unwrap();
+    let baseline = controller.data().clone();
+    let imported_animation = CompactExAnimation {
+        setting: 3,
+        header_value: 0x1234,
+        trigger_mask: 1 << 7,
+        trigger_values: std::array::from_fn(|index| if index == 7 { 7 } else { 0 }),
+        records: vec![animation_record(12)],
+    };
+    controller
+        .replace_animation_file(&CompactExAnimationFile {
+            source_slot: 0x1ff,
+            animation: imported_animation.clone(),
+        })
+        .unwrap();
+    assert_eq!(controller.data().animation, imported_animation);
+    let mut expected = baseline.clone();
+    expected.animation = imported_animation;
+    assert_eq!(controller.data(), &expected);
+
+    let mut excessive = CompactExAnimationFile {
+        source_slot: 0,
+        animation: controller.data().animation.clone(),
+    };
+    excessive.animation.records = vec![animation_record(1); 33];
+    assert!(controller.replace_animation_file(&excessive).is_err());
+    assert_eq!(controller.data(), &expected);
 }
 
 #[test]

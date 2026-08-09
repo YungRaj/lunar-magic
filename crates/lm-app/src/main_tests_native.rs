@@ -139,6 +139,10 @@ fn native_overworld_settings_export_distinguishes_first_fit_collision_from_owned
     installed_logical[header + 4..header + 6].copy_from_slice(&size.to_le_bytes());
     installed_logical[header + 6..header + 8].copy_from_slice(&(!size).to_le_bytes());
     installed_logical[header + 8..header + 8 + payload.len()].copy_from_slice(&payload);
+    for write in lm_profile::smw_us_v1_expanded_settings_fixed_writes(runtime).unwrap() {
+        let end = write.offset + write.replacement.len();
+        installed_logical[write.offset..end].copy_from_slice(&write.replacement);
+    }
 
     for (logical, expected) in [
         (&collision, &defaults),

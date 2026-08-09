@@ -1,30 +1,60 @@
 use super::RomOverworldEditor;
 use crate::{dialogs, document_loader::BoundedRead, persistence_worker::PersistenceTarget};
 use eframe::egui;
+use lm_graphics::CompactExAnimationFile;
 use lm_project::CompleteOverworldFile;
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) enum TransferKind {
+    Complete,
+    Animation,
+}
 
 impl RomOverworldEditor {
     pub(super) fn poll_transfer_file_io(&mut self, context: &egui::Context, revision: u64) {
         if let Some(result) = self.transfer_loader.show(context) {
+            let kind = self
+                .transfer_kind
+                .take()
+                .ok_or("overworld transfer completed without a transfer kind");
             let result = result.and_then(|loaded| {
-                let [(_, bytes)] = loaded.into_exact::<1>("complete overworld")?;
+                let kind = kind?;
+                let [(_, bytes)] = loaded.into_exact::<1>(match kind {
+                    TransferKind::Complete => "complete overworld",
+                    TransferKind::Animation => "overworld animation",
+                })?;
                 let workspace = self
                     .workspace
                     .as_mut()
                     .ok_or("overworld workspace is closed")?;
                 if workspace.controller.revision() != revision {
-                    return Err("the ROM changed while the complete overworld was loading".into());
+                    return Err("the ROM changed while the overworld transfer was loading".into());
                 }
                 let profile = &workspace.profiled.profile;
-                let file = decode_complete_file(
-                    &bytes,
-                    profile.overworld.animation.maximum_records,
-                    &profile.exanimation_double_size_modes,
-                )?;
-                workspace
-                    .controller
-                    .replace_complete_file(&file, profile.overworld_shape)
-                    .map_err(|error| error.to_string())?;
+                match kind {
+                    TransferKind::Complete => {
+                        let file = decode_complete_file(
+                            &bytes,
+                            profile.overworld.animation.maximum_records,
+                            &profile.exanimation_double_size_modes,
+                        )?;
+                        workspace
+                            .controller
+                            .replace_complete_file(&file, profile.overworld_shape)
+                            .map_err(|error| error.to_string())?;
+                    }
+                    TransferKind::Animation => {
+                        let file = decode_animation_file(
+                            &bytes,
+                            profile.overworld.animation.maximum_records,
+                            &profile.exanimation_double_size_modes,
+                        )?;
+                        workspace
+                            .controller
+                            .replace_animation_file(&file)
+                            .map_err(|error| error.to_string())?;
+                    }
+                }
                 self.invalidate();
                 Ok(())
             });
@@ -46,11 +76,14 @@ impl RomOverworldEditor {
                 .add_enabled(!stale && !busy, egui::Button::new("Import complete .lmow…"))
                 .clicked()
                 && let Some(path) = dialogs::choose_complete_overworld_document()
-                && let Err(error) = self.transfer_loader.start(vec![BoundedRead::new(
-                    path,
-                    CompleteOverworldFile::MAX_FILE_LEN as u64,
-                    "complete overworld file",
-                )])
+                && let Err(error) = self.start_transfer_load(
+                    TransferKind::Complete,
+                    BoundedRead::new(
+                        path,
+                        CompleteOverworldFile::MAX_FILE_LEN as u64,
+                        "complete overworld file",
+                    ),
+                )
             {
                 self.error = Some(error);
             }
@@ -64,6 +97,51 @@ impl RomOverworldEditor {
         ui.small(
             "Complete transfer stages or exports all nine modeled overworld domains together.",
         );
+    }
+
+    pub(super) fn animation_file_controls(
+        &mut self,
+        ui: &mut egui::Ui,
+        stale: bool,
+        revision: u64,
+    ) {
+        let busy = self.transfer_busy();
+        ui.horizontal(|ui| {
+            if ui
+                .add_enabled(
+                    !stale && !busy,
+                    egui::Button::new("Import animation .lmexan…"),
+                )
+                .clicked()
+                && let Some(path) = dialogs::choose_exanimation_document()
+                && let Err(error) = self.start_transfer_load(
+                    TransferKind::Animation,
+                    BoundedRead::new(
+                        path,
+                        CompactExAnimationFile::MAX_FILE_LEN as u64,
+                        "overworld animation file",
+                    ),
+                )
+            {
+                self.error = Some(error);
+            }
+            if ui
+                .add_enabled(
+                    !stale && !busy,
+                    egui::Button::new("Export animation .lmexan…"),
+                )
+                .clicked()
+            {
+                self.start_animation_export(revision);
+            }
+        });
+        ui.small("Animation transfer changes only the active overworld animation domain.");
+    }
+
+    fn start_transfer_load(&mut self, kind: TransferKind, read: BoundedRead) -> Result<(), String> {
+        self.transfer_loader.start(vec![read])?;
+        self.transfer_kind = Some(kind);
+        Ok(())
     }
 
     fn start_complete_export(&mut self, revision: u64) {
@@ -93,6 +171,35 @@ impl RomOverworldEditor {
             Err(error) => self.error = Some(error),
         }
     }
+
+    fn start_animation_export(&mut self, revision: u64) {
+        let Some(workspace) = self.workspace.as_ref() else {
+            self.error = Some("overworld workspace is closed".into());
+            return;
+        };
+        let Some(path) = dialogs::choose_exanimation_save_path(workspace.slot) else {
+            return;
+        };
+        let file = CompactExAnimationFile {
+            source_slot: workspace.slot,
+            animation: workspace.controller.data().animation.clone(),
+        };
+        match encode_animation_file(
+            &file,
+            &workspace.profiled.profile.exanimation_double_size_modes,
+        ) {
+            Ok(bytes) => {
+                if let Err(error) = self.transfer_persistence.start(
+                    revision,
+                    PersistenceTarget::Create(path),
+                    bytes,
+                ) {
+                    self.error = Some(error);
+                }
+            }
+            Err(error) => self.error = Some(error),
+        }
+    }
 }
 
 fn decode_complete_file(
@@ -110,6 +217,33 @@ fn encode_complete_file(
 ) -> Result<Vec<u8>, String> {
     file.encode(double_size_modes)
         .map_err(|error| error.to_string())
+}
+
+fn decode_animation_file(
+    bytes: &[u8],
+    maximum_records: usize,
+    double_size_modes: &[bool],
+) -> Result<CompactExAnimationFile, String> {
+    let modes: &[bool; 256] = double_size_modes.try_into().map_err(|_| {
+        format!(
+            "expected 256 ExAnimation size modes, got {}",
+            double_size_modes.len()
+        )
+    })?;
+    CompactExAnimationFile::decode(bytes, maximum_records, modes).map_err(|error| error.to_string())
+}
+
+fn encode_animation_file(
+    file: &CompactExAnimationFile,
+    double_size_modes: &[bool],
+) -> Result<Vec<u8>, String> {
+    let modes: &[bool; 256] = double_size_modes.try_into().map_err(|_| {
+        format!(
+            "expected 256 ExAnimation size modes, got {}",
+            double_size_modes.len()
+        )
+    })?;
+    file.encode(modes).map_err(|error| error.to_string())
 }
 
 #[cfg(test)]
@@ -183,5 +317,23 @@ mod tests {
         let bytes = encode_complete_file(&expected, &MODES).unwrap();
         assert_eq!(decode_complete_file(&bytes, 32, &MODES).unwrap(), expected);
         assert!(decode_complete_file(&bytes[..bytes.len() - 1], 32, &MODES).is_err());
+    }
+
+    #[test]
+    fn native_animation_transfer_round_trips_with_profile_modes_and_limits() {
+        let expected = CompactExAnimationFile {
+            source_slot: 0x1ff,
+            animation: CompactExAnimation {
+                setting: 2,
+                header_value: 0x4321,
+                trigger_mask: 1 << 3,
+                trigger_values: std::array::from_fn(|index| if index == 3 { 3 } else { 0 }),
+                records: Vec::new(),
+            },
+        };
+        let bytes = encode_animation_file(&expected, &MODES).unwrap();
+        assert_eq!(decode_animation_file(&bytes, 32, &MODES).unwrap(), expected);
+        assert!(decode_animation_file(&bytes[..bytes.len() - 1], 32, &MODES).is_err());
+        assert!(decode_animation_file(&bytes, 32, &MODES[..255]).is_err());
     }
 }

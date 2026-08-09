@@ -265,6 +265,7 @@ impl RomOverworldEditor {
         self.pending_open = None;
         self.pending_load = None;
         self.pending_close = None;
+        self.transfer_kind = None;
         self.paint_anchor = None;
         self.texture = None;
         self.map16_texture = None;

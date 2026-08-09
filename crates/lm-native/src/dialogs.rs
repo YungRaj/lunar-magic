@@ -359,6 +359,14 @@ pub(crate) fn choose_exanimation_document() -> Option<PathBuf> {
         .pick_file()
 }
 
+pub(crate) fn choose_exanimation_save_path(slot: u16) -> Option<PathBuf> {
+    rfd::FileDialog::new()
+        .set_title("Export Portable Lunar Magic ExAnimation")
+        .set_file_name(format!("overworld-{slot:03X}.lmexan"))
+        .add_filter("Portable Lunar Magic ExAnimation", &["lmexan"])
+        .save_file()
+}
+
 pub(crate) fn choose_exanimation_size_modes() -> Option<PathBuf> {
     rfd::FileDialog::new()
         .add_filter("ExAnimation size-mode table", &["bin", "dat"])

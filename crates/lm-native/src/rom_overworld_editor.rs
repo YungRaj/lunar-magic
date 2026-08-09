@@ -178,6 +178,7 @@ pub(crate) struct RomOverworldEditor {
     manifest_loader: crate::rom_ownership::RomOwnershipLoader,
     transfer_loader: DocumentLoader,
     transfer_persistence: crate::persistence_worker::PersistenceWorker,
+    transfer_kind: Option<transfer::TransferKind>,
 }
 
 impl RomOverworldEditor {
@@ -689,6 +690,7 @@ impl RomOverworldEditor {
             Panel::Palette => self.palette.show(ui, &file.data.palette, &ownership),
             Panel::Animation => {
                 self.animation_preview_controls(ui, &file.data.animation);
+                self.animation_file_controls(ui, stale, revision);
                 runtime_command = self.animation_option_controls(ui, editing_blocked);
                 self.animation
                     .show(ui, &file.data.animation, &modes, controller_revision)

@@ -3,7 +3,10 @@ use crate::overworld_edit_batch::{
     OverworldEditBatchError, OverworldEditContext, apply_overworld_edit_batch,
 };
 use crate::{EditorMode, ExAnimationControllerEdit};
-use lm_graphics::{PaletteBatchEditError, PaletteChange, PaletteOwnership};
+use lm_graphics::{
+    CompactExAnimationFile, CompactExAnimationFileError, PaletteBatchEditError, PaletteChange,
+    PaletteOwnership,
+};
 use lm_overworld::{
     EventReveal, OverworldEditError, OverworldEndpoint, OverworldMessage, OverworldSprite,
 };
@@ -99,6 +102,7 @@ pub enum OverworldControllerError {
         actual: usize,
         maximum: usize,
     },
+    ImportAnimationFile(CompactExAnimationFileError),
     ImportFile(CompleteOverworldFileError),
 }
 
@@ -212,6 +216,35 @@ impl OverworldController {
             .apply_changes(&palette_changes, &self.palette_ownership)
             .map_err(|error| OverworldControllerError::Palette { command: 0, error })?;
         self.data = file.data.clone();
+        Ok(())
+    }
+
+    /// Atomically stages only the compact animation domain from a validated portable file.
+    ///
+    /// Source slot is provenance only. Every other staged overworld domain remains byte-for-byte
+    /// unchanged, while the active profile's record limit and size-mode table authenticate the
+    /// imported animation before publication.
+    ///
+    /// # Errors
+    ///
+    /// Rejects excessive records or a non-canonical animation without changing staged state.
+    pub fn replace_animation_file(
+        &mut self,
+        file: &CompactExAnimationFile,
+    ) -> Result<(), OverworldControllerError> {
+        let maximum = self.layout.animation.maximum_records;
+        if file.animation.records.len() > maximum {
+            return Err(OverworldControllerError::ImportAnimationRecords {
+                actual: file.animation.records.len(),
+                maximum,
+            });
+        }
+        let bytes = file
+            .encode(&self.double_size_modes)
+            .map_err(OverworldControllerError::ImportAnimationFile)?;
+        let reopened = CompactExAnimationFile::decode(&bytes, maximum, &self.double_size_modes)
+            .map_err(OverworldControllerError::ImportAnimationFile)?;
+        self.data.animation = reopened.animation;
         Ok(())
     }
 }

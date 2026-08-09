@@ -4326,6 +4326,14 @@ to a new destination. Loading or persistence gates commit and close, and a ROM r
 loading rejects the import. Original Lunar Magic prompt and file behavior and broader variants
 remain incomplete.
 
+The same installed editor's Animation panel exposes a focused `.lmexan` transfer alongside the
+aggregate. It uses the active profile's exact 256-entry size-mode table and maximum-record bound.
+Import canonically encodes and reopens the portable file before replacing only the animation
+domain, treats its source slot as provenance, and leaves the other eight staged domains unchanged.
+Export snapshots only the active compact animation and publishes to a create-new destination.
+Both routes reuse the complete-transfer worker, stale-revision, edit, commit, and close gates, so a
+late animation read cannot overwrite an edit made while file I/O was active.
+
 The installed native-level-assets editor now transfers its complete staged palette through portable
 `.lmpal`, Lunar Magic's exact 257-word raw format, version-2 TPL, and RGB24. Reads are bounded and
 non-blocking. Raw/TPL/RGB imports automatically request the same-basename optional `.palmask` and
