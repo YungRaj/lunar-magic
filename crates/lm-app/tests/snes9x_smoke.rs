@@ -152,6 +152,7 @@ const SMW_MARIO_SUBMAP: usize = 0x1f11;
 const SMW_MARIO_POSITION: usize = 0x1f17;
 const SMW_MARIO_GRID_POSITION: usize = 0x1f1f;
 const SMW_LEVEL_MODE: u8 = 0x14;
+const SMW_CURRENT_MUSIC: usize = 0x0dda;
 const SMW_TIMER_HUNDREDS: usize = 0x0f31;
 const MAX_GAMEPLAY_STATE_BYTES: u64 = 64 * 1024 * 1024;
 const MAX_GAMEPLAY_SCREENSHOT_BYTES: u64 = 16 * 1024 * 1024;
@@ -288,7 +289,11 @@ fn require_overworld_path_gameplay_evidence(
     validate_overworld_path_gameplay_evidence(&snapshot, &screenshot, expected);
 }
 
-fn require_level_header_gameplay_evidence(snes9x: &Path, rom: &Path, expected_timer: u16) {
+fn require_level_header_gameplay_evidence(
+    snes9x: &Path,
+    rom: &Path,
+    expected_timer: u16,
+) -> Vec<u8> {
     let driver = std::env::var_os("SNES9X_GAMEPLAY_DRIVER")
         .map(PathBuf::from)
         .filter(|path| path.is_file())
@@ -298,8 +303,12 @@ fn require_level_header_gameplay_evidence(snes9x: &Path, rom: &Path, expected_ti
             )
         });
     let directory = rom.parent().expect("temporary gameplay ROM parent");
-    let snapshot = directory.join("level-header-after.frz");
-    let screenshot = directory.join("level-header-after.png");
+    let stem = rom
+        .file_stem()
+        .and_then(|stem| stem.to_str())
+        .expect("gameplay ROM has a UTF-8 file stem");
+    let snapshot = directory.join(format!("{stem}-level-header-after.frz"));
+    let screenshot = directory.join(format!("{stem}-level-header-after.png"));
     let child = Command::new(&driver)
         .arg("--emulator")
         .arg(snes9x)
@@ -360,6 +369,7 @@ fn require_level_header_gameplay_evidence(snes9x: &Path, rom: &Path, expected_ti
     assert!((224..=478).contains(&image.height));
     let first = image.pixels.first().expect("nonempty gameplay screenshot");
     assert!(image.pixels.iter().any(|pixel| pixel != first));
+    wram
 }
 
 fn synthetic_overworld_path_evidence(expected: OverworldEndpoint) -> (Vec<u8>, Vec<u8>) {
@@ -1062,12 +1072,12 @@ fn rust_custom_time_and_support_patch_b_are_applied_in_snes9x_gameplay() {
     let directory = SmokeDirectory::create();
     let output = directory.0.join("Rust-custom-time-support-patch-B-SMW.sfc");
     fs::write(&output, project.save_snapshot()).expect("write custom-time ROM");
-    require_level_header_gameplay_evidence(&snes9x, &output, custom_time.value());
+    let _ = require_level_header_gameplay_evidence(&snes9x, &output, custom_time.value());
 }
 
 #[test]
 #[ignore = "requires an official Snes9x libretro core, the gameplay driver, and the legally supplied SMW ROM"]
-fn rust_standard_time_header_is_applied_in_snes9x_gameplay() {
+fn rust_standard_time_and_music_headers_are_applied_in_snes9x_gameplay() {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
     let snes9x = require_snes9x_binary();
     let layout = lm_profile::smw_us_v1_vanilla_level_layout();
@@ -1101,6 +1111,11 @@ fn rust_standard_time_header_is_applied_in_snes9x_gameplay() {
             .expect("select standard 400-second timer");
         level
             .layer1
+            .header
+            .set_default_music_selector(5)
+            .expect("select music 5");
+        level
+            .layer1
             .objects
             .set_custom_time(false, None)
             .expect("disable custom timer");
@@ -1123,13 +1138,15 @@ fn rust_standard_time_header_is_applied_in_snes9x_gameplay() {
             .load_level_slot(level_number, layout, &sprite_lengths)
             .expect("reopen standard-time starting level");
         assert_eq!(reopened.layer1.header.time_limit_selector(), 3);
+        assert_eq!(reopened.layer1.header.default_music_selector(), 5);
         assert_eq!(reopened.layer1.objects.custom_time(false), None);
     }
 
     let directory = SmokeDirectory::create();
     let output = directory.0.join("Rust-standard-time-header-SMW.sfc");
     fs::write(&output, project.save_snapshot()).expect("write standard-time ROM");
-    require_level_header_gameplay_evidence(&snes9x, &output, 0x400);
+    let wram = require_level_header_gameplay_evidence(&snes9x, &output, 0x400);
+    assert_eq!(wram[SMW_CURRENT_MUSIC], 0x03);
 }
 
 #[test]

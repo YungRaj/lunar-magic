@@ -3821,11 +3821,12 @@ state only after game mode `$14` exposes timer digits `4/5/6` at WRAM `$0F31..$0
 requires a bounded nonuniform rendered frame. Other gameplay-sensitive header fields still need
 equivalent runtime assertions before the aggregate Oracle gate can be promoted.
 
-`rust_standard_time_header_is_applied_in_snes9x_gameplay` independently removes the custom-time
-runtime from the equation. It sets ordinary header selector 3, explicitly removes command `$28`,
-reopens both candidate levels, follows the same controller-driven entry path, and requires live
-timer digits `4/0/0`. This proves the ordinary selector and custom bypass reach distinct genuine
-gameplay paths with their expected values.
+`rust_standard_time_and_music_headers_are_applied_in_snes9x_gameplay` independently removes the
+custom-time runtime from the equation. It sets ordinary time selector 3 and music selector 5,
+explicitly removes command `$28`, reopens both candidate levels, and follows the same
+controller-driven entry path. The captured gameplay state requires live timer digits `4/0/0` and
+active song `$03` at WRAM `$0DDA`. This proves the ordinary timer and music selectors plus the
+custom bypass reach distinct genuine gameplay paths with their expected values.
 
 For authenticated ordinary SMW-US Layer 3, the installed preview and both image-export paths load
 the source level's stripe tilemap and active profile graphics, honor editor start offsets and
