@@ -1,8 +1,8 @@
 use lm_graphics::{Bgr555, Palette};
 use lm_level::{
-    LevelObjectData, Lm16Map16File, Map16Page, Map16PageFile, Map16Set, Map16SetFile, Map16Tile,
-    NativeSpriteRecordFields, NativeSpriteStream, ObjectCoordinateNibbles, ObjectRecord,
-    SpriteLengthTable, SpriteRecord, SpriteToken, Subtile,
+    CustomTimeSettings, Layer1VerticalScrollMode, LevelObjectData, Lm16Map16File, Map16Page,
+    Map16PageFile, Map16Set, Map16SetFile, Map16Tile, NativeSpriteRecordFields, NativeSpriteStream,
+    ObjectCoordinateNibbles, ObjectRecord, SpriteLengthTable, SpriteRecord, SpriteToken, Subtile,
 };
 use lm_project::{
     LevelPointerTable, LevelRomLayout, LevelSaveOptions, LoadedLevelSlot, Map16RomLayout,
@@ -237,6 +237,121 @@ fn object_edits_reopen_and_undo_across_every_supported_identity_mapper_header_an
                 let (edited_headerless, level) =
                     edit_variant(headerless, map_mode, storage.clone());
                 let (edited_headered, headered_level) = edit_variant(headered, map_mode, storage);
+                assert_eq!(headered_level, level);
+                assert_eq!(&edited_headered[..512], &COPIER_PREFIX);
+                assert_eq!(&edited_headered[512..], edited_headerless);
+            }
+        }
+    }
+}
+
+fn edit_header_variant(
+    physical: Vec<u8>,
+    expected_map_mode: u8,
+    storage: std::ops::Range<usize>,
+) -> (Vec<u8>, LoadedLevelSlot) {
+    let original_prefix = physical[..physical.len() % 0x8000].to_vec();
+    let image = RomImage::from_bytes(physical).unwrap();
+    let identity = detect_identity(&image).unwrap();
+    assert_eq!(identity.map_mode, expected_map_mode);
+    let level_layout = layout(identity.mapper);
+    let mut project = Project::new(image);
+    let initial_options = LevelSaveOptions {
+        layer1_allocation: allocation(storage.clone()),
+        sprite_allocation: allocation(storage.clone()),
+        previous_layer1: None,
+        previous_sprites: None,
+        reuse_identical: true,
+        erase_fill: 0xff,
+    };
+    let initial = project
+        .save_level_slot_with_checksum(
+            level_layout,
+            &source_level(),
+            &SpriteLengthTable::standard(),
+            0x7fdc,
+            &initial_options,
+        )
+        .unwrap();
+    let before_edit = project.save_snapshot();
+    let mut expected = project
+        .load_level_slot(0, level_layout, &SpriteLengthTable::standard())
+        .unwrap();
+    let header = &mut expected.layer1.header;
+    header.set_background_palette(5).unwrap();
+    header.set_last_screen(0x1d).unwrap();
+    header.set_level_mode(2).unwrap();
+    header.set_background_color(6).unwrap();
+    header.set_sprite_tileset(9).unwrap();
+    header.set_default_music_selector(6).unwrap();
+    header.set_time_limit_selector(2).unwrap();
+    header.set_sprite_palette(4).unwrap();
+    header.set_foreground_palette(3).unwrap();
+    header.set_object_tileset(7).unwrap();
+    header.set_layer1_vertical_scroll(Layer1VerticalScrollMode::NoScrollAtBottomUnlessFlying);
+    expected
+        .layer1
+        .objects
+        .set_custom_time(false, Some(CustomTimeSettings::new(0xabc, true).unwrap()))
+        .unwrap();
+    expected.sprites.header = 0xca;
+
+    let options = LevelSaveOptions {
+        layer1_allocation: allocation(storage.clone()),
+        sprite_allocation: allocation(storage),
+        previous_layer1: Some(initial.layer1.block),
+        previous_sprites: Some(initial.sprites.block),
+        reuse_identical: true,
+        erase_fill: 0xff,
+    };
+    project
+        .save_level_slot_with_checksum(
+            level_layout,
+            &expected,
+            &SpriteLengthTable::standard(),
+            0x7fdc,
+            &options,
+        )
+        .unwrap();
+    let reopened = project
+        .load_level_slot(0, level_layout, &SpriteLengthTable::standard())
+        .unwrap();
+    assert_eq!(reopened, expected);
+    assert_eq!(
+        reopened.layer1.objects.custom_time(false),
+        Some(CustomTimeSettings::new(0xabc, true).unwrap())
+    );
+    assert!(detect_identity(&project.rom).unwrap().checksum_matches());
+    assert_eq!(
+        &project.save_snapshot()[..original_prefix.len()],
+        original_prefix
+    );
+    let edited = project.save_snapshot();
+    assert!(project.undo().unwrap());
+    assert_eq!(project.save_snapshot(), before_edit);
+    assert!(project.redo().unwrap());
+    assert_eq!(project.save_snapshot(), edited);
+    (edited, reopened)
+}
+
+#[test]
+fn level_header_edits_reopen_and_undo_across_every_supported_identity_mapper_header_and_storage_variant()
+ {
+    const SMW: &[u8; 21] = b"SUPER MARIOWORLD     ";
+    const ALL_STARS_WORLD: &[u8; 21] = b"ALL_STARS + WORLD    ";
+    let identities = [(SMW, 0), (SMW, 1), (ALL_STARS_WORLD, 1)];
+    for &(title, region) in &identities {
+        for map_mode in [0x20, 0x30, 0x23, 0x32] {
+            for storage in [0x1_0000..0x1_8000, 0x2_0000..0x2_8000] {
+                let case = IdentityCase {
+                    title,
+                    region,
+                    map_mode,
+                };
+                let (edited_headerless, level) =
+                    edit_header_variant(variant_rom(case, false), map_mode, storage.clone());
+                let (edited_headered, headered_level) =
+                    edit_header_variant(variant_rom(case, true), map_mode, storage);
                 assert_eq!(headered_level, level);
                 assert_eq!(&edited_headered[..512], &COPIER_PREFIX);
                 assert_eq!(&edited_headered[512..], edited_headerless);

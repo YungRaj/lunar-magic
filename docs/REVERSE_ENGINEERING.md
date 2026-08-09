@@ -4372,3 +4372,13 @@ reads the active backend's exact size, and commits through `SaveSharedPalettesTo
 legacy mutation reopens exactly and preserves the ROM checksum; controlled live exports cover
 both original backend writers. Rust's reciprocal import/export gates cover both layouts,
 legacy-to-expanded installation, reopen, and failure-atomic downgrade rejection.
+
+The level-header persistence variant boundary is complete. One generated product exercises
+SMW-J, SMW-NA, and All-Stars+World-NA; LoROM `$20`/`$30`, SA-1 `$23`, and ExLoROM `$32`; exact
+copier-prefix absence/presence; and default/alternate allocation banks. Every case changes all
+five legacy-header bytes through their semantic setters, including mode, screens, graphics,
+palettes, music, preset time, and Layer 1 scroll, then adds the custom-time `$28` control and edits
+the sprite header. The saved image passes identity/checksum detection, semantically reopens every
+field, preserves the exact physical prefix, traverses byte-exact Undo/Redo, and is logically
+identical between headered and headerless forms. Original gameplay assertions remain a separate
+Oracle requirement rather than being inferred from this persistence product.
