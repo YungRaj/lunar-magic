@@ -621,4 +621,65 @@ fn lunar_magic_reexports_rust_sa1_standard_graphics_install() {
             "Lunar Magic did not re-export mixed Rust SA-1 ExGFX{file_number:02X}"
         );
     }
+
+    let mixed_rom = mixed_project.rom.clone();
+    let mut replacement = exgfx80.clone();
+    replacement[777] ^= 0xff;
+    for (label, files, expected_numbers) in [
+        (
+            "replace-all",
+            vec![
+                (0x60, exgfx80.clone()),
+                (0x80, replacement.clone()),
+                (0x100, exgfx80.clone()),
+            ],
+            vec![0x60_u16, 0x80, 0x100],
+        ),
+        ("only-80", vec![(0x80, replacement.clone())], vec![0x80_u16]),
+    ] {
+        let mut synchronized = Project::new(mixed_rom.clone());
+        let commit = lm_app::prepare_smw_us_v1_exgraphics_directory_install(
+            0,
+            synchronized.rom.clone(),
+            &files,
+        )
+        .unwrap();
+        synchronized
+            .apply_mutation(&commit.description, &commit.mutation)
+            .unwrap();
+        assert!(
+            lm_rom::detect_identity(&synchronized.rom)
+                .unwrap()
+                .checksum_matches()
+        );
+        let directory = TemporaryDirectory::create(&format!("sa1-exgfx-sync-{label}"));
+        let rom_name = format!("sa1-exgfx-sync-{label}.smc");
+        fs::write(
+            directory.0.join(&rom_name),
+            synchronized.rom.as_file_bytes(),
+        )
+        .unwrap();
+        fs::create_dir(directory.0.join("ExGraphics")).unwrap();
+        run_export_operation(&wine, &lunar_magic, &directory.0, "-ExportExGFX", &rom_name);
+        for number in expected_numbers {
+            let expected = files
+                .iter()
+                .find_map(|(file_number, bytes)| (*file_number == number).then_some(bytes))
+                .unwrap();
+            assert_eq!(
+                fs::read(
+                    directory
+                        .0
+                        .join(format!("ExGraphics/ExGFX{number:02X}.bin")),
+                )
+                .unwrap(),
+                *expected,
+                "Lunar Magic did not re-export synchronized ExGFX{number:02X}"
+            );
+        }
+        if label == "only-80" {
+            assert!(!directory.0.join("ExGraphics/ExGFX60.bin").exists());
+            assert!(!directory.0.join("ExGraphics/ExGFX100.bin").exists());
+        }
+    }
 }

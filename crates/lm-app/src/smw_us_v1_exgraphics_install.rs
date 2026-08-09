@@ -10,9 +10,13 @@ use lm_profile::{
     smw_us_v1_sa1_exgraphics_runtime_installation_plan,
     smw_us_v1_sa1_expanded_settings_installation_plan,
 };
-use lm_project::{GraphicsCompression, GraphicsRomLayout, LevelPointerTable, Project, RomMutation};
-use lm_rats::ProtectedRange;
-use lm_rom::{Mapper, RomImage};
+use lm_project::{
+    GraphicsCompression, GraphicsRomLayout, LevelPointerTable, Project, RatsOwnershipManifest,
+    RomMutation,
+};
+use lm_rats::{HEADER_LEN, ProtectedRange, parse_at};
+use lm_rom::{Mapper, RomImage, compute_snes_checksum, snes_to_pc};
+use std::collections::BTreeMap;
 
 /// Prepares first-time or subsequent native ExGFX insertion as one application commit.
 ///
@@ -30,6 +34,33 @@ pub fn prepare_smw_us_v1_exgraphics_install(
     image: RomImage,
     files: &[(u16, Vec<u8>)],
 ) -> Result<PreparedRomCommit, String> {
+    prepare_smw_us_v1_exgraphics_install_with_mode(expected_revision, image, files, false)
+}
+
+/// Prepares Lunar Magic's full-directory ExGFX synchronization behavior.
+///
+/// Unlike sparse insertion, every currently referenced ExGFX owner is authenticated and reclaimed
+/// in staging, all three pointer domains are reset to their native empty sentinels, and only files
+/// present in `files` are republished.
+///
+/// # Errors
+///
+/// Rejects the same malformed runtime and input cases as sparse insertion, plus unowned or invalid
+/// existing ExGFX pointers and reclamation failures.
+pub fn prepare_smw_us_v1_exgraphics_directory_install(
+    expected_revision: u64,
+    image: RomImage,
+    files: &[(u16, Vec<u8>)],
+) -> Result<PreparedRomCommit, String> {
+    prepare_smw_us_v1_exgraphics_install_with_mode(expected_revision, image, files, true)
+}
+
+fn prepare_smw_us_v1_exgraphics_install_with_mode(
+    expected_revision: u64,
+    image: RomImage,
+    files: &[(u16, Vec<u8>)],
+    synchronize_directory: bool,
+) -> Result<PreparedRomCommit, String> {
     if files.is_empty() {
         return Err("ExGFX insertion requires at least one file".into());
     }
@@ -38,8 +69,10 @@ pub fn prepare_smw_us_v1_exgraphics_install(
         .map(|identity| identity.mapper)
         .unwrap_or(Mapper::LoRom);
     let mut project = Project::new(image);
+    let existing_exgraphics_runtime;
     match probe_smw_us_v1_exgraphics_runtime_for_mapper(&project.rom, mapper) {
         Ok(state) => {
+            existing_exgraphics_runtime = true;
             if mapper == Mapper::Sa1 && state != SmwUsV1ExGraphicsRuntimeState::Expanded {
                 return Err(
                     "SA-1 ready/reserved ExGFX runtime migration is not yet available".into(),
@@ -47,6 +80,7 @@ pub fn prepare_smw_us_v1_exgraphics_install(
             }
         }
         Err(SmwUsV1ExGraphicsError::UnsupportedRuntimeHook) => {
+            existing_exgraphics_runtime = false;
             if !matches!(mapper, Mapper::LoRom | Mapper::Sa1) {
                 return Err(format!(
                     "first-time ExGFX prerequisite installation is not yet available for {mapper:?}"
@@ -169,6 +203,10 @@ pub fn prepare_smw_us_v1_exgraphics_install(
         }
     }
 
+    if synchronize_directory && existing_exgraphics_runtime {
+        synchronize_existing_exgraphics_storage(&mut project, mapper)?;
+    }
+
     let mut reserved = Vec::new();
     let mut compressed = Vec::new();
     let mut extended = Vec::new();
@@ -225,6 +263,9 @@ pub fn prepare_smw_us_v1_exgraphics_install(
             "ExGFX runtime reopened as {final_state:?}, expected {expected_state:?}"
         ));
     }
+    if synchronize_directory && existing_exgraphics_runtime {
+        install_exgraphics_checksum_compensation(&mut project, mapper, &before)?;
+    }
     let mutation = RomMutation::between(mapper, &before, project.rom.logical_bytes())
         .map_err(|error| error.to_string())?;
     Ok(PreparedRomCommit {
@@ -232,6 +273,161 @@ pub fn prepare_smw_us_v1_exgraphics_install(
         description: "Insert native SMW US ExGFX files".into(),
         mutation,
     })
+}
+
+fn install_exgraphics_checksum_compensation(
+    project: &mut Project,
+    mapper: Mapper,
+    original: &[u8],
+) -> Result<(), String> {
+    const CHECKSUM_FIELD: usize = 0x007fdc;
+    const COMPENSATION_LEN: usize = 0xa0;
+    let compensation = if mapper == Mapper::ExLoRom {
+        0x47_f000
+    } else {
+        0x07_f000
+    };
+    let original_checksum_fields = original
+        .get(CHECKSUM_FIELD..CHECKSUM_FIELD + 4)
+        .ok_or_else(|| "source ROM is truncated before the checksum fields".to_string())?;
+    let stored_checksum =
+        u16::from_le_bytes([original_checksum_fields[2], original_checksum_fields[3]]);
+    let mut compensated = project.rom.clone();
+    compensated
+        .write(CHECKSUM_FIELD, original_checksum_fields)
+        .map_err(|error| error.to_string())?;
+    compensated
+        .write(compensation, &[0; COMPENSATION_LEN])
+        .map_err(|error| error.to_string())?;
+    let current = compute_snes_checksum(compensated.logical_bytes(), CHECKSUM_FIELD)
+        .map_err(|error| error.to_string())?
+        .checksum;
+    let difference = usize::from(stored_checksum.wrapping_sub(current));
+    if difference > COMPENSATION_LEN * usize::from(u8::MAX) {
+        return Ok(());
+    }
+    let full = difference / usize::from(u8::MAX);
+    let remainder = difference % usize::from(u8::MAX);
+    compensated
+        .write(compensation, &vec![u8::MAX; full])
+        .map_err(|error| error.to_string())?;
+    if remainder != 0 {
+        compensated
+            .write(
+                compensation + full,
+                &[u8::try_from(remainder).expect("a modulo-255 remainder fits u8")],
+            )
+            .map_err(|error| error.to_string())?;
+    }
+    let actual = compute_snes_checksum(compensated.logical_bytes(), CHECKSUM_FIELD)
+        .map_err(|error| error.to_string())?
+        .checksum;
+    if actual != stored_checksum {
+        return Err(format!(
+            "ExGFX checksum compensation produced {actual:#06X}, expected {stored_checksum:#06X}"
+        ));
+    }
+    let before = project.rom.logical_bytes().to_vec();
+    let mutation = RomMutation::between(mapper, &before, compensated.logical_bytes())
+        .map_err(|error| error.to_string())?;
+    project
+        .apply_mutation("preserve Lunar Magic ExGFX checksum", &mutation)
+        .map_err(|error| error.to_string())?;
+    Ok(())
+}
+
+fn synchronize_existing_exgraphics_storage(
+    project: &mut Project,
+    mapper: Mapper,
+) -> Result<(), String> {
+    let mut owned = BTreeMap::new();
+    for file_number in (0x60_u16..=0x63).chain(0x80..=0xfff) {
+        let route = smw_us_v1_exgraphics_pointer_in_rom(&project.rom, file_number, mapper)
+            .map_err(|error| error.to_string())?;
+        let pointer = project
+            .rom
+            .read(route.pointer_offset, 3)
+            .map_err(|error| error.to_string())?;
+        if pointer == [0, 0, 0] || pointer == [0xff, 0xff, 0xff] {
+            continue;
+        }
+        let reopened = reopen_exgraphics_file(project, route, mapper)
+            .map_err(|error| format!("ExGFX{file_number:02X}: {error}"))?;
+        if !matches!(reopened.len(), 0x800 | 0xc00 | 0x1000) {
+            return Err(format!(
+                "ExGFX{file_number:02X} decodes to unsupported length {:#X}",
+                reopened.len()
+            ));
+        }
+        let address =
+            u32::from(pointer[0]) | u32::from(pointer[1]) << 8 | u32::from(pointer[2]) << 16;
+        let payload = snes_to_pc(mapper, address).map_err(|error| error.to_string())?;
+        let header = payload.checked_sub(HEADER_LEN).ok_or_else(|| {
+            format!("ExGFX{file_number:02X} pointer resolves before a RATS header")
+        })?;
+        let block = parse_at(project.rom.logical_bytes(), header)
+            .map_err(|error| format!("ExGFX{file_number:02X} owner: {error:?}"))?;
+        if block.payload.start != payload {
+            return Err(format!(
+                "ExGFX{file_number:02X} pointer does not target its RATS payload start"
+            ));
+        }
+        if route.encoding == SmwUsV1ExGraphicsEncoding::Raw2048 && block.payload.len() != 0x800 {
+            return Err(format!(
+                "ExGFX{file_number:02X} reserved owner has length {:#X}, expected 0x800",
+                block.payload.len()
+            ));
+        }
+        owned.entry(block.header_offset).or_insert(block);
+    }
+    if !owned.is_empty() {
+        project
+            .reclaim_owned_rats_with_checksum(
+                "reclaim synchronized ExGFX files",
+                &RatsOwnershipManifest {
+                    owned: owned.into_values().collect(),
+                    retained: Vec::new(),
+                },
+                0x00,
+                0x007fdc,
+            )
+            .map_err(|error| error.to_string())?;
+    }
+
+    let before = project.rom.logical_bytes().to_vec();
+    let mut cleared = project.rom.clone();
+    cleared
+        .write(
+            smw_us_v1_exgraphics_pointer_for_mapper(0x60, mapper)
+                .map_err(|error| error.to_string())?
+                .pointer_offset,
+            &[
+                0, 0, 0, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+            ],
+        )
+        .map_err(|error| error.to_string())?;
+    cleared
+        .write(
+            smw_us_v1_exgraphics_pointer_for_mapper(0x80, mapper)
+                .map_err(|error| error.to_string())?
+                .pointer_offset,
+            &[0; 0x80 * 3],
+        )
+        .map_err(|error| error.to_string())?;
+    let extended = smw_us_v1_exgraphics_pointer_in_rom(&cleared, 0x100, mapper)
+        .map_err(|error| error.to_string())?
+        .pointer_offset;
+    cleared
+        .write(extended, &vec![0xff; 0xf00 * 3])
+        .map_err(|error| error.to_string())?;
+    let mutation = RomMutation::between(mapper, &before, cleared.logical_bytes())
+        .map_err(|error| error.to_string())?;
+    if !mutation.is_empty() {
+        project
+            .apply_mutation("reset synchronized ExGFX pointers", &mutation)
+            .map_err(|error| error.to_string())?;
+    }
+    Ok(())
 }
 
 fn reopen_exgraphics_file(
@@ -489,6 +685,95 @@ mod tests {
                 mismatches.len(),
                 &mismatches[..mismatches.len().min(64)]
             );
+
+            let directory_prepared =
+                prepare_smw_us_v1_exgraphics_directory_install(0, before.clone(), &files).unwrap();
+            let mut directory_project = Project::new(before.clone());
+            directory_project
+                .apply_mutation(
+                    &directory_prepared.description,
+                    &directory_prepared.mutation,
+                )
+                .unwrap();
+            let directory_mismatches = directory_project
+                .rom
+                .logical_bytes()
+                .iter()
+                .zip(expected)
+                .enumerate()
+                .filter_map(|(offset, (actual, expected))| {
+                    (actual != expected).then_some((offset, *actual, *expected))
+                })
+                .collect::<Vec<_>>();
+            assert!(
+                directory_mismatches.is_empty(),
+                "{variable} directory route: {} mismatches; first: {:02X?}",
+                directory_mismatches.len(),
+                &directory_mismatches[..directory_mismatches.len().min(64)]
+            );
+        }
+    }
+
+    #[test]
+    #[ignore = "requires retained authentic SA-1 Pack directory synchronization oracles"]
+    fn authentic_sa1_directory_sync_reclaims_replaces_and_removes_omitted_files() {
+        let before = RomImage::from_bytes(
+            std::fs::read(
+                std::env::var_os("LM_SA1_EXGFX_MIXED_AFTER").expect("LM_SA1_EXGFX_MIXED_AFTER"),
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        let bytes = (0..0x800_usize)
+            .map(|index| index.to_le_bytes()[0].wrapping_mul(37).wrapping_add(11))
+            .collect::<Vec<_>>();
+        let mut replacement = bytes.clone();
+        replacement[777] ^= 0xff;
+        for (variable, files) in [
+            (
+                "LM_SA1_EXGFX_MIXED_REPLACE_AFTER",
+                vec![
+                    (0x60, bytes.clone()),
+                    (0x80, replacement.clone()),
+                    (0x100, bytes.clone()),
+                ],
+            ),
+            (
+                "LM_SA1_EXGFX_ONLY80_AFTER",
+                vec![(0x80, replacement.clone())],
+            ),
+        ] {
+            let oracle = RomImage::from_bytes(
+                std::fs::read(
+                    std::env::var_os(variable)
+                        .unwrap_or_else(|| panic!("{variable} must name an authentic after image")),
+                )
+                .unwrap(),
+            )
+            .unwrap();
+            let prepared =
+                prepare_smw_us_v1_exgraphics_directory_install(0, before.clone(), &files).unwrap();
+            let mut project = Project::new(before.clone());
+            project
+                .apply_mutation(&prepared.description, &prepared.mutation)
+                .unwrap();
+            let actual = project.rom.logical_bytes();
+            let expected = oracle.logical_bytes();
+            let mismatches = actual
+                .iter()
+                .zip(expected)
+                .enumerate()
+                .filter_map(|(offset, (actual, expected))| {
+                    (actual != expected).then_some((offset, *actual, *expected))
+                })
+                .collect::<Vec<_>>();
+            assert_eq!(actual.len(), expected.len(), "{variable}");
+            assert!(
+                mismatches.is_empty(),
+                "{variable}: {} mismatches; first: {:02X?}",
+                mismatches.len(),
+                &mismatches[..mismatches.len().min(64)]
+            );
         }
     }
 
@@ -566,6 +851,86 @@ mod tests {
             .unwrap(),
             vec![0x81; 0x800]
         );
+    }
+
+    #[test]
+    fn directory_sync_reclaims_omitted_owners_and_is_one_undoable_commit() {
+        let source = ready_image();
+        let first = prepare_smw_us_v1_exgraphics_install(
+            0,
+            source.clone(),
+            &[(0x60, vec![0; 0x800]), (0x80, vec![0x80; 0x800])],
+        )
+        .unwrap();
+        let mut project = Project::new(source);
+        project
+            .apply_mutation(&first.description, &first.mutation)
+            .unwrap();
+        let before_sync = project.rom.logical_bytes().to_vec();
+        let reserved_route = smw_us_v1_exgraphics_pointer(0x60).unwrap();
+        let old_reserved_pointer = project
+            .rom
+            .read(reserved_route.pointer_offset, 3)
+            .unwrap()
+            .to_vec();
+
+        let synchronized = prepare_smw_us_v1_exgraphics_directory_install(
+            0,
+            project.rom.clone(),
+            &[(0x80, vec![0x81; 0x800])],
+        )
+        .unwrap();
+        project
+            .apply_mutation(&synchronized.description, &synchronized.mutation)
+            .unwrap();
+        assert_eq!(
+            project.rom.read(reserved_route.pointer_offset, 3).unwrap(),
+            [0, 0, 0]
+        );
+        assert_eq!(
+            reopen_exgraphics_file(
+                &project,
+                smw_us_v1_exgraphics_pointer(0x80).unwrap(),
+                Mapper::LoRom,
+            )
+            .unwrap(),
+            vec![0x81; 0x800]
+        );
+        assert_ne!(
+            project.rom.read(reserved_route.pointer_offset, 3).unwrap(),
+            old_reserved_pointer
+        );
+        project.undo().unwrap();
+        assert_eq!(project.rom.logical_bytes(), before_sync);
+    }
+
+    #[test]
+    fn directory_sync_rejects_an_unowned_existing_pointer_before_publication() {
+        let source = ready_image();
+        let first =
+            prepare_smw_us_v1_exgraphics_install(0, source.clone(), &[(0x80, vec![0x80; 0x800])])
+                .unwrap();
+        let mut project = Project::new(source);
+        project
+            .apply_mutation(&first.description, &first.mutation)
+            .unwrap();
+        project
+            .rom
+            .write(
+                smw_us_v1_exgraphics_pointer(0x80).unwrap().pointer_offset,
+                &[0x00, 0x90, 0x10],
+            )
+            .unwrap();
+        let before = project.rom.logical_bytes().to_vec();
+
+        let error = prepare_smw_us_v1_exgraphics_directory_install(
+            0,
+            project.rom.clone(),
+            &[(0x80, vec![0x81; 0x800])],
+        )
+        .unwrap_err();
+        assert!(error.contains("ExGFX80"), "{error}");
+        assert_eq!(project.rom.logical_bytes(), before);
     }
 
     #[test]

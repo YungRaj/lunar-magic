@@ -219,7 +219,7 @@ fn prepare_import(
                             .map_err(|_| format!("ExGFX file number {number:X} exceeds $FFFF"))
                     })
                     .collect::<Result<Vec<_>, _>>()?;
-                lm_app::prepare_smw_us_v1_exgraphics_install(
+                lm_app::prepare_smw_us_v1_exgraphics_directory_install(
                     source.expected_revision,
                     source.image,
                     &files,

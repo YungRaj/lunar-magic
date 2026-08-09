@@ -297,6 +297,42 @@ LM_SA1_PACK_ROM=... WINEDEBUG=-all cargo test -p lm-app \
 All four Rust outputs are complete-ROM byte matches. The three-domain gate additionally requires
 Lunar Magic to re-export exact `ExGFX60`, `ExGFX80`, and `ExGFX100` source bytes from the Rust ROM.
 This recovered the seven distinct first-import marker forms and the domain-dependent allocator
-ordering. A separate retained subsequent-import capture shows that Lunar Magic treats the directory
-as a synchronized set, reclaiming replaced owners and removing omitted entries; that follow-up
-behavior remains an explicit open gate.
+ordering.
+
+## 2026-08-09 — SA-1 subsequent ExGFX directory synchronization
+
+Starting from the retained three-domain result, Lunar Magic imported a second complete directory
+in two forms. The first replaces all three files (with a changed `ExGFX80` payload); the second
+contains only that changed `ExGFX80`, requiring `ExGFX60` and `ExGFX100` to be deleted. Complete-ROM
+SHA-256 values are:
+
+```text
+replacement-all  4f935054a5dfbb135ec03810ee1441eee1689613257e8111bae0c39354638fa2
+only-ExGFX80     b704be1d424b2b99fe0681e49ccc2028aea935a3aa4de0bbc6ac36e7916417cc
+```
+
+```text
+LM_SA1_EXGFX_MIXED_AFTER=... \
+LM_SA1_EXGFX_MIXED_REPLACE_AFTER=... LM_SA1_EXGFX_ONLY80_AFTER=... \
+  cargo test -p lm-app \
+  authentic_sa1_directory_sync_reclaims_replaces_and_removes_omitted_files \
+  -- --ignored --nocapture
+1 passed; 0 failed
+
+LM_SA1_PACK_ROM=... WINEDEBUG=-all cargo test -p lm-app \
+  --test standard_graphics_install_wine \
+  lunar_magic_reexports_rust_sa1_standard_graphics_install -- --ignored --nocapture
+1 passed; 0 failed; finished in 15.27s
+
+cargo test -p lm-app --lib
+543 passed; 0 failed; 10 ignored
+
+cargo test -p lm-profile -p lm-render
+307 profile tests and 232 renderer tests passed
+```
+
+Both Rust synchronization results match Lunar Magic's complete ROM byte-for-byte. The native
+directory operation authenticates and reclaims the old owners, replaces every present file, clears
+omitted pointers with the correct domain sentinel, retains Lunar Magic's allocation ordering and
+checksum-compensation bytes, and commits as one undoable revision. Lunar Magic then reopens the
+Rust outputs, re-exports each surviving file exactly, and reports the two omitted files absent.
