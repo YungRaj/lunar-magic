@@ -2055,9 +2055,18 @@ runtime, not the 683-byte LoROM/ExLoROM payload. Mapper-aware plans preserve SA-
 reuse proven same-size ownership, and leave the original embedded LZ2 owner intact. A retained
 2-MiB 4bpp SA-1 project proves all 52 GFX files plus `ExGFX80` survive the Rust migration, the
 checksum remains valid, and Undo restores the exact copier-headered source. Original Lunar Magic
-reopens the Rust result and re-exports both directories byte-exactly. SA-1 installed overworld-event
-stream migration remains a separate gate because SA-1 Pack replaces the LoROM pristine event-code
-skeleton before Lunar Magic event storage is installed.
+reopens the Rust result and re-exports both directories byte-exactly.
+
+SA-1 installed overworld-event streams are now part of the same codec transaction. An authentic
+`-TransferOverworld` capture establishes that SA-1 retains the fixed loader/hook locations and
+instruction skeleton while rebasing the runtime RAM operands from `$7E/$7F`, `$13xx`, `$0Dxx`, and
+`$1Fxx` into the Pack's `$40/$41`, `$73xx`, `$6Dxx`, and `$7Fxx` workspaces. The mapper-aware
+locator authenticates those immutable operands while continuing to exclude the six allocated
+stream-pointer bytes. Retained LZ2/LZ3 captures decode to identical 92-entry buffers. Rust migrates
+both owned streams to LZ3 in the same replacement as the decoder and graphics, reopens the exact
+buffers, validates the checksum, and restores the complete physical LZ2 image with Undo. A
+non-installed SA-1 Pack runtime remains a typed pristine/no-stream state without being compared to
+LoROM's replaced code skeleton.
 The graphical **Tools** menu installs the same bounded `LMTOOLS1` configuration used by the
 application shell and lists tools in configuration order. Clicking a tool is the explicit execution
 boundary: placeholders are expanded by `lm-app`, while the native adapter launches the executable

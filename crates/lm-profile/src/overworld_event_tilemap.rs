@@ -122,21 +122,37 @@ pub fn smw_us_v1_event_tilemap_locator_for_mapper(mapper: Mapper) -> EventTilema
         primary_bank: base + SMW_US_V1_EVENT_TILEMAP_PRIMARY_BANK,
         secondary_low_word: base + SMW_US_V1_EVENT_TILEMAP_SECONDARY_LOW_WORD,
         secondary_bank: base + SMW_US_V1_EVENT_TILEMAP_SECONDARY_BANK,
-        primary_runtime: patched_primary_runtime(),
+        primary_runtime: if mapper == Mapper::Sa1 {
+            sa1_primary_runtime()
+        } else {
+            patched_primary_runtime()
+        },
         index_hook: base + INDEX_HOOK,
         index_hook_bytes: [0x22, 0xd0, 0xdc, 0x05],
         index_runtime: base + INDEX_RUNTIME,
-        index_runtime_bytes: INDEX_RUNTIME_BYTES,
+        index_runtime_bytes: if mapper == Mapper::Sa1 {
+            sa1_index_runtime()
+        } else {
+            INDEX_RUNTIME_BYTES
+        },
         reveal_hook: base + REVEAL_HOOK,
         reveal_hook_bytes: [0x22, 0x10, 0xba, 0x03, 0xea],
         reveal_runtime: base + REVEAL_RUNTIME,
-        reveal_runtime_bytes: REVEAL_RUNTIME_BYTES,
+        reveal_runtime_bytes: if mapper == Mapper::Sa1 {
+            sa1_reveal_runtime()
+        } else {
+            REVEAL_RUNTIME_BYTES
+        },
         reveal_opcode: base + REVEAL_OPCODE,
         reveal_opcode_byte: 0x8c,
         state_hook: base + STATE_HOOK,
         state_hook_bytes: [0x22, 0x50, 0xba, 0x03],
         state_runtime: base + STATE_RUNTIME,
-        state_runtime_bytes: STATE_RUNTIME_BYTES,
+        state_runtime_bytes: if mapper == Mapper::Sa1 {
+            sa1_state_runtime()
+        } else {
+            STATE_RUNTIME_BYTES
+        },
     }
 }
 
@@ -186,6 +202,12 @@ pub fn load_smw_us_v1_event_tilemaps_for_mapper(
         return Err(SmwUsV1EventTilemapLoadError::Installed {
             lz2,
             lz3: lz3.unwrap_err(),
+        });
+    }
+    if mapper == Mapper::Sa1 {
+        return Ok(LoadedSmwUsV1EventTilemaps {
+            buffers: EventTilemapBuffers::default(),
+            storage: SmwUsV1EventTilemapStorage::Pristine,
         });
     }
     let base = if mapper == Mapper::ExLoRom {
@@ -297,6 +319,43 @@ fn patched_primary_runtime() -> [u8; 64] {
     bytes
 }
 
+fn sa1_primary_runtime() -> [u8; 64] {
+    let mut bytes = patched_primary_runtime();
+    bytes[6] = 0x40;
+    bytes[37] = 0x41;
+    bytes
+}
+
+fn sa1_index_runtime() -> [u8; 32] {
+    let mut bytes = INDEX_RUNTIME_BYTES;
+    bytes[3] = 0x61;
+    bytes[15] = 0x73;
+    bytes[25] = 0x77;
+    bytes
+}
+
+fn sa1_reveal_runtime() -> [u8; 48] {
+    let mut bytes = REVEAL_RUNTIME_BYTES;
+    bytes[8] = 0x40;
+    bytes[15] = 0x7e;
+    bytes[28] = 0x73;
+    bytes
+}
+
+fn sa1_state_runtime() -> [u8; 160] {
+    let mut bytes = STATE_RUNTIME_BYTES;
+    for index in [24, 32] {
+        bytes[index] = 0x7e;
+    }
+    bytes[17] = 0x40;
+    bytes[45] = 0x73;
+    bytes[63] = 0x6d;
+    for index in [66, 71, 128] {
+        bytes[index] = 0x7f;
+    }
+    bytes
+}
+
 fn fixed_write<const EXPECTED: usize, const REPLACEMENT: usize>(
     offset: usize,
     expected: &[u8; EXPECTED],
@@ -316,6 +375,55 @@ mod tests {
     use super::*;
     use lm_rom::RomImage;
     use std::{fs, path::PathBuf};
+
+    #[test]
+    #[ignore = "requires retained SA-1 Pack installed event-tilemap LZ2/LZ3 captures"]
+    fn sa1_installed_event_streams_authenticate_in_both_compression_modes() {
+        let lz2 = Project::new(
+            RomImage::from_bytes(
+                fs::read(std::env::var_os("LM_SA1_EVENT_LZ2_ROM").unwrap()).unwrap(),
+            )
+            .unwrap(),
+        );
+        let lz3 = Project::new(
+            RomImage::from_bytes(
+                fs::read(std::env::var_os("LM_SA1_EVENT_LZ3_ROM").unwrap()).unwrap(),
+            )
+            .unwrap(),
+        );
+        let mut expected_primary = sa1_primary_runtime();
+        let actual_primary = lz2
+            .rom
+            .read(SMW_US_V1_EVENT_TILEMAP_LOADER_MARKER, 64)
+            .unwrap();
+        for index in [10, 11, 15, 41, 42, 46] {
+            expected_primary[index] = actual_primary[index];
+        }
+        assert_eq!(actual_primary, expected_primary);
+        assert_eq!(
+            lz2.rom.read(INDEX_RUNTIME, 32).unwrap(),
+            sa1_index_runtime()
+        );
+        assert_eq!(
+            lz2.rom.read(REVEAL_RUNTIME, 48).unwrap(),
+            sa1_reveal_runtime()
+        );
+        assert_eq!(
+            lz2.rom.read(STATE_RUNTIME, 160).unwrap(),
+            sa1_state_runtime()
+        );
+        let lz2_loaded = load_smw_us_v1_event_tilemaps_for_mapper(&lz2, Mapper::Sa1).unwrap();
+        let lz3_loaded = load_smw_us_v1_event_tilemaps_for_mapper(&lz3, Mapper::Sa1).unwrap();
+        assert_eq!(
+            lz2_loaded.storage,
+            SmwUsV1EventTilemapStorage::Installed(EventTilemapCompression::Lz2)
+        );
+        assert_eq!(
+            lz3_loaded.storage,
+            SmwUsV1EventTilemapStorage::Installed(EventTilemapCompression::Lz3)
+        );
+        assert_eq!(lz3_loaded.buffers, lz2_loaded.buffers);
+    }
 
     #[test]
     fn exact_pristine_install_reopens_and_undo_restores_the_original() {

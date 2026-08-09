@@ -426,6 +426,24 @@ LM_SA1_LZ2_SPEED_ROM=... cargo test -p lm-app --test standard_graphics_install_w
 1 passed; 0 failed; finished in 6.91s
 ```
 
+The follow-up mapper-event capture transfers the vanilla overworld into the expanded SA-1 project,
+then changes that installed result to LZ3:
+
+```text
+SA-1 event LZ2 2a2356dc829a445d7e338bb58623683469f82209babd8328b063fcc73e1b499a
+SA-1 event LZ3 61cd097b5c414a823f1dea92ffc1fdc3122fe053303de9dc28d491008b2c95d9
+
+LM_SA1_EVENT_LZ2_ROM=... LM_SA1_EVENT_LZ3_ROM=... cargo test -p lm-profile \
+  sa1_installed_event_streams_authenticate_in_both_compression_modes \
+  -- --ignored --nocapture
+1 passed; 0 failed
+
+LM_SA1_LZ2_SPEED_ROM=... LM_SA1_LZ3_ROM=... cargo test -p lm-profile \
+  sa1_codec_migration_preserves_all_standard_graphics_and_undoes \
+  -- --ignored --nocapture
+1 passed; 0 failed; finished in 5.72s
+```
+
 The first gate proves identical Rust logical output across copier forms, map-mode `$30` retention,
 valid checksums, exact 52-file semantic equality with Lunar Magic's LZ3 result, and byte-exact Undo.
 The end-to-end Wine gate independently creates the original oracle, asks Lunar Magic to select LZ3

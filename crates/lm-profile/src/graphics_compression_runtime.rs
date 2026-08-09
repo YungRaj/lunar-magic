@@ -665,9 +665,9 @@ fn smw_us_v1_graphics_compression_installation_plan(
             long_pointer_encoding(mapper),
         ));
     }
-    let event_tilemaps = (mapper != Mapper::Sa1)
-        .then(|| crate::load_smw_us_v1_event_tilemaps_for_mapper(&project, mapper))
-        .transpose()?;
+    let event_tilemaps = Some(crate::load_smw_us_v1_event_tilemaps_for_mapper(
+        &project, mapper,
+    )?);
     if let Some(crate::LoadedSmwUsV1EventTilemaps {
         buffers,
         storage: crate::SmwUsV1EventTilemapStorage::Installed(source_event_compression),
@@ -830,12 +830,10 @@ fn smw_us_v1_graphics_compression_ownership(
         )?;
     }
 
-    if mapper != Mapper::Sa1
-        && matches!(
-            crate::load_smw_us_v1_event_tilemaps_for_mapper(&project, mapper)?.storage,
-            crate::SmwUsV1EventTilemapStorage::Installed(_)
-        )
-    {
+    if matches!(
+        crate::load_smw_us_v1_event_tilemaps_for_mapper(&project, mapper)?.storage,
+        crate::SmwUsV1EventTilemapStorage::Installed(_)
+    ) {
         for (low_offset, bank_offset) in [
             (
                 base + crate::SMW_US_V1_EVENT_TILEMAP_PRIMARY_LOW_WORD,
@@ -1150,6 +1148,17 @@ mod tests {
             load_mapper_graphics(&oracle, Mapper::Sa1, GraphicsCompression::Lz3),
             expected
         );
+        let source_events = crate::load_smw_us_v1_event_tilemaps_for_mapper(
+            &Project::new(source.clone()),
+            Mapper::Sa1,
+        )
+        .unwrap();
+        let oracle_events = crate::load_smw_us_v1_event_tilemaps_for_mapper(
+            &Project::new(oracle.clone()),
+            Mapper::Sa1,
+        )
+        .unwrap();
+        assert_eq!(oracle_events.buffers, source_events.buffers);
         let replacement = smw_us_v1_compact_graphics_compression_migration_plan(
             &source,
             0x7fdc,
@@ -1170,6 +1179,22 @@ mod tests {
         assert_eq!(
             load_mapper_graphics(&project.rom, Mapper::Sa1, GraphicsCompression::Lz3),
             expected
+        );
+        let migrated_events =
+            crate::load_smw_us_v1_event_tilemaps_for_mapper(&project, Mapper::Sa1).unwrap();
+        assert_eq!(migrated_events.buffers, source_events.buffers);
+        assert_eq!(
+            migrated_events.storage,
+            match source_events.storage {
+                crate::SmwUsV1EventTilemapStorage::Pristine => {
+                    crate::SmwUsV1EventTilemapStorage::Pristine
+                }
+                crate::SmwUsV1EventTilemapStorage::Installed(_) => {
+                    crate::SmwUsV1EventTilemapStorage::Installed(
+                        lm_project::EventTilemapCompression::Lz3,
+                    )
+                }
+            }
         );
         if let Some(path) = std::env::var_os("LM_SA1_LZ3_RUST_OUTPUT") {
             fs::write(path, project.rom.as_file_bytes()).unwrap();
