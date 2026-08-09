@@ -359,8 +359,9 @@ descriptor-relative loader, installed-runtime save backend, and native per-map c
 complete. Option-only and mixed nine-payload changes share one checksum-valid application
 mutation, while pristine lightning remains independently editable. Alternate lightning routing,
 import/export, and ownership navigation are now closed by the destination-attribution gates.
-Complete original-ROM byte-differential evidence for the dedicated runtime installer remains open,
-so the row stays `Partial`.
+The complete original-ROM byte differential now binds the dedicated runtime installer and its
+mutable submap-owner chain. Broader original-editor behavioral evidence and supported
+mapper/identity runtime-installation variants remain partial, so the row stays `Partial`.
 
 The Graphics row's older sentence that calls subsequent ExGFX directory synchronization open is
 superseded by the 2026-08-09 evidence above: the native directory route now authenticates and
