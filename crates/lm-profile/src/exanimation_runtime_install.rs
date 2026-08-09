@@ -555,7 +555,6 @@ pub fn detect_smw_us_v1_current_expanded_exanimation_runtime_for_mapper(
     for (offset, expected) in [
         (mapper_rom_offset(mapper, 0x2390), &pointer_hook[..]),
         (mapper_rom_offset(mapper, 0x25e1), &[0xea, 0xea][..]),
-        (mapper_rom_offset(mapper, 0x1bcc0), &[0; 0x10][..]),
         (mapper_rom_offset(mapper, 0x2d8e2), &shared_a_hook[..]),
         (shared_a_offset, &shared_a[..]),
         (mapper_rom_offset(mapper, 0x26b8), &shared_b_hook[..]),
@@ -573,6 +572,7 @@ pub fn detect_smw_us_v1_current_expanded_exanimation_runtime_for_mapper(
             );
         }
     }
+    authenticate_reserved_exgraphics_table(bytes, mapper)?;
     authenticate_helper(
         bytes,
         mapper,
@@ -588,6 +588,41 @@ pub fn detect_smw_us_v1_current_expanded_exanimation_runtime_for_mapper(
         &GRAPHICS_RUNTIME,
     )?;
     Ok(runtime)
+}
+
+fn authenticate_reserved_exgraphics_table(
+    bytes: &[u8],
+    mapper: Mapper,
+) -> Result<(), SmwUsV1ExpandedExAnimationRuntimeDetectError> {
+    let offset = mapper_rom_offset(mapper, 0x1bcc0);
+    let table = bytes
+        .get(offset..offset + 0x10)
+        .ok_or(SmwUsV1ExpandedExAnimationRuntimeDetectError::FixedRangeMismatch { offset })?;
+    if table[0x0c..] != [0; 4] {
+        return Err(SmwUsV1ExpandedExAnimationRuntimeDetectError::FixedRangeMismatch { offset });
+    }
+    for pointer in table[..0x0c].chunks_exact(3) {
+        if pointer == [0; 3] {
+            continue;
+        }
+        let address =
+            u32::from(pointer[0]) | (u32::from(pointer[1]) << 8) | (u32::from(pointer[2]) << 16);
+        let payload = snes_to_pc(mapper, address).map_err(|_| {
+            SmwUsV1ExpandedExAnimationRuntimeDetectError::FixedRangeMismatch { offset }
+        })?;
+        let header = payload
+            .checked_sub(HEADER_LEN)
+            .ok_or(SmwUsV1ExpandedExAnimationRuntimeDetectError::FixedRangeMismatch { offset })?;
+        let block = parse_at(bytes, header).map_err(|_| {
+            SmwUsV1ExpandedExAnimationRuntimeDetectError::FixedRangeMismatch { offset }
+        })?;
+        if block.payload.start != payload || !(1..=0x1_0000).contains(&block.payload.len()) {
+            return Err(
+                SmwUsV1ExpandedExAnimationRuntimeDetectError::FixedRangeMismatch { offset },
+            );
+        }
+    }
+    Ok(())
 }
 
 /// Classifies the three coordinator branches without treating malformed installed signals as

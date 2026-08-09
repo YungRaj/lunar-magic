@@ -1,12 +1,18 @@
 use crate::PreparedRomCommit;
 use lm_profile::{
     SmwUsV1ExGraphicsEncoding, SmwUsV1ExGraphicsError, SmwUsV1ExGraphicsRuntimeState,
-    has_smw_us_v1_4bpp_graphics_prerequisite, probe_smw_us_v1_exgraphics_runtime,
+    SmwUsV1ExpandedExAnimationRuntimeGeneration, has_smw_us_v1_4bpp_graphics_prerequisite,
+    probe_smw_us_v1_exgraphics_runtime, probe_smw_us_v1_expanded_exanimation_runtime_generation,
     smw_us_v1_exgraphics_installation_plan, smw_us_v1_exgraphics_pointer,
+    smw_us_v1_expanded_exanimation_runtime_installation_plan,
     smw_us_v1_gfx_expanded_settings_installation_plan,
 };
 use lm_project::{GraphicsCompression, GraphicsRomLayout, LevelPointerTable, Project, RomMutation};
+use lm_rats::ProtectedRange;
 use lm_rom::{Mapper, RomImage};
+
+const EXTENDED_EXGFX_POINTER_END: usize =
+    lm_profile::SMW_US_V1_EXTENDED_EXGFX_POINTER_OFFSET + 0xf00 * 3;
 
 /// Prepares first-time or subsequent native ExGFX insertion as one application commit.
 ///
@@ -47,6 +53,27 @@ pub fn prepare_smw_us_v1_exgraphics_install(
             probe_smw_us_v1_exgraphics_runtime(&project.rom).map_err(|error| error.to_string())?;
         }
         Err(error) => return Err(error.to_string()),
+    }
+    match probe_smw_us_v1_expanded_exanimation_runtime_generation(project.rom.logical_bytes())
+        .map_err(|error| error.to_string())?
+    {
+        SmwUsV1ExpandedExAnimationRuntimeGeneration::Absent => {
+            let mut plan = smw_us_v1_expanded_exanimation_runtime_installation_plan()
+                .map_err(|error| error.to_string())?;
+            plan.allocation.fill_bytes = vec![0x00, 0xff];
+            plan.allocation.protected.push(ProtectedRange(
+                lm_profile::SMW_US_V1_EXTENDED_EXGFX_POINTER_OFFSET..EXTENDED_EXGFX_POINTER_END,
+            ));
+            project
+                .install_relocatable_patch(&plan)
+                .map_err(|error| error.to_string())?;
+        }
+        SmwUsV1ExpandedExAnimationRuntimeGeneration::Current => {}
+        generation => {
+            return Err(format!(
+                "native ExGFX insertion requires migration of the {generation:?} ExAnimation runtime"
+            ));
+        }
     }
 
     let mut reserved = Vec::new();
@@ -143,6 +170,11 @@ mod tests {
 
     fn ready_image() -> RomImage {
         let mut bytes = vec![0xff; 0x10_0000];
+        let core = smw_us_v1_expanded_exanimation_runtime_installation_plan().unwrap();
+        for write in core.writes {
+            bytes[write.offset..write.offset + write.expected.len()]
+                .copy_from_slice(&write.expected);
+        }
         bytes[SMW_US_V1_EXGFX_RUNTIME_HOOK_OFFSET..SMW_US_V1_EXGFX_RUNTIME_HOOK_OFFSET + 5]
             .copy_from_slice(&SMW_US_V1_EXGFX_RUNTIME_HOOK);
         bytes[SMW_US_V1_EXGFX_TABLE_BASE_OPERAND_OFFSET
@@ -177,5 +209,10 @@ mod tests {
             let actual = reopen_exgraphics_file(&reopened, route).unwrap();
             assert_eq!(actual, expected);
         }
+        assert_eq!(
+            probe_smw_us_v1_expanded_exanimation_runtime_generation(reopened.rom.logical_bytes())
+                .unwrap(),
+            SmwUsV1ExpandedExAnimationRuntimeGeneration::Current
+        );
     }
 }

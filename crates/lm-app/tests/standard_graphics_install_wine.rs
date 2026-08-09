@@ -135,6 +135,8 @@ fn lunar_magic_reexports_rust_standard_and_exgfx_across_legacy_migration() {
         "-ImportExGFX",
         "original-install.smc",
     );
+    let original_exgfx =
+        RomImage::from_bytes(fs::read(oracle.0.join("original-install.smc")).unwrap()).unwrap();
     fs::remove_file(oracle.0.join("ExGraphics/ExGFX80.bin")).unwrap();
     run_export_operation(
         &wine,
@@ -160,6 +162,20 @@ fn lunar_magic_reexports_rust_standard_and_exgfx_across_legacy_migration() {
     legacy_project
         .apply_mutation(&exgfx_commit.description, &exgfx_commit.mutation)
         .unwrap();
+    assert_eq!(
+        lm_profile::probe_smw_us_v1_expanded_exanimation_runtime_generation(
+            legacy_project.rom.logical_bytes()
+        )
+        .unwrap(),
+        lm_profile::SmwUsV1ExpandedExAnimationRuntimeGeneration::Current
+    );
+    for (offset, len) in [(0x26b8, 4), (0x2d8e2, 4), (0x77550, 0x20)] {
+        assert_eq!(
+            legacy_project.rom.read(offset, len).unwrap(),
+            original_exgfx.read(offset, len).unwrap(),
+            "expanded ExAnimation prerequisite differs at {offset:#08X}"
+        );
+    }
     for (offset, original) in lm_profile::SMW_US_V1_4BPP_GRAPHICS_MARKER_OFFSETS
         .into_iter()
         .zip([0x08, 0x1e])

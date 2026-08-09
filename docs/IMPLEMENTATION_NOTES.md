@@ -4341,6 +4341,12 @@ compressed ExGFX insertion zero-initializes both compressed pointer domains and 
 recovered `$002A47 = EA EA` expanded-format marker. The same Wine gate first verifies Lunar Magic's
 own import/export control, then proves `-ExportExGFX` enumerates and byte-matches the Rust-created
 `ExGFX80`, closing the original-tool recognition gap without copying unrelated ROM metadata.
+First ExGFX insertion also probes the independent expanded ExAnimation generation and, when absent,
+installs its recovered `$C30`, `$600`, `$20`, and `$30` owners plus fixed graphics/shared-palette
+hooks in the same unpublished staging project. Allocation accepts the route's zero fill, skips every
+RATS owner, and protects the extended ExGFX table. Runtime detection no longer mistakes a legitimate
+reserved `$60..$63` pointer for corruption: nonzero entries must resolve to bounded RATS-owned
+payloads, while the four padding bytes and empty entries remain canonical zeroes.
 
 The installed graphics editor also owns a scoped external-edit round trip. It exports the current
 staged controller bytes—not a stale ROM decode—to a uniquely reserved private temporary directory

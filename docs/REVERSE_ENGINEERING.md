@@ -1943,6 +1943,13 @@ standard payload allocation and `$FF` sentinels from masquerading as ExGFX entri
 Magic 3.63 control performs original `-ImportGFX`, `-ImportExGFX`, and `-ExportExGFX`; the same gate
 then re-exports every Rust-migrated regular file and the Rust-created `ExGFX80` byte-for-byte.
 Metadata copying is neither used nor required for recognition.
+The same import trace calls `InstallExpandedLevelSettingsPrerequisites` at `$00462C20`, which in
+turn installs the ExAnimation control family and the two shared-palette hooks before publishing the
+expanded level-header owner. Rust now invokes the already recovered current ExAnimation installer
+when that independently authenticated generation is absent. The live gate byte-matches Lunar
+Magic's fixed `$0026B8` and `$02D8E2` hooks plus `$077550..$07756F` helpers, then requires the
+complete runtime detector to report `Current`. That detector permits populated reserved ExGFX
+entries only when their three-byte addresses resolve to real bounded RATS payloads.
 A retained Lunar Magic 3.63 Wine oracle opens the original `Window8x8` through command `$232A` and
 posts F9 directly to that window. With all separate files replaced by equal-length sentinels, level
 `$105` changes exactly `$00,$01,$13,$14,$15,$17,$1B,$20`; removing `GFX33.bin` first produces
