@@ -19,6 +19,11 @@ pub struct ExAnimationTriggerPreviewState {
     pub custom: [bool; 16],
     pub one_shot: [bool; 32],
     pub manual_frames: [u8; 16],
+    /// Overworld-only replacements for trigger slots `$08-$0F`.
+    ///
+    /// Lunar Magic uses those eight trigger numbers for the event number stored in Manual
+    /// Frames 8-F while previewing an overworld.  `None` retains the level-editor meanings.
+    pub overworld_event_manual: Option<[bool; 8]>,
 }
 
 impl Default for ExAnimationTriggerPreviewState {
@@ -33,6 +38,7 @@ impl Default for ExAnimationTriggerPreviewState {
             custom: [false; 16],
             one_shot: [false; 32],
             manual_frames: [0; 16],
+            overworld_event_manual: None,
         }
     }
 }
@@ -107,7 +113,19 @@ pub fn exanimation_frame_source_word(
     record: &ExAnimationRecord,
     frame: u16,
 ) -> Result<u16, ExAnimationMaterializeError> {
-    let bytes = record.frame_bytes(exanimation_trigger_has_second_bank(record.trigger()));
+    exanimation_frame_source_word_with_banking(
+        record,
+        frame,
+        exanimation_trigger_has_second_bank(record.trigger()),
+    )
+}
+
+pub fn exanimation_frame_source_word_with_banking(
+    record: &ExAnimationRecord,
+    frame: u16,
+    second_bank: bool,
+) -> Result<u16, ExAnimationMaterializeError> {
+    let bytes = record.frame_bytes(second_bank);
     let offset =
         usize::from(frame)
             .checked_mul(2)
@@ -130,7 +148,21 @@ pub fn resolve_exanimation_graphics_address(
     frame: u16,
     context: ExAnimationGraphicsAddressContext,
 ) -> Result<ResolvedExAnimationGraphicsAddress, ExAnimationMaterializeError> {
-    let source_word = exanimation_frame_source_word(record, frame)?;
+    resolve_exanimation_graphics_address_with_banking(
+        record,
+        frame,
+        context,
+        exanimation_trigger_has_second_bank(record.trigger()),
+    )
+}
+
+pub fn resolve_exanimation_graphics_address_with_banking(
+    record: &ExAnimationRecord,
+    frame: u16,
+    context: ExAnimationGraphicsAddressContext,
+    second_bank: bool,
+) -> Result<ResolvedExAnimationGraphicsAddress, ExAnimationMaterializeError> {
+    let source_word = exanimation_frame_source_word_with_banking(record, frame, second_bank)?;
     let source_tile = if record.destination_flag() {
         let source_bytes = u32::from(source_word);
         let transfer_bytes = u32::from(
@@ -197,13 +229,33 @@ pub fn materialize_exanimation_graphics_transfer(
     destination_tile: u32,
     two_bpp_destination: bool,
 ) -> Result<Vec<MaterializedTileOverride>, ExAnimationMaterializeError> {
+    materialize_exanimation_graphics_transfer_with_banking(
+        record,
+        frame,
+        source_tiles,
+        source_tile,
+        destination_tile,
+        two_bpp_destination,
+        exanimation_trigger_has_second_bank(record.trigger()),
+    )
+}
+
+pub fn materialize_exanimation_graphics_transfer_with_banking(
+    record: &ExAnimationRecord,
+    frame: u16,
+    source_tiles: &[IndexedTile],
+    source_tile: usize,
+    destination_tile: u32,
+    two_bpp_destination: bool,
+    second_bank: bool,
+) -> Result<Vec<MaterializedTileOverride>, ExAnimationMaterializeError> {
     let kind = record.kind();
     let bytes = GRAPHICS_TRANSFER_BYTES
         .get(usize::from(kind))
         .copied()
         .filter(|bytes| *bytes != 0)
         .ok_or(ExAnimationMaterializeError::UnsupportedGraphicsKind(kind))?;
-    let _ = exanimation_frame_source_word(record, frame)?;
+    let _ = exanimation_frame_source_word_with_banking(record, frame, second_bank)?;
     let tile_count = usize::from(if two_bpp_destination {
         bytes >> 4
     } else {
@@ -263,6 +315,24 @@ pub fn materialize_exanimation_palette_transfer(
     source_color: usize,
     alternate_bank: bool,
 ) -> Result<ExAnimationPaletteTransfer, ExAnimationMaterializeError> {
+    materialize_exanimation_palette_transfer_with_banking(
+        record,
+        frame,
+        palette,
+        source_color,
+        alternate_bank,
+        exanimation_trigger_has_second_bank(record.trigger()),
+    )
+}
+
+pub fn materialize_exanimation_palette_transfer_with_banking(
+    record: &ExAnimationRecord,
+    frame: u16,
+    palette: &[Bgr555],
+    source_color: usize,
+    alternate_bank: bool,
+    second_bank: bool,
+) -> Result<ExAnimationPaletteTransfer, ExAnimationMaterializeError> {
     let kind = record.kind();
     if !(0x13..=0x1b).contains(&kind) {
         return Err(ExAnimationMaterializeError::UnsupportedPaletteKind(kind));
@@ -273,7 +343,7 @@ pub fn materialize_exanimation_palette_transfer(
 
     if (0x16..=0x17).contains(&kind) {
         return Ok(ExAnimationPaletteTransfer::FixedColor(valid_color(
-            exanimation_frame_source_word(record, frame)?,
+            exanimation_frame_source_word_with_banking(record, frame, second_bank)?,
         )?));
     }
 
@@ -292,7 +362,11 @@ pub fn materialize_exanimation_palette_transfer(
 
     let colors = if kind < 0x16 {
         if count == 1 {
-            vec![valid_color(exanimation_frame_source_word(record, frame)?)?]
+            vec![valid_color(exanimation_frame_source_word_with_banking(
+                record,
+                frame,
+                second_bank,
+            )?)?]
         } else {
             let source_end = source_color.checked_add(count).ok_or(
                 ExAnimationMaterializeError::PaletteSourceOutOfRange {
@@ -506,13 +580,34 @@ fn select_frame(
 ) -> Option<u16> {
     let trigger = record.trigger();
     let maximum = record.frame_count_minus_one();
-    let cursor_index = if trigger == 0x0f {
+    let overworld_event =
+        (8..=0x0f).contains(&trigger) && triggers.overworld_event_manual.is_some();
+    let cursor_index = if trigger == 0x0f && !overworld_event {
         record_index & !7
     } else {
         record_index
     };
     let cursor = cursors.get_mut(cursor_index)?;
     let mut alternate_bank = false;
+
+    if overworld_event && let Some(events) = triggers.overworld_event_manual {
+        alternate_bank = events[usize::from(trigger - 8)];
+        if advance {
+            if *cursor < maximum {
+                *cursor += 1;
+            } else {
+                *cursor = 0;
+            }
+        }
+        return Some(
+            u16::from(*cursor)
+                + if alternate_bank {
+                    u16::from(maximum) + 1
+                } else {
+                    0
+                },
+        );
+    }
 
     match trigger {
         0 => {}
@@ -701,6 +796,25 @@ mod tests {
         assert_eq!(
             state.process_phase(&records, 0, true, &mut triggers)[0].frame,
             2
+        );
+        assert_eq!(
+            state.process_phase(&records, 1, true, &mut triggers)[0].frame,
+            2
+        );
+    }
+
+    #[test]
+    fn overworld_event_manual_replaces_level_trigger_slots_eight_through_f() {
+        let records = vec![record(1, 1, 8), record(1, 1, 0x0f)];
+        let mut state = ExAnimationPreviewState::new(records.len());
+        let mut triggers = ExAnimationTriggerPreviewState::default();
+        triggers.five_yoshi_coins = true;
+        triggers.overworld_event_manual =
+            Some([false, false, false, false, false, false, false, true]);
+
+        assert_eq!(
+            state.process_phase(&records, 0, true, &mut triggers)[0].frame,
+            0
         );
         assert_eq!(
             state.process_phase(&records, 1, true, &mut triggers)[0].frame,

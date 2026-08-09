@@ -53,8 +53,12 @@ pub use exanimation_preview::{
     ExAnimationMaterializeError, ExAnimationPaletteTransfer, ExAnimationPreviewDomain,
     ExAnimationPreviewState, ExAnimationTriggerPreviewState, ResolvedExAnimationGraphicsAddress,
     SelectedCompositeExAnimationFrame, SelectedExAnimationFrame, exanimation_frame_source_word,
-    exanimation_trigger_has_second_bank, materialize_exanimation_graphics_transfer,
-    materialize_exanimation_palette_transfer, resolve_exanimation_graphics_address,
+    exanimation_frame_source_word_with_banking, exanimation_trigger_has_second_bank,
+    materialize_exanimation_graphics_transfer,
+    materialize_exanimation_graphics_transfer_with_banking,
+    materialize_exanimation_palette_transfer,
+    materialize_exanimation_palette_transfer_with_banking, resolve_exanimation_graphics_address,
+    resolve_exanimation_graphics_address_with_banking,
 };
 pub use exanimation_slot_options::{
     EXANIMATION_LEVEL_SLOT_COUNT, ExAnimationSlotOptionError, ExAnimationSlotOptionTable,

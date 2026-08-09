@@ -311,6 +311,8 @@ fn decode_main_layer2_workspace(
     // the ROM rather than inventing a palette entry.
     let complete_colors = palette.colors.len() / 16 * 16;
     palette.colors.truncate(complete_colors);
+    let (gfx32, gfx33) =
+        load_overworld_special_graphics(&project, lm_profile::smw_us_v1_vanilla_graphics_layout())?;
     Ok(MainLayer2Workspace {
         controller,
         original_paths: paths.clone(),
@@ -329,6 +331,8 @@ fn decode_main_layer2_workspace(
                 lm_profile::smw_us_v1_vanilla_graphics_layout(),
             )?,
             external_sprite_assets: lm_graphics::ExternalSpriteAssets::default(),
+            gfx32,
+            gfx33,
         },
     })
 }
@@ -452,6 +456,7 @@ fn decode_overworld_assets(
             .tiles;
         append_overworld_graphics_slot(&mut tiles, file_number, slot)?;
     }
+    let (gfx32, gfx33) = load_overworld_special_graphics(&project, profiled.profile.graphics)?;
     Ok(crate::overworld_editor_render::OverworldAssets {
         map16: Map16SetFile {
             set: map16.set().clone(),
@@ -465,7 +470,36 @@ fn decode_overworld_assets(
             profiled.profile.graphics,
         )?,
         external_sprite_assets: lm_graphics::ExternalSpriteAssets::default(),
+        gfx32,
+        gfx33,
     })
+}
+
+fn load_overworld_special_graphics(
+    project: &Project,
+    layout: lm_project::GraphicsRomLayout,
+) -> Result<(Vec<IndexedTile>, Vec<IndexedTile>), String> {
+    let entries = layout
+        .split_pointer_planes
+        .map_or(layout.pointers.entries, |planes| planes.entries);
+    let (gfx33_file, gfx32_file, gfx33_layout, gfx32_layout) = if entries > 0x33 {
+        (0x33, 0x32, layout, layout)
+    } else {
+        let special = lm_profile::smw_us_v1_special_graphics_layouts(&project.rom)
+            .map_err(|error| format!("could not resolve overworld special graphics: {error}"))?;
+        (0, 0, special.gfx33, special.gfx32)
+    };
+    let gfx33 = project
+        .load_decompressed_graphics_file(gfx33_file, gfx33_layout)
+        .map_err(|error| format!("could not load overworld ExAnimation GFX33: {error}"))?;
+    let gfx33 = lm_graphics::decode_planar_tiles(&gfx33, 3)
+        .map_err(|error| format!("could not decode overworld ExAnimation GFX33: {error}"))?;
+    let gfx32 = project
+        .load_decompressed_graphics_file(gfx32_file, gfx32_layout)
+        .map_err(|error| format!("could not load overworld ExAnimation GFX32: {error}"))?;
+    let gfx32 = lm_graphics::decode_planar_tiles(&gfx32, 4)
+        .map_err(|error| format!("could not decode overworld ExAnimation GFX32: {error}"))?;
+    Ok((gfx32, gfx33))
 }
 
 fn load_native_sprite_graphics_cache(

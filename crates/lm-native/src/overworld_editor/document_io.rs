@@ -50,6 +50,8 @@ pub(super) fn pending_from_loaded(loaded: LoadedDocument) -> Result<PendingOpen,
                 .map_err(|error| error.to_string())?,
             native_sprite_graphics_cache: Vec::new(),
             external_sprite_assets: lm_graphics::ExternalSpriteAssets::default(),
+            gfx32: Vec::new(),
+            gfx33: Vec::new(),
         },
         maximum_records: "32".into(),
     })

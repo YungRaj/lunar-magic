@@ -109,8 +109,16 @@ pub(crate) struct RomOverworldEditor {
     paint_tool: MapPaintTool,
     paint_anchor: Option<(usize, usize)>,
     completed_reveals: usize,
-    rendered_key: Option<(u64, usize)>,
+    rendered_key: Option<(u64, usize, usize)>,
     texture: Option<egui::TextureHandle>,
+    animation_preview_paused: bool,
+    animation_preview_origin: Option<f64>,
+    animation_preview_tick: usize,
+    animation_preview_triggers: lm_graphics::ExAnimationTriggerPreviewState,
+    animation_preview_events_passed: Vec<bool>,
+    animation_preview_trigger_kind: usize,
+    animation_preview_trigger_index: usize,
+    animation_preview_event: usize,
     map16_page: usize,
     map16_rendered_key: Option<(u64, usize)>,
     map16_texture: Option<egui::TextureHandle>,
@@ -450,6 +458,7 @@ impl RomOverworldEditor {
             None => None,
         };
         if self.workspace.is_some() {
+            self.update_animation_preview_clock(context);
             self.load_tile();
             self.refresh_texture(context);
             self.refresh_map16_texture(context);
@@ -635,6 +644,7 @@ impl RomOverworldEditor {
             Panel::Records => self.records.show(ui, &file, controller_revision),
             Panel::Palette => self.palette.show(ui, &file.data.palette, &ownership),
             Panel::Animation => {
+                self.animation_preview_controls(ui, &file.data.animation);
                 self.animation
                     .show(ui, &file.data.animation, &modes, controller_revision)
             }
@@ -937,7 +947,11 @@ impl RomOverworldEditor {
         let Some(workspace) = self.workspace.as_ref() else {
             return;
         };
-        let key = (workspace.controller.revision(), self.completed_reveals);
+        let key = (
+            workspace.controller.revision(),
+            self.completed_reveals,
+            self.animation_preview_tick,
+        );
         if self.rendered_key == Some(key) {
             return;
         }
@@ -946,12 +960,17 @@ impl RomOverworldEditor {
             shape: workspace.profiled.profile.overworld_shape,
             data: workspace.controller.data().clone(),
         };
-        match overworld_editor_render::render_texture(
+        match overworld_editor_render::render_texture_with_preview(
             context,
             &file,
             &workspace.assets,
             workspace.native_appearances.as_ref(),
             self.completed_reveals,
+            Some(&overworld_editor_render::OverworldExAnimationPreview {
+                tick: self.animation_preview_tick,
+                triggers: self.animation_preview_triggers.clone(),
+                events_passed: self.animation_preview_events_passed.clone(),
+            }),
         ) {
             Ok(texture) => {
                 self.texture = Some(texture);
@@ -969,7 +988,7 @@ impl RomOverworldEditor {
         let Some(workspace) = self.main_layer2_workspace.as_ref() else {
             return;
         };
-        let key = (workspace.controller.revision(), 0);
+        let key = (workspace.controller.revision(), 0, 0);
         if self.rendered_key == Some(key) {
             return;
         }
@@ -1289,7 +1308,146 @@ impl RomOverworldEditor {
         self.map16_rendered_key = None;
         self.records.invalidate();
         self.animation.invalidate();
+        self.reset_animation_preview();
     }
+
+    fn update_animation_preview_clock(&mut self, context: &egui::Context) {
+        if self.animation_preview_paused {
+            return;
+        }
+        let seconds = context.input(|input| input.time);
+        let origin = *self.animation_preview_origin.get_or_insert(seconds);
+        self.animation_preview_tick = overworld_animation_preview_tick(seconds - origin);
+        context.request_repaint_after(std::time::Duration::from_millis(60));
+    }
+
+    fn reset_animation_preview(&mut self) {
+        self.animation_preview_origin = None;
+        self.animation_preview_tick = 0;
+        self.animation_preview_triggers = lm_graphics::ExAnimationTriggerPreviewState::default();
+        self.animation_preview_events_passed.clear();
+        self.animation_preview_events_passed.resize(256, false);
+        if let Some(animation) = self
+            .workspace
+            .as_ref()
+            .map(|workspace| &workspace.controller.data().animation)
+        {
+            for index in 0..16 {
+                if animation.trigger_mask & (1 << index) != 0 {
+                    self.animation_preview_triggers.manual_frames[index] =
+                        animation.trigger_values[index];
+                    self.animation_preview_triggers.custom[index] =
+                        animation.trigger_values[index] != 0;
+                }
+            }
+        }
+    }
+
+    fn animation_preview_controls(
+        &mut self,
+        ui: &mut egui::Ui,
+        animation: &lm_graphics::CompactExAnimation,
+    ) {
+        if self.animation_preview_events_passed.len() != 256 {
+            self.animation_preview_events_passed.resize(256, false);
+        }
+        ui.group(|ui| {
+            ui.label("Live overworld ExAnimation preview");
+            ui.horizontal(|ui| {
+                let label = if self.animation_preview_paused { "Play" } else { "Pause" };
+                if ui.button(label).clicked() {
+                    self.animation_preview_paused = !self.animation_preview_paused;
+                    if self.animation_preview_paused {
+                        self.animation_preview_origin = None;
+                    } else {
+                        let now = ui.input(|input| input.time);
+                        self.animation_preview_origin =
+                            Some(now - self.animation_preview_tick as f64 * 0.06);
+                    }
+                }
+                if ui.button("Reset").clicked() {
+                    self.reset_animation_preview();
+                    self.rendered_key = None;
+                }
+                if ui
+                    .add_enabled(self.animation_preview_paused, egui::Button::new("Step phase"))
+                    .clicked()
+                {
+                    self.animation_preview_tick = self.animation_preview_tick.saturating_add(1);
+                    self.rendered_key = None;
+                }
+                ui.monospace(format!("phase {:X}, tick {}", self.animation_preview_tick & 7, self.animation_preview_tick));
+            });
+            ui.horizontal(|ui| {
+                egui::ComboBox::from_id_salt("overworld-preview-trigger-kind")
+                    .selected_text(match self.animation_preview_trigger_kind {
+                        0 => "Custom",
+                        1 => "One Shot",
+                        _ => "Manual Frame",
+                    })
+                    .show_ui(ui, |ui| {
+                        ui.selectable_value(&mut self.animation_preview_trigger_kind, 0, "Custom");
+                        ui.selectable_value(&mut self.animation_preview_trigger_kind, 1, "One Shot");
+                        ui.selectable_value(&mut self.animation_preview_trigger_kind, 2, "Manual Frame");
+                    });
+                let maximum = if self.animation_preview_trigger_kind == 1 { 31 } else { 15 };
+                self.animation_preview_trigger_index = self.animation_preview_trigger_index.min(maximum);
+                ui.add(egui::DragValue::new(&mut self.animation_preview_trigger_index).range(0..=maximum).prefix("#"));
+                let changed = match self.animation_preview_trigger_kind {
+                    0 => ui.checkbox(
+                        &mut self.animation_preview_triggers.custom[self.animation_preview_trigger_index],
+                        "Active",
+                    ).changed(),
+                    1 => ui.checkbox(
+                        &mut self.animation_preview_triggers.one_shot[self.animation_preview_trigger_index],
+                        "Active",
+                    ).changed(),
+                    _ => ui.add(
+                        egui::DragValue::new(
+                            &mut self.animation_preview_triggers.manual_frames[self.animation_preview_trigger_index],
+                        ).range(0..=u8::MAX).prefix("frame $"),
+                    ).changed(),
+                };
+                if changed {
+                    self.rendered_key = None;
+                }
+            });
+            ui.horizontal(|ui| {
+                ui.add(
+                    egui::DragValue::new(&mut self.animation_preview_event)
+                        .range(0..=u8::MAX as usize)
+                        .prefix("Event $"),
+                );
+                if ui
+                    .checkbox(
+                        &mut self.animation_preview_events_passed[self.animation_preview_event],
+                        "Passed",
+                    )
+                    .changed()
+                {
+                    self.rendered_key = None;
+                }
+            });
+            ui.small("Event Manual 8-F uses the event numbers stored by Trigger Init and these passed-event states.");
+            if animation.records.is_empty() {
+                ui.small("No custom overworld ExAnimation records are installed for this submap.");
+            }
+        });
+    }
+}
+
+fn overworld_animation_preview_tick(seconds: f64) -> usize {
+    if let Ok(tick) = std::env::var("LM_NATIVE_OVERWORLD_ANIMATION_TICK")
+        && let Ok(tick) = tick.parse::<usize>()
+    {
+        return tick;
+    }
+    if !seconds.is_finite() || seconds <= 0.0 {
+        return 0;
+    }
+    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+    let ticks = (seconds / 0.06).floor() as u64;
+    usize::try_from(ticks).unwrap_or(usize::MAX)
 }
 
 fn grid_line(start: (usize, usize), end: (usize, usize)) -> Vec<(usize, usize)> {
@@ -1439,11 +1597,22 @@ mod canvas_tests {
     use super::{
         MainPathLinkForm, OverworldControllerEdit, OverworldEndpoint, OverworldLayerId,
         OverworldPathDirection, OverworldPathLink, OverworldPathLinkTable, OverworldPathTarget,
-        RomOverworldEditor, flood_fill_cells, grid_line, rectangle_cells, route_canvas_endpoint,
-        route_directional_canvas_endpoint, route_endpoint_canvas_pixel, stroke_edits,
+        RomOverworldEditor, flood_fill_cells, grid_line, overworld_animation_preview_tick,
+        rectangle_cells, route_canvas_endpoint, route_directional_canvas_endpoint,
+        route_endpoint_canvas_pixel, stroke_edits,
     };
     use crate::document_loader::BoundedRead;
     use eframe::egui;
+
+    #[test]
+    fn overworld_animation_clock_uses_the_authenticated_native_preview_cadence() {
+        assert_eq!(overworld_animation_preview_tick(f64::NAN), 0);
+        assert_eq!(overworld_animation_preview_tick(-1.0), 0);
+        assert_eq!(overworld_animation_preview_tick(0.0), 0);
+        assert_eq!(overworld_animation_preview_tick(0.059), 0);
+        assert_eq!(overworld_animation_preview_tick(0.06), 1);
+        assert_eq!(overworld_animation_preview_tick(0.48), 8);
+    }
 
     #[test]
     fn active_complete_transfer_rejects_direct_mutation_entry_point() {
