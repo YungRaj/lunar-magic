@@ -181,6 +181,14 @@ pub enum Command {
         rev: u64,
         recording: TitleScreenRecording,
     },
+    /// Installs Lunar Magic's temporary title-movement joypad recorder runtime.
+    InstallNativeTitleRecordingRecorder {
+        rev: u64,
+    },
+    /// Removes only an authenticated temporary title-movement joypad recorder runtime.
+    UninstallNativeTitleRecordingRecorder {
+        rev: u64,
+    },
     /// Replaces Lunar Magic's fixed attribution, VRAM version, and packed feature record.
     ReplaceLunarMagicRomMetadata {
         rev: u64,

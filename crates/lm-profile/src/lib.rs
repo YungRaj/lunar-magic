@@ -66,6 +66,7 @@ mod text;
 mod text_encode;
 mod text_schema;
 mod title_recording;
+mod title_recording_recorder;
 mod title_tilemap;
 mod vanilla_layer3;
 mod vanilla_level_map16;
@@ -515,6 +516,13 @@ pub use title_recording::{
     SMW_US_V1_TITLE_RECORDING_CONTINUATION_OFFSET, SMW_US_V1_TITLE_RECORDING_HOOK_OFFSET,
     SMW_US_V1_TITLE_RECORDING_SEARCH_START, smw_us_v1_title_recording_allocation_policy,
     smw_us_v1_title_recording_locator,
+};
+pub use title_recording_recorder::{
+    SMW_US_V1_TITLE_RECORDER_COMPENSATION_LEN, SMW_US_V1_TITLE_RECORDER_COMPENSATION_OFFSET,
+    SMW_US_V1_TITLE_RECORDER_FIRST_HOOK_OFFSET, SMW_US_V1_TITLE_RECORDER_SEARCH_START,
+    SMW_US_V1_TITLE_RECORDER_SECOND_HOOK_OFFSET,
+    smw_us_v1_title_recording_recorder_allocation_policy,
+    smw_us_v1_title_recording_recorder_locator,
 };
 pub use title_tilemap::{
     SMW_US_V1_TITLE_TILEMAP_POINTER_OFFSET, SMW_US_V1_TITLE_TILEMAP_PRISTINE_STREAM_OFFSET,

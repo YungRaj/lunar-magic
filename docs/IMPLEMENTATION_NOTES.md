@@ -4816,6 +4816,17 @@ Map16 value, and draws Lunar Magic's four-pixel black/red/black double outline a
 native routine's temporary flag clear. Custom `.dsc` flag-eight markers remain pending live DSC
 ownership in the installed canvas.
 
+## Temporary title-movement joypad recorder parity
+
+The title-recording editor now exposes Lunar Magic's separate temporary recording runtime instead
+of treating playback-data import as the entire workflow. The project model authenticates pristine
+or installed hook pairs, requires exact RATS ownership and all 178 runtime bytes, installs with the
+original low-bank LoROM pointer convention, preserves the stored checksum through the recovered
+`$07EFA3..$07F08D` additive run, and removes only a fully authenticated owner. Install, uninstall,
+Undo, Redo, stale revisions, and native warning text are covered. A retained PID-scoped Wine
+oracle binds the exact 347-byte Lunar Magic 3.63 mutation, complete output hash, reciprocal removal,
+and Cancel atomicity. Vanilla expansion prompting and emulator-driven input capture remain gates.
+
 ## ExLoROM standard graphics and ExGFX conversion parity
 
 The original-tool conversion gate exposed a pointer-canonicalization bug that ordinary LoROM

@@ -211,6 +211,7 @@ pub enum AppError {
     TitleTilemapPatch(lm_project::TitleTilemapPatchError),
     TitleRecordingIdentityMismatch,
     TitleRecordingPatch(lm_project::TitleRecordingPatchError),
+    TitleRecordingRecorder(lm_project::TitleRecordingRecorderError),
     LunarMagicMetadataIdentityMismatch,
     LunarMagicMetadata(lm_project::LunarMagicRomMetadataIoError),
     SecondaryExitIdentityMismatch,
@@ -655,6 +656,12 @@ impl From<lm_project::TitleRecordingPatchError> for AppError {
     }
 }
 
+impl From<lm_project::TitleRecordingRecorderError> for AppError {
+    fn from(value: lm_project::TitleRecordingRecorderError) -> Self {
+        Self::TitleRecordingRecorder(value)
+    }
+}
+
 impl From<lm_project::LunarMagicRomMetadataIoError> for AppError {
     fn from(value: lm_project::LunarMagicRomMetadataIoError) -> Self {
         Self::LunarMagicMetadata(value)
@@ -983,6 +990,12 @@ impl AppState {
             }
             Command::ReplaceNativeTitleRecording { rev, recording } => {
                 self.replace_title_recording(rev, &recording)?
+            }
+            Command::InstallNativeTitleRecordingRecorder { rev } => {
+                self.set_title_recording_recorder(rev, true)?
+            }
+            Command::UninstallNativeTitleRecordingRecorder { rev } => {
+                self.set_title_recording_recorder(rev, false)?
             }
             Command::ReplaceLunarMagicRomMetadata { rev, metadata } => {
                 self.replace_lunar_magic_rom_metadata(rev, &metadata)?

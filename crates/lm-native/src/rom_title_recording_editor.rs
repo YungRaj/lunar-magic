@@ -6,6 +6,8 @@ use crate::{
 use eframe::egui;
 use lm_app::{AppState, Command};
 use lm_profile::smw_us_v1_title_recording_locator;
+use lm_profile::smw_us_v1_title_recording_recorder_locator;
+use lm_project::TitleRecordingRecorderState;
 use lm_title::{
     TitleScreenRecording, decode_snes9x_title_recording, decode_zsnes_title_recording,
     encode_zsnes_title_recording,
@@ -33,6 +35,7 @@ struct Workspace {
     original: Option<TitleScreenRecording>,
     original_text: String,
     text: String,
+    recorder: TitleRecordingRecorderState,
 }
 
 #[derive(Default)]
@@ -58,12 +61,18 @@ impl RomTitleRecordingEditor {
             .project()
             .ok_or_else(|| "open a supported ROM first".to_owned())
             .and_then(|project| {
-                project
+                let playback = project
                     .load_title_recording_detected(&smw_us_v1_title_recording_locator())
-                    .map_err(|error| error.to_string())
+                    .map_err(|error| error.to_string())?;
+                let recorder = project
+                    .load_title_recording_recorder_detected(
+                        &smw_us_v1_title_recording_recorder_locator(),
+                    )
+                    .map_err(|error| error.to_string())?;
+                Ok((playback, recorder))
             });
         match result {
-            Ok(loaded) => {
+            Ok((loaded, recorder)) => {
                 let original_text = loaded
                     .recording
                     .as_ref()
@@ -73,6 +82,7 @@ impl RomTitleRecordingEditor {
                     original: loaded.recording,
                     text: original_text.clone(),
                     original_text,
+                    recorder,
                 });
                 self.error = None;
             }
@@ -188,6 +198,44 @@ impl RomTitleRecordingEditor {
                 "Unchanged"
             });
         });
+        ui.separator();
+        ui.label("Temporary joypad recorder for creating title movements");
+        match &workspace.recorder {
+            TitleRecordingRecorderState::Absent => {
+                ui.colored_label(
+                    egui::Color32::YELLOW,
+                    "The recorder temporarily repurposes overworld RAM. Install it only while recording a level, then uninstall it before loading or creating overworld save states.",
+                );
+                if ui
+                    .add_enabled(
+                        !stale && !busy,
+                        egui::Button::new("Install temporary joypad recorder"),
+                    )
+                    .clicked()
+                {
+                    command = Some(Command::InstallNativeTitleRecordingRecorder {
+                        rev: project_revision,
+                    });
+                }
+            }
+            TitleRecordingRecorderState::Installed { .. } => {
+                ui.colored_label(
+                    egui::Color32::LIGHT_RED,
+                    "Recorder installed: create the emulator save state now, then uninstall immediately.",
+                );
+                if ui
+                    .add_enabled(
+                        !stale && !busy,
+                        egui::Button::new("Uninstall temporary joypad recorder"),
+                    )
+                    .clicked()
+                {
+                    command = Some(Command::UninstallNativeTitleRecordingRecorder {
+                        rev: project_revision,
+                    });
+                }
+            }
+        }
         ui.separator();
         ui.label("Recording files and emulator states");
         ui.horizontal_wrapped(|ui| {

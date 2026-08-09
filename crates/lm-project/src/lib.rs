@@ -77,6 +77,7 @@ mod separate_midway_patch;
 mod shared_palette_io;
 mod super_graphics_io;
 mod title_recording_patch;
+mod title_recording_recorder;
 mod title_tilemap_patch;
 mod transaction;
 mod vanilla_entrance_io;
@@ -272,6 +273,9 @@ pub use super_graphics_io::{
 pub use title_recording_patch::{
     LoadedTitleRecording, TitleRecordingPatchError, TitleRecordingPatchLocator,
     TitleRecordingStorage,
+};
+pub use title_recording_recorder::{
+    TitleRecordingRecorderError, TitleRecordingRecorderLocator, TitleRecordingRecorderState,
 };
 pub use title_tilemap_patch::{
     LoadedTitleTilemap, TitleTilemapPatchError, TitleTilemapPatchLocator, TitleTilemapStorage,

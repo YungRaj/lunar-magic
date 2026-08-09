@@ -1,7 +1,8 @@
 use crate::{AppError, AppState, FrontendEffect};
 use lm_profile::{
     SMW_US_V1_CHECKSUM_FIELD, smw_us_v1_title_recording_allocation_policy,
-    smw_us_v1_title_recording_locator,
+    smw_us_v1_title_recording_locator, smw_us_v1_title_recording_recorder_allocation_policy,
+    smw_us_v1_title_recording_recorder_locator,
 };
 use lm_rom::{Mapper, Region, SupportedGame};
 use lm_title::TitleScreenRecording;
@@ -55,6 +56,54 @@ impl AppState {
             revision: self.project_revision,
         }])
     }
+
+    pub(crate) fn set_title_recording_recorder(
+        &mut self,
+        expected_revision: u64,
+        install: bool,
+    ) -> Result<Vec<FrontendEffect>, AppError> {
+        if expected_revision != self.project_revision {
+            return Err(AppError::StaleProjectRevision {
+                expected: expected_revision,
+                actual: self.project_revision,
+            });
+        }
+        self.require_no_pending_save()?;
+        self.ensure_project_revision_capacity()?;
+        let project = self.project.as_mut().ok_or(AppError::NoProject)?;
+        let identity = project.identity.as_ref().ok_or(AppError::NoProject)?;
+        if identity.game != SupportedGame::SuperMarioWorld
+            || identity.region != Region::NorthAmerica
+            || identity.revision != 0
+            || identity.mapper != Mapper::LoRom
+        {
+            return Err(AppError::TitleRecordingIdentityMismatch);
+        }
+        let locator = smw_us_v1_title_recording_recorder_locator();
+        let allocation =
+            smw_us_v1_title_recording_recorder_allocation_policy(project.rom.logical_len());
+        let changed = if install {
+            project.install_title_recording_recorder(&locator, &allocation)?
+        } else {
+            project.uninstall_title_recording_recorder(&locator, &allocation)?
+        };
+        if !changed {
+            return Ok(Vec::new());
+        }
+        self.advance_project_revision()?;
+        let description = if install {
+            "Install native SMW title-movement joypad recorder"
+        } else {
+            "Uninstall native SMW title-movement joypad recorder"
+        }
+        .to_owned();
+        self.status.clone_from(&description);
+        Ok(vec![FrontendEffect::ProjectChanged {
+            description,
+            mode: self.mode,
+            revision: self.project_revision,
+        }])
+    }
 }
 
 #[cfg(test)]
@@ -73,6 +122,32 @@ mod tests {
         app.dispatch(Command::ReplaceNativeTitleRecording { rev: 0, recording })
             .unwrap();
         app.dispatch(Command::Undo).unwrap();
+        assert_eq!(app.project().unwrap().save_snapshot(), original);
+    }
+
+    #[test]
+    fn recorder_commands_are_revision_checked_and_undoable() {
+        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let Ok(original) = std::fs::read(root.join("Super Mario World (USA).sfc")) else {
+            return;
+        };
+        if original.len() != 0x20_0200 {
+            return;
+        }
+        let mut app = AppState::default();
+        app.load_rom(original.clone()).unwrap();
+        assert!(matches!(
+            app.dispatch(Command::InstallNativeTitleRecordingRecorder { rev: 1 }),
+            Err(AppError::StaleProjectRevision { .. })
+        ));
+        app.dispatch(Command::InstallNativeTitleRecordingRecorder { rev: 0 })
+            .unwrap();
+        assert_eq!(app.project_revision(), 1);
+        app.dispatch(Command::Undo).unwrap();
+        assert_eq!(app.project().unwrap().save_snapshot(), original);
+        app.dispatch(Command::Redo).unwrap();
+        app.dispatch(Command::UninstallNativeTitleRecordingRecorder { rev: 3 })
+            .unwrap();
         assert_eq!(app.project().unwrap().save_snapshot(), original);
     }
 }
