@@ -52,6 +52,7 @@ pub(super) fn pending_from_loaded(loaded: LoadedDocument) -> Result<PendingOpen,
             external_sprite_assets: lm_graphics::ExternalSpriteAssets::default(),
             gfx32: Vec::new(),
             gfx33: Vec::new(),
+            built_in_animation_addresses: Vec::new(),
         },
         maximum_records: "32".into(),
     })

@@ -10,6 +10,8 @@ pub(crate) struct OverworldAssets {
     pub(crate) external_sprite_assets: lm_graphics::ExternalSpriteAssets,
     pub(crate) gfx32: Vec<lm_graphics::IndexedTile>,
     pub(crate) gfx33: Vec<lm_graphics::IndexedTile>,
+    /// Lunar Magic's three built-in overworld seeds followed by eight frames for eight groups.
+    pub(crate) built_in_animation_addresses: Vec<u16>,
 }
 
 #[derive(Clone, Debug)]
@@ -183,6 +185,11 @@ fn materialize_overworld_exanimation(
     )?;
 
     let mut palette = overworld.data.palette.clone();
+    apply_builtin_overworld_animation(
+        &mut cache,
+        &assets.built_in_animation_addresses,
+        preview.tick,
+    )?;
     let mut triggers = preview.triggers.clone();
     triggers.overworld_event_manual = Some(std::array::from_fn(|index| {
         let manual = index + 8;
@@ -224,6 +231,126 @@ fn materialize_overworld_exanimation(
     let len = graphics.graphics.tiles.len();
     graphics.graphics.tiles.clone_from_slice(&cache[..len]);
     Ok((graphics, palette))
+}
+
+fn apply_builtin_overworld_animation(
+    graphics: &mut [lm_graphics::IndexedTile],
+    addresses: &[u16],
+    timer_ticks: usize,
+) -> Result<(), String> {
+    const ADDRESS_WORDS: usize = 3 + 8 * 8;
+    const DESTINATION: usize = 0x75;
+    const SOURCE_BASE: usize = 0xad00;
+    const SOURCE_LIMIT: usize = 0xc800;
+    if addresses.is_empty() {
+        return Ok(());
+    }
+    if addresses.len() != ADDRESS_WORDS {
+        return Err(format!(
+            "built-in overworld animation table has {} words instead of {ADDRESS_WORDS}",
+            addresses.len()
+        ));
+    }
+    let bytes_per_tile = usize::from(addresses[4].wrapping_sub(addresses[3]));
+    if !matches!(bytes_per_tile, 0x18 | 0x20) {
+        return Err(format!(
+            "built-in overworld animation source stride is {bytes_per_tile:X}, expected 18 or 20"
+        ));
+    }
+    let source = graphics.to_vec();
+    let blank = lm_graphics::IndexedTile::new([0; lm_graphics::IndexedTile::PIXEL_COUNT]);
+    let resolve = |address: u16| -> lm_graphics::IndexedTile {
+        let address = usize::from(address);
+        if (SOURCE_BASE..SOURCE_LIMIT).contains(&address) {
+            source
+                .get((address - SOURCE_BASE) / bytes_per_tile)
+                .cloned()
+                .unwrap_or_else(|| blank.clone())
+        } else {
+            blank.clone()
+        }
+    };
+    let mut animated = vec![blank.clone(); 11];
+    for (destination, address) in addresses[..3].iter().copied().enumerate() {
+        animated[destination] = resolve(address);
+    }
+    // InitializeOverworldAnimationGraphicsCache @ $00543480 copies this fixed source tile into
+    // cache slot five before AdvanceOverworldExAnimationFrame constructs the first frame.
+    animated[5] = source.get(0x7a).cloned().unwrap_or_else(|| blank.clone());
+    for group in 0..8 {
+        let first_address = addresses[3 + group * 8];
+        if group != 2 || !matches!(first_address, 0xb480 | 0xb700) {
+            animated[group + 3] = resolve(first_address);
+        }
+    }
+
+    // At the normal 60 ms editor rate Lunar Magic processes four animation substeps per timer
+    // callback. The initialized first frame has already consumed substeps 0..7, so callbacks 1/2,
+    // 3/4, ... cross successive eight-substep boundaries.
+    let boundaries = timer_ticks.saturating_add(1) / 2;
+    for boundary in 1..=boundaries {
+        rotate_builtin_overworld_seed_tiles(&mut animated);
+        for group in 0..8 {
+            let first_address = addresses[3 + group * 8];
+            if group == 2 && matches!(first_address, 0xb480 | 0xb700) {
+                continue;
+            }
+            let frame = if group < 2 {
+                boundary.saturating_add(1) / 2 & 7
+            } else {
+                boundary & 7
+            };
+            animated[group + 3] = resolve(addresses[3 + group * 8 + frame]);
+        }
+    }
+    let end = DESTINATION + animated.len();
+    let graphics_len = graphics.len();
+    graphics
+        .get_mut(DESTINATION..end)
+        .ok_or_else(|| {
+            format!(
+                "overworld graphics cache has {graphics_len:X} tiles; built-in animation requires {DESTINATION:X}..{end:X}"
+            )
+        })?
+        .clone_from_slice(&animated);
+    Ok(())
+}
+
+fn rotate_builtin_overworld_seed_tiles(tiles: &mut [lm_graphics::IndexedTile]) {
+    fn pixels(tile: &lm_graphics::IndexedTile) -> [u8; 64] {
+        *tile.pixels()
+    }
+    let mut first = pixels(&tiles[0]);
+    for row in 0..4 {
+        first[row * 8..row * 8 + 8].rotate_left(1);
+    }
+    for row in 4..8 {
+        first[row * 8..row * 8 + 8].rotate_right(1);
+    }
+    tiles[0] = lm_graphics::IndexedTile::new(first);
+
+    let mut second = pixels(&tiles[1]);
+    for column in 0..8 {
+        let bottom = second[7 * 8 + column];
+        for row in (1..8).rev() {
+            second[row * 8 + column] = second[(row - 1) * 8 + column];
+        }
+        second[column] = bottom;
+    }
+    tiles[1] = lm_graphics::IndexedTile::new(second);
+
+    let mut third = pixels(&tiles[2]);
+    for row in 0..8 {
+        third[row * 8..row * 8 + 8].rotate_left(1);
+    }
+    for column in 0..8 {
+        let bottom = third[7 * 8 + column];
+        for row in (1..8).rev() {
+            third[row * 8 + column] = third[(row - 1) * 8 + column];
+        }
+        third[column] = bottom;
+    }
+    tiles[2] = lm_graphics::IndexedTile::new(third);
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -428,6 +555,7 @@ mod tests {
             external_sprite_assets: lm_graphics::ExternalSpriteAssets::default(),
             gfx32: Vec::new(),
             gfx33,
+            built_in_animation_addresses: Vec::new(),
         };
         (overworld, assets)
     }
@@ -479,5 +607,51 @@ mod tests {
         let (graphics, _) =
             materialize_overworld_exanimation(&overworld, &assets, &preview).unwrap();
         assert_eq!(graphics.graphics.tiles[0].pixels(), &[2; 64]);
+    }
+
+    #[test]
+    fn built_in_overworld_tiles_use_rom_table_slow_groups_and_exact_seed_rotations() {
+        let tile = |value| lm_graphics::IndexedTile::new([value; 64]);
+        let mut graphics = (0..0x200)
+            .map(|index| tile(u8::try_from(index & 0xff).unwrap()))
+            .collect::<Vec<_>>();
+        let first_seed = lm_graphics::IndexedTile::new(std::array::from_fn(|index| {
+            u8::try_from(index).unwrap()
+        }));
+        graphics[0x10] = first_seed;
+        let address = |tile: usize| u16::try_from(0xad00 + tile * 0x20).unwrap();
+        let mut addresses = vec![address(0x10), address(0x11), address(0x12)];
+        for group in 0..8 {
+            for frame in 0..8 {
+                addresses.push(address(0x40 + group * 8 + frame));
+            }
+        }
+
+        let mut first = graphics.clone();
+        apply_builtin_overworld_animation(&mut first, &addresses, 0).unwrap();
+        assert_eq!(first[0x75].pixels(), graphics[0x10].pixels());
+        assert_eq!(first[0x78].pixels(), &[0x40; 64]);
+        assert_eq!(first[0x7a].pixels(), graphics[0x7a].pixels());
+
+        let mut tick_one = graphics.clone();
+        apply_builtin_overworld_animation(&mut tick_one, &addresses, 1).unwrap();
+        assert_eq!(&tick_one[0x75].pixels()[..8], &[1, 2, 3, 4, 5, 6, 7, 0]);
+        assert_eq!(
+            &tick_one[0x75].pixels()[32..40],
+            &[39, 32, 33, 34, 35, 36, 37, 38]
+        );
+        assert_eq!(tick_one[0x78].pixels(), &[0x41; 64]);
+        assert_eq!(tick_one[0x7a].pixels(), graphics[0x7a].pixels());
+
+        let mut tick_two = graphics.clone();
+        apply_builtin_overworld_animation(&mut tick_two, &addresses, 2).unwrap();
+        assert_eq!(tick_two[0x75].pixels(), tick_one[0x75].pixels());
+        assert_eq!(tick_two[0x78].pixels(), &[0x41; 64]);
+
+        let mut tick_three = graphics.clone();
+        apply_builtin_overworld_animation(&mut tick_three, &addresses, 3).unwrap();
+        assert_eq!(tick_three[0x78].pixels(), &[0x41; 64]);
+        assert_eq!(tick_three[0x7a].pixels(), graphics[0x7a].pixels());
+        assert_eq!(tick_three[0x7b].pixels(), &[0x5a; 64]);
     }
 }

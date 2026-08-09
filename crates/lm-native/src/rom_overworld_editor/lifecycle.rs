@@ -20,6 +20,8 @@ const NATIVE_SPRITE_SUBMAP_BASE: usize = 0x1c00;
 const NATIVE_SPRITE_SUBMAP_STRIDE: usize = 0x200;
 const NATIVE_ANIMATED_SUBMAP_BASE: usize = 0x2a00;
 const NATIVE_ANIMATED_SUBMAP_STRIDE: usize = 0x100;
+const VANILLA_OVERWORLD_ANIMATION_TABLE_OFFSET: usize = 0x20000;
+const VANILLA_OVERWORLD_ANIMATION_TABLE_WORDS: usize = 3 + 8 * 8;
 
 impl RomOverworldEditor {
     pub(crate) fn handles(app: &AppState) -> bool {
@@ -333,6 +335,7 @@ fn decode_main_layer2_workspace(
             external_sprite_assets: lm_graphics::ExternalSpriteAssets::default(),
             gfx32,
             gfx33,
+            built_in_animation_addresses: load_builtin_overworld_animation_addresses(&project)?,
         },
     })
 }
@@ -472,7 +475,36 @@ fn decode_overworld_assets(
         external_sprite_assets: lm_graphics::ExternalSpriteAssets::default(),
         gfx32,
         gfx33,
+        built_in_animation_addresses: load_builtin_overworld_animation_addresses(&project)?,
     })
+}
+
+fn load_builtin_overworld_animation_addresses(project: &Project) -> Result<Vec<u16>, String> {
+    let byte_len = VANILLA_OVERWORLD_ANIMATION_TABLE_WORDS * 2;
+    let bytes = project
+        .rom
+        .logical_bytes()
+        .get(
+            VANILLA_OVERWORLD_ANIMATION_TABLE_OFFSET
+                ..VANILLA_OVERWORLD_ANIMATION_TABLE_OFFSET + byte_len,
+        )
+        .ok_or("vanilla overworld animation address table is outside the ROM")?;
+    let addresses = bytes
+        .chunks_exact(2)
+        .map(|pair| u16::from_le_bytes([pair[0], pair[1]]))
+        .collect::<Vec<_>>();
+    // The base SMW descriptor points at physical $020200 in a copier-header ROM, which is logical
+    // $020000. Installed overworld transfers can
+    // relocate this table; until that descriptor field is modeled, never reinterpret unrelated
+    // bytes at the vanilla address as graphics sources.
+    if addresses
+        .iter()
+        .all(|&address| (0x2000..0xc800).contains(&usize::from(address)))
+    {
+        Ok(addresses)
+    } else {
+        Ok(Vec::new())
+    }
 }
 
 fn load_overworld_special_graphics(
@@ -638,9 +670,11 @@ mod tests {
     use super::{
         TILES_PER_NATIVE_GRAPHICS_SLOT, append_overworld_graphics_slot,
         decode_main_layer2_workspace, decode_native_appearance_siblings,
-        native_base_graphics_files, native_sprite_graphics_files, parse_slot,
+        load_builtin_overworld_animation_addresses, native_base_graphics_files,
+        native_sprite_graphics_files, parse_slot,
     };
     use lm_graphics::IndexedTile;
+    use lm_project::Project;
     use lm_rom::RomImage;
     use std::{fs, path::Path};
 
@@ -779,6 +813,7 @@ mod tests {
             );
             assert_eq!(workspace.assets.map16.set.pages.len(), 0x100);
             assert_eq!(workspace.assets.graphics.graphics.tiles.len(), 0x200);
+            assert_eq!(workspace.assets.built_in_animation_addresses.len(), 67);
             assert_eq!(workspace.paths, workspace.original_paths);
             assert!(!workspace.paths.links.is_empty());
             let canvas = lm_render::render_smw_overworld_layer2_tilemap(
@@ -900,5 +935,17 @@ mod tests {
             );
         }
         assert_eq!(logical_results[0], logical_results[1]);
+    }
+
+    #[test]
+    fn authentic_pristine_rom_loads_vanilla_overworld_animation_address_table() {
+        let fixture = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../..")
+            .join("oracle-work/lm363/pristine-us/headered.smc");
+        let project = Project::new(RomImage::from_bytes(fs::read(fixture).unwrap()).unwrap());
+        let addresses = load_builtin_overworld_animation_addresses(&project).unwrap();
+        assert_eq!(addresses.len(), 67);
+        assert_eq!(&addresses[..4], &[0xb480, 0xb498, 0xb4b0, 0xb300]);
+        assert_eq!(addresses[4] - addresses[3], 0x18);
     }
 }
