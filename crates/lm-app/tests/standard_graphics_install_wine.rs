@@ -1,5 +1,6 @@
 use lm_app::prepare_smw_us_v1_standard_graphics_install;
 use lm_project::{GraphicsCompression, GraphicsRomLayout, LevelPointerTable, Project};
+use lm_rats::AllocationPolicy;
 use lm_rom::{CopierHeader, RomImage};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -681,5 +682,132 @@ fn lunar_magic_reexports_rust_sa1_standard_graphics_install() {
             assert!(!directory.0.join("ExGraphics/ExGFX60.bin").exists());
             assert!(!directory.0.join("ExGraphics/ExGFX100.bin").exists());
         }
+    }
+}
+
+#[test]
+#[ignore = "requires Wine, Lunar Magic 3.63, and a locally supplied installed LZ2 SMW-US ROM"]
+fn lunar_magic_reopens_rust_fast_lorom_lz3_across_copier_header_variants() {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let wine = std::env::var_os("WINE_BIN")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from("wine"));
+    let lunar_magic = std::env::var_os("LUNAR_MAGIC_EXE")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| root.join("lm363/Lunar Magic.exe"));
+    let source_path = std::env::var_os("LM_LZ2_ORIGINAL_ROM")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| root.join("Super Mario World (USA).sfc"));
+    let mut fast = RomImage::from_bytes(fs::read(source_path).unwrap()).unwrap();
+    assert_eq!(
+        lm_profile::detect_smw_us_v1_graphics_compression_mode(&fast).unwrap(),
+        lm_profile::SmwUsV1GraphicsCompressionMode::Lz2Original
+    );
+    fast.write(0x7fd5, &[0x30]).unwrap();
+    fast.update_snes_checksum(0x7fdc).unwrap();
+
+    let oracle = TemporaryDirectory::create("fast-lorom-lz3-oracle");
+    let mut headered = vec![0; 0x200];
+    headered.extend_from_slice(fast.logical_bytes());
+    fs::write(oracle.0.join("oracle.smc"), &headered).unwrap();
+    // ChangeCompression has one required argument after the ROM path, so use the exact command
+    // directly rather than the single-argument export helper.
+    let output = Command::new(&wine)
+        .arg(&lunar_magic)
+        .arg("-ChangeCompression")
+        .arg("oracle.smc")
+        .arg("LC_LZ3")
+        .current_dir(&oracle.0)
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "Lunar Magic Fast-LoROM oracle conversion failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    fs::create_dir(oracle.0.join("Graphics")).unwrap();
+    run_export(&wine, &lunar_magic, &oracle.0, "oracle.smc");
+    let expected_files = (0..0x34)
+        .map(|number| {
+            fs::read(
+                oracle
+                    .0
+                    .join("Graphics")
+                    .join(format!("GFX{number:02X}.bin")),
+            )
+            .unwrap()
+        })
+        .collect::<Vec<_>>();
+
+    let mut expected_logical = None;
+    for (label, bytes, expected_header) in [
+        (
+            "headerless",
+            fast.logical_bytes().to_vec(),
+            CopierHeader::Absent,
+        ),
+        ("headered", headered, CopierHeader::Present),
+    ] {
+        let image = RomImage::from_bytes(bytes.clone()).unwrap();
+        let plan = lm_profile::smw_us_v1_lz3_installation_plan(
+            &image,
+            AllocationPolicy::lorom(0x10_0000..0x20_0000),
+            0x7fdc,
+        )
+        .unwrap();
+        let mut project = Project::new(image);
+        project.install_relocatable_patch(&plan).unwrap();
+        assert_eq!(project.rom.copier_header(), expected_header);
+        assert_eq!(project.rom.logical_bytes()[0x7fd5], 0x30);
+        assert!(
+            lm_rom::detect_identity(&project.rom)
+                .unwrap()
+                .checksum_matches()
+        );
+        match &expected_logical {
+            Some(expected) => assert_eq!(project.rom.logical_bytes(), expected),
+            None => expected_logical = Some(project.rom.logical_bytes().to_vec()),
+        }
+
+        let reopen = TemporaryDirectory::create(&format!("fast-lorom-lz3-{label}"));
+        let rom_name = format!("rust-{label}.smc");
+        let rust_bytes = project.rom.as_file_bytes().to_vec();
+        fs::write(reopen.0.join(&rom_name), &rust_bytes).unwrap();
+        let output = Command::new(&wine)
+            .arg(&lunar_magic)
+            .arg("-ChangeCompression")
+            .arg(&rom_name)
+            .arg("LC_LZ3")
+            .current_dir(&reopen.0)
+            .output()
+            .unwrap();
+        assert!(output.status.success(), "{label}: {output:?}");
+        let reopened = fs::read(reopen.0.join(&rom_name)).unwrap();
+        if expected_header == CopierHeader::Present {
+            assert_eq!(reopened, rust_bytes, "{label} was not recognized as LZ3");
+        } else {
+            assert_eq!(
+                &reopened[0x200..],
+                rust_bytes,
+                "{label} logical ROM changed"
+            );
+        }
+        fs::create_dir(reopen.0.join("Graphics")).unwrap();
+        run_export(&wine, &lunar_magic, &reopen.0, &rom_name);
+        for (number, expected) in expected_files.iter().enumerate() {
+            assert_eq!(
+                fs::read(
+                    reopen
+                        .0
+                        .join("Graphics")
+                        .join(format!("GFX{number:02X}.bin")),
+                )
+                .unwrap(),
+                *expected,
+                "{label} GFX{number:02X}"
+            );
+        }
+        project.history.undo(&mut project.rom).unwrap();
+        assert_eq!(project.rom.as_file_bytes(), bytes);
     }
 }

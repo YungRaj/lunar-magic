@@ -1042,6 +1042,102 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "requires retained Lunar Magic 3.63 Fast-LoROM LZ2/LZ3 conversion oracles"]
+    fn fast_lorom_lz3_migration_matches_across_copier_header_variants() {
+        let oracle = RomImage::from_bytes(
+            fs::read(std::env::var_os("LM_FAST_LZ3_ORACLE_ROM").unwrap()).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(oracle.logical_bytes()[0x7fd5], 0x30);
+        assert_eq!(
+            detect_smw_us_v1_graphics_compression_mode(&oracle).unwrap(),
+            SmwUsV1GraphicsCompressionMode::Lz3
+        );
+        let oracle_project = Project::new(oracle.clone());
+        let mut oracle_ordinary_layout = crate::smw_us_v1_vanilla_graphics_layout();
+        oracle_ordinary_layout.compression = GraphicsCompression::Lz3;
+        let oracle_ordinary = (0..oracle_ordinary_layout.pointers.entries)
+            .map(|slot| {
+                oracle_project
+                    .load_graphics_file(slot, oracle_ordinary_layout)
+                    .unwrap()
+            })
+            .collect::<Vec<_>>();
+        let mut oracle_special = crate::smw_us_v1_special_graphics_layouts(&oracle).unwrap();
+        oracle_special.gfx33.compression = GraphicsCompression::Lz3;
+        oracle_special.gfx32.compression = GraphicsCompression::Lz3;
+        let oracle_gfx33 = oracle_project
+            .load_graphics_file(0, oracle_special.gfx33)
+            .unwrap();
+        let oracle_gfx32 = oracle_project
+            .load_graphics_file(0, oracle_special.gfx32)
+            .unwrap();
+
+        let mut logical_result = None;
+        for (variable, expected_header) in [
+            ("LM_FAST_LZ2_HEADERLESS_ROM", lm_rom::CopierHeader::Absent),
+            ("LM_FAST_LZ2_HEADERED_ROM", lm_rom::CopierHeader::Present),
+        ] {
+            let original = fs::read(std::env::var_os(variable).unwrap()).unwrap();
+            let image = RomImage::from_bytes(original.clone()).unwrap();
+            assert_eq!(image.copier_header(), expected_header);
+            assert_eq!(image.logical_bytes()[0x7fd5], 0x30);
+            assert_eq!(
+                detect_smw_us_v1_graphics_compression_mode(&image).unwrap(),
+                SmwUsV1GraphicsCompressionMode::Lz2Original
+            );
+            let plan = smw_us_v1_lz3_installation_plan(
+                &image,
+                AllocationPolicy::lorom(0x10_0000..0x20_0000),
+                0x7fdc,
+            )
+            .unwrap();
+            let mut project = Project::new(image);
+            project.install_relocatable_patch(&plan).unwrap();
+            assert_eq!(project.rom.copier_header(), expected_header);
+            assert_eq!(project.rom.logical_bytes()[0x7fd5], 0x30);
+            assert!(
+                lm_rom::detect_identity(&project.rom)
+                    .unwrap()
+                    .checksum_matches()
+            );
+            assert_eq!(
+                detect_smw_us_v1_graphics_compression_mode(&project.rom).unwrap(),
+                SmwUsV1GraphicsCompressionMode::Lz3
+            );
+            let mut target_layout = crate::smw_us_v1_vanilla_graphics_layout();
+            target_layout.compression = GraphicsCompression::Lz3;
+            for (slot, expected) in oracle_ordinary.iter().enumerate() {
+                assert_eq!(
+                    project.load_graphics_file(slot, target_layout).unwrap(),
+                    *expected,
+                    "{variable} GFX{slot:02X}"
+                );
+            }
+            let mut target_special =
+                crate::smw_us_v1_special_graphics_layouts(&project.rom).unwrap();
+            target_special.gfx33.compression = GraphicsCompression::Lz3;
+            target_special.gfx32.compression = GraphicsCompression::Lz3;
+            assert_eq!(
+                project.load_graphics_file(0, target_special.gfx33).unwrap(),
+                oracle_gfx33,
+                "{variable} GFX33"
+            );
+            assert_eq!(
+                project.load_graphics_file(0, target_special.gfx32).unwrap(),
+                oracle_gfx32,
+                "{variable} GFX32"
+            );
+            match &logical_result {
+                Some(expected) => assert_eq!(project.rom.logical_bytes(), expected),
+                None => logical_result = Some(project.rom.logical_bytes().to_vec()),
+            }
+            project.history.undo(&mut project.rom).unwrap();
+            assert_eq!(project.rom.as_file_bytes(), original);
+        }
+    }
+
+    #[test]
     #[ignore = "requires retained Lunar Magic 3.63 LZ3 installed-graphics ROM"]
     fn standard_lz2_original_reversal_preserves_all_52_graphics_and_undoes() {
         let original = fs::read(std::env::var_os("LM_LZ3_ROM").unwrap()).unwrap();

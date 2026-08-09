@@ -336,3 +336,37 @@ directory operation authenticates and reclaims the old owners, replaces every pr
 omitted pointers with the correct domain sentinel, retains Lunar Magic's allocation ordering and
 checksum-compensation bytes, and commits as one undoable revision. Lunar Magic then reopens the
 Rust outputs, re-exports each surviving file exactly, and reports the two omitted files absent.
+
+## 2026-08-09 — Fast-LoROM graphics-compression migration
+
+The authenticated installed LZ2-Orig SMW-US source was changed only to internal map mode `$30`,
+checksum-repaired, and presented in headered and headerless physical forms. Lunar Magic 3.63 then
+created the LZ3 oracle and exported all 52 standard graphics files. Representative retained hashes
+from the capture are:
+
+```text
+Fast-LoROM LZ2 headerless  9b27da5162caf891fd5c10ff93dc7954818349694a6513549c9facd7ebc6aca2
+Fast-LoROM LZ2 headered    42e04cc5aed6bca1059c4346676133485f6f3a75bd72fb2781e2580d0a8042bf
+Lunar Magic LZ3 headered  cf3451fca5a4ad47ea613d7aa6a189ebdf4441398280d44f910e13cb7bd0494d
+Rust LZ3 headered          c400be514703c0c453ecd2f2b9018ad8fb18c622b12534e64f59f6de4936cbd2
+```
+
+```text
+LM_FAST_LZ2_HEADERLESS_ROM=... LM_FAST_LZ2_HEADERED_ROM=... \
+LM_FAST_LZ3_ORACLE_ROM=... cargo test -p lm-profile \
+  fast_lorom_lz3_migration_matches_across_copier_header_variants \
+  -- --ignored --nocapture
+1 passed; 0 failed; finished in 9.75s
+
+WINEDEBUG=-all cargo test -p lm-app --test standard_graphics_install_wine \
+  lunar_magic_reopens_rust_fast_lorom_lz3_across_copier_header_variants \
+  -- --ignored --nocapture
+1 passed; 0 failed; finished in 12.72s
+```
+
+The first gate proves identical Rust logical output across copier forms, map-mode `$30` retention,
+valid checksums, exact 52-file semantic equality with Lunar Magic's LZ3 result, and byte-exact Undo.
+The end-to-end Wine gate independently creates the original oracle, asks Lunar Magic to select LZ3
+again on each Rust output, verifies no logical byte changes, and compares every original re-export
+with the source graphics. The original adds its canonical copier prefix to the headerless file, so
+that case compares the unchanged logical body while the headered case remains physically identical.

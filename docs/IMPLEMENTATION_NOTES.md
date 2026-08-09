@@ -2027,6 +2027,14 @@ Compression…** requires an installed identity-audited profile, selects LZ2 or 
 metadata ranges from that profile, and atomically decodes, recompresses, reallocates, repoints,
 checksum-repairs, and semantically reopens every declared graphics slot. Its explicit end-exclusive
 logical-PC allocation bounds prevent the graphical shell from guessing where free space may live.
+The installed-SMW compression coordinator also retains Fast-LoROM `$30` as a distinct verified
+header value while using the shared LoROM address transform. A fresh Lunar Magic 3.63
+`-ChangeCompression ... LC_LZ3` oracle and `-ExportGFX` round trip cover headered and headerless
+physical inputs. Rust produces one identical logical LZ3 result, retains or omits the copier prefix
+to match each source, keeps all 52 decoded files equal to the original oracle, repairs the checksum,
+and restores each exact physical input with Undo. Lunar Magic subsequently reports both Rust
+results as already LZ3 and exports the same 52 files. This evidence does not generalize the fixed
+LoROM runtime hooks to SA-1 or ExLoROM; those mapper-specific runtime families remain separate.
 The graphical **Tools** menu installs the same bounded `LMTOOLS1` configuration used by the
 application shell and lists tools in configuration order. Clicking a tool is the explicit execution
 boundary: placeholders are expanded by `lm-app`, while the native adapter launches the executable
