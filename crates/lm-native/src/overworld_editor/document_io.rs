@@ -55,6 +55,8 @@ pub(super) fn pending_from_loaded(loaded: LoadedDocument) -> Result<PendingOpen,
             built_in_animation_addresses: Vec::new(),
             built_in_level_dot_palette: None,
             built_in_lightning: None,
+            animation_options: crate::overworld_editor_render::vanilla_overworld_animation_options(
+            ),
         },
         maximum_records: "32".into(),
     })

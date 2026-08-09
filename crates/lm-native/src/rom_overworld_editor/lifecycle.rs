@@ -343,6 +343,8 @@ fn decode_main_layer2_workspace(
             built_in_animation_addresses: load_builtin_overworld_animation_addresses(&project)?,
             built_in_level_dot_palette: load_builtin_overworld_level_dot_palette(&project)?,
             built_in_lightning: load_builtin_overworld_lightning(&project)?,
+            animation_options: crate::overworld_editor_render::vanilla_overworld_animation_options(
+            ),
         },
     })
 }
@@ -485,6 +487,7 @@ fn decode_overworld_assets(
         built_in_animation_addresses: load_builtin_overworld_animation_addresses(&project)?,
         built_in_level_dot_palette: load_builtin_overworld_level_dot_palette(&project)?,
         built_in_lightning: load_builtin_overworld_lightning(&project)?,
+        animation_options: crate::overworld_editor_render::vanilla_overworld_animation_options(),
     })
 }
 

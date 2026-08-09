@@ -16,6 +16,58 @@ pub(crate) struct OverworldAssets {
     pub(crate) built_in_level_dot_palette: Option<[[lm_graphics::Bgr555; 8]; 2]>,
     /// Vanilla's deterministic lightning scheduler and its two selector tables.
     pub(crate) built_in_lightning: Option<BuiltInOverworldLightning>,
+    /// The five animation switches selected independently for each of the seven maps.
+    pub(crate) animation_options: [OverworldAnimationOptions; 7],
+}
+
+/// Lossless semantic view of Lunar Magic's per-map animation controls.
+///
+/// Four controls share the inverted high-nibble representation used by the level editor. The
+/// original lightning control is stored separately as a seven-map bit mask, so it must not be
+/// folded into that byte.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct OverworldAnimationOptions {
+    pub(crate) features: lm_graphics::ExAnimationFeatureOptions,
+    pub(crate) original_lightning: bool,
+}
+
+impl OverworldAnimationOptions {
+    pub(crate) const VANILLA_ENABLED: Self = Self {
+        features: lm_graphics::ExAnimationFeatureOptions::decode(0),
+        original_lightning: false,
+    };
+
+    pub(crate) const fn decode(feature_byte: u8, lightning_enabled: bool) -> Self {
+        Self {
+            features: lm_graphics::ExAnimationFeatureOptions::decode(feature_byte),
+            original_lightning: lightning_enabled,
+        }
+    }
+}
+
+pub(crate) const fn vanilla_overworld_animation_options() -> [OverworldAnimationOptions; 7] {
+    decode_overworld_animation_options([0; 7], 0xf7)
+}
+
+/// Decodes the exact two-source representation used by Lunar Magic 3.63.
+///
+/// `feature_bytes` are the seven inverted high-nibble option bytes loaded by the editor. The
+/// lightning routine tests bit 7 and shifts its separate byte left after each map; a clear bit
+/// enables lightning for that map. Bit zero is not consumed because there are only seven maps.
+pub(crate) const fn decode_overworld_animation_options(
+    feature_bytes: [u8; 7],
+    lightning_disable_mask: u8,
+) -> [OverworldAnimationOptions; 7] {
+    let mut result = [OverworldAnimationOptions::VANILLA_ENABLED; 7];
+    let mut index = 0;
+    while index < result.len() {
+        result[index] = OverworldAnimationOptions::decode(
+            feature_bytes[index],
+            lightning_disable_mask & (0x80 >> index) == 0,
+        );
+        index += 1;
+    }
+    result
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -198,16 +250,22 @@ fn materialize_overworld_exanimation(
 
     let runtime_substeps = preview.tick.saturating_mul(preview.substeps_per_tick);
     let mut palette = overworld.data.palette.clone();
-    apply_builtin_overworld_animation(
-        &mut cache,
-        &assets.built_in_animation_addresses,
-        runtime_substeps,
-    )?;
+    let options = assets.animation_options[submap];
+    if options
+        .features
+        .enabled(lm_graphics::ExAnimationFeature::VanillaAnimation)
+    {
+        apply_builtin_overworld_animation(
+            &mut cache,
+            &assets.built_in_animation_addresses,
+            runtime_substeps,
+        )?;
+    }
     apply_builtin_overworld_palette_animation(
         &mut palette,
         assets.built_in_level_dot_palette.as_ref(),
         assets.built_in_lightning.as_ref(),
-        usize::from(overworld.source_slot).min(6),
+        options,
         runtime_substeps,
     )?;
     let mut triggers = preview.triggers.clone();
@@ -221,7 +279,14 @@ fn materialize_overworld_exanimation(
                 .unwrap_or(false)
     }));
 
-    let records = &overworld.data.animation.records;
+    let records = if options
+        .features
+        .enabled(lm_graphics::ExAnimationFeature::LevelExAnimation)
+    {
+        overworld.data.animation.records.as_slice()
+    } else {
+        &[]
+    };
     let mut state = lm_graphics::ExAnimationPreviewState::new(records.len());
     // Lunar Magic constructs a complete first-frame cache before showing the map.  Subsequent
     // updates retain the native eight-way slot interleave.
@@ -257,15 +322,18 @@ fn apply_builtin_overworld_palette_animation(
     palette: &mut lm_graphics::Palette,
     level_dot_colors: Option<&[[lm_graphics::Bgr555; 8]; 2]>,
     lightning: Option<&BuiltInOverworldLightning>,
-    submap: usize,
+    options: OverworldAnimationOptions,
     runtime_substeps: usize,
 ) -> Result<(), String> {
     const LEVEL_DOT_TARGETS: [usize; 2] = [0x6d, 0x7d];
-    const LIGHTNING_SUBMAP: usize = 4;
     const LIGHTNING_TARGET: usize = 0x47;
     const LIGHTNING_SOURCE_BASE: usize = 0x28;
 
-    if let Some(colors) = level_dot_colors {
+    if options
+        .features
+        .enabled(lm_graphics::ExAnimationFeature::PaletteAnimation)
+        && let Some(colors) = level_dot_colors
+    {
         // InitializeOverworldAnimationGraphicsCache refreshes with counter eight. Each timer rate
         // contributes its recovered substep count, and Refresh... uses `(counter >> 2) & 7` as
         // the color phase.
@@ -280,9 +348,7 @@ fn apply_builtin_overworld_palette_animation(
         }
     }
 
-    // Vanilla passes mask $F7 to the game's submap check, enabling lightning only where the
-    // corresponding bit is clear: Valley of Bowser (native submap four).
-    if submap == LIGHTNING_SUBMAP
+    if options.original_lightning
         && let Some(lightning) = lightning
         && let Some(color_index) = materialize_builtin_lightning_color(lightning, runtime_substeps)
     {
@@ -663,6 +729,7 @@ mod tests {
             built_in_animation_addresses: Vec::new(),
             built_in_level_dot_palette: None,
             built_in_lightning: None,
+            animation_options: vanilla_overworld_animation_options(),
         };
         (overworld, assets)
     }
@@ -806,7 +873,7 @@ mod tests {
             &mut palette,
             Some(&dot_cycles),
             Some(&lightning),
-            0,
+            vanilla_overworld_animation_options()[0],
             0,
         )
         .unwrap();
@@ -818,13 +885,89 @@ mod tests {
             &mut palette,
             Some(&dot_cycles),
             Some(&lightning),
-            4,
+            vanilla_overworld_animation_options()[4],
             504,
         )
         .unwrap();
         assert_eq!(palette.colors[0x6d], Bgr555(0x1000));
         assert_eq!(palette.colors[0x7d], Bgr555(0x2000));
         assert_eq!(palette.colors[0x47], Bgr555(0x2f));
+    }
+
+    #[test]
+    fn every_overworld_feature_byte_round_trips_with_recovered_inverted_semantics() {
+        for packed in 0_u8..=u8::MAX {
+            let options = OverworldAnimationOptions::decode(packed, packed & 1 != 0);
+            assert_eq!(options.features.encode(), packed);
+            assert_eq!(options.original_lightning, packed & 1 != 0);
+        }
+        let options = OverworldAnimationOptions::decode(0xf0, true);
+        for feature in [
+            lm_graphics::ExAnimationFeature::LevelExAnimation,
+            lm_graphics::ExAnimationFeature::GlobalExAnimation,
+            lm_graphics::ExAnimationFeature::VanillaAnimation,
+            lm_graphics::ExAnimationFeature::PaletteAnimation,
+        ] {
+            assert!(!options.features.enabled(feature));
+        }
+    }
+
+    #[test]
+    fn every_lightning_mask_decodes_in_the_original_high_bit_shift_order() {
+        for mask in 0_u8..=u8::MAX {
+            let options = decode_overworld_animation_options([0; 7], mask);
+            for (submap, option) in options.into_iter().enumerate() {
+                assert_eq!(option.original_lightning, mask & (0x80 >> submap) == 0);
+            }
+        }
+        let vanilla = vanilla_overworld_animation_options();
+        assert_eq!(
+            vanilla.map(|option| option.original_lightning),
+            [false, false, false, false, true, false, false]
+        );
+    }
+
+    #[test]
+    fn per_map_options_gate_dot_lightning_and_local_records_independently() {
+        let dot_cycles = [
+            std::array::from_fn(|index| Bgr555(0x1000 + index as u16)),
+            std::array::from_fn(|index| Bgr555(0x2000 + index as u16)),
+        ];
+        let lightning = BuiltInOverworldLightning {
+            selectors: [0; 128],
+            delays: [1; 8],
+            initial_colors: [7; 8],
+        };
+        let mut palette = Palette {
+            colors: (0..256).map(|index| Bgr555(index)).collect(),
+        };
+        apply_builtin_overworld_palette_animation(
+            &mut palette,
+            Some(&dot_cycles),
+            Some(&lightning),
+            OverworldAnimationOptions::decode(0x80, true),
+            504,
+        )
+        .unwrap();
+        assert_eq!(palette.colors[0x6d], Bgr555(0x6d));
+        assert_eq!(palette.colors[0x7d], Bgr555(0x7d));
+        assert_eq!(palette.colors[0x47], Bgr555(0x2f));
+
+        let (overworld, mut assets) = preview_fixture();
+        assets.animation_options[0] = OverworldAnimationOptions::decode(0x10, false);
+        let (graphics, palette) = materialize_overworld_exanimation(
+            &overworld,
+            &assets,
+            &OverworldExAnimationPreview {
+                tick: 0,
+                substeps_per_tick: 4,
+                triggers: lm_graphics::ExAnimationTriggerPreviewState::default(),
+                events_passed: vec![false; 256],
+            },
+        )
+        .unwrap();
+        assert_eq!(graphics.graphics.tiles[0].pixels(), &[0; 64]);
+        assert_eq!(palette.colors[5], Bgr555(0));
     }
 
     #[test]
