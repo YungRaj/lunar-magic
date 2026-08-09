@@ -4641,12 +4641,13 @@ table through active ROM-layout-descriptor field `+$5C4`, seeks that physical fi
 copies exactly `$86` bytes (67 little-endian words) into `$00CA7D08`. The ordinary SMW descriptors
 at `$005E9DE8` and `$005EAA00` both store physical `$020200`; after removing the copier prefix this
 is logical `$020000`. ExLoROM selection adds `$400000` before the read, choosing logical `$420000`
-in the active upper SMW body rather than the lower compatibility mirror. The SA-1 descriptor at
-`$005EB610` instead stores physical `$1A0200`, selecting logical `$1A0000`.
+in the active upper SMW body rather than the lower compatibility mirror. The All-Stars + World
+descriptor at `$005EB610` instead stores physical `$1A0200`, selecting its relocated SMW table at
+logical `$1A0000`. An authentic SA-1 Pack conversion retains the ordinary table at `$020000`.
 
 Rust publishes these three descriptor-equivalent layouts in `lm-profile` and the installed
 overworld lifecycle loads only the identity-selected table. Every one of the 67 VRAM source words
 must be in `$2000..$C7FF`; a truncated or malformed selected table aborts open and cannot fall back
 to a plausible table in another mapper's location. The retained pristine table, synthetic
-LoROM/ExLoROM/SA-1 routing, lower-mirror decoy, corruption, full overworld-raster reopen, and exact
-built-in phase materialization gates cover the recovered boundary.
+SMW/ExLoROM/SA-1/All-Stars routing, lower-mirror decoy, corruption, full overworld-raster reopen,
+and exact built-in phase materialization gates cover the recovered boundary.

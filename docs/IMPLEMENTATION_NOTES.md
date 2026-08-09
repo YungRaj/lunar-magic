@@ -4924,13 +4924,13 @@ and 54 ExGFX files as its own corresponding reverse conversion.
 The installed overworld preview no longer assumes that Lunar Magic's 67-word built-in animation
 table always lives at logical `$020000`. Original function `$004BA8D0` reads `$86` bytes through
 active descriptor field `+$5C4`. The profile layer mirrors its three recovered destinations:
-LoROM `$020000`, ExLoROM `$420000` in the active upper SMW body, and SA-1 `$1A0000`. Physical
-descriptor values include the `$200` copier prefix; all project offsets are normalized to logical
-ROM bytes.
+ordinary SMW/SA-1 `$020000`, ExLoROM `$420000` in the active upper SMW body, and All-Stars + World
+`$1A0000`. Physical descriptor values include the `$200` copier prefix; all project offsets are
+normalized to logical ROM bytes.
 
 The selected table is mandatory and fail-closed. All 67 source words must address the recovered
 VRAM cache interval `$2000..$C7FF`; truncation or one invalid word rejects the native open. No
 fallback probes the LoROM location, which prevents a valid lower ExLoROM mirror from hiding a
 corrupt active table. Profile routing tests distinguish all three tables, lifecycle tests retain a
-valid lower-mirror decoy while corrupting ExLoROM/SA-1, and authentic pristine/full-raster plus
+valid ordinary-table decoy while corrupting ExLoROM/All-Stars, and authentic pristine/full-raster plus
 built-in phase tests retain the renderer boundary.

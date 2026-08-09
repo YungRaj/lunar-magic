@@ -605,17 +605,12 @@ fn load_builtin_overworld_lightning(
 }
 
 fn load_builtin_overworld_animation_addresses(project: &Project) -> Result<Vec<u16>, String> {
-    let mapper = project
+    let identity = project
         .identity
-        .as_ref()
-        .map(|identity| identity.mapper)
-        .or_else(|| {
-            detect_identity(&project.rom)
-                .ok()
-                .map(|identity| identity.mapper)
-        })
+        .clone()
+        .or_else(|| detect_identity(&project.rom).ok())
         .ok_or("built-in overworld animation table requires an authenticated ROM identity")?;
-    lm_profile::load_smw_us_v1_builtin_overworld_animation_table_for_mapper(&project.rom, mapper)
+    lm_profile::load_builtin_overworld_animation_table(&project.rom, identity.game, identity.mapper)
         .map(|table| table.addresses.to_vec())
         .map_err(|error| error.to_string())
 }
@@ -789,7 +784,7 @@ mod tests {
     };
     use lm_graphics::IndexedTile;
     use lm_project::Project;
-    use lm_rom::{Mapper, RomImage, detect_identity};
+    use lm_rom::{Mapper, RomImage, SupportedGame, detect_identity};
     use std::{fs, path::Path};
 
     #[test]
@@ -1066,24 +1061,31 @@ mod tests {
     }
 
     #[test]
-    fn native_lifecycle_uses_selected_mapper_animation_table_without_mirror_fallback() {
+    fn native_lifecycle_uses_selected_identity_animation_table_without_mirror_fallback() {
         let fixture = Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("../..")
             .join("oracle-work/lm363/pristine-us/headered.smc");
         let source = RomImage::from_bytes(fs::read(fixture).unwrap()).unwrap();
         let mut identity = detect_identity(&source).unwrap();
-        let source_offset =
-            lm_profile::smw_us_v1_builtin_overworld_animation_table_offset(Mapper::LoRom);
+        let source_offset = lm_profile::builtin_overworld_animation_table_offset(
+            SupportedGame::SuperMarioWorld,
+            Mapper::LoRom,
+        );
         let table_len = lm_profile::SMW_US_V1_BUILT_IN_OVERWORLD_ANIMATION_WORDS * 2;
         let source_table = source.read(source_offset, table_len).unwrap().to_vec();
 
-        for mapper in [Mapper::ExLoRom, Mapper::Sa1] {
+        for (game, mapper) in [
+            (SupportedGame::SuperMarioWorld, Mapper::ExLoRom),
+            (SupportedGame::SuperMarioWorld, Mapper::Sa1),
+            (SupportedGame::AllStarsAndWorld, Mapper::LoRom),
+        ] {
             let selected_offset =
-                lm_profile::smw_us_v1_builtin_overworld_animation_table_offset(mapper);
+                lm_profile::builtin_overworld_animation_table_offset(game, mapper);
             let mut logical = source.logical_bytes().to_vec();
             logical.resize(0x80_0000, 0xff);
-            // Keep the valid lower LoROM table as an explicit compatibility-mirror decoy.
+            // ExLoROM and All-Stars cases retain the valid ordinary table as an explicit decoy.
             logical[selected_offset..selected_offset + table_len].copy_from_slice(&source_table);
+            identity.game = game;
             identity.mapper = mapper;
             let mut project = Project::new(RomImage::from_bytes(logical).unwrap());
             project.identity = Some(identity.clone());

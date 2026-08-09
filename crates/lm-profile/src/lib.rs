@@ -358,13 +358,12 @@ pub use overworld_boss_sequence::{
     smw_us_v1_boss_sequence_locator, smw_us_v1_boss_sequence_update_policy,
 };
 pub use overworld_builtin_animation::{
+    ALL_STARS_WORLD_BUILT_IN_OVERWORLD_ANIMATION_PHYSICAL_OFFSET,
     LUNAR_MAGIC_OVERWORLD_ANIMATION_DESCRIPTOR_FIELD,
     SMW_US_V1_BUILT_IN_OVERWORLD_ANIMATION_PHYSICAL_OFFSET,
-    SMW_US_V1_BUILT_IN_OVERWORLD_ANIMATION_WORDS,
-    SMW_US_V1_SA1_BUILT_IN_OVERWORLD_ANIMATION_PHYSICAL_OFFSET,
-    SmwUsV1BuiltInOverworldAnimationError, SmwUsV1BuiltInOverworldAnimationTable,
-    load_smw_us_v1_builtin_overworld_animation_table_for_mapper,
-    smw_us_v1_builtin_overworld_animation_table_offset,
+    SMW_US_V1_BUILT_IN_OVERWORLD_ANIMATION_WORDS, SmwUsV1BuiltInOverworldAnimationError,
+    SmwUsV1BuiltInOverworldAnimationTable, builtin_overworld_animation_table_offset,
+    load_builtin_overworld_animation_table,
 };
 pub use overworld_event::{
     SMW_US_V1_OVERWORLD_EVENT_DESTINATION_OPERAND_OFFSET, SMW_US_V1_OVERWORLD_EVENT_FIXED_ENTRIES,
