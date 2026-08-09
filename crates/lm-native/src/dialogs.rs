@@ -254,6 +254,43 @@ pub(crate) fn choose_emulator() -> Option<PathBuf> {
         .pick_file()
 }
 
+pub(crate) fn choose_native_title_recording() -> Option<PathBuf> {
+    rfd::FileDialog::new()
+        .set_title("Import Native Title-Screen Recording")
+        .add_filter("Native title recording", &["lmtitle"])
+        .pick_file()
+}
+
+pub(crate) fn choose_native_title_recording_save_path() -> Option<PathBuf> {
+    rfd::FileDialog::new()
+        .set_title("Export Native Title-Screen Recording")
+        .add_filter("Native title recording", &["lmtitle"])
+        .set_file_name("Title Recording.lmtitle")
+        .save_file()
+}
+
+pub(crate) fn choose_zsnes_title_recording_state() -> Option<PathBuf> {
+    rfd::FileDialog::new()
+        .set_title("Import ZSNES Title-Screen Recording State")
+        .add_filter("ZSNES save state", &["zst"])
+        .pick_file()
+}
+
+pub(crate) fn choose_zsnes_title_recording_save_path() -> Option<PathBuf> {
+    rfd::FileDialog::new()
+        .set_title("Export ZSNES Title-Screen Recording State")
+        .add_filter("ZSNES save state", &["zst"])
+        .set_file_name("Title Recording.zst")
+        .save_file()
+}
+
+pub(crate) fn choose_snes9x_title_recording_state() -> Option<PathBuf> {
+    rfd::FileDialog::new()
+        .set_title("Import Snes9x Title-Screen Recording State")
+        .add_filter("Snes9x save state", &["000", "001", "002", "frz", "gz"])
+        .pick_file()
+}
+
 pub(crate) fn choose_graphics_directory() -> Option<PathBuf> {
     rfd::FileDialog::new()
         .set_title("Extract All Standard GFX Files")

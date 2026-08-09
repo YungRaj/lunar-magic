@@ -331,6 +331,12 @@ interactive frontends cannot bypass confirmation and request correlation through
   sixteen-byte hexadecimal rows, validates two-digit tokens and the final `$FF`, and dispatches
   the same transactional install/update command used by the CLI. Invalid text, stale revisions,
   and rejected commits retain the editable payload; dirty close and quit require confirmation.
+  The window also exposes the lossless interchange codecs directly: bounded background reads
+  import native `LMTITL01`, exact ZSNES states, and plain or gzip Snes9x states into the staged
+  text for review, while create-new background writes export native and minimal ZSNES V143 files.
+  Imports recheck the captured ROM revision before replacing staged text, exports snapshot the
+  validated payload, active file work gates close/shutdown, and no imported recording reaches the
+  ROM until the ordinary explicit commit succeeds.
   Shared native tilemap workspaces cover the title screen and credits without duplicating their
   ROM formats in the frontend. The title editor addresses both 32×29 materialized word planes;
   the credits editor addresses the complete 32×256 word grid, including rows unavailable to the

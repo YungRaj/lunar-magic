@@ -1,13 +1,31 @@
+use crate::{
+    dialogs,
+    document_loader::{BoundedRead, DocumentLoader},
+    persistence_worker::{PersistenceTarget, PersistenceWorker},
+};
 use eframe::egui;
 use lm_app::{AppState, Command};
 use lm_profile::smw_us_v1_title_recording_locator;
-use lm_title::TitleScreenRecording;
+use lm_title::{
+    TitleScreenRecording, decode_snes9x_title_recording, decode_zsnes_title_recording,
+    encode_zsnes_title_recording,
+};
 use std::fmt::Write;
+
+const ZSNES_STATE_LEN: usize = 0x20c13;
+const SNES9X_STATE_MAX_LEN: usize = 64 * 1024 * 1024;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum PendingClose {
     Editor,
     Application,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum ImportKind {
+    Native,
+    Zsnes,
+    Snes9x,
 }
 
 struct Workspace {
@@ -22,6 +40,9 @@ pub(crate) struct RomTitleRecordingEditor {
     workspace: Option<Workspace>,
     error: Option<String>,
     pending_close: Option<PendingClose>,
+    loader: DocumentLoader,
+    persistence: PersistenceWorker,
+    pending_import: Option<ImportKind>,
 }
 
 impl RomTitleRecordingEditor {
@@ -60,6 +81,10 @@ impl RomTitleRecordingEditor {
     }
 
     pub(crate) fn request_close(&mut self, application: bool) -> bool {
+        if self.loader.is_running() || self.persistence.is_running() {
+            self.error = Some("wait for the title-recording file operation to finish".into());
+            return false;
+        }
         let Some(workspace) = &self.workspace else {
             return true;
         };
@@ -80,6 +105,7 @@ impl RomTitleRecordingEditor {
         context: &egui::Context,
         project_revision: u64,
     ) -> (bool, Option<Command>) {
+        self.poll_file_io(context, project_revision);
         let mut command = None;
         if self.workspace.is_some() {
             egui::Window::new("ROM Title-Screen Recording")
@@ -96,6 +122,7 @@ impl RomTitleRecordingEditor {
     fn contents(&mut self, ui: &mut egui::Ui, project_revision: u64) -> Option<Command> {
         let workspace = self.workspace.as_mut()?;
         let stale = workspace.revision != project_revision;
+        let busy = self.loader.is_running() || self.persistence.is_running();
         ui.label(
             "Exact Lunar Magic movement payload. Enter two hexadecimal digits per byte; \
              whitespace separates bytes and the final byte must be FF.",
@@ -161,7 +188,124 @@ impl RomTitleRecordingEditor {
                 "Unchanged"
             });
         });
+        ui.separator();
+        ui.label("Recording files and emulator states");
+        ui.horizontal_wrapped(|ui| {
+            if ui
+                .add_enabled(!stale && !busy, egui::Button::new("Import .lmtitle…"))
+                .clicked()
+                && let Some(path) = dialogs::choose_native_title_recording()
+            {
+                self.start_import(
+                    ImportKind::Native,
+                    BoundedRead::new(
+                        path,
+                        TitleScreenRecording::MAX_FILE_LEN as u64,
+                        "native title recording",
+                    ),
+                );
+            }
+            if ui
+                .add_enabled(!stale && !busy, egui::Button::new("Import ZSNES state…"))
+                .clicked()
+                && let Some(path) = dialogs::choose_zsnes_title_recording_state()
+            {
+                self.start_import(
+                    ImportKind::Zsnes,
+                    BoundedRead::new(path, ZSNES_STATE_LEN as u64, "ZSNES title recording state"),
+                );
+            }
+            if ui
+                .add_enabled(!stale && !busy, egui::Button::new("Import Snes9x state…"))
+                .clicked()
+                && let Some(path) = dialogs::choose_snes9x_title_recording_state()
+            {
+                self.start_import(
+                    ImportKind::Snes9x,
+                    BoundedRead::new(
+                        path,
+                        SNES9X_STATE_MAX_LEN as u64,
+                        "Snes9x title recording state",
+                    ),
+                );
+            }
+        });
+        ui.horizontal_wrapped(|ui| {
+            if ui
+                .add_enabled(
+                    !stale && !busy && parsed.is_ok(),
+                    egui::Button::new("Export .lmtitle…"),
+                )
+                .clicked()
+                && let Ok(recording) = &parsed
+                && let Some(path) = dialogs::choose_native_title_recording_save_path()
+            {
+                self.start_export(project_revision, path, recording.encode_native_file());
+            }
+            if ui
+                .add_enabled(
+                    !stale && !busy && parsed.is_ok(),
+                    egui::Button::new("Export ZSNES state…"),
+                )
+                .clicked()
+                && let Ok(recording) = &parsed
+                && let Some(path) = dialogs::choose_zsnes_title_recording_save_path()
+            {
+                self.start_export(
+                    project_revision,
+                    path,
+                    encode_zsnes_title_recording(recording),
+                );
+            }
+        });
+        ui.small(
+            "Imports stage the exact movement payload for review; Commit recording to ROM applies it. Exports never modify the ROM.",
+        );
         command
+    }
+
+    fn start_import(&mut self, kind: ImportKind, request: BoundedRead) {
+        match self.loader.start(vec![request]) {
+            Ok(()) => self.pending_import = Some(kind),
+            Err(error) => self.error = Some(error),
+        }
+    }
+
+    fn start_export(&mut self, revision: u64, path: std::path::PathBuf, bytes: Vec<u8>) {
+        if let Err(error) = self
+            .persistence
+            .start(revision, PersistenceTarget::Create(path), bytes)
+        {
+            self.error = Some(error);
+        }
+    }
+
+    fn poll_file_io(&mut self, context: &egui::Context, project_revision: u64) {
+        if let Some(result) = self.loader.show(context) {
+            let kind = self.pending_import.take();
+            let result = result.and_then(|loaded| {
+                let [(_, bytes)] = loaded.into_exact::<1>("title recording")?;
+                let kind = kind.ok_or("title-recording import kind was lost")?;
+                let recording = decode_import(kind, &bytes)?;
+                let workspace = self
+                    .workspace
+                    .as_mut()
+                    .ok_or("title-recording workspace is closed")?;
+                if workspace.revision != project_revision {
+                    return Err("the ROM changed while the title recording was loading".into());
+                }
+                workspace.text = encode_hex(recording.bytes());
+                Ok(())
+            });
+            if let Err(error) = result {
+                self.error = Some(error);
+            }
+        }
+        if let Some(completion) = self.persistence.show(context)
+            && let Err(error) = completion.result
+        {
+            self.error = Some(error);
+        }
     }
 
     fn prepare_commit(
@@ -218,10 +362,23 @@ impl RomTitleRecordingEditor {
     fn clear(&mut self) {
         self.workspace = None;
         self.pending_close = None;
+        self.pending_import = None;
     }
 
     pub(crate) fn commit_succeeded(&mut self) {
         self.clear();
+    }
+}
+
+fn decode_import(kind: ImportKind, bytes: &[u8]) -> Result<TitleScreenRecording, String> {
+    match kind {
+        ImportKind::Native => {
+            TitleScreenRecording::decode_native_file(bytes).map_err(|error| error.to_string())
+        }
+        ImportKind::Zsnes => decode_zsnes_title_recording(bytes).map_err(|error| error.to_string()),
+        ImportKind::Snes9x => {
+            decode_snes9x_title_recording(bytes).map_err(|error| error.to_string())
+        }
     }
 }
 
@@ -347,5 +504,24 @@ mod tests {
             encode_hex(&[0; 17]),
             "00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00\n00"
         );
+    }
+
+    #[test]
+    fn native_zsnes_and_snes9x_file_routes_preserve_the_exact_recording() {
+        let recording = TitleScreenRecording::from_bytes(vec![0x12, 0x34, 0x56, 0xff]).unwrap();
+        assert_eq!(
+            decode_import(ImportKind::Native, &recording.encode_native_file()).unwrap(),
+            recording
+        );
+        let state = encode_zsnes_title_recording(&recording);
+        assert_eq!(decode_import(ImportKind::Zsnes, &state).unwrap(), recording);
+        let mut snes9x = b"#!s9xsnp:0007\nRAM:131072:".to_vec();
+        snes9x.extend_from_slice(&state[0x0c13..]);
+        assert_eq!(
+            decode_import(ImportKind::Snes9x, &snes9x).unwrap(),
+            recording
+        );
+        assert!(decode_import(ImportKind::Native, &state).is_err());
+        assert!(decode_import(ImportKind::Zsnes, &recording.encode_native_file()).is_err());
     }
 }
