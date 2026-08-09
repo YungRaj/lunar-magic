@@ -16,6 +16,12 @@ struct title_search {
     HWND window;
 };
 
+struct child_search {
+    int id;
+    const char *class_name;
+    HWND window;
+};
+
 static BOOL CALLBACK find_frame(HWND window, LPARAM opaque) {
     struct window_search *search = (struct window_search *)opaque;
     DWORD process_id = 0;
@@ -57,7 +63,7 @@ static HWND find_process_window(DWORD process_id, const char *class_name) {
 }
 
 static HWND wait_for_process_window(DWORD process_id, const char *class_name) {
-    for (unsigned attempt = 0; attempt < 200; attempt++) {
+    for (unsigned attempt = 0; attempt < 800; attempt++) {
         HWND window = find_process_window(process_id, class_name);
         if (window != NULL) {
             return window;
@@ -97,6 +103,28 @@ static HWND wait_for_title(DWORD process_id, const char *title, unsigned attempt
         Sleep(25);
     }
     return NULL;
+}
+
+static BOOL CALLBACK find_child_control(HWND window, LPARAM opaque) {
+    struct child_search *search = (struct child_search *)opaque;
+    char class_name[128] = {0};
+    GetClassNameA(window, class_name, sizeof(class_name));
+    if (GetDlgCtrlID(window) == search->id &&
+        _stricmp(class_name, search->class_name) == 0) {
+        search->window = window;
+        return FALSE;
+    }
+    return TRUE;
+}
+
+static HWND find_descendant(HWND parent, int id, const char *class_name) {
+    struct child_search search = {
+        .id = id,
+        .class_name = class_name,
+        .window = NULL,
+    };
+    EnumChildWindows(parent, find_child_control, (LPARAM)&search);
+    return search.window;
 }
 
 static void list_menu(HMENU menu, unsigned depth) {
@@ -153,11 +181,11 @@ static BOOL CALLBACK list_process_window(HWND window, LPARAM opaque) {
 }
 
 int main(int argc, char **argv) {
-    if (argc < 3 || argc > 5) {
+    if (argc < 3 || argc > 6) {
         fprintf(
             stderr,
             "usage: wine-title-recording-oracle.exe LUNAR_MAGIC_EXE ROM "
-            "[COMMAND [accept|cancel]]\n"
+            "[COMMAND [accept|cancel|cancel-file|accept-nosave [INPUT]]]\n"
         );
         return 2;
     }
@@ -213,8 +241,14 @@ int main(int argc, char **argv) {
         }
         printf("posting command=0x%04lx to Overworld Editor\n", command_id);
         PostMessageA(overworld, WM_COMMAND, (WPARAM)command_id, 0);
-        if (argc == 5) {
-            HWND dialog = wait_for_process_window(process.dwProcessId, "#32770");
+        if (argc >= 5) {
+            HWND dialog = command_id == 0x1f44
+                ? wait_for_title(
+                    process.dwProcessId,
+                    "Insert Joypad Recorded Data for Playback during Intro Level?",
+                    200
+                )
+                : wait_for_process_window(process.dwProcessId, "#32770");
             if (dialog == NULL) {
                 fprintf(stderr, "command did not open a dialog\n");
                 TerminateProcess(process.hProcess, 1);
@@ -223,12 +257,18 @@ int main(int argc, char **argv) {
                 return 1;
             }
             int button_id = 0;
-            if (_stricmp(argv[4], "accept") == 0) {
+            BOOL cancel_file = _stricmp(argv[4], "cancel-file") == 0;
+            BOOL accept_without_save = _stricmp(argv[4], "accept-nosave") == 0;
+            if (_stricmp(argv[4], "accept") == 0 || cancel_file ||
+                accept_without_save) {
                 button_id = IDOK;
             } else if (_stricmp(argv[4], "cancel") == 0) {
                 button_id = IDCANCEL;
             } else {
-                fprintf(stderr, "decision must be accept or cancel\n");
+                fprintf(
+                    stderr,
+                    "decision must be accept, cancel, cancel-file, or accept-nosave\n"
+                );
                 TerminateProcess(process.hProcess, 1);
                 CloseHandle(process.hThread);
                 CloseHandle(process.hProcess);
@@ -237,6 +277,8 @@ int main(int argc, char **argv) {
             HWND button = GetDlgItem(dialog, button_id);
             if (button == NULL) {
                 fprintf(stderr, "dialog does not expose requested button %d\n", button_id);
+                EnumWindows(list_process_window, (LPARAM)&process.dwProcessId);
+                fflush(stdout);
                 TerminateProcess(process.hProcess, 1);
                 CloseHandle(process.hThread);
                 CloseHandle(process.hProcess);
@@ -245,6 +287,58 @@ int main(int argc, char **argv) {
             printf("clicking dialog button=%d\n", button_id);
             fflush(stdout);
             SendMessageA(button, BM_CLICK, 0, 0);
+            if (button_id == IDOK && command_id == 0x1f44) {
+                HWND open = wait_for_title(process.dwProcessId, "Open", 200);
+                if (open == NULL) {
+                    fprintf(stderr, "playback import did not open a file dialog\n");
+                    TerminateProcess(process.hProcess, 1);
+                    CloseHandle(process.hThread);
+                    CloseHandle(process.hProcess);
+                    return 1;
+                }
+                if (cancel_file) {
+                    HWND cancel_button = find_descendant(open, IDCANCEL, "Button");
+                    if (cancel_button == NULL) {
+                        fprintf(stderr, "file dialog has no Cancel button\n");
+                        TerminateProcess(process.hProcess, 1);
+                        CloseHandle(process.hThread);
+                        CloseHandle(process.hProcess);
+                        return 1;
+                    }
+                    puts("clicking playback file dialog button=2");
+                    fflush(stdout);
+                    SendMessageA(cancel_button, BM_CLICK, 0, 0);
+                } else {
+                    if (argc != 6) {
+                        fprintf(stderr, "playback import requires an input path\n");
+                        TerminateProcess(process.hProcess, 1);
+                        CloseHandle(process.hThread);
+                        CloseHandle(process.hProcess);
+                        return 2;
+                    }
+                    HWND filename = find_descendant(open, 0x047c, "Edit");
+                    HWND open_button = GetDlgItem(open, IDOK);
+                    if (filename == NULL || open_button == NULL) {
+                        fprintf(stderr, "file dialog controls are incomplete\n");
+                        EnumWindows(list_process_window, (LPARAM)&process.dwProcessId);
+                        fflush(stdout);
+                        TerminateProcess(process.hProcess, 1);
+                        CloseHandle(process.hThread);
+                        CloseHandle(process.hProcess);
+                        return 1;
+                    }
+                    printf("opening playback input=%s\n", argv[5]);
+                    fflush(stdout);
+                    SetWindowTextA(filename, argv[5]);
+                    SendMessageA(open_button, BM_CLICK, 0, 0);
+                    Sleep(3000);
+                    if (!accept_without_save) {
+                        puts("posting command=0x1f40 to save playback state");
+                        fflush(stdout);
+                        PostMessageA(overworld, WM_COMMAND, 0x1f40, 0);
+                    }
+                }
+            }
             if (button_id == IDOK && command_id == 0x1f46) {
                 HWND expansion = wait_for_title(
                     process.dwProcessId,

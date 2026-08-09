@@ -45,7 +45,7 @@ fn locator(mapper: Mapper) -> TitleRecordingPatchLocator {
         pristine_hook: [0x44; TitleRecordingPatchLocator::HOOK_LEN],
         hook_template,
         runtime_template,
-        continuation_target: 0x600,
+        checksum_compensation: None,
     }
 }
 

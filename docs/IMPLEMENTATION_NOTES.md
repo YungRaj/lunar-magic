@@ -4827,6 +4827,15 @@ Undo, Redo, stale revisions, and native warning text are covered. A retained PID
 oracle binds the exact 347-byte Lunar Magic 3.63 mutation, complete output hash, reciprocal removal,
 and Cancel atomicity. Vanilla expansion prompting and emulator-driven input capture remain gates.
 
+The playback-import half now has its own retained Lunar Magic 3.63 oracle. A deterministic
+four-byte movement payload inside a minimal ZSNES V143 state produces a 335-byte mutation whose
+complete ROM SHA-256 matches Rust byte-for-byte. That comparison corrected four coupled errors:
+the runtime's `+9` word remains fixed at zero; the recording owner is allocated before the runtime;
+only zero-filled expanded-ROM space at or above the original 512 KiB boundary is eligible; and an
+already expanded ROM is not grown merely because the fallback search range permits another bank.
+The transaction also uses Lunar Magic's checksum-compensation run to retain the stored checksum.
+Both the confirmation Cancel and common-file-dialog Cancel paths are byte-identical.
+
 ## ExLoROM standard graphics and ExGFX conversion parity
 
 The original-tool conversion gate exposed a pointer-canonicalization bug that ordinary LoROM

@@ -3086,13 +3086,19 @@ header bytes `+4..+9`; the first `RAM` block of at least `$20000` bytes feeds th
 extractor.
 
 Dynamic descriptor inspection resolves playback hook entry `+$574` to logical `$001C6F`,
-continuation entry `+$578` to `$0021DA`, and allocation search entry `+$C4` to `$06ABF7`.
+the adjacent recorder hook entry `+$578` to `$0021DA`, and allocation search entry `+$C4` to
+`$06ABF7`.
 The pristine 17-byte hook begins `AE F4 1D`; installation replaces it with a `JSL` and fixed
 continuation tail. Its RATS-owned `$60`-byte runtime begins `08 C2 20` and refers to the separately
-owned movement payload at biased addresses `payload+2`, `payload-3`, and `payload-2`.
+owned movement payload at biased addresses `payload+2`, `payload-3`, and `payload-2`. A retained
+playback-import oracle corrects an earlier misclassification: runtime bytes `+9..+10` are a fixed
+zero initialization word, not a continuation operand. Lunar Magic allocates the recording before
+the runtime in zero-filled expanded-ROM space at or above `$080000`, preserves the current ROM
+size when space already exists, and preserves the stored checksum with its bounded compensation
+run.
 
-The Rust implementation validates every fixed hook/runtime byte, both owners, the continuation
-word, and agreement among all biased pointers. First installation allocates both blocks; updates
+The Rust implementation validates every fixed hook/runtime byte, both owners, the fixed zero
+initialization word, and agreement among all biased pointers. First installation allocates both blocks; updates
 retain the proven runtime and reclaim only its proven recording owner. Allocation, pointer
 publication, checksum repair, semantic reopen, and history commit are failure-atomic. `lm-title`
 separates movement/container parsing from ROM mutation, while CLI and application workflows expose

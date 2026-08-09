@@ -14,15 +14,14 @@ pub struct TitleRecordingPatchLocator {
     pub pristine_hook: [u8; Self::HOOK_LEN],
     pub hook_template: [u8; Self::HOOK_LEN],
     pub runtime_template: [u8; Self::RUNTIME_LEN],
-    /// Logical ROM target placed into the runtime's initial 16-bit continuation operand.
-    pub continuation_target: usize,
+    /// Optional Lunar Magic checksum-compensation run used to preserve the stored checksum.
+    pub checksum_compensation: Option<std::ops::Range<usize>>,
 }
 
 impl TitleRecordingPatchLocator {
     pub const HOOK_LEN: usize = 0x11;
     pub const RUNTIME_LEN: usize = 0x60;
     pub const HOOK_RUNTIME_POINTER: usize = 1;
-    pub const CONTINUATION_WORD: usize = 9;
     pub const TIMER_POINTER: usize = 0x23;
     pub const FIRST_INPUT_POINTER: usize = 0x36;
     pub const SECOND_INPUT_POINTER: usize = 0x44;
@@ -48,7 +47,6 @@ pub enum TitleRecordingPatchError {
     MapperMismatch { expected: Mapper, actual: Mapper },
     HookSignature,
     RuntimeSignature,
-    ContinuationMismatch,
     MissingRuntimeOwnership,
     RuntimeLength(usize),
     MissingRecordingOwnership,
@@ -57,6 +55,8 @@ pub enum TitleRecordingPatchError {
     Recording(TitleScreenRecordingError),
     Allocation(AllocationError),
     Commit(crate::PayloadSaveError),
+    CompensationOverflow { required: usize, available: usize },
+    CompensationMismatch { expected: u16, actual: u16 },
     ReopenMismatch,
 }
 
@@ -143,8 +143,6 @@ impl Project {
             runtime_bytes,
             &locator.runtime_template,
             &[
-                TitleRecordingPatchLocator::CONTINUATION_WORD
-                    ..TitleRecordingPatchLocator::CONTINUATION_WORD + 2,
                 TitleRecordingPatchLocator::TIMER_POINTER
                     ..TitleRecordingPatchLocator::TIMER_POINTER + 3,
                 TitleRecordingPatchLocator::FIRST_INPUT_POINTER
@@ -154,14 +152,6 @@ impl Project {
             ],
         )
         .map_err(|()| TitleRecordingPatchError::RuntimeSignature)?;
-        let expected_continuation =
-            pc_to_snes(locator.mapper, locator.continuation_target)?.to_le_bytes();
-        if runtime_bytes[TitleRecordingPatchLocator::CONTINUATION_WORD
-            ..TitleRecordingPatchLocator::CONTINUATION_WORD + 2]
-            != expected_continuation[..2]
-        {
-            return Err(TitleRecordingPatchError::ContinuationMismatch);
-        }
         let timer = read_pointer(
             self.rom.logical_bytes(),
             runtime.payload.start + TitleRecordingPatchLocator::TIMER_POINTER,
@@ -247,45 +237,54 @@ fn stage_recording(
 ) -> Result<(), TitleRecordingPatchError> {
     let original = project.rom.logical_bytes().to_vec();
     let mut image = RomImage::from_bytes(original.clone())?;
-    if allocation.search.end > image.logical_len() {
-        image.expand(locator.mapper, allocation.search.end, fill)?;
-    }
     let mut staged = image.logical_bytes().to_vec();
     let mut policy = allocation.clone();
     policy.protected.extend([
         ProtectedRange(locator.hook..locator.hook + TitleRecordingPatchLocator::HOOK_LEN),
         ProtectedRange(checksum_field..checksum_field + 4),
     ]);
-    policy.validate(staged.len())?;
-    let runtime = match storage {
-        TitleRecordingStorage::Absent => FreeSpaceAllocator::new(&mut staged, policy.clone())
-            .allocate(&locator.runtime_template)?,
-        TitleRecordingStorage::Installed { runtime, recording } => {
-            validate_owned(
-                &staged,
-                runtime,
-                TitleRecordingPatchError::MissingRuntimeOwnership,
-            )?;
-            validate_owned(
-                &staged,
-                recording,
-                TitleRecordingPatchError::MissingRecordingOwnership,
-            )?;
-            FreeSpaceAllocator::new(&mut staged, policy.clone()).erase(recording, fill)?;
-            runtime.clone()
+    if let Some(compensation) = &locator.checksum_compensation {
+        policy.protected.push(ProtectedRange(compensation.clone()));
+    }
+    let requested_end = policy.search.end;
+    let initial_end = requested_end.min(staged.len());
+    let initial_attempt = if policy.search.start < initial_end {
+        let mut bounded = policy.clone();
+        bounded.search.end = initial_end;
+        let mut candidate = staged.clone();
+        match allocate_title_blocks(&mut candidate, locator, storage, &bounded, recording, fill) {
+            Ok(blocks) => Some(Ok((candidate, blocks))),
+            Err(TitleRecordingPatchError::Allocation(AllocationError::NoSpace { .. })) => None,
+            Err(error) => Some(Err(error)),
+        }
+    } else {
+        None
+    };
+    let (mut staged, (runtime, recording_block)) = match initial_attempt {
+        Some(result) => result?,
+        None if requested_end > staged.len() => {
+            let expansion_fill = *policy
+                .fill_bytes
+                .first()
+                .ok_or(AllocationError::InvalidPolicy)?;
+            image.expand(locator.mapper, requested_end, expansion_fill)?;
+            staged = image.logical_bytes().to_vec();
+            policy.validate(staged.len())?;
+            let blocks =
+                allocate_title_blocks(&mut staged, locator, storage, &policy, recording, fill)?;
+            (staged, blocks)
+        }
+        None => {
+            return Err(AllocationError::NoSpace {
+                required: lm_rats::HEADER_LEN + recording.bytes().len(),
+            }
+            .into());
         }
     };
-    let recording_block =
-        FreeSpaceAllocator::new(&mut staged, policy).allocate(recording.bytes())?;
     let runtime_bytes = &mut staged[runtime.payload.clone()];
     if matches!(storage, TitleRecordingStorage::Absent) {
         runtime_bytes.copy_from_slice(&locator.runtime_template);
     }
-    runtime_bytes[TitleRecordingPatchLocator::CONTINUATION_WORD
-        ..TitleRecordingPatchLocator::CONTINUATION_WORD + 2]
-        .copy_from_slice(
-            &pc_to_snes(locator.mapper, locator.continuation_target)?.to_le_bytes()[..2],
-        );
     write_pointer(
         runtime_bytes,
         TitleRecordingPatchLocator::TIMER_POINTER,
@@ -309,8 +308,12 @@ fn stage_recording(
         .copy_from_slice(&low_bank_pointer(locator.mapper, runtime.payload.start)?);
     staged[locator.hook..locator.hook + TitleRecordingPatchLocator::HOOK_LEN]
         .copy_from_slice(&hook);
-    let checksum = compute_snes_checksum(&staged, checksum_field)?;
-    staged[checksum_field..checksum_field + 4].copy_from_slice(&checksum.encoded());
+    if let Some(compensation) = &locator.checksum_compensation {
+        preserve_stored_checksum(&mut staged, &original, checksum_field, compensation.clone())?;
+    } else {
+        let checksum = compute_snes_checksum(&staged, checksum_field)?;
+        staged[checksum_field..checksum_field + 4].copy_from_slice(&checksum.encoded());
+    }
     commit_staged(
         project,
         "replace title-screen recording".into(),
@@ -318,6 +321,42 @@ fn stage_recording(
         &staged,
     )?;
     Ok(())
+}
+
+fn allocate_title_blocks(
+    staged: &mut [u8],
+    locator: &TitleRecordingPatchLocator,
+    storage: &TitleRecordingStorage,
+    policy: &AllocationPolicy,
+    recording: &TitleScreenRecording,
+    fill: u8,
+) -> Result<(RatsBlock, RatsBlock), TitleRecordingPatchError> {
+    policy.validate(staged.len())?;
+    let runtime = match storage {
+        TitleRecordingStorage::Absent => None,
+        TitleRecordingStorage::Installed { runtime, recording } => {
+            validate_owned(
+                &staged,
+                runtime,
+                TitleRecordingPatchError::MissingRuntimeOwnership,
+            )?;
+            validate_owned(
+                &staged,
+                recording,
+                TitleRecordingPatchError::MissingRecordingOwnership,
+            )?;
+            FreeSpaceAllocator::new(&mut *staged, policy.clone()).erase(recording, fill)?;
+            Some(runtime.clone())
+        }
+    };
+    let recording_block =
+        FreeSpaceAllocator::new(&mut *staged, policy.clone()).allocate(recording.bytes())?;
+    let runtime = match runtime {
+        Some(runtime) => runtime,
+        None => FreeSpaceAllocator::new(&mut *staged, policy.clone())
+            .allocate(&locator.runtime_template)?,
+    };
+    Ok((runtime, recording_block))
 }
 
 fn validate_mapper(project: &Project, mapper: Mapper) -> Result<(), TitleRecordingPatchError> {
@@ -410,6 +449,53 @@ fn low_bank_pointer(mapper: Mapper, pc: usize) -> Result<[u8; 3], RomError> {
         bytes[2] &= 0x7f;
     }
     Ok(bytes)
+}
+
+fn preserve_stored_checksum(
+    staged: &mut [u8],
+    original: &[u8],
+    checksum_field: usize,
+    compensation: std::ops::Range<usize>,
+) -> Result<(), TitleRecordingPatchError> {
+    let fields =
+        original
+            .get(checksum_field..checksum_field + 4)
+            .ok_or(RomError::RangeOutOfBounds {
+                offset: checksum_field,
+                len: 4,
+                image_len: original.len(),
+            })?;
+    staged[checksum_field..checksum_field + 4].copy_from_slice(fields);
+    let staged_len = staged.len();
+    let target = staged
+        .get_mut(compensation.clone())
+        .ok_or(RomError::RangeOutOfBounds {
+            offset: compensation.start,
+            len: compensation.len(),
+            image_len: staged_len,
+        })?;
+    target.fill(0);
+    let expected = u16::from_le_bytes([fields[2], fields[3]]);
+    let current = compute_snes_checksum(staged, checksum_field)?.checksum;
+    let difference = usize::from(expected.wrapping_sub(current));
+    let available = compensation.len() * usize::from(u8::MAX);
+    if difference > available {
+        return Err(TitleRecordingPatchError::CompensationOverflow {
+            required: difference,
+            available,
+        });
+    }
+    let full = difference / usize::from(u8::MAX);
+    let remainder = difference % usize::from(u8::MAX);
+    staged[compensation.start..compensation.start + full].fill(u8::MAX);
+    if remainder != 0 {
+        staged[compensation.start + full] = remainder as u8;
+    }
+    let actual = compute_snes_checksum(staged, checksum_field)?.checksum;
+    if actual != expected {
+        return Err(TitleRecordingPatchError::CompensationMismatch { expected, actual });
+    }
+    Ok(())
 }
 
 #[cfg(test)]
