@@ -4489,3 +4489,7 @@ the index/reveal/state hooks use high LoROM banks `$85/$83/$83`, and reveal-runt
 is zero. Lunar Magic's LZ3 conversion retains these immutable bytes while replacing both stream
 pointers. Rust recognizes both generations and migrates their owned streams. The complete Rust LZ3
 result reopens in Lunar Magic without mutation and reproduces all 52 GFX and 54 ExGFX exports.
+The reverse path is generation-stable rather than destructive: Lunar Magic's LZ3-to-LZ2 Orig and
+LZ3-to-LZ2 Speed results retain the upgraded GFX17 and the historical settings/event families.
+Rust does the same for both modes, and Lunar Magic subsequently treats each Rust output as a
+no-op target and reproduces its complete 106-file graphics export set.

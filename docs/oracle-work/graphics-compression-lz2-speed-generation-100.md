@@ -76,7 +76,16 @@ standard files, all 54 ExGFX files, and both event buffers from the Lunar Magic 
 semantic reopen, and exact Undo pass. The Rust result SHA-256 is
 `67a7c8bd72e4902b3dc28165f952ab0d063ddfd5b54e9656e50a24f2df843563`. Lunar Magic 3.63 reports
 that file is already LZ3, leaves the hash unchanged, and re-exports all 106 graphics files exactly.
-Other unobserved historical runtime generations remain outside this completed generation boundary.
+Rust also reverses that LZ3 result to both current LZ2 modes while preserving the upgraded GFX17,
+all 54 legacy ExGFX streams, and both event buffers. Lunar Magic's independent reverse-oracle
+SHA-256 values are `b32e39a355bce5f4c9de766076e35b25e605feeb9ffdaa7cd9dc391291db3baa`
+for `LC_LZ2_Orig` and `718926f479da582d52245ba441e3821b57f0d4de8b60f2e4cb298108be424206`
+for `LC_LZ2_Speed`. Rust's semantically equivalent results are
+`391c4bac9719894f8c63b5c4fc56ea59b576477d55a0eb0a9ffd137973fbd408` and
+`58bfd1818513fde7936a4d852c44bf663da9236be2679a0c55684c18d52138f1`; Lunar Magic recognizes
+both as already using the target format, leaves both hashes unchanged, and re-exports 52/54 files
+that byte-match the corresponding original-editor reverse oracle. Other unobserved historical
+runtime generations remain outside this completed generation boundary.
 
 ## Verification
 
@@ -84,4 +93,6 @@ The exact synthetic fixture tests authenticate the retained compression and even
 settings-owner lengths, the GFX17 four-tile transformation, corruption rejection, and
 wrong-generation rejection. The opt-in corpus test authenticates the complete patch-derived ROM,
 migrates it to LZ3, compares every graphics/event domain with Lunar Magic 3.63, and undoes to the
-byte-exact source.
+byte-exact source. It then migrates that exact LZ3 result to both LZ2 modes, compares the same
+domains against the two retained reverse oracles, and independently undoes each to the byte-exact
+LZ3 input.

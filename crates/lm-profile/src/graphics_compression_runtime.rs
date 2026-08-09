@@ -1523,6 +1523,99 @@ mod tests {
         if let Some(path) = std::env::var_os("LM_HISTORICAL_LZ3_RUST_OUTPUT") {
             fs::write(path, migrated.rom.as_file_bytes()).unwrap();
         }
+        for (target_mode, oracle_variable, output_variable) in [
+            (
+                SmwUsV1GraphicsCompressionMode::Lz2Original,
+                "LM_HISTORICAL_LZ2_ORIGINAL_ORACLE",
+                "LM_HISTORICAL_LZ2_ORIGINAL_RUST_OUTPUT",
+            ),
+            (
+                SmwUsV1GraphicsCompressionMode::Lz2Speed,
+                "LM_HISTORICAL_LZ2_SPEED_ORACLE",
+                "LM_HISTORICAL_LZ2_SPEED_RUST_OUTPUT",
+            ),
+        ] {
+            let reverse = smw_us_v1_compact_graphics_compression_migration_plan(
+                &migrated.rom,
+                0x7fdc,
+                target_mode,
+            )
+            .unwrap();
+            let lz3_bytes = migrated.rom.as_file_bytes().to_vec();
+            let mut reversed = Project::new(migrated.rom.clone());
+            reversed
+                .replace_relocatable_patch(&reverse.plan, &reverse.obsolete, 0xff)
+                .unwrap();
+            assert_eq!(reversed.rom.logical_len(), migrated.rom.logical_len());
+            assert_eq!(
+                detect_smw_us_v1_graphics_compression_mode(&reversed.rom).unwrap(),
+                target_mode
+            );
+            assert!(detect_identity(&reversed.rom).unwrap().checksum_matches());
+
+            ordinary.compression = GraphicsCompression::Lz2;
+            for (slot, expected) in expected_migrated_standard.iter().enumerate() {
+                assert_eq!(
+                    reversed.load_graphics_file(slot, ordinary).unwrap(),
+                    *expected,
+                    "{target_mode:?} GFX{slot:02X}"
+                );
+            }
+            let mut reversed_special =
+                crate::smw_us_v1_special_graphics_layouts(&reversed.rom).unwrap();
+            reversed_special.gfx33.compression = GraphicsCompression::Lz2;
+            reversed_special.gfx32.compression = GraphicsCompression::Lz2;
+            assert_eq!(
+                reversed
+                    .load_graphics_file(0, reversed_special.gfx33)
+                    .unwrap(),
+                expected_gfx33
+            );
+            assert_eq!(
+                reversed
+                    .load_graphics_file(0, reversed_special.gfx32)
+                    .unwrap(),
+                expected_gfx32
+            );
+            assert_eq!(
+                load_installed_exgraphics(&reversed.rom, GraphicsCompression::Lz2),
+                expected_exgraphics
+            );
+            let reversed_events = crate::load_smw_us_v1_event_tilemaps(&reversed).unwrap();
+            assert_eq!(reversed_events.buffers, expected_events.buffers);
+            assert_eq!(
+                reversed_events.storage,
+                crate::SmwUsV1EventTilemapStorage::Installed(
+                    lm_project::EventTilemapCompression::Lz2
+                )
+            );
+
+            if let Some(path) = std::env::var_os(oracle_variable) {
+                let oracle = RomImage::from_bytes(fs::read(path).unwrap()).unwrap();
+                assert_eq!(
+                    detect_smw_us_v1_graphics_compression_mode(&oracle).unwrap(),
+                    target_mode
+                );
+                let oracle_graphics =
+                    load_mapper_graphics(&oracle, Mapper::LoRom, GraphicsCompression::Lz2);
+                assert_eq!(oracle_graphics.0, expected_migrated_standard);
+                assert_eq!(oracle_graphics.1, expected_gfx33);
+                assert_eq!(oracle_graphics.2, expected_gfx32);
+                assert_eq!(
+                    load_installed_exgraphics(&oracle, GraphicsCompression::Lz2),
+                    expected_exgraphics
+                );
+                let oracle_events =
+                    crate::load_smw_us_v1_event_tilemaps(&Project::new(oracle)).unwrap();
+                assert_eq!(oracle_events.buffers, expected_events.buffers);
+                assert_eq!(oracle_events.storage, reversed_events.storage);
+            }
+            if let Some(path) = std::env::var_os(output_variable) {
+                fs::write(path, reversed.rom.as_file_bytes()).unwrap();
+            }
+            reversed.history.undo(&mut reversed.rom).unwrap();
+            assert_eq!(reversed.rom.as_file_bytes(), lz3_bytes);
+        }
         migrated.history.undo(&mut migrated.rom).unwrap();
         assert_eq!(migrated.rom.as_file_bytes(), source_bytes);
     }

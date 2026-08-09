@@ -4826,3 +4826,10 @@ original editor's 52 standard and 54 ExGFX exports, repairs the checksum, and re
 source through Undo. Lunar Magic reports the Rust result is already LZ3, leaves its SHA-256
 unchanged, and re-exports every graphics file byte-for-byte. Exact provenance and hashes are
 retained in `oracle-work/graphics-compression-lz2-speed-generation-100.md`.
+
+The reciprocal boundary is verified too. Starting from that migrated historical LZ3 image, Rust
+returns to both `LZ2 Orig` and `LZ2 Speed` without losing the upgraded GFX17 plane, either odd-sized
+legacy ExGFX stream, or either event buffer. Both transactions retain ROM size, repair checksum,
+semantically reopen, and Undo to the exact LZ3 input. Lunar Magic 3.63 recognizes each Rust output
+as already using the requested LZ2 mode, leaves its SHA-256 unchanged, and exports the same 52 GFX
+and 54 ExGFX files as its own corresponding reverse conversion.

@@ -492,3 +492,26 @@ remained `67a7c8bd72e4902b3dc28165f952ab0d063ddfd5b54e9656e50a24f2df843563`, and
 `-ExportGFX`/`-ExportExGFX` directories matched the original LZ3 oracle's 52/54 files with no
 differences. See `oracle-work/graphics-compression-lz2-speed-generation-100.md` for source and
 conversion hashes.
+
+The same corpus gate now includes both reciprocal migrations:
+
+```text
+LM_HISTORICAL_LZ2_ORIGINAL_ORACLE=/tmp/lm-historical-reverse.Rwc5RB/original.smc \
+LM_HISTORICAL_LZ2_SPEED_ORACLE=/tmp/lm-historical-reverse.Rwc5RB/speed.smc \
+LM_HISTORICAL_LZ2_ORIGINAL_RUST_OUTPUT=/tmp/AVSMWFinal-rust-lz2-original.smc \
+LM_HISTORICAL_LZ2_SPEED_RUST_OUTPUT=/tmp/AVSMWFinal-rust-lz2-speed.smc \
+# plus the three forward variables above
+cargo test -p lm-profile \
+  historical_lz2_speed_rom_migrates_all_graphics_and_events_like_lunar_magic \
+  -- --ignored --nocapture
+test ...historical_lz2_speed_rom_migrates_all_graphics_and_events_like_lunar_magic ... ok
+test result: ok. 1 passed; 0 failed; finished in 483.63s
+```
+
+Both reverse results are same-size, checksum-valid, semantically reopen all 52 GFX, 54 ExGFX, and
+both event buffers under LZ2, and Undo to the exact LZ3 input. Lunar Magic 3.63 reports `The ROM is
+already using this compression format.` for both Rust files, leaves SHA-256 values
+`391c4bac9719894f8c63b5c4fc56ea59b576477d55a0eb0a9ffd137973fbd408` (`LZ2 Orig`) and
+`58bfd1818513fde7936a4d852c44bf663da9236be2679a0c55684c18d52138f1` (`LZ2 Speed`) unchanged,
+and fresh 52-file GFX plus 54-file ExGFX exports match the corresponding original-editor reverse
+oracles with no differences.
