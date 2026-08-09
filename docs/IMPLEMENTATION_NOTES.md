@@ -3818,8 +3818,12 @@ forced `$456` command in both deterministic new-game starting-level candidates, 
 boots the resulting ROM through the supplied driver and an official Snes9x libretro core. The
 driver advances the real title/file/intro flow, presses controller A on the overworld, and captures
 state only after game mode `$14` exposes timer digits `4/5/6` at WRAM `$0F31..$0F33`; Rust also
-requires a bounded nonuniform rendered frame. Other gameplay-sensitive header fields still need
-equivalent runtime assertions before the aggregate Oracle gate can be promoted.
+requires a bounded nonuniform rendered frame. The companion standard-header gate supplies
+discriminating runtime coverage for ordinary time, music, sprite memory, buoyancy, and Layer 1
+scroll. Together with the retained Lunar Magic suite that edits/reopens every five-byte field and
+exhausts reserved-mode canonicalization, plus renderer coverage for mode/palette/tileset effects,
+this closes the aggregate Oracle gate without requiring each visually redundant field to own a
+separate emulator scenario.
 
 `rust_standard_time_music_and_sprite_headers_are_applied_in_snes9x_gameplay` independently removes
 the custom-time runtime from the equation. It sets ordinary time selector 3, music selector 7,

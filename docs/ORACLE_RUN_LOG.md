@@ -561,3 +561,18 @@ at `$1411/$1412`. A separate mode-2 probe produced `$01/$02`, proving the pair i
 This discriminating tuple
 replaces the prior `$03/$12/$C0` observation and proves the input route is executing the edited
 level rather than accepting coincidentally matching vanilla values.
+
+The complete original-editor header suite was rerun after the gameplay gates:
+
+```text
+WINEDEBUG=-all cargo test -p lm-app --test level_header_wine \
+  -- --ignored --nocapture --test-threads=1
+test lunar_magic_canonicalizes_every_reserved_mode_without_losing_background_color ... ok
+test lunar_magic_exports_every_rust_legacy_level_header_field ... ok
+test result: ok. 2 passed; 0 failed; finished in 11.90s
+```
+
+This exhausts the original success/canonicalization surface while the Snes9x gates prove the
+runtime-sensitive fields and the renderer covers mode, palette, and tileset consequences. The
+combined evidence promotes the level-header Oracle gate rather than treating one emulator snapshot
+as proof of the whole workflow.
