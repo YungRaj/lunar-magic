@@ -553,8 +553,11 @@ test result: ok. 1 passed; 0 failed; finished in 0.93s
 ```
 
 That ROM contains no custom-time command in either candidate level. Both semantically reopen with
-ordinary time selector 3, music selector 7, sprite memory `$0B`, and both buoyancy controls cleared.
+ordinary time selector 3, music selector 7, sprite memory `$0B`, both buoyancy controls cleared,
+and Layer 1 scroll mode 3.
 The captured gameplay state requires exact WRAM digits `4/0/0`, active song `$12` at `$0DDA`,
-sprite memory `$0B` at `$1692`, and buoyancy flags `$00` at `$190E`. This discriminating tuple
+sprite memory `$0B` at `$1692`, buoyancy flags `$00` at `$190E`, and scroll runtime pair `$00/$00`
+at `$1411/$1412`. A separate mode-2 probe produced `$01/$02`, proving the pair is mode-sensitive.
+This discriminating tuple
 replaces the prior `$03/$12/$C0` observation and proves the input route is executing the edited
 level rather than accepting coincidentally matching vanilla values.

@@ -5,8 +5,8 @@ use lm_app::{
 };
 use lm_graphics::{Bgr555, CompactExAnimation, Palette};
 use lm_level::{
-    CustomTimeSettings, Map16Address, Map16Quadrant, NativeLayer2Data, NativeSpriteHeader,
-    NativeSpriteStream, ObjectEdit, SpriteLengthTable, SpriteToken, Subtile,
+    CustomTimeSettings, Layer1VerticalScrollMode, Map16Address, Map16Quadrant, NativeLayer2Data,
+    NativeSpriteHeader, NativeSpriteStream, ObjectEdit, SpriteLengthTable, SpriteToken, Subtile,
 };
 use lm_overworld::{
     EventReveal, EventRevealTable, OverworldEndpoint, OverworldLayer, OverworldMessage,
@@ -155,6 +155,8 @@ const SMW_LEVEL_MODE: u8 = 0x14;
 const SMW_CURRENT_MUSIC: usize = 0x0dda;
 const SMW_SPRITE_MEMORY: usize = 0x1692;
 const SMW_SPRITE_BUOYANCY: usize = 0x190e;
+const SMW_LAYER1_VERTICAL_SCROLL_ENABLED: usize = 0x1411;
+const SMW_LAYER1_VERTICAL_SCROLL_MODE: usize = 0x1412;
 const SMW_TIMER_HUNDREDS: usize = 0x0f31;
 const MAX_GAMEPLAY_STATE_BYTES: u64 = 64 * 1024 * 1024;
 const MAX_GAMEPLAY_SCREENSHOT_BYTES: u64 = 16 * 1024 * 1024;
@@ -1118,6 +1120,10 @@ fn rust_standard_time_music_and_sprite_headers_are_applied_in_snes9x_gameplay() 
             .expect("select music 7");
         level
             .layer1
+            .header
+            .set_layer1_vertical_scroll(Layer1VerticalScrollMode::NoneVerticalOrHorizontal);
+        level
+            .layer1
             .objects
             .set_custom_time(false, None)
             .expect("disable custom timer");
@@ -1141,6 +1147,10 @@ fn rust_standard_time_music_and_sprite_headers_are_applied_in_snes9x_gameplay() 
             .expect("reopen standard-time starting level");
         assert_eq!(reopened.layer1.header.time_limit_selector(), 3);
         assert_eq!(reopened.layer1.header.default_music_selector(), 7);
+        assert_eq!(
+            reopened.layer1.header.layer1_vertical_scroll(),
+            Layer1VerticalScrollMode::NoneVerticalOrHorizontal
+        );
         assert_eq!(reopened.layer1.objects.custom_time(false), None);
 
         let original = reopened;
@@ -1177,6 +1187,8 @@ fn rust_standard_time_music_and_sprite_headers_are_applied_in_snes9x_gameplay() 
     assert_eq!(wram[SMW_CURRENT_MUSIC], 0x12);
     assert_eq!(wram[SMW_SPRITE_MEMORY], 0x0b);
     assert_eq!(wram[SMW_SPRITE_BUOYANCY], 0x00);
+    assert_eq!(wram[SMW_LAYER1_VERTICAL_SCROLL_ENABLED], 0x00);
+    assert_eq!(wram[SMW_LAYER1_VERTICAL_SCROLL_MODE], 0x00);
 }
 
 #[test]
