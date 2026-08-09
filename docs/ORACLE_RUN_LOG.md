@@ -148,3 +148,33 @@ workspace byte-for-byte. `captured_bitmap_components_produce_the_original_single
 `exact_capacity_tile_without_the_reusable_first_color_drops_its_last_weak_tie`, and the ignored
 `lunar_magic_bitmap_capture_matches_rust_palette_and_graphics` differential bind the recovered
 unit and end-to-end behavior.
+
+## 2026-08-08 — Per-level palette transfer audit
+
+- Lunar Magic executable SHA-256:
+  `b64998b637e553c9adb96dd893140b5b8d0303c7a0f46a1fdab5f887a1d46eff`
+- Pristine headered SMW-US ROM SHA-256:
+  `5e3d55b019dd012e8db1498dda06b63ad1a304787625402b511e6d525946beaf`
+
+```text
+cargo test -p lm-app --test level_palette_transfer_wine -- --ignored --nocapture
+1 passed; 0 failed; finished in 30.11s
+```
+
+The isolated Wine gate drives the recovered level-editor commands `$239F` and `$23A0` rather than
+the palette editor's distinct shared-palette buttons. From pristine level `$105`, Lunar Magic 3.63
+exports exact RGB `.pal`, version-2 TPL, and raw `.mw3` files with lengths `$300`, `$204`, and
+`$202`; their retained SHA-256 identities are respectively
+`88586ad377c5501476d93a820387c58312df9d05a64dd68af8f3131d71d10afa`,
+`d4da32140cc2994b332e2bfd86579a7002868d692a4c6779ae99adedc6182201`, and
+`8a50127cc38c0f39120687e3b4c2fa3067ded7dfbddf49c88a1d431003640c8f`.
+The gate independently checks every RGB channel against the exported SNES words and proves the
+row-zero/backdrop substitution across all sixteen rows.
+
+The reciprocal phase changes one selected TPL word and one unselected word while supplying an
+exact 257-byte `.palmask`. Lunar Magic changes only the selected word, preserves all other 256
+working colors, retains the complete selector, republishes it beside a subsequent export, and
+auto-enables the level's custom palette. An invalid TPL-version import displays the original
+rejection, leaves all 257 palette words unchanged, and resets the original's transient selector to
+all enabled. Rust deliberately keeps both palette and selector failure-atomic; the stronger state
+boundary is recorded explicitly rather than mistaken for an unobserved original behavior.

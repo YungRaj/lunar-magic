@@ -508,6 +508,19 @@ Secondary-exit serialization, the top-level ROM level loader/new-level initializ
 
 `LoadPaletteFromSupportedFile` and `SavePaletteToSupportedFile` prove the native TPL version-2 framing independently: ASCII `TPL`, one version byte equal to `2`, then exactly `0x200` bytes containing 256 little-endian SNES BGR555 words. TPL version `0` instead contains RGB triplets and remains a separately interpreted variant rather than being accepted by the native-word decoder.
 
+The level editor dispatches `PromptAndSavePaletteFile` and `PromptAndLoadPaletteFile` through
+commands `$239F` and `$23A0`. A retained isolated-Wine run proves these are the per-level transfer
+commands, distinct from palette-editor buttons `$2264/$2265`, which own complete shared `.smwpal`
+files. Per-level export selects its encoding by extension: `.pal` writes `$300` RGB bytes, `.tpl`
+writes `TPL` version 2 plus `$200` native bytes, and other accepted extensions such as `.mw3`
+write all `$101` little-endian working words. Before supported 256-color export, every row-zero
+entry is replaced by the backdrop word. Import automatically derives the same-basename
+`.palmask`, initializes a missing selector to 257 enabled bytes, applies only selected entries,
+clears selected row-zero colors, and auto-enables the level custom palette through
+`CommitLevelObjectPaletteEdit`. An invalid TPL version preserves the working colors but leaves the
+transient selector reset to all enabled; Rust intentionally retains the stronger failure-atomic
+selector behavior.
+
 The same dispatcher proves the extension-independent raw palette as exactly `0x202` bytes, or 257 little-endian SNES colors. Its optional same-basename `.palmask` sibling is exactly `0x101` selector bytes: a zero retains the working color and any nonzero value imports the corresponding source. The bundled 3.63 help and executable strings confirm the full extension and automatic sibling discovery. After import, selected first colors of rows 0–15 (indices `0x00`, `0x10`, …, `0xF0`) are forced to zero; the separate color at index `0x100` is not part of that clearing loop.
 
 RGB `.pal` files are exactly `0x300` bytes: 256 ordered red/green/blue triplets. `DetectPaletteRgbByteOrdering` is more precisely an expansion detector. For enabled colors, it counts evidence with any low-three channel bits and separately counts triplets whose low bits are all zero but whose high three bits are nonzero; a strict majority of the latter selects high-bits-only `xxxxx000`, otherwise five-bit values use replicated low bits. The conversion routine chooses the nearest replicated value for noncanonical inputs, preferring the higher five-bit level on an exact distance tie.

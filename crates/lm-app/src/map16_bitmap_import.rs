@@ -3392,11 +3392,14 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(plan.tile_palette_rows, vec![0, 1, 0, 1]);
-        assert_eq!(plan.map16_tiles[0].top_left.0 & 0x1c00, 0);
-        assert_eq!(plan.map16_tiles[0].top_right.0 & 0x1c00, 1 << 10);
-        assert_eq!(plan.map16_tiles[0].bottom_left.0 & 0x1c00, 0);
-        assert_eq!(plan.map16_tiles[0].bottom_right.0 & 0x1c00, 1 << 10);
+        // Equal-capacity exact-fit target rows follow Lunar Magic's recovered later-row tie. The
+        // complete Map16 definition and preview must carry that allocation without swapping it
+        // back to the older seed-row order.
+        assert_eq!(plan.tile_palette_rows, vec![1, 0, 1, 0]);
+        assert_eq!(plan.map16_tiles[0].top_left.0 & 0x1c00, 1 << 10);
+        assert_eq!(plan.map16_tiles[0].top_right.0 & 0x1c00, 0);
+        assert_eq!(plan.map16_tiles[0].bottom_left.0 & 0x1c00, 1 << 10);
+        assert_eq!(plan.map16_tiles[0].bottom_right.0 & 0x1c00, 0);
         let converted = plan.converted_pixels();
         assert_eq!(converted[0], pixels[0]);
         assert_eq!(converted[8], pixels[8]);
