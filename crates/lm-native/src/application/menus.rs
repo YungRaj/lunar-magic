@@ -455,6 +455,8 @@ impl NativeApplication {
                             .start_localization_path(catalog.path)
                         {
                             self.effects.error = Some(error);
+                        } else {
+                            self.auto_detect_localization = false;
                         }
                     }
                 }
@@ -469,8 +471,26 @@ impl NativeApplication {
                     .clicked()
                 {
                     ui.close_menu();
-                    if let Err(error) = self.configuration_loader.choose_localization_and_start() {
+                    match self.configuration_loader.choose_localization_and_start() {
+                        Ok(true) => self.auto_detect_localization = false,
+                        Ok(false) => {}
+                        Err(error) => self.effects.error = Some(error),
+                    }
+                }
+                if ui
+                    .add_enabled(
+                        !self.configuration_loader.is_running(),
+                        egui::Button::new(self.menu_text(UiTextKey::ToolsAutoDetectLanguage))
+                            .selected(self.auto_detect_localization),
+                    )
+                    .clicked()
+                {
+                    ui.close_menu();
+                    self.auto_detect_localization = true;
+                    if let Err(error) = self.start_auto_detected_localization() {
                         self.effects.error = Some(error);
+                    } else {
+                        self.app.status = "Enabled automatic system-language selection".into();
                     }
                 }
                 if ui
@@ -481,6 +501,7 @@ impl NativeApplication {
                     .clicked()
                 {
                     ui.close_menu();
+                    self.auto_detect_localization = false;
                     self.app.clear_localization();
                     self.app.status = "Restored built-in English".into();
                 }

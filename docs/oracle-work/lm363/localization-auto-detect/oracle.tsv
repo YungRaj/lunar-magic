@@ -1,0 +1,7 @@
+function	address	contract
+BuildSystemLanguageDirectoryPath	004D6BB0	executable-relative sysLMLanguage directory
+ValidateLanguageModuleChecksum	004D7010	decoded checksum versus dword at file_size-0x38
+AutoDetectAndLoadLanguageModule	004D7360	persistent Default versus AutoDetect; exact then primary-language match
+EnumerateAvailableLanguageModules	004D7940	DLL resource 0xDB7 magic and bounded resource 0xDB6 metadata
+BuildFallbackPreferredUiLanguageList	004DB640	full locale then primary-language fallback multi-string
+GetPreferredUiLanguagesAsUtf8	004DB810	bounded preferred-language list with legacy fallback

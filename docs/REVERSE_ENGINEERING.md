@@ -1391,6 +1391,16 @@ The external-tool runtime following the parser is now named through toolbar-wind
 
 The localization and Unicode compatibility layer through `004d9d60` is now annotated. Recovered behavior includes language-DLL checksum validation, installed-language enumeration and OS-language auto-detection, localized modal/modeless dialog selection, mapped binary resources, right-to-left window/bitmap/icon mirroring, UTF-8/UTF-16/code-point conversion, escaped multi-string separators, ANSI compatibility conversions, locale-aware sort-key generation, Unicode ShellMessageBox fallback, UTF-8 window creation/class registration, and UTF-8 list-box text retrieval. The overlapping entry at `004d8805` is conservatively labeled as an alternate UTF-8 serialization entry pending function-boundary correction.
 
+Direct port-8089 recovery closes the localization-selection state machine. `004D7940` adds
+`(Default)` English and accepts only `sysLMLanguage\\*.dll` modules with resource `$0DB7` magic
+`$C001BABE` plus at most `$410` bytes of resource `$0DB6` metadata. `004D7360` keeps persisted
+`(AutoDetect)` distinct from `(Default)`, compares as many as 64 preferred UI-language tags first
+exactly and then by primary language, and falls back to English without loading a module.
+`004DB810` bounds the Windows list to `$600` UTF-16 units and uses `004DB640` for the legacy
+full-tag/primary-tag fallback. `004D7010` validates the decoded pre-trailer bytes against the dword
+at `file_size - $38`. The retained contract is in
+`docs/oracle-work/lm363/localization-auto-detect/`.
+
 Unicode-compatible Win32 wrappers are additionally named through `004db810`: combo-box text retrieval, UTF-8 virtual-key lookup, UTF-8 activation-context creation, window/dialog text setters and getters, dynamic preferred-UI-language APIs, the legacy language-ID fallback table, and UTF-8 preferred-language multi-string production.
 
 The UTF-8 Win32 adaptation layer is now named through `004e0680`. It covers ShellExecute and CreateProcess, common open/save dialogs, UTF-8 file creation/deletion/copying and attributes, current/short/full/module/executable paths, drag-and-drop filenames, file enumeration, and UTF-8 LoadLibrary variants. Added the 1,140-byte `Win32FindDataUtf8` structure with 1,040-byte primary and 56-byte alternate UTF-8 filename buffers, and applied it to the first/next enumeration prototypes. The entry at `004ddd6a` overlaps the short-path routine and remains explicitly marked as a medium-confidence boundary.

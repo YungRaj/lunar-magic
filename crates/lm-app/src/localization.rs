@@ -6,6 +6,7 @@ const MAGIC: &[u8; 8] = b"LMLOC001";
 const MAX_LOCALE_BYTES: usize = 64;
 const MAX_TEXT_BYTES: usize = 4096;
 const LEGACY_CHROME_KEY_COUNT: usize = 19;
+const PREVIOUS_COMPLETE_KEY_COUNT: usize = 183;
 const MAX_ENCODED_BYTES: usize =
     MAGIC.len() + 2 + MAX_LOCALE_BYTES + 2 + UiTextKey::ALL.len() * (1 + 2 + MAX_TEXT_BYTES);
 
@@ -195,6 +196,7 @@ pub enum UiTextKey {
     UndoHistorySnapshotsLabel,
     UndoHistoryHint,
     CommonApply,
+    ToolsAutoDetectLanguage,
 }
 
 impl UiTextKey {
@@ -256,6 +258,7 @@ impl UiTextKey {
             Self::ToolsLanguageFormat => "Language ({locale})",
             Self::ToolsInstallLanguage => "Install Language Catalog…",
             Self::ToolsUseBuiltInEnglish => "Use Built-in English",
+            Self::ToolsAutoDetectLanguage => "Auto-detect System Language",
             Self::ToolsInstallFrontendConfiguration => "Install Frontend Configuration…",
             Self::ToolsInstallToolConfiguration => "Install Tool Configuration…",
             Self::ToolsTestRomInEmulator => "Test ROM in Emulator",
@@ -421,7 +424,7 @@ impl UiTextKey {
         }
     }
 
-    pub const ALL: [Self; 183] = [
+    pub const ALL: [Self; 184] = [
         Self::AppTitle,
         Self::FileOpen,
         Self::FileSave,
@@ -605,6 +608,7 @@ impl UiTextKey {
         Self::UndoHistorySnapshotsLabel,
         Self::UndoHistoryHint,
         Self::CommonApply,
+        Self::ToolsAutoDetectLanguage,
     ];
 
     fn from_byte(value: u8) -> Option<Self> {
@@ -755,7 +759,10 @@ impl LocalizationCatalog {
         }
         let locale = reader.string(MAX_LOCALE_BYTES)?;
         let count = usize::from(reader.u16()?);
-        if count != UiTextKey::ALL.len() && count != LEGACY_CHROME_KEY_COUNT {
+        if count != UiTextKey::ALL.len()
+            && count != PREVIOUS_COMPLETE_KEY_COUNT
+            && count != LEGACY_CHROME_KEY_COUNT
+        {
             return Err(LocalizationError::WrongEntryCount(count));
         }
         let mut entries = BTreeMap::new();
@@ -770,13 +777,13 @@ impl LocalizationCatalog {
         if !reader.is_empty() {
             return Err(LocalizationError::TrailingBytes);
         }
-        if count == LEGACY_CHROME_KEY_COUNT {
-            for key in UiTextKey::ALL[..LEGACY_CHROME_KEY_COUNT].iter().copied() {
+        if count != UiTextKey::ALL.len() {
+            for key in UiTextKey::ALL[..count].iter().copied() {
                 if !entries.contains_key(&key) {
                     return Err(LocalizationError::MissingKey(key));
                 }
             }
-            for key in UiTextKey::ALL[LEGACY_CHROME_KEY_COUNT..].iter().copied() {
+            for key in UiTextKey::ALL[count..].iter().copied() {
                 entries.insert(key, key.english().into());
             }
         }
@@ -886,6 +893,31 @@ mod tests {
         assert_eq!(
             upgraded.text(UiTextKey::HelpCompatibilityDiagnostics),
             "Compatibility diagnostics…"
+        );
+        assert_eq!(
+            LocalizationCatalog::decode(&upgraded.encode().unwrap()).unwrap(),
+            upgraded
+        );
+    }
+
+    #[test]
+    fn previous_complete_catalogs_append_auto_detect_with_english_fallback() {
+        let mut bytes = MAGIC.to_vec();
+        write_string(&mut bytes, "es-MX", MAX_LOCALE_BYTES).unwrap();
+        bytes.extend_from_slice(&(PREVIOUS_COMPLETE_KEY_COUNT as u16).to_le_bytes());
+        for key in UiTextKey::ALL[..PREVIOUS_COMPLETE_KEY_COUNT]
+            .iter()
+            .copied()
+        {
+            bytes.push(key as u8);
+            write_string(&mut bytes, &format!("viejo-{key:?}"), MAX_TEXT_BYTES).unwrap();
+        }
+
+        let upgraded = LocalizationCatalog::decode(&bytes).unwrap();
+        assert_eq!(upgraded.text(UiTextKey::CommonApply), "viejo-CommonApply");
+        assert_eq!(
+            upgraded.text(UiTextKey::ToolsAutoDetectLanguage),
+            "Auto-detect System Language"
         );
         assert_eq!(
             LocalizationCatalog::decode(&upgraded.encode().unwrap()).unwrap(),

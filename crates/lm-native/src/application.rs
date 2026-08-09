@@ -209,6 +209,7 @@ pub(crate) struct NativeApplication {
     recent_state: Option<lm_app::recent_state_file::RecentStateFile>,
     configuration_loader: ConfigurationLoader,
     installed_localizations: Vec<InstalledLocalization>,
+    auto_detect_localization: bool,
     profile_loader: crate::profile_loader::ProfileLoader,
     #[cfg(feature = "visual-smoke")]
     visual_smoke_frames: u8,
@@ -408,6 +409,10 @@ impl NativeApplication {
 
     pub(crate) fn load_persistent_preferences(&mut self, storage: Option<&dyn eframe::Storage>) {
         let Some(storage) = storage else {
+            self.auto_detect_localization = true;
+            if let Err(error) = self.start_auto_detected_localization() {
+                self.effects.error = Some(error);
+            }
             return;
         };
         if let Some(encoded) = storage.get_string(Self::RESTORE_POLICY_STORAGE_KEY)
@@ -449,10 +454,15 @@ impl NativeApplication {
             }
         }
         if let Some(encoded) = storage.get_string(Self::LOCALIZATION_STORAGE_KEY) {
-            let result = if encoded == "builtin-en" {
+            let result = if encoded == "auto-detect" {
+                self.auto_detect_localization = true;
+                self.start_auto_detected_localization()
+            } else if encoded == "builtin-en" {
+                self.auto_detect_localization = false;
                 self.app.clear_localization();
                 Ok(())
             } else {
+                self.auto_detect_localization = false;
                 encoded
                     .strip_prefix("hex:")
                     .ok_or_else(|| "unknown localization preference version".to_owned())
@@ -466,12 +476,11 @@ impl NativeApplication {
             if let Err(error) = result {
                 self.effects.error = Some(format!("cannot load language catalog: {error}"));
             }
-        } else if let Some(path) = select_preferred_installed_localization(
-            &self.installed_localizations,
-            system_locale_preferences(),
-        ) && let Err(error) = self.configuration_loader.start_localization_path(path)
-        {
-            self.effects.error = Some(error);
+        } else {
+            self.auto_detect_localization = true;
+            if let Err(error) = self.start_auto_detected_localization() {
+                self.effects.error = Some(error);
+            }
         }
         if let Some(encoded) = storage.get_string(Self::UNDO_HISTORY_STORAGE_KEY) {
             let result = undo_history_settings::decode_preference(&encoded).and_then(|limit| {
@@ -659,6 +668,17 @@ impl NativeApplication {
         }
     }
 
+    fn start_auto_detected_localization(&mut self) -> Result<(), String> {
+        self.app.clear_localization();
+        let Some(path) = select_preferred_installed_localization(
+            &self.installed_localizations,
+            system_locale_preferences(),
+        ) else {
+            return Ok(());
+        };
+        self.configuration_loader.start_localization_path(path)
+    }
+
     fn show_global_effects(&mut self, context: &egui::Context) {
         self.effects.show_rom_loader(context, &mut self.app);
         self.effects.show_persistence(context, &mut self.app);
@@ -703,9 +723,9 @@ impl eframe::App for NativeApplication {
             |toolbar| format!("hex:{}", encode_toolbar_preference(toolbar)),
         );
         storage.set_string(Self::TOOLBAR_STORAGE_KEY, toolbar);
-        let localization = self.app.localization().map_or_else(
-            || "builtin-en".to_owned(),
-            |catalog| format!("hex:{}", encode_localization_preference(catalog)),
+        let localization = encode_localization_storage_preference(
+            self.auto_detect_localization,
+            self.app.localization(),
         );
         storage.set_string(Self::LOCALIZATION_STORAGE_KEY, localization);
         storage.set_string(
@@ -929,6 +949,20 @@ fn encode_localization_preference(catalog: &LocalizationCatalog) -> String {
     encode_hex(&bytes)
 }
 
+fn encode_localization_storage_preference(
+    auto_detect: bool,
+    catalog: Option<&LocalizationCatalog>,
+) -> String {
+    if auto_detect {
+        "auto-detect".to_owned()
+    } else {
+        catalog.map_or_else(
+            || "builtin-en".to_owned(),
+            |catalog| format!("hex:{}", encode_localization_preference(catalog)),
+        )
+    }
+}
+
 fn decode_localization_preference(value: &str) -> Result<LocalizationCatalog, String> {
     LocalizationCatalog::decode(&decode_hex(value, LocalizationCatalog::MAX_ENCODED_LEN)?)
         .map_err(|error| error.to_string())
@@ -1041,6 +1075,26 @@ mod preference_tests {
             decode_localization_preference(&"00".repeat(LocalizationCatalog::MAX_ENCODED_LEN + 1))
                 .is_err()
         );
+    }
+
+    #[test]
+    fn localization_storage_keeps_auto_detect_distinct_from_builtin_and_explicit() {
+        let catalog = LocalizationCatalog::new(
+            "ja-JP",
+            UiTextKey::ALL.map(|key| (key, format!("日本語-{key:?}"))),
+        )
+        .unwrap();
+        assert_eq!(
+            encode_localization_storage_preference(true, Some(&catalog)),
+            "auto-detect"
+        );
+        assert_eq!(
+            encode_localization_storage_preference(false, None),
+            "builtin-en"
+        );
+        let explicit = encode_localization_storage_preference(false, Some(&catalog));
+        let encoded = explicit.strip_prefix("hex:").unwrap();
+        assert_eq!(decode_localization_preference(encoded).unwrap(), catalog);
     }
 
     #[test]
