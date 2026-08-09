@@ -455,6 +455,14 @@ truncation, page-row wrap, and namespace overflow reject. The installed-ROM test
 rectangle across a page boundary at the request-captured destination, proves later selection
 movement cannot retarget it, and rejects reuse of the stale revision token.
 
+The installed Map16 page preview also owns the rectangle-selection gesture. Click-drag uses the
+rendered 16×16 cells at every zoom, normalizes all four drag directions to a top-left origin, writes
+the selected width and height in the hexadecimal form consumed by selected `.map16` and native
+clipboard export, and outlines the complete in-page range. A click resets the range to one tile.
+`rendered_page_drag_normalizes_rectangle_in_every_direction` and
+`rendered_page_outlines_only_rectangles_visible_on_the_current_page` lock the geometry and prevent
+an invalid manually entered range from painting outside the current page.
+
 Map16 bitmap decoding additionally covers BMP `BI_JPEG` and `BI_PNG` embedded payloads. Hermetic
 fixtures wrap generated JPEG and PNG images in exact DIB framing and verify decoded dimensions,
 RGB/RGBA output, PNG alpha retention, JPEG normalization, declared-size truncation, zero-length

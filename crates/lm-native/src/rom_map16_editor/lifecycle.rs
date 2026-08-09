@@ -18,6 +18,7 @@ impl RomMap16Editor {
                 self.workspace = Some(workspace);
                 self.page = 0;
                 self.tile = 0;
+                self.rectangle_drag_anchor = None;
                 if logical_len == 0x80_000 {
                     self.search_start = "80000".into();
                     self.search_end = "100000".into();
@@ -203,6 +204,7 @@ impl RomMap16Editor {
         self.snes_tileset_preview = None;
         self.clipboard_paste_target = None;
         self.rectangle_clipboard_paste_target = None;
+        self.rectangle_drag_anchor = None;
         self.staged_revision = 0;
         self.undo_history.clear();
         self.redo_history.clear();

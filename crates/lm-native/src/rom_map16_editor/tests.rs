@@ -924,3 +924,21 @@ fn staged_map16_history_is_bounded_to_one_hundred_snapshots() {
         100
     );
 }
+
+#[test]
+fn rendered_page_drag_normalizes_rectangle_in_every_direction() {
+    assert_eq!(map16_drag_rectangle(0x21, 0x54), (0x21, 4, 4));
+    assert_eq!(map16_drag_rectangle(0x54, 0x21), (0x21, 4, 4));
+    assert_eq!(map16_drag_rectangle(0x24, 0x51), (0x21, 4, 4));
+    assert_eq!(map16_drag_rectangle(0x51, 0x24), (0x21, 4, 4));
+    assert_eq!(map16_drag_rectangle(0xff, 0xff), (0xff, 1, 1));
+}
+
+#[test]
+fn rendered_page_outlines_only_rectangles_visible_on_the_current_page() {
+    assert_eq!(page_rectangle(0x21, 4, 4), Some((0x21, 4, 4)));
+    assert_eq!(page_rectangle(0x2f, 2, 1), None);
+    assert_eq!(page_rectangle(0xf0, 1, 2), None);
+    assert_eq!(page_rectangle(0, 0, 1), None);
+    assert_eq!(page_rectangle(0, usize::MAX, usize::MAX), None);
+}

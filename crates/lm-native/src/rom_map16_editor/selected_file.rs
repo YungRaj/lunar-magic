@@ -251,7 +251,7 @@ fn take_selected_file_shortcut(ui: &mut egui::Ui) -> Option<SelectedFileShortcut
     })
 }
 
-fn parse_dimensions(width: &str, height: &str) -> Result<(usize, usize), String> {
+pub(super) fn parse_dimensions(width: &str, height: &str) -> Result<(usize, usize), String> {
     let width = usize::from_str_radix(width.trim(), 16)
         .map_err(|_| "selected Map16 width must be hexadecimal".to_owned())?;
     let height = usize::from_str_radix(height.trim(), 16)

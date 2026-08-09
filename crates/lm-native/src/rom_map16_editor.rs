@@ -153,6 +153,7 @@ pub(crate) struct RomMap16Editor {
     workspace: Option<Workspace>,
     page: usize,
     tile: usize,
+    rectangle_drag_anchor: Option<usize>,
     quadrant: usize,
     subtile: map16_subtile_form::SubtileForm,
     acts_like: String,
@@ -505,6 +506,10 @@ impl RomMap16Editor {
         let show_grid = self.show_grid;
         let dark_grid = self.dark_grid;
         let selected_tile = self.tile;
+        let selected_rectangle =
+            selected_file::parse_dimensions(&self.selected_width, &self.selected_height)
+                .ok()
+                .and_then(|(width, height)| page_rectangle(selected_tile, width, height));
         let show_page_number = self.show_page_number;
         let page = self.page;
         let response = egui::ScrollArea::both()
@@ -513,7 +518,7 @@ impl RomMap16Editor {
                 let response = ui.add(
                     egui::Image::new(&texture)
                         .fit_to_exact_size(image_size)
-                        .sense(egui::Sense::click()),
+                        .sense(egui::Sense::click_and_drag()),
                 );
                 let cell_size = response.rect.width() / 16.0;
                 if show_grid {
@@ -549,11 +554,12 @@ impl RomMap16Editor {
                         egui::Color32::WHITE,
                     );
                 }
-                let column = f32::from(u8::try_from(selected_tile % 16).unwrap_or(0));
-                let row = f32::from(u8::try_from(selected_tile / 16).unwrap_or(0));
+                let (origin, width, height) = selected_rectangle.unwrap_or((selected_tile, 1, 1));
+                let column = f32::from(u8::try_from(origin % 16).unwrap_or(0));
+                let row = f32::from(u8::try_from(origin / 16).unwrap_or(0));
                 let cell = egui::Rect::from_min_size(
                     response.rect.min + egui::vec2(column * cell_size, row * cell_size),
-                    egui::Vec2::splat(cell_size),
+                    egui::vec2(width as f32 * cell_size, height as f32 * cell_size),
                 );
                 ui.painter().rect_stroke(
                     cell,
@@ -564,15 +570,36 @@ impl RomMap16Editor {
                 response
             })
             .inner;
-        if response.clicked()
-            && let Some(position) = response.interact_pointer_pos()
-            && let Some(tile) = crate::map16_editor_render::selected_tile(response.rect, position)
+        let pointer_tile = response.interact_pointer_pos().and_then(|position| {
+            crate::map16_editor_render::selected_tile(response.rect, position)
+        });
+        if response.drag_started() {
+            self.rectangle_drag_anchor = pointer_tile;
+        }
+        if response.dragged()
+            && let (Some(anchor), Some(current)) = (self.rectangle_drag_anchor, pointer_tile)
+        {
+            let (origin, width, height) = map16_drag_rectangle(anchor, current);
+            if self.tile != origin {
+                self.tile = origin;
+                self.invalidate();
+                self.load();
+            }
+            self.selected_width = format!("{width:X}");
+            self.selected_height = format!("{height:X}");
+        } else if response.clicked()
+            && let Some(tile) = pointer_tile
         {
             self.tile = tile;
+            self.selected_width = "1".into();
+            self.selected_height = "1".into();
             self.invalidate();
             self.load();
         }
-        ui.small("Click a rendered 16×16 tile to select it.");
+        if response.drag_stopped() {
+            self.rectangle_drag_anchor = None;
+        }
+        ui.small("Click a rendered 16×16 tile, or drag across tiles to select a rectangle.");
     }
 
     fn selection_and_clipboard(
@@ -991,6 +1018,29 @@ impl RomMap16Editor {
     fn invalidate(&mut self) {
         self.loaded = None;
     }
+}
+
+fn map16_drag_rectangle(anchor: usize, current: usize) -> (usize, usize, usize) {
+    let anchor = anchor.min(Map16Page::TILE_COUNT - 1);
+    let current = current.min(Map16Page::TILE_COUNT - 1);
+    let left = (anchor % 16).min(current % 16);
+    let right = (anchor % 16).max(current % 16);
+    let top = (anchor / 16).min(current / 16);
+    let bottom = (anchor / 16).max(current / 16);
+    (top * 16 + left, right - left + 1, bottom - top + 1)
+}
+
+fn page_rectangle(origin: usize, width: usize, height: usize) -> Option<(usize, usize, usize)> {
+    (origin < Map16Page::TILE_COUNT
+        && width > 0
+        && height > 0
+        && (origin % 16)
+            .checked_add(width)
+            .is_some_and(|end| end <= 16)
+        && (origin / 16)
+            .checked_add(height)
+            .is_some_and(|end| end <= 16))
+    .then_some((origin, width, height))
 }
 
 fn take_map16_commit_shortcut(ui: &mut egui::Ui) -> bool {
