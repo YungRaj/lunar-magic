@@ -382,6 +382,64 @@ pub enum ResolvedNativeOverworldSpriteElement {
     },
 }
 
+/// Returns the painter-topmost sprite whose rendered cell contains `point`.
+///
+/// Hit regions share the renderer's exact element geometry. Resolved Map16 subtiles and internal
+/// text definitions occupy one 8x8 cell, unresolved Map16 references retain their 16x16 footprint,
+/// and labels use the same authenticated native-font measurement as painting.
+#[must_use]
+pub fn hit_test_resolved_native_overworld_sprite_elements(
+    elements: &[ResolvedNativeOverworldSpriteElement],
+    point: (i32, i32),
+) -> Option<usize> {
+    elements.iter().rev().find_map(|element| {
+        let (sprite_index, x, y, width, height) = match element {
+            ResolvedNativeOverworldSpriteElement::Tile {
+                sprite_index, x, y, ..
+            }
+            | ResolvedNativeOverworldSpriteElement::EditorTextDefinition {
+                sprite_index,
+                x,
+                y,
+                ..
+            } => (*sprite_index, *x, *y, 8, 8),
+            ResolvedNativeOverworldSpriteElement::UnresolvedMap16 {
+                sprite_index, x, y, ..
+            } => (*sprite_index, *x, *y, 16, 16),
+            ResolvedNativeOverworldSpriteElement::Label {
+                sprite_index,
+                x,
+                y,
+                text,
+            } => {
+                let (width, height) =
+                    crate::native_level_raster::lunar_magic_editor_label_size(text);
+                (*sprite_index, *x, *y, width, height)
+            }
+        };
+        point_in_rendered_region(point, x, y, width, height).then_some(sprite_index)
+    })
+}
+
+fn point_in_rendered_region(
+    point: (i32, i32),
+    x: i32,
+    y: i32,
+    width: usize,
+    height: usize,
+) -> bool {
+    let Ok(width) = i32::try_from(width) else {
+        return false;
+    };
+    let Ok(height) = i32::try_from(height) else {
+        return false;
+    };
+    point.0 >= x
+        && point.1 >= y
+        && point.0 < x.saturating_add(width)
+        && point.1 < y.saturating_add(height)
+}
+
 /// Resolves native overworld sprite appearances to 8x8 tile and label elements.
 ///
 /// `builtin_sprite_map16` owns native definitions `$000..$3FF`; `.s16ov` owns `$400..$BFF`.
@@ -911,6 +969,78 @@ mod tests {
             graphics_ranges: Vec::new(),
             palette_ranges: Vec::new(),
         }
+    }
+
+    #[test]
+    fn rendered_element_hit_test_uses_exact_regions_and_reverse_painter_order() {
+        let tile = |sprite_index| ResolvedNativeOverworldSpriteElement::Tile {
+            sprite_index,
+            tile_number: 0,
+            palette: 0,
+            x: -4,
+            y: 6,
+            priority: false,
+            x_flip: false,
+            y_flip: false,
+            translucent: false,
+            graphics_base: 0,
+            palette_base: 0,
+            active_palette_offset: 0,
+        };
+        let elements = vec![
+            tile(2),
+            tile(7),
+            ResolvedNativeOverworldSpriteElement::UnresolvedMap16 {
+                sprite_index: 9,
+                native_tile: 0x400,
+                x: 20,
+                y: 30,
+                translucent: false,
+            },
+            ResolvedNativeOverworldSpriteElement::Label {
+                sprite_index: 11,
+                x: 50,
+                y: 60,
+                text: "Warp".into(),
+            },
+        ];
+
+        assert_eq!(
+            hit_test_resolved_native_overworld_sprite_elements(&elements, (-4, 6)),
+            Some(7)
+        );
+        assert_eq!(
+            hit_test_resolved_native_overworld_sprite_elements(&elements, (3, 13)),
+            Some(7)
+        );
+        assert_eq!(
+            hit_test_resolved_native_overworld_sprite_elements(&elements, (4, 13)),
+            None
+        );
+        assert_eq!(
+            hit_test_resolved_native_overworld_sprite_elements(&elements, (35, 45)),
+            Some(9)
+        );
+        assert_eq!(
+            hit_test_resolved_native_overworld_sprite_elements(&elements, (36, 45)),
+            None
+        );
+        let (label_width, label_height) =
+            crate::native_level_raster::lunar_magic_editor_label_size("Warp");
+        assert_eq!(
+            hit_test_resolved_native_overworld_sprite_elements(
+                &elements,
+                (49 + label_width as i32, 59 + label_height as i32),
+            ),
+            Some(11)
+        );
+        assert_eq!(
+            hit_test_resolved_native_overworld_sprite_elements(
+                &elements,
+                (50 + label_width as i32, 60),
+            ),
+            None
+        );
     }
 
     #[test]

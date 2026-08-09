@@ -622,6 +622,16 @@ pub fn draw_lunar_magic_editor_label(
     }
 }
 
+pub(crate) fn lunar_magic_editor_label_size(text: &str) -> (usize, usize) {
+    let width = text.bytes().fold(0_i32, |width, character| {
+        width.saturating_add(i32::from(lm363_editor_font_advance(character)))
+    });
+    (
+        usize::try_from(width).unwrap_or_default(),
+        LM363_EDITOR_FONT_TEXT_HEIGHT,
+    )
+}
+
 fn lm363_editor_font_advance(character: u8) -> i16 {
     let offset = LM363_EDITOR_FONT_HEADER + usize::from(character) * LM363_EDITOR_FONT_RECORD_BYTES;
     i16::from_le_bytes([LM363_EDITOR_FONT[offset], LM363_EDITOR_FONT[offset + 1]])

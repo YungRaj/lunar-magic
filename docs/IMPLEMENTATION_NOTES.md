@@ -4984,7 +4984,12 @@ ordinary overworld records. Map 0 owns canvas pixels `0..=511`; maps 1–6 share
 canvas plane and therefore add 512 to their map-local X coordinate only while rendering. The ROM
 model remains map-local, so saving and reopening do not absorb that visual offset.
 
-The native-sprite canvas tool now hit-tests the active map's anchor cells in reverse record order.
-An occupied click selects the last/topmost matching record and reloads its complete variable-width
-form. A drag captures that record identity and stages exactly one replacement at release; an empty
-click retains insert/move behavior. Cross-plane points cannot select or mutate a record.
+The native-sprite canvas tool resolves the same appearance elements used for painting and hit-tests
+them in reverse painter order. Resolved and internal-text subtiles use half-open 8x8 regions,
+unresolved Map16 references retain 16x16 regions, and labels reuse the authenticated font's exact
+advance widths and text height. Signed display offsets therefore participate in selection without
+changing the record origin. Records with no drawable definition retain an 8x8 anchor fallback;
+records with a drawable definition do not gain an invisible anchor target. An occupied click
+selects the last/topmost matching record and reloads its complete variable-width form. A drag
+captures that record identity and stages exactly one replacement at release; an empty click retains
+insert/move behavior. Cross-plane points cannot select or mutate a record.

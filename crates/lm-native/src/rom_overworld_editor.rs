@@ -1204,6 +1204,13 @@ impl RomOverworldEditor {
                     shape.height,
                 )
             {
+                let canvas_pixel = overworld_editor_render::selected_tile(
+                    response.rect,
+                    position,
+                    shape.width.saturating_mul(8),
+                    shape.height.saturating_mul(8),
+                )
+                .unwrap_or((x.saturating_mul(8), y.saturating_mul(8)));
                 self.x = x;
                 self.y = y;
                 self.loaded = None;
@@ -1218,7 +1225,7 @@ impl RomOverworldEditor {
                     }
                     MapPaintTool::NativeSprite if !stale => {
                         if response.drag_started() {
-                            if let Some(index) = self.native_sprite_hit_test((x, y)) {
+                            if let Some(index) = self.native_sprite_hit_test(canvas_pixel) {
                                 self.native_sprite.index = index;
                                 self.load_native_sprite_form();
                                 self.native_sprite_drag = Some(NativeSpriteDrag {
@@ -1235,7 +1242,7 @@ impl RomOverworldEditor {
                                 native_sprite_position = Some((x, y));
                             }
                         } else if response.clicked() {
-                            if let Some(index) = self.native_sprite_hit_test((x, y)) {
+                            if let Some(index) = self.native_sprite_hit_test(canvas_pixel) {
                                 self.native_sprite.index = index;
                                 self.load_native_sprite_form();
                             } else {
@@ -1366,12 +1373,13 @@ impl RomOverworldEditor {
         Ok(())
     }
 
-    fn native_sprite_hit_test(&self, position: (usize, usize)) -> Option<usize> {
+    fn native_sprite_hit_test(&self, point: (usize, usize)) -> Option<usize> {
         let workspace = self.workspace.as_ref()?;
-        native_sprite_canvas_hit_test(
-            &workspace.native_sprites.table().maps,
+        overworld_editor_render::native_custom_sprite_hit_test(
+            workspace.native_appearances.as_ref(),
+            workspace.native_sprites.table(),
             self.native_sprite.map,
-            position,
+            point,
         )
     }
 
@@ -2086,17 +2094,6 @@ fn native_sprite_canvas_edit(
     })
 }
 
-fn native_sprite_canvas_hit_test(
-    maps: &[Vec<lm_overworld::NativeCustomOverworldSprite>; 7],
-    map: usize,
-    position: (usize, usize),
-) -> Option<usize> {
-    let (x, y) = native_sprite_canvas_position(map, position.0, position.1)?;
-    maps.get(map)?
-        .iter()
-        .rposition(|sprite| sprite.x == x && sprite.y == y)
-}
-
 fn overworld_animation_preview_tick(seconds: f64, rate: OverworldAnimationRate) -> usize {
     if let Ok(tick) = std::env::var("LM_NATIVE_OVERWORLD_ANIMATION_TICK")
         && let Ok(tick) = tick.parse::<usize>()
@@ -2259,12 +2256,12 @@ mod canvas_tests {
         MainPathLinkForm, NativeCustomOverworldSpriteEdit, OverworldAnimationRate,
         OverworldControllerEdit, OverworldEndpoint, OverworldLayerId, OverworldPathDirection,
         OverworldPathLink, OverworldPathLinkTable, OverworldPathTarget, RomOverworldEditor,
-        flood_fill_cells, grid_line, native_sprite_canvas_edit, native_sprite_canvas_hit_test,
-        native_sprite_canvas_position, overworld_animation_preview_tick, rectangle_cells,
-        route_canvas_endpoint, route_directional_canvas_endpoint, route_endpoint_canvas_pixel,
-        stroke_edits,
+        flood_fill_cells, grid_line, native_sprite_canvas_edit, native_sprite_canvas_position,
+        overworld_animation_preview_tick, rectangle_cells, route_canvas_endpoint,
+        route_directional_canvas_endpoint, route_endpoint_canvas_pixel, stroke_edits,
     };
     use crate::document_loader::BoundedRead;
+    use crate::overworld_editor_render;
     use eframe::egui;
 
     #[test]
@@ -2327,21 +2324,38 @@ mod canvas_tests {
             screen: 0,
             extra: Vec::new(),
         };
-        let maps = [
-            vec![sprite(1, 80, 40), sprite(2, 80, 40)],
-            vec![sprite(3, 48, 24)],
-            Vec::new(),
-            Vec::new(),
-            Vec::new(),
-            Vec::new(),
-            Vec::new(),
-        ];
+        let table = lm_overworld::NativeCustomOverworldSpriteTable {
+            maps: [
+                vec![sprite(1, 80, 40), sprite(2, 80, 40)],
+                vec![sprite(3, 48, 24)],
+                Vec::new(),
+                Vec::new(),
+                Vec::new(),
+                Vec::new(),
+                Vec::new(),
+            ],
+        };
 
-        assert_eq!(native_sprite_canvas_hit_test(&maps, 0, (10, 5)), Some(1));
-        assert_eq!(native_sprite_canvas_hit_test(&maps, 1, (70, 3)), Some(0));
-        assert_eq!(native_sprite_canvas_hit_test(&maps, 0, (70, 3)), None);
-        assert_eq!(native_sprite_canvas_hit_test(&maps, 1, (10, 5)), None);
-        assert_eq!(native_sprite_canvas_hit_test(&maps, 7, (64, 0)), None);
+        assert_eq!(
+            overworld_editor_render::native_custom_sprite_hit_test(None, &table, 0, (80, 40)),
+            Some(1)
+        );
+        assert_eq!(
+            overworld_editor_render::native_custom_sprite_hit_test(None, &table, 1, (560, 24)),
+            Some(0)
+        );
+        assert_eq!(
+            overworld_editor_render::native_custom_sprite_hit_test(None, &table, 0, (560, 24)),
+            None
+        );
+        assert_eq!(
+            overworld_editor_render::native_custom_sprite_hit_test(None, &table, 1, (80, 40)),
+            None
+        );
+        assert_eq!(
+            overworld_editor_render::native_custom_sprite_hit_test(None, &table, 7, (512, 0)),
+            None
+        );
     }
 
     #[test]

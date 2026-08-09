@@ -415,6 +415,69 @@ fn native_overworld_sprite_placements(
     placements
 }
 
+pub(crate) fn native_custom_sprite_hit_test(
+    native: Option<&lm_render::NativeOverworldAppearancePair>,
+    custom: &lm_overworld::NativeCustomOverworldSpriteTable,
+    map: usize,
+    point: (usize, usize),
+) -> Option<usize> {
+    let records = custom.maps.get(map)?;
+    let canvas_x = if map == 0 { 0 } else { 512 };
+    let submap = u8::try_from(map).ok()?;
+    let placements = records
+        .iter()
+        .map(|sprite| lm_render::NativeOverworldSpritePlacement {
+            id: u16::from(sprite.id),
+            x: i32::from(sprite.x) + canvas_x,
+            y: i32::from(sprite.y),
+            submap,
+        })
+        .collect::<Vec<_>>();
+    let mut rendered = vec![false; records.len()];
+    if let Some(native) = native {
+        let elements = lm_render::resolve_native_overworld_sprite_elements(
+            &placements,
+            &native.definitions,
+            lm_render::lunar_magic_builtin_overworld_sprite_map16(),
+            &native.sprite_map16,
+        );
+        for element in &elements {
+            let index = match element {
+                lm_render::ResolvedNativeOverworldSpriteElement::Tile { sprite_index, .. }
+                | lm_render::ResolvedNativeOverworldSpriteElement::Label { sprite_index, .. }
+                | lm_render::ResolvedNativeOverworldSpriteElement::EditorTextDefinition {
+                    sprite_index,
+                    ..
+                }
+                | lm_render::ResolvedNativeOverworldSpriteElement::UnresolvedMap16 {
+                    sprite_index,
+                    ..
+                } => *sprite_index,
+            };
+            if let Some(rendered) = rendered.get_mut(index) {
+                *rendered = true;
+            }
+        }
+        let point = (i32::try_from(point.0).ok()?, i32::try_from(point.1).ok()?);
+        if let Some(index) =
+            lm_render::hit_test_resolved_native_overworld_sprite_elements(&elements, point)
+        {
+            return Some(index);
+        }
+    }
+    let point = (u16::try_from(point.0).ok()?, u16::try_from(point.1).ok()?);
+    records.iter().enumerate().rposition(|(index, sprite)| {
+        let x = sprite
+            .x
+            .saturating_add(u16::try_from(canvas_x).unwrap_or_default());
+        !rendered[index]
+            && point.0 >= x
+            && point.1 >= sprite.y
+            && point.0 < x.saturating_add(8)
+            && point.1 < sprite.y.saturating_add(8)
+    })
+}
+
 fn materialize_overworld_exanimation(
     overworld: &CompleteOverworldFile,
     assets: &OverworldAssets,
@@ -915,7 +978,8 @@ mod tests {
     use lm_level::{Map16Set, Map16SetFile};
     use lm_overworld::{
         EventRevealTable, NativeCustomOverworldSprite, NativeCustomOverworldSpriteTable,
-        OverworldLayer,
+        NativeOverworldSpriteAppearance, NativeOverworldSpriteDisplay,
+        NativeOverworldSpriteSidecar, OverworldLayer,
     };
     use lm_project::{CompleteOverworldData, CompleteOverworldShape, OverworldLayers};
 
@@ -1019,6 +1083,65 @@ mod tests {
             assert_eq!((placement.x, placement.y), (536, 40));
             assert_eq!(usize::from(placement.submap), map);
         }
+    }
+
+    #[test]
+    fn native_custom_sprite_hit_test_uses_rendered_label_geometry_on_the_selected_map() {
+        let custom = NativeCustomOverworldSpriteTable {
+            maps: std::array::from_fn(|map| {
+                (map == 1)
+                    .then(|| {
+                        vec![NativeCustomOverworldSprite {
+                            id: 3,
+                            x: 48,
+                            y: 24,
+                            screen: 0,
+                            extra: Vec::new(),
+                        }]
+                    })
+                    .unwrap_or_default()
+            }),
+        };
+        let native = lm_render::NativeOverworldAppearancePair {
+            definitions: NativeOverworldSpriteSidecar {
+                tooltips: Default::default(),
+                appearances: std::collections::BTreeMap::from([(
+                    3,
+                    NativeOverworldSpriteAppearance {
+                        shadow: false,
+                        display: NativeOverworldSpriteDisplay::Label {
+                            x: -16,
+                            y: 8,
+                            text: "Warp".into(),
+                        },
+                    },
+                )]),
+                graphics_ranges: Vec::new(),
+                palette_ranges: Vec::new(),
+            },
+            sprite_map16: lm_level::S16OvSidecar::decode(&[]).unwrap(),
+        };
+
+        assert_eq!(
+            native_custom_sprite_hit_test(Some(&native), &custom, 1, (544, 32)),
+            Some(0)
+        );
+        assert_eq!(
+            native_custom_sprite_hit_test(Some(&native), &custom, 1, (546, 35)),
+            Some(0)
+        );
+        assert_eq!(
+            native_custom_sprite_hit_test(Some(&native), &custom, 1, (560, 24)),
+            None
+        );
+        assert_eq!(
+            native_custom_sprite_hit_test(Some(&native), &custom, 0, (544, 32)),
+            None
+        );
+        assert_eq!(
+            native_custom_sprite_hit_test(Some(&native), &custom, 1, (48, 24)),
+            None
+        );
     }
 
     #[test]
