@@ -420,11 +420,14 @@ pub use overworld_player_start::{
 pub use overworld_settings::{
     LoadedSmwUsV1ExpandedLevelSettings, LoadedSmwUsV1OverworldLayer3Settings,
     LoadedSmwUsV1OverworldSettings, SMW_US_V1_EXPANDED_SETTINGS_PAYLOAD_OFFSET,
-    SMW_US_V1_EXPANDED_SETTINGS_TABLE_OFFSET, SMW_US_V1_OVERWORLD_SETTINGS_FIRST_SLOT,
+    SMW_US_V1_EXPANDED_SETTINGS_TABLE_OFFSET,
+    SMW_US_V1_OVERWORLD_ANIMATION_FEATURE_OPERAND_DISPLACEMENT,
+    SMW_US_V1_OVERWORLD_ANIMATION_RUNTIME_MARKER, SMW_US_V1_OVERWORLD_ANIMATION_RUNTIME_OPERAND,
+    SMW_US_V1_OVERWORLD_LIGHTNING_DISABLE_MASK, SMW_US_V1_OVERWORLD_SETTINGS_FIRST_SLOT,
     SmwUsV1OverworldSettingsLoadError, load_smw_us_v1_expanded_level_settings,
     load_smw_us_v1_overworld_layer3_settings, load_smw_us_v1_overworld_settings,
     smw_us_v1_expanded_settings_layout, smw_us_v1_installed_expanded_settings_layout,
-    smw_us_v1_overworld_layer3_settings_layout,
+    smw_us_v1_overworld_animation_options_layout, smw_us_v1_overworld_layer3_settings_layout,
 };
 pub use overworld_special_event::{
     SMW_US_V1_SPECIAL_EVENT_DESTINATION_OPERAND, SMW_US_V1_SPECIAL_EVENT_DIRECTION_OPERAND,

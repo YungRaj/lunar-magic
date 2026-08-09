@@ -4,8 +4,9 @@ use lm_level::ExpandedLevelSettingsRecord;
 use lm_level::ExpandedOverworldSettings;
 use lm_overworld::{OverworldLayer3SettingsError, OverworldLayer3SettingsTable};
 use lm_project::{
-    ExpandedLevelSettingsIoError, ExpandedLevelSettingsLayout, ExpandedOverworldSettingsIoError,
-    OverworldLayer3SettingsRomLayout, Project,
+    ChainedSnesPointerLocator, ExpandedLevelSettingsIoError, ExpandedLevelSettingsLayout,
+    ExpandedOverworldSettingsIoError, GatedLayout, InstallationMarker, InstalledLayout,
+    OverworldAnimationOptionsRomLayout, OverworldLayer3SettingsRomLayout, Project,
 };
 use lm_rats::parse_at;
 use lm_rom::{Mapper, snes_to_pc};
@@ -25,6 +26,32 @@ pub const SMW_US_V1_EXPANDED_SETTINGS_PAYLOAD_OFFSET: usize =
 pub const SMW_US_V1_EXPANDED_SETTINGS_TABLE_OFFSET: usize =
     SMW_US_V1_EXPANDED_SETTINGS_PAYLOAD_OFFSET + SMW_US_V1_EXPANDED_SETTINGS_PREFIX_LEN;
 const SMW_US_V1_EXPANDED_SETTINGS_BASE_OPERAND: usize = 0x7f840 + 0x33;
+pub const SMW_US_V1_OVERWORLD_ANIMATION_RUNTIME_MARKER: usize = 0x24e3;
+pub const SMW_US_V1_OVERWORLD_ANIMATION_RUNTIME_OPERAND: usize = 0x20087;
+pub const SMW_US_V1_OVERWORLD_ANIMATION_FEATURE_OPERAND_DISPLACEMENT: isize = 0x4a;
+pub const SMW_US_V1_OVERWORLD_LIGHTNING_DISABLE_MASK: usize = 0x27709;
+
+#[must_use]
+pub const fn smw_us_v1_overworld_animation_options_layout() -> OverworldAnimationOptionsRomLayout {
+    OverworldAnimationOptionsRomLayout {
+        feature_installation: InstalledLayout::Alternatives {
+            primary: GatedLayout {
+                marker: InstallationMarker {
+                    offset: SMW_US_V1_OVERWORLD_ANIMATION_RUNTIME_MARKER,
+                    expected: 0x22,
+                },
+                layout: ChainedSnesPointerLocator {
+                    mapper: Mapper::LoRom,
+                    first_operand_offset: SMW_US_V1_OVERWORLD_ANIMATION_RUNTIME_OPERAND,
+                    final_operand_displacement:
+                        SMW_US_V1_OVERWORLD_ANIMATION_FEATURE_OPERAND_DISPLACEMENT,
+                },
+            },
+            fallback: None,
+        },
+        lightning_disable_mask_offset: SMW_US_V1_OVERWORLD_LIGHTNING_DISABLE_MASK,
+    }
+}
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct LoadedSmwUsV1OverworldSettings {
@@ -275,6 +302,35 @@ mod tests {
     use lm_project::Project;
     use lm_rom::{RomImage, SnesChecksum};
     use std::{fs, path::PathBuf};
+
+    #[test]
+    fn pristine_descriptor_offsets_load_exact_vanilla_overworld_animation_options() {
+        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let bytes = fs::read(root.join("oracle-work/lm363/pristine-us/headered.smc")).unwrap();
+        let project = Project::new(RomImage::from_bytes(bytes).unwrap());
+        assert_ne!(
+            project
+                .rom
+                .read(SMW_US_V1_OVERWORLD_ANIMATION_RUNTIME_MARKER, 1)
+                .unwrap()[0],
+            0x22
+        );
+        assert_eq!(
+            project
+                .rom
+                .read(SMW_US_V1_OVERWORLD_LIGHTNING_DISABLE_MASK, 1)
+                .unwrap(),
+            [0xf7]
+        );
+        let loaded = project
+            .load_installed_overworld_animation_options(
+                smw_us_v1_overworld_animation_options_layout(),
+            )
+            .unwrap();
+        assert_eq!(loaded.feature_bytes, [0; 7]);
+        assert_eq!(loaded.lightning_disable_mask, 0xf7);
+        assert!(!loaded.runtime_installed);
+    }
 
     #[test]
     fn retained_wine_rom_loads_and_updates_all_seven_exact_records_atomically() {

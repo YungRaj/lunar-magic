@@ -33,6 +33,7 @@ mod native_level_assets_file;
 mod native_level_assets_layer2;
 mod native_level_assets_load;
 mod native_level_assets_save;
+mod overworld_animation_options_io;
 mod overworld_boss_sequence_patch;
 mod overworld_endpoint_io;
 mod overworld_event_io;
@@ -166,6 +167,10 @@ pub use native_level_assets_load::{LoadedNativeLevelAssets, NativeLevelAssetsLoa
 pub use native_level_assets_save::{
     NativeLevelAssets, NativeLevelAssetsLayout, NativeLevelAssetsSaveError,
     NativeLevelAssetsSaveOptions, SavedNativeLevelAssets,
+};
+pub use overworld_animation_options_io::{
+    LoadedOverworldAnimationOptions, OVERWORLD_ANIMATION_MAP_COUNT,
+    OverworldAnimationOptionsIoError, OverworldAnimationOptionsRomLayout,
 };
 pub use overworld_boss_sequence_patch::{
     BossSequencePatchError, BossSequencePatchLocator, BossSequenceStorage,

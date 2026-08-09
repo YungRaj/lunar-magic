@@ -18,6 +18,8 @@ pub(crate) struct OverworldAssets {
     pub(crate) built_in_lightning: Option<BuiltInOverworldLightning>,
     /// The five animation switches selected independently for each of the seven maps.
     pub(crate) animation_options: [OverworldAnimationOptions; 7],
+    /// Unconsumed low bit of the original lightning byte, retained for lossless save.
+    pub(crate) animation_lightning_unused_low_bit: bool,
     /// Lunar Magic's ROM-global ExAnimation set, resolved through the installed runtime.
     pub(crate) global_animation: Option<lm_graphics::CompactExAnimation>,
 }
@@ -70,6 +72,26 @@ pub(crate) const fn decode_overworld_animation_options(
         index += 1;
     }
     result
+}
+
+pub(crate) fn encode_overworld_animation_options(
+    options: [OverworldAnimationOptions; 7],
+    lightning_unused_low_bit: bool,
+) -> ([u8; 7], u8) {
+    let mut feature_bytes = [0; 7];
+    let mut lightning_disable_mask = 0_u8;
+    let mut index = 0;
+    while index < options.len() {
+        feature_bytes[index] = options[index].features.encode();
+        if !options[index].original_lightning {
+            lightning_disable_mask |= 0x80 >> index;
+        }
+        index += 1;
+    }
+    if lightning_unused_low_bit {
+        lightning_disable_mask |= 1;
+    }
+    (feature_bytes, lightning_disable_mask)
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -781,6 +803,7 @@ mod tests {
             built_in_level_dot_palette: None,
             built_in_lightning: None,
             animation_options: vanilla_overworld_animation_options(),
+            animation_lightning_unused_low_bit: true,
             global_animation: None,
         };
         (overworld, assets)
@@ -971,6 +994,10 @@ mod tests {
             for (submap, option) in options.into_iter().enumerate() {
                 assert_eq!(option.original_lightning, mask & (0x80 >> submap) == 0);
             }
+            let (features, encoded_mask) =
+                encode_overworld_animation_options(options, mask & 1 != 0);
+            assert_eq!(features, [0; 7]);
+            assert_eq!(encoded_mask, mask);
         }
         let vanilla = vanilla_overworld_animation_options();
         assert_eq!(

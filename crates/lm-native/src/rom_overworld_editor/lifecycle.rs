@@ -345,6 +345,7 @@ fn decode_main_layer2_workspace(
             built_in_lightning: load_builtin_overworld_lightning(&project)?,
             animation_options: crate::overworld_editor_render::vanilla_overworld_animation_options(
             ),
+            animation_lightning_unused_low_bit: true,
             global_animation: None,
         },
     })
@@ -470,6 +471,11 @@ fn decode_overworld_assets(
         append_overworld_graphics_slot(&mut tiles, file_number, slot)?;
     }
     let (gfx32, gfx33) = load_overworld_special_graphics(&project, profiled.profile.graphics)?;
+    let animation_options = project
+        .load_installed_overworld_animation_options(
+            lm_profile::smw_us_v1_overworld_animation_options_layout(),
+        )
+        .map_err(|error| error.to_string())?;
     Ok(crate::overworld_editor_render::OverworldAssets {
         map16: Map16SetFile {
             set: map16.set().clone(),
@@ -488,7 +494,11 @@ fn decode_overworld_assets(
         built_in_animation_addresses: load_builtin_overworld_animation_addresses(&project)?,
         built_in_level_dot_palette: load_builtin_overworld_level_dot_palette(&project)?,
         built_in_lightning: load_builtin_overworld_lightning(&project)?,
-        animation_options: crate::overworld_editor_render::vanilla_overworld_animation_options(),
+        animation_options: crate::overworld_editor_render::decode_overworld_animation_options(
+            animation_options.feature_bytes,
+            animation_options.lightning_disable_mask,
+        ),
+        animation_lightning_unused_low_bit: animation_options.lightning_disable_mask & 1 != 0,
         global_animation: load_global_overworld_exanimation(&project, &profiled.profile)?,
     })
 }

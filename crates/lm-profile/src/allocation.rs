@@ -215,8 +215,65 @@ impl RevisionProfile {
                 }
             }
         }
+        if self.game == lm_rom::SupportedGame::SuperMarioWorld
+            && self.region == lm_rom::Region::NorthAmerica
+            && self.revision == 0
+            && self.mapper == lm_rom::Mapper::LoRom
+        {
+            protect_smw_us_v1_overworld_animation_options(&mut policy, rom)?;
+        }
         Ok(policy)
     }
+}
+
+fn protect_smw_us_v1_overworld_animation_options(
+    policy: &mut AllocationPolicy,
+    rom: &lm_rom::RomImage,
+) -> Result<(), RevisionAllocationError> {
+    let layout = crate::smw_us_v1_overworld_animation_options_layout();
+    for (domain, offset, len) in [
+        (
+            "overworld.animation.options.marker",
+            crate::SMW_US_V1_OVERWORLD_ANIMATION_RUNTIME_MARKER,
+            1,
+        ),
+        (
+            "overworld.animation.options.hook_operand",
+            crate::SMW_US_V1_OVERWORLD_ANIMATION_RUNTIME_OPERAND,
+            3,
+        ),
+        (
+            "overworld.animation.lightning_mask",
+            layout.lightning_disable_mask_offset,
+            1,
+        ),
+    ] {
+        let range = protected_range(domain, offset, len, rom.logical_len())?;
+        if !policy.protected.contains(&range) {
+            policy.protected.push(range);
+        }
+    }
+    if let Some(locator) = layout.feature_installation.resolve(rom)? {
+        for range in [
+            protected_range(
+                "overworld.animation.options.final_operand",
+                locator.final_operand_offset(rom)?,
+                3,
+                rom.logical_len(),
+            )?,
+            protected_range(
+                "overworld.animation.options.table",
+                locator.resolve(rom)?,
+                lm_project::OVERWORLD_ANIMATION_MAP_COUNT,
+                rom.logical_len(),
+            )?,
+        ] {
+            if !policy.protected.contains(&range) {
+                policy.protected.push(range);
+            }
+        }
+    }
+    Ok(())
 }
 
 fn installation_marker_ranges(
@@ -694,6 +751,57 @@ mod tests {
             ProtectedRange(global_bank_operand..global_bank_operand + 1),
             ProtectedRange(global_low_word_operand..global_low_word_operand + 2),
             ProtectedRange(table - 1..table + lm_project::EXANIMATION_FEATURE_LEVEL_COUNT),
+        ] {
+            assert!(policy.protected.contains(&range), "missing {range:?}");
+        }
+    }
+
+    #[test]
+    fn resolved_overworld_animation_option_chain_and_lightning_operand_are_protected() {
+        let layout = crate::smw_us_v1_overworld_animation_options_layout();
+        let runtime: usize = 0x2_c000;
+        let table: usize = 0x2_a000;
+        let mut rom = lm_rom::RomImage::from_bytes(vec![0xff; 0x3_0000]).unwrap();
+        rom.write(crate::SMW_US_V1_OVERWORLD_ANIMATION_RUNTIME_MARKER, &[0x22])
+            .unwrap();
+        for (offset, target) in [
+            (
+                crate::SMW_US_V1_OVERWORLD_ANIMATION_RUNTIME_OPERAND,
+                runtime,
+            ),
+            (
+                runtime
+                    .checked_add_signed(
+                        crate::SMW_US_V1_OVERWORLD_ANIMATION_FEATURE_OPERAND_DISPLACEMENT,
+                    )
+                    .unwrap(),
+                table,
+            ),
+        ] {
+            let mapped = lm_rom::pc_to_snes(lm_rom::Mapper::LoRom, target).unwrap();
+            rom.write(offset, &mapped.to_le_bytes()[..3]).unwrap();
+        }
+        let mut policy = AllocationPolicy::lorom(0x6000..0x7000);
+        protect_smw_us_v1_overworld_animation_options(&mut policy, &rom).unwrap();
+        let locator = layout.feature_installation.resolve(&rom).unwrap().unwrap();
+        for range in [
+            ProtectedRange(
+                crate::SMW_US_V1_OVERWORLD_ANIMATION_RUNTIME_MARKER
+                    ..crate::SMW_US_V1_OVERWORLD_ANIMATION_RUNTIME_MARKER + 1,
+            ),
+            ProtectedRange(
+                crate::SMW_US_V1_OVERWORLD_ANIMATION_RUNTIME_OPERAND
+                    ..crate::SMW_US_V1_OVERWORLD_ANIMATION_RUNTIME_OPERAND + 3,
+            ),
+            ProtectedRange(
+                locator.final_operand_offset(&rom).unwrap()
+                    ..locator.final_operand_offset(&rom).unwrap() + 3,
+            ),
+            ProtectedRange(table..table + lm_project::OVERWORLD_ANIMATION_MAP_COUNT),
+            ProtectedRange(
+                crate::SMW_US_V1_OVERWORLD_LIGHTNING_DISABLE_MASK
+                    ..crate::SMW_US_V1_OVERWORLD_LIGHTNING_DISABLE_MASK + 1,
+            ),
         ] {
             assert!(policy.protected.contains(&range), "missing {range:?}");
         }
