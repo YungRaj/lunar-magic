@@ -447,3 +447,67 @@ fn lunar_magic_reexports_rust_standard_and_exgfx_across_legacy_migration() {
         "Lunar Magic did not re-export Rust ExLoROM ExGFX81"
     );
 }
+
+#[test]
+#[ignore = "requires Wine, Lunar Magic 3.63, and an authentic SA-1 Pack SMW ROM"]
+fn lunar_magic_reexports_rust_sa1_standard_graphics_install() {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let wine = std::env::var_os("WINE_BIN")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from("wine"));
+    let lunar_magic = std::env::var_os("LUNAR_MAGIC_EXE")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| root.join("lm363/Lunar Magic.exe"));
+    let source = PathBuf::from(
+        std::env::var_os("LM_SA1_PACK_ROM")
+            .expect("LM_SA1_PACK_ROM must name an authentic checksum-valid SA-1 Pack SMW ROM"),
+    );
+
+    let baseline = TemporaryDirectory::create("sa1-gfx-baseline");
+    fs::copy(&source, baseline.0.join("sa1.smc")).unwrap();
+    run_export(&wine, &lunar_magic, &baseline.0, "sa1.smc");
+    let mut files = (0..0x34)
+        .map(|number| {
+            fs::read(
+                baseline
+                    .0
+                    .join("Graphics")
+                    .join(format!("GFX{number:02X}.bin")),
+            )
+            .unwrap()
+        })
+        .collect::<Vec<_>>();
+    files[0][100] ^= 0xff;
+
+    let original = RomImage::from_bytes(fs::read(&source).unwrap()).unwrap();
+    assert_eq!(
+        lm_rom::detect_identity(&original).unwrap().mapper,
+        lm_rom::Mapper::Sa1
+    );
+    let commit = prepare_smw_us_v1_standard_graphics_install(0, original.clone(), &files).unwrap();
+    let mut project = Project::new(original);
+    project
+        .apply_mutation(&commit.description, &commit.mutation)
+        .unwrap();
+    let identity = lm_rom::detect_identity(&project.rom).unwrap();
+    assert_eq!(identity.mapper, lm_rom::Mapper::Sa1);
+    assert!(identity.checksum_matches());
+
+    let installed = TemporaryDirectory::create("sa1-gfx-installed");
+    fs::write(
+        installed.0.join("sa1-rust.smc"),
+        project.rom.as_file_bytes(),
+    )
+    .unwrap();
+    run_export(&wine, &lunar_magic, &installed.0, "sa1-rust.smc");
+    for (number, expected) in files.iter().enumerate() {
+        let actual = fs::read(
+            installed
+                .0
+                .join("Graphics")
+                .join(format!("GFX{number:02X}.bin")),
+        )
+        .unwrap();
+        assert_eq!(actual, *expected, "SA-1 GFX{number:02X}");
+    }
+}

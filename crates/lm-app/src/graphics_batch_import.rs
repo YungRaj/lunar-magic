@@ -183,8 +183,13 @@ fn prepare_smw_us_v1_special_graphics_import_inner(
             raw_files.len()
         ));
     }
-    let live = lm_profile::smw_us_v1_special_graphics_layouts(&image)
+    let mut live = lm_profile::smw_us_v1_special_graphics_layouts(&image)
         .map_err(|error| format!("special graphics startup layout: {error}"))?;
+    let mapper = lm_rom::detect_identity(&image)
+        .map(|identity| identity.mapper)
+        .unwrap_or(live.gfx33.mapper);
+    live.gfx33.mapper = mapper;
+    live.gfx32.mapper = mapper;
     if require_current_sizes {
         let original = Project::new(image.clone());
         for ((file_number, bytes), layout) in FILE_NUMBERS
@@ -274,8 +279,10 @@ fn prepare_smw_us_v1_special_graphics_import_inner(
             &candidate_options,
         ) {
             Ok(_) => {
-                let reopened = lm_profile::smw_us_v1_special_graphics_layouts(&project.rom)
+                let mut reopened = lm_profile::smw_us_v1_special_graphics_layouts(&project.rom)
                     .map_err(|error| format!("reopen special graphics startup layout: {error}"))?;
+                reopened.gfx33.mapper = mapper;
+                reopened.gfx32.mapper = mapper;
                 for ((file_number, expected), layout) in FILE_NUMBERS
                     .into_iter()
                     .zip(raw_files)

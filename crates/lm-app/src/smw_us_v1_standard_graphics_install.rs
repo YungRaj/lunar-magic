@@ -1,6 +1,9 @@
 use crate::PreparedRomCommit;
-use lm_project::{GraphicsSaveOptions, Project, RomMutation};
-use lm_rats::ProtectedRange;
+use lm_project::{
+    GraphicsSaveOptions, PatchFixup, PatchFixupEncoding, PatchPayload, PatchWrite, Project,
+    RelocatablePatchPlan, RomMutation,
+};
+use lm_rats::{AllocationPolicy, ProtectedRange};
 use lm_rom::{Mapper, RomImage};
 
 const TARGET_LOGICAL_LEN: usize = 0x10_0000;
@@ -216,6 +219,24 @@ const RUNTIME_C: &[u8] = &[
     0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
 ];
 
+const SA1_PATCH_2AD4_BEFORE: &[u8] = &[
+    0xeb, 0x07, 0x00, 0x9d, 0xb2, 0x7b, 0xe6, 0x00, 0xe6, 0x00, 0xca, 0x10, 0xee, 0xa2,
+];
+const SA1_PATCH_2B0B_BEFORE: &[u8] = &[
+    0xb0, 0x00, 0xa2, 0x07, 0xa7, 0x00, 0x8d, 0x18, 0x21, 0xeb, 0x07, 0x00, 0x9d, 0xb2, 0x7b,
+];
+const SA1_PATCH_2B0B_AFTER: &[u8] = &[
+    0xa2, 0x07, 0xa7, 0x00, 0x8d, 0x18, 0x21, 0xeb, 0x07, 0x00, 0x9d, 0xb2, 0x7b, 0xe6, 0x00,
+];
+const SA1_PATCH_2B1C_BEFORE: &[u8] = &[
+    0xe6, 0x00, 0xca, 0x10, 0xee, 0xa2, 0x07, 0xa7, 0x00, 0x29, 0xff, 0x00, 0x85, 0x0c, 0xa7, 0x00,
+    0xeb, 0x1d, 0xb2, 0x7b, 0x25, 0x0a, 0x05, 0x0c, 0x8d, 0x18, 0x21,
+];
+const SA1_PATCH_2B1C_AFTER: &[u8] = &[
+    0xca, 0x10, 0xee, 0xa2, 0x07, 0xa7, 0x00, 0x29, 0xff, 0x00, 0x85, 0x0c, 0xa7, 0x00, 0xeb, 0x1d,
+    0xb2, 0x7b, 0x25, 0x0a, 0x05, 0x0c, 0x8d, 0x18, 0x21, 0xe6, 0x00,
+];
+
 /// Installs Lunar Magic's first 4bpp standard-GFX runtime and all 52 editable files into a
 /// pristine North-American SMW revision-0 ROM as one revision-bound mutation.
 pub fn prepare_smw_us_v1_standard_graphics_install(
@@ -237,9 +258,20 @@ pub fn prepare_smw_us_v1_standard_graphics_install(
             ));
         }
     }
-    let legacy_upgrade = lm_profile::requires_smw_us_v1_4bpp_graphics_warning(&image);
+    let mapper = lm_rom::detect_identity(&image)
+        .map(|identity| identity.mapper)
+        .unwrap_or(Mapper::LoRom);
+    if !matches!(mapper, Mapper::LoRom | Mapper::Sa1) {
+        return Err(format!(
+            "first-time standard-GFX installation is not available for {mapper:?}"
+        ));
+    }
+    let legacy_upgrade =
+        mapper == Mapper::LoRom && lm_profile::requires_smw_us_v1_4bpp_graphics_warning(&image);
     if legacy_upgrade {
         authenticate_installed_patches(&image)?;
+    } else if mapper == Mapper::Sa1 {
+        authenticate_sa1_patches(&image)?;
     } else {
         if image.logical_len() != 0x80_000 {
             return Err(format!(
@@ -254,13 +286,13 @@ pub fn prepare_smw_us_v1_standard_graphics_install(
         .then(|| snapshot_exgraphics_pointer_tables(&image))
         .transpose()?;
     let mut project = Project::new(image);
-    if !legacy_upgrade {
+    if !legacy_upgrade && mapper == Mapper::LoRom {
         project
             .expand_rom(Mapper::LoRom, TARGET_LOGICAL_LEN, 0x00, CHECKSUM_FIELD)
             .map_err(|error| error.to_string())?;
     }
-    apply_runtime(&mut project)?;
-    if !legacy_upgrade {
+    apply_runtime(&mut project, mapper)?;
+    if !legacy_upgrade && mapper == Mapper::LoRom {
         project
             .install_relocatable_patch(
                 &lm_profile::smw_us_v1_gfx_expanded_settings_installation_plan()
@@ -291,7 +323,8 @@ pub fn prepare_smw_us_v1_standard_graphics_install(
     options.allocation.protected.push(ProtectedRange(
         lm_profile::SMW_US_V1_EXTENDED_EXGFX_POINTER_OFFSET..EXTENDED_EXGFX_POINTER_END,
     ));
-    let ordinary = lm_profile::smw_us_v1_vanilla_graphics_layout();
+    let mut ordinary = lm_profile::smw_us_v1_vanilla_graphics_layout();
+    ordinary.mapper = mapper;
     protect_layout(&mut options, ordinary)?;
     project
         .save_decompressed_graphics_slots_with_checksum(
@@ -327,7 +360,7 @@ pub fn prepare_smw_us_v1_standard_graphics_install(
     if let Some(expected) = legacy_exgraphics_tables {
         verify_exgraphics_pointer_tables(&project.rom, &expected)?;
     }
-    let mutation = RomMutation::between(Mapper::LoRom, &before, project.rom.logical_bytes())
+    let mutation = RomMutation::between(mapper, &before, project.rom.logical_bytes())
         .map_err(|error| error.to_string())?;
     Ok(PreparedRomCommit {
         expected_revision,
@@ -460,27 +493,109 @@ fn verify_exgraphics_pointer_tables(
     Ok(())
 }
 
-fn apply_runtime(project: &mut Project) -> Result<(), String> {
+fn authenticate_sa1_patches(image: &RomImage) -> Result<(), String> {
+    if image.logical_len() < TARGET_LOGICAL_LEN {
+        return Err(format!(
+            "SA-1 standard-GFX installation requires at least a 1 MiB ROM, got {:#X} bytes",
+            image.logical_len()
+        ));
+    }
     for patch in PATCHES {
+        let expected = match patch.offset {
+            0x002ad4 => SA1_PATCH_2AD4_BEFORE,
+            0x002b0b => SA1_PATCH_2B0B_BEFORE,
+            0x002b1c => SA1_PATCH_2B1C_BEFORE,
+            _ => patch.before,
+        };
+        if image
+            .read(patch.offset, expected.len())
+            .map_err(|error| error.to_string())?
+            != expected
+        {
+            return Err(format!(
+                "unsupported SA-1 standard-GFX runtime bytes at {:#08X}",
+                patch.offset
+            ));
+        }
+    }
+    for (offset, bytes) in [(0x77c50, RUNTIME_A), (0x77c80, RUNTIME_B)] {
+        if image
+            .read(offset, bytes.len())
+            .map_err(|error| error.to_string())?
+            .iter()
+            .any(|byte| *byte != 0xff)
+        {
+            return Err(format!(
+                "SA-1 standard-GFX runtime destination at {offset:#08X} is not free"
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn apply_runtime(project: &mut Project, mapper: Mapper) -> Result<(), String> {
+    for patch in PATCHES {
+        if mapper == Mapper::Sa1 && patch.offset == 0x0013f7 {
+            continue;
+        }
+        let after = if mapper == Mapper::Sa1 {
+            match patch.offset {
+                0x002b0b => SA1_PATCH_2B0B_AFTER,
+                0x002b1c => SA1_PATCH_2B1C_AFTER,
+                _ => patch.after,
+            }
+        } else {
+            patch.after
+        };
         project
             .rom
-            .write(patch.offset, patch.after)
+            .write(patch.offset, after)
             .map_err(|error| error.to_string())?;
     }
-    for (offset, _, after) in RAM_REFERENCE_PATCHES {
-        project
-            .rom
-            .write(*offset, after)
-            .map_err(|error| error.to_string())?;
+    if mapper == Mapper::LoRom {
+        for (offset, _, after) in RAM_REFERENCE_PATCHES {
+            project
+                .rom
+                .write(*offset, after)
+                .map_err(|error| error.to_string())?;
+        }
     }
-    for (offset, bytes) in [
-        (0x77c50, RUNTIME_A),
-        (0x77c80, RUNTIME_B),
-        (0x80000, RUNTIME_C),
-    ] {
+    for (offset, bytes) in [(0x77c50, RUNTIME_A), (0x77c80, RUNTIME_B)] {
         project
             .rom
             .write(offset, bytes)
+            .map_err(|error| error.to_string())?;
+    }
+    if mapper == Mapper::LoRom {
+        project
+            .rom
+            .write(0x80000, RUNTIME_C)
+            .map_err(|error| error.to_string())?;
+    } else {
+        let plan = RelocatablePatchPlan {
+            description: "install SA-1 standard-GFX DMA helper".into(),
+            mapper,
+            allocation: AllocationPolicy::lorom(0x80_000..project.rom.logical_len()),
+            checksum_field: CHECKSUM_FIELD,
+            expansion_fill: 0x00,
+            payloads: vec![PatchPayload {
+                bytes: RUNTIME_C[8..].to_vec(),
+                fixups: Vec::new(),
+            }],
+            writes: vec![PatchWrite {
+                offset: 0x0013f7,
+                expected: PATCHES[0].before.to_vec(),
+                replacement: vec![0x22, 0, 0, 0, 0x60],
+                fixups: vec![PatchFixup {
+                    offset: 1,
+                    target_payload: 0,
+                    target_addend: 0,
+                    encoding: PatchFixupEncoding::Long24,
+                }],
+            }],
+        };
+        project
+            .install_relocatable_patch(&plan)
             .map_err(|error| error.to_string())?;
     }
     Ok(())
@@ -507,7 +622,11 @@ fn verify_reopen(image: &RomImage, files: &[Vec<u8>]) -> Result<(), String> {
         return Err("installed standard-GFX format markers did not reopen".into());
     }
     let project = Project::new(image.clone());
-    let ordinary = lm_profile::smw_us_v1_vanilla_graphics_layout();
+    let mapper = lm_rom::detect_identity(image)
+        .map(|identity| identity.mapper)
+        .unwrap_or(Mapper::LoRom);
+    let mut ordinary = lm_profile::smw_us_v1_vanilla_graphics_layout();
+    ordinary.mapper = mapper;
     for (slot, expected) in files.iter().take(0x32).enumerate() {
         let actual = project
             .load_decompressed_graphics_file(slot, ordinary)
@@ -516,8 +635,10 @@ fn verify_reopen(image: &RomImage, files: &[Vec<u8>]) -> Result<(), String> {
             return Err(format!("GFX{slot:02X}: semantic reopen mismatch"));
         }
     }
-    let special = lm_profile::smw_us_v1_special_graphics_layouts(image)
+    let mut special = lm_profile::smw_us_v1_special_graphics_layouts(image)
         .map_err(|error| format!("special graphics startup layout: {error}"))?;
+    special.gfx32.mapper = mapper;
+    special.gfx33.mapper = mapper;
     for (number, layout) in [(0x32, special.gfx32), (0x33, special.gfx33)] {
         let actual = project
             .load_decompressed_graphics_file(0, layout)

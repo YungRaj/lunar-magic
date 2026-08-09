@@ -4448,3 +4448,20 @@ mirror. A high-bank LoROM mirror is equivalent before conversion but selects the
 half in ExLoROM. Rust therefore models low-bank split-byte and shared-bank pointers explicitly and
 applies them only to LoROM, retaining address bit 23 for ExLoROM and SA-1. A live conversion and
 export gate now proves all 52 GFX files plus retained `ExGFX80` and newly inserted `ExGFX81`.
+
+The standard-GFX installer now has an authentic SA-1 Pack variant as well. SA-1 Pack v1.40 was
+applied to the retained pristine SMW-US ROM with its official BPS release, producing the
+copier-headered 1 MiB source SHA-256
+`926d28f2c8b0298b3b1744ac2d90c6e9a64260b7740eab5e195c0cbef38273c3`. Lunar Magic 3.63's
+first modified-GFX insertion proves that most fixed 4bpp edits are shared, but the SA-1 `$7B`
+graphics-buffer operands must remain `$7B`, the ordinary LoROM `$7E/$7F` RAM-reference rewrite
+must not run, and the 32-byte DMA helper cannot occupy `$080000` because SA-1 Pack already owns
+that RATS block. Lunar Magic instead allocates the helper at the first valid free RATS location
+(`$084F4A` in this oracle) and patches `$0013F7` to its mapper-canonical payload address
+`$10:CF52`. Rust now authenticates those SA-1-specific preconditions, performs the dynamic helper
+allocation and mapper fixup transactionally, writes all 52 compressed files with SA-1 pointer
+conversion, preserves the three pre-existing SA-1 Pack RATS owners, and reopens every file before
+publication. The live Wine gate changes GFX00, installs the Rust result, and requires Lunar Magic
+to export all 52 files byte-for-byte while retaining SA-1 identity and a valid checksum. ExGFX
+first installation remains a separate mapper gate because Lunar Magic installs expanded-settings
+storage and descriptor-routed extended tables at SA-1-specific locations.
