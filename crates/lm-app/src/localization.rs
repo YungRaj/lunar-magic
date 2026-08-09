@@ -107,6 +107,9 @@ pub enum UiTextKey {
     HelpOriginalSection,
     HelpOriginalRoute,
     HelpOriginalNotice,
+    HelpOpenOriginalContents,
+    HelpOriginalOpened,
+    HelpOriginalUnavailable,
     HelpNoMatches,
     AboutWindowTitleFormat,
     AboutVersionFormat,
@@ -287,6 +290,11 @@ impl UiTextKey {
             Self::HelpOriginalNotice => {
                 "This retained index identifies the original workflow without redistributing the proprietary help text. Search the Rust workflow guides for native usage and Compatibility diagnostics for ROM-specific state."
             }
+            Self::HelpOpenOriginalContents => "Open installed Lunar Magic.chm contents",
+            Self::HelpOriginalOpened => "Opened the installed Lunar Magic help file.",
+            Self::HelpOriginalUnavailable => {
+                "Could not open the installed Lunar Magic help file: {error}"
+            }
             Self::HelpNoMatches => "No help topics match this search.",
             Self::AboutWindowTitleFormat => "About {product}",
             Self::AboutVersionFormat => "Version {version}",
@@ -393,7 +401,7 @@ impl UiTextKey {
         }
     }
 
-    pub const ALL: [Self; 172] = [
+    pub const ALL: [Self; 175] = [
         Self::AppTitle,
         Self::FileOpen,
         Self::FileSave,
@@ -489,6 +497,9 @@ impl UiTextKey {
         Self::HelpOriginalSection,
         Self::HelpOriginalRoute,
         Self::HelpOriginalNotice,
+        Self::HelpOpenOriginalContents,
+        Self::HelpOriginalOpened,
+        Self::HelpOriginalUnavailable,
         Self::HelpNoMatches,
         Self::AboutWindowTitleFormat,
         Self::AboutVersionFormat,

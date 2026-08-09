@@ -1,0 +1,13 @@
+field	value
+open_function	00440F90
+show_function	004E4870
+retry_function	004E4B30
+localized_path_function	004D6C10
+default_file	Lunar Magic.chm
+zone_stream	:Zone.Identifier
+html_help_command	0
+html_help_data	0
+level_call	00497E36
+overworld_call	00564DB9
+missing_file_check	GetFileAttributesFromUtf8Path
+retry_path	8.3 short path

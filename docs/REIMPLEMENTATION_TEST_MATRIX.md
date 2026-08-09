@@ -19,6 +19,14 @@ This document defines the behavioral boundary for a clean, cross-platform Rust r
 | Native crash recovery | Decode bounded versioned `LMRECOV1` records containing revision/level context, the exact last-saved physical ROM, the exact current physical ROM, explicit lengths, and a CRC-32 over each complete framed payload | Give each editor process a unique record plus a lifetime advisory lock; publish each new dirty application revision off the UI thread through a synchronized same-directory temporary file; skip live sessions, boundedly queue stale sessions at startup, recover or discard each independently, require Save As for recovered unnamed projects, and remove only the corresponding record | Reject short/bad magic, corruption, trailing bytes, oversized records/ROMs, clean records, symlinks/non-files, more than 16 pending sessions, unsupported recovered current images, and replacement of an already open project; do not claim recovery of uncommitted editor-local forms or original Lunar Magic equivalence |
 | Compatibility diagnostics | Report cached and freshly revalidated game/region/revision/mapper identity, map mode, cartridge type, copier-header/physical/logical shape, stored/computed checksum status, project revision, dirty ranges/bytes, valid RATS blocks/payload bytes, profile audit status, classified SMW-US Layer 2 format, and authenticated Map16/Lfix3 generations | Snapshot one deterministic path-free report when the native dialog opens and copy the same immutable text; exercise pristine, headered, SA-1, dirty checksum, broken identity, and partial-runtime states | Exclude paths and ROM bytes, mark unrelated families `not-applicable`, and report corrupt identity/profile/runtime evidence as warnings without guessing a format or mutating project state |
 
+The native Help browser additionally owns the original CHM contents boundary. The retained
+`help-chm-dispatch/oracle.tsv` proves that `00440F90` resolves a localized or executable-adjacent
+CHM, invokes `004E4870` with HTML Help command/data zero, and retries through `004E4B30`; the two
+editor callers pass an owner window rather than a topic route. Rust's launch action accepts only an
+adjacent regular `Lunar Magic.chm`, constructs one direct platform command without a shell, and
+reports missing/non-file/process-start failures in the still-open Help window. Focused tests bind the
+fixture, adjacent-file rejection, exact process/argument boundary, all 314 index nodes, and search.
+
 Cached identity checksum evidence is revision-coherent: tests require checksum-valid writes,
 prepared commits, grouped payload saves, undo, and redo to refresh both stored and computed values.
 Unqualified projects remain explicitly without identity rather than fabricating checksum metadata.

@@ -1,10 +1,15 @@
 use eframe::egui;
 use lm_app::{LocalizationCatalog, UiTextKey};
-use std::sync::OnceLock;
+use std::{
+    path::{Path, PathBuf},
+    process::Command,
+    sync::OnceLock,
+};
 
 use crate::frontend_ui::localized_text;
 
 const ORIGINAL_TOPIC_INDEX: &str = include_str!("lunar_magic_363_help_topics.tsv");
+const ORIGINAL_HELP_FILE_NAME: &str = "Lunar Magic.chm";
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) struct HelpTopic {
@@ -53,6 +58,7 @@ pub(crate) struct HelpDialog {
     query: String,
     selected: usize,
     selected_original: Option<usize>,
+    original_help_status: Option<Result<(), String>>,
 }
 
 impl HelpDialog {
@@ -135,6 +141,35 @@ impl HelpDialog {
                             }
                             ui.add_space(8.0);
                             ui.label(localized_text(catalog, UiTextKey::HelpOriginalNotice));
+                            ui.add_space(8.0);
+                            if ui
+                                .button(localized_text(
+                                    catalog,
+                                    UiTextKey::HelpOpenOriginalContents,
+                                ))
+                                .clicked()
+                            {
+                                self.original_help_status = Some(open_original_help_contents());
+                            }
+                            if let Some(status) = &self.original_help_status {
+                                match status {
+                                    Ok(()) => {
+                                        ui.label(localized_text(
+                                            catalog,
+                                            UiTextKey::HelpOriginalOpened,
+                                        ));
+                                    }
+                                    Err(error) => {
+                                        ui.label(
+                                            localized_text(
+                                                catalog,
+                                                UiTextKey::HelpOriginalUnavailable,
+                                            )
+                                            .replace("{error}", error),
+                                        );
+                                    }
+                                }
+                            }
                         } else if let Some(topic) = HELP_TOPICS.get(self.selected) {
                             ui.heading(localized_text(catalog, topic.title));
                             ui.add_space(8.0);
@@ -146,6 +181,50 @@ impl HelpDialog {
                 });
             });
     }
+}
+
+fn adjacent_original_help_file(executable: &Path) -> Result<PathBuf, String> {
+    let directory = executable
+        .parent()
+        .ok_or_else(|| "the application path has no parent directory".to_owned())?;
+    let path = directory.join(ORIGINAL_HELP_FILE_NAME);
+    let metadata = std::fs::symlink_metadata(&path)
+        .map_err(|error| format!("{} ({error})", path.display()))?;
+    if metadata.file_type().is_symlink() || !metadata.is_file() {
+        return Err(format!("{} is not a regular file", path.display()));
+    }
+    Ok(path)
+}
+
+fn original_help_command(path: &Path) -> Command {
+    #[cfg(target_os = "windows")]
+    {
+        let mut command = Command::new("hh.exe");
+        command.arg(path);
+        command
+    }
+    #[cfg(target_os = "macos")]
+    {
+        let mut command = Command::new("/usr/bin/open");
+        command.arg(path);
+        command
+    }
+    #[cfg(all(unix, not(target_os = "macos")))]
+    {
+        let mut command = Command::new("xdg-open");
+        command.arg(path);
+        command
+    }
+}
+
+fn open_original_help_contents() -> Result<(), String> {
+    let executable = std::env::current_exe()
+        .map_err(|error| format!("cannot locate this application ({error})"))?;
+    let path = adjacent_original_help_file(&executable)?;
+    original_help_command(&path)
+        .spawn()
+        .map(|_| ())
+        .map_err(|error| format!("{} ({error})", path.display()))
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -276,6 +355,54 @@ mod tests {
         assert!(dialog.open);
         assert_eq!(dialog.query, "map16");
         assert_eq!(dialog.selected, 3);
+    }
+
+    #[test]
+    fn original_help_discovery_accepts_only_an_adjacent_regular_file() {
+        let oracle = include_str!("../../../docs/oracle-work/lm363/help-chm-dispatch/oracle.tsv");
+        let fields = oracle
+            .lines()
+            .skip(1)
+            .map(|line| line.split_once('\t').expect("oracle row has two columns"))
+            .collect::<std::collections::HashMap<_, _>>();
+        assert_eq!(fields["open_function"], "00440F90");
+        assert_eq!(fields["show_function"], "004E4870");
+        assert_eq!(fields["html_help_command"], "0");
+        assert_eq!(fields["html_help_data"], "0");
+        assert_eq!(fields["default_file"], ORIGINAL_HELP_FILE_NAME);
+
+        let directory = std::env::temp_dir().join(format!(
+            "lm-help-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir(&directory).unwrap();
+        let executable = directory.join("lunar-magic-rust");
+        std::fs::write(&executable, b"test executable").unwrap();
+        assert!(adjacent_original_help_file(&executable).is_err());
+        let help = directory.join(ORIGINAL_HELP_FILE_NAME);
+        std::fs::write(&help, b"ITSF").unwrap();
+        assert_eq!(adjacent_original_help_file(&executable).unwrap(), help);
+        std::fs::remove_file(&help).unwrap();
+        std::fs::create_dir(&help).unwrap();
+        assert!(adjacent_original_help_file(&executable).is_err());
+        std::fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn original_help_launch_uses_one_direct_platform_process_without_a_shell() {
+        let path = Path::new("installed Lunar Magic.chm");
+        let command = original_help_command(path);
+        #[cfg(target_os = "windows")]
+        assert_eq!(command.get_program(), "hh.exe");
+        #[cfg(target_os = "macos")]
+        assert_eq!(command.get_program(), "/usr/bin/open");
+        #[cfg(all(unix, not(target_os = "macos")))]
+        assert_eq!(command.get_program(), "xdg-open");
+        assert_eq!(command.get_args().collect::<Vec<_>>(), [path.as_os_str()]);
     }
 
     #[test]

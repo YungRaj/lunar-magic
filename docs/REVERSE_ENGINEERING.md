@@ -286,6 +286,18 @@ controllers and refuses an unapproved transition before staged state changes.
 
 The `00414bb0`–`004178b0` range identifies interface/VRAM-patch option tooltips, the About dialog and URL clipboard path, and the beginning of the overworld ExAnimation subsystem. `AboutDialogProc` has a recovered Win32 callback prototype. Overworld animation address/frame conversions, remapping, submap selection, slot display, and duplicate-trigger checks are named separately from their level-editor counterparts.
 
+The Help-file dispatch is now recovered separately. `OpenLunarMagicHelpFile` at `00440F90` first
+asks `BuildLocalizedHelpFilePath` (`004D6C10`) to replace the active language-module extension with
+`.chm`; if that file is absent it selects `Lunar Magic.chm` beside the executable. It attempts to
+delete the `:Zone.Identifier` alternate stream, then routes the UTF-8 path through
+`ShowHtmlHelpFromUtf8Path` at `004E4870`. That wrapper selects `HtmlHelpW` or `HtmlHelpA` and passes
+command zero plus data zero. The fastcall argument supplied by both the level (`00497E36`) and
+overworld (`00564DB9`) command dispatchers is therefore the owner window, not a topic route. Failed
+launch retries through an 8.3 short path at `004E4B30`; missing files and a failed retry use the
+original error-code presenter. The retained `help-chm-dispatch/oracle.tsv` binds these addresses and
+constants. Rust preserves the in-process searchable topic index and launches only an installed
+adjacent regular CHM through one direct platform process, without bundling or altering that file.
+
 The overworld ExAnimation editor is now named through `OverworldAnimatedTilesDialogProc` at `004188d0`, including its frame-edit subclass, record commit, shift/rotate behavior, and tooltips. The following functions through `0041ab70` identify overworld submap options and both combo-based and edit-field variants of the Layer 3 graphics settings editor.
 
 The `0041b410`–`0041e300` range identifies the analogous overworld foreground graphics editors, graphics-index list transfer, Overworld Options dialog, event reveal tile-pair editor, manual overworld sprite-command parser, and common error reporters. `OverworldOptionsDialogProc` has a recovered Win32 callback prototype. The 22-entry source/destination reveal arrays and their selected-row global are typed and named.
