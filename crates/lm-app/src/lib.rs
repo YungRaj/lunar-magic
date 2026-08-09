@@ -48,6 +48,7 @@ mod map16_page_document_controller;
 mod mwl_batch_export;
 mod mwl_batch_import;
 mod mwl_document_controller;
+mod native_custom_overworld_sprite_controller;
 mod native_level_assets_controller;
 mod native_level_assets_document_controller;
 mod native_level_document_controller;
@@ -241,6 +242,10 @@ pub use mwl_batch_import::{
 };
 pub use mwl_document_controller::{
     MwlDocumentController, MwlDocumentControllerError, MwlDocumentEdit, MwlDocumentSaveSnapshot,
+};
+pub use native_custom_overworld_sprite_controller::{
+    NativeCustomOverworldSpriteController, NativeCustomOverworldSpriteControllerError,
+    NativeCustomOverworldSpriteEdit,
 };
 pub use native_level_assets_controller::{
     NativeLevelAssetsController, NativeLevelAssetsControllerEdit, NativeLevelAssetsControllerError,

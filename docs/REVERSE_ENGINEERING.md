@@ -3370,6 +3370,14 @@ these details in `NativeCustomOverworldSpriteTable`, while its oracle compares
 the decoded ID, coordinates, screen, and extension bytes rather than offsets
 or allocation location.
 
+The recovered stream now has a revision-bound application transaction rather than only a codec
+and project API. `NativeCustomOverworldSpriteController` loads the exact RATS owner from an
+overworld snapshot, stages ordered insert/replace/remove/move-before edits across all seven maps,
+canonically encodes and reopens the complete stream, then publishes one checksum-repaired ROM
+mutation using the proven previous owner. A late invalid ID, extension width, coordinate, screen,
+map count, record index, or 25th per-map placement cannot publish an earlier edit from the same
+batch. The codec also rejects IDs `$80+` before indexing the 128-entry size table.
+
 ## Per-slot `ExAnimation` options
 
 `DecodeExAnimationSlotOptionFlags` (`004B3CB0`) and

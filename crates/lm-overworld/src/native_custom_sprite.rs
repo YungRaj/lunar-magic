@@ -180,6 +180,9 @@ impl NativeCustomOverworldSpriteTable {
             output[map * 2..map * 2 + 2].copy_from_slice(&offset.to_le_bytes());
 
             for (record_index, record) in records.iter().enumerate() {
+                if usize::from(record.id) >= CUSTOM_OVERWORLD_SPRITE_ID_COUNT {
+                    return Err(NativeCustomOverworldSpriteError::IdOutOfRange(record.id));
+                }
                 validate_coordinate("x", record.x)?;
                 validate_coordinate("y", record.y)?;
                 if record.screen > 0xf8 {
@@ -321,5 +324,28 @@ mod tests {
             table.encode(&sizes()),
             Err(NativeCustomOverworldSpriteError::ExtraLength { .. })
         ));
+    }
+
+    #[test]
+    fn out_of_range_id_is_typed_instead_of_indexing_the_size_table() {
+        let table = NativeCustomOverworldSpriteTable {
+            maps: std::array::from_fn(|map| {
+                (map == 0)
+                    .then(|| {
+                        vec![NativeCustomOverworldSprite {
+                            id: 0x80,
+                            x: 0,
+                            y: 0,
+                            screen: 0,
+                            extra: vec![0],
+                        }]
+                    })
+                    .unwrap_or_default()
+            }),
+        };
+        assert_eq!(
+            table.encode(&sizes()),
+            Err(NativeCustomOverworldSpriteError::IdOutOfRange(0x80))
+        );
     }
 }

@@ -3937,6 +3937,14 @@ The model preserves seven independently offset map lists, the 24-record-per-map 
 offset aliases. Project save/load is copy-on-write and undoable; semantic observations exclude
 allocation placement and packed spelling.
 
+`NativeCustomOverworldSpriteController` promotes that model into the application mutation
+boundary. It accepts ordered insert, replace, remove, and move-before batches on a private table,
+validates the complete result by canonical encode/decode, reuses only the authenticated prior RATS
+owner, repairs the checksum, and returns a revision-bound mutation. Tests cover all four edits in
+one transaction, semantic reopen, application Undo, stale rejection, and atomic failure for an
+invalid ID or the 25th sprite on one map. Profile-derived original pointer/record-size discovery
+and the native direct-manipulation editor remain the next integration boundary.
+
 `ExAnimation` slot options are also represented as their own native seven-byte table rather than
 being folded into animation records. Use
 `exanimation-slot-options ROM MAPPER POINTER OBSERVATION` to inspect a RATS-owned table. Rust
