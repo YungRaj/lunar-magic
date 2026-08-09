@@ -14,11 +14,20 @@ const PRISTINE_LEVEL_105_TPL_SHA256: &str =
     "d4da32140cc2994b332e2bfd86579a7002868d692a4c6779ae99adedc6182201";
 const PRISTINE_LEVEL_105_RAW_SHA256: &str =
     "8a50127cc38c0f39120687e3b4c2fa3067ded7dfbddf49c88a1d431003640c8f";
+const PRISTINE_SHARED_LEGACY_SHA256: &str =
+    "ea0c7adc6a67abe06d6dee5c57818a8536385b3d1bba7de9e6165466097ea0c2";
+const CHANGED_SHARED_LEGACY_SHA256: &str =
+    "7694d2f0dd5fb1535bf9ec82ad021e583239bc5b34fc0a99341fe8d69dcb26e3";
+const PRISTINE_SHARED_EXPANDED_SHA256: &str =
+    "3b72d173b2d549fa4a014f8d97e9d7385998b07fe0dfb92daf81f338ab078e08";
 const WORKING_PALETTE: &str = "0x008634c0,514";
 const TRANSFER_MASK: &str = "0x0086b6e0,257";
 const EXPORT_LEVEL_PALETTE: &str = "0x239f";
 const IMPORT_LEVEL_PALETTE: &str = "0x23a0";
 const SHOW_PALETTE_EDITOR: &str = "0x2528";
+const EXPORT_SHARED_PALETTE: &str = "0x239d";
+const IMPORT_SHARED_PALETTE: &str = "0x239e";
+const SHARED_PALETTE_BACKEND: &str = "0x00e27909,1";
 
 fn run(prefix: &Path, program: &str, arguments: &[&str]) -> Output {
     Command::new(program)
@@ -88,8 +97,8 @@ fn read_bytes(prefix: &Path, helper: &Path, executable: &str, request: &str) -> 
 fn wait_for_palette(prefix: &Path, helper: &Path, executable: &str) -> (Vec<u8>, Vec<u8>) {
     // A new macOS Wine prefix needs an undisturbed interval to create its graphics driver and
     // main window. Starting Toolhelp helper processes immediately can otherwise starve startup.
-    thread::sleep(Duration::from_secs(5));
-    for _ in 0..200 {
+    thread::sleep(Duration::from_secs(10));
+    for _ in 0..100 {
         if let (Some(palette), Some(mask)) = (
             read_bytes(prefix, helper, executable, WORKING_PALETTE),
             read_bytes(prefix, helper, executable, TRANSFER_MASK),
@@ -98,7 +107,7 @@ fn wait_for_palette(prefix: &Path, helper: &Path, executable: &str) -> (Vec<u8>,
         {
             return (palette, mask);
         }
-        thread::sleep(Duration::from_millis(100));
+        thread::sleep(Duration::from_millis(250));
     }
     panic!("Lunar Magic did not publish its working palette within twenty-five seconds");
 }
@@ -207,6 +216,34 @@ fn submit_file_dialog_and_acknowledge_message(
 fn export_palette(prefix: &Path, helper: &Path, executable: &str, path: &Path) -> Vec<u8> {
     post_command(prefix, helper, executable, EXPORT_LEVEL_PALETTE);
     submit_file_dialog(prefix, helper, executable, path);
+    for _ in 0..200 {
+        if let Ok(bytes) = fs::read(path) {
+            return bytes;
+        }
+        thread::sleep(Duration::from_millis(25));
+    }
+    panic!("Lunar Magic did not publish {}", path.display());
+}
+
+fn export_with_command(
+    prefix: &Path,
+    helper: &Path,
+    executable: &str,
+    command: &str,
+    path: &Path,
+) -> Vec<u8> {
+    post_command(prefix, helper, executable, command);
+    submit_file_dialog(prefix, helper, executable, path);
+    for _ in 0..200 {
+        if let Ok(bytes) = fs::read(path) {
+            return bytes;
+        }
+        thread::sleep(Duration::from_millis(25));
+    }
+    panic!("Lunar Magic did not publish {}", path.display());
+}
+
+fn wait_for_file(path: &Path) -> Vec<u8> {
     for _ in 0..200 {
         if let Ok(bytes) = fs::read(path) {
             return bytes;
@@ -407,5 +444,184 @@ fn original_lunar_magic_level_palette_transfer_formats_masks_and_auto_enable_mat
 
     eprintln!("palette oracle: stopping isolated Wine");
     stop_isolated_wine(&prefix, &mut child);
+    fs::remove_dir_all(directory).unwrap();
+}
+
+#[test]
+#[ignore = "requires Wine, MinGW, local Lunar Magic 3.63, and retained legacy/expanded SMW-US palette ROMs"]
+fn original_lunar_magic_shared_exports_match_both_backends_and_legacy_import_reopens() {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let lunar_magic = root.join("lm363/Lunar Magic.exe");
+    assert_eq!(
+        lm_oracle::sha256_hex(&fs::read(&lunar_magic).unwrap()),
+        LUNAR_MAGIC_363_SHA256
+    );
+    let variants = [(
+        root.join("sysLMRestore/smwOrig.smc"),
+        PRISTINE_HEADERED_SMW_US_SHA256,
+        0_u8,
+        0x7e2_usize,
+        "legacy",
+    )];
+
+    let nonce = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    let directory = std::env::temp_dir().join(format!(
+        "lm-shared-palette-wine-{}-{nonce}",
+        std::process::id()
+    ));
+    fs::create_dir(&directory).unwrap();
+    let helper = directory.join("wine-window-command.exe");
+    let compiler = Command::new("i686-w64-mingw32-gcc")
+        .args(["-std=c11", "-O2", "-Wall", "-Wextra", "-Werror"])
+        .arg(root.join("tools/wine-window-command.c"))
+        .args(["-lcomctl32", "-lgdi32", "-o"])
+        .arg(&helper)
+        .output()
+        .expect("cannot launch MinGW compiler");
+    assert!(
+        compiler.status.success(),
+        "helper compilation failed:\n{}",
+        String::from_utf8_lossy(&compiler.stderr)
+    );
+
+    for (source, source_sha256, backend, expected_len, label) in variants {
+        assert_eq!(
+            lm_oracle::sha256_hex(&fs::read(&source).unwrap()),
+            source_sha256
+        );
+        let variant = directory.join(label);
+        fs::create_dir(&variant).unwrap();
+        let prefix = variant.join("prefix");
+        successful(&prefix, "wineboot", &["-u"]);
+        let executable_name = "LMPal.exe";
+        let executable = variant.join(executable_name);
+        fs::copy(&lunar_magic, &executable).unwrap();
+        let rom_path = variant.join("working.smc");
+        fs::copy(&source, &rom_path).unwrap();
+        let rom = wine_path(&prefix, &rom_path);
+        let mut child = Command::new("wine")
+            .env("WINEPREFIX", &prefix)
+            .env("WINEDEBUG", "-all")
+            .arg(&executable)
+            .arg(&rom)
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .unwrap();
+        wait_for_palette(&prefix, &helper, executable_name);
+        assert_eq!(
+            read_bytes(&prefix, &helper, executable_name, SHARED_PALETTE_BACKEND).unwrap(),
+            [backend]
+        );
+
+        let shared_path = variant.join("shared.smwpal");
+        let shared = export_with_command(
+            &prefix,
+            &helper,
+            executable_name,
+            EXPORT_SHARED_PALETTE,
+            &shared_path,
+        );
+        assert_eq!(shared.len(), expected_len);
+        assert_eq!(
+            lm_oracle::sha256_hex(&shared),
+            PRISTINE_SHARED_LEGACY_SHA256
+        );
+
+        post_command(&prefix, &helper, executable_name, SHOW_PALETTE_EDITOR);
+        successful(
+            &prefix,
+            "wine",
+            &[
+                helper.to_str().expect("helper path is UTF-8"),
+                executable_name,
+                "click",
+                "0x2264",
+            ],
+        );
+        let full_path = variant.join("full.smwpal");
+        submit_file_dialog(&prefix, &helper, executable_name, &full_path);
+        let full = wait_for_file(&full_path);
+        assert_eq!(full, shared, "{label} full/shared export mismatch");
+
+        let mut changed = shared.clone();
+        changed[0x123] ^= 0x1f;
+        let import_path = variant.join("changed.smwpal");
+        fs::write(&import_path, &changed).unwrap();
+        post_command(&prefix, &helper, executable_name, IMPORT_SHARED_PALETTE);
+        submit_file_dialog(&prefix, &helper, executable_name, &import_path);
+
+        let reopened_path = variant.join("reopened.smwpal");
+        let reopened = export_with_command(
+            &prefix,
+            &helper,
+            executable_name,
+            EXPORT_SHARED_PALETTE,
+            &reopened_path,
+        );
+        assert_eq!(reopened, changed, "{label} shared import did not reopen");
+        assert_eq!(
+            lm_oracle::sha256_hex(&reopened),
+            CHANGED_SHARED_LEGACY_SHA256
+        );
+        assert_eq!(
+            read_bytes(&prefix, &helper, executable_name, SHARED_PALETTE_BACKEND).unwrap(),
+            [backend]
+        );
+        let image = lm_rom::RomImage::from_bytes(fs::read(&rom_path).unwrap()).unwrap();
+        assert!(lm_rom::detect_identity(&image).unwrap().checksum_matches());
+        eprintln!(
+            "shared palette oracle {label}: baseline={} changed={}",
+            lm_oracle::sha256_hex(&shared),
+            lm_oracle::sha256_hex(&reopened)
+        );
+
+        // `$00E27909` is the original's process-wide expanded-backend mode. Its recovered writers
+        // append the otherwise separate 16-byte auxiliary prefix after the 0x800-byte main body.
+        successful(
+            &prefix,
+            "wine",
+            &[
+                helper.to_str().expect("helper path is UTF-8"),
+                executable_name,
+                "write-byte",
+                "0x00e27909,1",
+            ],
+        );
+        let expanded_path = variant.join("expanded.smwpal");
+        let expanded = export_with_command(
+            &prefix,
+            &helper,
+            executable_name,
+            EXPORT_SHARED_PALETTE,
+            &expanded_path,
+        );
+        assert_eq!(expanded.len(), 0x810);
+        assert_eq!(
+            lm_oracle::sha256_hex(&expanded),
+            PRISTINE_SHARED_EXPANDED_SHA256
+        );
+        successful(
+            &prefix,
+            "wine",
+            &[
+                helper.to_str().expect("helper path is UTF-8"),
+                executable_name,
+                "click",
+                "0x2264",
+            ],
+        );
+        let expanded_full_path = variant.join("expanded-full.smwpal");
+        submit_file_dialog(&prefix, &helper, executable_name, &expanded_full_path);
+        assert_eq!(wait_for_file(&expanded_full_path), expanded);
+        eprintln!(
+            "shared palette oracle expanded export: {}",
+            lm_oracle::sha256_hex(&expanded)
+        );
+        stop_isolated_wine(&prefix, &mut child);
+    }
     fs::remove_dir_all(directory).unwrap();
 }

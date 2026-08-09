@@ -4362,3 +4362,13 @@ points to the registered cross-process boundary. A newly opened edit buffer copi
 zero pixels. Publishing four repeats of indexed row `00 01 ... 0F`, invoking original paste, and
 copying again returns all 64 pixels byte-for-byte, independently proving the headerless row-major
 record consumed by Rust.
+
+Shared/full palette transfer is retained across both original storage backends.
+`ExportSharedPaletteFile` (`$239D`) and the palette editor's `ExportFullPaletteFile` control
+`$2264` emit identical files: `$7E2` bytes in legacy mode and `$810` bytes when process backend
+byte `DAT_00e27909` is one. The expanded writer appends the separate 16-byte auxiliary prefix to
+the `$800`-byte main body. `ImportSharedPaletteFile` (`$239E`) requires at least `$400` bytes,
+reads the active backend's exact size, and commits through `SaveSharedPalettesToRom(1)`. A live
+legacy mutation reopens exactly and preserves the ROM checksum; controlled live exports cover
+both original backend writers. Rust's reciprocal import/export gates cover both layouts,
+legacy-to-expanded installation, reopen, and failure-atomic downgrade rejection.

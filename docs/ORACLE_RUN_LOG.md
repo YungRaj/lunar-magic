@@ -178,3 +178,33 @@ auto-enables the level's custom palette. An invalid TPL-version import displays 
 rejection, leaves all 257 palette words unchanged, and resets the original's transient selector to
 all enabled. Rust deliberately keeps both palette and selector failure-atomic; the stronger state
 boundary is recorded explicitly rather than mistaken for an unobserved original behavior.
+
+## 2026-08-08 — Shared and full palette transfer audit
+
+- Lunar Magic executable SHA-256:
+  `b64998b637e553c9adb96dd893140b5b8d0303c7a0f46a1fdab5f887a1d46eff`
+- Pristine headered SMW-US ROM SHA-256:
+  `5e3d55b019dd012e8db1498dda06b63ad1a304787625402b511e6d525946beaf`
+
+```text
+cargo test -p lm-app --test level_palette_transfer_wine \
+  original_lunar_magic_shared_exports_match_both_backends_and_legacy_import_reopens \
+  -- --ignored --exact --nocapture
+1 passed; 0 failed; finished in 43.77s
+```
+
+The isolated Wine gate drives original shared-palette commands `$239D` and `$239E`, opens the
+palette editor with `$2528`, and invokes its full-palette export control `$2264`. On the original
+legacy backend, both export entry points produce the same `$7E2` bytes with SHA-256
+`ea0c7adc6a67abe06d6dee5c57818a8536385b3d1bba7de9e6165466097ea0c2`. Importing a file whose
+byte `$123` is changed, then exporting again, reopens that exact file with SHA-256
+`7694d2f0dd5fb1535bf9ec82ad021e583239bc5b34fc0a99341fe8d69dcb26e3`; the resulting ROM retains
+a valid SNES checksum.
+
+The gate then selects the original process's recovered expanded-palette backend byte and proves
+that both original export entry points produce the same `$810` bytes with SHA-256
+`3b72d173b2d549fa4a014f8d97e9d7385998b07fe0dfb92daf81f338ab078e08`. Ghidra's recovered
+`ImportSharedPaletteFile` supplies the reciprocal expanded read-size and save-path evidence.
+Rust independently round-trips both exact backends, installs legacy data into expanded storage,
+rejects unsafe downgrade atomically, reopens the installed data, and passes the two built-CLI
+process tests. The renderer regression remains green at 232/232 tests.
