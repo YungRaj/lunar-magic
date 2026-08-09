@@ -2,7 +2,7 @@
 
 use crate::{
     Map16BitmapImportError, Map16BitmapImportOptions, Map16BitmapImportPlan,
-    Map16BitmapImportRequest,
+    Map16BitmapImportRequest, Map16BitmapSyntheticPadding,
 };
 use lm_graphics::{GraphicsFile4bpp, GraphicsOwnership, Palette, PaletteOwnership, Rgba8};
 
@@ -19,6 +19,7 @@ pub struct Map16BitmapImportInputs {
     pub graphics: GraphicsFile4bpp,
     pub graphics_ownership: GraphicsOwnership,
     pub occupied: Vec<bool>,
+    pub synthetic_padding: Option<Map16BitmapSyntheticPadding>,
 }
 
 impl Map16BitmapImportInputs {
@@ -34,6 +35,21 @@ impl Map16BitmapImportInputs {
             graphics: &self.graphics,
             graphics_ownership: &self.graphics_ownership,
             occupied: &self.occupied,
+        }
+    }
+
+    fn plan(
+        &self,
+        options: Map16BitmapImportOptions,
+    ) -> Result<Map16BitmapImportPlan, Map16BitmapImportError> {
+        if let Some(padding) = self.synthetic_padding {
+            Map16BitmapImportPlan::prepare_with_options_and_padding(
+                self.request(),
+                options,
+                padding,
+            )
+        } else {
+            Map16BitmapImportPlan::prepare_with_options(self.request(), options)
         }
     }
 }
@@ -61,7 +77,7 @@ impl Map16BitmapImportPreviewState {
         inputs: Map16BitmapImportInputs,
         options: Map16BitmapImportOptions,
     ) -> Result<Self, Map16BitmapImportError> {
-        let plan = Map16BitmapImportPlan::prepare_with_options(inputs.request(), options.clone())?;
+        let plan = inputs.plan(options.clone())?;
         let converted_pixels = plan.converted_pixels();
         Ok(Self {
             inputs,
@@ -108,8 +124,7 @@ impl Map16BitmapImportPreviewState {
         if options == self.options {
             return Ok(());
         }
-        let plan =
-            Map16BitmapImportPlan::prepare_with_options(self.inputs.request(), options.clone())?;
+        let plan = self.inputs.plan(options.clone())?;
         let converted_pixels = plan.converted_pixels();
         self.options = options;
         self.plan = plan;
@@ -134,8 +149,7 @@ impl Map16BitmapImportPreviewState {
         }
         let mut inputs = self.inputs.clone();
         inputs.palette_ownership = ownership;
-        let plan =
-            Map16BitmapImportPlan::prepare_with_options(inputs.request(), self.options.clone())?;
+        let plan = inputs.plan(self.options.clone())?;
         let converted_pixels = plan.converted_pixels();
         self.inputs = inputs;
         self.plan = plan;
@@ -186,6 +200,7 @@ mod tests {
                 0x400
             ]),
             occupied: vec![false; 0x400],
+            synthetic_padding: None,
         }
     }
 

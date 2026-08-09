@@ -634,3 +634,35 @@ at WRAM `$7F:0000`. Rust decoded the genuine serialized state, required a nonbla
 installed those captured bytes into title playback, and reopened the same semantic recording. The
 state, screenshot, ROM, and proprietary core remain non-redistributed local release evidence; the
 deterministic expected stream and complete commands are retained here and in the automated gate.
+
+## Map16 bitmap non-aligned edge normalization
+
+A 17×16 top-down 24-bit clipboard BMP (SHA-256
+`4d48542d2e9340db0073aad0071654fc40face69a8eaa8115f68e168da00fd10`) was imported by an
+isolated Lunar Magic 3.63 process from a vanilla ROM. The odd width forces normalization to a
+32×16 working plane and distinguishes partial from wholly synthetic 8×8 cells. Captures with the
+configured blank-8×8 option enabled and disabled both pass the complete Rust comparison:
+
+```text
+LM_BITMAP_CAPTURE_DIR=/tmp/lm-map16-padding17-8-enabled.0kPwVh \
+LM_BITMAP_SOURCE=/tmp/lm-map16-padding17-8.bmp \
+cargo test -p lm-app --test map16_bitmap_wine_capture \
+  lunar_magic_bitmap_capture_matches_rust_palette_and_graphics -- --ignored --exact
+test ... ok
+
+LM_BITMAP_CAPTURE_DIR=/tmp/lm-map16-padding17-8-disabled.YFtqhX \
+LM_BITMAP_SOURCE=/tmp/lm-map16-padding17-8.bmp \
+cargo test -p lm-app --test map16_bitmap_wine_capture \
+  lunar_magic_bitmap_capture_matches_rust_palette_and_graphics -- --ignored --exact
+test ... ok
+```
+
+The enabled capture's after-state SHA-256 values are
+`3fe82bd39a1d0b3e28fded78dc0fdf6d877f116eaad5edd9fd9eedc7654c4eab` (palette),
+`d4776ae6b8069d979cc3592c815e09f177658ab534a95a7f17b532ce5f92f21c` (graphics), and
+`202857f04d40ca82b0cd5a33d013e8f17331402a731b379126e7101c6bf45c4a` (complete Map16
+workspace). The disabled capture uses a different accumulated Map16 baseline, and its complete
+after-workspace SHA-256 is
+`23bee4f42318c27782ab0925736f7880f80027d67cf0bae9bd3730176b8e7bcd`; the exact gate
+reconstructs each result from its own captured baseline rather than comparing unrelated process
+histories.

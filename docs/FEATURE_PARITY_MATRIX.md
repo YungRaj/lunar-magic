@@ -544,6 +544,13 @@ The fastest route to a broadly usable editor is:
 5. Broaden modified-ROM, SA-1, and ecosystem fixtures.
 6. Complete configuration, help, packaging, and release gates.
 
+The current Map16 bitmap evidence also includes a non-aligned 17×16 clipboard product in both
+blank-option states. Rust matches the original palette, graphics, and complete 65,536-definition
+workspace after correcting edge normalization: partial synthetic cells retain index zero, while
+wholly synthetic 8×8 cells are materialized after source palette reduction through the vanilla
+Map16 back-area selection (row 0, entry `$D`). Transparent-source blank reuse and allocation
+exhaustion remain open, so the affected rows stay Partial.
+
 Whenever a row changes, its evidence must name the relevant Rust tests and, where applicable, the
 Wine fixture and Ghidra address. A passing aggregate test suite is necessary but cannot promote a
 row whose workflow-specific evidence is absent.

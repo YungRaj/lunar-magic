@@ -3,11 +3,11 @@
 use crate::{
     ControllerSnapshot, Map16BitmapAllocation, Map16BitmapAllocationMode,
     Map16BitmapAllocationOptions, Map16BitmapImportError, Map16BitmapImportInputs,
-    Map16BitmapImportOptions, Map16BitmapImportPreviewState, NativeMap16BitmapGraphicsWorkspace,
-    NativeMap16BitmapWorkspaceError, NativeMap16BitmapWorkspaceLoadError, PreparedRomCommit,
-    RevisionProfile, allocate_bitmap_map16_tiles_sequential_grid,
-    allocate_bitmap_map16_tiles_with_reserved_sources, native_map16_bitmap_import_options,
-    prepare_map16_bitmap_rom_commit,
+    Map16BitmapImportOptions, Map16BitmapImportPreviewState, Map16BitmapSyntheticPadding,
+    NativeMap16BitmapGraphicsWorkspace, NativeMap16BitmapWorkspaceError,
+    NativeMap16BitmapWorkspaceLoadError, PreparedRomCommit, RevisionProfile,
+    allocate_bitmap_map16_tiles_sequential_grid, allocate_bitmap_map16_tiles_with_reserved_sources,
+    native_map16_bitmap_import_options, prepare_map16_bitmap_rom_commit,
 };
 use lm_graphics::{PaletteEntryOwner, PaletteImportError, PaletteOwnership, Rgba8};
 use lm_project::{
@@ -110,6 +110,12 @@ impl NativeMap16BitmapImportSession {
                 graphics: workspace.graphics.clone(),
                 graphics_ownership: workspace.ownership.clone(),
                 occupied: workspace.occupied.clone(),
+                synthetic_padding: Some(Map16BitmapSyntheticPadding {
+                    source_width: request.width,
+                    source_height: request.height,
+                    palette_row: 0,
+                    palette_index: 0x0d,
+                }),
             },
             options,
         )
@@ -199,6 +205,12 @@ impl NativeMap16BitmapImportSession {
                 graphics: workspace.graphics.clone(),
                 graphics_ownership: workspace.ownership.clone(),
                 occupied: workspace.occupied.clone(),
+                synthetic_padding: Some(Map16BitmapSyntheticPadding {
+                    source_width: request.width,
+                    source_height: request.height,
+                    palette_row: 0,
+                    palette_index: 0x0d,
+                }),
             },
             options,
         )
@@ -728,14 +740,8 @@ fn padded_bitmap(
     width: usize,
     height: usize,
     pixels: Vec<Rgba8>,
-    palette: &lm_graphics::Palette,
+    _palette: &lm_graphics::Palette,
 ) -> Result<crate::DecodedMap16Bitmap, NativeMap16BitmapImportSessionError> {
-    let fill = palette
-        .colors
-        .first()
-        .copied()
-        .unwrap_or_default()
-        .to_rgb8();
     crate::pad_map16_bitmap(
         &crate::DecodedMap16Bitmap {
             width,
@@ -743,10 +749,10 @@ fn padded_bitmap(
             pixels,
         },
         Rgba8 {
-            red: fill.red,
-            green: fill.green,
-            blue: fill.blue,
-            alpha: 255,
+            red: 0,
+            green: 0,
+            blue: 0,
+            alpha: 0,
         },
     )
     .map_err(|error| NativeMap16BitmapImportSessionError::ImportGeometry(error.to_string()))

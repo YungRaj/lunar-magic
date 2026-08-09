@@ -1398,6 +1398,15 @@ allocation now follows that recovered 16-column strip algorithm and the exact `$
 exclusive bound. Foreground/background transaction reopen and Undo, all 232 renderer tests, and
 the complete 512-slot pristine render dimension/empty-outcome gate pass.
 
+Non-aligned clipboard geometry is now a separate exact product. A 17×16 source exercises the
+32×16 normalized plane, partial right-edge cells, wholly synthetic 8×8 cells, and both states of
+the configured blank-8×8 option. `Map16BitmapSyntheticPadding` keeps partial-cell padding at index
+zero, excludes wholly synthetic cells from source palette reduction, then rematerializes those
+cells through the vanilla Map16 back-area selection (row 0, entry `$D`). Both retained Wine
+captures match Rust byte-for-byte for palette, graphics, and the complete 65,536-definition
+workspace. Focused tests reject palette index zero as a synthetic back-area selection and prove
+that option recomputation retains the post-palette materialization rule.
+
 Native main event-reveal coverage verifies the two descriptor-derived long operands at logical
 `$25A74/$25A84`, the pristine 112-entry fallback, little-endian source and big-endian destination
 planes, source normalization bounds, and the 255-entry editor maximum. Detection rejects mixed

@@ -31,6 +31,19 @@ pub struct Map16BitmapImportRequest<'a> {
     pub occupied: &'a [bool],
 }
 
+/// Lunar Magic's synthetic edge-padding metadata for a clipboard bitmap.
+///
+/// Pixels in partially covered 8×8 cells retain transparent index zero. Entire 8×8 cells
+/// outside the source rectangle use the editor's selected back-area palette entry, but that
+/// synthetic color does not participate in source palette reduction.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct Map16BitmapSyntheticPadding {
+    pub source_width: usize,
+    pub source_height: usize,
+    pub palette_row: u8,
+    pub palette_index: u8,
+}
+
 /// Conversion choices that affect the staged graphics and Map16 result.
 #[derive(Clone, Debug, Eq, PartialEq, Default)]
 pub struct Map16BitmapImportOptions {
@@ -165,6 +178,88 @@ impl Map16BitmapImportPlan {
             generated_colors: staged_palette.generated_colors,
             newly_occupied_tiles,
         })
+    }
+
+    /// Builds a plan for Lunar Magic's non-aligned clipboard geometry.
+    ///
+    /// The caller supplies an already 16-pixel-aligned plane whose synthetic pixels have alpha
+    /// zero. Fully synthetic 8×8 cells are installed afterward through the selected back-area
+    /// palette entry, reproducing the original's separation between source color reduction and
+    /// edge-cell materialization.
+    pub fn prepare_with_options_and_padding(
+        request: Map16BitmapImportRequest<'_>,
+        options: Map16BitmapImportOptions,
+        padding: Map16BitmapSyntheticPadding,
+    ) -> Result<Self, Map16BitmapImportError> {
+        if padding.source_width == 0
+            || padding.source_height == 0
+            || padding.source_width > request.width
+            || padding.source_height > request.height
+            || padding.palette_row > 7
+            || !(1..16).contains(&padding.palette_index)
+        {
+            return Err(Map16BitmapImportError::SyntheticPadding(padding));
+        }
+        let mut plan = Self::prepare_with_options(request, options.clone())?;
+        let tiles_wide = request.width / 8;
+        let tiles_high = request.height / 8;
+        let palette_offset =
+            usize::from(padding.palette_row) * 16 + usize::from(padding.palette_index);
+        let color = plan
+            .palette
+            .colors
+            .get(palette_offset)
+            .copied()
+            .ok_or(Map16BitmapImportError::SyntheticPadding(padding))?
+            .to_rgb8();
+        for tile_y in 0..tiles_high {
+            for tile_x in 0..tiles_wide {
+                if tile_x * 8 < padding.source_width && tile_y * 8 < padding.source_height {
+                    continue;
+                }
+                let tile = tile_y * tiles_wide + tile_x;
+                plan.tile_palette_rows[tile] = padding.palette_row;
+                for pixel_y in 0..8 {
+                    let start = (tile_y * 8 + pixel_y) * request.width + tile_x * 8;
+                    plan.indexed_pixels[start..start + 8].fill(padding.palette_index);
+                    plan.source_pixels[start..start + 8].fill(Rgba8 {
+                        red: color.red,
+                        green: color.green,
+                        blue: color.blue,
+                        alpha: 255,
+                    });
+                }
+            }
+        }
+        let materialized = IndexedBitmapImport::materialize_with_options(
+            request.width,
+            request.height,
+            &plan.indexed_pixels,
+            request.graphics,
+            request.graphics_ownership,
+            request.occupied,
+            options.graphics,
+        )
+        .map_err(Map16BitmapImportError::Graphics)?;
+        let (map16_tiles, page, width_in_map16_tiles, height_in_map16_tiles) = build_map16_tiles(
+            &materialized,
+            &plan.tile_palette_rows,
+            request.acts_like,
+            options.layer_priority,
+        )?;
+        plan.newly_occupied_tiles = materialized
+            .occupied
+            .iter()
+            .zip(request.occupied)
+            .filter(|(after, before)| **after && !**before)
+            .count();
+        plan.graphics = materialized.graphics;
+        plan.occupied = materialized.occupied;
+        plan.map16_tiles = map16_tiles;
+        plan.page = page;
+        plan.width_in_map16_tiles = width_in_map16_tiles;
+        plan.height_in_map16_tiles = height_in_map16_tiles;
+        Ok(plan)
     }
 
     /// Materializes the exact converted preview through each staged 8×8 tile's palette row.
@@ -1752,6 +1847,7 @@ pub enum Map16BitmapImportError {
     WrongMaterializedShape { width: usize, height: usize },
     PaletteRowCount { expected: usize, actual: usize },
     Map16TileCount(usize),
+    SyntheticPadding(Map16BitmapSyntheticPadding),
 }
 
 impl fmt::Display for Map16BitmapImportError {
@@ -3332,6 +3428,145 @@ mod tests {
         assert_eq!(plan.page.tiles[0].top_left.0 & 0x23ff, 0x2200);
         assert!(plan.occupied[0x200]);
         assert!(!plan.occupied[..0x200].iter().any(|occupied| *occupied));
+    }
+
+    #[test]
+    fn synthetic_edge_cells_are_materialized_after_palette_reduction() {
+        let width = 32;
+        let height = 16;
+        let source_width = 17;
+        let source_height = 16;
+        let pixels = (0..height)
+            .flat_map(|_| {
+                (0..width).map(|x| {
+                    if x < source_width {
+                        Rgba8 {
+                            red: 255,
+                            green: 0,
+                            blue: 0,
+                            alpha: 255,
+                        }
+                    } else {
+                        Rgba8 {
+                            red: 0,
+                            green: 0,
+                            blue: 0,
+                            alpha: 0,
+                        }
+                    }
+                })
+            })
+            .collect::<Vec<_>>();
+        let palette = Palette {
+            colors: vec![Bgr555(0); 128],
+        };
+        let graphics = GraphicsFile4bpp {
+            tiles: vec![IndexedTile::new([0; 64]); 0x300],
+        };
+        let occupied = vec![false; 0x300];
+        let options = Map16BitmapImportOptions {
+            graphics: IndexedBitmapImportOptions {
+                allocation_start: 0x200,
+                allocation_end: 0x300,
+                reuse_existing_tiles: false,
+                optimize_new_tiles: true,
+                allow_flipped_matches: true,
+                blank_tile: Some(0x0f8),
+            },
+            color: None,
+            deduplicate_map16: true,
+            use_reserved_map16_for_blank: false,
+            reserved_map16_tile: 0x8000,
+            map16_allocation_start: 0x8200,
+            layer_priority: false,
+        };
+        let request = Map16BitmapImportRequest {
+            pixels: &pixels,
+            width,
+            height,
+            palette_row: 4,
+            acts_like: 0,
+            palette: &palette,
+            palette_ownership: &PaletteOwnership::editable(128),
+            graphics: &graphics,
+            graphics_ownership: &GraphicsOwnership::editable(0x300),
+            occupied: &occupied,
+        };
+        let baseline =
+            Map16BitmapImportPlan::prepare_with_options(request, options.clone()).unwrap();
+        let plan = Map16BitmapImportPlan::prepare_with_options_and_padding(
+            request,
+            options,
+            Map16BitmapSyntheticPadding {
+                source_width,
+                source_height,
+                palette_row: 0,
+                palette_index: 0x0d,
+            },
+        )
+        .unwrap();
+
+        assert_eq!(plan.palette, baseline.palette);
+        assert_eq!(plan.generated_colors, baseline.generated_colors);
+        assert_eq!(plan.newly_occupied_tiles, 3);
+        assert_eq!(plan.map16_tiles.len(), 2);
+        assert_eq!(plan.map16_tiles[1].top_left.tile_number(), 0x201);
+        assert_eq!(plan.map16_tiles[1].bottom_left.tile_number(), 0x201);
+        assert_eq!(plan.map16_tiles[1].top_right.tile_number(), 0x202);
+        assert_eq!(plan.map16_tiles[1].bottom_right.tile_number(), 0x202);
+        assert_eq!(plan.map16_tiles[1].top_right.palette(), 0);
+        assert!(plan.source_pixels[24].alpha == 255);
+        assert!(
+            plan.graphics.tiles[0x202]
+                .pixels()
+                .iter()
+                .all(|pixel| *pixel == 0x0d)
+        );
+    }
+
+    #[test]
+    fn synthetic_padding_rejects_transparency_entry_zero() {
+        let pixels = vec![
+            Rgba8 {
+                red: 0,
+                green: 0,
+                blue: 0,
+                alpha: 0,
+            };
+            16 * 16
+        ];
+        let palette = Palette {
+            colors: vec![Bgr555(0); 128],
+        };
+        let graphics = GraphicsFile4bpp {
+            tiles: vec![IndexedTile::new([0; 64]); 0x300],
+        };
+        let occupied = vec![false; 0x300];
+        let padding = Map16BitmapSyntheticPadding {
+            source_width: 1,
+            source_height: 1,
+            palette_row: 0,
+            palette_index: 0,
+        };
+        assert_eq!(
+            Map16BitmapImportPlan::prepare_with_options_and_padding(
+                Map16BitmapImportRequest {
+                    pixels: &pixels,
+                    width: 16,
+                    height: 16,
+                    palette_row: 0,
+                    acts_like: 0,
+                    palette: &palette,
+                    palette_ownership: &PaletteOwnership::editable(128),
+                    graphics: &graphics,
+                    graphics_ownership: &GraphicsOwnership::editable(0x300),
+                    occupied: &occupied,
+                },
+                Map16BitmapImportOptions::default(),
+                padding,
+            ),
+            Err(Map16BitmapImportError::SyntheticPadding(padding))
+        );
     }
 
     #[test]

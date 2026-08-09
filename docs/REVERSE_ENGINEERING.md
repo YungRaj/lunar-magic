@@ -4532,3 +4532,13 @@ The reverse path is generation-stable rather than destructive: Lunar Magic's LZ3
 LZ3-to-LZ2 Speed results retain the upgraded GFX17 and the historical settings/event families.
 Rust does the same for both modes, and Lunar Magic subsequently treats each Rust output as a
 no-op target and reproduces its complete 106-file graphics export set.
+
+The bitmap clipboard normalizer has a distinct post-palette edge phase. A 17×16 source is aligned
+to 32×16, but synthetic pixels do not all enter color reduction as an ordinary fill color.
+Padding inside a partially covered 8×8 cell retains index zero. A wholly synthetic 8×8 cell is
+then materialized through the Map16 editor's selected back-area palette entry; the vanilla/default
+live state uses palette row 0, entry `$D`. Consequently that cell becomes a real graphics tile
+(`$202` in the discriminating capture), not the configured blank tile `$0F8`, and the source color
+sets and generated palette remain unchanged. Reapplying graphics materialization and Map16
+construction after this synthetic-cell substitution matches the original palette, graphics, and
+all 65,536 live Map16 definitions byte-for-byte.

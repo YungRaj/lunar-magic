@@ -1,11 +1,12 @@
 use lm_app::{
     Map16BitmapAllocationMode, Map16BitmapAllocationOptions, Map16BitmapImportOptions,
-    Map16BitmapImportPlan, Map16BitmapImportRequest, allocate_bitmap_map16_tiles_sequential_grid,
-    allocate_bitmap_map16_tiles_with_reserved_sources, decode_map16_bitmap_image,
+    Map16BitmapImportPlan, Map16BitmapImportRequest, Map16BitmapSyntheticPadding,
+    allocate_bitmap_map16_tiles_sequential_grid, allocate_bitmap_map16_tiles_with_reserved_sources,
+    decode_map16_bitmap_image, pad_map16_bitmap,
 };
 use lm_graphics::{
     Bgr555, BitmapPaletteColorOptions, BitmapPaletteEntryState, BitmapPaletteReduction,
-    GraphicsFile4bpp, GraphicsOwnership, Palette, PaletteOwnership, Rgb8,
+    GraphicsFile4bpp, GraphicsOwnership, Palette, PaletteOwnership, Rgb8, Rgba8,
 };
 use lm_level::{Map16Tile, Subtile};
 use std::{collections::BTreeMap, fs, path::Path};
@@ -47,8 +48,21 @@ fn lunar_magic_bitmap_capture_matches_rust_palette_and_graphics() {
         .map(|tile| tile.pixels().iter().any(|pixel| *pixel != 0))
         .collect::<Vec<_>>();
     let bitmap = decode_map16_bitmap_image(&fs::read(source).unwrap()).unwrap();
+    let source_width = bitmap.width;
+    let source_height = bitmap.height;
+    let bitmap = pad_map16_bitmap(
+        &bitmap,
+        Rgba8 {
+            red: 0x42,
+            green: 0x84,
+            blue: 0xa5,
+            alpha: 0,
+        },
+    )
+    .unwrap();
+
     let options = options_from_manifest(&manifest, capture_dir);
-    let plan = Map16BitmapImportPlan::prepare_with_options(
+    let plan = Map16BitmapImportPlan::prepare_with_options_and_padding(
         Map16BitmapImportRequest {
             pixels: &bitmap.pixels,
             width: bitmap.width,
@@ -62,6 +76,12 @@ fn lunar_magic_bitmap_capture_matches_rust_palette_and_graphics() {
             occupied: &occupied,
         },
         options.clone(),
+        Map16BitmapSyntheticPadding {
+            source_width,
+            source_height,
+            palette_row: 0,
+            palette_index: 0x0d,
+        },
     )
     .unwrap();
 
