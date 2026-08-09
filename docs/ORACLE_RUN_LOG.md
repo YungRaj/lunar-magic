@@ -666,3 +666,28 @@ after-workspace SHA-256 is
 `23bee4f42318c27782ab0925736f7880f80027d67cf0bae9bd3730176b8e7bcd`; the exact gate
 reconstructs each result from its own captured baseline rather than comparing unrelated process
 histories.
+
+## Map16 bitmap allocation exhaustion
+
+An isolated Lunar Magic 3.63 process imported the retained 32×32 top-down BMP (SHA-256
+`7665fbb71678b38e73bfa36ac76428457d95e26f67e0ecdace57b4a97d72752b`) with its first Map16
+tile set to `$8FFF`. The source requires four distinct Map16 definitions, but the native allocation
+band ends exclusively at `$9000`. Lunar Magic retained the first definition at `$8FFF`, displayed
+`Not enough free 16x16 tiles!` and its complete partial-import explanation, and left all later
+definitions unchanged. The capture is `/tmp/lm-map16-exhaustion-capture.BtyPpH`.
+
+```text
+LM_BITMAP_CAPTURE_DIR=/tmp/lm-map16-exhaustion-capture.BtyPpH \
+LM_BITMAP_SOURCE=/tmp/lm-bitmap-matrix.O2tdOm/source.bmp \
+cargo test -p lm-app --test map16_bitmap_wine_capture \
+  lunar_magic_bitmap_capture_matches_rust_palette_and_graphics -- --ignored --exact
+test ... ok
+```
+
+The after-state SHA-256 values are
+`115b3c585e592008c44f8ab6705dee297e8a648d23f9beb8c0815c06aceceb63` (palette),
+`64dc776f697e1e4e8463091af5b1835a0ea9e6a91b7e9f503d101b837eabcdf9` (graphics), and
+`7d232c9f53ed488fa1988c3a7238d6634157ea3a0fcfdc442219a9c29808690c` (complete Map16
+workspace). Exactly seven Map16 bytes changed, all within definition `$8FFF`. The native session
+test `pristine_map16_exhaustion_retains_only_the_successful_preview_prefix` independently proves
+the same one-of-four allocation outcome.

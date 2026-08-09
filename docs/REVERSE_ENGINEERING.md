@@ -1441,6 +1441,14 @@ the upper bound to `0x8000` when the initial cursor is below
 `0x8000`; otherwise it rounds the initial cursor down to a `0x1000`-tile boundary and uses the next
 boundary as the exclusive limit.
 
+The exhaustion branch is now observed through the complete original UI rather than inferred only
+from assembly. With a four-definition 32×32 import beginning at `$8FFF`, Lunar Magic writes the
+first definition at `$8FFF`, leaves the remaining three unassigned, preserves the completed
+palette/graphics conversion, and opens `Not enough free 16x16 tiles!` with the message `There
+weren't enough blank 16x16 tiles remaining to import this bitmap.  Only some of them have been
+imported.` The pre/post 524,288-byte definition capture differs at seven bytes, all inside the
+single `$8FFF` record, and matches the Rust prefix allocator exactly.
+
 The live 524,288-byte definition workspace at `00777e58` stores each tile's four graphics words in
 column-major order (`top-left`, `bottom-left`, `top-right`, `bottom-right`). ROM and Map16 file
 definitions remain row-major. Three full-workspace Wine captures distinguish this adapter detail

@@ -162,7 +162,28 @@ fn lunar_magic_bitmap_capture_matches_rust_palette_and_graphics() {
         )
     }
     .unwrap();
-    assert!(!allocation.exhausted);
+    let expected_exhaustion = optional_flag(&manifest, "expected_map16_exhaustion");
+    assert_eq!(
+        allocation.exhausted, expected_exhaustion,
+        "Rust allocation exhaustion differs from the captured native outcome"
+    );
+    assert_eq!(
+        optional_flag(&manifest, "observed_map16_exhaustion_warning"),
+        expected_exhaustion,
+        "the disposable oracle did not observe the requested native warning state"
+    );
+    if expected_exhaustion {
+        assert!(
+            allocation.assignments.len() < plan.map16_tiles.len(),
+            "an exhausted import must retain a strict source prefix"
+        );
+        let warning = fs::read_to_string(capture_dir.join("map16-exhaustion-warning.txt"))
+            .expect("exhaustion capture must retain the native warning text");
+        assert!(warning.contains("Not enough free 16x16 tiles!"));
+        assert!(warning.contains(
+            "There weren't enough blank 16x16 tiles remaining to import this bitmap.  Only some of them have been imported."
+        ));
+    }
     let expected_map16 = encode_map16_definitions(&expected_definitions);
     let map16_differences = expected_map16
         .iter()
@@ -232,6 +253,10 @@ fn flag(values: &BTreeMap<String, String>, key: &str) -> bool {
         "1" => true,
         value => panic!("invalid {key} flag {value}"),
     }
+}
+
+fn optional_flag(values: &BTreeMap<String, String>, key: &str) -> bool {
+    values.get(key).is_some_and(|_| flag(values, key))
 }
 
 fn decimal(values: &BTreeMap<String, String>, key: &str) -> usize {

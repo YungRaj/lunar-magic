@@ -26,6 +26,7 @@ usage() {
     echo "  LM_BITMAP_BLANK_8X8_TILE: hexadecimal blank graphics tile (default: 0F8)" >&2
     echo "  LM_BITMAP_FIRST_MAP16_TILE: hexadecimal first Map16 tile (default: 8200)" >&2
     echo "  LM_BITMAP_BLANK_MAP16_TILE: hexadecimal reserved blank Map16 tile (default: 8000)" >&2
+    echo "  LM_BITMAP_EXPECT_MAP16_EXHAUSTION: capture and dismiss partial-import warning, 0 or 1 (default: 0)" >&2
     exit 2
 }
 
@@ -55,6 +56,7 @@ first_8x8_tile=${LM_BITMAP_FIRST_8X8_TILE:-200}
 blank_8x8_tile=${LM_BITMAP_BLANK_8X8_TILE:-0F8}
 first_map16_tile=${LM_BITMAP_FIRST_MAP16_TILE:-8200}
 blank_map16_tile=${LM_BITMAP_BLANK_MAP16_TILE:-8000}
+expect_map16_exhaustion=${LM_BITMAP_EXPECT_MAP16_EXHAUSTION:-0}
 helper="$output_dir/bin/wine-window-command.exe"
 paste_log="$output_dir/paste.log"
 paste_pid=
@@ -127,7 +129,7 @@ case "$exact_matches" in
         ;;
 esac
 for bitmap_other_flag in "$optimize_8x8" "$reuse_existing_8x8" "$optimize_16x16" \
-    "$layer_priority" "$use_blank_8x8" "$use_blank_16x16"; do
+    "$layer_priority" "$use_blank_8x8" "$use_blank_16x16" "$expect_map16_exhaustion"; do
     case "$bitmap_other_flag" in
         0|1) ;;
         *)
@@ -428,6 +430,32 @@ wine "$helper" "$target_executable" list '#32770' 2>/dev/null |
 read_buffer 0x009b3f58 128 "$output_dir/palette-entry-states.bin"
 read_buffer 0x00758dd8 1024 "$output_dir/palette-effective.rgb32"
 wine "$helper" "$target_executable" click 1 >/dev/null 2>&1
+map16_exhaustion_warning=0
+if [ "$expect_map16_exhaustion" -eq 1 ]; then
+    warning_ready=0
+    attempt=0
+    while [ "$attempt" -lt 400 ]; do
+        warning_windows=$(wine "$helper" "$target_executable" list '#32770' 2>/dev/null |
+            tr -d '\r' || true)
+        if printf '%s\n' "$warning_windows" |
+            grep -q "There weren't enough blank 16x16 tiles remaining"; then
+            warning_ready=1
+            break
+        fi
+        if ! kill -0 "$paste_pid" 2>/dev/null; then
+            break
+        fi
+        attempt=$((attempt + 1))
+        sleep 0.025
+    done
+    [ "$warning_ready" -eq 1 ] || {
+        echo "expected Map16 exhaustion warning was not ready within 10 seconds" >&2
+        exit 1
+    }
+    printf '%s\n' "$warning_windows" >"$output_dir/map16-exhaustion-warning.txt"
+    map16_exhaustion_warning=1
+    wine "$helper" "$target_executable" click 1 >/dev/null 2>&1
+fi
 wait "$paste_pid"
 paste_pid=
 
@@ -474,6 +502,8 @@ palette_entry_states_sha=$(shasum -a 256 "$output_dir/palette-entry-states.bin" 
     printf 'requested_blank_8x8_tile_hex\t%s\n' "$blank_8x8_tile"
     printf 'requested_first_map16_tile_hex\t%s\n' "$first_map16_tile"
     printf 'requested_blank_map16_tile_hex\t%s\n' "$blank_map16_tile"
+    printf 'expected_map16_exhaustion\t%s\n' "$expect_map16_exhaustion"
+    printf 'observed_map16_exhaustion_warning\t%s\n' "$map16_exhaustion_warning"
     printf 'observed_first_graphics_tile_le32\t%s\n' "$observed_first_graphics_tile"
     printf 'observed_blank_graphics_tile_le32\t%s\n' "$observed_blank_graphics_tile"
     printf 'observed_first_map16_tile_le32\t%s\n' "$observed_first_map16_tile"

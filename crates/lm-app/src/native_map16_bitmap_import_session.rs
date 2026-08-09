@@ -1266,6 +1266,81 @@ mod tests {
     }
 
     #[test]
+    fn pristine_map16_exhaustion_retains_only_the_successful_preview_prefix() {
+        let mut app = AppState::default();
+        app.load_rom(crate::test_support::pristine_smw_us_rom_bytes())
+            .unwrap();
+        let pixels = (0..32 * 32)
+            .map(|index| {
+                let x = index % 32;
+                let y = index / 32;
+                match (x / 16, y / 16) {
+                    (0, 0) => Rgba8 {
+                        red: 240,
+                        green: 20,
+                        blue: 40,
+                        alpha: 255,
+                    },
+                    (1, 0) => Rgba8 {
+                        red: 20,
+                        green: 220,
+                        blue: 60,
+                        alpha: 255,
+                    },
+                    (0, 1) => Rgba8 {
+                        red: 30,
+                        green: 70,
+                        blue: 240,
+                        alpha: 255,
+                    },
+                    (1, 1) => Rgba8 {
+                        red: 230,
+                        green: 210,
+                        blue: 30,
+                        alpha: 255,
+                    },
+                    _ => unreachable!(),
+                }
+            })
+            .collect();
+        let session = NativeMap16BitmapImportSession::new_smw_us_v1(
+            app.controller_snapshot().unwrap(),
+            NativeMap16BitmapImportSessionRequest {
+                level: 0x105,
+                start_map16_tile: 0x8fff,
+                extra_graphics: [Some(0x20), Some(0x21)],
+                pixels,
+                width: 32,
+                height: 32,
+                palette_row: 4,
+            },
+        )
+        .unwrap();
+        assert_eq!(session.preview().plan().map16_tiles.len(), 4);
+        let allocated = session.allocated_pages().unwrap();
+        assert!(allocated.allocation.exhausted);
+        assert_eq!(allocated.allocation.assignments, [0x8fff]);
+        assert_eq!(allocated.allocation.allocated_definitions, 1);
+        assert_eq!(allocated.touched_pages, [0x8f]);
+        let imported = session.preview().plan().map16_tiles[0];
+        let retained = allocated.pages[0x8f].tiles[0xff];
+        assert_eq!(
+            [
+                retained.top_left,
+                retained.top_right,
+                retained.bottom_left,
+                retained.bottom_right,
+            ],
+            [
+                imported.top_left,
+                imported.top_right,
+                imported.bottom_left,
+                imported.bottom_right,
+            ]
+        );
+    }
+
+    #[test]
     fn session_color_options_preserve_selected_live_palette_words() {
         let mut app = AppState::default();
         app.load_rom(crate::test_support::pristine_smw_us_rom_bytes())

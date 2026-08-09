@@ -407,6 +407,14 @@ to the later index. All five variants
 match the original palette and complete `$000–$2FF` graphics workspace byte-for-byte;
 `lm-graphics` locks each recovered branch independently.
 
+The same retained differential now covers Map16 allocation exhaustion at the final slot of the
+`$8000–$8FFF` band. A 32×32 source beginning at `$8FFF` leaves three source definitions
+unassigned, changes only the one available native definition, retains the converted palette and
+graphics, and displays Lunar Magic's exact partial-import warning. The ignored Wine gate derives
+the expected exhaustion state from the capture manifest and still compares all 524,288 Map16
+workspace bytes; the native session test independently proves the one-definition prefix and
+preserved destination Acts-Like field.
+
 Structured LM16 Map16 transfer covers both complete and selected-range containers. The compact
 selected form validates the recovered width/height/column/band-relative-row header fields, restores
 all three ambiguous `$4000`-tile bands through flags 4/8, requires exact row-major definition and
