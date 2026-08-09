@@ -37,6 +37,7 @@ mod native_map16_primary;
 mod native_map16_remap;
 mod native_map16_secondary;
 mod native_map16_transfer;
+mod overworld_animation_runtime;
 mod overworld_boss_sequence;
 mod overworld_event;
 mod overworld_event_number;
@@ -341,6 +342,14 @@ pub use native_map16_transfer::{
     SMW_US_V1_MAP16_MAX_ENTRIES, SavedSmwUsV1TransferredMap16, SmwUsV1TransferredMap16Error,
     SmwUsV1TransferredMap16SaveOptions, load_smw_us_v1_transferred_map16,
     save_smw_us_v1_transferred_map16,
+};
+pub use overworld_animation_runtime::{
+    SMW_US_V1_OVERWORLD_ANIMATION_AUXILIARY_LEN, SMW_US_V1_OVERWORLD_ANIMATION_OPTIONS_LEN,
+    SMW_US_V1_OVERWORLD_ANIMATION_RUNTIME_LEN, SMW_US_V1_OVERWORLD_ANIMATION_SEARCH_END,
+    SMW_US_V1_OVERWORLD_ANIMATION_SEARCH_START, SmwUsV1OverworldAnimationRuntime,
+    SmwUsV1OverworldAnimationRuntimeError, detect_smw_us_v1_overworld_animation_runtime,
+    smw_us_v1_overworld_animation_runtime_installation_plan,
+    smw_us_v1_overworld_animation_runtime_template,
 };
 pub use overworld_boss_sequence::{
     SMW_US_V1_BOSS_SEQUENCE_FIRST_POINTER, SMW_US_V1_BOSS_SEQUENCE_SEARCH_END,

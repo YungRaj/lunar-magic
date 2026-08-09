@@ -683,12 +683,13 @@ impl RomOverworldEditor {
             shape,
             data,
         };
+        let mut runtime_command = None;
         let edit = match self.panel {
             Panel::Records => self.records.show(ui, &file, controller_revision),
             Panel::Palette => self.palette.show(ui, &file.data.palette, &ownership),
             Panel::Animation => {
                 self.animation_preview_controls(ui, &file.data.animation);
-                self.animation_option_controls(ui, editing_blocked);
+                runtime_command = self.animation_option_controls(ui, editing_blocked);
                 self.animation
                     .show(ui, &file.data.animation, &modes, controller_revision)
             }
@@ -702,6 +703,9 @@ impl RomOverworldEditor {
                 Ok(_) => self.error = Some("stale overworld workspace cannot accept edits".into()),
                 Err(error) => self.error = Some(error),
             }
+        }
+        if runtime_command.is_some() {
+            return runtime_command;
         }
         self.commit_controls(ui, editing_blocked, revision)
     }
@@ -1246,9 +1250,13 @@ impl RomOverworldEditor {
         None
     }
 
-    fn animation_option_controls(&mut self, ui: &mut egui::Ui, editing_blocked: bool) {
+    fn animation_option_controls(
+        &mut self,
+        ui: &mut egui::Ui,
+        editing_blocked: bool,
+    ) -> Option<Command> {
         let Some(workspace) = self.workspace.as_mut() else {
-            return;
+            return None;
         };
         ui.separator();
         ui.heading("Per-map animation options");
@@ -1256,9 +1264,11 @@ impl RomOverworldEditor {
             egui::Slider::new(&mut self.animation_option_map, 0..=6)
                 .text("Map (main, Yoshi, Vanilla, Forest, Valley, Special, Star)"),
         );
-        let option = &mut workspace.assets.animation_options[self.animation_option_map];
         let installed = workspace.assets.animation_options_runtime_installed;
         let layout_supported = workspace.assets.animation_options_layout_supported;
+        let mut staged = workspace.controller.is_modified()
+            || workspace.assets.animation_options != workspace.baseline_animation_options;
+        let option = &mut workspace.assets.animation_options[self.animation_option_map];
         let before = *option;
         ui.add_enabled_ui(!editing_blocked && layout_supported, |ui| {
             ui.add_enabled_ui(installed, |ui| {
@@ -1296,9 +1306,31 @@ impl RomOverworldEditor {
             );
         }
         if *option != before {
+            staged = true;
             self.rendered_key = None;
             self.texture = None;
         }
+        if !installed
+            && layout_supported
+            && ui
+                .add_enabled(
+                    !editing_blocked && !staged,
+                    egui::Button::new("Install overworld animation runtime"),
+                )
+                .on_hover_text(
+                    "Install Lunar Magic's authenticated vanilla SMW-US runtime and seven-byte per-map option table as one undoable ROM transaction.",
+                )
+                .clicked()
+        {
+            match self.prepare_animation_runtime_install() {
+                Ok(command) => return Some(command),
+                Err(error) => self.error = Some(error),
+            }
+        }
+        if !installed && staged {
+            ui.small("Commit or discard staged changes before installing the runtime.");
+        }
+        None
     }
 
     fn apply(&mut self, edit: OverworldControllerEdit) {

@@ -4613,3 +4613,23 @@ live state uses palette row 0, entry `$D`. Consequently that cell becomes a real
 sets and generated palette remain unchanged. Reapplying graphics materialization and Map16
 construction after this synthetic-cell substitution matches the original palette, graphics, and
 all 65,536 live Map16 definitions byte-for-byte.
+
+## Dedicated overworld animation-options runtime
+
+Lunar Magic 3.63 installs the per-map overworld animation-option storage through the dedicated
+function at PE address `$004B2440`; it is not the expanded level-ExAnimation runtime at
+`$0045CAF0`. The function concatenates executable ranges `$005C3040..$005C322F` (`$1F0` bytes),
+`$005C3238..$005C3547` (`$310` bytes), and `$005C2918..$005C3037` (`$720` bytes) into one `$C20`
+LoROM payload. Mapper-conditioned targets append `$20` bytes from `$005B5754`, but pristine
+SMW-US LoROM takes neither that suffix nor any IRAM conversion branch.
+
+The ordinary path allocates three independent RATS owners in order: the `$C20` runtime, a
+`$15`-byte auxiliary initialized with `$FF` at every third byte, and the seven zeroed option
+bytes. It installs JSL hooks at logical `$020086` and `$0024E3`, redirects the operand at
+`$0200E0`, changes logical `$020102/$02010D/$02013B` from `$13` to `$14`, and publishes the option
+owner through runtime `+$4A`. The relocation pass contains 25 explicit fixed/allocation pointer
+sites plus 108 low-word sites at runtime `+$B3B`, whose source offsets are the low 15 bits of the
+table at executable `$005C2F53`. The Rust installer embeds the exact three-fragment template,
+applies this complete LoROM relocation network transactionally, and authenticates all immutable
+runtime/auxiliary bytes and allocation owners on reopen while allowing the seven option bytes to
+remain mutable.

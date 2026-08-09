@@ -479,6 +479,10 @@ fn decode_overworld_assets(
         && profiled.profile.revision == 0
         && profiled.profile.mapper == lm_rom::Mapper::LoRom;
     let animation_options = if animation_options_layout_supported {
+        lm_profile::detect_smw_us_v1_overworld_animation_runtime(project.rom.logical_bytes())
+            .map_err(|error| {
+                format!("could not authenticate overworld animation runtime: {error}")
+            })?;
         project
             .load_installed_overworld_animation_options(
                 lm_profile::smw_us_v1_overworld_animation_options_layout(),

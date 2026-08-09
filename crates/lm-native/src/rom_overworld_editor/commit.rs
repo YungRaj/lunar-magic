@@ -4,6 +4,47 @@ use lm_project::{CompleteOverworldSaveOptions, Project, RomMutation};
 use lm_rats::{AllocationPolicy, ProtectedRange};
 
 impl RomOverworldEditor {
+    pub(super) fn prepare_animation_runtime_install(&self) -> Result<Command, String> {
+        let workspace = self.workspace.as_ref().ok_or("workspace is closed")?;
+        if workspace.controller.is_modified()
+            || workspace.assets.animation_options != workspace.baseline_animation_options
+        {
+            return Err(
+                "commit or discard staged overworld edits before installing the animation runtime"
+                    .into(),
+            );
+        }
+        match lm_profile::detect_smw_us_v1_overworld_animation_runtime(
+            workspace.image.logical_bytes(),
+        )
+        .map_err(|error| error.to_string())?
+        {
+            Some(_) => {
+                return Err("the authenticated overworld animation runtime is installed".into());
+            }
+            None => {}
+        }
+        let before = workspace.image.logical_bytes().to_vec();
+        let mut project = Project::new(workspace.image.clone());
+        project
+            .install_relocatable_patch(
+                &lm_profile::smw_us_v1_overworld_animation_runtime_installation_plan()
+                    .map_err(|error| error.to_string())?,
+            )
+            .map_err(|error| error.to_string())?;
+        Ok(lm_app::PreparedRomCommit {
+            expected_revision: workspace.controller.revision(),
+            description: "Install SMW US v1 overworld animation runtime".into(),
+            mutation: RomMutation::between(
+                workspace.profiled.snapshot.identity.mapper,
+                &before,
+                project.rom.logical_bytes(),
+            )
+            .map_err(|error| error.to_string())?,
+        }
+        .into_command())
+    }
+
     pub(super) fn prepare_main_layer2_commit(&self) -> Result<Command, String> {
         let workspace = self
             .main_layer2_workspace
