@@ -1507,6 +1507,16 @@ allocation now follows that recovered 16-column strip algorithm and the exact `$
 exclusive bound. Foreground/background transaction reopen and Undo, all 232 renderer tests, and
 the complete 512-slot pristine render dimension/empty-outcome gate pass.
 
+The original bitmap dialog is no longer represented by an open-ended option list. Direct Ghidra
+recovery binds resources `$418/$419`, procedures `004F15E0`/`004F1FA0`, and every editable control
+to exactly 20 Rust semantics. The retained TSV covers all six other-option toggles, four bounded
+hexadecimal fields, six color toggles, reduction, priority, maximum colors, and the 128-cell state
+grid; the disabled exact-match checkbox remains fixed on like Lunar Magic 3.63. Fixture-bound
+default assertions, focused toggle/range tests, the complete Wine option differential family, main
+preview acceptance/cancellation, partial-exhaustion warning, and full palette/graphics/Map16
+workspace comparisons together close the Oracle gate. The workflow remains Partial only while its
+supported installed-ROM identity/mapper product is not yet complete.
+
 Non-aligned clipboard geometry is now a separate exact product. A 17×16 source exercises the
 32×16 normalized plane, partial right-edge cells, wholly synthetic 8×8 cells, and both states of
 the configured blank-8×8 option. `Map16BitmapSyntheticPadding` keeps partial-cell padding at index

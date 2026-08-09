@@ -391,6 +391,42 @@ mod tests {
 
     #[test]
     fn native_options_match_every_recovered_other_options_default() {
+        let controls = include_str!(
+            "../../../docs/oracle-work/lm363/map16-bitmap-control-inventory/controls.tsv"
+        );
+        let rows = controls
+            .lines()
+            .skip(1)
+            .map(|line| line.split('\t').collect::<Vec<_>>())
+            .collect::<Vec<_>>();
+        assert_eq!(rows.len(), 20);
+        assert!(rows.iter().all(|row| row.len() == 7));
+        assert_eq!(
+            rows.iter().map(|row| row[4]).collect::<Vec<_>>(),
+            [
+                "graphics.optimize_new_tiles",
+                "graphics.reuse_existing_tiles",
+                "deduplicate_map16",
+                "layer_priority",
+                "graphics.blank_tile.enabled",
+                "use_reserved_map16_for_blank",
+                "graphics.allocation_start",
+                "graphics.blank_tile",
+                "map16_allocation_start",
+                "reserved_map16_tile",
+                "color.allow_modifying_unmarked_colors",
+                "color.prioritize_exact_palette_matches",
+                "color.prioritize_unique_colors",
+                "color.maintain_detail",
+                "color.popularity_reduction_method_1",
+                "color.popularity_reduction_method_2",
+                "color.priority_level",
+                "color.reduction",
+                "color.maximum_colors",
+                "color.entries",
+            ]
+        );
+
         let options = native_map16_bitmap_import_options();
         assert_eq!(options.graphics.allocation_start, 0x200);
         assert_eq!(options.graphics.allocation_end, 0x300);
@@ -407,6 +443,20 @@ mod tests {
         assert_eq!(options.map16_allocation_start, 0x8200);
         assert_eq!(options.reserved_map16_tile, 0x8000);
         assert!(!options.layer_priority);
+        let color = options.color.unwrap();
+        assert_eq!(color.entries.len(), 128);
+        assert_eq!(color.maximum_colors, 128);
+        assert_eq!(color.priority_level, 3);
+        assert_eq!(
+            color.reduction,
+            lm_graphics::BitmapPaletteReduction::MedianCut
+        );
+        assert!(color.prioritize_unique_colors);
+        assert!(!color.maintain_detail);
+        assert!(color.popularity_reduction_method_1);
+        assert!(!color.popularity_reduction_method_2);
+        assert!(color.allow_modifying_unmarked_colors);
+        assert!(color.prioritize_exact_palette_matches);
     }
 
     #[test]

@@ -1789,6 +1789,17 @@ classification remains based on decoded pixels when configured blank-8×8 routin
 
 The following controller and selection tooling through `004f5990` is now named. This includes the import-preview zoom menu and keyboard hook, the top-level bitmap import workflow, a textual remapping language that can transform graphics indexes, palette rows, Map16 indexes, and secondary-map values, and the custom registered `Lunar Magic 16x16 Tiles` clipboard serializer. Added the exact 0xA0-byte `LunarMagicTileClipboardHeader` with section offsets, selected count, rectangular dimensions, source Map16 index, flags, and explicitly represented reserved regions.
 
+The bitmap option surface is now closed as a finite inventory. The main procedure at `004F3A70`
+opens color resource `$418` through `004F15E0` and other-options resource `$419` through the
+previously unnamed callback at `004F1FA0`. That callback independently reads six checkboxes and
+four hexadecimal controls on OK, accepts graphics values only below `$300`, accepts Map16 values
+only below `$10000`, and restores every persisted value on initialization. The color callback
+independently owns six semantic checkboxes, the two reduction methods, 1–4 priority, 1–128 maximum
+colors, and all 128 palette-entry states; Cancel restores the complete snapshots. The exact
+20-control map is retained in
+`docs/oracle-work/lm363/map16-bitmap-control-inventory/controls.tsv` and fixture-bound by
+`native_options_match_every_recovered_other_options_default`.
+
 Map16 import/export, history, and visible rendering through `004f9e40` are now named and annotated. Added exact 64-byte `Lm16Map16FileHeader` and `Lm16Map16SectionDirectory` structures for the structured `.map16` format. Added the exact 811,788-byte `Map16UndoSnapshot` and typed its live linked-list globals. Rendering names now distinguish decoded tile composition, Acts Like overlays, selected-tile highlighting, page frames and labels, page boundaries, and bounded versus drag-selection marching ants.
 
 `WriteAllMap16ContainerSections` at `004f78f0` and `ReadAllMap16ContainerSections` at `004f7c80`
