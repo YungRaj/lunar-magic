@@ -561,12 +561,10 @@ impl RomMap16Editor {
                     response.rect.min + egui::vec2(column * cell_size, row * cell_size),
                     egui::vec2(width as f32 * cell_size, height as f32 * cell_size),
                 );
-                ui.painter().rect_stroke(
-                    cell,
-                    0.0,
-                    egui::Stroke::new(2.0_f32, egui::Color32::YELLOW),
-                    egui::StrokeKind::Inside,
-                );
+                for (start, end, color) in map16_selection_marquee(cell, zoom) {
+                    ui.painter()
+                        .line_segment([start, end], egui::Stroke::new(zoom.max(1.0), color));
+                }
                 response
             })
             .inner;
@@ -1041,6 +1039,41 @@ fn page_rectangle(origin: usize, width: usize, height: usize) -> Option<(usize, 
             .checked_add(height)
             .is_some_and(|end| end <= 16))
     .then_some((origin, width, height))
+}
+
+fn map16_selection_marquee(
+    rectangle: egui::Rect,
+    source_pixel_scale: f32,
+) -> Vec<(egui::Pos2, egui::Pos2, egui::Color32)> {
+    let scale = source_pixel_scale.max(1.0);
+    let mut segments = Vec::new();
+    for (start, end) in [
+        (rectangle.left_top(), rectangle.right_top()),
+        (rectangle.left_bottom(), rectangle.right_bottom()),
+        (rectangle.left_top(), rectangle.left_bottom()),
+        (rectangle.right_top(), rectangle.right_bottom()),
+    ] {
+        let vector = end - start;
+        let length = vector.length();
+        if length <= 0.0 {
+            continue;
+        }
+        let direction = vector / length;
+        let mut offset = 0.0;
+        let mut source_pixel = 0_usize;
+        while offset < length {
+            let next = (offset + scale).min(length);
+            let color = if matches!(source_pixel % 4, 0 | 3) {
+                egui::Color32::WHITE
+            } else {
+                egui::Color32::BLACK
+            };
+            segments.push((start + direction * offset, start + direction * next, color));
+            offset = next;
+            source_pixel += 1;
+        }
+    }
+    segments
 }
 
 fn take_map16_commit_shortcut(ui: &mut egui::Ui) -> bool {

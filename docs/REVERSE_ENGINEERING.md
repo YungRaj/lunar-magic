@@ -1482,6 +1482,16 @@ The outer Layer 1 selector creator and the beginning of the main level-editor pr
 
 The level-editor modification and selected-tile transaction layer through `004ebb10` is now annotated. The dirty-state setter drives command `0x2261` and save/discard/cancel prompting. Tile selection uses four 0x13D00-entry planes of per-tile state, rectangle rasterization, cached bounds/counts, temporary Map16 definition and acts-like snapshots, bounded translation, drag updates, and placement at a requested grid point. Live and temporary definitions are swapped so overwritten tiles remain recoverable during movement. Typed and named both 324,608-byte selection-state arrays, selected-tile count, nonempty-bounds flag, and drag-active guard. Three following capacity counters are intentionally named by proven mechanics because their exact resource-table identities are not yet established by callers.
 
+The main Map16 rectangle gesture is now bound end to end. `HandleMap16RenderWindow` at `00500850`
+routes mouse down through `HandleMap16EditorLeftButtonDown` at `004fbc50`; active selection state 1
+moves through `HandleMap16EditorMouseMove` at `004fb750` and
+`MoveMap16SelectionAnchorAndRedraw` at `004eb110`; mouse-up or capture loss finalizes at
+`004fbb10`. Both axes are snapped to 16-pixel cells, reverse drags are normalized, and
+`ShowMap16SelectionDimensions` at `004fb620` reports `abs(endpoint - origin) / 16 + 1`.
+`DrawMap16SelectionMarquee` at `004f9340` resets each edge to a one-source-pixel repeating
+white/black/black/white phase. The Rust rendered-page selection now reproduces that geometry,
+inclusive dimension rule, and pre-scale marquee phase through its full 100–5000% zoom range.
+
 The following palette-allocation engine through `004ece10` is now named. It initializes palette-entry reservation states, optionally propagates a selected color across eight rows, converts RGB to Windows HSL-240 coordinates, builds unique color histograms for 8x8 tiles, performs weighted RGB555 palette selection, and models recurring tile color sets and their subset dependencies. Added the exact 184-byte `PaletteColorSetRecord`, containing up to 16 colors, direct and aggregate weights, source pointers, subset pointers, selection flags, and aggregate total. The final greedy selector maximizes overlap with already chosen colors and aggregate utility while respecting remaining palette capacity.
 
 The bitmap-import orchestration block through `004ef770` is now named and annotated. It extends weighted color sets into available palette rows, marks subset records assigned, maps imported pixels to palette indexes, detects blank and duplicate 8x8 graphics including horizontal and vertical flip equivalents, allocates free graphics slots, assembles or deduplicates 16x16 Map16 entries, commits editable palette changes, and drives the complete bitmap quantization/import pipeline. The occupancy scanner covers all `0x300` graphics slots; tile-map results preserve palette, priority, and flip attributes in the final 16-bit tile words.

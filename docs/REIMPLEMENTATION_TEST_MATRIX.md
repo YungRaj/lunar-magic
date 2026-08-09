@@ -464,9 +464,15 @@ The installed Map16 page preview also owns the rectangle-selection gesture. Clic
 rendered 16×16 cells at every zoom, normalizes all four drag directions to a top-left origin, writes
 the selected width and height in the hexadecimal form consumed by selected `.map16` and native
 clipboard export, and outlines the complete in-page range. A click resets the range to one tile.
+The retained original chain at `00500850`/`004FBC50`/`004FB750`/`004EB110`/`004FB620`/`004FBB10`
+proves the same down/drag/normalize/inclusive-dimension/up sequence. The original marquee at
+`004F9340` resets each edge to one-source-pixel white/black/black/white phases; Rust generates that
+phase before zoom scaling instead of using its former solid yellow outline.
 `rendered_page_drag_normalizes_rectangle_in_every_direction` and
 `rendered_page_outlines_only_rectangles_visible_on_the_current_page` lock the geometry and prevent
-an invalid manually entered range from painting outside the current page.
+an invalid manually entered range from painting outside the current page, while
+`rendered_page_marquee_matches_original_source_pixel_phase_at_every_zoom` covers the exact phase at
+100%, 300%, and 5000%.
 
 Map16 bitmap decoding additionally covers BMP `BI_JPEG` and `BI_PNG` embedded payloads. Hermetic
 fixtures wrap generated JPEG and PNG images in exact DIB framing and verify decoded dimensions,

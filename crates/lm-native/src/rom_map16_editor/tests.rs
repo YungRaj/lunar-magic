@@ -942,3 +942,33 @@ fn rendered_page_outlines_only_rectangles_visible_on_the_current_page() {
     assert_eq!(page_rectangle(0, 0, 1), None);
     assert_eq!(page_rectangle(0, usize::MAX, usize::MAX), None);
 }
+
+#[test]
+fn rendered_page_marquee_matches_original_source_pixel_phase_at_every_zoom() {
+    for zoom in [1.0, 3.0, 50.0] {
+        let marquee = map16_selection_marquee(
+            egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(8.0, 8.0) * zoom),
+            zoom,
+        );
+        assert_eq!(marquee.len(), 32);
+        assert_eq!(
+            marquee[..8]
+                .iter()
+                .map(|(_, _, color)| *color)
+                .collect::<Vec<_>>(),
+            [
+                egui::Color32::WHITE,
+                egui::Color32::BLACK,
+                egui::Color32::BLACK,
+                egui::Color32::WHITE,
+                egui::Color32::WHITE,
+                egui::Color32::BLACK,
+                egui::Color32::BLACK,
+                egui::Color32::WHITE,
+            ]
+        );
+        assert!(marquee.iter().all(|(start, end, _)| {
+            ((end.x - start.x).abs() + (end.y - start.y).abs() - zoom).abs() < f32::EPSILON
+        }));
+    }
+}

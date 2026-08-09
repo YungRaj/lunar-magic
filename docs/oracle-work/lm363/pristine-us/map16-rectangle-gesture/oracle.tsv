@@ -1,0 +1,12 @@
+field	value
+window_proc	00500850
+mouse_down	004FBC50
+mouse_move	004FB750
+anchor_update	004EB110
+dimension_report	004FB620
+mouse_up	004FBB10
+marquee_draw	004F9340
+coordinate_quantum_pixels	16
+dimension_rule	abs(endpoint-origin)/16+1
+marquee_phase	white,black,black,white
+marquee_source_pixel_width	1
