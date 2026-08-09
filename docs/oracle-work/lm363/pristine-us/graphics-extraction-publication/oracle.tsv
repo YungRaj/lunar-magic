@@ -1,0 +1,15 @@
+field	value
+standard_function	0047DA40
+extended_function	0047EFF0
+write_mode_address	005B2D3C
+write_mode_bytes	776200
+write_mode	wb
+standard_directory	Graphics
+extended_directory	ExGraphics
+standard_separate_name	GFX%02X.bin
+standard_joined_name	AllGFX.bin
+extended_low_name	ExGFX%02X.bin
+extended_high_name	ExGFX%03X.bin
+standard_joined_flag	param2_bit0
+standard_quiet_flag	param2_bit1
+extended_quiet_flag	param1_bit1

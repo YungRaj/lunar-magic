@@ -2051,6 +2051,17 @@ and progress bits but has no joined-file bit. The ordinary menu commands first r
 confirmation resources; quick commands set bit 1 and bypass only the completion presentation, not
 validation or mutation behavior.
 
+Both bulk extraction functions use the same recovered `wb` mode string at image address
+`005B2D3C`. `ExtractAllGFXFiles` therefore truncates/replaces every fixed
+`Graphics/GFX%02X.bin` output, or `Graphics/AllGFX.bin` in joined mode, on a repeated export;
+`ExportExtendedGraphicsFromRom` does the same for populated `ExGraphics/ExGFX%02X.bin` and
+`ExGFX%03X.bin` outputs. The retained
+`graphics-extraction-publication/oracle.tsv` binds the two function addresses, mode pointer and
+bytes, names, directories, and flag meanings. Rust matches the visible replacement semantics while
+publishing the entire separate-file set atomically, preserving regular-file permissions, and
+rejecting symlink or non-file destinations without exposing a partial refresh. Joined and raw Save
+As extraction use the same recoverable replacement boundary.
+
 Regular-GFX insertion has one format-transition warning before any graphics structures are erased.
 On a modified ROM with the ExGFX/ExAnimation support state present but without the expanded graphics
 format marker, Lunar Magic displays `Graphics Format Change Warning!` and explains that existing

@@ -474,6 +474,16 @@ an invalid manually entered range from painting outside the current page, while
 `rendered_page_marquee_matches_original_source_pixel_phase_at_every_zoom` covers the exact phase at
 100%, 300%, and 5000%.
 
+Graphics extraction publication is also bound to an exact original write-mode fixture. The
+retained `graphics-extraction-publication/oracle.tsv` identifies `ExtractAllGFXFiles` at
+`0047DA40`, `ExportExtendedGraphicsFromRom` at `0047EFF0`, and their shared `wb` mode string at
+`005B2D3C`, proving that repeated fixed-name separate, joined, and ExGFX exports replace existing
+regular files. `repeated_directory_extraction_atomically_replaces_every_existing_file` and
+`joined_batch_concatenates_slots_in_pointer_table_order` cover repeated Rust publication;
+`invalid_late_destination_leaves_no_partial_batch` covers all-or-rollback rejection. Raw Save As
+uses `PersistenceTarget::save_as`, whose focused tests distinguish absent creation, approved
+regular-file replacement, and pre-worker rejection of symlink/non-file destinations.
+
 Map16 bitmap decoding additionally covers BMP `BI_JPEG` and `BI_PNG` embedded payloads. Hermetic
 fixtures wrap generated JPEG and PNG images in exact DIB framing and verify decoded dimensions,
 RGB/RGBA output, PNG alpha retention, JPEG normalization, declared-size truncation, zero-length

@@ -1579,11 +1579,17 @@ impl RomGraphicsEditor {
             }
         };
         self.next_persistence_request = self.next_persistence_request.wrapping_add(1);
-        if let Err(error) = self.persistence.start(
-            self.next_persistence_request,
-            crate::persistence_worker::PersistenceTarget::Create(path),
-            bytes,
-        ) {
+        let target = match crate::persistence_worker::PersistenceTarget::save_as(path) {
+            Ok(target) => target,
+            Err(error) => {
+                self.error = Some(error);
+                return;
+            }
+        };
+        if let Err(error) = self
+            .persistence
+            .start(self.next_persistence_request, target, bytes)
+        {
             self.error = Some(error);
         } else {
             self.io_status = None;

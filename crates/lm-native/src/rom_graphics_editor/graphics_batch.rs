@@ -268,12 +268,11 @@ fn export_batch(
         }
         _ => None,
     };
-    let mut group = matches!(target, GraphicsExportTarget::Directory(_))
-        .then_some(lm_app::file_persistence::NewFileGroup::new());
     let mut replacements = Vec::with_capacity(
         if matches!(
             target,
-            GraphicsExportTarget::ReplaceDirectory { .. }
+            GraphicsExportTarget::Directory(_)
+                | GraphicsExportTarget::ReplaceDirectory { .. }
                 | GraphicsExportTarget::ReplaceJoinedFile { .. }
         ) {
             total
@@ -281,7 +280,9 @@ fn export_batch(
             0
         },
     );
-    let mut joined_files = Vec::with_capacity(if group.is_some() { 0 } else { total });
+    let mut joined_files = Vec::with_capacity(
+        usize::from(matches!(target, GraphicsExportTarget::JoinedFile(_))) * total,
+    );
     for (index, (slot, file_number)) in source
         .slots
         .iter()
@@ -362,14 +363,10 @@ fn export_batch(
         }
         match target {
             GraphicsExportTarget::Directory(directory) => {
-                group
-                    .as_mut()
-                    .expect("directory exports create a staging group")
-                    .stage(
-                        &batch_output_path(directory, file_number, source.exgraphics_names),
-                        &bytes,
-                    )
-                    .map_err(|error| format!("GFX{file_number:02X}: {error}"))?;
+                replacements.push((
+                    batch_output_path(directory, file_number, source.exgraphics_names),
+                    bytes,
+                ));
             }
             GraphicsExportTarget::ReplaceDirectory {
                 standard_path,
@@ -412,9 +409,11 @@ fn export_batch(
     }
     match target {
         GraphicsExportTarget::Directory(_) => {
-            group
-                .expect("directory exports retain their staging group")
-                .publish()
+            let documents = replacements
+                .iter()
+                .map(|(path, bytes)| (path.as_path(), bytes.as_slice()))
+                .collect::<Vec<_>>();
+            lm_app::file_persistence::replace_or_create_group(&documents)
                 .map_err(|error| error.to_string())?;
         }
         GraphicsExportTarget::ReplaceDirectory { .. } => {
@@ -447,7 +446,7 @@ fn export_batch(
             }
             .join()
             .map_err(|error| error.to_string())?;
-            lm_app::file_persistence::write_new(path, &joined)
+            lm_app::file_persistence::replace_or_create_group(&[(path.as_path(), &joined)])
                 .map_err(|error| error.to_string())?;
         }
     }
@@ -861,10 +860,10 @@ mod tests {
     }
 
     #[test]
-    fn late_destination_collision_leaves_no_partial_batch() {
+    fn invalid_late_destination_leaves_no_partial_batch() {
         let directory = temporary_directory();
         fs::create_dir(&directory).unwrap();
-        fs::write(directory.join("GFX01.bin"), b"keep").unwrap();
+        fs::create_dir(directory.join("GFX01.bin")).unwrap();
         let (source, _) = fixture_source();
         assert!(
             export_batch(
@@ -876,7 +875,45 @@ mod tests {
             .is_err()
         );
         assert!(!directory.join("GFX00.bin").exists());
-        assert_eq!(fs::read(directory.join("GFX01.bin")).unwrap(), b"keep");
+        assert!(directory.join("GFX01.bin").is_dir());
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn repeated_directory_extraction_atomically_replaces_every_existing_file() {
+        let oracle = include_str!(
+            "../../../../docs/oracle-work/lm363/pristine-us/graphics-extraction-publication/oracle.tsv"
+        );
+        let fields = oracle
+            .lines()
+            .skip(1)
+            .map(|line| line.split_once('\t').expect("oracle row has two columns"))
+            .collect::<std::collections::HashMap<_, _>>();
+        assert_eq!(fields["standard_function"], "0047DA40");
+        assert_eq!(fields["extended_function"], "0047EFF0");
+        assert_eq!(fields["write_mode_address"], "005B2D3C");
+        assert_eq!(fields["write_mode_bytes"], "776200");
+        assert_eq!(fields["write_mode"], "wb");
+        assert_eq!(fields["standard_separate_name"], "GFX%02X.bin");
+        assert_eq!(fields["extended_high_name"], "ExGFX%03X.bin");
+
+        let directory = temporary_directory();
+        fs::create_dir(&directory).unwrap();
+        fs::write(directory.join("GFX00.bin"), b"old-zero").unwrap();
+        fs::write(directory.join("GFX01.bin"), b"old-one").unwrap();
+        let (source, expected) = fixture_source();
+        assert_eq!(
+            export_batch(
+                source,
+                &GraphicsExportTarget::Directory(directory.clone()),
+                &AtomicUsize::new(0),
+                &AtomicBool::new(false),
+            )
+            .unwrap(),
+            Some(2)
+        );
+        assert_eq!(fs::read(directory.join("GFX00.bin")).unwrap(), expected[0]);
+        assert_eq!(fs::read(directory.join("GFX01.bin")).unwrap(), expected[1]);
         fs::remove_dir_all(directory).unwrap();
     }
 
@@ -897,7 +934,20 @@ mod tests {
             Some(2)
         );
         assert_eq!(
-            fs::read(path).unwrap(),
+            fs::read(&path).unwrap(),
+            [expected[0].clone(), expected[1].clone()].concat()
+        );
+        let (source, expected) = fixture_source();
+        fs::write(&path, b"stale joined extraction").unwrap();
+        export_batch(
+            source,
+            &GraphicsExportTarget::JoinedFile(path.clone()),
+            &AtomicUsize::new(0),
+            &AtomicBool::new(false),
+        )
+        .unwrap();
+        assert_eq!(
+            fs::read(&path).unwrap(),
             [expected[0].clone(), expected[1].clone()].concat()
         );
         fs::remove_dir_all(directory).unwrap();
