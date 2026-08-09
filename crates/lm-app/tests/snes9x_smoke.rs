@@ -1066,6 +1066,73 @@ fn rust_custom_time_and_support_patch_b_are_applied_in_snes9x_gameplay() {
 }
 
 #[test]
+#[ignore = "requires an official Snes9x libretro core, the gameplay driver, and the legally supplied SMW ROM"]
+fn rust_standard_time_header_is_applied_in_snes9x_gameplay() {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let snes9x = require_snes9x_binary();
+    let layout = lm_profile::smw_us_v1_vanilla_level_layout();
+    let sprite_lengths = SpriteLengthTable::standard();
+    let mut project = Project::new(
+        RomImage::from_bytes(fs::read(source_rom(&root)).expect("read source SMW ROM"))
+            .expect("decode source SMW ROM"),
+    );
+    let allocation_start = project.rom.logical_len();
+    let logical_len = 0x10_0000;
+    project
+        .expand_rom(Mapper::LoRom, logical_len, 0xff, 0x7fdc)
+        .expect("expand standard-time ROM");
+    let allocation = AllocationPolicy {
+        search: allocation_start..logical_len,
+        bank_size: Some(0x8000),
+        fill_bytes: vec![0xff],
+        protected: vec![
+            ProtectedRange(0x2e000..0x2e600),
+            ProtectedRange(0x7fc0..0x8000),
+        ],
+    };
+    for level_number in [0x104, 0x105] {
+        let mut level = project
+            .load_level_slot(level_number, layout, &sprite_lengths)
+            .expect("load starting level");
+        level
+            .layer1
+            .header
+            .set_time_limit_selector(3)
+            .expect("select standard 400-second timer");
+        level
+            .layer1
+            .objects
+            .set_custom_time(false, None)
+            .expect("disable custom timer");
+        project
+            .save_level_layer1_with_checksum(
+                layout,
+                &level,
+                0x7fdc,
+                &LevelSaveOptions {
+                    layer1_allocation: allocation.clone(),
+                    sprite_allocation: allocation.clone(),
+                    previous_layer1: None,
+                    previous_sprites: None,
+                    reuse_identical: true,
+                    erase_fill: 0xff,
+                },
+            )
+            .expect("save standard-time starting level");
+        let reopened = project
+            .load_level_slot(level_number, layout, &sprite_lengths)
+            .expect("reopen standard-time starting level");
+        assert_eq!(reopened.layer1.header.time_limit_selector(), 3);
+        assert_eq!(reopened.layer1.objects.custom_time(false), None);
+    }
+
+    let directory = SmokeDirectory::create();
+    let output = directory.0.join("Rust-standard-time-header-SMW.sfc");
+    fs::write(&output, project.save_snapshot()).expect("write standard-time ROM");
+    require_level_header_gameplay_evidence(&snes9x, &output, 0x400);
+}
+
+#[test]
 #[ignore = "requires local Snes9x plus the supplied legally obtained SMW ROM fixture"]
 fn rust_standard_sprite_edit_survives_snes9x_initialization() {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");

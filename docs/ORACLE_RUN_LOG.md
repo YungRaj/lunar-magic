@@ -538,3 +538,19 @@ current level using controller input, and captures a genuine Snes9x state plus g
 requires game mode `$14`, exact custom timer digits `4/5/6` at WRAM `$0F31..$0F33`, bounded image
 dimensions, and more than one rendered color. The upstream source, built core, ROM, state, and PNG
 remain non-redistributed local evidence.
+
+The ordinary five-byte-header timer was then exercised independently with the same core and
+driver:
+
+```text
+SNES9X_BIN=/tmp/lm-snes9x-libretro.dylib \
+SNES9X_GAMEPLAY_DRIVER=/tmp/lm-snes9x-gameplay-driver-2 \
+cargo test -p lm-app --test snes9x_smoke \
+  rust_standard_time_header_is_applied_in_snes9x_gameplay \
+  -- --ignored --exact --nocapture
+test rust_standard_time_header_is_applied_in_snes9x_gameplay ... ok
+test result: ok. 1 passed; 0 failed; finished in 0.93s
+```
+
+That ROM contains no custom-time command in either candidate level. Both semantically reopen with
+ordinary time selector 3, and the captured gameplay state requires exact WRAM digits `4/0/0`.
