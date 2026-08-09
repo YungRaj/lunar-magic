@@ -10,7 +10,7 @@ use lm_app::{PaletteOwnershipFile, RevisionProfileControllers};
 use lm_graphics::{Bgr555, GraphicsFile4bpp, GraphicsInterchangeFile, IndexedTile};
 use lm_level::Map16SetFile;
 use lm_project::Project;
-use lm_rom::RomImage;
+use lm_rom::{RomImage, detect_identity};
 
 const OVERWORLD_GRAPHICS_FILES: [usize; 4] = [0x1c, 0x1d, 0x1e, 0x1f];
 const TILES_PER_NATIVE_GRAPHICS_SLOT: usize = 0x80;
@@ -20,8 +20,6 @@ const NATIVE_SPRITE_SUBMAP_BASE: usize = 0x1c00;
 const NATIVE_SPRITE_SUBMAP_STRIDE: usize = 0x200;
 const NATIVE_ANIMATED_SUBMAP_BASE: usize = 0x2a00;
 const NATIVE_ANIMATED_SUBMAP_STRIDE: usize = 0x100;
-const VANILLA_OVERWORLD_ANIMATION_TABLE_OFFSET: usize = 0x20000;
-const VANILLA_OVERWORLD_ANIMATION_TABLE_WORDS: usize = 3 + 8 * 8;
 const VANILLA_SHARED_PALETTE_TABLE_OFFSET: usize = 0x30a0;
 const VANILLA_LEVEL_DOT_CYCLE_OFFSETS: [usize; 2] = [0x56c, 0x57c];
 const VANILLA_LIGHTNING_DELAYS_OFFSET: usize = 0x276f8;
@@ -607,31 +605,19 @@ fn load_builtin_overworld_lightning(
 }
 
 fn load_builtin_overworld_animation_addresses(project: &Project) -> Result<Vec<u16>, String> {
-    let byte_len = VANILLA_OVERWORLD_ANIMATION_TABLE_WORDS * 2;
-    let bytes = project
-        .rom
-        .logical_bytes()
-        .get(
-            VANILLA_OVERWORLD_ANIMATION_TABLE_OFFSET
-                ..VANILLA_OVERWORLD_ANIMATION_TABLE_OFFSET + byte_len,
-        )
-        .ok_or("vanilla overworld animation address table is outside the ROM")?;
-    let addresses = bytes
-        .chunks_exact(2)
-        .map(|pair| u16::from_le_bytes([pair[0], pair[1]]))
-        .collect::<Vec<_>>();
-    // The base SMW descriptor points at physical $020200 in a copier-header ROM, which is logical
-    // $020000. Installed overworld transfers can
-    // relocate this table; until that descriptor field is modeled, never reinterpret unrelated
-    // bytes at the vanilla address as graphics sources.
-    if addresses
-        .iter()
-        .all(|&address| (0x2000..0xc800).contains(&usize::from(address)))
-    {
-        Ok(addresses)
-    } else {
-        Ok(Vec::new())
-    }
+    let mapper = project
+        .identity
+        .as_ref()
+        .map(|identity| identity.mapper)
+        .or_else(|| {
+            detect_identity(&project.rom)
+                .ok()
+                .map(|identity| identity.mapper)
+        })
+        .ok_or("built-in overworld animation table requires an authenticated ROM identity")?;
+    lm_profile::load_smw_us_v1_builtin_overworld_animation_table_for_mapper(&project.rom, mapper)
+        .map(|table| table.addresses.to_vec())
+        .map_err(|error| error.to_string())
 }
 
 fn load_overworld_special_graphics(
@@ -803,7 +789,7 @@ mod tests {
     };
     use lm_graphics::IndexedTile;
     use lm_project::Project;
-    use lm_rom::RomImage;
+    use lm_rom::{Mapper, RomImage, detect_identity};
     use std::{fs, path::Path};
 
     #[test]
@@ -1077,6 +1063,40 @@ mod tests {
         assert_eq!(addresses.len(), 67);
         assert_eq!(&addresses[..4], &[0xb480, 0xb498, 0xb4b0, 0xb300]);
         assert_eq!(addresses[4] - addresses[3], 0x18);
+    }
+
+    #[test]
+    fn native_lifecycle_uses_selected_mapper_animation_table_without_mirror_fallback() {
+        let fixture = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../..")
+            .join("oracle-work/lm363/pristine-us/headered.smc");
+        let source = RomImage::from_bytes(fs::read(fixture).unwrap()).unwrap();
+        let mut identity = detect_identity(&source).unwrap();
+        let source_offset =
+            lm_profile::smw_us_v1_builtin_overworld_animation_table_offset(Mapper::LoRom);
+        let table_len = lm_profile::SMW_US_V1_BUILT_IN_OVERWORLD_ANIMATION_WORDS * 2;
+        let source_table = source.read(source_offset, table_len).unwrap().to_vec();
+
+        for mapper in [Mapper::ExLoRom, Mapper::Sa1] {
+            let selected_offset =
+                lm_profile::smw_us_v1_builtin_overworld_animation_table_offset(mapper);
+            let mut logical = source.logical_bytes().to_vec();
+            logical.resize(0x80_0000, 0xff);
+            // Keep the valid lower LoROM table as an explicit compatibility-mirror decoy.
+            logical[selected_offset..selected_offset + table_len].copy_from_slice(&source_table);
+            identity.mapper = mapper;
+            let mut project = Project::new(RomImage::from_bytes(logical).unwrap());
+            project.identity = Some(identity.clone());
+            let selected = load_builtin_overworld_animation_addresses(&project).unwrap();
+            assert_eq!(&selected[..4], &[0xb480, 0xb498, 0xb4b0, 0xb300]);
+
+            project
+                .rom
+                .write(selected_offset, &0x1fff_u16.to_le_bytes())
+                .unwrap();
+            let error = load_builtin_overworld_animation_addresses(&project).unwrap_err();
+            assert!(error.contains("source 0 is $1FFF"), "{error}");
+        }
     }
 
     #[test]

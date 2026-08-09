@@ -39,6 +39,7 @@ mod native_map16_secondary;
 mod native_map16_transfer;
 mod overworld_animation_runtime;
 mod overworld_boss_sequence;
+mod overworld_builtin_animation;
 mod overworld_event;
 mod overworld_event_number;
 mod overworld_event_tilemap;
@@ -355,6 +356,15 @@ pub use overworld_boss_sequence::{
     SMW_US_V1_BOSS_SEQUENCE_FIRST_POINTER, SMW_US_V1_BOSS_SEQUENCE_SEARCH_END,
     SMW_US_V1_BOSS_SEQUENCE_SEARCH_START, smw_us_v1_boss_sequence_allocation_policy,
     smw_us_v1_boss_sequence_locator, smw_us_v1_boss_sequence_update_policy,
+};
+pub use overworld_builtin_animation::{
+    LUNAR_MAGIC_OVERWORLD_ANIMATION_DESCRIPTOR_FIELD,
+    SMW_US_V1_BUILT_IN_OVERWORLD_ANIMATION_PHYSICAL_OFFSET,
+    SMW_US_V1_BUILT_IN_OVERWORLD_ANIMATION_WORDS,
+    SMW_US_V1_SA1_BUILT_IN_OVERWORLD_ANIMATION_PHYSICAL_OFFSET,
+    SmwUsV1BuiltInOverworldAnimationError, SmwUsV1BuiltInOverworldAnimationTable,
+    load_smw_us_v1_builtin_overworld_animation_table_for_mapper,
+    smw_us_v1_builtin_overworld_animation_table_offset,
 };
 pub use overworld_event::{
     SMW_US_V1_OVERWORLD_EVENT_DESTINATION_OPERAND_OFFSET, SMW_US_V1_OVERWORLD_EVENT_FIXED_ENTRIES,
