@@ -20,7 +20,7 @@ pub struct NativeCustomOverworldSpriteRomLayout {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct LoadedNativeCustomOverworldSprites {
     pub table: NativeCustomOverworldSpriteTable,
-    pub block: RatsBlock,
+    pub block: Option<RatsBlock>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -33,6 +33,7 @@ pub struct NativeCustomOverworldSpriteSaveOptions {
 
 #[derive(Debug)]
 pub enum NativeCustomOverworldSpriteIoError {
+    Rom(lm_rom::RomError),
     Load(PayloadLoadError),
     MissingOwnership,
     Codec(NativeCustomOverworldSpriteError),
@@ -53,6 +54,12 @@ impl std::error::Error for NativeCustomOverworldSpriteIoError {}
 impl From<PayloadLoadError> for NativeCustomOverworldSpriteIoError {
     fn from(value: PayloadLoadError) -> Self {
         Self::Load(value)
+    }
+}
+
+impl From<lm_rom::RomError> for NativeCustomOverworldSpriteIoError {
+    fn from(value: lm_rom::RomError) -> Self {
+        Self::Rom(value)
     }
 }
 
@@ -79,12 +86,24 @@ impl Project {
         layout: NativeCustomOverworldSpriteRomLayout,
         record_sizes: &[u8; CUSTOM_OVERWORLD_SPRITE_ID_COUNT],
     ) -> Result<LoadedNativeCustomOverworldSprites, NativeCustomOverworldSpriteIoError> {
+        let pointer = self.rom.read(layout.pointer_offset, 3)?;
+        if pointer == [0, 0, 0] || pointer == [0xff, 0xff, 0xff] {
+            return Ok(LoadedNativeCustomOverworldSprites {
+                table: NativeCustomOverworldSpriteTable {
+                    maps: std::array::from_fn(|_| Vec::new()),
+                },
+                block: None,
+            });
+        }
         let payload = self.load_tagged_payload(layout.pointer_offset, layout.mapper)?;
         let table = NativeCustomOverworldSpriteTable::decode(&payload.bytes, record_sizes)?;
         let block = payload
             .block
             .ok_or(NativeCustomOverworldSpriteIoError::MissingOwnership)?;
-        Ok(LoadedNativeCustomOverworldSprites { table, block })
+        Ok(LoadedNativeCustomOverworldSprites {
+            table,
+            block: Some(block),
+        })
     }
 
     /// Encodes and relocates a native custom-overworld-sprite stream transactionally.
@@ -172,6 +191,19 @@ mod tests {
     }
 
     #[test]
+    fn vanilla_empty_pointer_opens_as_seven_editable_empty_maps() {
+        for sentinel in [[0_u8; 3], [0xff_u8; 3]] {
+            let mut bytes = vec![0xff; 0x8000];
+            bytes[0x20..0x23].copy_from_slice(&sentinel);
+            let loaded = Project::new(RomImage::from_bytes(bytes).unwrap())
+                .load_native_custom_overworld_sprites(layout(), &sizes())
+                .unwrap();
+            assert!(loaded.block.is_none());
+            assert!(loaded.table.maps.iter().all(Vec::is_empty));
+        }
+    }
+
+    #[test]
     fn save_load_and_undo_are_transactional() {
         let mut bytes = vec![0xff; 0x8000];
         let checksum = compute_snes_checksum(&bytes, CHECKSUM).unwrap().encoded();
@@ -193,7 +225,7 @@ mod tests {
                 .load_native_custom_overworld_sprites(layout(), &sizes())
                 .unwrap()
                 .block,
-            saved.block
+            Some(saved.block)
         );
         assert!(project.history.undo(&mut project.rom).unwrap());
         assert_eq!(project.save_snapshot(), original);

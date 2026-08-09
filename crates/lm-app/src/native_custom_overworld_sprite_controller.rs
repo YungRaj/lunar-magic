@@ -76,7 +76,7 @@ pub struct NativeCustomOverworldSpriteController {
     record_sizes: [u8; CUSTOM_OVERWORLD_SPRITE_ID_COUNT],
     baseline: NativeCustomOverworldSpriteTable,
     table: NativeCustomOverworldSpriteTable,
-    previous_block: RatsBlock,
+    previous_block: Option<RatsBlock>,
 }
 
 impl NativeCustomOverworldSpriteController {
@@ -164,7 +164,7 @@ impl NativeCustomOverworldSpriteController {
             });
         }
         let mut options = options.clone();
-        options.previous_block = Some(self.previous_block.clone());
+        options.previous_block = self.previous_block.clone();
         let mut project = Project::new(image);
         project
             .save_native_custom_overworld_sprites(

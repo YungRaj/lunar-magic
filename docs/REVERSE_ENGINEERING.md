@@ -3378,6 +3378,15 @@ mutation using the proven previous owner. A late invalid ID, extension width, co
 map count, record index, or 25th per-map placement cannot publish an earlier edit from the same
 batch. The codec also rejects IDs `$80+` before indexing the 128-entry size table.
 
+The active SMW-US descriptor values are now encoded as profile routing rather than caller-supplied
+addresses. Descriptor field `+$114` is physical `$077750` (All-Stars `$277780`), making its
+`+$0D` stream operand logical `$07755D`; field `+$BFC` is physical `$06E38C` (All-Stars
+`$16638C`), making its headerless size-table operand `$06E18C`. ExLoROM selects the upper 4 MiB
+body. The size-table loader's byte immediately after the operand is an installed `$42` marker;
+without it the initialized table remains all fours. With it, the operand must target an exact RATS
+payload of 128 bytes or the legacy 127-byte ID-1 tail, followed by low-nibble masking and clamping
+to `3..15`.
+
 ## Per-slot `ExAnimation` options
 
 `DecodeExAnimationSlotOptionFlags` (`004B3CB0`) and

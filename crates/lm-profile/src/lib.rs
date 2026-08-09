@@ -32,6 +32,7 @@ mod lfix3_runtime;
 mod lunar_magic_metadata;
 mod map16_runtime_install;
 mod native_assets;
+mod native_custom_overworld_sprite;
 mod native_map16_complete;
 mod native_map16_primary;
 mod native_map16_remap;
@@ -301,6 +302,12 @@ pub use map16_runtime_install::{
     detect_smw_us_v1_stage_two_map16_runtime, probe_smw_us_v1_map16_runtime_generation,
     smw_us_v1_builtin_map16_runtime_installation_plan, smw_us_v1_legacy_map16_runtime_migration,
     smw_us_v1_map16_runtime_installation_plan, smw_us_v1_stage_three_map16_runtime_migration,
+};
+pub use native_custom_overworld_sprite::{
+    LUNAR_MAGIC_CUSTOM_OVERWORLD_SPRITE_DESCRIPTOR_FIELD,
+    LUNAR_MAGIC_OVERWORLD_SPRITE_SIZE_DESCRIPTOR_FIELD,
+    SMW_US_V1_CUSTOM_OVERWORLD_SPRITE_MAX_PAYLOAD_LEN, SmwUsV1NativeCustomOverworldSpriteLayout,
+    SmwUsV1NativeCustomOverworldSpriteLayoutError, smw_us_v1_native_custom_overworld_sprite_layout,
 };
 pub use native_map16_complete::{
     LoadedSmwUsV1CompleteMap16, SavedSmwUsV1CompleteMap16, SmwUsV1CompleteMap16Error,

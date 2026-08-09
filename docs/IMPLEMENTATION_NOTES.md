@@ -3942,8 +3942,13 @@ boundary. It accepts ordered insert, replace, remove, and move-before batches on
 validates the complete result by canonical encode/decode, reuses only the authenticated prior RATS
 owner, repairs the checksum, and returns a revision-bound mutation. Tests cover all four edits in
 one transaction, semantic reopen, application Undo, stale rejection, and atomic failure for an
-invalid ID or the 25th sprite on one map. Profile-derived original pointer/record-size discovery
-and the native direct-manipulation editor remain the next integration boundary.
+invalid ID or the 25th sprite on one map. The SMW-US profile now derives the stream operand from
+descriptor field `+$114 + $0D` and the record-size operand from field `+$BFC`, including upper-body
+ExLoROM and relocated All-Stars routes. An installed `$42` size-table marker must resolve to an
+exact 127- or 128-byte RATS owner; its bytes are normalized exactly like Lunar Magic, while an
+uninstalled vanilla ROM uses 128 four-byte records. Vanilla `000000`/`FFFFFF` stream sentinels
+open as seven empty maps so the first placement can be installed transactionally. The native
+direct-manipulation editor remains the next integration boundary.
 
 `ExAnimation` slot options are also represented as their own native seven-byte table rather than
 being folded into animation records. Use
