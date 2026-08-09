@@ -55,6 +55,12 @@ impl ColorBox {
             blue_high: 32,
         }
     }
+
+    pub(super) const fn geometric_volume(self) -> usize {
+        (self.red_high - self.red_low)
+            * (self.green_high - self.green_low)
+            * (self.blue_high - self.blue_low)
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -162,17 +168,20 @@ pub(super) fn volume(moments: &[Moment], color_box: ColorBox) -> Moment {
     ))
 }
 
-#[allow(clippy::cast_precision_loss)]
+#[allow(clippy::cast_possible_truncation, clippy::cast_precision_loss)]
 pub(super) fn variance(moments: &[Moment], color_box: ColorBox) -> f32 {
     let moment = volume(moments, color_box);
     if moment.weight == 0 {
         0.0
     } else {
-        moment.squared
-            - ((moment.red as f32) * (moment.red as f32)
-                + (moment.green as f32) * (moment.green as f32)
-                + (moment.blue as f32) * (moment.blue as f32))
-                / (moment.weight as f32)
+        // The native routine first stores each integer component sum as binary32, then reloads
+        // those three values and performs the products, sum, division, and subtraction in the x87
+        // register stack before one final binary32 store.
+        let red = f64::from(moment.red as f32);
+        let green = f64::from(moment.green as f32);
+        let blue = f64::from(moment.blue as f32);
+        (f64::from(moment.squared)
+            - (red * red + green * green + blue * blue) / f64::from(moment.weight)) as f32
     }
 }
 

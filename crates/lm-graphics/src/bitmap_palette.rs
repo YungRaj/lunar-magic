@@ -223,7 +223,7 @@ fn reduce_bitmap_palette_internal(
     } else {
         match options.reduction {
             BitmapPaletteReduction::MedianCut => {
-                WuQuantizer::quantize(&opaque, options.maximum_colors)
+                WuQuantizer::quantize(&opaque, native_reduction_color_limit(original, options))
                     .map_err(BitmapPaletteReductionError::Quantizer)?
                     .palette
                     .colors
@@ -260,6 +260,33 @@ fn reduce_bitmap_palette_internal(
         return Err(BitmapPaletteReductionError::IndexPlaneMismatch);
     }
     Ok(ReducedBitmapPalette { colors, indices })
+}
+
+fn native_reduction_color_limit(
+    original: Option<&Palette>,
+    options: &BitmapPaletteColorOptions,
+) -> usize {
+    let Some(original) = original else {
+        return options.maximum_colors;
+    };
+    let free = options
+        .entries
+        .iter()
+        .filter(|state| **state == BitmapPaletteEntryState::Free)
+        .count();
+    let mut reusable = options
+        .entries
+        .iter()
+        .zip(&original.colors)
+        .filter_map(|(state, color)| {
+            (*state == BitmapPaletteEntryState::Reusable).then_some(color.0)
+        })
+        .collect::<Vec<_>>();
+    reusable.sort_unstable();
+    reusable.dedup();
+    options
+        .maximum_colors
+        .min(free.saturating_add(reusable.len()).max(1))
 }
 
 fn nearest_lunar_magic_palette_indices(
@@ -1686,6 +1713,37 @@ mod tests {
                 assert_eq!(options.entries[start + entry].lunar_magic_bits(), expected);
             }
         }
+    }
+
+    #[test]
+    fn median_cut_limit_cannot_exceed_installable_and_distinct_reusable_colors() {
+        let mut options = BitmapPaletteColorOptions::lunar_magic_initial();
+        options.maximum_colors = 32;
+        options.entries.fill(BitmapPaletteEntryState::Reserved);
+        for entry in (0..BITMAP_PALETTE_COLORS)
+            .filter(|entry| entry % Palette::COLORS_PER_ROW != 0)
+            .take(21)
+        {
+            options.entries[entry] = BitmapPaletteEntryState::Free;
+        }
+        for row in 0..8 {
+            options.entries[row * Palette::COLORS_PER_ROW] = BitmapPaletteEntryState::Reusable;
+        }
+        let mut palette = Palette {
+            colors: vec![Bgr555(0); BITMAP_PALETTE_COLORS],
+        };
+
+        assert_eq!(native_reduction_color_limit(Some(&palette), &options), 22);
+        assert_eq!(native_reduction_color_limit(None, &options), 32);
+
+        for row in 0..8 {
+            palette.colors[row * Palette::COLORS_PER_ROW] =
+                Bgr555(u16::try_from(row).expect("the fixture row fits u16"));
+        }
+        assert_eq!(native_reduction_color_limit(Some(&palette), &options), 29);
+
+        options.maximum_colors = 16;
+        assert_eq!(native_reduction_color_limit(Some(&palette), &options), 16);
     }
 
     #[test]

@@ -1477,6 +1477,16 @@ pixels to their nearest retained RGB555 words, rebuilds the histogram, and only 
 `(16,16)` became 11 by removing `$264E/$4E8C`. Rust reproduces both the row-major mutation and
 border-weight threshold; its exact-capacity regression locks the stable weak-color tie.
 
+The global Median Cut request is likewise bounded by destination capacity rather than blindly
+using the dialog's maximum. `ProcessBitmapGraphicsImport` counts writable entries, retries the
+quantizer at `004eff17..004eff29` when the unmatched generated colors exceed that count, and
+credits distinct preserved reusable colors toward the installable total. This is observable in a
+32-color request with 21 free entries and eight identical reusable backdrop entries: the native
+quantizer receives an effective ceiling of 22, while requests through 16 remain unchanged. Rust
+now applies that destination-derived ceiling before Median Cut. The retained 32-color fixture is
+still an open end-to-end gate because its lower-tile row selection exposes a later allocator
+difference.
+
 The Rust application path now carries that per-8×8 row plane through graphics materialization,
 Map16 construction, and the converted preview. Each of a Map16 definition's four subtile words
 receives the row selected for its own source 8×8 tile; no bitmap-wide or 16×16-wide row is inferred.

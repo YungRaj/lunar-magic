@@ -53,7 +53,9 @@ impl WuQuantizer {
                 .iter()
                 .enumerate()
                 .filter_map(|(index, color_box)| {
-                    best_split(&moments, *color_box)
+                    (color_box.geometric_volume() > 1)
+                        .then(|| best_split(&moments, *color_box))
+                        .flatten()
                         .map(|split| (index, variance(&moments, *color_box), split))
                 })
                 .max_by(|left, right| {
@@ -61,9 +63,12 @@ impl WuQuantizer {
                         .total_cmp(&right.1)
                         .then_with(|| right.0.cmp(&left.0))
                 });
-            let Some((index, _, split)) = candidate else {
+            let Some((index, candidate_variance, split)) = candidate else {
                 break;
             };
+            if candidate_variance <= 0.0 {
+                break;
+            }
             boxes[index] = split.first;
             boxes.push(split.second);
         }
