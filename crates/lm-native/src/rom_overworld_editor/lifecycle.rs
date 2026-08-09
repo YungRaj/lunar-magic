@@ -97,6 +97,7 @@ impl RomOverworldEditor {
         }
         let modified = self.workspace.as_ref().is_some_and(|workspace| {
             workspace.controller.is_modified()
+                || workspace.native_sprites.is_modified()
                 || workspace.assets.animation_options != workspace.baseline_animation_options
         }) || self
             .main_layer2_workspace
@@ -200,6 +201,8 @@ impl RomOverworldEditor {
         };
         match result.and_then(|loaded| decode_loaded(&pending, loaded, current_revision)) {
             Ok(workspace) => {
+                self.native_sprite.map = usize::from(workspace.slot).min(6);
+                self.native_sprite.index = 0;
                 self.workspace = Some(workspace);
                 self.search_start.clear();
                 self.search_end.clear();
@@ -379,6 +382,18 @@ fn decode_loaded(
         .map_err(|error| error.to_string())?;
     let image = RomImage::from_bytes(profiled.snapshot.rom_bytes.clone())
         .map_err(|error| error.to_string())?;
+    let native_sprite_layout = lm_profile::smw_us_v1_native_custom_overworld_sprite_layout(
+        &image,
+        profiled.snapshot.identity.game,
+        profiled.snapshot.identity.mapper,
+    )
+    .map_err(|error| error.to_string())?;
+    let native_sprites = lm_app::NativeCustomOverworldSpriteController::decode(
+        &profiled.snapshot,
+        native_sprite_layout.stream,
+        native_sprite_layout.record_sizes,
+    )
+    .map_err(|error| error.to_string())?;
     let mut assets = decode_overworld_assets(&profiled)?;
     let definitions_path = pending
         .open
@@ -407,6 +422,8 @@ fn decode_loaded(
         assets,
         baseline_animation_options,
         native_appearances,
+        native_sprites,
+        native_sprite_layout,
     })
 }
 

@@ -8,8 +8,9 @@ use crate::{
 };
 use eframe::egui;
 use lm_app::{
-    AppState, Command, OverworldController, OverworldControllerEdit, OverworldLayerId,
-    ProfiledControllerSnapshot, SmwMainOverworldLayer2Controller,
+    AppState, Command, NativeCustomOverworldSpriteController, NativeCustomOverworldSpriteEdit,
+    OverworldController, OverworldControllerEdit, OverworldLayerId, ProfiledControllerSnapshot,
+    SmwMainOverworldLayer2Controller,
 };
 use lm_graphics::{Palette, PaletteOwnership};
 use lm_overworld::{
@@ -28,6 +29,7 @@ enum Panel {
     Records,
     Palette,
     Animation,
+    NativeSprites,
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -67,6 +69,32 @@ struct Workspace {
     assets: OverworldAssets,
     baseline_animation_options: [crate::overworld_editor_render::OverworldAnimationOptions; 7],
     native_appearances: Option<lm_render::NativeOverworldAppearancePair>,
+    native_sprites: NativeCustomOverworldSpriteController,
+    native_sprite_layout: lm_profile::SmwUsV1NativeCustomOverworldSpriteLayout,
+}
+
+struct NativeSpriteForm {
+    map: usize,
+    index: usize,
+    id: String,
+    x: String,
+    y: String,
+    screen: String,
+    extra: String,
+}
+
+impl Default for NativeSpriteForm {
+    fn default() -> Self {
+        Self {
+            map: 0,
+            index: 0,
+            id: "00".into(),
+            x: "0000".into(),
+            y: "0000".into(),
+            screen: "00".into(),
+            extra: String::new(),
+        }
+    }
 }
 
 struct MainLayer2Workspace {
@@ -163,6 +191,7 @@ pub(crate) struct RomOverworldEditor {
     animation_preview_trigger_index: usize,
     animation_preview_event: usize,
     animation_option_map: usize,
+    native_sprite: NativeSpriteForm,
     map16_page: usize,
     map16_rendered_key: Option<(u64, usize)>,
     map16_texture: Option<egui::TextureHandle>,
@@ -699,6 +728,7 @@ impl RomOverworldEditor {
             ui.selectable_value(&mut self.panel, Panel::Records, "Records");
             ui.selectable_value(&mut self.panel, Panel::Palette, "Palette");
             ui.selectable_value(&mut self.panel, Panel::Animation, "Animation");
+            ui.selectable_value(&mut self.panel, Panel::NativeSprites, "Native sprites");
         });
         let file = CompleteOverworldFile {
             source_slot: slot,
@@ -734,6 +764,10 @@ impl RomOverworldEditor {
                     controller_revision,
                 )
             }
+            Panel::NativeSprites => {
+                self.native_sprite_controls(ui, editing_blocked);
+                None
+            }
         };
         if let Some(edit) = edit {
             match edit {
@@ -749,6 +783,183 @@ impl RomOverworldEditor {
             return runtime_command;
         }
         self.commit_controls(ui, editing_blocked, revision)
+    }
+
+    fn native_sprite_controls(&mut self, ui: &mut egui::Ui, blocked: bool) {
+        let counts = self.workspace.as_ref().map(|workspace| {
+            std::array::from_fn::<_, 7, _>(|map| workspace.native_sprites.table().maps[map].len())
+        });
+        let Some(counts) = counts else { return };
+        ui.heading("Native custom overworld sprite stream");
+        ui.small("Seven map-local lists, variable record widths, and Lunar Magic's 24-sprite-per-map limit.");
+        ui.add(egui::Slider::new(&mut self.native_sprite.map, 0..=6).text("Map"));
+        let count = counts[self.native_sprite.map];
+        ui.add(
+            egui::Slider::new(&mut self.native_sprite.index, 0..=count)
+                .text("Record / insertion index"),
+        );
+        egui::Grid::new("native-custom-overworld-sprite-form")
+            .striped(true)
+            .show(ui, |ui| {
+                path_form_row(ui, "ID (hex)", &mut self.native_sprite.id);
+                path_form_row(ui, "X pixels (hex)", &mut self.native_sprite.x);
+                path_form_row(ui, "Y pixels (hex)", &mut self.native_sprite.y);
+                path_form_row(ui, "Screen (hex)", &mut self.native_sprite.screen);
+                path_form_row(ui, "Extension bytes (hex)", &mut self.native_sprite.extra);
+            });
+        ui.horizontal(|ui| {
+            if ui
+                .add_enabled(
+                    self.native_sprite.index < count,
+                    egui::Button::new("Load selected"),
+                )
+                .clicked()
+            {
+                self.load_native_sprite_form();
+            }
+            if ui.button("Use canvas selection").clicked() {
+                self.native_sprite.x = format!("{:04X}", self.x.saturating_mul(8));
+                self.native_sprite.y = format!("{:04X}", self.y.saturating_mul(8));
+            }
+        });
+        let mut edit = None;
+        ui.horizontal(|ui| {
+            if ui
+                .add_enabled(!blocked, egui::Button::new("Insert"))
+                .clicked()
+            {
+                edit = Some(
+                    self.parse_native_sprite()
+                        .map(|sprite| NativeCustomOverworldSpriteEdit::Insert {
+                            map: self.native_sprite.map,
+                            index: self.native_sprite.index,
+                            sprite,
+                        })
+                        .map_err(|error| error.to_string()),
+                );
+            }
+            if ui
+                .add_enabled(
+                    !blocked && self.native_sprite.index < count,
+                    egui::Button::new("Replace"),
+                )
+                .clicked()
+            {
+                edit = Some(
+                    self.parse_native_sprite()
+                        .map(|sprite| NativeCustomOverworldSpriteEdit::Replace {
+                            map: self.native_sprite.map,
+                            index: self.native_sprite.index,
+                            sprite,
+                        })
+                        .map_err(|error| error.to_string()),
+                );
+            }
+            if ui
+                .add_enabled(
+                    !blocked && self.native_sprite.index < count,
+                    egui::Button::new("Delete"),
+                )
+                .clicked()
+            {
+                edit = Some(Ok(NativeCustomOverworldSpriteEdit::Remove {
+                    map: self.native_sprite.map,
+                    index: self.native_sprite.index,
+                }));
+            }
+            if ui
+                .add_enabled(
+                    !blocked && self.native_sprite.index > 0 && self.native_sprite.index < count,
+                    egui::Button::new("Move up"),
+                )
+                .clicked()
+            {
+                edit = Some(Ok(NativeCustomOverworldSpriteEdit::MoveBefore {
+                    map: self.native_sprite.map,
+                    from: self.native_sprite.index,
+                    before: self.native_sprite.index - 1,
+                }));
+            }
+            if ui
+                .add_enabled(
+                    !blocked && self.native_sprite.index < count.saturating_sub(1),
+                    egui::Button::new("Move down"),
+                )
+                .clicked()
+            {
+                edit = Some(Ok(NativeCustomOverworldSpriteEdit::MoveBefore {
+                    map: self.native_sprite.map,
+                    from: self.native_sprite.index,
+                    before: self.native_sprite.index + 2,
+                }));
+            }
+        });
+        if let Some(edit) = edit {
+            match edit.and_then(|edit| {
+                self.workspace
+                    .as_mut()
+                    .ok_or_else(|| String::from("workspace is closed"))?
+                    .native_sprites
+                    .apply_edits(&[edit])
+                    .map_err(|error| error.to_string())
+            }) {
+                Ok(()) => {
+                    self.rendered_key = None;
+                    self.texture = None;
+                }
+                Err(error) => self.error = Some(error),
+            }
+        }
+        ui.label(format!(
+            "Map {}: {count}/24 records",
+            self.native_sprite.map
+        ));
+    }
+
+    fn load_native_sprite_form(&mut self) {
+        let Some(sprite) = self.workspace.as_ref().and_then(|workspace| {
+            workspace
+                .native_sprites
+                .table()
+                .maps
+                .get(self.native_sprite.map)?
+                .get(self.native_sprite.index)
+        }) else {
+            return;
+        };
+        self.native_sprite.id = format!("{:02X}", sprite.id);
+        self.native_sprite.x = format!("{:04X}", sprite.x);
+        self.native_sprite.y = format!("{:04X}", sprite.y);
+        self.native_sprite.screen = format!("{:02X}", sprite.screen);
+        self.native_sprite.extra = sprite
+            .extra
+            .iter()
+            .map(|byte| format!("{byte:02X}"))
+            .collect::<Vec<_>>()
+            .join(" ");
+    }
+
+    fn parse_native_sprite(&self) -> Result<lm_overworld::NativeCustomOverworldSprite, String> {
+        let extra = self
+            .native_sprite
+            .extra
+            .split(|character: char| character.is_ascii_whitespace() || character == ',')
+            .filter(|value| !value.is_empty())
+            .enumerate()
+            .map(|(index, value)| {
+                level_editor_forms::parse_hex_u8(value, &format!("extension byte {index}"))
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(lm_overworld::NativeCustomOverworldSprite {
+            id: level_editor_forms::parse_hex_u8(&self.native_sprite.id, "native sprite ID")?,
+            x: level_editor_forms::parse_hex_u16(&self.native_sprite.x, "native sprite X")?,
+            y: level_editor_forms::parse_hex_u16(&self.native_sprite.y, "native sprite Y")?,
+            screen: level_editor_forms::parse_hex_u8(
+                &self.native_sprite.screen,
+                "native sprite screen",
+            )?,
+            extra,
+        })
     }
 
     fn layer_tile_controls(
@@ -1115,6 +1326,7 @@ impl RomOverworldEditor {
             &file,
             &workspace.assets,
             workspace.native_appearances.as_ref(),
+            Some(workspace.native_sprites.table()),
             self.completed_reveals,
             Some(&preview),
         ) {
@@ -1315,16 +1527,29 @@ impl RomOverworldEditor {
         });
         let modified = self.workspace.as_ref().is_some_and(|value| {
             value.controller.is_modified()
+                || value.native_sprites.is_modified()
                 || value.assets.animation_options != value.baseline_animation_options
         });
         let payloads_modified = self
             .workspace
             .as_ref()
             .is_some_and(|value| value.controller.is_modified());
+        let native_sprites_modified = self
+            .workspace
+            .as_ref()
+            .is_some_and(|value| value.native_sprites.is_modified());
+        let ordinary_modified = self.workspace.as_ref().is_some_and(|value| {
+            value.controller.is_modified()
+                || value.assets.animation_options != value.baseline_animation_options
+        });
         let transfer_busy = self.transfer_busy();
         if ui
             .add_enabled(
-                modified && !stale && !self.manifest_loader.is_running() && !transfer_busy,
+                ordinary_modified
+                    && !native_sprites_modified
+                    && !stale
+                    && !self.manifest_loader.is_running()
+                    && !transfer_busy,
                 egui::Button::new("Commit overworld payloads and map animation options"),
             )
             .clicked()
@@ -1333,6 +1558,22 @@ impl RomOverworldEditor {
                 Ok(command) => {
                     return Some(command);
                 }
+                Err(error) => self.error = Some(error),
+            }
+        }
+        if ui
+            .add_enabled(
+                native_sprites_modified
+                    && !ordinary_modified
+                    && !stale
+                    && !self.manifest_loader.is_running()
+                    && !transfer_busy,
+                egui::Button::new("Commit native custom sprite stream"),
+            )
+            .clicked()
+        {
+            match self.prepare_native_sprite_commit() {
+                Ok(command) => return Some(command),
                 Err(error) => self.error = Some(error),
             }
         }
@@ -1352,6 +1593,9 @@ impl RomOverworldEditor {
         } else {
             "No staged changes"
         });
+        if native_sprites_modified && ordinary_modified {
+            ui.small("Commit or discard either the sprite stream or other overworld edits before publishing the other transaction.");
+        }
         None
     }
 
@@ -1883,6 +2127,26 @@ mod canvas_tests {
     };
     use crate::document_loader::BoundedRead;
     use eframe::egui;
+
+    #[test]
+    fn native_sprite_form_preserves_variable_extensions_and_hex_coordinates() {
+        let mut editor = RomOverworldEditor::default();
+        editor.native_sprite.id = "2A".into();
+        editor.native_sprite.x = "01F8".into();
+        editor.native_sprite.y = "0100".into();
+        editor.native_sprite.screen = "F8".into();
+        editor.native_sprite.extra = "01, aB 7f".into();
+        assert_eq!(
+            editor.parse_native_sprite().unwrap(),
+            lm_overworld::NativeCustomOverworldSprite {
+                id: 0x2a,
+                x: 0x1f8,
+                y: 0x100,
+                screen: 0xf8,
+                extra: vec![1, 0xab, 0x7f],
+            }
+        );
+    }
 
     #[test]
     fn overworld_animation_clock_uses_the_authenticated_native_preview_cadence() {

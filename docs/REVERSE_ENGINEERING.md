@@ -3387,6 +3387,12 @@ without it the initialized table remains all fours. With it, the operand must ta
 payload of 128 bytes or the legacy 127-byte ID-1 tail, followed by low-nibble masking and clamping
 to `3..15`.
 
+The installed overworld editor consumes that resolved layout directly. Its native-sprite panel edits all
+seven ordered lists and uses the currently selected canvas cell as an eight-pixel-aligned position.
+Staged records are composed into the same native `.sscov`/`.s16ov` appearance pass as existing
+sprites. Publication uses a separate revision-bound transaction when other overworld payloads are
+staged, preventing two independently planned allocations from claiming the same free block.
+
 ## Per-slot `ExAnimation` options
 
 `DecodeExAnimationSlotOptionFlags` (`004B3CB0`) and

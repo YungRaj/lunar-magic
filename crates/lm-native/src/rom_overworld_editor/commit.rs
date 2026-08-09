@@ -4,6 +4,53 @@ use lm_project::{CompleteOverworldSaveOptions, Project, RomMutation};
 use lm_rats::{AllocationPolicy, ProtectedRange};
 
 impl RomOverworldEditor {
+    pub(super) fn prepare_native_sprite_commit(&self) -> Result<Command, String> {
+        let workspace = self.workspace.as_ref().ok_or("workspace is closed")?;
+        let range = parse_search_range(&self.search_start, &self.search_end)?;
+        let mut allocation = workspace
+            .profiled
+            .profile
+            .allocation_policy_for_rom(
+                range,
+                &workspace.image,
+                workspace.profiled.snapshot.identity.internal_header_offset,
+            )
+            .map_err(|error| error.to_string())?;
+        for protected in [
+            ProtectedRange(
+                workspace.native_sprite_layout.stream.pointer_offset
+                    ..workspace.native_sprite_layout.stream.pointer_offset + 3,
+            ),
+            ProtectedRange(
+                workspace.native_sprite_layout.record_size_pointer_offset
+                    ..workspace.native_sprite_layout.record_size_pointer_offset + 4,
+            ),
+        ] {
+            if !allocation.protected.contains(&protected) {
+                allocation.protected.push(protected);
+            }
+        }
+        if let Some(block) = &workspace.native_sprite_layout.record_size_block {
+            let protected = ProtectedRange(block.full_range());
+            if !allocation.protected.contains(&protected) {
+                allocation.protected.push(protected);
+            }
+        }
+        workspace
+            .native_sprites
+            .prepare_commit(
+                "Edit native custom overworld sprites",
+                &lm_project::NativeCustomOverworldSpriteSaveOptions {
+                    allocation,
+                    previous_block: None,
+                    reuse_identical: true,
+                    erase_fill: 0xff,
+                },
+            )
+            .map(lm_app::PreparedRomCommit::into_command)
+            .map_err(|error| error.to_string())
+    }
+
     pub(super) fn prepare_animation_runtime_install(&self) -> Result<Command, String> {
         let workspace = self.workspace.as_ref().ok_or("workspace is closed")?;
         if workspace.controller.is_modified()

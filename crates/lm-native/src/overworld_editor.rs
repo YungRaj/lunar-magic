@@ -263,6 +263,7 @@ impl OverworldEditor {
             document.controller.value(),
             &document.assets,
             None,
+            None,
             self.completed_reveals,
         ) {
             Ok(texture) => self.texture = Some(texture),

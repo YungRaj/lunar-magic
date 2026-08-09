@@ -322,6 +322,7 @@ pub(crate) fn render_texture(
     overworld: &CompleteOverworldFile,
     assets: &OverworldAssets,
     native_appearances: Option<&lm_render::NativeOverworldAppearancePair>,
+    native_custom_sprites: Option<&lm_overworld::NativeCustomOverworldSpriteTable>,
     completed_reveals: usize,
 ) -> Result<egui::TextureHandle, String> {
     render_texture_with_preview(
@@ -329,6 +330,7 @@ pub(crate) fn render_texture(
         overworld,
         assets,
         native_appearances,
+        native_custom_sprites,
         completed_reveals,
         None,
     )
@@ -339,6 +341,7 @@ pub(crate) fn render_texture_with_preview(
     overworld: &CompleteOverworldFile,
     assets: &OverworldAssets,
     native_appearances: Option<&lm_render::NativeOverworldAppearancePair>,
+    native_custom_sprites: Option<&lm_overworld::NativeCustomOverworldSpriteTable>,
     completed_reveals: usize,
     preview: Option<&OverworldExAnimationPreview>,
 ) -> Result<egui::TextureHandle, String> {
@@ -359,7 +362,7 @@ pub(crate) fn render_texture_with_preview(
     )
     .map_err(|error| error.to_string())?;
     if let Some(native) = native_appearances {
-        let placements = overworld
+        let mut placements = overworld
             .data
             .sprites
             .iter()
@@ -370,6 +373,18 @@ pub(crate) fn render_texture_with_preview(
                 submap: sprite.submap.encoded(),
             })
             .collect::<Vec<_>>();
+        if let Some(custom) = native_custom_sprites {
+            placements.extend(custom.maps.iter().enumerate().flat_map(|(map, sprites)| {
+                sprites
+                    .iter()
+                    .map(move |sprite| lm_render::NativeOverworldSpritePlacement {
+                        id: u16::from(sprite.id),
+                        x: i32::from(sprite.x),
+                        y: i32::from(sprite.y),
+                        submap: u8::try_from(map).unwrap_or_default(),
+                    })
+            }));
+        }
         let elements = lm_render::resolve_native_overworld_sprite_elements(
             &placements,
             &native.definitions,

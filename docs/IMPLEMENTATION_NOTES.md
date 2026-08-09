@@ -3947,8 +3947,11 @@ descriptor field `+$114 + $0D` and the record-size operand from field `+$BFC`, i
 ExLoROM and relocated All-Stars routes. An installed `$42` size-table marker must resolve to an
 exact 127- or 128-byte RATS owner; its bytes are normalized exactly like Lunar Magic, while an
 uninstalled vanilla ROM uses 128 four-byte records. Vanilla `000000`/`FFFFFF` stream sentinels
-open as seven empty maps so the first placement can be installed transactionally. The native
-direct-manipulation editor remains the next integration boundary.
+open as seven empty maps so the first placement can be installed transactionally. The installed
+overworld GUI now exposes every map-local list with insert, replace, delete, and ordering controls;
+it can copy the current canvas selection into an entry's pixel position, renders staged placements
+through the native appearance pipeline, and commits the stream with its operand and authenticated
+size-table owner protected from allocation.
 
 `ExAnimation` slot options are also represented as their own native seven-byte table rather than
 being folded into animation records. Use
