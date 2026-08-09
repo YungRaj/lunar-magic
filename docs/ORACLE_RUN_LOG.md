@@ -466,11 +466,29 @@ The non-redistributed patch-derived ROM is supplied explicitly for the corpus ga
 
 ```text
 LM_HISTORICAL_LZ2_SPEED_ROM=/tmp/AVSMWFinal.smc cargo test -p lm-profile \
-  historical_lz2_speed_rom_authenticates_and_decodes_standard_graphics -- --ignored --nocapture
-test graphics_compression_runtime::tests::historical_lz2_speed_rom_authenticates_and_decodes_standard_graphics ... ok
+  historical_lz2_speed_rom_migrates_all_graphics_and_events_like_lunar_magic -- --ignored --nocapture
+test graphics_compression_runtime::tests::historical_lz2_speed_rom_migrates_all_graphics_and_events_like_lunar_magic ... ok
 test result: ok. 1 passed; 0 failed
 ```
 
-The corpus run authenticates the complete runtime owner and reads all 52 standard graphics streams
-without mutating the source. See
-`oracle-work/graphics-compression-lz2-speed-generation-100.md` for source and conversion hashes.
+The expanded corpus gate now performs the complete same-size LZ3 migration and compares it with the
+retained Lunar Magic result:
+
+```text
+LM_HISTORICAL_LZ2_SPEED_ROM=/tmp/AVSMWFinal.smc \
+LM_HISTORICAL_LZ3_ORACLE=/tmp/lm-legacy-speed-oracle.wFTkTH/legacy.smc \
+LM_HISTORICAL_LZ3_RUST_OUTPUT=/tmp/AVSMWFinal-rust-lz3.smc \
+cargo test -p lm-profile \
+  historical_lz2_speed_rom_migrates_all_graphics_and_events_like_lunar_magic \
+  -- --ignored --nocapture
+test ...historical_lz2_speed_rom_migrates_all_graphics_and_events_like_lunar_magic ... ok
+test result: ok. 1 passed; 0 failed; finished in 149.65s
+```
+
+The gate covers 52 standard files, 54 ExGFX files, both installed event streams, the exact GFX17
+upgrade, checksum repair, semantic reopen, and byte-exact Undo. Original Lunar Magic 3.63 then
+reported `The ROM is already using this compression format.` for the Rust output. Its SHA-256
+remained `67a7c8bd72e4902b3dc28165f952ab0d063ddfd5b54e9656e50a24f2df843563`, and fresh
+`-ExportGFX`/`-ExportExGFX` directories matched the original LZ3 oracle's 52/54 files with no
+differences. See `oracle-work/graphics-compression-lz2-speed-generation-100.md` for source and
+conversion hashes.

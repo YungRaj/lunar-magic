@@ -2,7 +2,7 @@
 
 This note records the non-redistributed historical evidence used by
 `historical_lz2_speed_runtime_is_exactly_authenticated` and
-`historical_lz2_speed_rom_authenticates_and_decodes_standard_graphics`. The ROM and complete IPS
+`historical_lz2_speed_rom_migrates_all_graphics_and_events_like_lunar_magic`. The ROM and complete IPS
 patch remain outside the repository. The retained 431-byte runtime is the minimum exact byte
 fixture needed to authenticate this runtime generation and its rejection boundaries.
 
@@ -58,13 +58,30 @@ GFX files were byte-identical. GFX17 changed from
 bytes show that the original conversion couples the codec transition to a legacy graphics-format
 upgrade.
 
-This evidence therefore proves detection and standard-graphics readability, not reciprocal
-migration parity. Rust's current ExGFX resolver cannot yet interpret this historical table
-generation, and a codec migration must reproduce the coupled table/graphics-format upgrade before
-the feature-parity row can be promoted.
+The extended files reveal the legacy table layout. Thirty-three files are in the ordinary
+`$80..$FF` domain; 21 more are in `$100..$132`. The live `$07F873` operand selects a relocated
+`$6D00` RATS settings owner whose first `$2D00` bytes hold the complete extended pointer table.
+ExGFX120 and ExGFX127 decode to `$FFF` bytes; the other 52 files decode to `$1000`. Lunar Magic
+preserves all 54 byte-for-byte rather than rejecting or padding the two older shapes.
+
+The overworld event tilemaps use another retained generation. Relative to the current loader, its
+64-byte primary runtime changes bytes `$1D/$3C` to `$80`, its index/reveal/state JSL banks use
+`$85/$83/$83`, and reveal-runtime byte `$16` is zero. Those bytes are unchanged by the original
+LZ3 conversion, while both compressed event streams move and reopen under LZ3.
+
+Rust now follows both authenticated settings-owner lengths (`$6D00` legacy and `$6E00` current),
+accepts either exact event-loader generation, preserves bounded pre-existing ExGFX streams up to
+`$1000`, and applies the four-tile GFX17 upgrade. Its same-size forward migration matches all 52
+standard files, all 54 ExGFX files, and both event buffers from the Lunar Magic oracle; checksum,
+semantic reopen, and exact Undo pass. The Rust result SHA-256 is
+`67a7c8bd72e4902b3dc28165f952ab0d063ddfd5b54e9656e50a24f2df843563`. Lunar Magic 3.63 reports
+that file is already LZ3, leaves the hash unchanged, and re-exports all 106 graphics files exactly.
+Other unobserved historical runtime generations remain outside this completed generation boundary.
 
 ## Verification
 
-The exact synthetic fixture test authenticates the retained runtime and exercises corruption and
-wrong-generation rejection. The opt-in corpus test authenticates the complete patch-derived ROM
-and decodes every standard graphics stream through the selected optimized-LZ2 mode.
+The exact synthetic fixture tests authenticate the retained compression and event runtimes, both
+settings-owner lengths, the GFX17 four-tile transformation, corruption rejection, and
+wrong-generation rejection. The opt-in corpus test authenticates the complete patch-derived ROM,
+migrates it to LZ3, compares every graphics/event domain with Lunar Magic 3.63, and undoes to the
+byte-exact source.

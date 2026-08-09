@@ -7,8 +7,8 @@ use lm_project::{
     RatsOwnershipManifest, RelocatablePatchPlan,
 };
 use lm_rats::AllocationPolicy;
-use lm_rats::{HEADER_LEN, HeaderError, parse_at};
-use lm_rom::{Mapper, RomError, RomImage, SnesPointer24, detect_identity, snes_to_pc};
+use lm_rats::{parse_at, HeaderError, HEADER_LEN};
+use lm_rom::{detect_identity, snes_to_pc, Mapper, RomError, RomImage, SnesPointer24};
 
 pub const SMW_US_V1_GRAPHICS_COMPRESSION_METADATA_OFFSET: usize = 0x07_ffeb;
 pub const SMW_US_V1_GRAPHICS_COMPRESSION_HOOK_OFFSET: usize = 0x0038_e3;
@@ -283,6 +283,41 @@ pub fn detect_smw_us_v1_graphics_compression_mode(
     Ok(mode)
 }
 
+/// Distinguishes the authenticated historical optimized-LZ2 generation from the current runtime.
+/// The older generation participates in Lunar Magic's one-time GFX17 3bpp-to-4bpp upgrade.
+fn has_historical_lz2_speed_runtime(
+    image: &RomImage,
+    mapper: Mapper,
+    mode: SmwUsV1GraphicsCompressionMode,
+) -> Result<bool, SmwUsV1GraphicsCompressionDetectError> {
+    if mapper != Mapper::LoRom || mode != SmwUsV1GraphicsCompressionMode::Lz2Speed {
+        return Ok(false);
+    }
+    let hook = read_array::<5>(
+        image.logical_bytes(),
+        SMW_US_V1_GRAPHICS_COMPRESSION_HOOK_OFFSET,
+    )?;
+    let runtime_offset = snes_to_pc(mapper, u32::from_le_bytes([hook[1], hook[2], hook[3], 0]))
+        .map_err(SmwUsV1GraphicsCompressionDetectError::RuntimeAddress)?;
+    let header_offset = runtime_offset.checked_sub(HEADER_LEN).ok_or(
+        SmwUsV1GraphicsCompressionDetectError::RuntimeBeforeHeader(runtime_offset),
+    )?;
+    let block = parse_at(image.logical_bytes(), header_offset)
+        .map_err(SmwUsV1GraphicsCompressionDetectError::RuntimeHeader)?;
+    Ok(block.payload.start == runtime_offset && block.payload.len() == LEGACY_SPEED_RUNTIME_LEN)
+}
+
+/// Reproduces the legacy-format upgrade observed in Lunar Magic 3.63: GFX17 tiles `$00`, `$01`,
+/// `$10`, and `$11` receive an opaque fourth plane while every other tile remains byte-exact.
+fn upgrade_historical_gfx17(graphics: &mut lm_graphics::GraphicsFile4bpp) {
+    for tile_index in [0x00, 0x01, 0x10, 0x11] {
+        let Some(tile) = graphics.tiles.get_mut(tile_index) else {
+            continue;
+        };
+        *tile = lm_graphics::IndexedTile::new(tile.pixels().map(|pixel| pixel | 0x08));
+    }
+}
+
 /// Builds Lunar Magic's failure-atomic `LZ2 Orig` to `LZ2 Speed` runtime-only conversion.
 ///
 /// Both modes use identical LZ2 payloads, so no graphics or dependent table is recompressed. The
@@ -439,6 +474,7 @@ fn smw_us_v1_graphics_compression_installation_plan(
     let mapper = compression_mapper(image)?;
     let base = mapper_body_base(mapper);
     let source_mode = detect_smw_us_v1_graphics_compression_mode(image)?;
+    let historical_lz2_speed = has_historical_lz2_speed_runtime(image, mapper, source_mode)?;
     let (source_compression, target_compression, target_event_compression) = match target_mode {
         SmwUsV1GraphicsCompressionMode::Lz3
             if source_mode != SmwUsV1GraphicsCompressionMode::Lz3 =>
@@ -492,10 +528,11 @@ fn smw_us_v1_graphics_compression_installation_plan(
     ordinary_layout.compression = source_compression;
     let ordinary = (0..ordinary_layout.pointers.entries)
         .map(|slot| {
-            let raw = project
-                .load_graphics_file(slot, ordinary_layout)?
-                .encode()
-                .map_err(GraphicsIoError::from)?;
+            let mut graphics = project.load_graphics_file(slot, ordinary_layout)?;
+            if historical_lz2_speed && slot == 0x17 {
+                upgrade_historical_gfx17(&mut graphics);
+            }
+            let raw = graphics.encode().map_err(GraphicsIoError::from)?;
             Ok(encode(&raw))
         })
         .collect::<Result<Vec<_>, SmwUsV1GraphicsCompressionMigrationError>>()?;
@@ -641,7 +678,8 @@ fn smw_us_v1_graphics_compression_installation_plan(
             bank_pointer_encoding(mapper),
         ),
     ]);
-    for file_number in 0x80_u16..=exgraphics_scan_end(image, mapper)? {
+    let exgraphics_end = exgraphics_scan_end(image, mapper)?;
+    for file_number in 0x80_u16..=exgraphics_end {
         let route = crate::smw_us_v1_exgraphics_pointer_in_rom(image, file_number, mapper)?;
         if route.encoding != crate::SmwUsV1ExGraphicsEncoding::Lz2 {
             continue;
@@ -667,7 +705,10 @@ fn smw_us_v1_graphics_compression_installation_plan(
                 maximum_decompressed_len: 0x1000,
             },
         )?;
-        if !matches!(raw.len(), 0x800 | 0xc00 | 0x1000) {
+        // Historical Lunar Magic accepts and preserves bounded pre-existing streams whose decoded
+        // extent is not one of the later 2/3/4bpp import sizes. The retained generation has exact
+        // `$FFF`-byte ExGFX120 and ExGFX127 payloads, and 3.63 keeps both across conversion.
+        if raw.is_empty() || raw.len() > 0x1000 {
             return Err(crate::SmwUsV1ExGraphicsError::InvalidRawLength {
                 file_number,
                 actual: raw.len(),
@@ -837,7 +878,8 @@ fn smw_us_v1_graphics_compression_ownership(
     push_pointer(special.gfx33.read_pointer(&project, 0)?)?;
     push_pointer(special.gfx32.read_pointer(&project, 0)?)?;
 
-    for file_number in 0x80_u16..=exgraphics_scan_end(image, mapper)? {
+    let exgraphics_end = exgraphics_scan_end(image, mapper)?;
+    for file_number in 0x80_u16..=exgraphics_end {
         let route = crate::smw_us_v1_exgraphics_pointer_in_rom(image, file_number, mapper)?;
         if route.encoding != crate::SmwUsV1ExGraphicsEncoding::Lz2 {
             continue;
@@ -1077,6 +1119,42 @@ mod tests {
         (ordinary, gfx33, gfx32, exgfx)
     }
 
+    fn load_installed_exgraphics(
+        image: &RomImage,
+        compression: GraphicsCompression,
+    ) -> Vec<(u16, Vec<u8>)> {
+        let project = Project::new(image.clone());
+        (0x80_u16..=exgraphics_scan_end(image, Mapper::LoRom).unwrap())
+            .filter_map(|file_number| {
+                let route =
+                    crate::smw_us_v1_exgraphics_pointer_in_rom(image, file_number, Mapper::LoRom)
+                        .unwrap();
+                let pointer = image.read(route.pointer_offset, 3).unwrap();
+                if pointer == [0; 3] || pointer == [0xff; 3] {
+                    return None;
+                }
+                let bytes = project
+                    .load_decompressed_graphics_file(
+                        0,
+                        GraphicsRomLayout {
+                            mapper: Mapper::LoRom,
+                            pointers: LevelPointerTable {
+                                offset: route.pointer_offset,
+                                entries: 1,
+                                stride: 3,
+                            },
+                            split_pointer_planes: None,
+                            compression,
+                            maximum_compressed_len: 0x8000,
+                            maximum_decompressed_len: 0x1000,
+                        },
+                    )
+                    .unwrap();
+                Some((file_number, bytes))
+            })
+            .collect()
+    }
+
     #[test]
     #[ignore = "requires retained Lunar Magic 3.63 ExLoROM LZ2/LZ3 conversion captures"]
     fn exlorom_codec_replacement_preserves_every_graphics_stream_and_undoes() {
@@ -1108,13 +1186,11 @@ mod tests {
         )
         .unwrap();
         assert_eq!(replacement.plan.mapper, Mapper::ExLoRom);
-        assert!(
-            replacement
-                .plan
-                .writes
-                .iter()
-                .all(|write| { write.offset >= 0x40_0000 || write.offset >= 0x7f_0000 })
-        );
+        assert!(replacement
+            .plan
+            .writes
+            .iter()
+            .all(|write| { write.offset >= 0x40_0000 || write.offset >= 0x7f_0000 }));
         let inactive_mirror = lz2.clone();
         let mut project = Project::new(lz2);
         project
@@ -1293,6 +1369,12 @@ mod tests {
             detect_smw_us_v1_graphics_compression_mode(&image).unwrap(),
             SmwUsV1GraphicsCompressionMode::Lz2Speed
         );
+        assert!(has_historical_lz2_speed_runtime(
+            &image,
+            Mapper::LoRom,
+            SmwUsV1GraphicsCompressionMode::Lz2Speed
+        )
+        .unwrap());
 
         let mut corrupt = image.clone();
         corrupt.write(0x80_008 + 0x80, &[0]).unwrap();
@@ -1315,8 +1397,29 @@ mod tests {
     }
 
     #[test]
+    fn historical_gfx17_upgrade_changes_only_four_exact_fourth_planes() {
+        let mut graphics = lm_graphics::GraphicsFile4bpp {
+            tiles: (0..0x12)
+                .map(|index| lm_graphics::IndexedTile::new([index as u8 & 0x07; 64]))
+                .collect(),
+        };
+        let before = graphics.clone();
+        upgrade_historical_gfx17(&mut graphics);
+        for index in 0..graphics.tiles.len() {
+            let expected = if [0x00, 0x01, 0x10, 0x11].contains(&index) {
+                lm_graphics::IndexedTile::new(
+                    before.tiles[index].pixels().map(|pixel| pixel | 0x08),
+                )
+            } else {
+                before.tiles[index].clone()
+            };
+            assert_eq!(graphics.tiles[index], expected, "tile {index:#x}");
+        }
+    }
+
+    #[test]
     #[ignore = "requires an authenticated patch-derived historical LZ2-Speed ROM"]
-    fn historical_lz2_speed_rom_authenticates_and_decodes_standard_graphics() {
+    fn historical_lz2_speed_rom_migrates_all_graphics_and_events_like_lunar_magic() {
         let source_bytes = fs::read(
             std::env::var_os("LM_HISTORICAL_LZ2_SPEED_ROM").expect("LM_HISTORICAL_LZ2_SPEED_ROM"),
         )
@@ -1326,18 +1429,102 @@ mod tests {
             detect_smw_us_v1_graphics_compression_mode(&source).unwrap(),
             SmwUsV1GraphicsCompressionMode::Lz2Speed
         );
-        let project = Project::new(source);
+        let project = Project::new(source.clone());
         let mut ordinary = crate::smw_us_v1_vanilla_graphics_layout();
         ordinary.compression = GraphicsCompression::Lz2;
+        let mut expected_standard = Vec::new();
         for slot in 0..ordinary.pointers.entries {
-            project.load_graphics_file(slot, ordinary).unwrap();
+            expected_standard.push(project.load_graphics_file(slot, ordinary).unwrap());
         }
         let mut special = crate::smw_us_v1_special_graphics_layouts(&project.rom).unwrap();
         special.gfx33.compression = GraphicsCompression::Lz2;
         special.gfx32.compression = GraphicsCompression::Lz2;
-        project.load_graphics_file(0, special.gfx33).unwrap();
-        project.load_graphics_file(0, special.gfx32).unwrap();
+        let expected_gfx33 = project.load_graphics_file(0, special.gfx33).unwrap();
+        let expected_gfx32 = project.load_graphics_file(0, special.gfx32).unwrap();
+        let mut expected_migrated_standard = expected_standard.clone();
+        upgrade_historical_gfx17(&mut expected_migrated_standard[0x17]);
+        let expected_exgraphics = load_installed_exgraphics(&source, GraphicsCompression::Lz2);
+        assert_eq!(expected_exgraphics.len(), 54);
+        let expected_events = crate::load_smw_us_v1_event_tilemaps(&project).unwrap();
+        assert_eq!(
+            expected_events.storage,
+            crate::SmwUsV1EventTilemapStorage::Installed(lm_project::EventTilemapCompression::Lz2)
+        );
         assert_eq!(project.rom.as_file_bytes(), source_bytes);
+
+        let replacement = smw_us_v1_compact_graphics_compression_migration_plan(
+            &source,
+            0x7fdc,
+            SmwUsV1GraphicsCompressionMode::Lz3,
+        )
+        .unwrap();
+        let mut migrated = Project::new(source);
+        migrated
+            .replace_relocatable_patch(&replacement.plan, &replacement.obsolete, 0xff)
+            .unwrap();
+        assert_eq!(
+            detect_smw_us_v1_graphics_compression_mode(&migrated.rom).unwrap(),
+            SmwUsV1GraphicsCompressionMode::Lz3
+        );
+        assert!(detect_identity(&migrated.rom).unwrap().checksum_matches());
+        ordinary.compression = GraphicsCompression::Lz3;
+        for (slot, expected) in expected_migrated_standard.iter().enumerate() {
+            assert_eq!(
+                migrated.load_graphics_file(slot, ordinary).unwrap(),
+                *expected
+            );
+        }
+        let mut migrated_special =
+            crate::smw_us_v1_special_graphics_layouts(&migrated.rom).unwrap();
+        migrated_special.gfx33.compression = GraphicsCompression::Lz3;
+        migrated_special.gfx32.compression = GraphicsCompression::Lz3;
+        assert_eq!(
+            migrated
+                .load_graphics_file(0, migrated_special.gfx33)
+                .unwrap(),
+            expected_gfx33
+        );
+        assert_eq!(
+            migrated
+                .load_graphics_file(0, migrated_special.gfx32)
+                .unwrap(),
+            expected_gfx32
+        );
+        assert_eq!(
+            load_installed_exgraphics(&migrated.rom, GraphicsCompression::Lz3),
+            expected_exgraphics
+        );
+        let migrated_events = crate::load_smw_us_v1_event_tilemaps(&migrated).unwrap();
+        assert_eq!(migrated_events.buffers, expected_events.buffers);
+        assert_eq!(
+            migrated_events.storage,
+            crate::SmwUsV1EventTilemapStorage::Installed(lm_project::EventTilemapCompression::Lz3)
+        );
+        if let Some(path) = std::env::var_os("LM_HISTORICAL_LZ3_ORACLE") {
+            let oracle = RomImage::from_bytes(fs::read(path).unwrap()).unwrap();
+            assert_eq!(
+                detect_smw_us_v1_graphics_compression_mode(&oracle).unwrap(),
+                SmwUsV1GraphicsCompressionMode::Lz3
+            );
+            let oracle_graphics =
+                load_mapper_graphics(&oracle, Mapper::LoRom, GraphicsCompression::Lz3);
+            assert_eq!(oracle_graphics.0, expected_migrated_standard);
+            assert_eq!(oracle_graphics.1, expected_gfx33);
+            assert_eq!(oracle_graphics.2, expected_gfx32);
+            assert_eq!(
+                load_installed_exgraphics(&oracle, GraphicsCompression::Lz3),
+                expected_exgraphics
+            );
+            let oracle_events =
+                crate::load_smw_us_v1_event_tilemaps(&Project::new(oracle)).unwrap();
+            assert_eq!(oracle_events.buffers, expected_events.buffers);
+            assert_eq!(oracle_events.storage, migrated_events.storage);
+        }
+        if let Some(path) = std::env::var_os("LM_HISTORICAL_LZ3_RUST_OUTPUT") {
+            fs::write(path, migrated.rom.as_file_bytes()).unwrap();
+        }
+        migrated.history.undo(&mut migrated.rom).unwrap();
+        assert_eq!(migrated.rom.as_file_bytes(), source_bytes);
     }
 
     #[test]
@@ -1540,11 +1727,9 @@ mod tests {
             project.install_relocatable_patch(&plan).unwrap();
             assert_eq!(project.rom.copier_header(), expected_header);
             assert_eq!(project.rom.logical_bytes()[0x7fd5], 0x30);
-            assert!(
-                lm_rom::detect_identity(&project.rom)
-                    .unwrap()
-                    .checksum_matches()
-            );
+            assert!(lm_rom::detect_identity(&project.rom)
+                .unwrap()
+                .checksum_matches());
             assert_eq!(
                 detect_smw_us_v1_graphics_compression_mode(&project.rom).unwrap(),
                 SmwUsV1GraphicsCompressionMode::Lz3

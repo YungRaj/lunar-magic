@@ -2,8 +2,8 @@
 
 use lm_codec::encode_lz2;
 use lm_project::{PatchFixup, PatchFixupEncoding, PatchPayload, PatchWrite, RelocatablePatchPlan};
-use lm_rats::{AllocationPolicy, HEADER_LEN, parse_at};
-use lm_rom::{Mapper, RomError, RomImage, snes_to_pc};
+use lm_rats::{parse_at, AllocationPolicy, HEADER_LEN};
+use lm_rom::{snes_to_pc, Mapper, RomError, RomImage};
 
 pub const SMW_US_V1_EXGFX_RUNTIME_HOOK_OFFSET: usize = 0x001471;
 pub const SMW_US_V1_EXGFX_RUNTIME_HOOK: [u8; 5] = [0x22, 0xc0, 0xf9, 0x0f, 0xea];
@@ -412,35 +412,51 @@ pub fn smw_us_v1_exgraphics_pointer_for_mapper(
     })
 }
 
-/// Resolves an ExGFX pointer entry from the concrete ROM, including a relocated SA-1 expanded-
-/// settings owner.
+/// Resolves an ExGFX pointer entry from the concrete ROM, including relocated current or legacy
+/// expanded-settings owners.
 ///
 /// # Errors
 ///
-/// Rejects invalid file numbers, malformed allocation operands, non-owned or wrong-sized SA-1
-/// settings storage, and pointer arithmetic overflow.
+/// Rejects invalid file numbers, malformed allocation operands, non-owned or wrong-sized settings
+/// storage, and pointer arithmetic overflow.
 pub fn smw_us_v1_exgraphics_pointer_in_rom(
     rom: &RomImage,
     file_number: u16,
     mapper: Mapper,
 ) -> Result<SmwUsV1ExGraphicsPointer, SmwUsV1ExGraphicsError> {
     let mut route = smw_us_v1_exgraphics_pointer_for_mapper(file_number, mapper)?;
-    if mapper != Mapper::Sa1 || file_number < 0x100 {
+    if file_number < 0x100 {
         return Ok(route);
     }
     const EXPANDED_SETTINGS_BASE_OPERAND: usize = 0x07f873;
-    const EXPANDED_SETTINGS_ALLOCATION_LEN: usize = 0x6e00;
-    let operand = rom.read(EXPANDED_SETTINGS_BASE_OPERAND, 3)?;
-    let address = u32::from(operand[0]) | u32::from(operand[1]) << 8 | u32::from(operand[2]) << 16;
-    let payload = snes_to_pc(Mapper::Sa1, address)?;
-    let header = payload
-        .checked_sub(HEADER_LEN)
-        .ok_or(SmwUsV1ExGraphicsError::UnsupportedExpandedSettingsOwner)?;
-    let block = parse_at(rom.logical_bytes(), header)
-        .map_err(|_| SmwUsV1ExGraphicsError::UnsupportedExpandedSettingsOwner)?;
-    if block.payload.start != payload || block.payload.len() != EXPANDED_SETTINGS_ALLOCATION_LEN {
-        return Err(SmwUsV1ExGraphicsError::UnsupportedExpandedSettingsOwner);
-    }
+    const CURRENT_EXPANDED_SETTINGS_ALLOCATION_LEN: usize = 0x6e00;
+    const LEGACY_EXPANDED_SETTINGS_ALLOCATION_LEN: usize = 0x6d00;
+    let relocated_payload: Result<usize, SmwUsV1ExGraphicsError> = (|| {
+        let operand_offset = mapper_rom_offset(mapper, EXPANDED_SETTINGS_BASE_OPERAND);
+        let operand = rom.read(operand_offset, 3)?;
+        let address =
+            u32::from(operand[0]) | u32::from(operand[1]) << 8 | u32::from(operand[2]) << 16;
+        let payload = snes_to_pc(mapper, address)?;
+        let header = payload
+            .checked_sub(HEADER_LEN)
+            .ok_or(SmwUsV1ExGraphicsError::UnsupportedExpandedSettingsOwner)?;
+        let block = parse_at(rom.logical_bytes(), header)
+            .map_err(|_| SmwUsV1ExGraphicsError::UnsupportedExpandedSettingsOwner)?;
+        if block.payload.start != payload
+            || !matches!(
+                block.payload.len(),
+                CURRENT_EXPANDED_SETTINGS_ALLOCATION_LEN | LEGACY_EXPANDED_SETTINGS_ALLOCATION_LEN
+            )
+        {
+            return Err(SmwUsV1ExGraphicsError::UnsupportedExpandedSettingsOwner);
+        }
+        Ok(payload)
+    })();
+    let payload = match relocated_payload {
+        Ok(payload) => payload,
+        Err(error) if mapper == Mapper::Sa1 => return Err(error),
+        Err(_) => return Ok(route),
+    };
     route.pointer_offset = payload
         .checked_add(usize::from(file_number - 0x100) * 3)
         .ok_or(SmwUsV1ExGraphicsError::PointerOffsetOverflow)?;
@@ -773,6 +789,35 @@ mod tests {
     }
 
     #[test]
+    fn lorom_extended_pointer_follows_current_and_legacy_relocated_settings_owners() {
+        const HEADER: usize = 0x09_0000;
+        const PAYLOAD: usize = HEADER + HEADER_LEN;
+        for payload_len in [0x6d00_usize, 0x6e00] {
+            let mut bytes = vec![0xff; 0x20_0000];
+            let length_minus_one = u16::try_from(payload_len - 1).unwrap();
+            bytes[HEADER..HEADER + 4].copy_from_slice(b"STAR");
+            bytes[HEADER + 4..HEADER + 6].copy_from_slice(&length_minus_one.to_le_bytes());
+            bytes[HEADER + 6..PAYLOAD].copy_from_slice(&(!length_minus_one).to_le_bytes());
+            let address = lm_rom::pc_to_snes(Mapper::LoRom, PAYLOAD).unwrap();
+            bytes[0x07f873..0x07f876].copy_from_slice(&address.to_le_bytes()[..3]);
+            let image = RomImage::from_bytes(bytes).unwrap();
+
+            assert_eq!(
+                smw_us_v1_exgraphics_pointer_in_rom(&image, 0x100, Mapper::LoRom)
+                    .unwrap()
+                    .pointer_offset,
+                PAYLOAD
+            );
+            assert_eq!(
+                smw_us_v1_exgraphics_pointer_in_rom(&image, 0x132, Mapper::LoRom)
+                    .unwrap()
+                    .pointer_offset,
+                PAYLOAD + 0x32 * 3
+            );
+        }
+    }
+
+    #[test]
     fn probe_distinguishes_ready_reserved_and_expanded_states() {
         let mut bytes = vec![0xff; 0x09_0000];
         bytes[SMW_US_V1_EXGFX_RUNTIME_HOOK_OFFSET..SMW_US_V1_EXGFX_RUNTIME_HOOK_OFFSET + 5]
@@ -936,22 +981,18 @@ mod tests {
                 .unwrap(),
             SMW_US_V1_EXPANDED_GRAPHICS_FORMAT_MARKER
         );
-        assert!(
-            project
-                .rom
-                .read(SMW_US_V1_ORDINARY_EXGFX_POINTER_OFFSET + 3, 0x7f * 3)
-                .unwrap()
-                .iter()
-                .all(|byte| *byte == 0)
-        );
-        assert!(
-            project
-                .rom
-                .read(SMW_US_V1_EXTENDED_EXGFX_POINTER_OFFSET, 0xf00 * 3)
-                .unwrap()
-                .iter()
-                .all(|byte| *byte == 0)
-        );
+        assert!(project
+            .rom
+            .read(SMW_US_V1_ORDINARY_EXGFX_POINTER_OFFSET + 3, 0x7f * 3)
+            .unwrap()
+            .iter()
+            .all(|byte| *byte == 0));
+        assert!(project
+            .rom
+            .read(SMW_US_V1_EXTENDED_EXGFX_POINTER_OFFSET, 0xf00 * 3)
+            .unwrap()
+            .iter()
+            .all(|byte| *byte == 0));
         assert_eq!(project.rom.logical_len(), SMW_US_V1_EXGFX_LOGICAL_LEN);
         project.undo().unwrap();
         assert_eq!(project.rom.logical_bytes(), original);

@@ -4813,8 +4813,16 @@ ROM gate decodes all 50 ordinary files plus GFX33/GFX32 without changing the ima
 
 Original Lunar Magic 3.63 accepts the historical ROM and converts it to LZ3, but its conversion is
 not codec-only. All 54 ExGFX exports and 51 standard GFX exports remain exact, while GFX17 gains
-legacy fourth-plane data. Rust therefore does not yet offer this generation as a migration source:
-the legacy ExGFX pointer/table layout and coupled graphics-format upgrade must be modeled and
-verified together before conversion can be claimed failure-atomic or byte-compatible. Exact
-provenance and hashes are retained in
-`oracle-work/graphics-compression-lz2-speed-generation-100.md`.
+an opaque fourth plane on tiles `$00/$01/$10/$11`. Rust now reproduces that exact upgrade. The
+legacy `$100..$FFF` ExGFX table follows the live `$07F873` operand into an authenticated relocated
+`$6D00` expanded-settings owner rather than the current fixed `$088000` assumption; the 54 live
+files include two bounded `$FFF`-byte streams that must remain lossless during codec migration.
+
+The same source uses an earlier event-tilemap loader. Its primary runtime has two distinct branch
+bytes, its three JSL hooks use the equivalent high LoROM mirror, and its reveal runtime carries the
+older zero constant. Both the historical LZ2 ROM and Lunar Magic's LZ3 result retain that exact
+generation. Rust authenticates either event-loader family, migrates both event streams, matches the
+original editor's 52 standard and 54 ExGFX exports, repairs the checksum, and restores the exact
+source through Undo. Lunar Magic reports the Rust result is already LZ3, leaves its SHA-256
+unchanged, and re-exports every graphics file byte-for-byte. Exact provenance and hashes are
+retained in `oracle-work/graphics-compression-lz2-speed-generation-100.md`.

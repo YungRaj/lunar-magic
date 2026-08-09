@@ -199,6 +199,17 @@ pub fn load_smw_us_v1_event_tilemaps_for_mapper(
                 storage: SmwUsV1EventTilemapStorage::Installed(EventTilemapCompression::Lz3),
             });
         }
+        let historical_locator = historical_event_tilemap_locator_for_mapper(mapper);
+        for compression in [EventTilemapCompression::Lz2, EventTilemapCompression::Lz3] {
+            if let Ok(loaded) =
+                project.load_event_tilemap_buffers_detected(historical_locator, compression)
+            {
+                return Ok(LoadedSmwUsV1EventTilemaps {
+                    buffers: loaded.buffers,
+                    storage: SmwUsV1EventTilemapStorage::Installed(compression),
+                });
+            }
+        }
         return Err(SmwUsV1EventTilemapLoadError::Installed {
             lz2,
             lz3: lz3.unwrap_err(),
@@ -225,6 +236,20 @@ pub fn load_smw_us_v1_event_tilemaps_for_mapper(
         buffers: EventTilemapBuffers::default(),
         storage: SmwUsV1EventTilemapStorage::Pristine,
     })
+}
+
+/// Returns the exact earlier event-loader generation retained by the authenticated historical
+/// optimized-LZ2 ROM and by Lunar Magic 3.63 after converting that ROM to LZ3. The two `$80`
+/// branch bytes are immutable program bytes, not stream-pointer operands.
+fn historical_event_tilemap_locator_for_mapper(mapper: Mapper) -> EventTilemapPatchLocator {
+    let mut locator = smw_us_v1_event_tilemap_locator_for_mapper(mapper);
+    locator.primary_runtime[0x1d] = 0x80;
+    locator.primary_runtime[0x3c] = 0x80;
+    locator.index_hook_bytes[3] = 0x85;
+    locator.reveal_hook_bytes[3] = 0x83;
+    locator.reveal_runtime_bytes[0x16] = 0x00;
+    locator.state_hook_bytes[3] = 0x83;
+    locator
 }
 
 fn pristine_fragments() -> [(usize, &'static [u8]); 8] {
@@ -490,6 +515,49 @@ mod tests {
     }
 
     #[test]
+    fn historical_event_runtime_generation_authenticates_and_decodes() {
+        let original = crate::test_support::pristine_smw_us_rom_bytes();
+        let mut project =
+            lm_project::Project::open_supported(RomImage::from_bytes(original).unwrap()).unwrap();
+        let mut buffers = EventTilemapBuffers::default();
+        buffers.primary_bytes_mut()[0x123] = 0x45;
+        buffers.secondary_high_bytes_mut()[0x456] = 0x80;
+        let compression = EventTilemapCompression::Lz2;
+        let plan = smw_us_v1_event_tilemap_installation_plan(&buffers, compression);
+        project
+            .install_event_tilemap_buffers(
+                &buffers,
+                smw_us_v1_event_tilemap_locator(),
+                compression,
+                &plan,
+            )
+            .unwrap();
+
+        for (offset, byte) in [
+            (SMW_US_V1_EVENT_TILEMAP_LOADER_MARKER + 0x1d, 0x80),
+            (SMW_US_V1_EVENT_TILEMAP_LOADER_MARKER + 0x3c, 0x80),
+            (INDEX_HOOK + 3, 0x85),
+            (REVEAL_HOOK + 3, 0x83),
+            (REVEAL_RUNTIME + 0x16, 0x00),
+            (STATE_HOOK + 3, 0x83),
+        ] {
+            project.rom.write(offset, &[byte]).unwrap();
+        }
+        let loaded = load_smw_us_v1_event_tilemaps(&project).unwrap();
+        assert_eq!(loaded.buffers, buffers);
+        assert_eq!(
+            loaded.storage,
+            SmwUsV1EventTilemapStorage::Installed(EventTilemapCompression::Lz2)
+        );
+
+        project.rom.write(REVEAL_RUNTIME + 0x16, &[0x02]).unwrap();
+        assert!(matches!(
+            load_smw_us_v1_event_tilemaps(&project),
+            Err(SmwUsV1EventTilemapLoadError::Installed { .. })
+        ));
+    }
+
+    #[test]
     fn wine_transfer_overworld_materializes_legacy_event_tilemaps() {
         let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
         let fixture = root.join("oracle-work/lm363/pristine-us/overworld-transfer-positive");
@@ -513,13 +581,11 @@ mod tests {
             loaded.buffers.primary_bytes()[EventTilemapBuffers::WORD_COUNT + 60],
             0xc0
         );
-        assert!(
-            loaded
-                .buffers
-                .secondary_high_bytes()
-                .iter()
-                .all(|byte| *byte == 0)
-        );
+        assert!(loaded
+            .buffers
+            .secondary_high_bytes()
+            .iter()
+            .all(|byte| *byte == 0));
 
         let mut edited = loaded.buffers;
         edited.secondary_high_bytes_mut()[0x7ff] = 0x80;

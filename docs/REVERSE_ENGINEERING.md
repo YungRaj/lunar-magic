@@ -4475,3 +4475,17 @@ unchanged 54-file ExGFX export set shows that the editor understands the old ExG
 though the current Rust table resolver does not. This establishes the next migration boundary as
 the coupled legacy graphics-format and pointer-table transition, not merely another decompressor
 payload replacement.
+
+That coupled boundary is now modeled. The `$07F873` long operand resolves the historical `$6D00`
+expanded-settings owner at logical `$0801E7`; its `$2D00` prefix is the relocated `$100..$FFF`
+ExGFX table. This yields 21 live extended entries in addition to 33 ordinary ones. Two historical
+streams decode to `$FFF` bytes, which Lunar Magic preserves exactly, establishing that conversion
+must retain bounded pre-existing shapes rather than enforce only later import sizes. GFX17's only
+conversion difference is plane 3 for tiles `$00/$01/$10/$11`: the 32 bytes at encoded offsets
+`$011..$01F`, `$031..$03F`, `$211..$21F`, and `$231..$23F` change from `$00` to `$FF`.
+
+The earlier overworld event loader is exact as well: primary-runtime offsets `$1D/$3C` are `$80`,
+the index/reveal/state hooks use high LoROM banks `$85/$83/$83`, and reveal-runtime offset `$16`
+is zero. Lunar Magic's LZ3 conversion retains these immutable bytes while replacing both stream
+pointers. Rust recognizes both generations and migrates their owned streams. The complete Rust LZ3
+result reopens in Lunar Magic without mutation and reproduces all 52 GFX and 54 ExGFX exports.
