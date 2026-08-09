@@ -416,17 +416,31 @@ pub fn smw_us_v1_default_music_tracks(rom: &RomImage) -> Result<[u8; 8], RomErro
 /// `ReadGraphicsFileRomPointer`.
 #[must_use]
 pub const fn smw_us_v1_vanilla_graphics_layout() -> GraphicsRomLayout {
+    smw_us_v1_vanilla_graphics_layout_for_mapper(Mapper::LoRom)
+}
+
+/// Returns the native graphics layout in the active SMW body for `mapper`.
+///
+/// ExLoROM keeps the executable SMW body and its mutable graphics pointer planes in the upper
+/// 4 MiB half of the image. The lower copy is only a compatibility mirror and must not be edited.
+#[must_use]
+pub const fn smw_us_v1_vanilla_graphics_layout_for_mapper(mapper: Mapper) -> GraphicsRomLayout {
+    let base = if matches!(mapper, Mapper::ExLoRom) {
+        0x40_0000
+    } else {
+        0
+    };
     GraphicsRomLayout {
-        mapper: Mapper::LoRom,
+        mapper,
         pointers: LevelPointerTable {
-            offset: SMW_US_V1_GRAPHICS_POINTER_LOW_OFFSET,
+            offset: base + SMW_US_V1_GRAPHICS_POINTER_LOW_OFFSET,
             entries: SMW_US_V1_VANILLA_GRAPHICS_FILES,
             stride: 1,
         },
         split_pointer_planes: Some(GraphicsPointerPlanes {
-            low_offset: SMW_US_V1_GRAPHICS_POINTER_LOW_OFFSET,
-            high_offset: SMW_US_V1_GRAPHICS_POINTER_HIGH_OFFSET,
-            bank_offset: SMW_US_V1_GRAPHICS_POINTER_BANK_OFFSET,
+            low_offset: base + SMW_US_V1_GRAPHICS_POINTER_LOW_OFFSET,
+            high_offset: base + SMW_US_V1_GRAPHICS_POINTER_HIGH_OFFSET,
+            bank_offset: base + SMW_US_V1_GRAPHICS_POINTER_BANK_OFFSET,
             entries: SMW_US_V1_VANILLA_GRAPHICS_FILES,
             stride: 1,
         }),
@@ -467,6 +481,19 @@ pub const fn smw_us_v1_vanilla_special_graphics_layout() -> GraphicsRomLayout {
 pub fn smw_us_v1_special_graphics_layouts(
     rom: &RomImage,
 ) -> Result<SmwUsV1SpecialGraphicsLayouts, SmwUsV1SpecialGraphicsLayoutError> {
+    smw_us_v1_special_graphics_layouts_for_mapper(rom, Mapper::LoRom)
+}
+
+/// Resolves the active startup GFX33/GFX32 operands for a supported mapper.
+pub fn smw_us_v1_special_graphics_layouts_for_mapper(
+    rom: &RomImage,
+    mapper: Mapper,
+) -> Result<SmwUsV1SpecialGraphicsLayouts, SmwUsV1SpecialGraphicsLayoutError> {
+    let base = if mapper == Mapper::ExLoRom {
+        0x40_0000
+    } else {
+        0
+    };
     const GUARDED_BYTES: &[(usize, &[u8])] = &[
         (0x3889, &[0x10, 0xa0]),
         (0x388d, &[0x84, 0x8a, 0xa9]),
@@ -474,22 +501,23 @@ pub fn smw_us_v1_special_graphics_layouts(
         (0x38d5, &[0x80, 0xd6, 0xa9]),
         (0x38da, &[0x85, 0x8a, 0xe2, 0x20, 0xc2, 0x10]),
     ];
-    for &(offset, expected) in GUARDED_BYTES {
+    for &(local_offset, expected) in GUARDED_BYTES {
+        let offset = base + local_offset;
         if rom.read(offset, expected.len())? != expected {
             return Err(SmwUsV1SpecialGraphicsLayoutError::UnsupportedStartupCode { offset });
         }
     }
-    let layout = |low_offset| GraphicsRomLayout {
-        mapper: Mapper::LoRom,
+    let layout = |local_low_offset| GraphicsRomLayout {
+        mapper,
         pointers: LevelPointerTable {
-            offset: low_offset,
+            offset: base + local_low_offset,
             entries: 1,
             stride: 1,
         },
         split_pointer_planes: Some(GraphicsPointerPlanes {
-            low_offset,
-            high_offset: low_offset + 1,
-            bank_offset: SMW_US_V1_SPECIAL_GRAPHICS_STARTUP_POINTER_BANK_OFFSET,
+            low_offset: base + local_low_offset,
+            high_offset: base + local_low_offset + 1,
+            bank_offset: base + SMW_US_V1_SPECIAL_GRAPHICS_STARTUP_POINTER_BANK_OFFSET,
             entries: 1,
             stride: 1,
         }),

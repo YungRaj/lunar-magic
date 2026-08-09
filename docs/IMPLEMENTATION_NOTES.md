@@ -2033,8 +2033,19 @@ header value while using the shared LoROM address transform. A fresh Lunar Magic
 physical inputs. Rust produces one identical logical LZ3 result, retains or omits the copier prefix
 to match each source, keeps all 52 decoded files equal to the original oracle, repairs the checksum,
 and restores each exact physical input with Undo. Lunar Magic subsequently reports both Rust
-results as already LZ3 and exports the same 52 files. This evidence does not generalize the fixed
-LoROM runtime hooks to SA-1 or ExLoROM; those mapper-specific runtime families remain separate.
+results as already LZ3 and exports the same 52 files.
+
+The compression coordinator now also follows Lunar Magic's active-body convention for 8-MiB
+ExLoROM. Runtime metadata/hooks, all three ordinary pointer planes, GFX33/GFX32 startup operands,
+compressed ExGFX pointers, ROM-size metadata, and installed event-tilemap hooks are addressed in
+the relocated upper SMW body; the inactive lower compatibility mirror is not rewritten. ExLoROM
+fixups retain mapper-significant bank bits instead of applying LoROM's low-bank alias. An authentic
+Lunar Magic LZ2/LZ3 pair proves every one of the 52 standard files and both populated ExGFX files
+decode identically across the transition. Rust performs same-size LZ2→LZ3→LZ2 replacements with
+valid identity checksums, and two Undo operations restore the exact original ROM. The application
+path exposes the transition as one revision and one Undo step, while original Lunar Magic reopens
+the Rust LZ3 result and re-exports all 54 streams byte-exactly. SA-1 and historical runtime-family
+variants remain separate compression gates.
 The graphical **Tools** menu installs the same bounded `LMTOOLS1` configuration used by the
 application shell and lists tools in configuration order. Clicking a tool is the explicit execution
 boundary: placeholders are expanded by `lm-app`, while the native adapter launches the executable

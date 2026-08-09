@@ -54,6 +54,29 @@ fn run_export(wine: &Path, lunar_magic: &Path, directory: &Path, rom_name: &str)
     run_export_operation(wine, lunar_magic, directory, "-ExportGFX", rom_name);
 }
 
+fn run_change_compression(
+    wine: &Path,
+    lunar_magic: &Path,
+    directory: &Path,
+    rom_name: &str,
+    format: &str,
+) -> std::process::Output {
+    let output = Command::new(wine)
+        .arg(lunar_magic)
+        .arg("-ChangeCompression")
+        .arg(rom_name)
+        .arg(format)
+        .current_dir(directory)
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "Lunar Magic compression change failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    output
+}
+
 #[test]
 #[ignore = "requires Wine, Lunar Magic 3.63, and the local legally obtained pristine SMW ROM"]
 fn lunar_magic_reexports_rust_standard_and_exgfx_across_legacy_migration() {
@@ -446,6 +469,92 @@ fn lunar_magic_reexports_rust_standard_and_exgfx_across_legacy_migration() {
         fs::read(exlorom.0.join("ExGraphics/ExGFX81.bin")).unwrap(),
         exgfx81,
         "Lunar Magic did not re-export Rust ExLoROM ExGFX81"
+    );
+    let exlorom_lz2_bytes = fs::read(exlorom.0.join("exlorom.smc")).unwrap();
+    if let Some(path) = std::env::var_os("LM_EXLOROM_LZ2_CAPTURE") {
+        fs::copy(exlorom.0.join("exlorom.smc"), path).unwrap();
+    }
+    run_change_compression(&wine, &lunar_magic, &exlorom.0, "exlorom.smc", "LC_LZ3");
+    if let Some(path) = std::env::var_os("LM_EXLOROM_LZ3_CAPTURE") {
+        fs::copy(exlorom.0.join("exlorom.smc"), path).unwrap();
+    }
+    fs::remove_dir_all(exlorom.0.join("Graphics")).unwrap();
+    fs::remove_dir_all(exlorom.0.join("ExGraphics")).unwrap();
+    run_export(&wine, &lunar_magic, &exlorom.0, "exlorom.smc");
+    run_export_operation(
+        &wine,
+        &lunar_magic,
+        &exlorom.0,
+        "-ExportExGFX",
+        "exlorom.smc",
+    );
+    for number in 0..0x34 {
+        let name = format!("GFX{number:02X}.bin");
+        assert_eq!(
+            fs::read(exlorom.0.join("Graphics").join(&name)).unwrap(),
+            files[number],
+            "LZ3 ExLoROM {name}"
+        );
+    }
+    assert_eq!(
+        fs::read(exlorom.0.join("ExGraphics/ExGFX80.bin")).unwrap(),
+        exgfx80,
+        "Lunar Magic did not preserve LZ3 ExLoROM ExGFX80"
+    );
+    assert_eq!(
+        fs::read(exlorom.0.join("ExGraphics/ExGFX81.bin")).unwrap(),
+        exgfx81,
+        "Lunar Magic did not preserve LZ3 ExLoROM ExGFX81"
+    );
+
+    // Build the same transition with the Rust runtime and require original Lunar Magic to accept
+    // and export every resulting stream. This is the cross-implementation gate, not merely a
+    // self-consistency check between Rust encoders and decoders.
+    let rust_source = RomImage::from_bytes(exlorom_lz2_bytes).unwrap();
+    let replacement = lm_profile::smw_us_v1_compact_graphics_compression_migration_plan(
+        &rust_source,
+        0x7fdc,
+        lm_profile::SmwUsV1GraphicsCompressionMode::Lz3,
+    )
+    .unwrap();
+    let mut rust_project = Project::new(rust_source);
+    rust_project
+        .replace_relocatable_patch(&replacement.plan, &replacement.obsolete, 0xff)
+        .unwrap();
+    assert!(
+        lm_rom::detect_identity(&rust_project.rom)
+            .unwrap()
+            .checksum_matches()
+    );
+    let rust = TemporaryDirectory::create("gfx-exlorom-rust-lz3");
+    fs::write(
+        rust.0.join("rust-exlorom.smc"),
+        rust_project.rom.as_file_bytes(),
+    )
+    .unwrap();
+    run_export(&wine, &lunar_magic, &rust.0, "rust-exlorom.smc");
+    run_export_operation(
+        &wine,
+        &lunar_magic,
+        &rust.0,
+        "-ExportExGFX",
+        "rust-exlorom.smc",
+    );
+    for number in 0..0x34 {
+        let name = format!("GFX{number:02X}.bin");
+        assert_eq!(
+            fs::read(rust.0.join("Graphics").join(&name)).unwrap(),
+            files[number],
+            "Lunar Magic did not re-export Rust LZ3 ExLoROM {name}"
+        );
+    }
+    assert_eq!(
+        fs::read(rust.0.join("ExGraphics/ExGFX80.bin")).unwrap(),
+        exgfx80
+    );
+    assert_eq!(
+        fs::read(rust.0.join("ExGraphics/ExGFX81.bin")).unwrap(),
+        exgfx81
     );
 }
 

@@ -364,6 +364,39 @@ WINEDEBUG=-all cargo test -p lm-app --test standard_graphics_install_wine \
 1 passed; 0 failed; finished in 12.72s
 ```
 
+## 2026-08-09 — ExLoROM graphics-compression migration
+
+Lunar Magic 3.63 converted the retained 8-MiB ExLoROM project from LZ2 Orig to LZ3 while
+preserving all 52 standard graphics files and populated `ExGFX80`/`ExGFX81`. Retained physical-ROM
+hashes are:
+
+```text
+ExLoROM LZ2  26743ed3a747e6bb9e3b60ebcf65103e0b1b7ecb9b53030f924adbd020e27705
+ExLoROM LZ3  519eb1a468c067aa821a9e6a47cbd9dfe63fbd787572f5b716724968e1d98ef2
+```
+
+The capture establishes that the active compression metadata, hook, ordinary split-pointer
+planes, and startup operands are the copies at logical `+$400000`; the base copies remain
+unchanged. The installed LZ3 hook points to `$C08008`, resolving through ExLoROM to its owned
+runtime payload in the active upper half.
+
+```text
+LM_EXLOROM_LZ2_ROM=... LM_EXLOROM_LZ3_ROM=... cargo test -p lm-profile \
+  exlorom_codec_replacement_preserves_every_graphics_stream_and_undoes \
+  -- --ignored --nocapture
+1 passed; 0 failed; finished in 17.93s
+
+LM_EXLOROM_LZ2_ROM=... cargo test -p lm-app \
+  exlorom_lz3_command_is_one_same_size_undoable_revision \
+  --lib -- --ignored --nocapture
+1 passed; 0 failed; finished in 9.33s
+
+WINEDEBUG=-all cargo test -p lm-app --test standard_graphics_install_wine \
+  lunar_magic_reexports_rust_standard_and_exgfx_across_legacy_migration \
+  -- --ignored --nocapture
+1 passed; 0 failed; finished in 61.12s
+```
+
 The first gate proves identical Rust logical output across copier forms, map-mode `$30` retention,
 valid checksums, exact 52-file semantic equality with Lunar Magic's LZ3 result, and byte-exact Undo.
 The end-to-end Wine gate independently creates the original oracle, asks Lunar Magic to select LZ3

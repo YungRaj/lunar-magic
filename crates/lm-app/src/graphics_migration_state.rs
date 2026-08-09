@@ -55,12 +55,19 @@ impl AppState {
                 source: source.compression,
                 target,
             };
-            if source.compression == GraphicsCompression::Lz3 {
+            let mapper = lm_rom::detect_identity(&project.rom)
+                .map(|identity| identity.mapper)
+                .unwrap_or(source.mapper);
+            if source.compression == GraphicsCompression::Lz3 || mapper == lm_rom::Mapper::ExLoRom {
                 let replacement =
                     lm_profile::smw_us_v1_compact_graphics_compression_migration_plan(
                         &project.rom,
                         options.checksum_field,
-                        lm_profile::SmwUsV1GraphicsCompressionMode::Lz2Original,
+                        if target == GraphicsCompression::Lz3 {
+                            lm_profile::SmwUsV1GraphicsCompressionMode::Lz3
+                        } else {
+                            lm_profile::SmwUsV1GraphicsCompressionMode::Lz2Original
+                        },
                     )?;
                 project.replace_relocatable_patch_with_kind(
                     &replacement.plan,
@@ -459,6 +466,56 @@ mod tests {
         assert_eq!(
             app.revision_profile().unwrap().graphics.compression,
             GraphicsCompression::Lz2
+        );
+    }
+
+    #[test]
+    #[ignore = "requires retained Lunar Magic 3.63 ExLoROM LZ2 conversion capture"]
+    fn exlorom_lz3_command_is_one_same_size_undoable_revision() {
+        let original = fs::read(std::env::var_os("LM_EXLOROM_LZ2_ROM").unwrap()).unwrap();
+        let mut app = AppState::default();
+        app.load_rom(original.clone()).unwrap();
+        let source =
+            lm_profile::smw_us_v1_vanilla_graphics_layout_for_mapper(lm_rom::Mapper::ExLoRom);
+        let mut profile = lm_profile::test_support::profile();
+        profile.mapper = lm_rom::Mapper::ExLoRom;
+        profile.graphics = source;
+        app.revision_profile = Some(profile);
+        app.dispatch(Command::MigrateGraphicsCompression {
+            expected_revision: 0,
+            source,
+            target: GraphicsCompression::Lz3,
+            options: GraphicsMigrationOptions {
+                allocation: allocation(0x8000..0x10000),
+                reuse_identical: true,
+                erase_fill: 0xff,
+                checksum_field: 0x7fdc,
+            },
+        })
+        .unwrap();
+        assert_eq!(app.project_revision(), 1);
+        assert_eq!(app.project().unwrap().rom.logical_len(), 0x80_0000);
+        assert_eq!(app.project().unwrap().history.undo_len(), 1);
+        assert_eq!(
+            lm_profile::detect_smw_us_v1_graphics_compression_mode(&app.project().unwrap().rom)
+                .unwrap(),
+            lm_profile::SmwUsV1GraphicsCompressionMode::Lz3
+        );
+        assert!(
+            lm_rom::detect_identity(&app.project().unwrap().rom)
+                .unwrap()
+                .checksum_matches()
+        );
+        app.dispatch(Command::Undo).unwrap();
+        assert_eq!(app.project().unwrap().rom.as_file_bytes(), original);
+        assert_eq!(
+            app.revision_profile().unwrap().graphics.compression,
+            GraphicsCompression::Lz2
+        );
+        app.dispatch(Command::Redo).unwrap();
+        assert_eq!(
+            app.revision_profile().unwrap().graphics.compression,
+            GraphicsCompression::Lz3
         );
     }
 }

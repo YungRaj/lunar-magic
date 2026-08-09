@@ -103,28 +103,39 @@ impl From<RomError> for SmwUsV1EventTilemapLoadError {
 
 #[must_use]
 pub fn smw_us_v1_event_tilemap_locator() -> EventTilemapPatchLocator {
+    smw_us_v1_event_tilemap_locator_for_mapper(Mapper::LoRom)
+}
+
+/// Returns the event-tilemap locator in the mapper's active SMW body.
+#[must_use]
+pub fn smw_us_v1_event_tilemap_locator_for_mapper(mapper: Mapper) -> EventTilemapPatchLocator {
+    let base = if mapper == Mapper::ExLoRom {
+        0x40_0000
+    } else {
+        0
+    };
     EventTilemapPatchLocator {
-        mapper: Mapper::LoRom,
-        loader_marker: SMW_US_V1_EVENT_TILEMAP_LOADER_MARKER,
-        secondary_marker: SMW_US_V1_EVENT_TILEMAP_SECONDARY_MARKER,
-        primary_low_word: SMW_US_V1_EVENT_TILEMAP_PRIMARY_LOW_WORD,
-        primary_bank: SMW_US_V1_EVENT_TILEMAP_PRIMARY_BANK,
-        secondary_low_word: SMW_US_V1_EVENT_TILEMAP_SECONDARY_LOW_WORD,
-        secondary_bank: SMW_US_V1_EVENT_TILEMAP_SECONDARY_BANK,
+        mapper,
+        loader_marker: base + SMW_US_V1_EVENT_TILEMAP_LOADER_MARKER,
+        secondary_marker: base + SMW_US_V1_EVENT_TILEMAP_SECONDARY_MARKER,
+        primary_low_word: base + SMW_US_V1_EVENT_TILEMAP_PRIMARY_LOW_WORD,
+        primary_bank: base + SMW_US_V1_EVENT_TILEMAP_PRIMARY_BANK,
+        secondary_low_word: base + SMW_US_V1_EVENT_TILEMAP_SECONDARY_LOW_WORD,
+        secondary_bank: base + SMW_US_V1_EVENT_TILEMAP_SECONDARY_BANK,
         primary_runtime: patched_primary_runtime(),
-        index_hook: INDEX_HOOK,
+        index_hook: base + INDEX_HOOK,
         index_hook_bytes: [0x22, 0xd0, 0xdc, 0x05],
-        index_runtime: INDEX_RUNTIME,
+        index_runtime: base + INDEX_RUNTIME,
         index_runtime_bytes: INDEX_RUNTIME_BYTES,
-        reveal_hook: REVEAL_HOOK,
+        reveal_hook: base + REVEAL_HOOK,
         reveal_hook_bytes: [0x22, 0x10, 0xba, 0x03, 0xea],
-        reveal_runtime: REVEAL_RUNTIME,
+        reveal_runtime: base + REVEAL_RUNTIME,
         reveal_runtime_bytes: REVEAL_RUNTIME_BYTES,
-        reveal_opcode: REVEAL_OPCODE,
+        reveal_opcode: base + REVEAL_OPCODE,
         reveal_opcode_byte: 0x8c,
-        state_hook: STATE_HOOK,
+        state_hook: base + STATE_HOOK,
         state_hook_bytes: [0x22, 0x50, 0xba, 0x03],
-        state_runtime: STATE_RUNTIME,
+        state_runtime: base + STATE_RUNTIME,
         state_runtime_bytes: STATE_RUNTIME_BYTES,
     }
 }
@@ -145,7 +156,15 @@ pub fn smw_us_v1_event_tilemap_update_policy(image_len: usize) -> AllocationPoli
 pub fn load_smw_us_v1_event_tilemaps(
     project: &Project,
 ) -> Result<LoadedSmwUsV1EventTilemaps, SmwUsV1EventTilemapLoadError> {
-    let locator = smw_us_v1_event_tilemap_locator();
+    load_smw_us_v1_event_tilemaps_for_mapper(project, Mapper::LoRom)
+}
+
+/// Loads event tilemaps from the mapper's active SMW body.
+pub fn load_smw_us_v1_event_tilemaps_for_mapper(
+    project: &Project,
+    mapper: Mapper,
+) -> Result<LoadedSmwUsV1EventTilemaps, SmwUsV1EventTilemapLoadError> {
+    let locator = smw_us_v1_event_tilemap_locator_for_mapper(mapper);
     if project.rom.read(locator.loader_marker, 1)? == [0xa2] {
         let lz2 =
             project.load_event_tilemap_buffers_detected(locator, EventTilemapCompression::Lz2);
@@ -169,7 +188,13 @@ pub fn load_smw_us_v1_event_tilemaps(
             lz3: lz3.unwrap_err(),
         });
     }
-    for (offset, expected) in pristine_fragments() {
+    let base = if mapper == Mapper::ExLoRom {
+        0x40_0000
+    } else {
+        0
+    };
+    for (local_offset, expected) in pristine_fragments() {
+        let offset = base + local_offset;
         if project.rom.read(offset, expected.len())? != expected {
             return Err(SmwUsV1EventTilemapLoadError::PristineMismatch { offset });
         }

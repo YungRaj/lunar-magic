@@ -8,7 +8,7 @@ use lm_project::{
 };
 use lm_rats::AllocationPolicy;
 use lm_rats::{HEADER_LEN, HeaderError, parse_at};
-use lm_rom::{Mapper, RomError, RomImage, SnesPointer24, snes_to_pc};
+use lm_rom::{Mapper, RomError, RomImage, SnesPointer24, detect_identity, snes_to_pc};
 
 pub const SMW_US_V1_GRAPHICS_COMPRESSION_METADATA_OFFSET: usize = 0x07_ffeb;
 pub const SMW_US_V1_GRAPHICS_COMPRESSION_HOOK_OFFSET: usize = 0x0038_e3;
@@ -60,6 +60,7 @@ pub enum SmwUsV1GraphicsCompressionDetectError {
         expected: SmwUsV1GraphicsCompressionMode,
         actual: SmwUsV1GraphicsCompressionMode,
     },
+    UnsupportedMapper(Mapper),
 }
 
 impl std::fmt::Display for SmwUsV1GraphicsCompressionDetectError {
@@ -152,14 +153,19 @@ pub struct SmwUsV1GraphicsCompressionReplacementPlan {
 pub fn detect_smw_us_v1_graphics_compression_mode(
     image: &RomImage,
 ) -> Result<SmwUsV1GraphicsCompressionMode, SmwUsV1GraphicsCompressionDetectError> {
+    let mapper = compression_mapper(image)?;
+    let base = mapper_body_base(mapper);
     let bytes = image.logical_bytes();
-    let metadata = *bytes
-        .get(SMW_US_V1_GRAPHICS_COMPRESSION_METADATA_OFFSET)
-        .ok_or(SmwUsV1GraphicsCompressionDetectError::Truncated {
-            offset: SMW_US_V1_GRAPHICS_COMPRESSION_METADATA_OFFSET,
-            len: 1,
-        })?;
-    let hook = read_array::<5>(bytes, SMW_US_V1_GRAPHICS_COMPRESSION_HOOK_OFFSET)?;
+    let metadata_offset = base + SMW_US_V1_GRAPHICS_COMPRESSION_METADATA_OFFSET;
+    let hook_offset = base + SMW_US_V1_GRAPHICS_COMPRESSION_HOOK_OFFSET;
+    let metadata =
+        *bytes
+            .get(metadata_offset)
+            .ok_or(SmwUsV1GraphicsCompressionDetectError::Truncated {
+                offset: metadata_offset,
+                len: 1,
+            })?;
+    let hook = read_array::<5>(bytes, hook_offset)?;
     let mode = match metadata & 0x0f {
         0 => SmwUsV1GraphicsCompressionMode::Lz2Original,
         1 => SmwUsV1GraphicsCompressionMode::Lz2Speed,
@@ -178,11 +184,8 @@ pub fn detect_smw_us_v1_graphics_compression_mode(
     if hook[0] != INSTALLED_OPCODE || hook[4] != INSTALLED_RETURN {
         return Err(SmwUsV1GraphicsCompressionDetectError::InstalledHookMismatch(hook));
     }
-    let runtime_offset = snes_to_pc(
-        Mapper::LoRom,
-        u32::from_le_bytes([hook[1], hook[2], hook[3], 0]),
-    )
-    .map_err(SmwUsV1GraphicsCompressionDetectError::RuntimeAddress)?;
+    let runtime_offset = snes_to_pc(mapper, u32::from_le_bytes([hook[1], hook[2], hook[3], 0]))
+        .map_err(SmwUsV1GraphicsCompressionDetectError::RuntimeAddress)?;
     let header_offset = runtime_offset.checked_sub(HEADER_LEN).ok_or(
         SmwUsV1GraphicsCompressionDetectError::RuntimeBeforeHeader(runtime_offset),
     )?;
@@ -229,6 +232,8 @@ pub fn smw_us_v1_lz2_speed_installation_plan(
     allocation: AllocationPolicy,
     checksum_field: usize,
 ) -> Result<RelocatablePatchPlan, SmwUsV1GraphicsCompressionDetectError> {
+    let mapper = compression_mapper(image)?;
+    let base = mapper_body_base(mapper);
     let mode = detect_smw_us_v1_graphics_compression_mode(image)?;
     if mode != SmwUsV1GraphicsCompressionMode::Lz2Original {
         return Err(SmwUsV1GraphicsCompressionDetectError::SourceMode {
@@ -236,13 +241,13 @@ pub fn smw_us_v1_lz2_speed_installation_plan(
             actual: mode,
         });
     }
-    let metadata = image.logical_bytes()[SMW_US_V1_GRAPHICS_COMPRESSION_METADATA_OFFSET];
+    let metadata = image.logical_bytes()[base + SMW_US_V1_GRAPHICS_COMPRESSION_METADATA_OFFSET];
     let runtime = decode_hex(SPEED_RUNTIME_HEX);
     debug_assert_eq!(runtime.len(), SPEED_RUNTIME_LEN);
     debug_assert_eq!(crc32(&runtime), SPEED_RUNTIME_CRC32);
     Ok(RelocatablePatchPlan {
         description: "change SMW graphics compression from LZ2 Orig to LZ2 Speed".into(),
-        mapper: Mapper::LoRom,
+        mapper,
         allocation,
         checksum_field,
         expansion_fill: 0xff,
@@ -252,18 +257,18 @@ pub fn smw_us_v1_lz2_speed_installation_plan(
         }],
         writes: vec![
             PatchWrite {
-                offset: SMW_US_V1_GRAPHICS_COMPRESSION_HOOK_OFFSET,
+                offset: base + SMW_US_V1_GRAPHICS_COMPRESSION_HOOK_OFFSET,
                 expected: ORIGINAL_HOOK.to_vec(),
                 replacement: vec![INSTALLED_OPCODE, 0, 0, 0, INSTALLED_RETURN],
                 fixups: vec![PatchFixup {
                     offset: 1,
                     target_payload: 0,
                     target_addend: 0,
-                    encoding: PatchFixupEncoding::Long24LowBank,
+                    encoding: long_pointer_encoding(mapper),
                 }],
             },
             PatchWrite {
-                offset: SMW_US_V1_GRAPHICS_COMPRESSION_METADATA_OFFSET,
+                offset: base + SMW_US_V1_GRAPHICS_COMPRESSION_METADATA_OFFSET,
                 expected: vec![metadata],
                 replacement: vec![(metadata & 0xf0) | 1],
                 fixups: vec![],
@@ -347,7 +352,12 @@ pub fn smw_us_v1_compact_graphics_compression_migration_plan(
             })
         })
         .ok_or(SmwUsV1GraphicsCompressionMigrationError::SpecialGraphicsAllocationPolicy)?;
-    let allocation = AllocationPolicy::lorom(first_bank..image.logical_len());
+    let allocation = AllocationPolicy {
+        search: first_bank..image.logical_len(),
+        bank_size: Some(0x8000),
+        fill_bytes: vec![0x00, 0xff],
+        protected: Vec::new(),
+    };
     let plan = smw_us_v1_graphics_compression_installation_plan(
         image,
         allocation,
@@ -365,6 +375,8 @@ fn smw_us_v1_graphics_compression_installation_plan(
     target_mode: SmwUsV1GraphicsCompressionMode,
     obsolete: Option<&RatsOwnershipManifest>,
 ) -> Result<RelocatablePatchPlan, SmwUsV1GraphicsCompressionMigrationError> {
+    let mapper = compression_mapper(image)?;
+    let base = mapper_body_base(mapper);
     let source_mode = detect_smw_us_v1_graphics_compression_mode(image)?;
     let (source_compression, target_compression, target_event_compression) = match target_mode {
         SmwUsV1GraphicsCompressionMode::Lz3
@@ -415,7 +427,7 @@ fn smw_us_v1_graphics_compression_installation_plan(
         GraphicsCompression::Lz3 => encode_lz3(raw),
     };
     let project = Project::new(image.clone());
-    let mut ordinary_layout = crate::smw_us_v1_vanilla_graphics_layout();
+    let mut ordinary_layout = crate::smw_us_v1_vanilla_graphics_layout_for_mapper(mapper);
     ordinary_layout.compression = source_compression;
     let ordinary = (0..ordinary_layout.pointers.entries)
         .map(|slot| {
@@ -426,7 +438,7 @@ fn smw_us_v1_graphics_compression_installation_plan(
             Ok(encode(&raw))
         })
         .collect::<Result<Vec<_>, SmwUsV1GraphicsCompressionMigrationError>>()?;
-    let mut special = crate::smw_us_v1_special_graphics_layouts(image)?;
+    let mut special = crate::smw_us_v1_special_graphics_layouts_for_mapper(image, mapper)?;
     special.gfx33.compression = source_compression;
     special.gfx32.compression = source_compression;
     let gfx33 = encode(
@@ -504,15 +516,21 @@ fn smw_us_v1_graphics_compression_installation_plan(
     let bytes = image.logical_bytes();
     let mut writes = Vec::with_capacity(ordinary_layout.pointers.entries * 3 + 6);
     let target_len = image.logical_len().max(allocation.search.end);
-    if !target_len.is_power_of_two() || !(0x10_0000..=0x40_0000).contains(&target_len) {
+    let maximum_len = if mapper == Mapper::ExLoRom {
+        0x80_0000
+    } else {
+        0x40_0000
+    };
+    if !target_len.is_power_of_two() || !(0x10_0000..=maximum_len).contains(&target_len) {
         return Err(SmwUsV1GraphicsCompressionMigrationError::SpecialGraphicsAllocationPolicy);
     }
     let rom_size = u8::try_from(target_len.ilog2() - 10)
         .map_err(|_| SmwUsV1GraphicsCompressionMigrationError::SpecialGraphicsAllocationPolicy)?;
-    if bytes[crate::smw_us_v1_exgraphics::SMW_US_V1_ROM_SIZE_OFFSET] != rom_size {
+    let rom_size_offset = base + crate::smw_us_v1_exgraphics::SMW_US_V1_ROM_SIZE_OFFSET;
+    if bytes[rom_size_offset] != rom_size {
         writes.push(PatchWrite {
-            offset: crate::smw_us_v1_exgraphics::SMW_US_V1_ROM_SIZE_OFFSET,
-            expected: vec![bytes[crate::smw_us_v1_exgraphics::SMW_US_V1_ROM_SIZE_OFFSET]],
+            offset: rom_size_offset,
+            expected: vec![bytes[rom_size_offset]],
             replacement: vec![rom_size],
             fixups: Vec::new(),
         });
@@ -521,16 +539,16 @@ fn smw_us_v1_graphics_compression_installation_plan(
         let target_payload = gfx32_payload_index + 1 + slot;
         for (offset, encoding) in [
             (
-                crate::SMW_US_V1_GRAPHICS_POINTER_LOW_OFFSET + slot,
+                base + crate::SMW_US_V1_GRAPHICS_POINTER_LOW_OFFSET + slot,
                 PatchFixupEncoding::Low8,
             ),
             (
-                crate::SMW_US_V1_GRAPHICS_POINTER_HIGH_OFFSET + slot,
+                base + crate::SMW_US_V1_GRAPHICS_POINTER_HIGH_OFFSET + slot,
                 PatchFixupEncoding::High8,
             ),
             (
-                crate::SMW_US_V1_GRAPHICS_POINTER_BANK_OFFSET + slot,
-                PatchFixupEncoding::Bank8LowBank,
+                base + crate::SMW_US_V1_GRAPHICS_POINTER_BANK_OFFSET + slot,
+                bank_pointer_encoding(mapper),
             ),
         ] {
             writes.push(pointer_write(bytes, offset, target_payload, 0, encoding));
@@ -539,28 +557,28 @@ fn smw_us_v1_graphics_compression_installation_plan(
     writes.extend([
         pointer_write(
             bytes,
-            crate::SMW_US_V1_GFX33_STARTUP_POINTER_LOW_OFFSET,
+            base + crate::SMW_US_V1_GFX33_STARTUP_POINTER_LOW_OFFSET,
             gfx33_payload_index,
             0,
             PatchFixupEncoding::Low16,
         ),
         pointer_write(
             bytes,
-            crate::SMW_US_V1_GFX32_STARTUP_POINTER_LOW_OFFSET,
+            base + crate::SMW_US_V1_GFX32_STARTUP_POINTER_LOW_OFFSET,
             gfx32_payload_index,
             0,
             PatchFixupEncoding::Low16,
         ),
         pointer_write(
             bytes,
-            crate::SMW_US_V1_SPECIAL_GRAPHICS_STARTUP_POINTER_BANK_OFFSET,
+            base + crate::SMW_US_V1_SPECIAL_GRAPHICS_STARTUP_POINTER_BANK_OFFSET,
             gfx33_payload_index,
             0,
-            PatchFixupEncoding::Bank8LowBank,
+            bank_pointer_encoding(mapper),
         ),
     ]);
     for file_number in 0x80_u16..=0x0fff {
-        let route = crate::smw_us_v1_exgraphics_pointer(file_number)?;
+        let route = crate::smw_us_v1_exgraphics_pointer_in_rom(image, file_number, mapper)?;
         if route.encoding != crate::SmwUsV1ExGraphicsEncoding::Lz2 {
             continue;
         }
@@ -573,7 +591,7 @@ fn smw_us_v1_graphics_compression_installation_plan(
         let raw = project.load_decompressed_graphics_file(
             0,
             GraphicsRomLayout {
-                mapper: Mapper::LoRom,
+                mapper,
                 pointers: LevelPointerTable {
                     offset: route.pointer_offset,
                     entries: 1,
@@ -602,10 +620,10 @@ fn smw_us_v1_graphics_compression_installation_plan(
             route.pointer_offset,
             target_payload,
             0,
-            PatchFixupEncoding::Long24LowBank,
+            long_pointer_encoding(mapper),
         ));
     }
-    let event_tilemaps = crate::load_smw_us_v1_event_tilemaps(&project)?;
+    let event_tilemaps = crate::load_smw_us_v1_event_tilemaps_for_mapper(&project, mapper)?;
     if let crate::SmwUsV1EventTilemapStorage::Installed(source_event_compression) =
         event_tilemaps.storage
     {
@@ -621,13 +639,13 @@ fn smw_us_v1_graphics_compression_installation_plan(
         });
         for (low_offset, bank_offset, target_payload) in [
             (
-                crate::SMW_US_V1_EVENT_TILEMAP_PRIMARY_LOW_WORD,
-                crate::SMW_US_V1_EVENT_TILEMAP_PRIMARY_BANK,
+                base + crate::SMW_US_V1_EVENT_TILEMAP_PRIMARY_LOW_WORD,
+                base + crate::SMW_US_V1_EVENT_TILEMAP_PRIMARY_BANK,
                 primary_payload,
             ),
             (
-                crate::SMW_US_V1_EVENT_TILEMAP_SECONDARY_LOW_WORD,
-                crate::SMW_US_V1_EVENT_TILEMAP_SECONDARY_BANK,
+                base + crate::SMW_US_V1_EVENT_TILEMAP_SECONDARY_LOW_WORD,
+                base + crate::SMW_US_V1_EVENT_TILEMAP_SECONDARY_BANK,
                 secondary_payload,
             ),
         ] {
@@ -643,12 +661,13 @@ fn smw_us_v1_graphics_compression_installation_plan(
                 bank_offset,
                 target_payload,
                 0,
-                PatchFixupEncoding::Bank8LowBank,
+                bank_pointer_encoding(mapper),
             ));
         }
         debug_assert_ne!(source_event_compression, target_event_compression);
     }
-    let hook = read_array::<5>(bytes, SMW_US_V1_GRAPHICS_COMPRESSION_HOOK_OFFSET)?;
+    let hook_offset = base + SMW_US_V1_GRAPHICS_COMPRESSION_HOOK_OFFSET;
+    let hook = read_array::<5>(bytes, hook_offset)?;
     let (replacement, fixups) = match runtime_payload_index {
         Some(target_payload) => (
             vec![INSTALLED_OPCODE, 0, 0, 0, INSTALLED_RETURN],
@@ -656,20 +675,21 @@ fn smw_us_v1_graphics_compression_installation_plan(
                 offset: 1,
                 target_payload,
                 target_addend: 0,
-                encoding: PatchFixupEncoding::Long24LowBank,
+                encoding: long_pointer_encoding(mapper),
             }],
         ),
         None => (ORIGINAL_HOOK.to_vec(), Vec::new()),
     };
     writes.push(PatchWrite {
-        offset: SMW_US_V1_GRAPHICS_COMPRESSION_HOOK_OFFSET,
+        offset: hook_offset,
         expected: hook.to_vec(),
         replacement,
         fixups,
     });
-    let metadata = bytes[SMW_US_V1_GRAPHICS_COMPRESSION_METADATA_OFFSET];
+    let metadata_offset = base + SMW_US_V1_GRAPHICS_COMPRESSION_METADATA_OFFSET;
+    let metadata = bytes[metadata_offset];
     writes.push(PatchWrite {
-        offset: SMW_US_V1_GRAPHICS_COMPRESSION_METADATA_OFFSET,
+        offset: metadata_offset,
         expected: vec![metadata],
         replacement: vec![
             (metadata & 0xf0)
@@ -693,7 +713,7 @@ fn smw_us_v1_graphics_compression_installation_plan(
                 "install SMW LZ3 decoder and migrate all graphics".into()
             }
         },
-        mapper: Mapper::LoRom,
+        mapper,
         allocation,
         checksum_field,
         expansion_fill: 0xff,
@@ -705,13 +725,15 @@ fn smw_us_v1_graphics_compression_installation_plan(
 fn smw_us_v1_graphics_compression_ownership(
     image: &RomImage,
 ) -> Result<RatsOwnershipManifest, SmwUsV1GraphicsCompressionMigrationError> {
+    let mapper = compression_mapper(image)?;
+    let base = mapper_body_base(mapper);
     let project = Project::new(image.clone());
     let mut owned = Vec::new();
     let mut push_pointer =
         |pointer: SnesPointer24| -> Result<(), SmwUsV1GraphicsCompressionMigrationError> {
             let loaded = match project.load_payload_from_pointer(
                 pointer,
-                Mapper::LoRom,
+                mapper,
                 &PayloadReadPolicy::Tagged,
             ) {
                 Ok(loaded) => loaded,
@@ -731,7 +753,7 @@ fn smw_us_v1_graphics_compression_ownership(
     if mode != SmwUsV1GraphicsCompressionMode::Lz2Original {
         let hook = read_array::<5>(
             image.logical_bytes(),
-            SMW_US_V1_GRAPHICS_COMPRESSION_HOOK_OFFSET,
+            base + SMW_US_V1_GRAPHICS_COMPRESSION_HOOK_OFFSET,
         )?;
         push_pointer(
             SnesPointer24::new(u32::from_le_bytes([hook[1], hook[2], hook[3], 0]))
@@ -739,16 +761,16 @@ fn smw_us_v1_graphics_compression_ownership(
         )?;
     }
 
-    let ordinary = crate::smw_us_v1_vanilla_graphics_layout();
+    let ordinary = crate::smw_us_v1_vanilla_graphics_layout_for_mapper(mapper);
     for slot in 0..ordinary.pointers.entries {
         push_pointer(ordinary.read_pointer(&project, slot)?)?;
     }
-    let special = crate::smw_us_v1_special_graphics_layouts(image)?;
+    let special = crate::smw_us_v1_special_graphics_layouts_for_mapper(image, mapper)?;
     push_pointer(special.gfx33.read_pointer(&project, 0)?)?;
     push_pointer(special.gfx32.read_pointer(&project, 0)?)?;
 
     for file_number in 0x80_u16..=0x0fff {
-        let route = crate::smw_us_v1_exgraphics_pointer(file_number)?;
+        let route = crate::smw_us_v1_exgraphics_pointer_in_rom(image, file_number, mapper)?;
         if route.encoding != crate::SmwUsV1ExGraphicsEncoding::Lz2 {
             continue;
         }
@@ -763,17 +785,17 @@ fn smw_us_v1_graphics_compression_ownership(
     }
 
     if matches!(
-        crate::load_smw_us_v1_event_tilemaps(&project)?.storage,
+        crate::load_smw_us_v1_event_tilemaps_for_mapper(&project, mapper)?.storage,
         crate::SmwUsV1EventTilemapStorage::Installed(_)
     ) {
         for (low_offset, bank_offset) in [
             (
-                crate::SMW_US_V1_EVENT_TILEMAP_PRIMARY_LOW_WORD,
-                crate::SMW_US_V1_EVENT_TILEMAP_PRIMARY_BANK,
+                base + crate::SMW_US_V1_EVENT_TILEMAP_PRIMARY_LOW_WORD,
+                base + crate::SMW_US_V1_EVENT_TILEMAP_PRIMARY_BANK,
             ),
             (
-                crate::SMW_US_V1_EVENT_TILEMAP_SECONDARY_LOW_WORD,
-                crate::SMW_US_V1_EVENT_TILEMAP_SECONDARY_BANK,
+                base + crate::SMW_US_V1_EVENT_TILEMAP_SECONDARY_LOW_WORD,
+                base + crate::SMW_US_V1_EVENT_TILEMAP_SECONDARY_BANK,
             ),
         ] {
             let low = image.read(low_offset, 2)?;
@@ -791,6 +813,40 @@ fn smw_us_v1_graphics_compression_ownership(
         owned,
         retained: Vec::new(),
     })
+}
+
+fn compression_mapper(image: &RomImage) -> Result<Mapper, SmwUsV1GraphicsCompressionDetectError> {
+    let mapper = detect_identity(image).map_or(Mapper::LoRom, |identity| identity.mapper);
+    match mapper {
+        Mapper::LoRom | Mapper::ExLoRom => Ok(mapper),
+        Mapper::Sa1 => Err(SmwUsV1GraphicsCompressionDetectError::UnsupportedMapper(
+            mapper,
+        )),
+    }
+}
+
+const fn mapper_body_base(mapper: Mapper) -> usize {
+    if matches!(mapper, Mapper::ExLoRom) {
+        0x40_0000
+    } else {
+        0
+    }
+}
+
+const fn long_pointer_encoding(mapper: Mapper) -> PatchFixupEncoding {
+    if matches!(mapper, Mapper::LoRom) {
+        PatchFixupEncoding::Long24LowBank
+    } else {
+        PatchFixupEncoding::Long24
+    }
+}
+
+const fn bank_pointer_encoding(mapper: Mapper) -> PatchFixupEncoding {
+    if matches!(mapper, Mapper::LoRom) {
+        PatchFixupEncoding::Bank8LowBank
+    } else {
+        PatchFixupEncoding::Bank8
+    }
 }
 
 fn pointer_write(
@@ -859,6 +915,158 @@ mod tests {
     use super::*;
     use lm_project::Project;
     use std::fs;
+
+    fn load_exlorom_graphics(
+        image: &RomImage,
+        compression: GraphicsCompression,
+    ) -> (
+        Vec<lm_graphics::GraphicsFile4bpp>,
+        lm_graphics::GraphicsFile4bpp,
+        lm_graphics::GraphicsFile4bpp,
+        Vec<(u16, Vec<u8>)>,
+    ) {
+        let project = Project::new(image.clone());
+        let mut ordinary_layout =
+            crate::smw_us_v1_vanilla_graphics_layout_for_mapper(Mapper::ExLoRom);
+        ordinary_layout.compression = compression;
+        let ordinary = (0..ordinary_layout.pointers.entries)
+            .map(|slot| project.load_graphics_file(slot, ordinary_layout).unwrap())
+            .collect();
+        let mut special =
+            crate::smw_us_v1_special_graphics_layouts_for_mapper(image, Mapper::ExLoRom).unwrap();
+        special.gfx33.compression = compression;
+        special.gfx32.compression = compression;
+        let gfx33 = project.load_graphics_file(0, special.gfx33).unwrap();
+        let gfx32 = project.load_graphics_file(0, special.gfx32).unwrap();
+        let mut exgfx = Vec::new();
+        for file_number in 0x80_u16..=0x0fff {
+            let route =
+                crate::smw_us_v1_exgraphics_pointer_in_rom(image, file_number, Mapper::ExLoRom)
+                    .unwrap();
+            if route.encoding != crate::SmwUsV1ExGraphicsEncoding::Lz2 {
+                continue;
+            }
+            let pointer = image.read(route.pointer_offset, 3).unwrap();
+            if pointer == [0; 3] || pointer == [0xff; 3] {
+                continue;
+            }
+            let bytes = project
+                .load_decompressed_graphics_file(
+                    0,
+                    GraphicsRomLayout {
+                        mapper: Mapper::ExLoRom,
+                        pointers: LevelPointerTable {
+                            offset: route.pointer_offset,
+                            entries: 1,
+                            stride: 3,
+                        },
+                        split_pointer_planes: None,
+                        compression,
+                        maximum_compressed_len: 0x8000,
+                        maximum_decompressed_len: 0x1000,
+                    },
+                )
+                .unwrap();
+            exgfx.push((file_number, bytes));
+        }
+        (ordinary, gfx33, gfx32, exgfx)
+    }
+
+    #[test]
+    #[ignore = "requires retained Lunar Magic 3.63 ExLoROM LZ2/LZ3 conversion captures"]
+    fn exlorom_codec_replacement_preserves_every_graphics_stream_and_undoes() {
+        let lz2_bytes = fs::read(std::env::var_os("LM_EXLOROM_LZ2_ROM").unwrap()).unwrap();
+        let lz3_oracle = RomImage::from_bytes(
+            fs::read(std::env::var_os("LM_EXLOROM_LZ3_ROM").unwrap()).unwrap(),
+        )
+        .unwrap();
+        let lz2 = RomImage::from_bytes(lz2_bytes.clone()).unwrap();
+        assert_eq!(detect_identity(&lz2).unwrap().mapper, Mapper::ExLoRom);
+        assert_eq!(
+            detect_smw_us_v1_graphics_compression_mode(&lz2).unwrap(),
+            SmwUsV1GraphicsCompressionMode::Lz2Original
+        );
+        assert_eq!(
+            detect_smw_us_v1_graphics_compression_mode(&lz3_oracle).unwrap(),
+            SmwUsV1GraphicsCompressionMode::Lz3
+        );
+        let expected = load_exlorom_graphics(&lz2, GraphicsCompression::Lz2);
+        assert_eq!(
+            load_exlorom_graphics(&lz3_oracle, GraphicsCompression::Lz3),
+            expected
+        );
+
+        let replacement = smw_us_v1_compact_graphics_compression_migration_plan(
+            &lz2,
+            0x7fdc,
+            SmwUsV1GraphicsCompressionMode::Lz3,
+        )
+        .unwrap();
+        assert_eq!(replacement.plan.mapper, Mapper::ExLoRom);
+        assert!(
+            replacement
+                .plan
+                .writes
+                .iter()
+                .all(|write| { write.offset >= 0x40_0000 || write.offset >= 0x7f_0000 })
+        );
+        let inactive_mirror = lz2.clone();
+        let mut project = Project::new(lz2);
+        project
+            .replace_relocatable_patch(&replacement.plan, &replacement.obsolete, 0xff)
+            .unwrap();
+        assert_eq!(
+            detect_smw_us_v1_graphics_compression_mode(&project.rom).unwrap(),
+            SmwUsV1GraphicsCompressionMode::Lz3
+        );
+        let identity = detect_identity(&project.rom).unwrap();
+        assert!(
+            identity.checksum_matches(),
+            "stored={:?} computed={:?}",
+            identity.stored_checksum,
+            identity.computed_checksum
+        );
+        assert_eq!(
+            load_exlorom_graphics(&project.rom, GraphicsCompression::Lz3),
+            expected
+        );
+        for range in [
+            SMW_US_V1_GRAPHICS_COMPRESSION_HOOK_OFFSET
+                ..SMW_US_V1_GRAPHICS_COMPRESSION_HOOK_OFFSET + 5,
+            SMW_US_V1_GRAPHICS_COMPRESSION_METADATA_OFFSET
+                ..SMW_US_V1_GRAPHICS_COMPRESSION_METADATA_OFFSET + 1,
+            crate::SMW_US_V1_GRAPHICS_POINTER_LOW_OFFSET
+                ..crate::SMW_US_V1_GRAPHICS_POINTER_BANK_OFFSET
+                    + crate::SMW_US_V1_VANILLA_GRAPHICS_FILES,
+        ] {
+            assert_eq!(
+                &project.rom.logical_bytes()[range.clone()],
+                &inactive_mirror.logical_bytes()[range],
+                "Rust rewrote the inactive ExLoROM compatibility mirror"
+            );
+        }
+
+        let reverse = smw_us_v1_compact_graphics_compression_migration_plan(
+            &project.rom,
+            0x7fdc,
+            SmwUsV1GraphicsCompressionMode::Lz2Original,
+        )
+        .unwrap();
+        project
+            .replace_relocatable_patch(&reverse.plan, &reverse.obsolete, 0xff)
+            .unwrap();
+        assert_eq!(
+            detect_smw_us_v1_graphics_compression_mode(&project.rom).unwrap(),
+            SmwUsV1GraphicsCompressionMode::Lz2Original
+        );
+        assert_eq!(
+            load_exlorom_graphics(&project.rom, GraphicsCompression::Lz2),
+            expected
+        );
+        project.history.undo(&mut project.rom).unwrap();
+        project.history.undo(&mut project.rom).unwrap();
+        assert_eq!(project.rom.as_file_bytes(), lz2_bytes);
+    }
 
     #[test]
     fn original_mode_requires_metadata_and_the_complete_fixed_hook() {

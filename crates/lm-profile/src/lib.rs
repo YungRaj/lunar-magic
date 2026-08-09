@@ -365,7 +365,8 @@ pub use overworld_event_tilemap::{
     SMW_US_V1_EVENT_TILEMAP_SECONDARY_BANK, SMW_US_V1_EVENT_TILEMAP_SECONDARY_LOW_WORD,
     SMW_US_V1_EVENT_TILEMAP_SECONDARY_MARKER, SmwUsV1EventTilemapLoadError,
     SmwUsV1EventTilemapStorage, load_smw_us_v1_event_tilemaps,
-    smw_us_v1_event_tilemap_installation_plan, smw_us_v1_event_tilemap_locator,
+    load_smw_us_v1_event_tilemaps_for_mapper, smw_us_v1_event_tilemap_installation_plan,
+    smw_us_v1_event_tilemap_locator, smw_us_v1_event_tilemap_locator_for_mapper,
     smw_us_v1_event_tilemap_update_policy,
 };
 pub use overworld_level_name::{
@@ -568,8 +569,9 @@ pub use vanilla_smw::{
     smw_us_v1_level_layer2_layout, smw_us_v1_level_uses_shared_background,
     smw_us_v1_lfix3_level_fields_layout, smw_us_v1_object_tileset_graphics_files,
     smw_us_v1_separate_midway_locator, smw_us_v1_special_graphics_layouts,
-    smw_us_v1_sprite_pointer_table, smw_us_v1_sprite_tileset_graphics_files,
-    smw_us_v1_vanilla_entrance_layout, smw_us_v1_vanilla_graphics_layout,
+    smw_us_v1_special_graphics_layouts_for_mapper, smw_us_v1_sprite_pointer_table,
+    smw_us_v1_sprite_tileset_graphics_files, smw_us_v1_vanilla_entrance_layout,
+    smw_us_v1_vanilla_graphics_layout, smw_us_v1_vanilla_graphics_layout_for_mapper,
     smw_us_v1_vanilla_layer2_layout, smw_us_v1_vanilla_level_layout,
     smw_us_v1_vanilla_special_graphics_layout,
 };
