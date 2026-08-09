@@ -553,6 +553,8 @@ test result: ok. 1 passed; 0 failed; finished in 0.93s
 ```
 
 That ROM contains no custom-time command in either candidate level. Both semantically reopen with
-ordinary time selector 3, music selector 5, sprite memory `$12`, and both buoyancy controls. The
-captured gameplay state requires exact WRAM digits `4/0/0`, active song `$03` at `$0DDA`, sprite
-memory `$12` at `$1692`, and combined buoyancy flags `$C0` at `$190E`.
+ordinary time selector 3, music selector 7, sprite memory `$0B`, and both buoyancy controls cleared.
+The captured gameplay state requires exact WRAM digits `4/0/0`, active song `$12` at `$0DDA`,
+sprite memory `$0B` at `$1692`, and buoyancy flags `$00` at `$190E`. This discriminating tuple
+replaces the prior `$03/$12/$C0` observation and proves the input route is executing the edited
+level rather than accepting coincidentally matching vanilla values.

@@ -1114,8 +1114,8 @@ fn rust_standard_time_music_and_sprite_headers_are_applied_in_snes9x_gameplay() 
         level
             .layer1
             .header
-            .set_default_music_selector(5)
-            .expect("select music 5");
+            .set_default_music_selector(7)
+            .expect("select music 7");
         level
             .layer1
             .objects
@@ -1140,14 +1140,14 @@ fn rust_standard_time_music_and_sprite_headers_are_applied_in_snes9x_gameplay() 
             .load_level_slot(level_number, layout, &sprite_lengths)
             .expect("reopen standard-time starting level");
         assert_eq!(reopened.layer1.header.time_limit_selector(), 3);
-        assert_eq!(reopened.layer1.header.default_music_selector(), 5);
+        assert_eq!(reopened.layer1.header.default_music_selector(), 7);
         assert_eq!(reopened.layer1.objects.custom_time(false), None);
 
         let original = reopened;
         let mut replacement = original.clone();
         replacement.sprites.header = NativeSpriteHeader::from_raw(replacement.sprites.header)
-            .with_properties(0x12, true, true)
-            .expect("set sprite memory and both buoyancy flags")
+            .with_properties(0x0b, false, false)
+            .expect("set discriminating sprite-header properties")
             .raw();
         assert!(
             project
@@ -1174,9 +1174,9 @@ fn rust_standard_time_music_and_sprite_headers_are_applied_in_snes9x_gameplay() 
     let output = directory.0.join("Rust-standard-time-header-SMW.sfc");
     fs::write(&output, project.save_snapshot()).expect("write standard-time ROM");
     let wram = require_level_header_gameplay_evidence(&snes9x, &output, 0x400);
-    assert_eq!(wram[SMW_CURRENT_MUSIC], 0x03);
-    assert_eq!(wram[SMW_SPRITE_MEMORY], 0x12);
-    assert_eq!(wram[SMW_SPRITE_BUOYANCY], 0xc0);
+    assert_eq!(wram[SMW_CURRENT_MUSIC], 0x12);
+    assert_eq!(wram[SMW_SPRITE_MEMORY], 0x0b);
+    assert_eq!(wram[SMW_SPRITE_BUOYANCY], 0x00);
 }
 
 #[test]

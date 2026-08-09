@@ -70,9 +70,10 @@ level with real controller-A input, and requires a fresh Snes9x snapshot in game
 WRAM timer digits at `$0F31..$0F33` are exactly `4/5/6`. A bounded nonuniform gameplay screenshot
 is required alongside the state, so an idle boot or fabricated state-only report cannot pass. A
 second independent gate disables the custom command, sets ordinary five-byte-header time selector
-3, music selector 5, sprite memory `$12`, and both buoyancy controls. The same runtime boundary
-must expose exact digits `4/0/0`, active song `$03` at WRAM `$0DDA`, sprite memory `$12` at
-`$1692`, and buoyancy flags `$C0` at `$190E`.
+3, music selector 7, sprite memory `$0B`, and both buoyancy controls cleared. The same runtime
+boundary must expose exact digits `4/0/0`, active song `$12` at WRAM `$0DDA`, sprite memory `$0B`
+at `$1692`, and buoyancy flags `$00` at `$190E`. Those discriminating values differ from the
+previous live `$03/$12/$C0` tuple and therefore prove the edited level was entered.
 
 Run the gates serially so GUI instances cannot share state:
 

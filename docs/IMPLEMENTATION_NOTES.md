@@ -3822,11 +3822,13 @@ requires a bounded nonuniform rendered frame. Other gameplay-sensitive header fi
 equivalent runtime assertions before the aggregate Oracle gate can be promoted.
 
 `rust_standard_time_music_and_sprite_headers_are_applied_in_snes9x_gameplay` independently removes
-the custom-time runtime from the equation. It sets ordinary time selector 3, music selector 5,
-sprite memory `$12`, and both buoyancy controls; explicitly removes command `$28`; reopens both
+the custom-time runtime from the equation. It sets ordinary time selector 3, music selector 7,
+sprite memory `$0B`, and clears both buoyancy controls; explicitly removes command `$28`; reopens both
 candidate levels; and follows the same controller-driven entry path. The captured gameplay state
-requires live timer digits `4/0/0`, active song `$03` at WRAM `$0DDA`, sprite memory `$12` at
-`$1692`, and buoyancy flags `$C0` at `$190E`. This proves the ordinary timer, music, and complete
+requires live timer digits `4/0/0`, active song `$12` at WRAM `$0DDA`, sprite memory `$0B` at
+`$1692`, and cleared buoyancy flags `$00` at `$190E`. These discriminating values differ from the
+previous `$03/$12/$C0` live tuple, proving the controller route entered the edited level rather
+than merely observing plausible vanilla defaults. This proves the ordinary timer, music, and complete
 sprite-header properties plus the custom bypass reach genuine gameplay with their expected values.
 
 For authenticated ordinary SMW-US Layer 3, the installed preview and both image-export paths load
