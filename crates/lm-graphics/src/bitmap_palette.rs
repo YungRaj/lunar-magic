@@ -249,7 +249,28 @@ fn reduce_bitmap_palette_internal(
         }
     }
     let opaque_indices = if options.maintain_detail {
-        maintain_detail_palette_indices(&opaque, &colors, &exact_existing)?
+        let mut indices = maintain_detail_palette_indices(&opaque, &colors, &exact_existing)?;
+        // Maintain Detail includes a temporary zero-color candidate before the reduced colors.
+        // Its index zero is not bitmap transparency: opaque pixels assigned to it continue into
+        // row allocation and may use an existing nonzero palette cell containing black. Keep that
+        // candidate in the reduced palette so only source alpha produces an actual zero index.
+        if indices.contains(&0) {
+            let black = colors
+                .iter()
+                .position(|color| color.0 == 0)
+                .unwrap_or_else(|| {
+                    colors.push(Bgr555(0));
+                    colors.len() - 1
+                });
+            let black =
+                u8::try_from(black + 1).map_err(|_| BitmapPaletteReductionError::IndexOverflow)?;
+            for index in &mut indices {
+                if *index == 0 {
+                    *index = black;
+                }
+            }
+        }
+        indices
     } else {
         nearest_lunar_magic_palette_indices(&opaque, &colors)?
     };
@@ -903,9 +924,9 @@ fn retain_exact_existing_color_sets(
         }
         let Some(row) = rows.iter().position(|row| {
             record.colors.iter().all(|color| {
-                row.entries.iter().any(
-                    |entry| matches!(entry, RowEntry::Free(Some(value)) if value == color),
-                )
+                row.entries
+                    .iter()
+                    .any(|entry| matches!(entry, RowEntry::Free(Some(value)) if value == color))
             })
         }) else {
             continue;
@@ -1838,9 +1859,7 @@ const fn assigned_color(entry: RowEntry) -> Option<u16> {
         | RowEntry::Free(_)
         | RowEntry::Reusable(_)
         | RowEntry::Retained(_)
-        | RowEntry::Exact(_) => {
-            None
-        }
+        | RowEntry::Exact(_) => None,
     }
 }
 
@@ -2703,6 +2722,34 @@ mod tests {
     }
 
     #[test]
+    fn maintain_detail_materializes_the_opaque_zero_candidate() {
+        let near_black = Bgr555(1);
+        let red = Bgr555(0x001f);
+        let mut original = Palette {
+            colors: vec![Bgr555(0x7fff); BITMAP_PALETTE_COLORS],
+        };
+        original.colors[13] = Bgr555(0);
+        let mut options = BitmapPaletteColorOptions::lunar_magic_initial();
+        options.maximum_colors = 1;
+        options.maintain_detail = true;
+        options.entries.fill(BitmapPaletteEntryState::Reserved);
+        options.entries[0] = BitmapPaletteEntryState::Reusable;
+        options.entries[13] = BitmapPaletteEntryState::Free;
+        options.entries[16] = BitmapPaletteEntryState::Reusable;
+        options.entries[17] = BitmapPaletteEntryState::Free;
+        let pixels = [near_black.to_rgb8(), red.to_rgb8()].map(|pixel| Rgba8 {
+            red: pixel.red,
+            green: pixel.green,
+            blue: pixel.blue,
+            alpha: 255,
+        });
+
+        let reduced = reduce_bitmap_palette_with_palette(&pixels, &original, &options).unwrap();
+        assert!(reduced.colors.contains(&Bgr555(0)));
+        assert!(reduced.indices.iter().all(|index| *index != 0));
+    }
+
+    #[test]
     fn ordinary_reduction_prefers_an_exact_color_but_retains_the_zero_fallback() {
         let opaque = [Bgr555(0).to_rgb8(), Bgr555(0x7fff).to_rgb8()];
         assert_eq!(
@@ -2765,15 +2812,13 @@ mod tests {
                 .collect(),
         };
 
-        let allocated =
-            allocate_bitmap_palette_rows(&reduced, 16, 8, &original, &options).unwrap();
+        let allocated = allocate_bitmap_palette_rows(&reduced, 16, 8, &original, &options).unwrap();
         assert_eq!(allocated.generated_colors, 1);
         assert_eq!(allocated.palette.colors[13], black);
         assert_eq!(allocated.palette.colors[17], generated);
         assert_eq!(allocated.tile_rows, [0, 1]);
         assert!(allocated.indices.chunks_exact(16).all(|row| {
-            row[..8].iter().all(|index| *index == 13)
-                && row[8..].iter().all(|index| *index == 1)
+            row[..8].iter().all(|index| *index == 13) && row[8..].iter().all(|index| *index == 1)
         }));
     }
 

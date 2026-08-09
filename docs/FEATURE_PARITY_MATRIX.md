@@ -38,7 +38,8 @@ Current bitmap-option oracle evidence covers Popularity Method 1, Method 2, neit
 method, Method 1 with Maintain Detail, and the existing-colors-only route with “Allow modifying
 palette colors that aren't marked on right” disabled. All five match Lunar Magic's active palette
 and complete `$000–$2FF` graphics workspace byte-for-byte. The Maintain Detail breakpoint proves
-the leading zero/transparent sentinel participates in distinct-source assignment; the fifth gate
+the leading zero-color sentinel participates in distinct-source assignment; a low-color exact
+capture further proves that this is an opaque candidate rather than transparency. The fifth gate
 proves retained colors can seed one row and be rearranged into a later row, equal-error selection
 prefers exact movable assignments over merely retained words, and equal existing-color entries use
 the later index. The live differential now also compares all 524,288 Map16 definition bytes.
@@ -47,14 +48,19 @@ from `$83A5` match exactly. The sequential case proves Lunar Magic preserves sou
 `$10`-tile destination stride and corrected Rust's formerly flattened placement; the exact
 `$8000`/next-`$1000` allocation boundary is now applied. A boundary capture beginning at `$8FFF`
 also proves exhaustion is prefix-preserving: Lunar Magic commits the one available definition,
-retains palette/graphics conversion, and reports its exact partial-import warning. Transparent-source
-blank reuse plus complete original interaction coverage remain open.
+retains palette/graphics conversion, and reports its exact partial-import warning.
 
 Three additional low-color captures close an ambiguity that the larger fixtures could not expose.
 Opaque black is not automatically transparent: an exact black already present in a usable nonzero
 palette cell bypasses the generated-color limit, stays at its original row/index, and materializes
 as a real graphics tile. This remains true with a one-color limit and with Maintain Detail enabled;
 Rust now matches all three complete palette, graphics, and Map16 workspaces exactly.
+A fourth near-black/red Maintain Detail capture distinguishes exact black from the sentinel's
+nearest-source assignment. Lunar Magic routes opaque near-black through row 0/index `$D` and emits
+graphics tile `$200`; Rust now preserves that opaque zero-color candidate through row allocation
+instead of collapsing it to transparent index zero. Its complete palette, graphics, and Map16
+workspaces also match exactly. Transparent-source blank reuse plus independently crossed blank
+8×8/Map16 option captures remain open.
 
 Current Layer 1 import evidence also distinguishes extent from ordering. MWL import recomputes the
 five-bit stored last-screen field from the highest visible Layer 1 object or sprite, but preserves

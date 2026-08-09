@@ -119,7 +119,7 @@ SHA-256 `07e0db077220846dd17b13b743718152779f79cd5d2034240c944483808fc8d9`.
 
 A fourth capture enables Maintain Detail with Method 1. The first differential exposed one source
 pixel incorrectly retained by Rust. A breakpoint at `$004F0269` showed Lunar Magic's reduced
-candidate count is 17: the requested 16 opaque colors plus a leading zero sentinel. That sentinel
+candidate count is 17: the requested 16 opaque colors plus a leading zero-color sentinel. That sentinel
 claims the nearest unused bitmap color during Maintain Detail's distinct-source pass. After adding
 the sentinel to both native nearest mapping and the distinct-source allocator, the complete final
 palette and `$000–$2FF` graphics workspace match exactly. A repeated original capture produced the
@@ -714,3 +714,15 @@ All three exact Wine comparisons pass. Their palette/graphics/Map16 after-state 
 
 Together they prove Lunar Magic retains row 0/index `$D` black without consuming the single
 generated-color slot and materializes graphics tile `$200` in both reduction modes.
+
+A fourth 32×16 near-black/red fixture (SHA-256
+`a807ec07490de3f7d9755547d6226aed59172eec5d008fec0a10cb14cebf0ccc`) closes the remaining
+sentinel ambiguity. With Maintain Detail and a one-color limit, near-black is assigned to the
+leading zero-color candidate, but Lunar Magic does not make those pixels transparent: it maps them
+to the usable black at row 0/index `$D` and emits a nonblank tile at `$200`. The exact Wine gate
+passes with after-state SHA-256 values
+`7474781e87653ebcf38b69e64ec130cdcbb460d1ea2e286239ef4d19c3acdc90` (palette),
+`ccdfb6d920e3ac76312cb0dfb1ac16e3ad6e72ebc7551d2a52c79021fde22e3d` (graphics), and
+`150abbbb9d4045b6467bcf7286888be31419d0c5565b9e1d543bc8ee29053cb4` (complete Map16
+workspace). Rust now materializes the temporary zero-color candidate as a nonzero reduced index;
+only source alpha produces transparent index zero.

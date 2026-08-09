@@ -1459,6 +1459,13 @@ sentinel pass. Rust now preserves free-cell values only for this prepass, marks 
 without seeding it into later row proposals, and clears every unclaimed modifiable value before the
 ordinary allocator.
 
+The leading zero-color candidate in Maintain Detail is not a transparency marker. A 32×16
+near-black/red capture with a one-color limit assigns near-black to that candidate, then maps the
+opaque pixels to the retained black at row 0/index `$D`; graphics tile `$200` contains index `$D`
+throughout instead of zero pixels. Transparency remains a separate source-alpha condition. Rust
+therefore materializes a sentinel-selected black in the reduced color table under a nonzero pixel
+index before palette-row allocation.
+
 The live 524,288-byte definition workspace at `00777e58` stores each tile's four graphics words in
 column-major order (`top-left`, `bottom-left`, `top-right`, `bottom-right`). ROM and Map16 file
 definitions remain row-major. Three full-workspace Wine captures distinguish this adapter detail

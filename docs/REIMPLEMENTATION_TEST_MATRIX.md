@@ -399,7 +399,7 @@ truncated pixels reject without producing a partial image.
 
 The retained bitmap differential now covers Popularity Method 1, Method 2, neither neighborhood
 method, Method 1 with Maintain Detail, and existing-colors-only conversion. The Maintain Detail
-gate proves Lunar Magic prepends a zero/transparent sentinel to the reduced-color candidate list
+gate proves Lunar Magic prepends a zero-color sentinel to the reduced-color candidate list
 and permits it to claim the globally nearest unused source color. The existing-colors-only gate
 proves retained exact colors do not prevent a later row from being rebuilt, equal-error selection
 prefers exact movable assignments over merely retained words, and duplicate equal entries resolve
@@ -422,6 +422,9 @@ nonzero destination palette index without installing a duplicate, and produces a
 graphics tile. `exact_usable_black_bypasses_the_generated_color_limit`,
 `exact_free_row_color_is_used_without_installing_a_duplicate`, and
 `maintain_detail_exact_existing_black_bypasses_the_zero_sentinel` lock the recovered substeps.
+The near-black/red exact capture additionally proves a sentinel-assigned opaque source remains
+nontransparent and reuses the nonzero black cell; `maintain_detail_materializes_the_opaque_zero_candidate`
+locks that distinction before tile allocation.
 
 Structured LM16 Map16 transfer covers both complete and selected-range containers. The compact
 selected form validates the recovered width/height/column/band-relative-row header fields, restores
