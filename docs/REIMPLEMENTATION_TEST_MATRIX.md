@@ -24,7 +24,7 @@ prepared commits, grouped payload saves, undo, and redo to refresh both stored a
 Unqualified projects remain explicitly without identity rather than fabricating checksum metadata.
 On macOS, Windows, and Linux, the opt-in `snes9x_smoke` gates find Snes9x through `SNES9X_BIN`,
 the platform default, or `PATH`; expand the supplied pristine fixture; insert/repoint a
-standard Layer 1 object, install support patch B plus a forced `$ABC` custom-time command, update a
+standard Layer 1 object, install support patch B plus a forced `$456` custom-time command, update a
 fixed-width standard sprite placement in place, and independently edit/repoint installed level
 `$105` Layer 2 through the Rust project API. A separate installed-ROM gate publishes and
 semantically reopens an expanded upper-Y sprite transition before booting that exact output.
@@ -64,6 +64,12 @@ then terminates and reaps it and removes the temporary copy, including during te
 launch-time runtime evidence, not a substitute for
 screenshot- or input-driven gameplay assertions.
 
+The custom-time gate now uses the same authenticated libretro boundary rather than stopping at
+initialization. It edits both deterministic new-game starting-level candidates, enters the current
+level with real controller-A input, and requires a fresh Snes9x snapshot in game mode `$14` whose
+WRAM timer digits at `$0F31..$0F33` are exactly `4/5/6`. A bounded nonuniform gameplay screenshot
+is required alongside the state, so an idle boot or fabricated state-only report cannot pass.
+
 Run the gates serially so GUI instances cannot share state:
 
 ```text
@@ -76,9 +82,10 @@ all three operating systems without requiring the copyrighted ROM fixture; emula
 fixture-owning, opt-in release gate.
 
 The route-traversal gate additionally requires `SNES9X_GAMEPLAY_DRIVER` to name an executable
-platform adapter. Its argument contract is printed directly by the test source and uses only
+platform adapter. Its two scenario contracts are printed directly by the test source and use only
 separate process arguments: `--emulator`, `--rom`, `--scenario smw-overworld-path-link`, source and
-expected X/Y/submap fields, `--snapshot`, and `--screenshot`. The adapter owns input delivery and
+expected X/Y/submap fields, `--snapshot`, and `--screenshot`; or `--scenario smw-level-header`,
+`--expected-timer`, `--snapshot`, and `--screenshot`. The adapter owns input delivery and
 must return only after Snes9x has written both requested evidence files; Rust, not the adapter,
 decides whether they prove traversal. The test bounds execution to 120 seconds and its child guard
 kills and reaps the driver during timeout, failure, or panic; each adapter remains responsible for
@@ -93,10 +100,15 @@ SNES9X_BIN=/absolute/path/to/snes9x_libretro.dylib \
 SNES9X_GAMEPLAY_DRIVER=/tmp/lm-snes9x-gameplay-driver \
 cargo test -p lm-app --test snes9x_smoke \
   native_overworld_path_link_edit_is_traversed_in_snes9x -- --ignored --exact
+
+SNES9X_BIN=/absolute/path/to/snes9x_libretro.dylib \
+SNES9X_GAMEPLAY_DRIVER=/tmp/lm-snes9x-gameplay-driver \
+cargo test -p lm-app --test snes9x_smoke \
+  rust_custom_time_and_support_patch_b_are_applied_in_snes9x_gameplay -- --ignored --exact
 ```
 
 Use `.so` for a Linux core. The adapter dynamically authenticates the libretro API and Snes9x
-library name, accepts only the named scenario and complete separate-argument contract, refuses
+library name, accepts only either named scenario and its complete separate-argument contract, refuses
 pre-existing evidence paths, caps core state/video allocation, tries at most four approaches of
 900 frames each, and never invokes a command shell. A local macOS arm64 run with official Snes9x
 1.63 passed the complete ignored gate in 1.58 seconds. A Windows adapter and release-host run remain

@@ -84,6 +84,7 @@ struct endpoint { uint16_t x, y; uint8_t submap; };
 struct options {
   const char *core, *rom, *scenario, *snapshot, *screenshot;
   struct endpoint source, expected;
+  uint16_t expected_timer;
 };
 struct snapshot { uint8_t *bytes; size_t size; };
 
@@ -215,12 +216,17 @@ static bool parse_options(int argc, char **argv, struct options *options) {
     else if (!strcmp(key, "--expected-x") && parse_hex(value, 0xffff, &parsed)) { options->expected.x = (uint16_t)parsed; seen |= 1u << 8; }
     else if (!strcmp(key, "--expected-y") && parse_hex(value, 0xffff, &parsed)) { options->expected.y = (uint16_t)parsed; seen |= 1u << 9; }
     else if (!strcmp(key, "--expected-submap") && parse_hex(value, 0xff, &parsed)) { options->expected.submap = (uint8_t)parsed; seen |= 1u << 10; }
+    else if (!strcmp(key, "--expected-timer") && parse_hex(value, 0x999, &parsed)) { options->expected_timer = (uint16_t)parsed; seen |= 1u << 11; }
     else {
       fprintf(stderr, "invalid or unknown gameplay-driver argument: %s %s\n", key, value);
       return false;
     }
   }
-  return argc == 23 && seen == 0x7ff && !strcmp(options->scenario, "smw-overworld-path-link");
+  if (!strcmp(options->scenario, "smw-overworld-path-link"))
+    return argc == 23 && seen == 0x7ff;
+  if (!strcmp(options->scenario, "smw-level-header"))
+    return argc == 13 && seen == 0x81f;
+  return false;
 }
 
 static void put_u16(uint8_t *ram, size_t offset, uint16_t value) {
@@ -329,6 +335,41 @@ static bool traverse(struct core_api *api, uint8_t *ram, const struct options *o
   return false;
 }
 
+static bool timer_matches(const uint8_t *ram, uint16_t timer) {
+  return ram[0x0f31] == (uint8_t)(timer >> 8) &&
+         ram[0x0f32] == (uint8_t)((timer >> 4) & 0x0f) &&
+         ram[0x0f33] == (uint8_t)(timer & 0x0f);
+}
+
+static bool enter_current_level(struct core_api *api, uint8_t *ram,
+                                const struct options *options, struct snapshot *snapshot) {
+  unsigned overworld_age = 0;
+  for (unsigned frame = 0; frame < 3600; frame++) {
+    held_buttons = 0;
+    if (ram[0x0100] == 0x0e) {
+      overworld_age++;
+      if (overworld_age >= 120 && overworld_age % 30 == 0)
+        held_buttons = (uint16_t)(1u << RETRO_A);
+    }
+    api->run();
+    if (ram[0x0100] == 0x14 && timer_matches(ram, options->expected_timer)) {
+      if (!capture_snapshot(api, snapshot))
+        return false;
+      for (unsigned settle = 0; settle < 120; settle++) {
+        held_buttons = 0;
+        api->run();
+      }
+      return true;
+    }
+  }
+  fprintf(stderr,
+          "SMW did not enter the current level with timer %03X within 3600 frames; "
+          "mode=%02X level=%02X%02X timer=%02X%02X%02X\n",
+          options->expected_timer, ram[0x0100], ram[0x010c], ram[0x010b],
+          ram[0x0f31], ram[0x0f32], ram[0x0f33]);
+  return false;
+}
+
 static uint32_t crc32_bytes(const uint8_t *data, size_t length) {
   uint32_t crc = 0xffffffffu;
   for (size_t i = 0; i < length; i++) {
@@ -433,7 +474,8 @@ static bool write_snapshot(const struct snapshot *snapshot, const char *path) {
 int main(int argc, char **argv) {
   struct options options;
   if (!parse_options(argc, argv, &options)) {
-    fprintf(stderr, "usage: driver --emulator CORE --rom ROM --scenario smw-overworld-path-link --source-x HEX --source-y HEX --source-submap HEX --expected-x HEX --expected-y HEX --expected-submap HEX --snapshot FILE --screenshot PNG\n");
+    fprintf(stderr, "usage: driver --emulator CORE --rom ROM --scenario smw-overworld-path-link --source-x HEX --source-y HEX --source-submap HEX --expected-x HEX --expected-y HEX --expected-submap HEX --snapshot FILE --screenshot PNG\n"
+                    "   or: driver --emulator CORE --rom ROM --scenario smw-level-header --expected-timer BCD --snapshot FILE --screenshot PNG\n");
     return 2;
   }
   struct stat metadata;
@@ -451,8 +493,16 @@ int main(int argc, char **argv) {
   bool loaded = api.load_game(&game);
   uint8_t *ram = loaded ? api.get_memory_data(RETRO_MEMORY_SYSTEM_RAM) : NULL;
   struct snapshot snapshot = {0};
+  bool scenario_ok = false;
+  if (loaded && ram && api.get_memory_size(RETRO_MEMORY_SYSTEM_RAM) == 128u * 1024u &&
+      enter_overworld(&api, ram)) {
+    if (!strcmp(options.scenario, "smw-overworld-path-link"))
+      scenario_ok = traverse(&api, ram, &options, &snapshot);
+    else if (!strcmp(options.scenario, "smw-level-header"))
+      scenario_ok = enter_current_level(&api, ram, &options, &snapshot);
+  }
   bool ok = loaded && ram && api.get_memory_size(RETRO_MEMORY_SYSTEM_RAM) == 128u * 1024u &&
-            enter_overworld(&api, ram) && traverse(&api, ram, &options, &snapshot) &&
+            scenario_ok &&
             write_snapshot(&snapshot, options.snapshot) && write_png(options.screenshot);
   if (loaded) api.unload_game(); api.deinit(); dlclose(api.library); free(video_pixels);
   free(snapshot.bytes);

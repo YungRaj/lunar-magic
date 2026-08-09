@@ -3812,6 +3812,15 @@ creates `$ABC` horizontal and vertical forms, requires their raw records to diff
 decode to the same typed value, verifies checksum-valid reopen and byte-exact undo for each, and
 proves zero-without-force rejection leaves the complete ROM unchanged.
 
+The opt-in `rust_custom_time_and_support_patch_b_are_applied_in_snes9x_gameplay` gate closes the
+initialization-only gap for this field. It installs the exact support-patch-B runtime, publishes a
+forced `$456` command in both deterministic new-game starting-level candidates, reopens both, and
+boots the resulting ROM through the supplied driver and an official Snes9x libretro core. The
+driver advances the real title/file/intro flow, presses controller A on the overworld, and captures
+state only after game mode `$14` exposes timer digits `4/5/6` at WRAM `$0F31..$0F33`; Rust also
+requires a bounded nonuniform rendered frame. Other gameplay-sensitive header fields still need
+equivalent runtime assertions before the aggregate Oracle gate can be promoted.
+
 For authenticated ordinary SMW-US Layer 3, the installed preview and both image-export paths load
 the source level's stripe tilemap and active profile graphics, honor editor start offsets and
 horizontal/vertical plane repetition, split the priority planes, and preserve normal or

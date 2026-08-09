@@ -151,6 +151,8 @@ const SMW_OVERWORLD_MODE: u8 = 0x0e;
 const SMW_MARIO_SUBMAP: usize = 0x1f11;
 const SMW_MARIO_POSITION: usize = 0x1f17;
 const SMW_MARIO_GRID_POSITION: usize = 0x1f1f;
+const SMW_LEVEL_MODE: u8 = 0x14;
+const SMW_TIMER_HUNDREDS: usize = 0x0f31;
 const MAX_GAMEPLAY_STATE_BYTES: u64 = 64 * 1024 * 1024;
 const MAX_GAMEPLAY_SCREENSHOT_BYTES: u64 = 16 * 1024 * 1024;
 const GAMEPLAY_DRIVER_TIMEOUT: Duration = Duration::from_secs(120);
@@ -284,6 +286,80 @@ fn require_overworld_path_gameplay_evidence(
         "Snes9x gameplay screenshot",
     );
     validate_overworld_path_gameplay_evidence(&snapshot, &screenshot, expected);
+}
+
+fn require_level_header_gameplay_evidence(snes9x: &Path, rom: &Path, expected_timer: u16) {
+    let driver = std::env::var_os("SNES9X_GAMEPLAY_DRIVER")
+        .map(PathBuf::from)
+        .filter(|path| path.is_file())
+        .unwrap_or_else(|| {
+            panic!(
+                "SNES9X_GAMEPLAY_DRIVER must name the supplied deterministic libretro gameplay driver"
+            )
+        });
+    let directory = rom.parent().expect("temporary gameplay ROM parent");
+    let snapshot = directory.join("level-header-after.frz");
+    let screenshot = directory.join("level-header-after.png");
+    let child = Command::new(&driver)
+        .arg("--emulator")
+        .arg(snes9x)
+        .arg("--rom")
+        .arg(rom)
+        .arg("--scenario")
+        .arg("smw-level-header")
+        .arg("--expected-timer")
+        .arg(format!("{expected_timer:03X}"))
+        .arg("--snapshot")
+        .arg(&snapshot)
+        .arg("--screenshot")
+        .arg(&screenshot)
+        .stdin(Stdio::null())
+        .spawn()
+        .expect("launch Snes9x level-header gameplay driver");
+    let mut child = ChildGuard(child);
+    let deadline = Instant::now() + GAMEPLAY_DRIVER_TIMEOUT;
+    let status = loop {
+        if let Some(status) = child
+            .0
+            .try_wait()
+            .expect("query level-header gameplay driver")
+        {
+            break status;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "Snes9x level-header gameplay driver exceeded {GAMEPLAY_DRIVER_TIMEOUT:?}"
+        );
+        thread::sleep(Duration::from_millis(100));
+    };
+    assert!(
+        status.success(),
+        "Snes9x level-header gameplay driver failed: {status}"
+    );
+
+    let snapshot = read_regular_bounded(
+        &snapshot,
+        MAX_GAMEPLAY_STATE_BYTES,
+        "Snes9x level-header snapshot",
+    );
+    let screenshot = read_regular_bounded(
+        &screenshot,
+        MAX_GAMEPLAY_SCREENSHOT_BYTES,
+        "Snes9x level-header screenshot",
+    );
+    let wram = decode_snes9x_wram(&snapshot).expect("decode level-header Snes9x WRAM");
+    assert_eq!(wram[SMW_GAME_MODE], SMW_LEVEL_MODE);
+    assert_eq!(wram[SMW_TIMER_HUNDREDS], (expected_timer >> 8) as u8);
+    assert_eq!(
+        wram[SMW_TIMER_HUNDREDS + 1],
+        ((expected_timer >> 4) & 0x0f) as u8
+    );
+    assert_eq!(wram[SMW_TIMER_HUNDREDS + 2], (expected_timer & 0x0f) as u8);
+    let image = decode_map16_bitmap_png_image(&screenshot).expect("decode level-header screenshot");
+    assert!((256..=512).contains(&image.width));
+    assert!((224..=478).contains(&image.height));
+    let first = image.pixels.first().expect("nonempty gameplay screenshot");
+    assert!(image.pixels.iter().any(|pixel| pixel != first));
 }
 
 fn synthetic_overworld_path_evidence(expected: OverworldEndpoint) -> (Vec<u8>, Vec<u8>) {
@@ -914,13 +990,13 @@ fn rust_layer1_object_edit_survives_snes9x_initialization() {
 }
 
 #[test]
-#[ignore = "requires local Snes9x plus the supplied legally obtained SMW ROM fixture"]
-fn rust_custom_time_and_support_patch_b_survive_snes9x_initialization() {
+#[ignore = "requires an official Snes9x libretro core, the gameplay driver, and the legally supplied SMW ROM"]
+fn rust_custom_time_and_support_patch_b_are_applied_in_snes9x_gameplay() {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
     let snes9x = require_snes9x_binary();
     let layout = lm_profile::smw_us_v1_vanilla_level_layout();
     let sprite_lengths = SpriteLengthTable::standard();
-    let custom_time = CustomTimeSettings::new(0xabc, true).expect("construct custom time");
+    let custom_time = CustomTimeSettings::new(0x456, true).expect("construct custom time");
     let mut project = Project::new(
         RomImage::from_bytes(fs::read(source_rom(&root)).expect("read source SMW ROM"))
             .expect("decode source SMW ROM"),
@@ -931,15 +1007,6 @@ fn rust_custom_time_and_support_patch_b_survive_snes9x_initialization() {
     project
         .install_relocatable_patch(&patch)
         .expect("install support patch B");
-    let mut level = project
-        .load_level_slot(0x105, layout, &sprite_lengths)
-        .expect("load level 105");
-    level
-        .layer1
-        .objects
-        .set_custom_time(false, Some(custom_time))
-        .expect("stage forced custom time");
-
     let allocation_start = project.rom.logical_len();
     let logical_len = 0x10_0000;
     project
@@ -954,28 +1021,38 @@ fn rust_custom_time_and_support_patch_b_survive_snes9x_initialization() {
             ProtectedRange(0x7fc0..0x8000),
         ],
     };
-    project
-        .save_level_layer1_with_checksum(
-            layout,
-            &level,
-            0x7fdc,
-            &LevelSaveOptions {
-                layer1_allocation: allocation.clone(),
-                sprite_allocation: allocation,
-                previous_layer1: None,
-                previous_sprites: None,
-                reuse_identical: true,
-                erase_fill: 0xff,
-            },
-        )
-        .expect("save custom-time level");
-    let reopened = project
-        .load_level_slot(0x105, layout, &sprite_lengths)
-        .expect("reopen custom-time level");
-    assert_eq!(
-        reopened.layer1.objects.custom_time(false),
-        Some(custom_time)
-    );
+    for level_number in [0x104, 0x105] {
+        let mut level = project
+            .load_level_slot(level_number, layout, &sprite_lengths)
+            .expect("load starting level");
+        level
+            .layer1
+            .objects
+            .set_custom_time(false, Some(custom_time))
+            .expect("stage forced custom time");
+        project
+            .save_level_layer1_with_checksum(
+                layout,
+                &level,
+                0x7fdc,
+                &LevelSaveOptions {
+                    layer1_allocation: allocation.clone(),
+                    sprite_allocation: allocation.clone(),
+                    previous_layer1: None,
+                    previous_sprites: None,
+                    reuse_identical: true,
+                    erase_fill: 0xff,
+                },
+            )
+            .expect("save custom-time starting level");
+        let reopened = project
+            .load_level_slot(level_number, layout, &sprite_lengths)
+            .expect("reopen custom-time starting level");
+        assert_eq!(
+            reopened.layer1.objects.custom_time(false),
+            Some(custom_time)
+        );
+    }
     assert_eq!(
         lm_profile::detect_smw_us_v1_support_patch_b(project.rom.logical_bytes())
             .expect("authenticate support patch B"),
@@ -985,7 +1062,7 @@ fn rust_custom_time_and_support_patch_b_survive_snes9x_initialization() {
     let directory = SmokeDirectory::create();
     let output = directory.0.join("Rust-custom-time-support-patch-B-SMW.sfc");
     fs::write(&output, project.save_snapshot()).expect("write custom-time ROM");
-    require_snes9x_initialization(&snes9x, &output);
+    require_level_header_gameplay_evidence(&snes9x, &output, custom_time.value());
 }
 
 #[test]

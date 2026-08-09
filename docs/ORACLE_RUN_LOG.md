@@ -515,3 +515,26 @@ already using this compression format.` for both Rust files, leaves SHA-256 valu
 `58bfd1818513fde7936a4d852c44bf663da9236be2679a0c55684c18d52138f1` (`LZ2 Speed`) unchanged,
 and fresh 52-file GFX plus 54-file ExGFX exports match the corresponding original-editor reverse
 oracles with no differences.
+
+## Input-driven custom-time gameplay
+
+The supplied driver was rebuilt from the repository, and the official Snes9x libretro core was
+built from clean upstream commit `b5cc765` for macOS arm64. The core SHA-256 was
+`df2113649ea880ca6b329e4405128c8cab3ff0fb1b8ccbe9fcfe7a20ee09114e`.
+
+```text
+tools/build-snes9x-gameplay-driver.sh /tmp/lm-snes9x-gameplay-driver-2
+SNES9X_BIN=/tmp/lm-snes9x-libretro.dylib \
+SNES9X_GAMEPLAY_DRIVER=/tmp/lm-snes9x-gameplay-driver-2 \
+cargo test -p lm-app --test snes9x_smoke \
+  rust_custom_time_and_support_patch_b_are_applied_in_snes9x_gameplay \
+  -- --ignored --exact --nocapture
+test rust_custom_time_and_support_patch_b_are_applied_in_snes9x_gameplay ... ok
+test result: ok. 1 passed; 0 failed; finished in 0.95s
+```
+
+The gate boots the checksum-valid Rust ROM, advances the title/file/intro sequence, enters the
+current level using controller input, and captures a genuine Snes9x state plus gameplay PNG. Rust
+requires game mode `$14`, exact custom timer digits `4/5/6` at WRAM `$0F31..$0F33`, bounded image
+dimensions, and more than one rendered color. The upstream source, built core, ROM, state, and PNG
+remain non-redistributed local evidence.
