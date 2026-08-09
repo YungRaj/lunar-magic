@@ -1559,23 +1559,11 @@ impl RomOverworldEditor {
             .workspace
             .as_ref()
             .is_some_and(|value| value.controller.is_modified());
-        let native_sprites_modified = self
-            .workspace
-            .as_ref()
-            .is_some_and(|value| value.native_sprites.is_modified());
-        let ordinary_modified = self.workspace.as_ref().is_some_and(|value| {
-            value.controller.is_modified()
-                || value.assets.animation_options != value.baseline_animation_options
-        });
         let transfer_busy = self.transfer_busy();
         if ui
             .add_enabled(
-                ordinary_modified
-                    && !native_sprites_modified
-                    && !stale
-                    && !self.manifest_loader.is_running()
-                    && !transfer_busy,
-                egui::Button::new("Commit overworld payloads and map animation options"),
+                modified && !stale && !self.manifest_loader.is_running() && !transfer_busy,
+                egui::Button::new("Commit all staged overworld changes"),
             )
             .clicked()
         {
@@ -1583,22 +1571,6 @@ impl RomOverworldEditor {
                 Ok(command) => {
                     return Some(command);
                 }
-                Err(error) => self.error = Some(error),
-            }
-        }
-        if ui
-            .add_enabled(
-                native_sprites_modified
-                    && !ordinary_modified
-                    && !stale
-                    && !self.manifest_loader.is_running()
-                    && !transfer_busy,
-                egui::Button::new("Commit native custom sprite stream"),
-            )
-            .clicked()
-        {
-            match self.prepare_native_sprite_commit() {
-                Ok(command) => return Some(command),
                 Err(error) => self.error = Some(error),
             }
         }
@@ -1618,9 +1590,6 @@ impl RomOverworldEditor {
         } else {
             "No staged changes"
         });
-        if native_sprites_modified && ordinary_modified {
-            ui.small("Commit or discard either the sprite stream or other overworld edits before publishing the other transaction.");
-        }
         None
     }
 

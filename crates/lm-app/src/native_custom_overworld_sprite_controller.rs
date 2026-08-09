@@ -42,6 +42,10 @@ pub enum NativeCustomOverworldSpriteControllerError {
         snapshot: Mapper,
         layout: Mapper,
     },
+    BaseRevisionMismatch {
+        controller: u64,
+        prepared: u64,
+    },
     MapOutOfRange(usize),
     IndexOutOfRange {
         command: usize,
@@ -132,6 +136,12 @@ impl NativeCustomOverworldSpriteController {
             .and_then(|size| usize::from(*size).checked_sub(3))
     }
 
+    /// Returns the authenticated current stream owner, if the vanilla empty sentinel is replaced.
+    #[must_use]
+    pub const fn owned_block(&self) -> Option<&RatsBlock> {
+        self.previous_block.as_ref()
+    }
+
     #[must_use]
     pub fn is_modified(&self) -> bool {
         self.table != self.baseline
@@ -194,6 +204,59 @@ impl NativeCustomOverworldSpriteController {
             description,
             mutation,
         })
+    }
+
+    /// Rebases this staged stream onto an already prepared mutation and returns one transaction.
+    ///
+    /// Allocation runs against the materialized result of `prepared`, so newly allocated ordinary
+    /// overworld payloads cannot collide with the custom sprite stream. The returned mutation is
+    /// still relative to this controller's immutable source image and therefore remains one Undo
+    /// step at the application boundary.
+    pub fn merge_into_commit(
+        &self,
+        mut prepared: PreparedRomCommit,
+        options: &NativeCustomOverworldSpriteSaveOptions,
+    ) -> Result<PreparedRomCommit, NativeCustomOverworldSpriteControllerError> {
+        if prepared.expected_revision != self.revision {
+            return Err(
+                NativeCustomOverworldSpriteControllerError::BaseRevisionMismatch {
+                    controller: self.revision,
+                    prepared: prepared.expected_revision,
+                },
+            );
+        }
+        if !self.is_modified() {
+            return Ok(prepared);
+        }
+        let image = RomImage::from_bytes(self.source_file_bytes.clone())
+            .map_err(NativeCustomOverworldSpriteControllerError::Rom)?;
+        let before = image.logical_bytes().to_vec();
+        let mut project = Project::new(image);
+        project
+            .apply_mutation("stage preceding overworld edits", &prepared.mutation)
+            .map_err(NativeCustomOverworldSpriteControllerError::Mutation)?;
+        let mut options = options.clone();
+        options.previous_block = self.previous_block.clone();
+        project
+            .save_native_custom_overworld_sprites(
+                &self.table,
+                &self.record_sizes,
+                self.layout,
+                &options,
+            )
+            .map_err(NativeCustomOverworldSpriteControllerError::Io)?;
+        project
+            .rom
+            .update_snes_checksum(self.checksum_field)
+            .map_err(NativeCustomOverworldSpriteControllerError::Rom)?;
+        prepared.description = format!(
+            "{} and native custom overworld sprites",
+            prepared.description
+        );
+        prepared.mutation =
+            RomMutation::between(self.layout.mapper, &before, project.rom.logical_bytes())
+                .map_err(NativeCustomOverworldSpriteControllerError::Mutation)?;
+        Ok(prepared)
     }
 }
 
@@ -453,5 +516,62 @@ mod tests {
             .collect::<Vec<_>>();
         assert!(controller.apply_edits(&edits).is_err());
         assert_eq!(controller.table(), &original);
+    }
+
+    #[test]
+    fn merge_materializes_prior_writes_avoids_them_and_undoes_both_domains_once() {
+        let mut app = application();
+        let original = app.project().unwrap().save_snapshot();
+        let mut controller = NativeCustomOverworldSpriteController::decode(
+            &app.controller_snapshot().unwrap(),
+            layout(),
+            [4; 128],
+        )
+        .unwrap();
+        let growth = (0..20)
+            .map(|index| NativeCustomOverworldSpriteEdit::Insert {
+                map: 0,
+                index,
+                sprite: sprite(9),
+            })
+            .collect::<Vec<_>>();
+        controller.apply_edits(&growth).unwrap();
+        let preceding = PreparedRomCommit {
+            expected_revision: controller.revision(),
+            description: "Edit ordinary overworld terrain".into(),
+            mutation: RomMutation {
+                mapper: Mapper::LoRom,
+                expected_len: 0x8000,
+                appended: Vec::new(),
+                writes: vec![lm_project::RomWrite {
+                    offset: 0x3050,
+                    bytes: vec![0x5a; 0x100],
+                }],
+            },
+        };
+        let merged = controller
+            .merge_into_commit(preceding, &save_options())
+            .unwrap();
+        app.dispatch(merged.into_command()).unwrap();
+        let project = app.project().unwrap();
+        assert_eq!(project.rom.read(0x3050, 0x100).unwrap(), vec![0x5a; 0x100]);
+        let loaded = project
+            .load_native_custom_overworld_sprites(layout(), &[4; 128])
+            .unwrap();
+        assert_eq!(loaded.table, *controller.table());
+        assert!(loaded.block.unwrap().header_offset >= 0x3150);
+        assert!(project.identity.as_ref().unwrap().checksum_matches());
+        app.dispatch(Command::Undo).unwrap();
+        assert_eq!(app.project().unwrap().save_snapshot(), original);
+
+        let mismatch = PreparedRomCommit {
+            expected_revision: controller.revision() + 1,
+            description: "stale base".into(),
+            mutation: RomMutation::unchanged(Mapper::LoRom, 0x8000),
+        };
+        assert!(matches!(
+            controller.merge_into_commit(mismatch, &save_options()),
+            Err(NativeCustomOverworldSpriteControllerError::BaseRevisionMismatch { .. })
+        ));
     }
 }

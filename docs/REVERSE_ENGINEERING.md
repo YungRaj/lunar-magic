@@ -3390,8 +3390,11 @@ to `3..15`.
 The installed overworld editor consumes that resolved layout directly. Its native-sprite panel edits all
 seven ordered lists and uses the currently selected canvas cell as an eight-pixel-aligned position.
 Staged records are composed into the same native `.sscov`/`.s16ov` appearance pass as existing
-sprites. Publication uses a separate revision-bound transaction when other overworld payloads are
-staged, preventing two independently planned allocations from claiming the same free block.
+sprites. Publication materializes the already prepared terrain/record/animation mutation first,
+then allocates the native stream against that staged image and rebuilds one mutation relative to
+the immutable source. Existing stream and size-table owners are protected during ordinary payload
+planning; the authenticated stream owner becomes reclaimable only inside its own save. This avoids
+free-space collisions while preserving one application revision and one Undo step across domains.
 
 ## Per-slot `ExAnimation` options
 

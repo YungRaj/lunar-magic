@@ -3951,7 +3951,11 @@ open as seven empty maps so the first placement can be installed transactionally
 overworld GUI now exposes every map-local list with insert, replace, delete, and ordering controls;
 it can copy the current canvas selection into an entry's pixel position, renders staged placements
 through the native appearance pipeline, and commits the stream with its operand and authenticated
-size-table owner protected from allocation.
+size-table owner protected from allocation. Terrain, ordinary records, animation options, and the
+native stream now publish together: the stream allocator runs against the materialized earlier
+mutation, semantically reopens its result, repairs the final checksum, and returns one application
+mutation. A growth test places an earlier staged allocation directly after the old stream owner,
+proves the stream relocates around it, reopens both domains, and undoes both in one step.
 
 `ExAnimation` slot options are also represented as their own native seven-byte table rather than
 being folded into animation records. Use

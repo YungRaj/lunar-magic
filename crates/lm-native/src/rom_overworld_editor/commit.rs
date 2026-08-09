@@ -4,56 +4,10 @@ use lm_project::{CompleteOverworldSaveOptions, Project, RomMutation};
 use lm_rats::{AllocationPolicy, ProtectedRange};
 
 impl RomOverworldEditor {
-    pub(super) fn prepare_native_sprite_commit(&self) -> Result<Command, String> {
-        let workspace = self.workspace.as_ref().ok_or("workspace is closed")?;
-        let range = parse_search_range(&self.search_start, &self.search_end)?;
-        let mut allocation = workspace
-            .profiled
-            .profile
-            .allocation_policy_for_rom(
-                range,
-                &workspace.image,
-                workspace.profiled.snapshot.identity.internal_header_offset,
-            )
-            .map_err(|error| error.to_string())?;
-        for protected in [
-            ProtectedRange(
-                workspace.native_sprite_layout.stream.pointer_offset
-                    ..workspace.native_sprite_layout.stream.pointer_offset + 3,
-            ),
-            ProtectedRange(
-                workspace.native_sprite_layout.record_size_pointer_offset
-                    ..workspace.native_sprite_layout.record_size_pointer_offset + 4,
-            ),
-        ] {
-            if !allocation.protected.contains(&protected) {
-                allocation.protected.push(protected);
-            }
-        }
-        if let Some(block) = &workspace.native_sprite_layout.record_size_block {
-            let protected = ProtectedRange(block.full_range());
-            if !allocation.protected.contains(&protected) {
-                allocation.protected.push(protected);
-            }
-        }
-        workspace
-            .native_sprites
-            .prepare_commit(
-                "Edit native custom overworld sprites",
-                &lm_project::NativeCustomOverworldSpriteSaveOptions {
-                    allocation,
-                    previous_block: None,
-                    reuse_identical: true,
-                    erase_fill: 0xff,
-                },
-            )
-            .map(lm_app::PreparedRomCommit::into_command)
-            .map_err(|error| error.to_string())
-    }
-
     pub(super) fn prepare_animation_runtime_install(&self) -> Result<Command, String> {
         let workspace = self.workspace.as_ref().ok_or("workspace is closed")?;
         if workspace.controller.is_modified()
+            || workspace.native_sprites.is_modified()
             || workspace.assets.animation_options != workspace.baseline_animation_options
         {
             return Err(
@@ -154,7 +108,7 @@ impl RomOverworldEditor {
                 ),
             }
         };
-        self.merge_animation_option_commit(workspace, prepared)
+        self.finish_combined_commit(workspace, prepared)
     }
 
     pub(super) fn prepare_commit_owned(
@@ -174,16 +128,33 @@ impl RomOverworldEditor {
                 manifest,
             )
             .map_err(|error| error.to_string())?;
-        self.merge_animation_option_commit(workspace, prepared)
+        self.finish_combined_commit(workspace, prepared)
+    }
+
+    fn finish_combined_commit(
+        &self,
+        workspace: &Workspace,
+        prepared: lm_app::PreparedRomCommit,
+    ) -> Result<Command, String> {
+        let prepared = self.merge_animation_option_commit(workspace, prepared)?;
+        let prepared = if workspace.native_sprites.is_modified() {
+            workspace
+                .native_sprites
+                .merge_into_commit(prepared, &self.native_sprite_save_options(workspace)?)
+                .map_err(|error| error.to_string())?
+        } else {
+            prepared
+        };
+        Ok(prepared.into_command())
     }
 
     fn merge_animation_option_commit(
         &self,
         workspace: &Workspace,
         mut prepared: lm_app::PreparedRomCommit,
-    ) -> Result<Command, String> {
+    ) -> Result<lm_app::PreparedRomCommit, String> {
         if workspace.assets.animation_options == workspace.baseline_animation_options {
-            return Ok(prepared.into_command());
+            return Ok(prepared);
         }
         merge_animation_option_mutation(
             &workspace.image,
@@ -195,12 +166,37 @@ impl RomOverworldEditor {
             &mut prepared,
         )
         .map_err(|error| error.to_string())?;
-        Ok(prepared.into_command())
+        Ok(prepared)
     }
 
     fn save_options(&self, workspace: &Workspace) -> Result<CompleteOverworldSaveOptions, String> {
+        self.overworld_allocation_policy(workspace)
+            .map(CompleteOverworldSaveOptions::uniform_allocation)
+    }
+
+    fn native_sprite_save_options(
+        &self,
+        workspace: &Workspace,
+    ) -> Result<lm_project::NativeCustomOverworldSpriteSaveOptions, String> {
+        let mut allocation = self.overworld_allocation_policy(workspace)?;
+        if let Some(block) = workspace.native_sprites.owned_block() {
+            let owned = ProtectedRange(block.full_range());
+            allocation.protected.retain(|range| range != &owned);
+        }
+        Ok(lm_project::NativeCustomOverworldSpriteSaveOptions {
+            allocation,
+            previous_block: None,
+            reuse_identical: true,
+            erase_fill: 0xff,
+        })
+    }
+
+    fn overworld_allocation_policy(
+        &self,
+        workspace: &Workspace,
+    ) -> Result<AllocationPolicy, String> {
         let range = parse_search_range(&self.search_start, &self.search_end)?;
-        workspace
+        let mut allocation = workspace
             .profiled
             .profile
             .allocation_policy_for_rom(
@@ -208,8 +204,34 @@ impl RomOverworldEditor {
                 &workspace.image,
                 workspace.profiled.snapshot.identity.internal_header_offset,
             )
-            .map(CompleteOverworldSaveOptions::uniform_allocation)
-            .map_err(|error| error.to_string())
+            .map_err(|error| error.to_string())?;
+        for protected in [
+            ProtectedRange(
+                workspace.native_sprite_layout.stream.pointer_offset
+                    ..workspace.native_sprite_layout.stream.pointer_offset + 3,
+            ),
+            ProtectedRange(
+                workspace.native_sprite_layout.record_size_pointer_offset
+                    ..workspace.native_sprite_layout.record_size_pointer_offset + 4,
+            ),
+        ] {
+            if !allocation.protected.contains(&protected) {
+                allocation.protected.push(protected);
+            }
+        }
+        if let Some(block) = &workspace.native_sprite_layout.record_size_block {
+            let protected = ProtectedRange(block.full_range());
+            if !allocation.protected.contains(&protected) {
+                allocation.protected.push(protected);
+            }
+        }
+        if let Some(block) = workspace.native_sprites.owned_block() {
+            let protected = ProtectedRange(block.full_range());
+            if !allocation.protected.contains(&protected) {
+                allocation.protected.push(protected);
+            }
+        }
+        Ok(allocation)
     }
 }
 
