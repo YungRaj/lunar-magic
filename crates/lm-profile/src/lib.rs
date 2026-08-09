@@ -490,8 +490,10 @@ pub use smw_us_v1_exgraphics::{
     SMW_US_V1_RESERVED_EXGFX_POINTER_OFFSET, SMW_US_V1_VANILLA_GRAPHICS_FORMAT_MARKER,
     SmwUsV1ExGraphicsEncoding, SmwUsV1ExGraphicsError, SmwUsV1ExGraphicsPointer,
     SmwUsV1ExGraphicsRuntimeState, has_smw_us_v1_4bpp_graphics_prerequisite,
-    probe_smw_us_v1_exgraphics_runtime, requires_smw_us_v1_4bpp_graphics_warning,
-    smw_us_v1_exgraphics_installation_plan, smw_us_v1_exgraphics_pointer,
+    probe_smw_us_v1_exgraphics_runtime, probe_smw_us_v1_exgraphics_runtime_for_mapper,
+    requires_smw_us_v1_4bpp_graphics_warning, smw_us_v1_exgraphics_installation_plan,
+    smw_us_v1_exgraphics_installation_plan_for_mapper, smw_us_v1_exgraphics_pointer,
+    smw_us_v1_exgraphics_pointer_for_mapper,
 };
 pub use sprite19_fix::{
     SMW_US_V1_SPRITE19_FIX_BRANCH_OFFSET, SMW_US_V1_SPRITE19_FIX_HOOK_OFFSET,

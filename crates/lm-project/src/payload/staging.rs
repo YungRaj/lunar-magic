@@ -145,6 +145,8 @@ fn write_pointer(
         PayloadPointer::ContiguousLowBank { .. }
             | PayloadPointer::DisplacedContiguous { low_bank: true, .. }
             | PayloadPointer::DisplacedWordAndBank { low_bank: true, .. }
+            | PayloadPointer::SplitBytesLowBank { .. }
+            | PayloadPointer::SplitLowBank { .. }
     ) {
         pointer[2] &= 0x7f;
     }
@@ -163,6 +165,11 @@ fn write_pointer(
             ]);
         }
         PayloadPointer::Split {
+            bank_offset,
+            shared_bank,
+            ..
+        }
+        | PayloadPointer::SplitLowBank {
             bank_offset,
             shared_bank,
             ..
@@ -191,7 +198,7 @@ fn write_pointer(
                 staged[current_pointer_ranges[1].clone()].copy_from_slice(&pointer[2..3]);
             }
         }
-        PayloadPointer::SplitBytes { .. } => {
+        PayloadPointer::SplitBytes { .. } | PayloadPointer::SplitBytesLowBank { .. } => {
             for (range, byte) in current_pointer_ranges.iter().zip(pointer) {
                 staged[range.clone()].copy_from_slice(std::slice::from_ref(&byte));
             }

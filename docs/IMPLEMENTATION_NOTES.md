@@ -4715,3 +4715,21 @@ Map16 value, and draws Lunar Magic's four-pixel black/red/black double outline a
 0–3 and 12–15. It intentionally bypasses the general translucent-overlay opacity, matching the
 native routine's temporary flag clear. Custom `.dsc` flag-eight markers remain pending live DSC
 ownership in the installed canvas.
+
+## ExLoROM standard graphics and ExGFX conversion parity
+
+The original-tool conversion gate exposed a pointer-canonicalization bug that ordinary LoROM
+reopen tests could not detect. Rust's generic `pc_to_snes(LoRom, ...)` intentionally chooses the
+fast `$80..$FF` mirror. Standard graphics split planes and the shared-bank GFX32/GFX33 startup
+operands had inherited that representation. It is equivalent in LoROM, but address bit 23 becomes
+mapper-significant in ExLoROM, so a copied `$90:xxxx` pointer selected the low 4 MiB half instead of
+the relocated SMW body and Lunar Magic exported zero-filled graphics.
+
+Payload publication now has explicit low-bank forms for split-byte and split-word/shared-bank
+pointers. Graphics layouts select those forms only for LoROM; ExLoROM and SA-1 preserve their
+canonical significant high banks. The mapper-aware ExGFX route resolves all three relocated pointer
+tables, upgrades a converted relocated `$C30` expanded-ExAnimation runtime to the metadata-selected
+`$C50` family without losing its exact `$600` pointer table, and reopens every inserted payload
+before publication. The live Wine gate covers headered, headerless, Fast LoROM, and the complete
+8 MiB ExLoROM transition, requiring Lunar Magic 3.63 to export all 52 GFX files plus `ExGFX80` and
+newly inserted `ExGFX81` byte-for-byte.

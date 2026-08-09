@@ -390,4 +390,60 @@ fn lunar_magic_reexports_rust_standard_and_exgfx_across_legacy_migration() {
         exgfx80,
         "Lunar Magic did not re-export Fast-LoROM ExGFX80"
     );
+
+    let mut exlorom_project = Project::open_supported(legacy_project.rom.clone()).unwrap();
+    exlorom_project.convert_to_64_mbit_exlorom().unwrap();
+    let exgfx81 = vec![0x81; 0x800];
+    let exlorom_insert = lm_app::prepare_smw_us_v1_exgraphics_install(
+        0,
+        exlorom_project.rom.clone(),
+        &[(0x81, exgfx81.clone())],
+    )
+    .unwrap();
+    exlorom_project
+        .apply_mutation(&exlorom_insert.description, &exlorom_insert.mutation)
+        .unwrap();
+    assert_eq!(
+        lm_rom::detect_identity(&exlorom_project.rom)
+            .unwrap()
+            .mapper,
+        lm_rom::Mapper::ExLoRom
+    );
+    assert!(
+        lm_rom::detect_identity(&exlorom_project.rom)
+            .unwrap()
+            .checksum_matches()
+    );
+    let exlorom = TemporaryDirectory::create("gfx-exlorom-variant");
+    fs::write(
+        exlorom.0.join("exlorom.smc"),
+        exlorom_project.rom.as_file_bytes(),
+    )
+    .unwrap();
+    run_export(&wine, &lunar_magic, &exlorom.0, "exlorom.smc");
+    run_export_operation(
+        &wine,
+        &lunar_magic,
+        &exlorom.0,
+        "-ExportExGFX",
+        "exlorom.smc",
+    );
+    for number in 0..0x34 {
+        let name = format!("GFX{number:02X}.bin");
+        assert_eq!(
+            fs::read(exlorom.0.join("Graphics").join(&name)).unwrap(),
+            files[number],
+            "ExLoROM {name}"
+        );
+    }
+    assert_eq!(
+        fs::read(exlorom.0.join("ExGraphics/ExGFX80.bin")).unwrap(),
+        exgfx80,
+        "Lunar Magic did not preserve converted ExLoROM ExGFX80"
+    );
+    assert_eq!(
+        fs::read(exlorom.0.join("ExGraphics/ExGFX81.bin")).unwrap(),
+        exgfx81,
+        "Lunar Magic did not re-export Rust ExLoROM ExGFX81"
+    );
 }

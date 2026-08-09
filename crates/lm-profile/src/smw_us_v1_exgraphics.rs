@@ -107,31 +107,37 @@ impl From<RomError> for SmwUsV1ExGraphicsError {
 pub fn probe_smw_us_v1_exgraphics_runtime(
     rom: &RomImage,
 ) -> Result<SmwUsV1ExGraphicsRuntimeState, SmwUsV1ExGraphicsError> {
-    if rom.read(
-        SMW_US_V1_EXGFX_RUNTIME_HOOK_OFFSET,
-        SMW_US_V1_EXGFX_RUNTIME_HOOK.len(),
-    )? != SMW_US_V1_EXGFX_RUNTIME_HOOK
-    {
+    probe_smw_us_v1_exgraphics_runtime_for_mapper(rom, Mapper::LoRom)
+}
+
+/// Authenticates the shared ExGFX runtime through the active mapper's descriptor-equivalent fixed
+/// ROM locations. Lunar Magic's canonical ExLoROM conversion relocates these locations into the
+/// upper 4-MiB half, while SA-1 retains the ordinary offsets.
+pub fn probe_smw_us_v1_exgraphics_runtime_for_mapper(
+    rom: &RomImage,
+    mapper: Mapper,
+) -> Result<SmwUsV1ExGraphicsRuntimeState, SmwUsV1ExGraphicsError> {
+    let runtime_hook = mapper_rom_offset(mapper, SMW_US_V1_EXGFX_RUNTIME_HOOK_OFFSET);
+    if rom.read(runtime_hook, SMW_US_V1_EXGFX_RUNTIME_HOOK.len())? != SMW_US_V1_EXGFX_RUNTIME_HOOK {
         return Err(SmwUsV1ExGraphicsError::UnsupportedRuntimeHook);
     }
-    if rom.read(
-        SMW_US_V1_EXGFX_TABLE_BASE_OPERAND_OFFSET,
-        SMW_US_V1_EXGFX_TABLE_BASE_OPERAND.len(),
-    )? != SMW_US_V1_EXGFX_TABLE_BASE_OPERAND
+    let table_base_operand = mapper_rom_offset(mapper, SMW_US_V1_EXGFX_TABLE_BASE_OPERAND_OFFSET);
+    if rom.read(table_base_operand, SMW_US_V1_EXGFX_TABLE_BASE_OPERAND.len())?
+        != SMW_US_V1_EXGFX_TABLE_BASE_OPERAND
     {
         return Err(SmwUsV1ExGraphicsError::UnsupportedTableBase);
     }
+    let expansion_marker = mapper_rom_offset(mapper, SMW_US_V1_EXGFX_EXPANSION_MARKER_OFFSET);
     let marker: [u8; 7] = rom
-        .read(
-            SMW_US_V1_EXGFX_EXPANSION_MARKER_OFFSET,
-            SMW_US_V1_EXGFX_EXPANSION_MARKER.len(),
-        )?
+        .read(expansion_marker, SMW_US_V1_EXGFX_EXPANSION_MARKER.len())?
         .try_into()
         .expect("the exact marker length was requested");
     if marker == SMW_US_V1_EXGFX_EXPANSION_MARKER {
+        let format_marker_offset =
+            mapper_rom_offset(mapper, SMW_US_V1_EXPANDED_GRAPHICS_FORMAT_MARKER_OFFSET);
         let format_marker: [u8; 2] = rom
             .read(
-                SMW_US_V1_EXPANDED_GRAPHICS_FORMAT_MARKER_OFFSET,
+                format_marker_offset,
                 SMW_US_V1_EXPANDED_GRAPHICS_FORMAT_MARKER.len(),
             )?
             .try_into()
@@ -144,9 +150,11 @@ pub fn probe_smw_us_v1_exgraphics_runtime(
         return Ok(SmwUsV1ExGraphicsRuntimeState::Expanded);
     }
     if marker == [0xff, 0xff, 0xff, 0xff, 0xff, 0x22, 0] {
+        let format_marker_offset =
+            mapper_rom_offset(mapper, SMW_US_V1_EXPANDED_GRAPHICS_FORMAT_MARKER_OFFSET);
         let format_marker: [u8; 2] = rom
             .read(
-                SMW_US_V1_EXPANDED_GRAPHICS_FORMAT_MARKER_OFFSET,
+                format_marker_offset,
                 SMW_US_V1_VANILLA_GRAPHICS_FORMAT_MARKER.len(),
             )?
             .try_into()
@@ -159,9 +167,11 @@ pub fn probe_smw_us_v1_exgraphics_runtime(
         return Ok(SmwUsV1ExGraphicsRuntimeState::ReservedOnly);
     }
     if marker == [0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x1f] {
+        let format_marker_offset =
+            mapper_rom_offset(mapper, SMW_US_V1_EXPANDED_GRAPHICS_FORMAT_MARKER_OFFSET);
         let format_marker: [u8; 2] = rom
             .read(
-                SMW_US_V1_EXPANDED_GRAPHICS_FORMAT_MARKER_OFFSET,
+                format_marker_offset,
                 SMW_US_V1_VANILLA_GRAPHICS_FORMAT_MARKER.len(),
             )?
             .try_into()
@@ -185,6 +195,14 @@ pub fn probe_smw_us_v1_exgraphics_runtime(
 pub fn smw_us_v1_exgraphics_pointer(
     file_number: u16,
 ) -> Result<SmwUsV1ExGraphicsPointer, SmwUsV1ExGraphicsError> {
+    smw_us_v1_exgraphics_pointer_for_mapper(file_number, Mapper::LoRom)
+}
+
+/// Resolves one native ExGFX pointer entry through the active mapper's canonical table placement.
+pub fn smw_us_v1_exgraphics_pointer_for_mapper(
+    file_number: u16,
+    mapper: Mapper,
+) -> Result<SmwUsV1ExGraphicsPointer, SmwUsV1ExGraphicsError> {
     let (base, index, encoding) = match file_number {
         0x60..=0x63 => (
             SMW_US_V1_RESERVED_EXGFX_POINTER_OFFSET,
@@ -206,6 +224,7 @@ pub fn smw_us_v1_exgraphics_pointer(
     let pointer_offset = index
         .checked_mul(3)
         .and_then(|delta| base.checked_add(delta))
+        .map(|offset| mapper_rom_offset(mapper, offset))
         .ok_or(SmwUsV1ExGraphicsError::PointerOffsetOverflow)?;
     Ok(SmwUsV1ExGraphicsPointer {
         file_number,
@@ -228,7 +247,16 @@ pub fn smw_us_v1_exgraphics_installation_plan(
     rom: &RomImage,
     files: &[(u16, Vec<u8>)],
 ) -> Result<RelocatablePatchPlan, SmwUsV1ExGraphicsError> {
-    let state = probe_smw_us_v1_exgraphics_runtime(rom)?;
+    smw_us_v1_exgraphics_installation_plan_for_mapper(rom, files, Mapper::LoRom)
+}
+
+/// Builds one native ExGFX insertion plan using mapper-specific table locations and pointers.
+pub fn smw_us_v1_exgraphics_installation_plan_for_mapper(
+    rom: &RomImage,
+    files: &[(u16, Vec<u8>)],
+    mapper: Mapper,
+) -> Result<RelocatablePatchPlan, SmwUsV1ExGraphicsError> {
+    let state = probe_smw_us_v1_exgraphics_runtime_for_mapper(rom, mapper)?;
     if files.is_empty() {
         return Err(SmwUsV1ExGraphicsError::EmptyFiles);
     }
@@ -239,7 +267,7 @@ pub fn smw_us_v1_exgraphics_installation_plan(
     }
     let routes = ordered
         .iter()
-        .map(|(file_number, _)| smw_us_v1_exgraphics_pointer(*file_number))
+        .map(|(file_number, _)| smw_us_v1_exgraphics_pointer_for_mapper(*file_number, mapper))
         .collect::<Result<Vec<_>, _>>()?;
     let encoding = routes[0].encoding;
     if routes.iter().any(|route| route.encoding != encoding) {
@@ -290,19 +318,19 @@ pub fn smw_us_v1_exgraphics_installation_plan(
         | (SmwUsV1ExGraphicsEncoding::Lz2, SmwUsV1ExGraphicsRuntimeState::ReservedOnly) => {
             writes.push(marker_write(
                 rom,
-                SMW_US_V1_EXGFX_EXPANSION_MARKER_OFFSET,
+                mapper_rom_offset(mapper, SMW_US_V1_EXGFX_EXPANSION_MARKER_OFFSET),
                 &SMW_US_V1_EXGFX_EXPANSION_MARKER,
             )?);
             writes.push(marker_write(
                 rom,
-                SMW_US_V1_EXPANDED_GRAPHICS_FORMAT_MARKER_OFFSET,
+                mapper_rom_offset(mapper, SMW_US_V1_EXPANDED_GRAPHICS_FORMAT_MARKER_OFFSET),
                 &SMW_US_V1_EXPANDED_GRAPHICS_FORMAT_MARKER,
             )?);
         }
         (SmwUsV1ExGraphicsEncoding::Raw2048, SmwUsV1ExGraphicsRuntimeState::Ready) => {
             writes.push(marker_write(
                 rom,
-                SMW_US_V1_RESERVED_EXGFX_MARKER_OFFSET,
+                mapper_rom_offset(mapper, SMW_US_V1_RESERVED_EXGFX_MARKER_OFFSET),
                 &SMW_US_V1_RESERVED_EXGFX_MARKER,
             )?);
         }
@@ -315,17 +343,23 @@ pub fn smw_us_v1_exgraphics_installation_plan(
         );
     if initializes_compressed_tables {
         let mut ordinary = PatchWrite {
-            offset: SMW_US_V1_ORDINARY_EXGFX_POINTER_OFFSET,
+            offset: mapper_rom_offset(mapper, SMW_US_V1_ORDINARY_EXGFX_POINTER_OFFSET),
             expected: rom
-                .read(SMW_US_V1_ORDINARY_EXGFX_POINTER_OFFSET, 0x80 * 3)?
+                .read(
+                    mapper_rom_offset(mapper, SMW_US_V1_ORDINARY_EXGFX_POINTER_OFFSET),
+                    0x80 * 3,
+                )?
                 .to_vec(),
             replacement: vec![0; 0x80 * 3],
             fixups: Vec::new(),
         };
         let mut extended = PatchWrite {
-            offset: SMW_US_V1_EXTENDED_EXGFX_POINTER_OFFSET,
+            offset: mapper_rom_offset(mapper, SMW_US_V1_EXTENDED_EXGFX_POINTER_OFFSET),
             expected: rom
-                .read(SMW_US_V1_EXTENDED_EXGFX_POINTER_OFFSET, 0xf00 * 3)?
+                .read(
+                    mapper_rom_offset(mapper, SMW_US_V1_EXTENDED_EXGFX_POINTER_OFFSET),
+                    0xf00 * 3,
+                )?
                 .to_vec(),
             replacement: vec![0; 0xf00 * 3],
             fixups: Vec::new(),
@@ -340,7 +374,7 @@ pub fn smw_us_v1_exgraphics_installation_plan(
                 offset,
                 target_payload: index,
                 target_addend: 0,
-                encoding: PatchFixupEncoding::Long24LowBank,
+                encoding: mapper_pointer_encoding(mapper),
             });
         }
         writes.push(ordinary);
@@ -358,14 +392,14 @@ pub fn smw_us_v1_exgraphics_installation_plan(
                 offset: 0,
                 target_payload: index,
                 target_addend: 0,
-                encoding: PatchFixupEncoding::Long24LowBank,
+                encoding: mapper_pointer_encoding(mapper),
             }],
         });
     }
     writes.sort_unstable_by_key(|write| write.offset);
     Ok(RelocatablePatchPlan {
         description: "insert native SMW US ExGFX files".into(),
-        mapper: Mapper::LoRom,
+        mapper,
         allocation: AllocationPolicy {
             search: match encoding {
                 SmwUsV1ExGraphicsEncoding::Raw2048 => 0x08_0028..SMW_US_V1_EXGFX_LOGICAL_LEN,
@@ -380,6 +414,22 @@ pub fn smw_us_v1_exgraphics_installation_plan(
         payloads,
         writes,
     })
+}
+
+fn mapper_rom_offset(mapper: Mapper, lorom_offset: usize) -> usize {
+    if mapper == Mapper::ExLoRom {
+        0x40_0000 + lorom_offset
+    } else {
+        lorom_offset
+    }
+}
+
+fn mapper_pointer_encoding(mapper: Mapper) -> PatchFixupEncoding {
+    if mapper == Mapper::LoRom {
+        PatchFixupEncoding::Long24LowBank
+    } else {
+        PatchFixupEncoding::Long24
+    }
 }
 
 fn marker_write(
@@ -417,6 +467,30 @@ mod tests {
         assert_eq!(
             smw_us_v1_exgraphics_pointer(0xff).unwrap().pointer_offset,
             0x07f77d
+        );
+        assert_eq!(
+            smw_us_v1_exgraphics_pointer_for_mapper(0x60, Mapper::ExLoRom)
+                .unwrap()
+                .pointer_offset,
+            0x41bcc0
+        );
+        assert_eq!(
+            smw_us_v1_exgraphics_pointer_for_mapper(0x80, Mapper::ExLoRom)
+                .unwrap()
+                .pointer_offset,
+            0x47f600
+        );
+        assert_eq!(
+            smw_us_v1_exgraphics_pointer_for_mapper(0x100, Mapper::ExLoRom)
+                .unwrap()
+                .pointer_offset,
+            0x488000
+        );
+        assert_eq!(
+            smw_us_v1_exgraphics_pointer_for_mapper(0x100, Mapper::Sa1)
+                .unwrap()
+                .pointer_offset,
+            0x088000
         );
         assert_eq!(
             smw_us_v1_exgraphics_pointer(0x100).unwrap().pointer_offset,

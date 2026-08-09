@@ -216,12 +216,12 @@ fn prepare_smw_us_v1_special_graphics_import_inner(
         return Err("special graphics startup layouts do not share one bank operand".into());
     }
     let pointers = [
-        PayloadPointer::Split {
+        PayloadPointer::SplitLowBank {
             low_word_offset: gfx33_planes.low_offset,
             bank_offset: gfx33_planes.bank_offset,
             shared_bank: false,
         },
-        PayloadPointer::Split {
+        PayloadPointer::SplitLowBank {
             low_word_offset: gfx32_planes.low_offset,
             bank_offset: gfx32_planes.bank_offset,
             shared_bank: true,

@@ -4438,3 +4438,13 @@ selection, clipboard, accepted paste, and rejected paste then traverses the orig
 named clipboard entry point. The dedicated helpers accept either the historical numeric process
 ID or an exact executable name so isolated automation cannot attach to another Lunar Magic
 session.
+
+`ConvertRomTo64MbitExLoROM` (`0047FCE0`) was revalidated against a modified 4 MiB source containing
+standard 4bpp graphics and ExGFX. Lunar Magic writes metadata before relocation, performs the same
+byte-exact layout transform already modeled by Rust, reloads the active descriptor, and writes the
+final relocated metadata. The decisive compatibility invariant is the source pointer form:
+Lunar Magic's standard split-plane table and shared GFX32/GFX33 operand publish LoROM's low-bank
+mirror. A high-bank LoROM mirror is equivalent before conversion but selects the wrong physical
+half in ExLoROM. Rust therefore models low-bank split-byte and shared-bank pointers explicitly and
+applies them only to LoROM, retaining address bit 23 for ExLoROM and SA-1. A live conversion and
+export gate now proves all 52 GFX files plus retained `ExGFX80` and newly inserted `ExGFX81`.

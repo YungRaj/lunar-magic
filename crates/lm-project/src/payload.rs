@@ -45,8 +45,20 @@ pub enum PayloadPointer {
         bank_offset: usize,
         shared_bank: bool,
     },
+    /// Split word/bank pointer encoded through LoROM's low-bank mirror.
+    SplitLowBank {
+        low_word_offset: usize,
+        bank_offset: usize,
+        shared_bank: bool,
+    },
     /// Three address bytes stored in independent parallel byte planes.
     SplitBytes {
+        low_offset: usize,
+        high_offset: usize,
+        bank_offset: usize,
+    },
+    /// Three address bytes stored in independent planes, encoded through LoROM's low-bank mirror.
+    SplitBytesLowBank {
         low_offset: usize,
         high_offset: usize,
         bank_offset: usize,

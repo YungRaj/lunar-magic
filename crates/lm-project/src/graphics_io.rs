@@ -129,10 +129,21 @@ impl GraphicsRomLayout {
             base.checked_add(displacement)
                 .ok_or(LevelLoadError::AddressOverflow)
         };
-        Ok(PayloadPointer::SplitBytes {
-            low_offset: add(planes.low_offset)?,
-            high_offset: add(planes.high_offset)?,
-            bank_offset: add(planes.bank_offset)?,
+        let low_offset = add(planes.low_offset)?;
+        let high_offset = add(planes.high_offset)?;
+        let bank_offset = add(planes.bank_offset)?;
+        Ok(if self.mapper == Mapper::LoRom {
+            PayloadPointer::SplitBytesLowBank {
+                low_offset,
+                high_offset,
+                bank_offset,
+            }
+        } else {
+            PayloadPointer::SplitBytes {
+                low_offset,
+                high_offset,
+                bank_offset,
+            }
         })
     }
 
@@ -160,6 +171,11 @@ impl GraphicsRomLayout {
                 low_offset,
                 high_offset,
                 bank_offset,
+            }
+            | PayloadPointer::SplitBytesLowBank {
+                low_offset,
+                high_offset,
+                bank_offset,
             } => {
                 let low = u32::from(project.rom.read(low_offset, 1)?[0]);
                 let high = u32::from(project.rom.read(high_offset, 1)?[0]);
@@ -167,7 +183,9 @@ impl GraphicsRomLayout {
                 SnesPointer24::new(low | (high << 8) | (bank << 16))
                     .map_err(|_| GraphicsIoError::Layout(LevelLoadError::AddressOverflow))
             }
-            PayloadPointer::Split { .. } | PayloadPointer::DisplacedWordAndBank { .. } => {
+            PayloadPointer::Split { .. }
+            | PayloadPointer::SplitLowBank { .. }
+            | PayloadPointer::DisplacedWordAndBank { .. } => {
                 unreachable!("graphics layouts do not emit split words")
             }
         }
@@ -641,6 +659,26 @@ mod tests {
         );
         assert!(project.history.undo(&mut project.rom).unwrap());
         assert_eq!(project.save_snapshot(), original);
+    }
+
+    #[test]
+    fn split_graphics_pointers_use_lorom_low_banks_only_when_the_mapper_allows_it() {
+        assert!(matches!(
+            split_layout().payload_pointer(0).unwrap(),
+            PayloadPointer::SplitBytesLowBank { .. }
+        ));
+        let mut exlorom = split_layout();
+        exlorom.mapper = Mapper::ExLoRom;
+        assert!(matches!(
+            exlorom.payload_pointer(0).unwrap(),
+            PayloadPointer::SplitBytes { .. }
+        ));
+        let mut sa1 = split_layout();
+        sa1.mapper = Mapper::Sa1;
+        assert!(matches!(
+            sa1.payload_pointer(0).unwrap(),
+            PayloadPointer::SplitBytes { .. }
+        ));
     }
 
     #[test]

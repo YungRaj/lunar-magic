@@ -49,6 +49,11 @@ pub(super) fn checked_pointer_ranges(
                     low_word_offset,
                     bank_offset,
                     shared_bank,
+                }
+                | PayloadPointer::SplitLowBank {
+                    low_word_offset,
+                    bank_offset,
+                    shared_bank,
                 } => {
                     let mut ranges = vec![range(low_word_offset, 2)?];
                     if !shared_bank {
@@ -62,6 +67,11 @@ pub(super) fn checked_pointer_ranges(
                     ..
                 } => Ok(vec![range(low_word_offset, 2)?, range(bank_offset, 1)?]),
                 PayloadPointer::SplitBytes {
+                    low_offset,
+                    high_offset,
+                    bank_offset,
+                }
+                | PayloadPointer::SplitBytesLowBank {
                     low_offset,
                     high_offset,
                     bank_offset,
@@ -184,6 +194,11 @@ pub(super) fn validate_request(
             bank_offset,
             ..
         }
+        | PayloadPointer::SplitLowBank {
+            low_word_offset,
+            bank_offset,
+            ..
+        }
         | PayloadPointer::DisplacedWordAndBank {
             low_word_offset,
             bank_offset,
@@ -193,6 +208,11 @@ pub(super) fn validate_request(
             project.rom.read(bank_offset, 1)?;
         }
         PayloadPointer::SplitBytes {
+            low_offset,
+            high_offset,
+            bank_offset,
+        }
+        | PayloadPointer::SplitBytesLowBank {
             low_offset,
             high_offset,
             bank_offset,
