@@ -22,9 +22,6 @@ const NATIVE_ANIMATED_SUBMAP_BASE: usize = 0x2a00;
 const NATIVE_ANIMATED_SUBMAP_STRIDE: usize = 0x100;
 const VANILLA_SHARED_PALETTE_TABLE_OFFSET: usize = 0x30a0;
 const VANILLA_LEVEL_DOT_CYCLE_OFFSETS: [usize; 2] = [0x56c, 0x57c];
-const VANILLA_LIGHTNING_DELAYS_OFFSET: usize = 0x276f8;
-const VANILLA_LIGHTNING_INITIAL_COLORS_OFFSET: usize = 0x27700;
-const VANILLA_LIGHTNING_SELECTORS_OFFSET: usize = 0x27708;
 
 impl RomOverworldEditor {
     pub(crate) fn handles(app: &AppState) -> bool {
@@ -571,37 +568,32 @@ fn load_builtin_overworld_level_dot_palette(
 fn load_builtin_overworld_lightning(
     project: &Project,
 ) -> Result<Option<crate::overworld_editor_render::BuiltInOverworldLightning>, String> {
-    let logical = project.rom.logical_bytes();
-    let delays: [u8; 8] = logical
-        .get(VANILLA_LIGHTNING_DELAYS_OFFSET..VANILLA_LIGHTNING_DELAYS_OFFSET + 8)
-        .ok_or("vanilla overworld lightning delay table is outside the ROM")?
-        .try_into()
-        .expect("fixed eight-byte lightning delay slice");
-    let initial_colors: [u8; 8] = logical
-        .get(VANILLA_LIGHTNING_INITIAL_COLORS_OFFSET..VANILLA_LIGHTNING_INITIAL_COLORS_OFFSET + 8)
-        .ok_or("vanilla overworld lightning color table is outside the ROM")?
-        .try_into()
-        .expect("fixed eight-byte lightning color slice");
-    let selectors: [u8; 128] = logical
-        .get(VANILLA_LIGHTNING_SELECTORS_OFFSET..VANILLA_LIGHTNING_SELECTORS_OFFSET + 128)
-        .ok_or("vanilla overworld lightning selector table is outside the ROM")?
-        .try_into()
-        .expect("fixed 128-byte lightning selector slice");
-    if delays.contains(&0)
-        || initial_colors.iter().any(|&color| !(1..=7).contains(&color))
-        // The selector deliberately aliases the first 128 bytes of the vanilla routine. These
-        // opcodes authenticate that we did not reinterpret a relocated/modified routine.
-        || selectors[..8] != [0xa9, 0xf7, 0x20, 0x82, 0xf8, 0xd0, 0x5f, 0xac]
-    {
-        return Ok(None);
-    }
-    Ok(Some(
-        crate::overworld_editor_render::BuiltInOverworldLightning {
-            selectors,
-            delays,
-            initial_colors,
-        },
-    ))
+    let identity = project
+        .identity
+        .clone()
+        .or_else(|| detect_identity(&project.rom).ok())
+        .ok_or("built-in overworld lightning requires an authenticated ROM identity")?;
+    lm_profile::probe_builtin_overworld_lightning_sources(
+        &project.rom,
+        identity.game,
+        identity.region,
+        identity.mapper,
+    )
+    .map(|sources| {
+        sources.map(
+            |lm_profile::BuiltInOverworldLightningSources {
+                 selectors,
+                 delays,
+                 initial_colors,
+                 ..
+             }| crate::overworld_editor_render::BuiltInOverworldLightning {
+                selectors,
+                delays,
+                initial_colors,
+            },
+        )
+    })
+    .map_err(|error| format!("cannot load built-in overworld lightning: {error}"))
 }
 
 fn load_builtin_overworld_animation_addresses(project: &Project) -> Result<Vec<u16>, String> {
@@ -1098,6 +1090,72 @@ mod tests {
                 .unwrap();
             let error = load_builtin_overworld_animation_addresses(&project).unwrap_err();
             assert!(error.contains("source 0 is $1FFF"), "{error}");
+        }
+    }
+
+    #[test]
+    fn native_lifecycle_loads_every_descriptor_lightning_family_and_rejects_selected_corruption() {
+        let fixture = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../..")
+            .join("oracle-work/lm363/pristine-us/headered.smc");
+        let source = RomImage::from_bytes(fs::read(fixture).unwrap()).unwrap();
+        let mut identity = detect_identity(&source).unwrap();
+        let source_layout = lm_profile::builtin_overworld_lightning_layout(
+            SupportedGame::SuperMarioWorld,
+            lm_rom::Region::NorthAmerica,
+            Mapper::LoRom,
+        );
+        let source_family = source
+            .read(source_layout.delays_offset, 16 + 128)
+            .unwrap()
+            .to_vec();
+
+        for (game, region, mapper) in [
+            (
+                SupportedGame::SuperMarioWorld,
+                lm_rom::Region::Japan,
+                Mapper::LoRom,
+            ),
+            (
+                SupportedGame::SuperMarioWorld,
+                lm_rom::Region::NorthAmerica,
+                Mapper::Sa1,
+            ),
+            (
+                SupportedGame::SuperMarioWorld,
+                lm_rom::Region::NorthAmerica,
+                Mapper::ExLoRom,
+            ),
+            (
+                SupportedGame::AllStarsAndWorld,
+                lm_rom::Region::NorthAmerica,
+                Mapper::LoRom,
+            ),
+        ] {
+            let selected_layout =
+                lm_profile::builtin_overworld_lightning_layout(game, region, mapper);
+            let mut logical = source.logical_bytes().to_vec();
+            logical.resize(0x80_0000, 0xff);
+            logical[selected_layout.delays_offset..selected_layout.delays_offset + 16 + 128]
+                .copy_from_slice(&source_family);
+            identity.game = game;
+            identity.region = region;
+            identity.mapper = mapper;
+            let mut project = Project::new(RomImage::from_bytes(logical).unwrap());
+            project.identity = Some(identity.clone());
+            let selected = load_builtin_overworld_lightning(&project).unwrap().unwrap();
+            assert_eq!(selected.delays[0], 0x20);
+            assert_eq!(selected.initial_colors, [7, 5, 6, 7, 4, 6, 7, 5]);
+
+            project
+                .rom
+                .write(selected_layout.selectors_offset, &[0])
+                .unwrap();
+            assert!(
+                load_builtin_overworld_lightning(&project)
+                    .unwrap()
+                    .is_none()
+            );
         }
     }
 

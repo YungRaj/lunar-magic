@@ -40,6 +40,7 @@ mod native_map16_transfer;
 mod overworld_animation_runtime;
 mod overworld_boss_sequence;
 mod overworld_builtin_animation;
+mod overworld_builtin_lightning;
 mod overworld_event;
 mod overworld_event_number;
 mod overworld_event_tilemap;
@@ -364,6 +365,12 @@ pub use overworld_builtin_animation::{
     SMW_US_V1_BUILT_IN_OVERWORLD_ANIMATION_WORDS, SmwUsV1BuiltInOverworldAnimationError,
     SmwUsV1BuiltInOverworldAnimationTable, builtin_overworld_animation_table_offset,
     load_builtin_overworld_animation_table,
+};
+pub use overworld_builtin_lightning::{
+    BUILT_IN_OVERWORLD_LIGHTNING_SELECTOR_LEN, BuiltInOverworldLightningLayout,
+    BuiltInOverworldLightningSources, LUNAR_MAGIC_OVERWORLD_LIGHTNING_DELAYS_DESCRIPTOR_FIELD,
+    LUNAR_MAGIC_OVERWORLD_LIGHTNING_MASK_DESCRIPTOR_FIELD, builtin_overworld_lightning_layout,
+    probe_builtin_overworld_lightning_sources,
 };
 pub use overworld_event::{
     SMW_US_V1_OVERWORLD_EVENT_DESTINATION_OPERAND_OFFSET, SMW_US_V1_OVERWORLD_EVENT_FIXED_ENTRIES,

@@ -4651,3 +4651,14 @@ must be in `$2000..$C7FF`; a truncated or malformed selected table aborts open a
 to a plausible table in another mapper's location. The retained pristine table, synthetic
 SMW/ExLoROM/SA-1/All-Stars routing, lower-mirror decoy, corruption, full overworld-raster reopen,
 and exact built-in phase materialization gates cover the recovered boundary.
+
+The same descriptor family resolves original overworld lightning. Field `+$904` names the
+physical mask operand inside the selector routine; the 128-byte selector source begins one byte
+earlier. Field `+$90C` names the eight delay bytes, followed immediately by eight initial colors.
+The SMW-US descriptor yields logical delays/selectors `$0276F8/$027708`; SMW-J yields
+`$0276F0/$027700`; and All-Stars + World yields `$1A76EC/$1A76FC`. ExLoROM adds `$400000` to the
+selected SMW body, while an authentic SA-1 Pack conversion retains the SMW-US locations.
+
+Rust authenticates the selected family with nonzero delays, color indexes 1–7, and the recovered
+eight-byte selector prologue. Complete foreign or corrupt routines disable only built-in lightning;
+truncated selected sources reject. No cross-identity or lower-mirror fallback is attempted.

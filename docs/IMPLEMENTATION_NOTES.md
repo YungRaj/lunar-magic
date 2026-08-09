@@ -4934,3 +4934,12 @@ fallback probes the LoROM location, which prevents a valid lower ExLoROM mirror 
 corrupt active table. Profile routing tests distinguish all three tables, lifecycle tests retain a
 valid ordinary-table decoy while corrupting ExLoROM/All-Stars, and authentic pristine/full-raster plus
 built-in phase tests retain the renderer boundary.
+
+Lightning sources now follow descriptor fields `+$904` and `+$90C` instead of fixed SMW-US
+constants. The layout resolver covers the eight-byte-shifted Japanese routine, relocated
+All-Stars + World routine, ExLoROM upper body, and unchanged SA-1 location. It derives the selector
+start from the mask operand, then authenticates the delay/color bounds and exact routine prologue.
+Focused lifecycle tests copy the authentic source family into every selected layout, corrupt that
+selected prologue, and retain other plausible families as decoys. Existing wrapping-counter,
+pre-decrement-color, submap-isolation, and authentic pristine gates keep the rendered sequence
+unchanged.
