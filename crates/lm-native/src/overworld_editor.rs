@@ -10,7 +10,10 @@ use crate::{
     overworld_editor_palette::OverworldPalettePanel,
     overworld_editor_records::OverworldRecordPanels,
     overworld_editor_render::{self, OverworldAssets},
-    user_toolbar_images::{MainToolbarImageSet, OriginalToolbarAction, OriginalToolbarImages},
+    user_toolbar_images::{
+        MainToolbarImageSet, OriginalTiledImage, OriginalToolbarAction, OriginalToolbarImages,
+        tiled_surface_canvas_size,
+    },
 };
 use eframe::egui;
 use lm_app::OverworldDocumentController;
@@ -195,7 +198,7 @@ impl OverworldEditor {
         self.toolbar(ui, toolbar_images);
         ui.separator();
         ui.columns(2, |columns| {
-            self.world_view(&mut columns[0]);
+            self.world_view(&mut columns[0], toolbar_images);
             self.side_panel(&mut columns[1]);
         });
     }

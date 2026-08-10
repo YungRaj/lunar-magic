@@ -246,7 +246,7 @@ impl MainToolbarImageSet {
                 tile.texture = Some(context.load_texture(
                     format!("original-tiled-image-{kind:?}"),
                     image.clone(),
-                    egui::TextureOptions::NEAREST,
+                    egui::TextureOptions::NEAREST_REPEAT,
                 ));
             }
         }
@@ -321,6 +321,40 @@ impl MainToolbarImageSet {
     pub(crate) fn tiled_texture(&self, kind: OriginalTiledImage) -> Option<&egui::TextureHandle> {
         self.original_tiles.get(kind.index())?.texture.as_ref()
     }
+
+    pub(crate) fn paint_tiled_surface(
+        &self,
+        painter: &egui::Painter,
+        kind: OriginalTiledImage,
+        target: egui::Rect,
+        origin: egui::Pos2,
+    ) -> bool {
+        let Some(texture) = self.tiled_texture(kind) else {
+            return false;
+        };
+        let size = texture.size_vec2();
+        let uv = tiled_surface_uv(target, origin, size);
+        painter.image(texture.id(), target, uv, egui::Color32::WHITE);
+        true
+    }
+}
+
+fn tiled_surface_uv(target: egui::Rect, origin: egui::Pos2, tile_size: egui::Vec2) -> egui::Rect {
+    debug_assert!(tile_size.x > 0.0 && tile_size.y > 0.0);
+    egui::Rect::from_min_max(
+        egui::pos2(
+            (target.min.x - origin.x) / tile_size.x,
+            (target.min.y - origin.y) / tile_size.y,
+        ),
+        egui::pos2(
+            (target.max.x - origin.x) / tile_size.x,
+            (target.max.y - origin.y) / tile_size.y,
+        ),
+    )
+}
+
+pub(crate) fn tiled_surface_canvas_size(content: egui::Vec2, available: egui::Vec2) -> egui::Vec2 {
+    egui::vec2(content.x.max(available.x), content.y.max(available.y))
 }
 
 fn load_original_strip(
@@ -853,6 +887,22 @@ mod tests {
             loaded
                 .tiled_texture(OriginalTiledImage::BackgroundCanvas)
                 .is_some()
+        );
+    }
+
+    #[test]
+    fn original_tiled_surfaces_repeat_from_the_valid_content_edge() {
+        assert_eq!(
+            tiled_surface_canvas_size(egui::vec2(512.0, 256.0), egui::vec2(640.0, 200.0)),
+            egui::vec2(640.0, 256.0)
+        );
+        let target = egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(640.0, 480.0));
+        let uv = tiled_surface_uv(target, egui::pos2(512.0, 0.0), egui::vec2(32.0, 16.0));
+        assert_eq!(uv.min, egui::pos2(-16.0, 0.0));
+        assert_eq!(uv.max, egui::pos2(4.0, 30.0));
+        assert_eq!(
+            egui::TextureOptions::NEAREST_REPEAT.wrap_mode,
+            egui::TextureWrapMode::Repeat
         );
     }
 

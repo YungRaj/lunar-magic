@@ -3775,6 +3775,18 @@ surface, while `ApplyCustomObjectZoomLayout` at `$005304C0` and
 `ApplySpritePreviewZoomLayout` at `$00579D20` preserve the selected zoom across layout and DPI
 changes. Rust now mirrors these controls with independent object/sprite state and scrollable scaled
 surfaces rather than resizing the level canvas.
+The optional tiled GUI images have a stricter role than a general editor skin.
+`LoadFfxEditorOverlayBitmap` at `$0044E0B0`, `LoadOverworldEditorBackgroundImage` at `$00548210`,
+and `LoadFfxhdBackgroundOverlayBitmap` at `$0051B540` convert `.ffx`, `.ffx2`, and `.ffxhd` to
+top-down 32-bit surfaces. `RenderLevelEditorViewportRegion` at `$004530A0`,
+`RenderOverworldEditorViewport` at `$00546FD0`, and `RenderLevelBackgroundCanvasRegion` at
+`$0051D6E0` copy repeated source pixels only for coordinates outside their valid map bounds; valid
+Map16/8×8 content is rendered separately. Their modulo offsets align the repeated bitmap against
+the valid-content edge on the orientation-dependent axis while leaving the other origin unchanged.
+Rust uses nearest-repeat textures with the same edge-relative UV origin, grows each host canvas to
+its viewport, paints valid content afterward,
+and excludes the tiled margin from hit testing. The background selection additionally inverts the
+original two-plane 16×32 storage mapping for its 32×32 visual cursor.
 Resolved OSC displays now supply a second active-variant Add Object catalog. It deduplicates
 object/parameter selectors for the current normal, castle, rope, underground, or ghost-house
 family; searches hexadecimal pairs and descriptions; and fits composite Map16 artwork using

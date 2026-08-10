@@ -622,6 +622,12 @@ interactive frontends cannot bypass confirmation and request correlation through
   Hiding the preview keeps its zoom and layout choices but disables those controls until the pane
   is restored. Standard and extended objects, OSC composites, standard sprites, SSC atlas parts,
   and externally remapped SSC parts all render from the currently selected placement template.
+  The optional `.ffx`, `.ffx2`, and `.ffxhd` GUI bitmaps now back the level, overworld, and
+  background-map canvases. They use repeat sampling at native pixel scale and are painted only in
+  the portion of a resized viewport outside valid editable content. Valid game pixels are composited
+  over them, and clicks in the tiled margin cannot select or mutate a level/overworld/background
+  cell. The compact background preview maps selection through Lunar Magic's two 16×32 storage
+  planes rather than treating its bytes as a visually row-major array.
   Attached `.osc` metadata adds an active-tileset custom catalog searchable by hexadecimal
   object/parameter pair or description. Its composites resolve ordinary and external Map16
   definitions, while placement constructs the native command-derived 3–8-byte stream shape and

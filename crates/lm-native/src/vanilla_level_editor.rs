@@ -15,7 +15,8 @@ use lm_rom::{Mapper, Region, RomImage, SnesPointer24, SupportedGame};
 use std::collections::HashMap;
 
 use crate::user_toolbar_images::{
-    MainToolbarImageSet, OriginalCatalogAction, OriginalToolbarImages,
+    MainToolbarImageSet, OriginalCatalogAction, OriginalTiledImage, OriginalToolbarImages,
+    tiled_surface_canvas_size,
 };
 
 const ROM_LEVEL_CANVAS_CELL: f32 = 12.0;
@@ -637,7 +638,7 @@ impl VanillaLevelEditor {
                                     pending_command = self.show_entrance_editor(ui, level);
                                 }
                             });
-                        self.show_layer2_editor(ui, custom_objects, custom_map16);
+                        self.show_layer2_editor(ui, custom_objects, custom_map16, toolbar_images);
                         egui::CollapsingHeader::new("Layer 1 objects")
                             .id_salt("vanilla-layer1-tools")
                             .default_open(true)
@@ -681,6 +682,7 @@ impl VanillaLevelEditor {
                         custom_objects,
                         custom_map16,
                         live_frame,
+                        toolbar_images,
                     );
                 },
             );
@@ -790,6 +792,7 @@ impl VanillaLevelEditor {
         ui: &mut egui::Ui,
         custom_objects: Option<&lm_level::OscResolvedTable>,
         custom_map16: Option<&lm_app::NativeMap16SidecarDocument>,
+        toolbar_images: &MainToolbarImageSet,
     ) {
         let Some(layer2) = self
             .controller
@@ -839,6 +842,7 @@ impl VanillaLevelEditor {
                          shared bank-$0C payload directly would change every level that uses it.",
                     );
                 }
+                self.show_layer2_tilemap_canvas(ui, bytes, toolbar_images);
             }
             lm_level::NativeLayer2Data::Objects(objects) => {
                 ui.label(format!(
@@ -852,6 +856,65 @@ impl VanillaLevelEditor {
                 self.show_layer2_object_editor(ui, &objects.objects.records, custom_objects);
             }
         });
+    }
+
+    fn show_layer2_tilemap_canvas(
+        &mut self,
+        ui: &mut egui::Ui,
+        bytes: &[u8],
+        toolbar_images: &MainToolbarImageSet,
+    ) {
+        let Some(texture) = self.animated_background_plane_textures.first().cloned() else {
+            return;
+        };
+        let display_side = ui.available_width().min(256.0).max(128.0);
+        let image_size = egui::vec2(display_side, display_side);
+        let viewport_size = egui::vec2(ui.available_width().max(display_side), 280.0);
+        ui.label("32×32 background canvas");
+        egui::ScrollArea::both()
+            .id_salt("vanilla-layer2-background-canvas")
+            .max_height(viewport_size.y)
+            .show(ui, |ui| {
+                let canvas_size = tiled_surface_canvas_size(image_size, viewport_size);
+                let (canvas_rect, response) =
+                    ui.allocate_exact_size(canvas_size, egui::Sense::click());
+                let image_rect = egui::Rect::from_min_size(canvas_rect.min, image_size);
+                let painter = ui.painter_at(canvas_rect);
+                painter.rect_filled(canvas_rect, 0.0, egui::Color32::BLACK);
+                toolbar_images.paint_tiled_surface(
+                    &painter,
+                    OriginalTiledImage::BackgroundCanvas,
+                    canvas_rect,
+                    egui::pos2(image_rect.max.x, image_rect.min.y),
+                );
+                painter.image(
+                    texture.id(),
+                    image_rect,
+                    egui::Rect::from_min_max(egui::Pos2::ZERO, egui::pos2(1.0, 1.0)),
+                    egui::Color32::WHITE,
+                );
+                let cell = display_side / 32.0;
+                if let Some((x, y)) = layer2_canvas_coordinates(self.selected_layer2_tile) {
+                    let selected = egui::Rect::from_min_size(
+                        image_rect.min + egui::vec2(x as f32 * cell, y as f32 * cell),
+                        egui::vec2(cell, cell),
+                    );
+                    painter.rect_stroke(
+                        selected,
+                        0.0,
+                        egui::Stroke::new(1.0_f32, egui::Color32::YELLOW),
+                        egui::StrokeKind::Inside,
+                    );
+                }
+                if response.clicked()
+                    && let Some(position) = response.interact_pointer_pos()
+                    && let Some(index) = layer2_tile_at_canvas_position(position, image_rect, cell)
+                    && let Some(word) = bytes.get(index * 2..index * 2 + 2)
+                {
+                    self.selected_layer2_tile = index;
+                    self.layer2_word = u16::from_le_bytes([word[0], word[1]]);
+                }
+            });
     }
 
     #[allow(
@@ -2028,6 +2091,7 @@ impl VanillaLevelEditor {
         custom_objects: Option<&lm_level::OscResolvedTable>,
         custom_map16: Option<&lm_app::NativeMap16SidecarDocument>,
         live_frame: Option<(egui::TextureId, [usize; 2])>,
+        toolbar_images: &MainToolbarImageSet,
     ) {
         let CanvasModel {
             layer1_records: records,
@@ -2165,7 +2229,7 @@ impl VanillaLevelEditor {
             // axis instead of leaving a fixed-size 256×224 rectangle letterboxed inside it.
             canvas_available
         } else {
-            world_size
+            tiled_surface_canvas_size(world_size, canvas_available)
         };
         let audit_scroll = visual_smoke_editor_scroll_column().is_some()
             || visual_smoke_editor_scroll_row().is_some();
@@ -2208,11 +2272,25 @@ impl VanillaLevelEditor {
                     world_size,
                 )
             } else {
-                rect
+                egui::Rect::from_min_size(rect.min, world_size)
             };
             if is_boss_battle_level_mode(level_mode) {
                 paint_boss_battle_diagnostic(&painter, rect);
             } else {
+                painter.rect_filled(rect, 0.0, egui::Color32::BLACK);
+                if !snes_viewport {
+                    let tiled_origin = if vertical {
+                        egui::pos2(paint_rect.max.x, paint_rect.min.y)
+                    } else {
+                        egui::pos2(paint_rect.min.x, paint_rect.max.y)
+                    };
+                    toolbar_images.paint_tiled_surface(
+                        &painter,
+                        OriginalTiledImage::LevelCanvas,
+                        rect,
+                        tiled_origin,
+                    );
+                }
                 self.paint_object_canvas(
                     &painter,
                     &response,
@@ -10005,6 +10083,15 @@ fn layer2_tile_at_canvas_position(
     lm_level::native_layer2_tilemap_index(x as usize, y as usize)
 }
 
+fn layer2_canvas_coordinates(index: usize) -> Option<(usize, usize)> {
+    if index >= 32 * 32 {
+        return None;
+    }
+    let plane = index / (16 * 32);
+    let within_plane = index % (16 * 32);
+    Some((plane * 16 + within_plane % 16, within_plane / 16))
+}
+
 fn draw_map16_atlas_tile(
     painter: &egui::Painter,
     texture: &egui::TextureHandle,
@@ -13696,6 +13783,11 @@ mod tests {
             layer2_tile_at_canvas_position(egui::pos2(513.0, 8.0), canvas, 16.0),
             None
         );
+        for index in [0, 15, 16, 511, 512, 527, 528, 1023] {
+            let (x, y) = layer2_canvas_coordinates(index).unwrap();
+            assert_eq!(lm_level::native_layer2_tilemap_index(x, y), Some(index));
+        }
+        assert_eq!(layer2_canvas_coordinates(1024), None);
     }
 
     #[test]

@@ -79,6 +79,10 @@ object and sprite catalogs consume cells 1 and 3 for the matching preview-icon a
 toggles; those settings affect the complete corresponding catalog family. The standard-sprite
 catalog additionally consumes `.ff8` cell 2 and filters against its exact recovered mode/SP3/SP4
 alternatives while leaving custom SSC collections on their external-metadata path. The object
-BG1/FG3 predicate, cells 4 and 5 preview zoom/pane behavior, and tiled surfaces remain unrouted.
+BG1/FG3 predicate and cells 4 and 5 preview zoom/pane behavior are also routed. The `.ffx`, `.ffx2`,
+and `.ffxhd` textures use repeat sampling only outside their valid level, overworld, and 32×32
+background-map rectangles; the valid content is painted afterward and therefore cannot expose the
+GUI bitmap through transparent game pixels. Canvas growth, click rejection beyond valid content,
+two-plane background selection, and edge-anchored UV wrapping have regression coverage.
 Nearest-neighbor sampling is retained for user-supplied pixel artwork, with text and tooltip
 fallbacks.

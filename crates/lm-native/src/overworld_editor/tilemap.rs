@@ -1,11 +1,13 @@
-use super::{OverworldEditor, Panel};
+use super::{
+    MainToolbarImageSet, OriginalTiledImage, OverworldEditor, Panel, tiled_surface_canvas_size,
+};
 use crate::{level_editor_forms, overworld_editor_render};
 use eframe::egui;
 use lm_app::{OverworldControllerEdit, OverworldLayerId};
 use lm_project::CompleteOverworldShape;
 
 impl OverworldEditor {
-    pub(super) fn world_view(&mut self, ui: &mut egui::Ui) {
+    pub(super) fn world_view(&mut self, ui: &mut egui::Ui, toolbar_images: &MainToolbarImageSet) {
         ui.horizontal(|ui| {
             if ui
                 .selectable_value(&mut self.edit_layer, 0, "Layer 1")
@@ -33,13 +35,36 @@ impl OverworldEditor {
             ui.label("Preview unavailable; property editing remains available.");
             return;
         };
+        let available = ui.available_size();
         egui::ScrollArea::both().show(ui, |ui| {
-            let response = ui.add(egui::Image::new(&texture).sense(egui::Sense::click()));
+            let image_size = texture.size_vec2();
+            let canvas_size = tiled_surface_canvas_size(image_size, available);
+            let (canvas_rect, response) = ui.allocate_exact_size(canvas_size, egui::Sense::click());
+            let image_rect = egui::Rect::from_min_size(canvas_rect.min, image_size);
+            let painter = ui.painter_at(canvas_rect);
+            painter.rect_filled(canvas_rect, 0.0, egui::Color32::BLACK);
+            toolbar_images.paint_tiled_surface(
+                &painter,
+                OriginalTiledImage::OverworldCanvas,
+                canvas_rect,
+                if image_size.x < image_size.y {
+                    egui::pos2(image_rect.max.x, image_rect.min.y)
+                } else {
+                    egui::pos2(image_rect.min.x, image_rect.max.y)
+                },
+            );
+            painter.image(
+                texture.id(),
+                image_rect,
+                egui::Rect::from_min_max(egui::Pos2::ZERO, egui::pos2(1.0, 1.0)),
+                egui::Color32::WHITE,
+            );
             if response.clicked()
                 && let Some(position) = response.interact_pointer_pos()
+                && image_rect.contains(position)
                 && let Some(shape) = self.shape()
                 && let Some(selected) = overworld_editor_render::selected_tile(
-                    response.rect,
+                    image_rect,
                     position,
                     shape.width,
                     shape.height,
