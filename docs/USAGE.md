@@ -101,8 +101,11 @@ and follows its normal boot path.
 For an embedded live frame, build both `lm-native` and `lm-libretro`, keep the executables in the
 same directory, open a level, and choose **Tools → Live ROM Test (Libretro)…**. Select a
 libretro-v1 SNES core that supports in-memory ROM loading. The live window exposes pause, resume,
-single-frame step, and stop. It currently boots the exact unsaved ROM snapshot; direct selected-
-level injection, edited-sprite reload, gameplay input, and audio are not implemented yet.
+single-frame step, and stop. It boots the exact unsaved ROM snapshot directly into the selected
+level, and supports live SNES joypad input with Z=B, A=Y, X=A, S=X, Enter=Start, Backspace=Select,
+and the arrow keys. Switching the editor level or changing its revision closes the immutable
+snapshot session; start it again to test the new state. Edited-sprite hot reload and audio output
+are not implemented yet.
 
 ## Rendering validation
 

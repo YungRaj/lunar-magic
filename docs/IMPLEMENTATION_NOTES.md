@@ -2455,14 +2455,21 @@ zero/oversized geometry, inconsistent raster lengths, bad UTF-8, unknown tags, e
 and trailing bytes reject before backend state changes. The codec is consumed by the separately
 unsafe-isolated `lm-libretro` process. That backend resolves the libretro-v1 ABI, rejects
 full-path-only cores so ROM bytes remain the editor's immutable snapshot, balances game/core
-teardown, and advertises only ROM load, RGBA frame, pause, step, and viewport capabilities. Its
+teardown, and advertises ROM load, RGBA frame, pause, step, and viewport capabilities. Its
 callbacks bound geometry, pitch, and allocation before copying and convert XRGB8888, RGB565, or
-XRGB1555 frames to RGBA. The localized native Tools action chooses a core, starts the sibling
-backend without a shell, validates Ready before Initialize, drives frames at a bounded cadence,
-and exposes Pause/Resume, single Step, and Stop. Closing the project or leaving the source level
-stops/reaps the snapshot session. Portable packaging includes the sibling backend. Direct selected-
-level injection, sprite reload, gameplay input/audio, and a retained compatible-core runtime oracle
-remain explicitly unadvertised and incomplete.
+XRGB1555 frames to RGBA. The capability set now also includes joypad input and selected-level load.
+The backend observes exact 128-KiB system RAM and reports game mode, Lunar Magic's two-byte
+sublevel, vanilla translevel, and camera position with each frame. Initialization automatically
+follows SMW's title/save/intro path until overworld mode, writes only `$0100`, `$0109`, and
+`$010B/$010C`, and enters the selected 9-bit level through modes `$0F..$14`; later `LoadLevel`
+commands use the same transition without restarting the core. The localized native Tools action
+chooses a core, starts the sibling backend without a shell, validates Ready before Initialize,
+drives frames at a bounded cadence, and exposes Pause/Resume, single Step, Stop, and a standard
+keyboard-to-SNES joypad mapping. `tools/lm-libretro-smw-oracle.py` retains the end-to-end gate
+against a supplied official Snes9x core and vanilla ROM. Closing the project, leaving the source
+level, or changing its revision stops/reaps the immutable snapshot session. Portable packaging
+includes the sibling backend. Sprite/ROM hot reload, audio, complete pause-reason and editor-overlay
+synchronization, and broader core/platform variants remain incomplete.
 The runnable frontend accepts `tools-config FILE`, lists configured identifiers with `tools-status`,
 and resolves typed requests with `tool-run ID` or `tool-event opened|saved|level`. Those preview
 commands print the executable, working directory, and every argument on separate lines. Explicit

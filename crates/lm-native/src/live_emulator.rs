@@ -2,8 +2,10 @@
 
 use eframe::egui;
 use lm_app::{
-    EmulatorBackendCommand, EmulatorBackendEvent, EmulatorPauseMode, EmulatorSessionAction,
-    EmulatorSessionState, UiTextKey,
+    EMULATOR_JOYPAD_A, EMULATOR_JOYPAD_B, EMULATOR_JOYPAD_DOWN, EMULATOR_JOYPAD_LEFT,
+    EMULATOR_JOYPAD_RIGHT, EMULATOR_JOYPAD_SELECT, EMULATOR_JOYPAD_START, EMULATOR_JOYPAD_UP,
+    EMULATOR_JOYPAD_X, EMULATOR_JOYPAD_Y, EmulatorBackendCommand, EmulatorBackendEvent,
+    EmulatorPauseMode, EmulatorSessionAction, EmulatorSessionState, UiTextKey,
 };
 use std::io::{Read, Write};
 use std::path::PathBuf;
@@ -24,6 +26,7 @@ struct RunningSession {
     model: EmulatorSessionState,
     pause: EmulatorPauseMode,
     capabilities: Option<u32>,
+    joypad: u16,
 }
 
 #[derive(Default)]
@@ -89,6 +92,7 @@ impl LiveEmulator {
             model,
             pause: EmulatorPauseMode::Running,
             capabilities: None,
+            joypad: 0,
         });
         self.source_level = Some(level);
         self.source_revision = Some(revision);
@@ -170,6 +174,16 @@ impl LiveEmulator {
             }
             send_session_action(&running.commands, session_action);
         }
+        let joypad = context.input(joypad_from_input);
+        if joypad != running.joypad {
+            running.joypad = joypad;
+            let _ =
+                running
+                    .commands
+                    .send(WorkerCommand::Protocol(EmulatorBackendCommand::SetJoypad(
+                        joypad,
+                    )));
+        }
         if stop {
             self.stop();
             return Some("Stopped live emulator".into());
@@ -200,18 +214,37 @@ impl LiveEmulator {
                         height,
                         rgba,
                     } => {
-                        let size = [width as usize, height as usize];
-                        let image = egui::ColorImage::from_rgba_unmultiplied(size, &rgba);
-                        if let Some(texture) = self.texture.as_mut() {
-                            texture.set(image, egui::TextureOptions::NEAREST);
-                        } else {
-                            self.texture = Some(context.load_texture(
-                                "live-libretro-frame",
-                                image,
-                                egui::TextureOptions::NEAREST,
-                            ));
-                        }
-                        self.frame_size = Some(size);
+                        install_frame(
+                            context,
+                            &mut self.texture,
+                            &mut self.frame_size,
+                            width,
+                            height,
+                            &rgba,
+                        );
+                    }
+                    EmulatorBackendEvent::RuntimeFrame {
+                        width,
+                        height,
+                        rgba,
+                        state,
+                    } => {
+                        install_frame(
+                            context,
+                            &mut self.texture,
+                            &mut self.frame_size,
+                            width,
+                            height,
+                            &rgba,
+                        );
+                        self.status = format!(
+                            "Live mode ${:02X}, sublevel {:03X}, translevel {:02X}, camera ({}, {})",
+                            state.game_mode,
+                            state.sublevel,
+                            state.translevel,
+                            state.camera_x,
+                            state.camera_y
+                        );
                     }
                     EmulatorBackendEvent::Error(error) => {
                         self.status = format!("Live emulator error: {error}");
@@ -231,6 +264,46 @@ impl LiveEmulator {
             }
         }
     }
+}
+
+fn install_frame(
+    context: &egui::Context,
+    texture: &mut Option<egui::TextureHandle>,
+    frame_size: &mut Option<[usize; 2]>,
+    width: u32,
+    height: u32,
+    rgba: &[u8],
+) {
+    let size = [width as usize, height as usize];
+    let image = egui::ColorImage::from_rgba_unmultiplied(size, rgba);
+    if let Some(texture) = texture.as_mut() {
+        texture.set(image, egui::TextureOptions::NEAREST);
+    } else {
+        *texture =
+            Some(context.load_texture("live-libretro-frame", image, egui::TextureOptions::NEAREST));
+    }
+    *frame_size = Some(size);
+}
+
+fn joypad_from_input(input: &egui::InputState) -> u16 {
+    let mut buttons = 0;
+    for (key, mask) in [
+        (egui::Key::Z, EMULATOR_JOYPAD_B),
+        (egui::Key::A, EMULATOR_JOYPAD_Y),
+        (egui::Key::Backspace, EMULATOR_JOYPAD_SELECT),
+        (egui::Key::Enter, EMULATOR_JOYPAD_START),
+        (egui::Key::ArrowUp, EMULATOR_JOYPAD_UP),
+        (egui::Key::ArrowDown, EMULATOR_JOYPAD_DOWN),
+        (egui::Key::ArrowLeft, EMULATOR_JOYPAD_LEFT),
+        (egui::Key::ArrowRight, EMULATOR_JOYPAD_RIGHT),
+        (egui::Key::X, EMULATOR_JOYPAD_A),
+        (egui::Key::S, EMULATOR_JOYPAD_X),
+    ] {
+        if input.key_down(key) {
+            buttons |= mask;
+        }
+    }
+    buttons
 }
 
 impl Drop for LiveEmulator {
@@ -415,6 +488,7 @@ mod tests {
             model: EmulatorSessionState::default(),
             pause: EmulatorPauseMode::Running,
             capabilities: None,
+            joypad: 0,
         });
         emulator.source_level = Some(0x105);
         emulator.source_revision = Some(7);
@@ -423,5 +497,27 @@ mod tests {
         assert!(emulator.running.is_none());
         assert_eq!(emulator.source_level, None);
         assert_eq!(emulator.source_revision, None);
+    }
+
+    #[test]
+    fn keyboard_mapping_uses_standard_snes_layout_without_unknown_bits() {
+        let mut input = egui::RawInput::default();
+        for key in [egui::Key::Z, egui::Key::X, egui::Key::ArrowRight] {
+            input.events.push(egui::Event::Key {
+                key,
+                physical_key: None,
+                pressed: true,
+                repeat: false,
+                modifiers: egui::Modifiers::NONE,
+            });
+        }
+        let context = egui::Context::default();
+        context.begin_pass(input);
+        let buttons = context.input(joypad_from_input);
+        let _ = context.end_pass();
+        assert_eq!(
+            buttons,
+            EMULATOR_JOYPAD_B | EMULATOR_JOYPAD_A | EMULATOR_JOYPAD_RIGHT
+        );
     }
 }

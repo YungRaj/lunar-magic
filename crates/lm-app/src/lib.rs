@@ -148,9 +148,12 @@ pub use dsc_sidecar_controller::{
     DscSidecarController, DscSidecarControllerError, DscSidecarSaveSnapshot,
 };
 pub use emulator_protocol::{
-    EmulatorBackendCommand, EmulatorBackendEvent, EmulatorProtocolError, EmulatorViewport,
-    MAX_EMULATOR_FRAME_HEIGHT, MAX_EMULATOR_FRAME_WIDTH, MAX_EMULATOR_ROM_BYTES,
-    MAX_EMULATOR_SPRITE_BYTES,
+    EMULATOR_JOYPAD_A, EMULATOR_JOYPAD_ALL, EMULATOR_JOYPAD_B, EMULATOR_JOYPAD_DOWN,
+    EMULATOR_JOYPAD_L, EMULATOR_JOYPAD_LEFT, EMULATOR_JOYPAD_R, EMULATOR_JOYPAD_RIGHT,
+    EMULATOR_JOYPAD_SELECT, EMULATOR_JOYPAD_START, EMULATOR_JOYPAD_UP, EMULATOR_JOYPAD_X,
+    EMULATOR_JOYPAD_Y, EmulatorBackendCommand, EmulatorBackendEvent, EmulatorProtocolError,
+    EmulatorRuntimeState, EmulatorViewport, MAX_EMULATOR_FRAME_HEIGHT, MAX_EMULATOR_FRAME_WIDTH,
+    MAX_EMULATOR_ROM_BYTES, MAX_EMULATOR_SPRITE_BYTES,
 };
 pub use emulator_session::{
     EmulatorPauseMode, EmulatorPauseReason, EmulatorSessionAction, EmulatorSessionState,

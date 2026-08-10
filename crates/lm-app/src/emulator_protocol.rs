@@ -7,6 +7,19 @@ pub const MAX_EMULATOR_ROM_BYTES: usize = 32 * 1024 * 1024;
 pub const MAX_EMULATOR_SPRITE_BYTES: usize = 1024 * 1024;
 pub const MAX_EMULATOR_FRAME_WIDTH: u32 = 512;
 pub const MAX_EMULATOR_FRAME_HEIGHT: u32 = 478;
+pub const EMULATOR_JOYPAD_B: u16 = 1 << 0;
+pub const EMULATOR_JOYPAD_Y: u16 = 1 << 1;
+pub const EMULATOR_JOYPAD_SELECT: u16 = 1 << 2;
+pub const EMULATOR_JOYPAD_START: u16 = 1 << 3;
+pub const EMULATOR_JOYPAD_UP: u16 = 1 << 4;
+pub const EMULATOR_JOYPAD_DOWN: u16 = 1 << 5;
+pub const EMULATOR_JOYPAD_LEFT: u16 = 1 << 6;
+pub const EMULATOR_JOYPAD_RIGHT: u16 = 1 << 7;
+pub const EMULATOR_JOYPAD_A: u16 = 1 << 8;
+pub const EMULATOR_JOYPAD_X: u16 = 1 << 9;
+pub const EMULATOR_JOYPAD_L: u16 = 1 << 10;
+pub const EMULATOR_JOYPAD_R: u16 = 1 << 11;
+pub const EMULATOR_JOYPAD_ALL: u16 = (1 << 12) - 1;
 const MAX_ERROR_BYTES: usize = 4096;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -15,6 +28,17 @@ pub struct EmulatorViewport {
     pub y: i32,
     pub width: u32,
     pub height: u32,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct EmulatorRuntimeState {
+    pub game_mode: u8,
+    /// Lunar Magic's two-byte current sublevel slot (`$010B/$010C`). Vanilla SMW leaves it unset.
+    pub sublevel: u16,
+    /// Vanilla SMW's current overworld translevel slot (`$13BF`).
+    pub translevel: u8,
+    pub camera_x: u16,
+    pub camera_y: u16,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -36,6 +60,7 @@ pub enum EmulatorBackendCommand {
     StepFrame,
     SetFlags(u8),
     SetViewport(EmulatorViewport),
+    SetJoypad(u16),
     Stop,
 }
 
@@ -52,6 +77,12 @@ pub enum EmulatorBackendEvent {
         height: u32,
         rgba: Vec<u8>,
     },
+    RuntimeFrame {
+        width: u32,
+        height: u32,
+        rgba: Vec<u8>,
+        state: EmulatorRuntimeState,
+    },
     Error(String),
 }
 
@@ -66,6 +97,7 @@ pub enum EmulatorProtocolError {
     SpriteDataTooLarge(usize),
     InvalidViewport,
     InvalidFrame,
+    InvalidJoypad(u16),
     InvalidUtf8,
     ErrorMessageTooLarge(usize),
     LengthOverflow,
@@ -124,6 +156,11 @@ impl EmulatorBackendCommand {
                 put_viewport(&mut payload, *viewport);
             }
             Self::Stop => payload.push(8),
+            Self::SetJoypad(buttons) => {
+                validate_joypad(*buttons)?;
+                payload.push(9);
+                payload.extend_from_slice(&buttons.to_le_bytes());
+            }
         }
         frame(&payload)
     }
@@ -160,6 +197,11 @@ impl EmulatorBackendCommand {
                 Self::SetViewport(viewport)
             }
             8 => Self::Stop,
+            9 => {
+                let buttons = input.u16()?;
+                validate_joypad(buttons)?;
+                Self::SetJoypad(buttons)
+            }
             tag => return Err(EmulatorProtocolError::UnknownTag(tag)),
         };
         input.finish()?;
@@ -192,6 +234,23 @@ impl EmulatorBackendEvent {
                 payload.extend_from_slice(&width.to_le_bytes());
                 payload.extend_from_slice(&height.to_le_bytes());
                 put_bytes(&mut payload, rgba)?;
+            }
+            Self::RuntimeFrame {
+                width,
+                height,
+                rgba,
+                state,
+            } => {
+                validate_frame(*width, *height, rgba)?;
+                payload.push(0x85);
+                payload.extend_from_slice(&width.to_le_bytes());
+                payload.extend_from_slice(&height.to_le_bytes());
+                put_bytes(&mut payload, rgba)?;
+                payload.push(state.game_mode);
+                payload.extend_from_slice(&state.sublevel.to_le_bytes());
+                payload.push(state.translevel);
+                payload.extend_from_slice(&state.camera_x.to_le_bytes());
+                payload.extend_from_slice(&state.camera_y.to_le_bytes());
             }
             Self::Error(message) => {
                 if message.len() > MAX_ERROR_BYTES {
@@ -231,6 +290,24 @@ impl EmulatorBackendEvent {
                     width,
                     height,
                     rgba,
+                }
+            }
+            0x85 => {
+                let width = input.u32()?;
+                let height = input.u32()?;
+                let rgba = input.bytes(max_frame_bytes()?, false)?;
+                validate_frame(width, height, &rgba)?;
+                Self::RuntimeFrame {
+                    width,
+                    height,
+                    rgba,
+                    state: EmulatorRuntimeState {
+                        game_mode: input.byte()?,
+                        sublevel: input.u16()?,
+                        translevel: input.byte()?,
+                        camera_x: input.u16()?,
+                        camera_y: input.u16()?,
+                    },
                 }
             }
             0xff => {
@@ -299,6 +376,13 @@ fn validate_frame(width: u32, height: u32, rgba: &[u8]) -> Result<(), EmulatorPr
             != Some(rgba.len())
     {
         return Err(EmulatorProtocolError::InvalidFrame);
+    }
+    Ok(())
+}
+
+fn validate_joypad(buttons: u16) -> Result<(), EmulatorProtocolError> {
+    if buttons & !EMULATOR_JOYPAD_ALL != 0 {
+        return Err(EmulatorProtocolError::InvalidJoypad(buttons));
     }
     Ok(())
 }
@@ -446,6 +530,7 @@ mod tests {
                 height: 224,
             }),
             EmulatorBackendCommand::Stop,
+            EmulatorBackendCommand::SetJoypad(EMULATOR_JOYPAD_B | EMULATOR_JOYPAD_RIGHT),
         ]
     }
 
@@ -485,6 +570,18 @@ mod tests {
                 width: 2,
                 height: 1,
                 rgba: vec![0, 1, 2, 3, 4, 5, 6, 7],
+            },
+            EmulatorBackendEvent::RuntimeFrame {
+                width: 1,
+                height: 1,
+                rgba: vec![4, 3, 2, 1],
+                state: EmulatorRuntimeState {
+                    game_mode: 0x14,
+                    sublevel: 0x105,
+                    translevel: 0x29,
+                    camera_x: 0x1234,
+                    camera_y: 0x0056,
+                },
             },
             EmulatorBackendEvent::Error("backend failed".into()),
         ];
@@ -529,6 +626,10 @@ mod tests {
             }
             .encode(),
             Err(EmulatorProtocolError::InvalidFrame)
+        );
+        assert_eq!(
+            EmulatorBackendCommand::SetJoypad(0x8000).encode(),
+            Err(EmulatorProtocolError::InvalidJoypad(0x8000))
         );
     }
 

@@ -784,3 +784,30 @@ gap. The archive is not registry-associated: it is deterministically
 for finding the pristine original after the project-local `smwOrig.smc`, `smwjOrig.smc`, or
 `AllWorldOrig.smc` search. Rust now creates or appends that exact associated archive and reuses the
 validated project-local original without opening either chooser.
+
+## Isolated live backend selected-level oracle
+
+On 2026-08-10, the concrete `lm-libretro` backend was built locally and exercised with the
+official ARM64 Snes9x libretro core at upstream commit `2ab06b3` and the untouched copier-headered
+vanilla ROM SHA-256 `5e3d55b019dd012e8db1498dda06b63ad1a304787625402b511e6d525946beaf`.
+Neither proprietary input nor the locally built core is redistributed. The repeatable bounded
+driver is retained as `tools/lm-libretro-smw-oracle.py`.
+
+```text
+cargo build -p lm-libretro
+python3 tools/lm-libretro-smw-oracle.py \
+  --backend target/debug/lm-libretro \
+  --core /tmp/snes9x/libretro/snes9x_libretro.dylib \
+  --rom /path/to/vanilla/smwOrig.smc
+
+result  level  frame  mode  translevel  camera  size     frame_sha256
+initial 105    1769   14    28          0,192   256x224  5bdb35bb32c3d52815d0dc961ce1a27d9890a9972c30c45648377701bb5aa597
+switch  106    110    14    25          0,192   256x224  3cfb24c3958eb8e0c0c8d8ea373d69be18b236f0d695a86829e0109a0607d963
+```
+
+The run required capability mask `$7F`, automatically traversed vanilla game modes `$00..$0E`,
+entered selected sublevel `$105` through `$0F..$14`, switched the active core to `$106` through a
+second `$0F..$14` transition, required distinct nonuniform 256×224 opaque RGBA frames, acknowledged
+hard pause, produced exactly one requested paused frame, stopped, and exited zero. Port-8089 Ghidra
+independently proves Lunar Magic 3.63 resolves `LMSW_LoadLevel` and calls it with
+`g_dwCurrentLevelNumber` after ROM load and again when the current editor level finishes loading.

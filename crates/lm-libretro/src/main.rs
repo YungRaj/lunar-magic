@@ -2,15 +2,18 @@
 
 use libloading::Library;
 use lm_app::{
-    EmulatorBackendCommand, EmulatorBackendEvent, EmulatorPauseMode, EmulatorViewport,
-    MAX_EMULATOR_FRAME_HEIGHT, MAX_EMULATOR_FRAME_WIDTH,
+    EmulatorBackendCommand, EmulatorBackendEvent, EmulatorPauseMode, EmulatorRuntimeState,
+    EmulatorViewport, MAX_EMULATOR_FRAME_HEIGHT, MAX_EMULATOR_FRAME_WIDTH,
 };
 use std::ffi::{c_char, c_void};
 use std::io::{self, Read, Write};
 use std::path::Path;
+use std::sync::atomic::{AtomicU16, Ordering};
 use std::sync::{Mutex, OnceLock};
 
 const RETRO_API_VERSION: u32 = 1;
+const RETRO_MEMORY_SYSTEM_RAM: u32 = 2;
+const SMW_WRAM_BYTES: usize = 128 * 1024;
 const RETRO_ENVIRONMENT_SET_PIXEL_FORMAT: u32 = 10;
 const RETRO_ENVIRONMENT_SET_INPUT_DESCRIPTORS: u32 = 11;
 const RETRO_ENVIRONMENT_SET_VARIABLES: u32 = 16;
@@ -23,7 +26,10 @@ const CAP_FRAME: u32 = 1 << 1;
 const CAP_PAUSE: u32 = 1 << 2;
 const CAP_STEP: u32 = 1 << 3;
 const CAP_VIEWPORT: u32 = 1 << 4;
-const CAPABILITIES: u32 = CAP_ROM_LOAD | CAP_FRAME | CAP_PAUSE | CAP_STEP | CAP_VIEWPORT;
+const CAP_INPUT: u32 = 1 << 5;
+const CAP_LEVEL_LOAD: u32 = 1 << 6;
+const CAPABILITIES: u32 =
+    CAP_ROM_LOAD | CAP_FRAME | CAP_PAUSE | CAP_STEP | CAP_VIEWPORT | CAP_INPUT | CAP_LEVEL_LOAD;
 const MAX_PROTOCOL_RECORD: usize = 40 * 1024 * 1024;
 
 #[repr(C)]
@@ -65,6 +71,8 @@ struct CoreApi {
     run: unsafe extern "C" fn(),
     unload_game: unsafe extern "C" fn(),
     deinit: unsafe extern "C" fn(),
+    get_memory_data: unsafe extern "C" fn(u32) -> *mut c_void,
+    get_memory_size: unsafe extern "C" fn(u32) -> usize,
 }
 
 impl CoreApi {
@@ -103,6 +111,11 @@ impl CoreApi {
             run: symbol!("retro_run", unsafe extern "C" fn()),
             unload_game: symbol!("retro_unload_game", unsafe extern "C" fn()),
             deinit: symbol!("retro_deinit", unsafe extern "C" fn()),
+            get_memory_data: symbol!(
+                "retro_get_memory_data",
+                unsafe extern "C" fn(u32) -> *mut c_void
+            ),
+            get_memory_size: symbol!("retro_get_memory_size", unsafe extern "C" fn(u32) -> usize),
             _library: library,
         };
         // SAFETY: Pure version query with no arguments.
@@ -123,6 +136,8 @@ struct VideoState {
 }
 
 static VIDEO: OnceLock<Mutex<VideoState>> = OnceLock::new();
+static JOYPAD: AtomicU16 = AtomicU16::new(0);
+static AUTOMATION_JOYPAD: AtomicU16 = AtomicU16::new(0);
 
 unsafe extern "C" fn environment(command: u32, data: *mut c_void) -> bool {
     match command {
@@ -193,8 +208,13 @@ unsafe extern "C" fn audio_batch(_data: *const i16, frames: usize) -> usize {
     frames
 }
 unsafe extern "C" fn input_poll() {}
-unsafe extern "C" fn input_state(_port: u32, _device: u32, _index: u32, _id: u32) -> i16 {
-    0
+unsafe extern "C" fn input_state(port: u32, device: u32, index: u32, id: u32) -> i16 {
+    if port == 0 && device == 1 && index == 0 && id < 12 {
+        let buttons = JOYPAD.load(Ordering::Relaxed) | AUTOMATION_JOYPAD.load(Ordering::Relaxed);
+        i16::from(buttons & (1 << id) != 0)
+    } else {
+        0
+    }
 }
 
 struct Backend {
@@ -204,6 +224,10 @@ struct Backend {
     rom: Vec<u8>,
     pause: EmulatorPauseMode,
     viewport: Option<EmulatorViewport>,
+    requested_level: Option<u16>,
+    reached_overworld: bool,
+    previous_mode: u8,
+    mode_age: u32,
 }
 
 impl Backend {
@@ -243,6 +267,10 @@ impl Backend {
             rom: Vec::new(),
             pause: EmulatorPauseMode::Running,
             viewport: None,
+            requested_level: None,
+            reached_overworld: false,
+            previous_mode: 0xff,
+            mode_age: 0,
         })
     }
 
@@ -265,22 +293,97 @@ impl Backend {
             return Err("libretro core rejected the ROM image".into());
         }
         self.loaded = true;
+        self.reached_overworld = false;
+        self.previous_mode = 0xff;
+        self.mode_age = 0;
         Ok(())
     }
 
-    fn run_frame(&self) -> Result<EmulatorBackendEvent, String> {
+    fn run_frame(&mut self) -> Result<EmulatorBackendEvent, String> {
         if !self.loaded {
             return Err("no ROM is loaded".into());
         }
+        let automatic_buttons = self.prepare_selected_level_boot()?;
+        AUTOMATION_JOYPAD.store(automatic_buttons, Ordering::Relaxed);
         // SAFETY: A game is loaded and all callbacks are installed.
         unsafe { (self.api.run)() };
-        frame_event(self.viewport)
+        AUTOMATION_JOYPAD.store(0, Ordering::Relaxed);
+        let frame = frame_event(self.viewport)?;
+        let Some(state) = runtime_state(&self.api) else {
+            return Ok(frame);
+        };
+        let EmulatorBackendEvent::Frame {
+            width,
+            height,
+            rgba,
+        } = frame
+        else {
+            unreachable!("frame_event always returns Frame")
+        };
+        Ok(EmulatorBackendEvent::RuntimeFrame {
+            width,
+            height,
+            rgba,
+            state,
+        })
+    }
+
+    fn request_level(&mut self, level: u16) -> Result<EmulatorBackendEvent, String> {
+        if level > 0x01ff {
+            return Err(format!(
+                "level {level:03X} exceeds the supported 000..1FF range"
+            ));
+        }
+        self.requested_level = Some(level);
+        if self.loaded {
+            let wram = system_ram_mut(&mut self.api).ok_or_else(|| {
+                "libretro core does not expose exact 128 KiB system RAM".to_string()
+            })?;
+            if wram[0x0100] == 0x0e || (self.reached_overworld && wram[0x0100] == 0x14) {
+                inject_selected_level(wram, level);
+                self.requested_level = None;
+            }
+        }
+        Ok(EmulatorBackendEvent::Acknowledged)
+    }
+
+    fn prepare_selected_level_boot(&mut self) -> Result<u16, String> {
+        let wram = system_ram_mut(&mut self.api)
+            .ok_or_else(|| "libretro core does not expose exact 128 KiB system RAM".to_string())?;
+        let mode = wram[0x0100];
+        if mode == self.previous_mode {
+            self.mode_age = self.mode_age.saturating_add(1);
+        } else {
+            self.previous_mode = mode;
+            self.mode_age = 0;
+        }
+        if mode == 0x0e {
+            self.reached_overworld = true;
+            if let Some(level) = self.requested_level.take() {
+                inject_selected_level(wram, level);
+                return Ok(0);
+            }
+        }
+        if self.requested_level.is_none() || self.reached_overworld {
+            return Ok(0);
+        }
+        Ok(match mode {
+            0x06 if self.mode_age == 60 => 1 << 3,
+            0x08 | 0x0a if self.mode_age == 60 => 1 << 8,
+            0x14 if wram[0x1426] != 0 && self.mode_age > 120 && self.mode_age % 120 == 0 => 1,
+            _ => 0,
+        })
     }
 
     fn command(&mut self, command: EmulatorBackendCommand) -> EmulatorBackendEvent {
         let result = match command {
-            EmulatorBackendCommand::Initialize { rom, .. }
-            | EmulatorBackendCommand::ReloadRom { rom, .. } => self
+            EmulatorBackendCommand::Initialize { level, rom, .. } => {
+                self.load_rom(rom).and_then(|()| {
+                    self.request_level(level)?;
+                    Ok(EmulatorBackendEvent::Active(true))
+                })
+            }
+            EmulatorBackendCommand::ReloadRom { rom, .. } => self
                 .load_rom(rom)
                 .map(|()| EmulatorBackendEvent::Active(true)),
             EmulatorBackendCommand::SetPauseMode(mode) => {
@@ -301,14 +404,65 @@ impl Backend {
                 self.rom.clear();
                 Ok(EmulatorBackendEvent::Active(false))
             }
-            EmulatorBackendCommand::LoadLevel(_)
-            | EmulatorBackendCommand::ReloadSprites(_)
-            | EmulatorBackendCommand::SetFlags(_) => {
+            EmulatorBackendCommand::SetJoypad(buttons) => {
+                JOYPAD.store(buttons, Ordering::Relaxed);
+                Ok(EmulatorBackendEvent::Acknowledged)
+            }
+            EmulatorBackendCommand::LoadLevel(level) => self.request_level(level),
+            EmulatorBackendCommand::ReloadSprites(_) | EmulatorBackendCommand::SetFlags(_) => {
                 Err("backend does not advertise this capability".into())
             }
         };
         result.unwrap_or_else(EmulatorBackendEvent::Error)
     }
+}
+
+fn runtime_state(api: &CoreApi) -> Option<EmulatorRuntimeState> {
+    // SAFETY: libretro exposes memory id 2 while a game is loaded. This backend calls the core
+    // and observes its memory on one thread, and retains no pointer beyond this function.
+    let (pointer, size) = unsafe {
+        (
+            (api.get_memory_data)(RETRO_MEMORY_SYSTEM_RAM),
+            (api.get_memory_size)(RETRO_MEMORY_SYSTEM_RAM),
+        )
+    };
+    if pointer.is_null() || size != SMW_WRAM_BYTES {
+        return None;
+    }
+    // SAFETY: The core reported exactly the bounded SMW WRAM size above.
+    let wram = unsafe { std::slice::from_raw_parts(pointer.cast::<u8>(), size) };
+    Some(EmulatorRuntimeState {
+        game_mode: wram[0x0100],
+        sublevel: u16::from_le_bytes([wram[0x010b], wram[0x010c]]),
+        translevel: wram[0x13bf],
+        camera_x: u16::from_le_bytes([wram[0x001a], wram[0x001b]]),
+        camera_y: u16::from_le_bytes([wram[0x001c], wram[0x001d]]),
+    })
+}
+
+fn system_ram_mut(api: &mut CoreApi) -> Option<&mut [u8]> {
+    // SAFETY: All backend commands and core calls run serially on the backend thread. The returned
+    // borrow is bounded to the caller and never overlaps a `retro_run` invocation.
+    let (pointer, size) = unsafe {
+        (
+            (api.get_memory_data)(RETRO_MEMORY_SYSTEM_RAM),
+            (api.get_memory_size)(RETRO_MEMORY_SYSTEM_RAM),
+        )
+    };
+    if pointer.is_null() || size != SMW_WRAM_BYTES {
+        return None;
+    }
+    // SAFETY: The core reported exactly the bounded SMW WRAM size and the caller has exclusive
+    // access to `Backend` while this mutable slice exists.
+    Some(unsafe { std::slice::from_raw_parts_mut(pointer.cast::<u8>(), size) })
+}
+
+fn inject_selected_level(wram: &mut [u8], level: u16) {
+    let [low, high] = level.to_le_bytes();
+    wram[0x0109] = 0;
+    wram[0x010b] = low;
+    wram[0x010c] = high;
+    wram[0x0100] = 0x0f;
 }
 
 impl Drop for Backend {
@@ -318,6 +472,8 @@ impl Drop for Backend {
             if self.loaded {
                 (self.api.unload_game)();
             }
+            JOYPAD.store(0, Ordering::Relaxed);
+            AUTOMATION_JOYPAD.store(0, Ordering::Relaxed);
             if self.initialized {
                 (self.api.deinit)();
             }
@@ -515,5 +671,20 @@ mod tests {
             EmulatorBackendEvent::decode(&encoded).unwrap(),
             EmulatorBackendEvent::Error(error)
         );
+    }
+
+    #[test]
+    fn selected_level_injection_changes_only_the_documented_transition_slots() {
+        let mut wram = vec![0xa5; SMW_WRAM_BYTES];
+        let before = wram.clone();
+        inject_selected_level(&mut wram, 0x01ab);
+        assert_eq!(wram[0x0100], 0x0f);
+        assert_eq!(wram[0x0109], 0);
+        assert_eq!(&wram[0x010b..=0x010c], &[0xab, 0x01]);
+        for (offset, (old, new)) in before.iter().zip(&wram).enumerate() {
+            if !matches!(offset, 0x0100 | 0x0109 | 0x010b | 0x010c) {
+                assert_eq!(old, new, "unexpected WRAM change at ${offset:04X}");
+            }
+        }
     }
 }

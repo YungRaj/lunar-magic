@@ -28,13 +28,17 @@ interactive level import workflow, and a CLI transaction does not prove its nati
 
 Current LMSW-row addendum: the concrete, separately unsafe-isolated `lm-libretro` backend and its
 localized native control window now implement ROM load, bounded RGBA frames, pause/resume,
-single-frame stepping, viewport cropping, process teardown, and capability negotiation through
-`LMEMU001`. Portable packages now contain `lm-native`, `lm-cli`, and the required sibling
-`lm-libretro` executable. The row remains `Partial`: direct selected-level injection, sprite/live
-edit reload, gameplay input/audio, editor-canvas overlay synchronization, and retained compatible-
-core runtime/platform oracles are still missing. This addendum supersedes only the older
-“concrete backend process/native control wiring missing” clauses in that row; all other evidence and
-missing boundaries remain current.
+single-frame stepping, viewport cropping, keyboard joypad input, process teardown, runtime SMW state
+observation, and capability negotiation through `LMEMU001`. It automatically advances an untouched
+vanilla ROM to a valid transition point and injects the selected 9-bit level; an active session can
+switch levels through the same `$0F..$14` game-mode sequence. The retained
+`tools/lm-libretro-smw-oracle.py` run against the official ARM64 Snes9x core proves vanilla level
+`$105`, live switch to `$106`, distinct nonuniform 256×224 RGBA frames, hard pause/one-step, and
+clean teardown. Portable packages contain `lm-native`, `lm-cli`, and the required sibling
+`lm-libretro` executable. The row remains `Partial`: edited-sprite/live ROM reload, audio, complete
+pause-reason/viewport overlay synchronization, and broader core/runtime/platform variants are still
+missing. This addendum supersedes only the older clauses that list the now-proved backend, native
+control, selected-level, input, and compatible-core runtime boundaries as missing.
 
 Current Map16 bitmap variant evidence additionally covers the 12-byte `BITMAPCOREHEADER`: its
 unsigned dimensions, bottom-up DWORD-padded rows, RGBTRIPLE palettes, indexed 1-/4-/8-bit pixels,
