@@ -358,6 +358,7 @@ pub(crate) struct VanillaLevelEditor {
     extended_object_catalog_filter: String,
     custom_object_catalog_filter: String,
     object_catalog_preview_icons: Option<bool>,
+    object_catalog_compatible_only: Option<bool>,
     object_catalog_vertical_layout: Option<bool>,
     object_placement_template: Option<ObjectRecord>,
     selected_sprite: usize,
@@ -6139,7 +6140,7 @@ impl VanillaLevelEditor {
         let (mut previews, mut compatible_only, mut vertical) = if objects {
             (
                 self.object_catalog_preview_icons.unwrap_or(true),
-                false,
+                self.object_catalog_compatible_only.unwrap_or(false),
                 self.object_catalog_vertical_layout.unwrap_or(false),
             )
         } else {
@@ -6162,16 +6163,19 @@ impl VanillaLevelEditor {
             {
                 previews = !previews;
             }
-            if !objects
-                && images
-                    .original_catalog_button(
-                        ui,
-                        kind,
-                        OriginalCatalogAction::CompatibleGraphicsOnly,
-                        "Hide sprites without the correct SP3/SP4 graphics",
-                        compatible_only,
-                    )
-                    .clicked()
+            if images
+                .original_catalog_button(
+                    ui,
+                    kind,
+                    OriginalCatalogAction::CompatibleGraphicsOnly,
+                    if objects {
+                        "Hide objects without the correct BG1/FG3 graphics"
+                    } else {
+                        "Hide sprites without the correct SP3/SP4 graphics"
+                    },
+                    compatible_only,
+                )
+                .clicked()
             {
                 compatible_only = !compatible_only;
             }
@@ -6190,6 +6194,7 @@ impl VanillaLevelEditor {
         });
         if objects {
             self.object_catalog_preview_icons = Some(previews);
+            self.object_catalog_compatible_only = Some(compatible_only);
             self.object_catalog_vertical_layout = Some(vertical);
         } else {
             self.sprite_catalog_preview_icons = Some(previews);
@@ -6237,7 +6242,16 @@ impl VanillaLevelEditor {
                     }
                 });
                 ui.label("Choose a tileset-resolved object, then click its destination tile.");
-                let commands = object_catalog_commands(&self.object_catalog_filter);
+                let object_tileset = self.controller.as_ref().map_or(0, |controller| {
+                    controller.level().layer1.header.object_tileset()
+                });
+                let commands = filter_standard_object_catalog_for_graphics(
+                    object_catalog_commands(&self.object_catalog_filter),
+                    self.object_catalog_compatible_only.unwrap_or(false),
+                    self.active_object_family_index(),
+                    object_tileset,
+                    self.map16_summary.map(|summary| summary.foreground_files),
+                );
                 let texture = self.map16_texture.clone();
                 let foreground_texture = self.foreground_texture.clone();
                 let handler_map = self.active_standard_object_handler_map().copied();
@@ -6458,9 +6472,14 @@ impl VanillaLevelEditor {
                     ui.label("The switch-state object previews are unavailable.");
                     return;
                 }
-                let selectors = extended_object_catalog_selectors(
-                    &definitions,
-                    &self.extended_object_catalog_filter,
+                let selectors = filter_extended_object_catalog_for_graphics(
+                    extended_object_catalog_selectors(
+                        &definitions,
+                        &self.extended_object_catalog_filter,
+                    ),
+                    self.object_catalog_compatible_only.unwrap_or(false),
+                    object_tileset,
+                    self.map16_summary.map(|summary| summary.foreground_files),
                 );
                 let texture = self.map16_texture.clone();
                 let foreground_texture = self.foreground_texture.clone();
@@ -8299,6 +8318,56 @@ fn object_catalog_commands(filter: &str) -> Vec<u8> {
     let filter = filter.trim().to_ascii_uppercase();
     (1..=0x3f)
         .filter(|command| filter.is_empty() || format!("{command:02X}").contains(&filter))
+        .collect()
+}
+
+fn filter_standard_object_catalog_for_graphics(
+    commands: Vec<u8>,
+    compatible_only: bool,
+    family: u8,
+    object_tileset: u8,
+    foreground_files: Option<[usize; 4]>,
+) -> Vec<u8> {
+    if !compatible_only {
+        return commands;
+    }
+    let Some(foreground_files) = foreground_files else {
+        return commands;
+    };
+    commands
+        .into_iter()
+        .filter(|&command| {
+            crate::catalog_graphics_compatibility::standard_object_is_graphics_compatible(
+                command,
+                family,
+                object_tileset,
+                foreground_files,
+            )
+        })
+        .collect()
+}
+
+fn filter_extended_object_catalog_for_graphics(
+    selectors: Vec<u8>,
+    compatible_only: bool,
+    object_tileset: u8,
+    foreground_files: Option<[usize; 4]>,
+) -> Vec<u8> {
+    if !compatible_only {
+        return selectors;
+    }
+    let Some(foreground_files) = foreground_files else {
+        return selectors;
+    };
+    selectors
+        .into_iter()
+        .filter(|&selector| {
+            crate::catalog_graphics_compatibility::extended_object_is_graphics_compatible(
+                selector,
+                object_tileset,
+                foreground_files,
+            )
+        })
         .collect()
 }
 
@@ -12662,18 +12731,65 @@ mod tests {
     fn object_and_sprite_catalog_presentation_state_is_independent() {
         let mut editor = VanillaLevelEditor::default();
         assert!(editor.object_catalog_preview_icons.unwrap_or(true));
+        assert!(!editor.object_catalog_compatible_only.unwrap_or(false));
         assert!(!editor.object_catalog_vertical_layout.unwrap_or(false));
         assert!(editor.sprite_catalog_preview_icons.unwrap_or(true));
         assert!(!editor.sprite_catalog_compatible_only.unwrap_or(false));
         assert!(!editor.sprite_catalog_vertical_layout.unwrap_or(false));
 
         editor.object_catalog_preview_icons = Some(false);
+        editor.object_catalog_compatible_only = Some(true);
         editor.object_catalog_vertical_layout = Some(true);
         assert!(!editor.object_catalog_preview_icons.unwrap_or(true));
+        assert!(editor.object_catalog_compatible_only.unwrap_or(false));
         assert!(editor.object_catalog_vertical_layout.unwrap_or(false));
         assert!(editor.sprite_catalog_preview_icons.unwrap_or(true));
         assert!(!editor.sprite_catalog_compatible_only.unwrap_or(false));
         assert!(!editor.sprite_catalog_vertical_layout.unwrap_or(false));
+    }
+
+    #[test]
+    fn object_graphics_filters_are_gated_and_require_loaded_assets() {
+        let commands = vec![0x01, 0x39];
+        assert_eq!(
+            filter_standard_object_catalog_for_graphics(
+                commands.clone(),
+                false,
+                0,
+                1,
+                Some([0, 1, 2, 0x15]),
+            ),
+            commands
+        );
+        assert_eq!(
+            filter_standard_object_catalog_for_graphics(commands.clone(), true, 0, 1, None,),
+            commands
+        );
+        assert_eq!(
+            filter_standard_object_catalog_for_graphics(
+                commands,
+                true,
+                0,
+                1,
+                Some([0, 1, 2, 0x15]),
+            ),
+            vec![0x01]
+        );
+
+        let selectors = vec![0x04, 0x7f];
+        assert_eq!(
+            filter_extended_object_catalog_for_graphics(
+                selectors.clone(),
+                false,
+                4,
+                Some([0, 1, 2, 0x1a]),
+            ),
+            selectors
+        );
+        assert_eq!(
+            filter_extended_object_catalog_for_graphics(selectors, true, 4, Some([0, 1, 2, 0x1a]),),
+            vec![0x04]
+        );
     }
 
     #[test]

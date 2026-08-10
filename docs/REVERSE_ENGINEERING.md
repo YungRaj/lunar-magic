@@ -3740,6 +3740,27 @@ handler map and renders a one-record minimum-parameter stream into an isolated 1
 The supplied normal-family ROM fixture currently proves authenticated visible cells for 45 IDs;
 the remaining valid commands are labeled rather than assigned speculative artwork. Selection
 initializes the minimum parameter and arms the same absolute-screen insertion transaction.
+Its `.ff7` cell-2 filter now follows `CheckObjectForegroundGfxCompatibility` at `$0052E9A0`,
+`CheckObjectTilesetCompatibility` at `$0052EA40`,
+`EvaluateObjectLegacyTilesetRequirements` at `$0052EAF0`,
+`InitializeMutableObjectMetadataTables` at `$0052EB60`, and
+`GetObjectDimensionRuleTables` at `$0052EBC0`. The immutable shared sources are the 1,024-byte
+mode table at `$005D1060` (SHA-256
+`caec723e61dbbfbd264c2daf1f537ae91949d9eadbacc790c3e10896ff2e135c`) and 2,048-byte graphics
+table at `$005CF288` (SHA-256
+`ae13441d711c9927c47e46b513c43087e1ccd9601731a87ce9c7797e17407830`). Commands `$2E–$3F`
+receive one of five 288-byte mode and 576-byte graphics family overlays selected through pointer
+tables `$005ED7B0` and `$005ED79C`; their contiguous source regions, including the four eight-byte
+gaps, hash to `07f878937d9af0b69faac4aec8a3c7640a1e86a26ecc3738847c1b8ca0926de8` and
+`eec12cb98a16b0048e75aebbe9e47a77e9056dc09417fabaaa8dea38854c3251`.
+Extended selectors use the 4,096-byte mode table at `$005CFA90` (SHA-256
+`b3e1c1630edbc6063524d1c5f0f7c1760adf440bb80bc0eab84197ec1542bc0b`) and 8,192-byte graphics
+table at `$005CC718` (SHA-256
+`b3968a4ce92433e7a1330ea2de841b4d8f918c0b5397f04400b2eed7753cc5b7`). The default catalog
+also honors command `$13`'s special graphics source at `$005D1628`; selector `$7F` switches to
+the `$005D1580`/`$005D1594` mode/graphics pair for object tilesets 4, 5, and D, requiring FG3 file
+`$07`. As in the original assembly, alternative zero may be all wildcards, while later
+all-wildcard alternatives are ignored unless at least one compared field is non-wildcard.
 Resolved OSC displays now supply a second active-variant Add Object catalog. It deduplicates
 object/parameter selectors for the current normal, castle, rope, underground, or ghost-house
 family; searches hexadecimal pairs and descriptions; and fits composite Map16 artwork using

@@ -609,6 +609,12 @@ interactive frontends cannot bypass confirmation and request correlation through
   authenticated Map16 footprints from the loaded tileset. Valid handlers without visible recovered
   cells retain an explicit hexadecimal fallback. Choosing an object initializes its smallest
   canonical parameter form and arms absolute canvas placement.
+  The recovered `.ff7` compatibility action independently hides standard and extended entries
+  that do not match the active object tileset and loaded BG1/FG3 files. Standard commands combine
+  Lunar Magic's shared metadata with the selected five-family overlay; extended selectors use
+  their dedicated 256-entry metadata and the `$7F` tileset-4/5/D override. Filtering remains
+  disabled until foreground assets are loaded, and custom OSC entries retain their own external
+  compatibility semantics rather than inheriting built-in requirements.
   Attached `.osc` metadata adds an active-tileset custom catalog searchable by hexadecimal
   object/parameter pair or description. Its composites resolve ordinary and external Map16
   definitions, while placement constructs the native command-derived 3–8-byte stream shape and

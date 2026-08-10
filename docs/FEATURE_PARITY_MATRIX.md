@@ -815,11 +815,17 @@ custom object/sprite catalogs route the proven cell-1 preview-icon toggle and ce
 toggle, retain text-list fallbacks, and avoid preview raster work while icons are hidden.
 `authenticated_catalog_action_cells_match_the_decompiled_command_tables` and
 `object_and_sprite_catalog_presentation_state_is_independent` bind the mapping and independent
-state. Add Sprite cell 2 now applies the exact recovered 178-alternative mode/SP3/SP4 predicate,
+state. Add Sprite cell 2 applies the exact recovered 178-alternative mode/SP3/SP4 predicate,
 including wildcards, multiple configurations, and sprite `$8C`'s hardcoded exception, without
-misapplying the built-in table to custom SSC collections. The object BG1/FG3 filter, separate preview
-pane/zoom, and tiled surfaces remain open, so the Configuration/Toolbar row remains `Partial` and
-the aggregate remains 59/65.
+misapplying the built-in table to custom SSC collections. Add Object cell 2 now independently
+applies the recovered standard and extended object tileset/BG1/FG3 predicates: the shared standard
+table plus all five family overlays, command `$13`'s default-size table, and extended selector
+`$7F`'s tileset-4/5/D override are compacted into 41/105/271/134 authenticated requirement rows.
+Custom OSC collections remain on their external-metadata path. Exact-shape predicate tests and
+`object_graphics_filters_are_gated_and_require_loaded_assets` cover alternatives, wildcards,
+family isolation, the `$7F` override, disabled state, and the no-assets fallback. The separate
+preview pane/zoom and tiled surfaces remain open, so the Configuration/Toolbar row remains
+`Partial` and the aggregate remains 59/65.
 
 The fastest route to a broadly usable editor is:
 
