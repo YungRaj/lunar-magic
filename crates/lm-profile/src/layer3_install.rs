@@ -143,7 +143,7 @@ fn compatibility_writes() -> Vec<PatchWrite> {
 mod tests {
     use super::*;
     use lm_project::{Project, RelocatablePatchError};
-    use lm_rom::{RomImage, SnesChecksum};
+    use lm_rom::{Mapper, RomImage, SnesChecksum};
     use std::{fs, path::PathBuf};
 
     fn pristine() -> RomImage {
@@ -218,5 +218,49 @@ mod tests {
         assert_eq!(project.history.undo_len(), 1);
         project.undo().unwrap();
         assert_eq!(project.rom.logical_bytes(), original);
+    }
+
+    #[test]
+    fn complete_feature_survives_exlorom_conversion_with_every_owned_byte() {
+        let mut project = Project::open_supported(pristine()).unwrap();
+        let plans = smw_us_v1_complete_layer3_feature_plans().unwrap();
+        let results = project
+            .install_relocatable_patch_group("install complete Layer 3 feature", &plans)
+            .unwrap();
+        let installed = project.rom.logical_bytes().to_vec();
+        let owned_ranges = results
+            .iter()
+            .flat_map(|result| result.blocks.iter().map(lm_rats::RatsBlock::full_range))
+            .collect::<Vec<_>>();
+
+        project.convert_to_64_mbit_exlorom().unwrap();
+        assert_eq!(project.identity.as_ref().unwrap().mapper, Mapper::ExLoRom);
+        for range in owned_ranges {
+            assert_eq!(
+                &project.rom.logical_bytes()[0x40_0000 + range.start..0x40_0000 + range.end],
+                &installed[range.clone()],
+                "relocated Layer 3 owner {range:#x?}"
+            );
+        }
+        for write in plans.iter().flat_map(|plan| &plan.writes) {
+            let range = write.offset..write.offset + write.replacement.len();
+            assert_eq!(
+                &project.rom.logical_bytes()[0x40_0000 + range.start..0x40_0000 + range.end],
+                &installed[range.clone()],
+                "relocated Layer 3 fixed write {range:#x?}"
+            );
+        }
+        let settings = crate::smw_us_v1_installed_expanded_settings_layout(&project)
+            .unwrap()
+            .unwrap();
+        assert_eq!(settings.mapper, Mapper::ExLoRom);
+        assert!(
+            lm_rom::detect_identity(&project.rom)
+                .unwrap()
+                .checksum_matches()
+        );
+
+        project.undo().unwrap();
+        assert_eq!(project.rom.logical_bytes(), installed);
     }
 }

@@ -408,8 +408,12 @@ mapper transition: it reads the relocated runtime operand, maps its RATS owner w
 semantics, authenticates every relocated fixed runtime byte, and returns an ExLoROM table layout.
 `converted_exlorom_resolves_and_edits_the_relocated_settings_owner` preserves a non-default level
 record through conversion, reopens and edits it, repairs the authoritative checksum, and undoes
-the exact converted image. Alternate identity and the remaining combined Layer 3 runtime variants
-keep the row `Partial`.
+the exact converted image. `complete_feature_survives_exlorom_conversion_with_every_owned_byte`
+then covers the combined family: all five Layer 3 RATS owners, the expanded-settings owner, and all
+fixed runtime writes are byte-identical in the relocated SMW body, the settings descriptor reopens,
+the mapper checksum remains valid, and one Undo restores the exact pre-conversion installation.
+Alternate identity, direct post-conversion Layer 3 installation, and the remaining SA-1 combined
+runtime variants keep the row `Partial`.
 
 The Configuration/Localization row additionally retains the original persistent distinction
 between `(AutoDetect)` and `(Default)` English. The localized native Language menu now exposes
