@@ -5095,7 +5095,12 @@ each native depth from the authenticated vanilla stream, discards only the edita
 for actual 3bpp files, preserves already-native files byte-for-byte, and never installs the 4bpp
 runtime. Separate-file insertion at the default cursor remains 512 KiB; joined insertion with the
 expansion option becomes 1 MiB. Both reopen every native file, while re-extraction reproduces all
-52 editable input files exactly and one Undo restores vanilla. Address-aware ordinary ExGFX
-allocation, ExGFX `$E00..$FFF` conversion bypass, and the original interactive expansion prompt
-after cursor-space exhaustion remain incomplete; therefore this remains a partial command
-milestone and does not close the configuration gate.
+52 editable input files exactly and one Undo restores vanilla. Ordinary ExGFX directory insertion
+now passes the selected logical cursor through every native storage-domain allocation while
+retaining domain order, synchronization/reclamation, semantic reopen, and one Undo. The installed
+worker gate replaces `ExGFX80` at `$190000` or later and restores the exact prior ROM. That path
+also corrected expanded-ExAnimation authentication to accept the canonical `$FF FF FF` empty
+sentinels in reserved ExGFX slots `$61..$63`, while retaining the required four-byte zero trailer.
+ExGFX `$E00..$FFF` conversion bypass without the 4bpp runtime and the original interactive
+expansion prompt after cursor-space exhaustion remain incomplete; therefore this remains a partial
+command milestone and does not close the configuration gate.

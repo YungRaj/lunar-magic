@@ -602,7 +602,7 @@ fn authenticate_reserved_exgraphics_table(
         return Err(SmwUsV1ExpandedExAnimationRuntimeDetectError::FixedRangeMismatch { offset });
     }
     for pointer in table[..0x0c].chunks_exact(3) {
-        if pointer == [0; 3] {
+        if pointer == [0; 3] || pointer == [0xff; 3] {
             continue;
         }
         let address =

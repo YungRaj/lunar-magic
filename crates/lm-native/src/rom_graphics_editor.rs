@@ -2028,12 +2028,6 @@ impl RomGraphicsEditor {
                 }
             });
         }
-        if source.smw_us_v1_exgraphics {
-            return Err(
-                "ordinary ExGFX address-aware allocation is not yet available; use quick ExGFX insertion for the existing atomic transaction"
-                    .into(),
-            );
-        }
         // Lunar Magic documents the 4bpp patch as irreversible. Clearing the box after the patch
         // exists therefore retains the installed format and changes no runtime byte.
         let expansion_target = (request.expand_rom
@@ -2748,7 +2742,67 @@ mod tests {
         let exgraphics_image =
             RomImage::from_bytes(app.controller_snapshot().unwrap().rom_bytes).unwrap();
         assert!(lm_profile::probe_smw_us_v1_exgraphics_runtime(&exgraphics_image).is_ok());
+        assert_eq!(
+            exgraphics_image.read(0x1bcc0, 16).unwrap(),
+            &[
+                0, 0, 0, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0, 0, 0, 0
+            ],
+            "reserved ExGFX table must retain the ExAnimation authentication trailer"
+        );
         assert_eq!(app.project_revision(), 2);
+
+        let quick_exgraphics_bytes = app.controller_snapshot().unwrap().rom_bytes;
+        let exgfx80_path = root.path().join("ExGraphics").join("ExGFX80.bin");
+        let mut changed_exgfx80 = std::fs::read(&exgfx80_path).unwrap();
+        changed_exgfx80[0] = 0x5a;
+        std::fs::write(&exgfx80_path, &changed_exgfx80).unwrap();
+        editor
+            .start_ordinary_graphics_import(
+                &app,
+                GraphicsInsertionRequest {
+                    family: GraphicsInsertionFamily::ExGraphics,
+                    logical_pc_address: 0x190000,
+                    expand_rom: false,
+                    use_4bpp: false,
+                },
+                false,
+            )
+            .unwrap();
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(120);
+        let ordinary_exgraphics_commit = loop {
+            if let Some(result) = editor.graphics_import.poll() {
+                break result
+                    .unwrap()
+                    .expect("ordinary ExGFX insertion prepares a commit");
+            }
+            assert!(std::time::Instant::now() < deadline);
+            std::thread::yield_now();
+        };
+        app.dispatch(ordinary_exgraphics_commit.into_command())
+            .unwrap();
+        let ordinary_exgraphics_image =
+            RomImage::from_bytes(app.controller_snapshot().unwrap().rom_bytes).unwrap();
+        let route = lm_profile::smw_us_v1_exgraphics_pointer_in_rom(
+            &ordinary_exgraphics_image,
+            0x80,
+            lm_rom::Mapper::LoRom,
+        )
+        .unwrap();
+        let pointer = lm_rom::SnesPointer24::decode(
+            ordinary_exgraphics_image
+                .read(route.pointer_offset, 3)
+                .unwrap(),
+        )
+        .unwrap()
+        .to_pc(lm_rom::Mapper::LoRom)
+        .unwrap();
+        assert!(pointer >= 0x190000);
+        assert_eq!(app.project_revision(), 3);
+        app.dispatch(lm_app::Command::Undo).unwrap();
+        assert_eq!(
+            app.controller_snapshot().unwrap().rom_bytes,
+            quick_exgraphics_bytes
+        );
 
         let gfx00_path = root.path().join("Graphics").join("GFX00.bin");
         let mut changed_gfx00 = std::fs::read(&gfx00_path).unwrap();
@@ -2793,11 +2847,11 @@ mod tests {
                 .unwrap(),
             changed_gfx00
         );
-        assert_eq!(app.project_revision(), 3);
-        app.dispatch(lm_app::Command::Undo).unwrap();
-        assert_eq!(app.project_revision(), 4);
-        app.dispatch(lm_app::Command::Undo).unwrap();
         assert_eq!(app.project_revision(), 5);
+        app.dispatch(lm_app::Command::Undo).unwrap();
+        assert_eq!(app.project_revision(), 6);
+        app.dispatch(lm_app::Command::Undo).unwrap();
+        assert_eq!(app.project_revision(), 7);
         app.dispatch(lm_app::Command::Undo).unwrap();
         assert_eq!(app.controller_snapshot().unwrap().rom_bytes, original);
     }

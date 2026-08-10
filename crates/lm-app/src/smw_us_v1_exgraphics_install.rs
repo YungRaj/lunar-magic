@@ -34,7 +34,7 @@ pub fn prepare_smw_us_v1_exgraphics_install(
     image: RomImage,
     files: &[(u16, Vec<u8>)],
 ) -> Result<PreparedRomCommit, String> {
-    prepare_smw_us_v1_exgraphics_install_with_mode(expected_revision, image, files, false)
+    prepare_smw_us_v1_exgraphics_install_with_mode(expected_revision, image, files, false, None)
 }
 
 /// Prepares Lunar Magic's full-directory ExGFX synchronization behavior.
@@ -52,7 +52,29 @@ pub fn prepare_smw_us_v1_exgraphics_directory_install(
     image: RomImage,
     files: &[(u16, Vec<u8>)],
 ) -> Result<PreparedRomCommit, String> {
-    prepare_smw_us_v1_exgraphics_install_with_mode(expected_revision, image, files, true)
+    prepare_smw_us_v1_exgraphics_install_with_mode(expected_revision, image, files, true, None)
+}
+
+/// Performs full-directory ExGFX synchronization while honoring the ordinary dialog's logical PC
+/// allocation cursor for every native storage domain.
+///
+/// # Errors
+///
+/// Rejects an address outside the available/expandable plan range plus every authentication,
+/// malformed-input, ownership, allocation, and reopen failure of directory synchronization.
+pub fn prepare_smw_us_v1_exgraphics_directory_install_at(
+    expected_revision: u64,
+    image: RomImage,
+    files: &[(u16, Vec<u8>)],
+    logical_pc_address: usize,
+) -> Result<PreparedRomCommit, String> {
+    prepare_smw_us_v1_exgraphics_install_with_mode(
+        expected_revision,
+        image,
+        files,
+        true,
+        Some(logical_pc_address),
+    )
 }
 
 fn prepare_smw_us_v1_exgraphics_install_with_mode(
@@ -60,6 +82,7 @@ fn prepare_smw_us_v1_exgraphics_install_with_mode(
     image: RomImage,
     files: &[(u16, Vec<u8>)],
     synchronize_directory: bool,
+    allocation_cursor: Option<usize>,
 ) -> Result<PreparedRomCommit, String> {
     if files.is_empty() {
         return Err("ExGFX insertion requires at least one file".into());
@@ -231,8 +254,18 @@ fn prepare_smw_us_v1_exgraphics_install_with_mode(
         if group.is_empty() {
             continue;
         }
-        let plan = smw_us_v1_exgraphics_installation_plan_for_mapper(&project.rom, group, mapper)
-            .map_err(|error| error.to_string())?;
+        let mut plan =
+            smw_us_v1_exgraphics_installation_plan_for_mapper(&project.rom, group, mapper)
+                .map_err(|error| error.to_string())?;
+        if let Some(cursor) = allocation_cursor {
+            let end = plan.allocation.search.end.max(project.rom.logical_len());
+            if cursor >= end {
+                return Err(format!(
+                    "ExGFX allocation address {cursor:#X} is outside the available {end:#X}-byte range"
+                ));
+            }
+            plan.allocation.search = cursor..end;
+        }
         project
             .install_relocatable_patch(&plan)
             .map_err(|error| error.to_string())?;

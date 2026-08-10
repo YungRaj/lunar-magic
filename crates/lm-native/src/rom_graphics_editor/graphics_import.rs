@@ -187,10 +187,10 @@ fn prepare_import(
     cancelled: &AtomicBool,
 ) -> Result<Option<PreparedRomCommit>, String> {
     let original_image = source.image.clone();
-    let ordinary_first_install =
-        source.smw_us_v1_standard_install && source.ordinary_options.is_some();
+    let ordinary_native_install = source.ordinary_options.is_some()
+        && (source.smw_us_v1_standard_install || source.smw_us_v1_exgraphics);
     if let Some(ordinary) = source.ordinary_options
-        && !ordinary_first_install
+        && !ordinary_native_install
     {
         apply_ordinary_options(
             &mut source.image,
@@ -263,12 +263,22 @@ fn prepare_import(
                             .map_err(|_| format!("ExGFX file number {number:X} exceeds $FFFF"))
                     })
                     .collect::<Result<Vec<_>, _>>()?;
-                lm_app::prepare_smw_us_v1_exgraphics_directory_install(
-                    source.expected_revision,
-                    source.image,
-                    &files,
-                )
-                .map(Some)
+                if let Some(ordinary) = source.ordinary_options {
+                    lm_app::prepare_smw_us_v1_exgraphics_directory_install_at(
+                        source.expected_revision,
+                        source.image,
+                        &files,
+                        ordinary.logical_pc_address,
+                    )
+                    .map(Some)
+                } else {
+                    lm_app::prepare_smw_us_v1_exgraphics_directory_install(
+                        source.expected_revision,
+                        source.image,
+                        &files,
+                    )
+                    .map(Some)
+                }
             } else if source.smw_us_v1_special {
                 lm_app::prepare_smw_us_v1_special_graphics_import(
                     source.expected_revision,
