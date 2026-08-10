@@ -108,5 +108,7 @@ it is not reduced to the unrelated current-level main-entrance section.
 `$2523` (`LM_LEVEL_EXITS`) opens the integrated complete 32-screen staged form. Its one-batch
 publication matches the recovered last-duplicate-wins normalization, absent-entry deletion,
 advance-bit retention, compact/extended encoding selection, ascending list-end placement, and one
-Undo boundary. The cursor-cell-specific `$26FE/$26FF` commands remain separate and pending.
-The authenticated partition is therefore 233 routed and 84 pending slots.
+Undo boundary. Cursor-cell command `$26FF` now resolves the live pointer through the painted canvas
+geometry, zoom, bounds, and orientation, then opens that table with the exact source screen
+preselected; `$26FE` remains separate and pending because it navigates through a dirty-save gate.
+The authenticated partition is therefore 234 routed and 83 pending slots.

@@ -18,8 +18,12 @@ record wins, removes duplicates, and reinserts the retained records in ascending
 
 The adjacent mouse commands are intentionally not treated as aliases. `$26FE` obtains the current
 client mouse cell and calls `FollowScreenExitDestinationAtCell` (`00489CD0`); `$26FF` obtains the
-cell and calls `OpenScreenExitEditorAtCell` (`00489C80`). Their cursor-position state remains a
-separate pending implementation boundary.
+cell and calls `OpenScreenExitEditorAtCell` (`00489C80`). Rust now retains the actual painted level
+canvas geometry, resolves the live pointer through zoom, bounds, and horizontal/vertical axis
+orientation, and routes `$26FF` to the same complete table with the targeted screen preselected and
+scrolled into view. Outside-canvas and out-of-level cells remain no-ops. `$26FE` remains pending
+because its distinct dirty-save prompt, primary/midway/secondary destination state, overworld-exit
+rejection, and level-navigation transaction must be preserved together.
 
 Rust binds `$2523` to a complete 32-screen staged form. `ObjectEdit::ReplaceScreenExitTable`
 performs the recovered deduplication, absence, retention, encoding-shape, and ordering behavior as

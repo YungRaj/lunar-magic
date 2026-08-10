@@ -378,6 +378,15 @@ struct CanvasObjectGroupDrag {
     secondary: bool,
 }
 
+#[derive(Clone, Copy, Debug)]
+struct LevelCanvasGeometry {
+    rect: egui::Rect,
+    cell: f32,
+    major_tiles: u16,
+    minor_tiles: u16,
+    vertical: bool,
+}
+
 #[derive(Default)]
 pub(crate) struct VanillaLevelEditor {
     key: Option<EditorKey>,
@@ -443,6 +452,8 @@ pub(crate) struct VanillaLevelEditor {
     tool_panel_generations: [u64; 4],
     requested_tool_panel: Option<LevelToolPanel>,
     screen_exit_table_form: Option<[Option<u16>; 32]>,
+    screen_exit_table_selected: Option<u8>,
+    canvas_geometry: Option<LevelCanvasGeometry>,
     game_preview: Option<bool>,
     snes_viewport: Option<bool>,
     draw_selection_over_live: Option<bool>,
@@ -1510,6 +1521,7 @@ impl VanillaLevelEditor {
             return;
         };
         let current = screen_exit_table(&controller.level().layer1.objects.records);
+        let selected_screen_exit = self.screen_exit_table_selected;
         let form = self.screen_exit_table_form.get_or_insert(current);
         ui.label(
             "Stage all 32 source screens together. Apply creates one level-editor Undo step; Reset discards this form only.",
@@ -1523,7 +1535,11 @@ impl VanillaLevelEditor {
                 ui.label("Destination / flags");
                 ui.end_row();
                 for (screen, entry) in form.iter_mut().enumerate() {
-                    ui.monospace(format!("{screen:02X}"));
+                    let selected = selected_screen_exit == Some(screen as u8);
+                    let response = ui.selectable_label(selected, format!("{screen:02X}"));
+                    if selected {
+                        response.scroll_to_me(Some(egui::Align::Center));
+                    }
                     let mut present = entry.is_some();
                     if ui.checkbox(&mut present, "").changed() {
                         *entry = present.then_some(0);
@@ -1663,6 +1679,8 @@ impl VanillaLevelEditor {
     ) {
         self.clear_z_order_bounds();
         self.screen_exit_table_form = None;
+        self.screen_exit_table_selected = None;
+        self.canvas_geometry = None;
         self.pending_layer2_mode_reset = None;
         self.canvas_entity_selection = None;
         if let Err(error) = validate_builtin_graphics_layout(snapshot) {
@@ -1858,6 +1876,8 @@ impl VanillaLevelEditor {
         self.controller = None;
         self.pending_expansion_commit = None;
         self.screen_exit_table_form = None;
+        self.screen_exit_table_selected = None;
+        self.canvas_geometry = None;
         self.entrance_controller = None;
         self.secondary_exits = None;
         self.secondary_exit_references = None;
@@ -2440,6 +2460,13 @@ impl VanillaLevelEditor {
             } else {
                 egui::Rect::from_min_size(rect.min, world_size)
             };
+            self.canvas_geometry = Some(LevelCanvasGeometry {
+                rect: paint_rect,
+                cell,
+                major_tiles,
+                minor_tiles,
+                vertical,
+            });
             if is_boss_battle_level_mode(level_mode) {
                 paint_boss_battle_diagnostic(&painter, rect);
             } else {
@@ -2699,6 +2726,23 @@ impl VanillaLevelEditor {
         let generation = &mut self.tool_panel_generations[panel.index()];
         *generation = generation.wrapping_add(1);
         self.requested_tool_panel = Some(panel);
+    }
+
+    /// Mirrors Lunar Magic command `$26FF`: resolve the current mouse cell against the level
+    /// canvas, preselect that source screen, and open the same complete editor as `$2523`.
+    pub(crate) fn toolbar_open_screen_exit_at_pointer(&mut self, context: &egui::Context) -> bool {
+        let Some(position) = context.pointer_hover_pos() else {
+            return false;
+        };
+        let Some(geometry) = self.canvas_geometry else {
+            return false;
+        };
+        let Some(screen) = screen_at_canvas_position(position, geometry) else {
+            return false;
+        };
+        self.screen_exit_table_selected = Some(screen);
+        self.toolbar_open_tool_panel(LevelToolPanel::ScreenExits);
+        true
     }
 
     /// Mirrors Lunar Magic 3.63's four entrance-view commands. The aggregate command owns an
@@ -8595,6 +8639,27 @@ fn screen_exit_table(records: &[ObjectRecord]) -> [Option<u16>; 32] {
         exits[usize::from(exit.screen)] = Some(exit.destination_and_flags);
     }
     exits
+}
+
+fn screen_at_canvas_position(position: egui::Pos2, geometry: LevelCanvasGeometry) -> Option<u8> {
+    if !geometry.rect.contains(position) || !geometry.cell.is_finite() || geometry.cell <= 0.0 {
+        return None;
+    }
+    let column = ((position.x - geometry.rect.left()) / geometry.cell).floor();
+    let row = ((position.y - geometry.rect.top()) / geometry.cell).floor();
+    if column < 0.0 || row < 0.0 {
+        return None;
+    }
+    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+    let (major, minor) = if geometry.vertical {
+        (row as u16, column as u16)
+    } else {
+        (column as u16, row as u16)
+    };
+    if major >= geometry.major_tiles || minor >= geometry.minor_tiles {
+        return None;
+    }
+    u8::try_from(major / 16).ok().filter(|screen| *screen < 32)
 }
 
 fn level_screen_exit_annotations(
@@ -17975,6 +18040,75 @@ mod tests {
         assert_eq!(exits[0], Some(0x0733));
         assert_eq!(exits[0x1f], Some(0x0622));
         assert_eq!(exits.iter().filter(|entry| entry.is_some()).count(), 2);
+    }
+
+    #[test]
+    fn mouse_screen_exit_command_maps_canvas_cells_in_both_level_orientations() {
+        let rect = egui::Rect::from_min_size(egui::pos2(10.0, 20.0), egui::vec2(640.0, 320.0));
+        let horizontal = LevelCanvasGeometry {
+            rect,
+            cell: 10.0,
+            major_tiles: 64,
+            minor_tiles: 27,
+            vertical: false,
+        };
+        assert_eq!(
+            screen_at_canvas_position(egui::pos2(10.0 + 35.0 * 10.0, 25.0), horizontal),
+            Some(2)
+        );
+        assert_eq!(
+            screen_at_canvas_position(egui::pos2(15.0, 20.0 + 27.5 * 10.0), horizontal),
+            None
+        );
+
+        let vertical_rect =
+            egui::Rect::from_min_size(egui::pos2(10.0, 20.0), egui::vec2(320.0, 640.0));
+        let vertical = LevelCanvasGeometry {
+            rect: vertical_rect,
+            cell: 10.0,
+            major_tiles: 64,
+            minor_tiles: 32,
+            vertical: true,
+        };
+        assert_eq!(
+            screen_at_canvas_position(egui::pos2(15.0, 20.0 + 51.0 * 10.0), vertical),
+            Some(3)
+        );
+        assert_eq!(
+            screen_at_canvas_position(
+                egui::pos2(vertical_rect.right() + 1.0, vertical_rect.top()),
+                vertical
+            ),
+            None
+        );
+    }
+
+    #[test]
+    fn authenticated_mouse_edit_screen_exit_preselects_and_opens_the_complete_table() {
+        let context = egui::Context::default();
+        context.begin_pass(egui::RawInput {
+            events: vec![egui::Event::PointerMoved(egui::pos2(335.0, 25.0))],
+            ..egui::RawInput::default()
+        });
+        let mut editor = VanillaLevelEditor {
+            tools_panel_visible: Some(false),
+            canvas_geometry: Some(LevelCanvasGeometry {
+                rect: egui::Rect::from_min_size(egui::pos2(10.0, 20.0), egui::vec2(640.0, 270.0)),
+                cell: 10.0,
+                major_tiles: 64,
+                minor_tiles: 27,
+                vertical: false,
+            }),
+            ..VanillaLevelEditor::default()
+        };
+        assert!(editor.toolbar_open_screen_exit_at_pointer(&context));
+        assert_eq!(editor.screen_exit_table_selected, Some(2));
+        assert_eq!(
+            editor.requested_tool_panel,
+            Some(LevelToolPanel::ScreenExits)
+        );
+        assert_eq!(editor.tools_panel_visible, Some(true));
+        let _ = context.end_pass();
     }
 
     #[test]
