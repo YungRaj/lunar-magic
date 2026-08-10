@@ -73,6 +73,7 @@ pub struct LoadedSmwUsV1OverworldLayer3Settings {
 
 #[derive(Debug)]
 pub enum SmwUsV1OverworldSettingsLoadError {
+    UnsupportedMapper(Mapper),
     InvalidOwnedBlock,
     InvalidRuntimePointer,
     RuntimeMismatch,
@@ -141,15 +142,29 @@ pub const fn smw_us_v1_expanded_settings_layout() -> ExpandedLevelSettingsLayout
 pub fn smw_us_v1_installed_expanded_settings_layout(
     project: &Project,
 ) -> Result<Option<ExpandedLevelSettingsLayout>, SmwUsV1OverworldSettingsLoadError> {
-    if expanded_settings_runtime_destinations_are_pristine(project) {
+    let mapper = project
+        .identity
+        .as_ref()
+        .map(|identity| identity.mapper)
+        .or_else(|| {
+            lm_rom::detect_identity(&project.rom)
+                .ok()
+                .map(|identity| identity.mapper)
+        })
+        .unwrap_or(Mapper::LoRom);
+    if !matches!(mapper, Mapper::LoRom | Mapper::ExLoRom) {
+        return Err(SmwUsV1OverworldSettingsLoadError::UnsupportedMapper(mapper));
+    }
+    if expanded_settings_runtime_destinations_are_pristine(project, mapper) {
         return Ok(None);
     }
+    let base_operand = mapper_rom_offset(mapper, SMW_US_V1_EXPANDED_SETTINGS_BASE_OPERAND);
     let operand = project
         .rom
-        .read(SMW_US_V1_EXPANDED_SETTINGS_BASE_OPERAND, 3)
+        .read(base_operand, 3)
         .map_err(|_| SmwUsV1OverworldSettingsLoadError::InvalidRuntimePointer)?;
     let allocation_base_snes = u32::from_le_bytes([operand[0], operand[1], operand[2], 0]);
-    let payload_offset = snes_to_pc(Mapper::LoRom, allocation_base_snes)
+    let payload_offset = snes_to_pc(mapper, allocation_base_snes)
         .map_err(|_| SmwUsV1OverworldSettingsLoadError::InvalidRuntimePointer)?;
     let header_offset = payload_offset
         .checked_sub(8)
@@ -181,7 +196,10 @@ pub fn smw_us_v1_installed_expanded_settings_layout(
             writes.iter().all(|write| {
                 project
                     .rom
-                    .read(write.offset, write.replacement.len())
+                    .read(
+                        mapper_rom_offset(mapper, write.offset),
+                        write.replacement.len(),
+                    )
                     .is_ok_and(|bytes| bytes == write.replacement)
             })
         })
@@ -190,7 +208,7 @@ pub fn smw_us_v1_installed_expanded_settings_layout(
         return Err(SmwUsV1OverworldSettingsLoadError::RuntimeMismatch);
     }
     Ok(Some(ExpandedLevelSettingsLayout {
-        mapper: Mapper::LoRom,
+        mapper,
         table_offset: payload_offset + SMW_US_V1_EXPANDED_SETTINGS_PREFIX_LEN,
         entries: SMW_US_V1_EXPANDED_SETTINGS_RECORD_COUNT,
         stride: 0x20,
@@ -259,7 +277,7 @@ pub fn load_smw_us_v1_expanded_level_settings(
     })
 }
 
-fn expanded_settings_runtime_destinations_are_pristine(project: &Project) -> bool {
+fn expanded_settings_runtime_destinations_are_pristine(project: &Project, mapper: Mapper) -> bool {
     let layout = ExpandedSettingsRuntimeLayout::smw_us_v1(
         0x11_8000,
         ExpandedSettingsEntryContinuation::Continue,
@@ -268,10 +286,21 @@ fn expanded_settings_runtime_destinations_are_pristine(project: &Project) -> boo
         writes.iter().all(|write| {
             project
                 .rom
-                .read(write.offset, write.expected.len())
+                .read(
+                    mapper_rom_offset(mapper, write.offset),
+                    write.expected.len(),
+                )
                 .is_ok_and(|bytes| bytes == write.expected)
         })
     })
+}
+
+const fn mapper_rom_offset(mapper: Mapper, lorom_offset: usize) -> usize {
+    if matches!(mapper, Mapper::ExLoRom) {
+        0x40_0000 + lorom_offset
+    } else {
+        lorom_offset
+    }
 }
 
 /// Loads the seven records through the validated expanded-settings owner and gives them their
@@ -479,5 +508,59 @@ mod tests {
         let project = Project::new(RomImage::from_bytes(bytes).unwrap());
         let loaded = load_smw_us_v1_overworld_settings(&project).unwrap();
         assert!(loaded.installed);
+    }
+
+    #[test]
+    fn converted_exlorom_resolves_and_edits_the_relocated_settings_owner() {
+        let original = crate::test_support::pristine_smw_us_rom_bytes();
+        let mut project = Project::open_supported(RomImage::from_bytes(original).unwrap()).unwrap();
+        let plan = crate::smw_us_v1_expanded_settings_installation_plan().unwrap();
+        project.install_relocatable_patch(&plan).unwrap();
+        let lorom_layout = smw_us_v1_installed_expanded_settings_layout(&project)
+            .unwrap()
+            .unwrap();
+        let mut expected = project
+            .load_expanded_level_settings(0x105, lorom_layout)
+            .unwrap();
+        expected.set_word(11, 0x5a5a).unwrap();
+        project
+            .save_expanded_level_settings(0x105, &expected, lorom_layout, SMW_US_V1_CHECKSUM_FIELD)
+            .unwrap();
+
+        project.convert_to_64_mbit_exlorom().unwrap();
+        let exlorom_layout = smw_us_v1_installed_expanded_settings_layout(&project)
+            .unwrap()
+            .unwrap();
+        assert_eq!(exlorom_layout.mapper, Mapper::ExLoRom);
+        assert_eq!(
+            exlorom_layout.table_offset,
+            0x40_0000 + lorom_layout.table_offset
+        );
+        assert_eq!(
+            project
+                .load_expanded_level_settings(0x105, exlorom_layout)
+                .unwrap(),
+            expected
+        );
+
+        let converted = project.save_snapshot();
+        let mut changed = expected.clone();
+        changed.set_word(11, 0xa55a).unwrap();
+        project
+            .save_expanded_level_settings(0x105, &changed, exlorom_layout, SMW_US_V1_CHECKSUM_FIELD)
+            .unwrap();
+        assert_eq!(
+            project
+                .load_expanded_level_settings(0x105, exlorom_layout)
+                .unwrap(),
+            changed
+        );
+        assert!(
+            lm_rom::detect_identity(&project.rom)
+                .unwrap()
+                .checksum_matches()
+        );
+        project.undo().unwrap();
+        assert_eq!(project.save_snapshot(), converted);
     }
 }

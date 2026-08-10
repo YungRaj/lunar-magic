@@ -403,8 +403,13 @@ shared/custom palettes are now descriptor-routed through the relocated SMW body 
 LoROM-to-ExLoROM conversion, while checksum repair correctly remains on ExLoROM's authoritative
 low first-bank header. `converted_exlorom_installs_edits_reopens_and_undoes_expanded_palettes`
 proves native install, installed-layout resolution, palette edit/reopen, checksum validity, and all
-three exact Undo boundaries. Alternate identity and the remaining combined Layer 3/settings
-runtime variants keep the row `Partial`.
+three exact Undo boundaries. The authenticated expanded-settings detector now follows the same
+mapper transition: it reads the relocated runtime operand, maps its RATS owner with ExLoROM
+semantics, authenticates every relocated fixed runtime byte, and returns an ExLoROM table layout.
+`converted_exlorom_resolves_and_edits_the_relocated_settings_owner` preserves a non-default level
+record through conversion, reopens and edits it, repairs the authoritative checksum, and undoes
+the exact converted image. Alternate identity and the remaining combined Layer 3 runtime variants
+keep the row `Partial`.
 
 The Configuration/Localization row additionally retains the original persistent distinction
 between `(AutoDetect)` and `(Default)` English. The localized native Language menu now exposes
