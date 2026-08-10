@@ -108,9 +108,10 @@ edit reloads the exact new in-memory ROM revision and re-enters the selected lev
 window, so object, block, sprite, palette, graphics, and other committed ROM changes are testable
 without manually restarting the session. With **Game pixels** and the SNES viewport enabled, the
 live frame is drawn directly in the level canvas and refits whenever the canvas or window changes
-size; canvas selection and placement hit testing remains active. LMSW's optional selected-tile
-overlay over that live frame, optimized sprite-stream-only hot reload, and audio output are not
-implemented yet. Alt-tabbing away soft-pauses the core; minimizing the editor hard-
+size; canvas selection and placement hit testing remains active. **Selection over game** defaults
+on and draws only the currently selected object/sprite artwork and outlines over the live frame;
+turn it off to view the unobstructed emulator image. LMSW's optimized sprite-stream-only hot reload
+and audio output are not implemented yet. Alt-tabbing away soft-pauses the core; minimizing the editor hard-
 pauses it, and restoring focus resumes only when no manual pause remains.
 Collapsing the live window or opening an editor menu also hard-pauses the core; menu closure retains
 the original short input grace before gameplay resumes.

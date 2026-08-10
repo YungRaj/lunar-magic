@@ -42,7 +42,10 @@ When **Game pixels** and the SNES viewport are enabled, the running core's RGBA 
 composited into the level-editor canvas using the same centered cover geometry as the deterministic
 game-pixel view. It recomputes from the current canvas dimensions on horizontal, vertical, and
 full-screen resize while preserving the canvas response used for entity hit testing. The row remains
-`Partial`: LMSW's optional selected-tile-over-emulator overlay, optimized sprite-stream-only hot
+The default-on **Selection over game** option reproduces the recovered `$004530A0` compositor
+ordering by repainting only selected Layer 1/Layer 2 object tiles and selected sprite artwork after
+the live frame, including transparent pixels and selection outlines; it can be disabled without
+affecting canvas hit testing. The row remains `Partial`: LMSW's optimized sprite-stream-only hot
 reload, audio, and broader core/runtime/platform variants are still missing. This addendum
 supersedes only the older clauses that list the now-proved backend, native
 control, selected-level, input, and compatible-core runtime boundaries as missing.
@@ -109,7 +112,7 @@ viewport. `pristine_full_level_render` composes the stored full extent with auth
 background, object, sprite, entrance, orientation, palette, and animation state. The responsive
 viewport fits exactly one 256-by-224 SNES screen into the available canvas and recomputes that fit
 for horizontal, vertical, and full-screen window changes. The current fixture-backed `lm-native`
-gate has 927 passing tests and 11 explicitly ignored external-fixture tests;
+gate has 929 passing tests and 11 explicitly ignored external-fixture tests;
 `every_pristine_level_materializes_its_builtin_render_assets` traverses all
 512 pristine level slots, while `pristine_full_render_matches_native_dimensions_and_empty_outcomes`
 checks full-render dimensions and empty outcomes.

@@ -2475,8 +2475,12 @@ boundary. Portable packaging includes the sibling backend. The running RGBA text
 composited into the level canvas when Game pixels/SNES viewport mode is active. Its rectangle uses
 the same centered cover scale as deterministic game pixels and is recomputed from the available
 canvas on every layout pass, so horizontal, vertical, and full-screen resizing remain synchronized
-without replacing the canvas interaction response. LMSW's optional selected-tile-over-emulator
-pass, optimized sprite-stream-only hot reload, and audio remain incomplete. Native OS focus loss
+without replacing the canvas interaction response. Ghidra's `RenderLevelEditorViewportRegion` at
+`$004530A0` proves Lunar Magic redraws only Map16 cells carrying selection flags `$60` after the
+LMSW viewport pass. Rust's default-on Selection over game pass follows that order for selected
+Layer 1/Layer 2 objects and sprites, preserving transparency and selection outlines while filtering
+all nonselected entities; the toggle changes only this final pass. LMSW's optimized
+sprite-stream-only hot reload and audio remain incomplete. Native OS focus loss
 now drives the original focus-only soft pause, while minimizing the main viewport drives hard-pause
 reason `$20`; manual hard pause retains
 precedence through the shared aggregate. A collapsed live window drives viewport reason `$04`.

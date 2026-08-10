@@ -380,6 +380,7 @@ pub(crate) struct VanillaLevelEditor {
     tools_panel_visible: Option<bool>,
     game_preview: Option<bool>,
     snes_viewport: Option<bool>,
+    draw_selection_over_live: Option<bool>,
     preview_camera_major_offset: i16,
     preview_camera_minor_offset: i16,
     initial_vertical_scroll_tiles: Option<u16>,
@@ -675,6 +676,10 @@ impl VanillaLevelEditor {
 
     fn snes_viewport(&self) -> bool {
         self.snes_viewport.unwrap_or(true)
+    }
+
+    fn draw_selection_over_live(&self) -> bool {
+        self.draw_selection_over_live.unwrap_or(true)
     }
 
     fn show_commit_controls(
@@ -2056,7 +2061,7 @@ impl VanillaLevelEditor {
         }
         let game_preview = self.game_preview();
         let snes_viewport = game_preview && self.snes_viewport();
-        self.show_canvas_tools(ui, major_tiles, minor_tiles, vertical);
+        self.show_canvas_tools(ui, major_tiles, minor_tiles, vertical, live_frame.is_some());
         if self.placement_mode.is_some() {
             ui.label("Click a canvas tile to place the values from the matching editor below.");
         } else {
@@ -2186,6 +2191,28 @@ impl VanillaLevelEditor {
                         egui::Rect::from_min_max(egui::Pos2::ZERO, egui::pos2(1.0, 1.0)),
                         egui::Color32::WHITE,
                     );
+                    if self.draw_selection_over_live() {
+                        self.paint_selection_over_live_frame(
+                            &painter,
+                            paint_rect,
+                            cell,
+                            major_tiles,
+                            minor_tiles,
+                            vertical,
+                            level_mode,
+                            map16_animation_phase,
+                            animation_phase,
+                            visibility,
+                            &layer2_records,
+                            &layer2_placements,
+                            &records,
+                            &placements,
+                            &sprite_placements,
+                            custom_sprites,
+                            custom_objects,
+                            custom_map16,
+                        );
+                    }
                 }
             }
         };
@@ -2214,6 +2241,7 @@ impl VanillaLevelEditor {
         major_tiles: u16,
         minor_tiles: u16,
         vertical: bool,
+        live_frame_available: bool,
     ) {
         // Keep the controls to one stable row. Wrapping made a horizontal window resize add or
         // remove toolbar rows, so the canvas height jumped independently of the window and looked
@@ -2243,6 +2271,18 @@ impl VanillaLevelEditor {
                                 self.snes_viewport = Some(snes_viewport);
                             }
                             if snes_viewport {
+                                if live_frame_available {
+                                    let mut draw_selection = self.draw_selection_over_live();
+                                    if ui
+                                        .toggle_value(&mut draw_selection, "Selection over game")
+                                        .on_hover_text(
+                                            "Draw selected object and sprite tiles over the live emulator frame",
+                                        )
+                                        .changed()
+                                    {
+                                        self.draw_selection_over_live = Some(draw_selection);
+                                    }
+                                }
                                 self.show_preview_camera_tools(
                                     ui,
                                     major_tiles,
@@ -3277,6 +3317,172 @@ impl VanillaLevelEditor {
     }
 
     #[allow(clippy::too_many_arguments, clippy::too_many_lines)]
+    fn paint_selection_over_live_frame(
+        &self,
+        painter: &egui::Painter,
+        rect: egui::Rect,
+        cell: f32,
+        major_tiles: u16,
+        minor_tiles: u16,
+        vertical: bool,
+        level_mode: u8,
+        map16_animation_phase: u8,
+        animation_phase: u8,
+        visibility: crate::application::LevelViewVisibility,
+        layer2_records: &[ObjectRecord],
+        layer2_placements: &[lm_level::NativeObjectPlacement],
+        records: &[ObjectRecord],
+        placements: &[lm_level::NativeObjectPlacement],
+        sprite_placements: &[lm_level::NativeSpritePlacement],
+        custom_sprites: Option<&lm_level::SscResolvedTable>,
+        custom_objects: Option<&lm_level::OscResolvedTable>,
+        custom_map16: Option<&lm_app::NativeMap16SidecarDocument>,
+    ) {
+        let animation_index = usize::from(map16_animation_phase);
+        let variant_start = animation_index * 4;
+        let map16_variants = self
+            .animated_map16_textures
+            .get(variant_start..variant_start + 4);
+        let map16_texture = map16_variants
+            .and_then(|textures| textures.first())
+            .or(self.map16_texture.as_ref());
+        let layer2_variants = self
+            .animated_layer2_map16_textures
+            .get(variant_start..variant_start + 4);
+        let layer2_texture = layer2_variants
+            .and_then(|textures| textures.first())
+            .or(self.layer2_map16_texture.as_ref())
+            .or(map16_texture);
+        let block_contents = self.block_contents_textures.get(animation_index);
+        let object_minor_tiles = native_object_cache_minor_tiles(minor_tiles, vertical);
+        let camera = self.game_preview_camera_origin(major_tiles, minor_tiles, vertical);
+        let layer1_camera = (i32::from(camera.0) * 16, i32::from(camera.1) * 16);
+        let layer2_camera = vanilla_layer2_camera_pixels(self.entrance_form, layer1_camera);
+        let layer2_target = rect.translate(egui::vec2(
+            screen_pixels_f32(layer1_camera.0 - layer2_camera.0) * cell / 16.0,
+            screen_pixels_f32(layer1_camera.1 - layer2_camera.1) * cell / 16.0,
+        ));
+
+        if visibility.layer1
+            && self.canvas_entity_selection == Some(CanvasEntitySelection::Layer1Object)
+        {
+            let selected = selected_object_placements(
+                placements,
+                &self.selected_object_group,
+                self.selected_object,
+            );
+            let bounds = self.draw_object_artwork(
+                painter,
+                rect,
+                cell,
+                major_tiles,
+                object_minor_tiles,
+                vertical,
+                records,
+                &selected,
+                custom_objects,
+                custom_map16,
+                map16_texture,
+                map16_variants,
+                block_contents,
+                visibility.surface_outline,
+                visibility.line_guide_outline,
+            );
+            draw_object_placement_markers(
+                painter,
+                None,
+                rect,
+                vertical,
+                records,
+                &selected,
+                &self.selected_object_group,
+                self.selected_object,
+                map16_texture,
+                &bounds,
+                &self.active_object_resize_models(records, custom_objects),
+                cell,
+                false,
+                true,
+            );
+        }
+        if visibility.layer2
+            && self.canvas_entity_selection == Some(CanvasEntitySelection::Layer2Object)
+        {
+            let selected = selected_object_placements(
+                layer2_placements,
+                &self.selected_layer2_object_group,
+                self.selected_layer2_object,
+            );
+            let bounds = self.draw_object_artwork(
+                painter,
+                layer2_target,
+                cell,
+                major_tiles,
+                object_minor_tiles,
+                vertical,
+                layer2_records,
+                &selected,
+                custom_objects,
+                custom_map16,
+                layer2_texture,
+                layer2_variants,
+                block_contents,
+                visibility.surface_outline,
+                visibility.line_guide_outline,
+            );
+            draw_object_placement_markers(
+                painter,
+                None,
+                layer2_target,
+                vertical,
+                layer2_records,
+                &selected,
+                &self.selected_layer2_object_group,
+                self.selected_layer2_object,
+                layer2_texture,
+                &bounds,
+                &self.active_object_resize_models(layer2_records, custom_objects),
+                cell,
+                false,
+                true,
+            );
+        }
+        if visibility.sprites && self.canvas_entity_selection == Some(CanvasEntitySelection::Sprite)
+        {
+            let _ = draw_sprite_placements(SpritePlacementDraw {
+                painter,
+                overlay_painter: painter,
+                target: rect,
+                cell_size: cell,
+                texture: self.sprite_texture.as_ref(),
+                animated_texture: self
+                    .animated_sprite_textures
+                    .get(usize::from(animation_phase))
+                    .or(self.sprite_texture.as_ref()),
+                placements: sprite_placements,
+                cursor: None,
+                selected_group: &self.selected_sprite_group,
+                selected: self.selected_sprite,
+                vertical,
+                level_mode,
+                sprite_tileset: self.form.sprite_tileset,
+                sprite_memory_index: self
+                    .controller
+                    .as_ref()
+                    .map_or(0, |controller| controller.level().sprites.header & 0x3f),
+                animation_phase,
+                silver_pow_active: self.silver_pow_active,
+                custom_sprites,
+                custom_map16,
+                external_textures: &self.external_sprite_textures,
+                editor_overlays: false,
+                selection_visible: true,
+                selected_only: true,
+            });
+        }
+    }
+
+    #[allow(clippy::too_many_arguments, clippy::too_many_lines)]
     fn paint_object_canvas(
         &mut self,
         painter: &egui::Painter,
@@ -3638,6 +3844,7 @@ impl VanillaLevelEditor {
                     self.canvas_entity_selection,
                     Some(CanvasEntitySelection::Sprite)
                 ),
+                selected_only: false,
             })
         });
         let hit_sprite = sprite_draw.as_ref().and_then(|result| result.hit);
@@ -10732,6 +10939,7 @@ struct SpritePlacementDraw<'a> {
     external_textures: &'a HashMap<lm_render::RemappedCustomSpritePreviewTile, egui::TextureHandle>,
     editor_overlays: bool,
     selection_visible: bool,
+    selected_only: bool,
 }
 
 #[allow(clippy::too_many_lines)]
@@ -10763,6 +10971,7 @@ fn draw_sprite_placements(request: SpritePlacementDraw<'_>) -> SpritePlacementDr
         external_textures,
         editor_overlays,
         selection_visible,
+        selected_only,
     } = request;
     let mut hit = None;
     let mut bounds = HashMap::with_capacity(placements.len());
@@ -10813,6 +11022,11 @@ fn draw_sprite_placements(request: SpritePlacementDraw<'_>) -> SpritePlacementDr
         };
         if uses_standard && placement.sprite_number == 0x8a {
             standard_8a_count = standard_8a_count.saturating_add(1);
+        }
+        let is_selected = selected_group.contains(&placement.token_index)
+            || selected_group.is_empty() && placement.token_index == selected;
+        if selected_only && !is_selected {
+            continue;
         }
         let interactive_rect = resolved_sprite_preview_bounds(
             marker,
@@ -10869,9 +11083,7 @@ fn draw_sprite_placements(request: SpritePlacementDraw<'_>) -> SpritePlacementDr
             overlay_painter.rect_filled(
                 marker,
                 marker.width() / 2.0,
-                if selected_group.contains(&placement.token_index)
-                    || selected_group.is_empty() && placement.token_index == selected
-                {
+                if is_selected {
                     egui::Color32::LIGHT_RED
                 } else {
                     egui::Color32::from_rgb(220, 70, 70)
@@ -10885,10 +11097,7 @@ fn draw_sprite_placements(request: SpritePlacementDraw<'_>) -> SpritePlacementDr
                 egui::Color32::WHITE,
             );
         }
-        if (editor_overlays || selection_visible)
-            && (selected_group.contains(&placement.token_index)
-                || selected_group.is_empty() && placement.token_index == selected)
-        {
+        if (editor_overlays || selection_visible) && is_selected {
             overlay_painter.rect_stroke(
                 interactive_rect,
                 marker.width() / 2.0,
@@ -11780,6 +11989,21 @@ fn live_frame_rect(canvas: egui::Rect, size: [usize; 2], cell: f32) -> egui::Rec
         canvas.center(),
         egui::vec2(size[0] as f32, size[1] as f32) * pixels_per_source_pixel,
     )
+}
+
+fn selected_object_placements(
+    placements: &[lm_level::NativeObjectPlacement],
+    selected_group: &[usize],
+    selected: usize,
+) -> Vec<lm_level::NativeObjectPlacement> {
+    placements
+        .iter()
+        .copied()
+        .filter(|placement| {
+            selected_group.contains(&placement.record_index)
+                || selected_group.is_empty() && placement.record_index == selected
+        })
+        .collect()
 }
 
 fn game_preview_origin(
@@ -16817,6 +17041,38 @@ mod tests {
     }
 
     #[test]
+    fn live_frame_selection_overlay_defaults_on_and_retains_an_explicit_choice() {
+        let mut editor = VanillaLevelEditor::default();
+        assert!(editor.draw_selection_over_live());
+        editor.draw_selection_over_live = Some(false);
+        assert!(!editor.draw_selection_over_live());
+    }
+
+    #[test]
+    fn live_frame_selection_filter_keeps_only_the_active_object_group() {
+        let placement = |record_index| lm_level::NativeObjectPlacement {
+            record_index,
+            screen: 0,
+            major: 0,
+            minor: 0,
+            major_span: 1,
+            minor_span: 1,
+        };
+        let placements = [placement(2), placement(5), placement(8)];
+        let grouped = selected_object_placements(&placements, &[2, 8], 5);
+        assert_eq!(
+            grouped
+                .iter()
+                .map(|placement| placement.record_index)
+                .collect::<Vec<_>>(),
+            vec![2, 8]
+        );
+        let singular = selected_object_placements(&placements, &[], 5);
+        assert_eq!(singular.len(), 1);
+        assert_eq!(singular[0].record_index, 5);
+    }
+
+    #[test]
     fn snes_screen_fit_recomputes_for_window_resize_and_full_screen() {
         let windowed = fitted_snes_viewport_cell(egui::vec2(640.0, 480.0), 100);
         let resized = fitted_snes_viewport_cell(egui::vec2(960.0, 720.0), 100);
@@ -19213,6 +19469,7 @@ mod tests {
             );
         let context = egui::Context::default();
         let mut hit = None;
+        let mut selected_only_hit = None;
         let _ = context.run(egui::RawInput::default(), |context| {
             egui::CentralPanel::default().show(context, |ui| {
                 hit = draw_sprite_placements(SpritePlacementDraw {
@@ -19237,11 +19494,38 @@ mod tests {
                     external_textures: &HashMap::new(),
                     editor_overlays: false,
                     selection_visible: false,
+                    selected_only: false,
+                })
+                .hit;
+                selected_only_hit = draw_sprite_placements(SpritePlacementDraw {
+                    painter: ui.painter(),
+                    overlay_painter: ui.painter(),
+                    target,
+                    cell_size: ROM_LEVEL_CANVAS_CELL,
+                    texture: None,
+                    animated_texture: None,
+                    placements: std::slice::from_ref(&placement),
+                    cursor: Some(cursor),
+                    selected_group: &[],
+                    selected: 99,
+                    vertical: false,
+                    level_mode: 0,
+                    sprite_tileset: 0,
+                    sprite_memory_index: 0,
+                    animation_phase: 0,
+                    silver_pow_active: false,
+                    custom_sprites: None,
+                    custom_map16: None,
+                    external_textures: &HashMap::new(),
+                    editor_overlays: false,
+                    selection_visible: true,
+                    selected_only: true,
                 })
                 .hit;
             });
         });
         assert_eq!(hit, Some(7));
+        assert_eq!(selected_only_hit, None);
     }
 
     #[test]
