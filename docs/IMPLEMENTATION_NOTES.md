@@ -2441,6 +2441,17 @@ pause mode. Stop clears both hard and soft state before reuse. This pure contrac
 separate from the existing one-shot external-process launcher so native libretro and optional LMSW
 bridge backends can share the same verified lifecycle semantics. It does not by itself claim ROM,
 level, sprite, video, audio, or input transport.
+
+`LMEMU001` is the corresponding shell-free backend transport. Every command and event is one
+self-framed little-endian record with an eight-byte version magic and an exact payload length.
+Commands cover initialize with immutable revision/ROM/selected-level/sprite data, ROM reload,
+level load, sprite reload, pause mode, single step, four option flags, signed viewport state, and
+stop. Events cover backend capabilities, acknowledgement, active state, viewport synchronization,
+bounded RGBA frames, and bounded UTF-8 diagnostics. ROMs are limited to 32 MiB, sprite payloads to
+1 MiB, diagnostics to 4 KiB, and frames to 512×478 RGBA; empty ROMs, invalid pause values,
+zero/oversized geometry, inconsistent raster lengths, bad UTF-8, unknown tags, every truncation,
+and trailing bytes reject before backend state changes. The codec establishes the process boundary
+but does not yet claim that a native frontend has spawned or driven a concrete backend.
 The runnable frontend accepts `tools-config FILE`, lists configured identifiers with `tools-status`,
 and resolves typed requests with `tool-run ID` or `tool-event opened|saved|level`. Those preview
 commands print the executable, working directory, and every argument on separate lines. Explicit

@@ -11,6 +11,7 @@ mod custom_object_controller;
 mod custom_sprite_controller;
 mod document;
 mod dsc_sidecar_controller;
+mod emulator_protocol;
 mod emulator_session;
 mod entity_appearance_document_controller;
 mod exanimation_clipboard;
@@ -145,6 +146,11 @@ pub use custom_sprite_controller::{
 pub use document::PreparedRomOpen;
 pub use dsc_sidecar_controller::{
     DscSidecarController, DscSidecarControllerError, DscSidecarSaveSnapshot,
+};
+pub use emulator_protocol::{
+    EmulatorBackendCommand, EmulatorBackendEvent, EmulatorProtocolError, EmulatorViewport,
+    MAX_EMULATOR_FRAME_HEIGHT, MAX_EMULATOR_FRAME_WIDTH, MAX_EMULATOR_ROM_BYTES,
+    MAX_EMULATOR_SPRITE_BYTES,
 };
 pub use emulator_session::{
     EmulatorPauseMode, EmulatorPauseReason, EmulatorSessionAction, EmulatorSessionState,
