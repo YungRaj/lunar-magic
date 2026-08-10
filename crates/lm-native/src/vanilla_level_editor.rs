@@ -2707,6 +2707,104 @@ impl VanillaLevelEditor {
         }
     }
 
+    /// Applies Lunar Magic's legacy Increase/Decrease Z Order operation: one stable creation-order
+    /// step, independent of overlap. The newer forward/back commands use different overlap-aware
+    /// semantics and intentionally do not route here.
+    pub(crate) fn toolbar_z_order_step(&mut self, increase: bool) {
+        let Some(domain) = self.canvas_entity_selection else {
+            self.error = Some("Z-order adjustment requires an object or sprite selection".into());
+            return;
+        };
+        let Some(controller) = self.controller.as_mut() else {
+            self.error = Some("level controller is unavailable".into());
+            return;
+        };
+        match domain {
+            CanvasEntitySelection::Layer1Object => {
+                let selected = selected_indexes(&self.selected_object_group, self.selected_object);
+                let mut predicted = controller.level().layer1.objects.clone();
+                let moved = predicted.adjust_ordinary_object_z_order(&selected, increase);
+                let moved = match moved {
+                    Ok(moved) => moved,
+                    Err(error) => {
+                        self.error = Some(error.to_string());
+                        return;
+                    }
+                };
+                match controller.apply_edits(&[NativeLevelEdit::Objects(vec![
+                    ObjectEdit::AdjustOrdinaryZOrder { selected, increase },
+                ])]) {
+                    Ok(()) => {
+                        self.selected_object_group = moved;
+                        self.selected_object = self.selected_object_group[0];
+                        self.reload_object_form();
+                        self.error = None;
+                    }
+                    Err(error) => self.error = Some(error.to_string()),
+                }
+            }
+            CanvasEntitySelection::Layer2Object => {
+                let selected = selected_indexes(
+                    &self.selected_layer2_object_group,
+                    self.selected_layer2_object,
+                );
+                let Some(lm_level::NativeLayer2Data::Objects(layer2)) = controller.layer2() else {
+                    self.error =
+                        Some("the current level does not use object-backed Layer 2".into());
+                    return;
+                };
+                let mut predicted = layer2.objects.clone();
+                let moved = match predicted.adjust_ordinary_object_z_order(&selected, increase) {
+                    Ok(moved) => moved,
+                    Err(error) => {
+                        self.error = Some(error.to_string());
+                        return;
+                    }
+                };
+                match controller.apply_layer2_object_edits(&[ObjectEdit::AdjustOrdinaryZOrder {
+                    selected,
+                    increase,
+                }]) {
+                    Ok(()) => {
+                        self.selected_layer2_object_group = moved;
+                        self.selected_layer2_object = self.selected_layer2_object_group[0];
+                        self.reload_layer2_object_form();
+                        self.error = None;
+                    }
+                    Err(error) => self.error = Some(error.to_string()),
+                }
+            }
+            CanvasEntitySelection::Sprite => {
+                let selected = selected_indexes(&self.selected_sprite_group, self.selected_sprite);
+                let vertical =
+                    lm_profile::smw_us_v1_level_mode(controller.level().layer1.header.level_mode())
+                        .vertical;
+                let mut predicted = controller.level().sprites.clone();
+                let moved = match predicted.adjust_record_z_order(&selected, increase, vertical) {
+                    Ok(moved) => moved,
+                    Err(error) => {
+                        self.error = Some(error.to_string());
+                        return;
+                    }
+                };
+                match controller
+                    .apply_edits(&[NativeLevelEdit::AdjustSpriteZOrder { selected, increase }])
+                {
+                    Ok(()) => {
+                        self.selected_sprite_group = moved;
+                        self.selected_sprite = self.selected_sprite_group[0];
+                        self.sprite_form = SpriteForm::from_token(
+                            controller.level().sprites.header,
+                            controller.level().sprites.tokens.get(self.selected_sprite),
+                        );
+                        self.error = None;
+                    }
+                    Err(error) => self.error = Some(error.to_string()),
+                }
+            }
+        }
+    }
+
     pub(crate) fn toolbar_zoom_filter_toggle(&mut self) {
         self.zoom_filter = Some(!self.zoom_filter());
         self.invalidate_graphics_preview();
@@ -17909,6 +18007,141 @@ mod tests {
                     && placement.sprite_number == moved_sprite.sprite_number
             });
         assert!(reopened_sprite.is_some());
+        app.dispatch(Command::Undo).unwrap();
+        assert_eq!(
+            app.project().unwrap().rom.logical_bytes(),
+            expanded_baseline
+        );
+    }
+
+    #[test]
+    fn toolbar_legacy_z_order_steps_preserve_positions_commit_reopen_and_undo() {
+        let mut app = AppState::default();
+        app.load_rom(crate::test_support::pristine_smw_us_rom_bytes())
+            .unwrap();
+        app.dispatch(Command::ExpandRom(lm_app::RomExpansionCommand {
+            expected_revision: 0,
+            mapper: Mapper::LoRom,
+            target_logical_len: 0x10_0000,
+            fill: 0xff,
+            checksum_field: 0x7fdc,
+        }))
+        .unwrap();
+        let expanded_baseline = app.project().unwrap().rom.logical_bytes().to_vec();
+        app.dispatch(Command::SelectLevel(0x105)).unwrap();
+        let snapshot = app.controller_snapshot().unwrap();
+        let mut editor = VanillaLevelEditor::default();
+        editor.load(
+            &snapshot,
+            EditorKey {
+                revision: snapshot.revision,
+                level: 0x105,
+                sprite_lengths_signature: ssc_sprite_lengths_signature(None),
+            },
+            None,
+        );
+
+        let original_level = editor.controller.as_ref().unwrap().level().clone();
+        let object_placements = original_level.layer1.objects.native_placements();
+        let object_pair = object_placements
+            .windows(2)
+            .find(|pair| {
+                original_level.layer1.objects.records[pair[0].record_index]
+                    != original_level.layer1.objects.records[pair[1].record_index]
+            })
+            .unwrap();
+        let first_object =
+            original_level.layer1.objects.records[object_pair[0].record_index].clone();
+        let second_object =
+            original_level.layer1.objects.records[object_pair[1].record_index].clone();
+        let mut original_object_positions = object_placements
+            .iter()
+            .map(|placement| (placement.major, placement.minor))
+            .collect::<Vec<_>>();
+        original_object_positions.sort_unstable();
+        editor.selected_object = object_pair[0].record_index;
+        editor.selected_object_group = vec![object_pair[0].record_index];
+        editor.canvas_entity_selection = Some(CanvasEntitySelection::Layer1Object);
+        editor.toolbar_z_order_step(true);
+        assert!(editor.error.is_none(), "{:?}", editor.error);
+        let reordered_objects = &editor.controller.as_ref().unwrap().level().layer1.objects;
+        assert!(
+            reordered_objects
+                .records
+                .iter()
+                .position(|record| record == &first_object)
+                .unwrap()
+                > reordered_objects
+                    .records
+                    .iter()
+                    .position(|record| record == &second_object)
+                    .unwrap()
+        );
+        let mut reordered_object_positions = reordered_objects
+            .native_placements()
+            .iter()
+            .map(|placement| (placement.major, placement.minor))
+            .collect::<Vec<_>>();
+        reordered_object_positions.sort_unstable();
+        assert_eq!(reordered_object_positions, original_object_positions);
+        assert!(editor.controller.as_mut().unwrap().undo());
+        assert_eq!(editor.controller.as_ref().unwrap().level(), &original_level);
+
+        let sprite_placements = original_level.sprites.native_placements();
+        let sprite_pair = sprite_placements
+            .windows(2)
+            .find(|pair| {
+                pair[0].screen == pair[1].screen
+                    && original_level.sprites.tokens[pair[0].token_index]
+                        != original_level.sprites.tokens[pair[1].token_index]
+            })
+            .unwrap();
+        let first_sprite = original_level.sprites.tokens[sprite_pair[0].token_index].clone();
+        let second_sprite = original_level.sprites.tokens[sprite_pair[1].token_index].clone();
+        editor.selected_sprite = sprite_pair[0].token_index;
+        editor.selected_sprite_group = vec![sprite_pair[0].token_index];
+        editor.canvas_entity_selection = Some(CanvasEntitySelection::Sprite);
+        editor.toolbar_z_order_step(true);
+        assert!(editor.error.is_none(), "{:?}", editor.error);
+        let reordered_sprites = &editor.controller.as_ref().unwrap().level().sprites;
+        assert!(
+            reordered_sprites
+                .tokens
+                .iter()
+                .position(|token| token == &first_sprite)
+                .unwrap()
+                > reordered_sprites
+                    .tokens
+                    .iter()
+                    .position(|token| token == &second_sprite)
+                    .unwrap()
+        );
+
+        app.dispatch(prepare_commit(editor.controller.as_ref().unwrap(), &snapshot).unwrap())
+            .unwrap();
+        let reopened = app
+            .project()
+            .unwrap()
+            .load_level_slot(
+                0x105,
+                lm_profile::smw_us_v1_vanilla_level_layout(),
+                &SpriteLengthTable::standard(),
+            )
+            .unwrap();
+        assert!(
+            reopened
+                .sprites
+                .tokens
+                .iter()
+                .position(|token| token == &first_sprite)
+                .unwrap()
+                > reopened
+                    .sprites
+                    .tokens
+                    .iter()
+                    .position(|token| token == &second_sprite)
+                    .unwrap()
+        );
         app.dispatch(Command::Undo).unwrap();
         assert_eq!(
             app.project().unwrap().rom.logical_bytes(),

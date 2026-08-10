@@ -521,6 +521,118 @@ impl NativeSpriteStream {
             .collect()
     }
 
+    /// Moves a sprite selection by one creation/Z-order step inside the same canonical game sort
+    /// group. Records on different screens (or expanded upper-Y/orientation bands) cannot cross,
+    /// matching Lunar Magic's documented "if possible" boundary.
+    pub fn adjust_record_z_order(
+        &mut self,
+        selected: &[usize],
+        increase: bool,
+        vertical: bool,
+    ) -> Result<Vec<usize>, LevelEditError> {
+        if selected.is_empty() {
+            return Err(LevelEditError::EmptySpriteSelection);
+        }
+        let mut selected_set = std::collections::BTreeSet::new();
+        for index in selected.iter().copied() {
+            if !selected_set.insert(index) {
+                return Err(LevelEditError::DuplicateSpriteSelection(index));
+            }
+            if index >= self.tokens.len() {
+                return Err(LevelEditError::IndexOutOfBounds {
+                    index,
+                    len: self.tokens.len(),
+                });
+            }
+        }
+
+        let mut active_upper_y = 0_u16;
+        let mut records = Vec::with_capacity(self.tokens.len());
+        for (index, token) in self.tokens.iter().enumerate() {
+            match token {
+                SpriteToken::Screen(value) => {
+                    if !self.expanded {
+                        return Err(LevelEditError::LegacyIncompatibleSpriteToken { index });
+                    }
+                    active_upper_y = u16::from(*value) * 32;
+                }
+                SpriteToken::Control(_) if !self.expanded => {
+                    return Err(LevelEditError::LegacyIncompatibleSpriteToken { index });
+                }
+                SpriteToken::Control(value) if (0x80..=0xfd).contains(value) => {}
+                SpriteToken::Control(value) => {
+                    return Err(LevelEditError::InvalidExpandedSpriteControl {
+                        index,
+                        value: *value,
+                    });
+                }
+                SpriteToken::Record(record) => {
+                    let fields =
+                        record
+                            .native_fields()
+                            .map_err(|_| LevelEditError::ShortSpriteRecord {
+                                index,
+                                len: record.encoded.len(),
+                            })?;
+                    records.push(GroupSpriteRecord {
+                        identity: index,
+                        major: u16::from(fields.screen) * 16 + u16::from(fields.x),
+                        minor: active_upper_y + u16::from(fields.y_low),
+                        record: record.clone(),
+                    });
+                }
+            }
+        }
+        for index in selected.iter().copied() {
+            if !records.iter().any(|record| record.identity == index) {
+                return Err(LevelEditError::LegacyIncompatibleSpriteToken { index });
+            }
+        }
+
+        let expanded = self.expanded;
+        crate::object_relocation::shift_selected_one_step(
+            &mut records,
+            |record| selected_set.contains(&record.identity),
+            increase,
+            |left, right| {
+                sprite_z_order_group(left, expanded, vertical)
+                    == sprite_z_order_group(right, expanded, vertical)
+            },
+        );
+
+        let mut rebuilt = Vec::with_capacity(records.len().saturating_mul(2));
+        let mut emitted_upper_y = 0_u16;
+        let mut selected_indexes = vec![None; selected.len()];
+        for record in records {
+            let upper_y = record.minor / 32;
+            if self.expanded && upper_y != emitted_upper_y {
+                rebuilt.push(SpriteToken::Screen(u8::try_from(upper_y).map_err(
+                    |_| LevelEditError::ExpandedSpriteYOutOfRange(record.minor),
+                )?));
+                emitted_upper_y = upper_y;
+            }
+            if let Some(ordinal) = selected
+                .iter()
+                .position(|identity| *identity == record.identity)
+            {
+                selected_indexes[ordinal] = Some(rebuilt.len());
+            }
+            rebuilt.push(SpriteToken::Record(record.record));
+        }
+        self.tokens = rebuilt;
+        self.canonicalize_framing();
+        selected_indexes
+            .into_iter()
+            .enumerate()
+            .map(|(ordinal, index)| {
+                index.ok_or(LevelEditError::IndexOutOfBounds {
+                    index: selected[ordinal],
+                    len: self.tokens.len(),
+                })
+            })
+            .collect()
+    }
+
     /// Replaces every proven native base field of one sprite record while preserving its extension
     /// bytes and current expanded upper-Y band. The record is then tracked through Lunar Magic's
     /// legacy or orientation-aware expanded ordering. Returns its resulting token index.
@@ -764,6 +876,22 @@ struct GroupSpriteRecord {
     record: crate::SpriteRecord,
 }
 
+fn sprite_z_order_group(
+    record: &GroupSpriteRecord,
+    expanded: bool,
+    vertical: bool,
+) -> (u16, u16, u16) {
+    (
+        record.major / 16,
+        if expanded { record.minor / 32 } else { 0 },
+        if expanded && vertical {
+            record.minor & 0x0f
+        } else {
+            0
+        },
+    )
+}
+
 fn validate_legacy_token(token: &SpriteToken, index: usize) -> Result<(), LevelEditError> {
     match token {
         SpriteToken::Record(record) if record.encoded.first() == Some(&0xff) => {
@@ -895,6 +1023,77 @@ mod tests {
         assert!(!stream.expanded);
         assert!(stream.insert(1, SpriteToken::Control(0x80)).is_err());
         assert_eq!(stream.tokens, [sprite(1)]);
+    }
+
+    #[test]
+    fn sprite_z_order_step_is_stable_and_cannot_cross_game_sort_groups() {
+        let mut stream = NativeSpriteStream {
+            header: 0,
+            expanded: false,
+            tokens: vec![
+                sprite_on_screen(0, 0x10),
+                sprite_on_screen(0, 0x20),
+                sprite_on_screen(1, 0x30),
+                sprite_on_screen(1, 0x40),
+            ],
+        };
+        assert_eq!(
+            stream.adjust_record_z_order(&[0], true, false).unwrap(),
+            [1]
+        );
+        assert_eq!(
+            stream
+                .tokens
+                .iter()
+                .map(|token| match token {
+                    SpriteToken::Record(record) => record.encoded[2],
+                    _ => unreachable!(),
+                })
+                .collect::<Vec<_>>(),
+            [0x20, 0x10, 0x30, 0x40]
+        );
+        assert_eq!(
+            stream.adjust_record_z_order(&[1], true, false).unwrap(),
+            [1]
+        );
+        assert_eq!(
+            stream
+                .tokens
+                .iter()
+                .map(|token| match token {
+                    SpriteToken::Record(record) => record.encoded[2],
+                    _ => unreachable!(),
+                })
+                .collect::<Vec<_>>(),
+            [0x20, 0x10, 0x30, 0x40],
+            "the last sprite on screen zero cannot cross the first sprite on screen one"
+        );
+        assert_eq!(
+            stream.adjust_record_z_order(&[2, 3], false, false).unwrap(),
+            [2, 3]
+        );
+    }
+
+    #[test]
+    fn expanded_sprite_z_order_respects_upper_y_and_vertical_nibble_groups() {
+        let mut stream = NativeSpriteStream {
+            header: 0,
+            expanded: true,
+            tokens: vec![
+                sprite_at(0, 1, 0x10),
+                sprite_at(0, 1, 0x20),
+                sprite_at(0, 2, 0x30),
+                SpriteToken::Screen(1),
+                sprite_at(0, 1, 0x40),
+            ],
+        };
+        assert_eq!(stream.adjust_record_z_order(&[0], true, true).unwrap(), [1]);
+        assert_eq!(stream.adjust_record_z_order(&[1], true, true).unwrap(), [1]);
+        assert_eq!(stream.adjust_record_z_order(&[2], true, true).unwrap(), [2]);
+        assert_eq!(
+            stream.adjust_record_z_order(&[4], false, true).unwrap(),
+            [4]
+        );
     }
 
     #[test]

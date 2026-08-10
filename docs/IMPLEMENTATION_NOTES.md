@@ -5019,3 +5019,25 @@ record indexes. `toolbar_coordinate_commands_nudge_objects_and_sprites_through_s
 moves both domains, proves staged Undo, commits into an expanded vanilla ROM, semantically reopens
 the moved sprite, and proves application Undo restores the byte-exact expanded baseline. The
 authenticated native-route count therefore advances from 187 to 191 table slots.
+
+## Legacy one-step level Z order
+
+Lunar Magic's 3.63 CHM distinguishes the hidden legacy `LM_EDIT_ZORDER_UP`/`DOWN` commands from
+the four newer menu commands. The 2.30 change log says Increase/Decrease Z Order move one raw
+creation-order step, while Bring Forward/Send Backward skip non-overlapping records. The legacy
+commands remain bound to Ctrl+Alt+Shift+Plus/Minus even though they were removed from the menu.
+
+Rust routes authenticated commands `$245E/$245F` only through the one-step operation. A complete
+Layer 1, object-backed Layer 2, or sprite selection moves stably past one adjacent unselected
+record. Object serialization regenerates forward and backtracking screen jumps so creation order
+can change without changing any absolute placement. Sprite serialization permits the step only
+inside the same game-imposed screen and, for expanded streams, upper-Y/orientation group. This is
+the original's documented “if possible” constraint.
+
+Model tests cover multi-selection stability, cross-screen object backtracking, legacy sprite screen
+boundaries, and expanded vertical grouping. The installed-editor test performs both object and
+sprite actions against vanilla level `$105`, proves placement preservation and staged Undo, commits
+the sprite ordering, semantically reopens it, and restores the byte-exact expanded ROM through
+application Undo. Native authenticated routing advances from 191 to 193 table slots. The four
+overlap-aware front/back commands remain intentionally separate and unrouted until their rendered
+intersection traversal is implemented.

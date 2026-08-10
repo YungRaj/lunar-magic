@@ -403,6 +403,76 @@ impl ObjectStream {
         self.records = records;
         Ok(selected_indexes)
     }
+
+    /// Changes the creation/Z order of a positioned object selection by one record while
+    /// preserving every object's absolute screen and coordinates. Selected records move as one
+    /// stable group past the adjacent unselected record; owned screen transitions are regenerated
+    /// so crossing a screen boundary cannot change placement.
+    pub fn adjust_ordinary_object_z_order(
+        &mut self,
+        selected: &[usize],
+        increase: bool,
+    ) -> Result<Vec<usize>, ObjectRelocationError> {
+        if selected.is_empty() {
+            return Err(ObjectRelocationError::EmptySelection);
+        }
+        let (mut positioned, trailing_controls) = decode_positioned_objects(self)?;
+        let mut selected_set = std::collections::BTreeSet::new();
+        for index in selected.iter().copied() {
+            if !selected_set.insert(index) {
+                return Err(ObjectRelocationError::DuplicateSelection(index));
+            }
+            if index >= self.records.len() {
+                return Err(ObjectRelocationError::IndexOutOfBounds {
+                    index,
+                    len: self.records.len(),
+                });
+            }
+            if !positioned
+                .iter()
+                .any(|object| object.original_index == index)
+            {
+                return Err(ObjectRelocationError::NotOrdinaryObject(index));
+            }
+        }
+        shift_selected_one_step(
+            &mut positioned,
+            |object| selected_set.contains(&object.original_index),
+            increase,
+            |_, _| true,
+        );
+        let (mut records, selected_indexes) = encode_positioned_object_group(positioned, selected)?;
+        records.extend(trailing_controls);
+        self.records = records;
+        Ok(selected_indexes)
+    }
+}
+
+pub(crate) fn shift_selected_one_step<T>(
+    values: &mut [T],
+    selected: impl Fn(&T) -> bool,
+    increase: bool,
+    can_swap: impl Fn(&T, &T) -> bool,
+) {
+    if increase {
+        for index in (0..values.len().saturating_sub(1)).rev() {
+            if selected(&values[index])
+                && !selected(&values[index + 1])
+                && can_swap(&values[index], &values[index + 1])
+            {
+                values.swap(index, index + 1);
+            }
+        }
+    } else {
+        for index in 1..values.len() {
+            if selected(&values[index])
+                && !selected(&values[index - 1])
+                && can_swap(&values[index - 1], &values[index])
+            {
+                values.swap(index - 1, index);
+            }
+        }
+    }
 }
 
 fn decode_positioned_objects(
@@ -711,6 +781,90 @@ mod tests {
             Err(ObjectRelocationError::DuplicateSelection(1))
         );
         assert_eq!(stream, original);
+    }
+
+    #[test]
+    fn z_order_step_preserves_positions_across_forward_and_backtracking_screen_jumps() {
+        let mut stream = ObjectStream {
+            records: vec![
+                object(false, 1, 2, 0x10),
+                ObjectRecord::new(vec![2, 0, 1]).unwrap(),
+                object(false, 3, 4, 0x20),
+                object(false, 5, 6, 0x30),
+            ],
+        };
+        let before = stream
+            .native_placements()
+            .into_iter()
+            .map(|placement| {
+                (
+                    stream.records[placement.record_index].parameter(),
+                    placement.screen,
+                    placement.major,
+                    placement.minor,
+                )
+            })
+            .collect::<Vec<_>>();
+        let moved = stream.adjust_ordinary_object_z_order(&[0], true).unwrap();
+        assert_eq!(moved, vec![3]);
+        let after = stream
+            .native_placements()
+            .into_iter()
+            .map(|placement| {
+                (
+                    stream.records[placement.record_index].parameter(),
+                    placement.screen,
+                    placement.major,
+                    placement.minor,
+                )
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(after[0].0, 0x20);
+        assert_eq!(after[1].0, 0x10);
+        for original in before {
+            assert!(after.contains(&original));
+        }
+        assert!(stream.records.iter().any(|record| {
+            record
+                .screen_jump()
+                .is_some_and(|jump| jump.resolved_screen() == 0)
+        }));
+    }
+
+    #[test]
+    fn z_order_multi_selection_moves_stably_by_one_unselected_record() {
+        let mut stream = ObjectStream {
+            records: vec![
+                object(false, 1, 1, 0x10),
+                object(false, 2, 2, 0x20),
+                object(false, 3, 3, 0x30),
+                object(false, 4, 4, 0x40),
+            ],
+        };
+        let moved = stream
+            .adjust_ordinary_object_z_order(&[0, 2], true)
+            .unwrap();
+        assert_eq!(moved, vec![1, 3]);
+        assert_eq!(
+            stream
+                .records
+                .iter()
+                .map(ObjectRecord::parameter)
+                .collect::<Vec<_>>(),
+            [0x20, 0x10, 0x40, 0x30]
+        );
+        let moved = stream
+            .adjust_ordinary_object_z_order(&moved, false)
+            .unwrap();
+        assert_eq!(moved, vec![0, 2]);
+        assert_eq!(
+            stream
+                .records
+                .iter()
+                .map(ObjectRecord::parameter)
+                .collect::<Vec<_>>(),
+            [0x10, 0x20, 0x30, 0x40]
+        );
     }
 
     #[test]

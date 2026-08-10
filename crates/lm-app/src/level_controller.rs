@@ -72,6 +72,10 @@ pub enum NativeLevelEdit {
         major_delta: i32,
         minor_delta: i32,
     },
+    AdjustSpriteZOrder {
+        selected: Vec<usize>,
+        increase: bool,
+    },
     RelocateExpandedSprite {
         selected: usize,
         screen: u8,
