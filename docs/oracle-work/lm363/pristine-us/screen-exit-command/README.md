@@ -21,9 +21,13 @@ client mouse cell and calls `FollowScreenExitDestinationAtCell` (`00489CD0`); `$
 cell and calls `OpenScreenExitEditorAtCell` (`00489C80`). Rust now retains the actual painted level
 canvas geometry, resolves the live pointer through zoom, bounds, and horizontal/vertical axis
 orientation, and routes `$26FF` to the same complete table with the targeted screen preselected and
-scrolled into view. Outside-canvas and out-of-level cells remain no-ops. `$26FE` remains pending
-because its distinct dirty-save prompt, primary/midway/secondary destination state, overworld-exit
-rejection, and level-navigation transaction must be preserved together.
+scrolled into view. Outside-canvas and out-of-level cells remain no-ops. `$26FE` now uses that same
+cell mapping, resolves direct and midway destinations plus the full 8,192-entry secondary table,
+rejects absent and overworld exits with the original status text, and navigates clean levels. A
+modified level instead enters Save/Discard/Cancel: Discard abandons only the staged controller and
+navigates, Cancel retains it, and Save waits for the exact revision-bound commit before navigating.
+If Layer 1/2 relocation first needs pristine-ROM expansion, navigation waits through both successful
+revisions; any failed or stale expansion/commit clears the deferred destination.
 
 Rust binds `$2523` to a complete 32-screen staged form. `ObjectEdit::ReplaceScreenExitTable`
 performs the recovered deduplication, absence, retention, encoding-shape, and ordering behavior as

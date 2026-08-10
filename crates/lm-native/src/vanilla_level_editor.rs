@@ -387,6 +387,13 @@ struct LevelCanvasGeometry {
     vertical: bool,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct PendingScreenExitFollowSave {
+    destination: u16,
+    final_revision: u64,
+    intermediate_revision: Option<u64>,
+}
+
 #[derive(Default)]
 pub(crate) struct VanillaLevelEditor {
     key: Option<EditorKey>,
@@ -454,6 +461,8 @@ pub(crate) struct VanillaLevelEditor {
     screen_exit_table_form: Option<[Option<u16>; 32]>,
     screen_exit_table_selected: Option<u8>,
     canvas_geometry: Option<LevelCanvasGeometry>,
+    screen_exit_follow_prompt: Option<u16>,
+    screen_exit_follow_after_save: Option<PendingScreenExitFollowSave>,
     game_preview: Option<bool>,
     snes_viewport: Option<bool>,
     draw_selection_over_live: Option<bool>,
@@ -594,13 +603,24 @@ impl VanillaLevelEditor {
             level,
             sprite_lengths_signature: ssc_sprite_lengths_signature(custom_sprites),
         };
+        if let Some(command) = self.take_screen_exit_follow_after_save(&snapshot) {
+            return Some(command);
+        }
         match self.take_pending_expansion_commit(&snapshot) {
-            Ok(Some(command)) => return Some(command),
+            Ok(Some(command)) => {
+                if let Some(pending) = &mut self.screen_exit_follow_after_save {
+                    pending.intermediate_revision = None;
+                }
+                return Some(command);
+            }
             Ok(None) => {}
             Err(error) => self.error = Some(error),
         }
         if self.key != Some(key) {
             self.load(&snapshot, key, custom_sprites);
+        }
+        if let Some(command) = self.show_screen_exit_follow_confirmation(ui.ctx(), &snapshot) {
+            return Some(command);
         }
         if self.external_asset_revision != external_asset_revision {
             self.external_asset_revision = external_asset_revision;
@@ -1681,6 +1701,7 @@ impl VanillaLevelEditor {
         self.screen_exit_table_form = None;
         self.screen_exit_table_selected = None;
         self.canvas_geometry = None;
+        self.screen_exit_follow_prompt = None;
         self.pending_layer2_mode_reset = None;
         self.canvas_entity_selection = None;
         if let Err(error) = validate_builtin_graphics_layout(snapshot) {
@@ -1878,6 +1899,8 @@ impl VanillaLevelEditor {
         self.screen_exit_table_form = None;
         self.screen_exit_table_selected = None;
         self.canvas_geometry = None;
+        self.screen_exit_follow_prompt = None;
+        self.screen_exit_follow_after_save = None;
         self.entrance_controller = None;
         self.secondary_exits = None;
         self.secondary_exit_references = None;
@@ -2743,6 +2766,136 @@ impl VanillaLevelEditor {
         self.screen_exit_table_selected = Some(screen);
         self.toolbar_open_tool_panel(LevelToolPanel::ScreenExits);
         true
+    }
+
+    /// Mirrors Lunar Magic command `$26FE`: resolve the screen exit under the current canvas
+    /// pointer and navigate immediately only when the staged level is clean. Modified levels enter
+    /// the original Save/Discard/Cancel boundary first.
+    pub(crate) fn toolbar_follow_screen_exit_at_pointer(
+        &mut self,
+        context: &egui::Context,
+    ) -> Result<Option<Command>, String> {
+        let Some(position) = context.pointer_hover_pos() else {
+            return Ok(None);
+        };
+        let Some(geometry) = self.canvas_geometry else {
+            return Ok(None);
+        };
+        let Some(screen) = screen_at_canvas_position(position, geometry) else {
+            return Ok(None);
+        };
+        let controller = self
+            .controller
+            .as_ref()
+            .ok_or_else(|| "the current level is unavailable".to_owned())?;
+        let destination = screen_exit_follow_destination(
+            &controller.level().layer1.objects.records,
+            self.secondary_exits.as_ref(),
+            screen,
+        )?;
+        if controller.is_modified() {
+            self.screen_exit_follow_prompt = Some(destination);
+            Ok(None)
+        } else {
+            Ok(Some(Command::SelectLevel(destination)))
+        }
+    }
+
+    fn take_screen_exit_follow_after_save(
+        &mut self,
+        snapshot: &lm_app::ControllerSnapshot,
+    ) -> Option<Command> {
+        let pending = self.screen_exit_follow_after_save?;
+        if snapshot.revision == pending.final_revision {
+            self.screen_exit_follow_after_save = None;
+            return Some(Command::SelectLevel(pending.destination));
+        }
+        if pending.intermediate_revision == Some(snapshot.revision)
+            && self.pending_expansion_commit.is_some()
+        {
+            return None;
+        }
+        self.screen_exit_follow_after_save = None;
+        self.pending_expansion_commit = None;
+        None
+    }
+
+    fn show_screen_exit_follow_confirmation(
+        &mut self,
+        context: &egui::Context,
+        snapshot: &lm_app::ControllerSnapshot,
+    ) -> Option<Command> {
+        let destination = self.screen_exit_follow_prompt?;
+        let mut choice = None;
+        egui::Window::new("Save level to ROM?")
+            .collapsible(false)
+            .resizable(false)
+            .show(context, |ui| {
+                ui.label(format!(
+                    "The current level has staged changes. Save before following this exit to level {destination:03X}?"
+                ));
+                ui.horizontal(|ui| {
+                    if ui.button("Save").clicked() {
+                        choice = Some(0_u8);
+                    }
+                    if ui.button("Discard").clicked() {
+                        choice = Some(1);
+                    }
+                    if ui.button("Cancel").clicked() {
+                        choice = Some(2);
+                    }
+                });
+            });
+        match choice {
+            Some(0) => {
+                let controller = self.controller.as_ref()?;
+                let expanded = RomImage::from_bytes(snapshot.rom_bytes.clone())
+                    .is_ok_and(|image| image.logical_len() > 0x80_000);
+                let relocation_needed =
+                    controller.layer1_is_modified() || controller.layer2_is_modified();
+                let expansion = !expanded && relocation_needed;
+                let steps = if expansion { 2 } else { 1 };
+                let Some(final_revision) = snapshot.revision.checked_add(steps) else {
+                    self.error = Some("project revision overflow".into());
+                    return None;
+                };
+                self.screen_exit_follow_prompt = None;
+                self.screen_exit_follow_after_save = Some(PendingScreenExitFollowSave {
+                    destination,
+                    final_revision,
+                    intermediate_revision: expansion.then(|| snapshot.revision + 1),
+                });
+                if expansion {
+                    self.pending_expansion_commit = Some(controller.clone());
+                    Some(Command::ExpandRom(RomExpansionCommand {
+                        expected_revision: snapshot.revision,
+                        mapper: snapshot.identity.mapper,
+                        target_logical_len: 0x10_0000,
+                        fill: 0xff,
+                        checksum_field: snapshot.identity.internal_header_offset + 0x1c,
+                    }))
+                } else {
+                    match prepare_commit(controller, snapshot) {
+                        Ok(command) => Some(command),
+                        Err(error) => {
+                            self.screen_exit_follow_after_save = None;
+                            self.error = Some(error);
+                            None
+                        }
+                    }
+                }
+            }
+            Some(1) => {
+                self.screen_exit_follow_prompt = None;
+                self.key = None;
+                Some(Command::SelectLevel(destination))
+            }
+            Some(2) => {
+                self.screen_exit_follow_prompt = None;
+                None
+            }
+            _ => None,
+        }
     }
 
     /// Mirrors Lunar Magic 3.63's four entrance-view commands. The aggregate command owns an
@@ -8660,6 +8813,28 @@ fn screen_at_canvas_position(position: egui::Pos2, geometry: LevelCanvasGeometry
         return None;
     }
     u8::try_from(major / 16).ok().filter(|screen| *screen < 32)
+}
+
+fn screen_exit_follow_destination(
+    records: &[ObjectRecord],
+    secondary_exits: Option<&SecondaryExitTable>,
+    screen: u8,
+) -> Result<u16, String> {
+    let destination_and_flags = screen_exit_table(records)[usize::from(screen)]
+        .ok_or_else(|| "No exit on this screen.".to_owned())?;
+    let destination = (destination_and_flags >> 3) & 0x1e00 | destination_and_flags & 0x01ff;
+    if destination_and_flags & 0x0200 == 0 {
+        return (destination < 0x200)
+            .then_some(destination)
+            .ok_or_else(|| format!("Level destination {destination:04X} is out of range."));
+    }
+    let exit = secondary_exits
+        .and_then(|table| table.entries.get(usize::from(destination)))
+        .ok_or_else(|| format!("Secondary exit {destination:04X} is unavailable."))?;
+    if exit.x_and_overworld_flags & 0x80 != 0 {
+        return Err("Destination is for overworld, not level.".into());
+    }
+    Ok(exit.destination_level)
 }
 
 fn level_screen_exit_annotations(
@@ -18108,6 +18283,133 @@ mod tests {
             Some(LevelToolPanel::ScreenExits)
         );
         assert_eq!(editor.tools_panel_visible, Some(true));
+        let _ = context.end_pass();
+    }
+
+    #[test]
+    fn mouse_follow_screen_exit_resolves_direct_midway_secondary_absent_and_overworld() {
+        let records = vec![
+            ObjectRecord::new(vec![0x00, 0, 2, 0x2a, 0x05]).unwrap(),
+            ObjectRecord::new(vec![0x01, 0, 2, 0x44, 0x0c]).unwrap(),
+            ObjectRecord::new(vec![0x02, 0, 2, 0x23, 0x07]).unwrap(),
+        ];
+        let mut secondary = SecondaryExitTable {
+            entries: vec![lm_level::SecondaryExit::default(); SecondaryExitTable::ENTRY_COUNT],
+        };
+        secondary.entries[0x123].destination_level = 0x1ab;
+        assert_eq!(
+            screen_exit_follow_destination(&records, Some(&secondary), 0).unwrap(),
+            0x12a
+        );
+        assert_eq!(
+            screen_exit_follow_destination(&records, Some(&secondary), 1).unwrap(),
+            0x044
+        );
+        assert_eq!(
+            screen_exit_follow_destination(&records, Some(&secondary), 2).unwrap(),
+            0x1ab
+        );
+        assert_eq!(
+            screen_exit_follow_destination(&records, Some(&secondary), 3).unwrap_err(),
+            "No exit on this screen."
+        );
+        secondary.entries[0x123].x_and_overworld_flags = 0x80;
+        assert_eq!(
+            screen_exit_follow_destination(&records, Some(&secondary), 2).unwrap_err(),
+            "Destination is for overworld, not level."
+        );
+    }
+
+    #[test]
+    fn successful_follow_save_revision_navigates_and_failed_revision_clears_request() {
+        let mut app = AppState::default();
+        app.load_rom(crate::test_support::pristine_smw_us_rom_bytes())
+            .unwrap();
+        app.dispatch(Command::SelectLevel(0x105)).unwrap();
+        let snapshot = app.controller_snapshot().unwrap();
+        let mut editor = VanillaLevelEditor {
+            screen_exit_follow_after_save: Some(PendingScreenExitFollowSave {
+                destination: 0x106,
+                final_revision: snapshot.revision,
+                intermediate_revision: None,
+            }),
+            ..VanillaLevelEditor::default()
+        };
+        assert_eq!(
+            editor.take_screen_exit_follow_after_save(&snapshot),
+            Some(Command::SelectLevel(0x106))
+        );
+        assert_eq!(editor.screen_exit_follow_after_save, None);
+
+        editor.screen_exit_follow_after_save = Some(PendingScreenExitFollowSave {
+            destination: 0x107,
+            final_revision: snapshot.revision + 1,
+            intermediate_revision: None,
+        });
+        assert_eq!(editor.take_screen_exit_follow_after_save(&snapshot), None);
+        assert_eq!(editor.screen_exit_follow_after_save, None);
+    }
+
+    #[test]
+    fn modified_mouse_follow_waits_for_confirmation_and_undo_removes_staged_destination() {
+        let mut app = AppState::default();
+        app.load_rom(crate::test_support::pristine_smw_us_rom_bytes())
+            .unwrap();
+        app.dispatch(Command::SelectLevel(0x105)).unwrap();
+        let snapshot = app.controller_snapshot().unwrap();
+        let key = EditorKey {
+            revision: snapshot.revision,
+            level: 0x105,
+            sprite_lengths_signature: ssc_sprite_lengths_signature(None),
+        };
+        let mut editor = VanillaLevelEditor::default();
+        editor.load(&snapshot, key, None);
+        let mut exits = screen_exit_table(
+            &editor
+                .controller
+                .as_ref()
+                .unwrap()
+                .level()
+                .layer1
+                .objects
+                .records,
+        );
+        exits[2] = Some(0x052a);
+        editor
+            .controller
+            .as_mut()
+            .unwrap()
+            .apply_edits(&[NativeLevelEdit::Objects(vec![
+                ObjectEdit::ReplaceScreenExitTable { exits },
+            ])])
+            .unwrap();
+        editor.canvas_geometry = Some(LevelCanvasGeometry {
+            rect: egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(640.0, 270.0)),
+            cell: 10.0,
+            major_tiles: 64,
+            minor_tiles: 27,
+            vertical: false,
+        });
+        let context = egui::Context::default();
+        context.begin_pass(egui::RawInput {
+            events: vec![egui::Event::PointerMoved(egui::pos2(325.0, 5.0))],
+            ..egui::RawInput::default()
+        });
+        assert_eq!(
+            editor
+                .toolbar_follow_screen_exit_at_pointer(&context)
+                .unwrap(),
+            None
+        );
+        assert_eq!(editor.screen_exit_follow_prompt, Some(0x12a));
+        assert!(editor.controller.as_mut().unwrap().undo());
+        editor.screen_exit_follow_prompt = None;
+        assert_eq!(
+            editor
+                .toolbar_follow_screen_exit_at_pointer(&context)
+                .unwrap_err(),
+            "No exit on this screen."
+        );
         let _ = context.end_pass();
     }
 

@@ -110,5 +110,8 @@ publication matches the recovered last-duplicate-wins normalization, absent-entr
 advance-bit retention, compact/extended encoding selection, ascending list-end placement, and one
 Undo boundary. Cursor-cell command `$26FF` now resolves the live pointer through the painted canvas
 geometry, zoom, bounds, and orientation, then opens that table with the exact source screen
-preselected; `$26FE` remains separate and pending because it navigates through a dirty-save gate.
-The authenticated partition is therefore 234 routed and 83 pending slots.
+preselected. `$26FE` now resolves direct, midway, and secondary destinations, rejects absent and
+overworld exits, and preserves the original dirty Save/Discard/Cancel gate; Save navigates only
+after successful commit and any required expansion, while stale/failing revisions cancel the
+deferred destination.
+The authenticated partition is therefore 235 routed and 82 pending slots.

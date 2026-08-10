@@ -429,6 +429,16 @@ impl NativeApplication {
                 self.vanilla_level_editor
                     .toolbar_open_screen_exit_at_pointer(context);
             }
+            UserToolbarNativeAction::FollowScreenExitAtPointer => {
+                match self
+                    .vanilla_level_editor
+                    .toolbar_follow_screen_exit_at_pointer(context)
+                {
+                    Ok(Some(command)) => self.dispatch(context, command),
+                    Ok(None) => {}
+                    Err(error) => self.effects.error = Some(error),
+                }
+            }
             UserToolbarNativeAction::PlaceObject => {
                 self.vanilla_level_editor.toolbar_place_object();
             }
@@ -1227,6 +1237,7 @@ enum UserToolbarNativeAction {
     DeleteLevel,
     OpenSecondaryEntrances,
     OpenScreenExitAtPointer,
+    FollowScreenExitAtPointer,
     PlaceObject,
     PlaceSprite,
     OpenLevelToolPanel(crate::vanilla_level_editor::LevelToolPanel),
@@ -1279,6 +1290,7 @@ fn user_toolbar_native_action(name: &str) -> Option<UserToolbarNativeAction> {
         "LM_FILE_DELETE_LEVEL" => UserToolbarNativeAction::DeleteLevel,
         "LM_LEVEL_ENTRANCE2" => UserToolbarNativeAction::OpenSecondaryEntrances,
         "LM_MOUSE_EDIT_SCREEN_EXIT" => UserToolbarNativeAction::OpenScreenExitAtPointer,
+        "LM_MOUSE_SCREEN_EXIT" => UserToolbarNativeAction::FollowScreenExitAtPointer,
         "LM_VIEW_ADD_OBJECT" | "LM_VIEW_OBJECT" | "LM_VIEW_ADD_OBJECT_OLD" => {
             UserToolbarNativeAction::PlaceObject
         }
@@ -1681,6 +1693,10 @@ mod user_toolbar_tests {
         assert_eq!(
             user_toolbar_native_action("LM_MOUSE_EDIT_SCREEN_EXIT"),
             Some(UserToolbarNativeAction::OpenScreenExitAtPointer)
+        );
+        assert_eq!(
+            user_toolbar_native_action("LM_MOUSE_SCREEN_EXIT"),
+            Some(UserToolbarNativeAction::FollowScreenExitAtPointer)
         );
         assert_eq!(
             user_toolbar_native_action("LM_HELP_ABOUT"),
@@ -2113,7 +2129,7 @@ mod user_toolbar_tests {
                     || user_toolbar_native_action(entry.name).is_some()
             })
             .collect::<Vec<_>>();
-        assert_eq!(supported.len(), 234);
+        assert_eq!(supported.len(), 235);
         assert!(
             supported
                 .iter()
@@ -2130,7 +2146,7 @@ mod user_toolbar_tests {
                     && user_toolbar_native_action(entry.name).is_none()
             })
             .collect::<Vec<_>>();
-        assert_eq!(unsupported.len(), 83);
+        assert_eq!(unsupported.len(), 82);
         if std::env::var_os("LM_DIAGNOSTIC_UNSUPPORTED_TOOLBAR_COMMANDS").is_some() {
             for entry in unsupported {
                 eprintln!(
