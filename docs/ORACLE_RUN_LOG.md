@@ -944,3 +944,20 @@ record carries an exclusive byte-length ceiling: an in-count string is cleared w
 length is greater than or equal to that ceiling; ranges use an exclusive end. Rust retains the
 tables verbatim in `original_language_validation.rs`. Boundary, neighboring-range, exclusive-end,
 and isolated-entry regression tests pass as part of the 17-test localization suite.
+
+## Original language-module typed catalog conversion
+
+`CreateMainApplicationMenu` (`00447540`) was re-audited instruction-by-instruction. Every localized
+menu insertion reads one dword slot rooted at `$0095BB90`, adds the decoded pool base when nonzero,
+and otherwise selects a nearby built-in English pointer before `AppendUtf8MenuItem`. The retained
+headless extractor records those index/fallback/function triples. Thirty-one typed equivalents are
+now bound, including five top-level menus, ROM open/save/recent/exit, expansion, level analysis,
+restore/IPS, Edit clipboard/history, four layer views, emulator actions, Special World Passed, and
+Help Contents/About. Rust-only keys remain English rather than borrowing a merely similar original
+string.
+
+The five-resource synthetic PE gate validates checksum, metadata, `$DAC/$DAD/$DAE`, fixed-buffer
+guards, normalization, typed conversion, and fallback in one call. All 20 localization tests pass.
+Native discovery now retains the converted catalog beside original metadata, Language-menu choices
+install it directly, and auto-detection compares canonical `.lmlang` and converted `.dll` candidates
+in the same exact-then-primary pass. Eight loader tests and 11 preference tests pass.

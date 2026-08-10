@@ -52,6 +52,30 @@ impl OriginalLanguageStringPool {
     pub fn get(&self, index: usize) -> Option<&str> {
         self.strings.get(index)?.as_deref()
     }
+
+    /// Converts every evidence-backed original UI string into the complete typed Rust catalog.
+    /// Rust-only workflows deliberately retain their built-in English text.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`LocalizationError`] when the module locale or a converted value violates the
+    /// bounded typed-catalog contract.
+    pub fn to_catalog(
+        &self,
+        locale: impl Into<String>,
+    ) -> Result<LocalizationCatalog, LocalizationError> {
+        LocalizationCatalog::new(
+            locale,
+            UiTextKey::ALL.into_iter().map(|key| {
+                let text = original_string_index(key)
+                    .and_then(|index| self.get(index))
+                    .map(|text| normalize_original_ui_text(key, text))
+                    .filter(|text| !text.is_empty())
+                    .unwrap_or_else(|| key.english().to_owned());
+                (key, text)
+            }),
+        )
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -64,6 +88,7 @@ pub enum OriginalLanguageModuleError {
     Inflate(String),
     InflatedPoolTooLong(usize),
     InvalidStringUtf8(usize),
+    InvalidCatalog(LocalizationError),
     WrongMarker,
     MetadataTooLong(usize),
     InvalidUtf8,
@@ -211,6 +236,96 @@ pub fn decode_original_language_module_strings(
         resources.resource(0x0dad)?,
         resources.resource(0x0dae)?,
     )
+}
+
+/// Validates one original DLL and converts its supported strings into a complete typed catalog.
+///
+/// Original strings without an evidence-backed semantic equivalent are intentionally ignored;
+/// Rust-only keys retain their built-in English values.
+///
+/// # Errors
+///
+/// Returns [`OriginalLanguageModuleError`] for module/resource failures or an invalid converted
+/// catalog.
+pub fn decode_original_language_module_catalog(
+    bytes: &[u8],
+) -> Result<(OriginalLanguageModuleMetadata, LocalizationCatalog), OriginalLanguageModuleError> {
+    validate_original_language_module_checksum(bytes)?;
+    let resources = PeResources::parse(bytes)?;
+    let metadata = OriginalLanguageModuleMetadata::decode(
+        resources.resource(0x0db7)?,
+        resources.resource(0x0db6)?,
+    )?;
+    let strings = decode_original_language_string_resources(
+        resources.resource(0x0dac)?,
+        resources.resource(0x0dad)?,
+        resources.resource(0x0dae)?,
+    )?;
+    let catalog = strings
+        .to_catalog(metadata.locale.clone())
+        .map_err(OriginalLanguageModuleError::InvalidCatalog)?;
+    Ok((metadata, catalog))
+}
+
+fn original_string_index(key: UiTextKey) -> Option<usize> {
+    Some(match key {
+        UiTextKey::MenuFile => 0x000a,
+        UiTextKey::MenuEdit => 0x000b,
+        UiTextKey::MenuView => 0x000c,
+        UiTextKey::MenuEditors => 0x000d,
+        UiTextKey::MenuHelp => 0x0010,
+        UiTextKey::FileOpen => 0x0011,
+        UiTextKey::FileSave => 0x0014,
+        UiTextKey::FileSaveAs => 0x0015,
+        UiTextKey::FileExpandRom => 0x001f,
+        UiTextKey::ToolsTestRomInEmulator => 0x001e,
+        UiTextKey::FileOpenRecent => 0x0023,
+        UiTextKey::FileQuit => 0x0024,
+        UiTextKey::FileAnalyzeLevelUsage => 0x0032,
+        UiTextKey::ToolsTestRomInEmulatorAction => 0x0036,
+        UiTextKey::ToolsChooseEmulator => 0x0037,
+        UiTextKey::FileCreateFullRestore => 0x004e,
+        UiTextKey::FileRestoreRom => 0x004f,
+        UiTextKey::FileCreateIpsPatch => 0x0050,
+        UiTextKey::FileApplyIpsPatch => 0x0051,
+        UiTextKey::EditUndo => 0x0055,
+        UiTextKey::EditRedo => 0x0056,
+        UiTextKey::EditCut => 0x0057,
+        UiTextKey::EditCopy => 0x0058,
+        UiTextKey::EditPaste => 0x0059,
+        UiTextKey::ViewLayer1 => 0x006c,
+        UiTextKey::ViewLayer2 => 0x006d,
+        UiTextKey::ViewLayer3 => 0x006e,
+        UiTextKey::ViewLayerSprites => 0x006f,
+        UiTextKey::ViewSpecialWorldPassed => 0x0081,
+        UiTextKey::HelpTopics => 0x0118,
+        UiTextKey::HelpAbout => 0x0119,
+        _ => return None,
+    })
+}
+
+fn normalize_original_ui_text(key: UiTextKey, text: &str) -> String {
+    let text = text.split('\t').next().unwrap_or(text).trim();
+    let mut normalized = String::with_capacity(text.len());
+    let mut characters = text.chars().peekable();
+    while let Some(character) = characters.next() {
+        if character != '&' {
+            normalized.push(character);
+            continue;
+        }
+        if characters.peek() == Some(&'&') {
+            characters.next();
+            normalized.push('&');
+        }
+    }
+    if normalized.ends_with("...") {
+        normalized.truncate(normalized.len() - 3);
+        normalized.push('…');
+    }
+    if key == UiTextKey::HelpAbout {
+        normalized = normalized.replace("%s", "Lunar Magic Rust");
+    }
+    normalized
 }
 
 fn decode_original_language_string_resources(
@@ -1573,6 +1688,82 @@ mod tests {
         checksummed_original_module(&payload)
     }
 
+    fn original_language_catalog_pe(
+        metadata: &[u8],
+        encoded_pool: &[u8],
+        offsets: &[u8],
+        lengths: &[u8],
+    ) -> Vec<u8> {
+        let mut payload = vec![0_u8; 0x1200];
+        payload[..2].copy_from_slice(b"MZ");
+        write_u32(&mut payload, 0x3c, 0x80);
+        payload[0x80..0x84].copy_from_slice(b"PE\0\0");
+        write_u16(&mut payload, 0x84, 0x014c);
+        write_u16(&mut payload, 0x86, 1);
+        let optional = 0x98;
+        write_u16(&mut payload, 0x94, 0xe0);
+        write_u16(&mut payload, optional, 0x010b);
+        write_u32(&mut payload, optional + 60, 0x200);
+        write_u32(&mut payload, optional + 92, 16);
+        write_u32(&mut payload, optional + 96 + 16, 0x1000);
+        write_u32(&mut payload, optional + 96 + 20, 0x1000);
+        let section = optional + 0xe0;
+        payload[section..section + 8].copy_from_slice(b".rsrc\0\0\0");
+        write_u32(&mut payload, section + 8, 0x1000);
+        write_u32(&mut payload, section + 12, 0x1000);
+        write_u32(&mut payload, section + 16, 0x1000);
+        write_u32(&mut payload, section + 20, 0x200);
+
+        let marker = ORIGINAL_LANGUAGE_MARKER.to_le_bytes();
+        let resources: [(u16, &[u8]); 5] = [
+            (0x0db6, metadata),
+            (0x0db7, &marker),
+            (0x0dac, encoded_pool),
+            (0x0dad, offsets),
+            (0x0dae, lengths),
+        ];
+        let root = 0x200;
+        write_u16(&mut payload, root + 14, 1);
+        write_u32(&mut payload, root + 16, u32::from(PE_RESOURCE_TYPE));
+        write_u32(&mut payload, root + 20, 0x8000_0020);
+        write_u16(&mut payload, root + 0x20 + 14, resources.len() as u16);
+        let language_directories = 0x60;
+        let data_entries = 0xe0;
+        let mut blob = 0x140;
+        for (index, (id, bytes)) in resources.into_iter().enumerate() {
+            let entry = 0x30 + index * 8;
+            let language = language_directories + index * 0x18;
+            let data = data_entries + index * 0x10;
+            write_u32(&mut payload, root + entry, u32::from(id));
+            write_u32(
+                &mut payload,
+                root + entry + 4,
+                0x8000_0000 | u32::try_from(language).unwrap(),
+            );
+            write_u16(&mut payload, root + language + 14, 1);
+            write_u32(&mut payload, root + language + 16, 0x0409);
+            write_u32(
+                &mut payload,
+                root + language + 20,
+                u32::try_from(data).unwrap(),
+            );
+            write_u32(
+                &mut payload,
+                root + data,
+                0x1000 + u32::try_from(blob).unwrap(),
+            );
+            write_u32(
+                &mut payload,
+                root + data + 4,
+                u32::try_from(bytes.len()).unwrap(),
+            );
+            payload[root + blob..root + blob + bytes.len()].copy_from_slice(bytes);
+            blob = (blob + bytes.len() + 3) & !3;
+        }
+        assert!(blob <= 0x1000);
+        checksummed_original_module(&payload)
+    }
+
     fn encoded_original_string_pool(decoded: &[u8]) -> Vec<u8> {
         let mut encoder = DeflateEncoder::new(Vec::new(), Compression::default());
         encoder.write_all(decoded).unwrap();
@@ -1791,6 +1982,93 @@ mod tests {
         .unwrap();
         assert_eq!(pool.get(0x0118), Some("kept"));
         assert_eq!(pool.get(0x0119), None);
+    }
+
+    #[test]
+    fn original_language_pool_maps_only_evidence_backed_typed_ui_strings() {
+        let mut strings = vec![None; ORIGINAL_LANGUAGE_MAX_STRINGS];
+        strings[0x000a] = Some("&Fichier".into());
+        strings[0x000b] = Some("&Édition".into());
+        strings[0x0011] = Some("&Ouvrir ROM...\tCtrl+O".into());
+        strings[0x0055] = Some("&Annuler\tCtrl+Z".into());
+        strings[0x0109] = Some("Musique && &Temps...".into());
+        strings[0x0119] = Some("À &propos de %s...".into());
+        let catalog = OriginalLanguageStringPool { strings }
+            .to_catalog("fr-FR")
+            .unwrap();
+
+        assert_eq!(catalog.text(UiTextKey::MenuFile), "Fichier");
+        assert_eq!(catalog.text(UiTextKey::MenuEdit), "Édition");
+        assert_eq!(catalog.text(UiTextKey::FileOpen), "Ouvrir ROM…");
+        assert_eq!(catalog.text(UiTextKey::EditUndo), "Annuler");
+        assert_eq!(
+            catalog.text(UiTextKey::HelpAbout),
+            "À propos de Lunar Magic Rust…"
+        );
+        assert_eq!(
+            catalog.text(UiTextKey::MenuTools),
+            UiTextKey::MenuTools.english()
+        );
+        assert_eq!(
+            catalog.text(UiTextKey::EditorNativeGraphics),
+            UiTextKey::EditorNativeGraphics.english()
+        );
+    }
+
+    #[test]
+    fn original_language_pool_falls_back_for_missing_empty_and_invalid_locale() {
+        let mut strings = vec![None; 0x0012];
+        strings[0x000a] = Some(String::new());
+        let pool = OriginalLanguageStringPool { strings };
+        let catalog = pool.to_catalog("de").unwrap();
+        assert_eq!(
+            catalog.text(UiTextKey::MenuFile),
+            UiTextKey::MenuFile.english()
+        );
+        assert_eq!(
+            catalog.text(UiTextKey::FileOpen),
+            UiTextKey::FileOpen.english()
+        );
+        assert_eq!(pool.to_catalog(""), Err(LocalizationError::InvalidLocale));
+    }
+
+    #[test]
+    fn original_language_module_catalog_decodes_all_five_resources_end_to_end() {
+        let count = 0x011a;
+        let mut decoded = Vec::new();
+        let mut offsets = Vec::with_capacity(count);
+        let mut lengths = Vec::with_capacity(count);
+        for index in 0..count {
+            let text: &[u8] = match index {
+                0x000a => b"&Datei",
+                0x0011 => b"ROM &oeffnen...\tCtrl+O",
+                0x0119 => b"&Ueber %s...",
+                _ => b"",
+            };
+            offsets.push(u32::try_from(decoded.len()).unwrap());
+            lengths.push(u32::try_from(text.len()).unwrap());
+            decoded.extend_from_slice(text);
+            decoded.push(0);
+        }
+        let module = original_language_catalog_pe(
+            b"Deutsch - Test\n3.63\nde-DE\n1252\n",
+            &encoded_original_string_pool(&decoded),
+            &string_table(&offsets, true),
+            &string_table(&lengths, false),
+        );
+        let (metadata, catalog) = decode_original_language_module_catalog(&module).unwrap();
+        assert_eq!(metadata.display_name, "Deutsch - Test");
+        assert_eq!(catalog.locale(), "de-DE");
+        assert_eq!(catalog.text(UiTextKey::MenuFile), "Datei");
+        assert_eq!(catalog.text(UiTextKey::FileOpen), "ROM oeffnen…");
+        assert_eq!(
+            catalog.text(UiTextKey::HelpAbout),
+            "Ueber Lunar Magic Rust…"
+        );
+        assert_eq!(
+            catalog.text(UiTextKey::MenuTools),
+            UiTextKey::MenuTools.english()
+        );
     }
 
     #[test]

@@ -434,6 +434,7 @@ impl NativeApplication {
                 .menu_text(UiTextKey::ToolsLanguageFormat)
                 .replace("{locale}", &locale);
             let installed = self.installed_localizations.clone();
+            let installed_original = self.installed_original_localizations.clone();
             let active_locale = self
                 .app
                 .localization()
@@ -460,7 +461,31 @@ impl NativeApplication {
                         }
                     }
                 }
-                if !self.installed_localizations.is_empty() {
+                for module in installed_original {
+                    if ui
+                        .add_enabled(
+                            !self.configuration_loader.is_running(),
+                            egui::Button::new(&module.metadata.display_name).selected(
+                                active_locale.as_deref() == Some(module.metadata.locale.as_str()),
+                            ),
+                        )
+                        .clicked()
+                    {
+                        ui.close_menu();
+                        let locale = module.metadata.locale.clone();
+                        match self.app.set_localization(module.catalog) {
+                            Ok(()) => {
+                                self.auto_detect_localization = false;
+                                self.app.status =
+                                    format!("Installed {locale} original language module");
+                            }
+                            Err(error) => self.effects.error = Some(error.to_string()),
+                        }
+                    }
+                }
+                if !self.installed_localizations.is_empty()
+                    || !self.installed_original_localizations.is_empty()
+                {
                     ui.separator();
                 }
                 if ui

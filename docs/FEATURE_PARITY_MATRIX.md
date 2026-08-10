@@ -518,6 +518,15 @@ ceilings. Seventeen localization tests, nine preference tests, and eight fronten
 audits pass. Remaining typed original-string-index mapping, editor-dialog coverage, selectable DLL
 catalog conversion, and a retained Wine gesture keep the row `Partial`.
 
+The original-module adapter now advances beyond that earlier decoder-only boundary. Direct
+`CreateMainApplicationMenu` call-site evidence maps 31 semantically equivalent typed keys; the
+converter normalizes Windows mnemonics/accelerators and About formatting while retaining English
+for Rust-only keys. Valid `.dll` modules are now selectable by metadata display name, participate in
+the same exact-then-primary auto-detection pass as `.lmlang`, install atomically, and persist as the
+bounded canonical typed catalog. Twenty localization, eight loader, and 11 preference tests pass,
+including an all-five-resource PE conversion gate. Unmapped original dialog templates and retained
+live-module/Wine evidence still keep Configuration/Localization `Partial`.
+
 The overworld Palette/ExAnimation row additionally has the exact per-map option representation.
 Four independently inverted feature bits retain their unrelated low nibble, while original
 lightning is decoded from its separate high-bit-first seven-map disable mask. The preview gates

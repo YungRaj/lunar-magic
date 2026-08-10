@@ -49,3 +49,31 @@ contains 272 `(string index, exclusive byte-length ceiling)` pairs (raw-table SH
 ceiling)` triples (raw-table SHA-256
 `cabeed1bfddffaeca5550aababd4c59da60a901cae92b39f5a9f2950e279978e`). The loader clears both
 offset and length when `length >= ceiling`; indices beyond the effective string count are ignored.
+
+`CreateMainApplicationMenu` at `$00447540` pairs each nonzero offset-table slot with an immediate
+built-in English fallback before calling `AppendUtf8MenuItem`. The retained headless extractor
+`tools/DumpLocalizedStringFallbacks.java` walks that exact pairing. The typed Rust catalog currently
+uses the following semantically equivalent slots; all other Rust-only keys deliberately retain
+built-in English:
+
+| Original index | Typed key(s) | Built-in fallback evidence |
+|---:|---|---|
+| `$000A..$000D` | `MenuFile`, `MenuEdit`, `MenuView`, `MenuEditors` | File, Edit, View, Editors |
+| `$0010` | `MenuHelp` | Help |
+| `$0011` | `FileOpen` | Open ROM |
+| `$0014..$0015` | `FileSave`, `FileSaveAs` | Save Level to ROM / as |
+| `$001E` | `ToolsTestRomInEmulator` | Emulator submenu |
+| `$001F` | `FileExpandRom` | Expand ROM submenu |
+| `$0023..$0024` | `FileOpenRecent`, `FileQuit` | Recent Files, Exit |
+| `$0032` | `FileAnalyzeLevelUsage` | Analyze Resources in Levels |
+| `$0036..$0037` | emulator action / chooser | Run ROM in Emulator, Setup Emulator |
+| `$004E..$0051` | full restore, restore, create/apply IPS | matching restore/IPS actions |
+| `$0055..$0059` | Undo, Redo, Cut, Copy, Paste | matching Edit actions |
+| `$006C..$006F` | Layer 1, Layer 2, Layer 3, Sprites | matching View layers |
+| `$0081` | `ViewSpecialWorldPassed` | Special World Passed |
+| `$0118..$0119` | `HelpTopics`, `HelpAbout` | Contents, About `%s` |
+
+Conversion removes Windows mnemonic ampersands and tab-delimited accelerator text, collapses `&&`
+to a literal ampersand, normalizes a trailing `...` to `…`, and substitutes `Lunar Magic Rust` for
+the About `%s`. A missing, cleared, or empty original slot falls back independently to the typed
+English value.

@@ -215,7 +215,7 @@ pub(crate) struct NativeApplication {
     recent_state: Option<lm_app::recent_state_file::RecentStateFile>,
     configuration_loader: ConfigurationLoader,
     installed_localizations: Vec<InstalledLocalization>,
-    _installed_original_localizations: Vec<InstalledOriginalLocalization>,
+    installed_original_localizations: Vec<InstalledOriginalLocalization>,
     auto_detect_localization: bool,
     profile_loader: crate::profile_loader::ProfileLoader,
     #[cfg(feature = "visual-smoke")]
@@ -270,7 +270,7 @@ impl NativeApplication {
         match result {
             Ok((catalogs, original_modules)) => {
                 self.installed_localizations = catalogs;
-                self._installed_original_localizations = original_modules;
+                self.installed_original_localizations = original_modules;
             }
             Err(error) => self.effects.error = Some(error),
         }
@@ -683,13 +683,22 @@ impl NativeApplication {
 
     fn start_auto_detected_localization(&mut self) -> Result<(), String> {
         self.app.clear_localization();
-        let Some(path) = select_preferred_installed_localization(
+        let Some(selection) = select_preferred_installed_localization_with_original(
             &self.installed_localizations,
+            &self.installed_original_localizations,
             system_locale_preferences(),
         ) else {
             return Ok(());
         };
-        self.configuration_loader.start_localization_path(path)
+        match selection {
+            PreferredInstalledLocalization::CatalogPath(path) => {
+                self.configuration_loader.start_localization_path(path)
+            }
+            PreferredInstalledLocalization::Original(catalog) => self
+                .app
+                .set_localization(catalog)
+                .map_err(|error| error.to_string()),
+        }
     }
 
     fn show_global_effects(&mut self, context: &egui::Context) {
@@ -1010,6 +1019,23 @@ fn select_preferred_installed_localization(
     installed: &[InstalledLocalization],
     preferences: impl IntoIterator<Item = String>,
 ) -> Option<std::path::PathBuf> {
+    match select_preferred_installed_localization_with_original(installed, &[], preferences)? {
+        PreferredInstalledLocalization::CatalogPath(path) => Some(path),
+        PreferredInstalledLocalization::Original(_) => None,
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+enum PreferredInstalledLocalization {
+    CatalogPath(std::path::PathBuf),
+    Original(LocalizationCatalog),
+}
+
+fn select_preferred_installed_localization_with_original(
+    installed: &[InstalledLocalization],
+    originals: &[InstalledOriginalLocalization],
+    preferences: impl IntoIterator<Item = String>,
+) -> Option<PreferredInstalledLocalization> {
     let preferences = preferences
         .into_iter()
         .filter_map(|locale| normalize_locale(&locale))
@@ -1020,7 +1046,17 @@ fn select_preferred_installed_localization(
             .iter()
             .find(|catalog| normalize_locale(&catalog.locale).as_ref() == Some(preference))
         {
-            return Some(catalog.path.clone());
+            return Some(PreferredInstalledLocalization::CatalogPath(
+                catalog.path.clone(),
+            ));
+        }
+        if let Some(module) = originals
+            .iter()
+            .find(|module| normalize_locale(&module.metadata.locale).as_ref() == Some(preference))
+        {
+            return Some(PreferredInstalledLocalization::Original(
+                module.catalog.clone(),
+            ));
         }
     }
     for preference in preferences {
@@ -1029,7 +1065,17 @@ fn select_preferred_installed_localization(
             normalize_locale(&catalog.locale)
                 .is_some_and(|locale| locale.split('-').next() == Some(language))
         }) {
-            return Some(catalog.path.clone());
+            return Some(PreferredInstalledLocalization::CatalogPath(
+                catalog.path.clone(),
+            ));
+        }
+        if let Some(module) = originals.iter().find(|module| {
+            normalize_locale(&module.metadata.locale)
+                .is_some_and(|locale| locale.split('-').next() == Some(language))
+        }) {
+            return Some(PreferredInstalledLocalization::Original(
+                module.catalog.clone(),
+            ));
         }
     }
     None
@@ -1246,6 +1292,38 @@ mod preference_tests {
         assert_eq!(
             select_preferred_installed_localization(&installed, beyond_bound),
             None
+        );
+    }
+
+    #[test]
+    fn installed_language_autodetection_includes_converted_original_modules() {
+        let installed = [InstalledLocalization {
+            locale: "fr-CA".into(),
+            path: "fr.lmlang".into(),
+        }];
+        let original_catalog = LocalizationCatalog::new(
+            "de-DE",
+            UiTextKey::ALL.map(|key| (key, format!("de-{key:?}"))),
+        )
+        .unwrap();
+        let originals = [InstalledOriginalLocalization {
+            metadata: lm_app::OriginalLanguageModuleMetadata {
+                display_name: "Deutsch".into(),
+                version: "3.63".into(),
+                locale: "de-DE".into(),
+                code_page: "1252".into(),
+            },
+            catalog: original_catalog.clone(),
+            path: "de.dll".into(),
+        }];
+
+        assert_eq!(
+            select_preferred_installed_localization_with_original(
+                &installed,
+                &originals,
+                ["fr-FR".to_owned(), "de-DE".to_owned()]
+            ),
+            Some(PreferredInstalledLocalization::Original(original_catalog))
         );
     }
 }

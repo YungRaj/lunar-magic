@@ -3556,8 +3556,13 @@ the original minimum of declared count, complete offset/length table extents, an
 Every offset/length addition is checked; entries without an in-range trailing NUL are unavailable,
 and valid entries must be UTF-8 before publication. The exact 272 single-index and 22 half-open
 range guards recovered from `$005E6420` and `$005E6398` then clear strings whose byte length reaches
-the original fixed-buffer ceiling. Typed `UiTextKey`-to-original-index mapping and localized
-dialog-template conversion remain before an original DLL can replace the active catalog.
+the original fixed-buffer ceiling. Thirty-one evidence-backed menu/action equivalents now map into
+the typed catalog with mnemonic, accelerator, ellipsis, and About-template normalization; missing
+slots and Rust-only workflows retain English independently. Native startup converts valid original
+DLLs without executing them, exposes their metadata display names in Tools → Language, includes
+their locale tags in the exact-then-primary auto-detection pass, installs a selected catalog
+atomically, and persists its canonical typed bytes. Remaining original dialog-template mapping and
+retained live-module evidence keep localization incomplete.
 
 The native frontend now has an opt-in, self-capturing `visual-smoke` build. It waits until the
 workspace has rendered across multiple frames, requests the real Glow viewport through egui, and

@@ -7,7 +7,7 @@ use crate::{
 use eframe::egui;
 use lm_app::{
     FrontendConfig, LocalizationCatalog, OriginalLanguageModuleMetadata, ToolConfig,
-    decode_original_language_module,
+    decode_original_language_module_catalog,
 };
 use std::path::{Path, PathBuf};
 
@@ -23,6 +23,7 @@ pub(crate) struct InstalledLocalization {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct InstalledOriginalLocalization {
     pub(crate) metadata: OriginalLanguageModuleMetadata,
+    pub(crate) catalog: LocalizationCatalog,
     pub(crate) path: PathBuf,
 }
 
@@ -187,7 +188,7 @@ impl ConfigurationLoader {
         executable_directory: &Path,
     ) -> Result<Vec<InstalledOriginalLocalization>, String> {
         discover_installed_original_localizations_with(executable_directory, |bytes| {
-            decode_original_language_module(bytes).ok()
+            decode_original_language_module_catalog(bytes).ok()
         })
     }
 
@@ -213,7 +214,7 @@ impl ConfigurationLoader {
 
 fn discover_installed_original_localizations_with(
     executable_directory: &Path,
-    decode: impl Fn(&[u8]) -> Option<OriginalLanguageModuleMetadata>,
+    decode: impl Fn(&[u8]) -> Option<(OriginalLanguageModuleMetadata, LocalizationCatalog)>,
 ) -> Result<Vec<InstalledOriginalLocalization>, String> {
     let directory = executable_directory.join("sysLMLanguage");
     let entries = match std::fs::read_dir(&directory) {
@@ -269,10 +270,14 @@ fn discover_installed_original_localizations_with(
         let Ok(bytes) = std::fs::read(&path) else {
             continue;
         };
-        let Some(metadata) = decode(&bytes) else {
+        let Some((metadata, catalog)) = decode(&bytes) else {
             continue;
         };
-        installed.push(InstalledOriginalLocalization { metadata, path });
+        installed.push(InstalledOriginalLocalization {
+            metadata,
+            catalog,
+            path,
+        });
     }
     installed.sort_by(|left, right| {
         left.metadata
@@ -439,17 +444,20 @@ mod tests {
                 b"zeta" => "Français",
                 _ => return None,
             };
-            Some(OriginalLanguageModuleMetadata {
+            let metadata = OriginalLanguageModuleMetadata {
                 display_name: name.into(),
                 version: "3.63".into(),
                 locale: if bytes == b"alpha" { "de-DE" } else { "fr-FR" }.into(),
                 code_page: "1252".into(),
-            })
+            };
+            let catalog = catalog(&metadata.locale);
+            Some((metadata, catalog))
         })
         .unwrap();
         assert_eq!(installed.len(), 2);
         assert_eq!(installed[0].metadata.display_name, "Deutsch");
         assert_eq!(installed[1].metadata.display_name, "Français");
+        assert_eq!(installed[0].catalog.locale(), "de-DE");
         assert_eq!(
             installed[0].path.file_name().unwrap(),
             std::ffi::OsStr::new("alpha.dll")

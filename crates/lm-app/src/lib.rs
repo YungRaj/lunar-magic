@@ -224,8 +224,8 @@ pub use lm_project::{MwlOptionalAssetsEdit, MwlOptionalAssetsEditError};
 pub use localization::{
     LocalizationCatalog, LocalizationError, OriginalLanguageModuleError,
     OriginalLanguageModuleMetadata, OriginalLanguageStringPool, UiTextKey,
-    decode_original_language_module, decode_original_language_module_strings,
-    validate_original_language_module_checksum,
+    decode_original_language_module, decode_original_language_module_catalog,
+    decode_original_language_module_strings, validate_original_language_module_checksum,
 };
 pub use map16_bitmap_allocation::{
     LUNAR_MAGIC_BLANK_MAP16_WORD, Map16BitmapAllocation, Map16BitmapAllocationError,
