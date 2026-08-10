@@ -900,6 +900,7 @@ impl eframe::App for NativeApplication {
                     self.osc_sidecar_editor.resolved(),
                     self.native_map16_sidecar_editor.value(),
                     live_frame,
+                    &self.main_toolbar_images,
                 )
             {
                 let sprite_only_commit = matches!(

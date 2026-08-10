@@ -34,6 +34,16 @@ The original uses zero-based cells. Only mappings with matching Rust actions are
 | Palette `.ff3`/`.ff6` | 2 | `$2279` | Undo | `FindPaletteEditorButtonIconIndex` at `$0056DE30`, table `$005E4134` |
 | Palette `.ff3`/`.ff6` | 3 | `$227A` | Redo | `FindPaletteEditorButtonIconIndex` at `$0056DE30`, table `$005E4134` |
 | Palette `.ff3`/`.ff6` | 11 | `$2261` | Save | `FindPaletteEditorButtonIconIndex` at `$0056DE30`, table `$005E4134` |
+| Add Object `.ff7` | 1 | `$0067` | Show preview icons in list | `LoadCustomObjectToolbarIcons` at `$0052B7E0`, table `$005E5118` |
+| Add Object `.ff7` | 2 | `$0069` | Compatible loaded GFX only | table `$005E5118`; object tooltip block `$005D1780` |
+| Add Object `.ff7` | 3 | `$006A` | Use vertical layout | table `$005E5118`; object tooltip block `$005D1780` |
+| Add Object `.ff7` | 4 | `$2440` | Preview zoom popup | table `$005E5118`; object-dialog handler |
+| Add Object `.ff7` | 5 | `$0097` | Show preview area | table `$005E5118`; object tooltip block `$005D1780` |
+| Add Sprite `.ff8` | 1 | `$0067` | Show preview icons in list | `LoadDialogCommandIconStrip` at `$00575B10`, table `$005E40A8` |
+| Add Sprite `.ff8` | 2 | `$0069` | Compatible SP3/SP4 only | table `$005E40A8`; sprite tooltip `$005D8DC8` |
+| Add Sprite `.ff8` | 3 | `$006A` | Use vertical layout | table `$005E40A8`; dialog handler |
+| Add Sprite `.ff8` | 4 | `$2440` | Preview zoom popup | table `$005E40A8`; dialog handler |
+| Add Sprite `.ff8` | 5 | `$0097` | Show preview area | table `$005E40A8`; dialog handler |
 
 `LoadOverworldToolbarImages` at `$005608E0`, `LoadLevelToolbarButtonIconCaches` at `$004EA760`,
 `LoadPaletteEditorButtonIcons` at `$0056DF40`, `LoadCustomObjectToolbarIcons` at `$0052B7E0`, and
@@ -46,7 +56,12 @@ unverified cells to superficially similar actions.
 - `user_toolbar_images::tests::every_authenticated_editor_strip_and_tiled_gui_image_loads_at_its_exact_shape`
 - `user_toolbar_images::tests::malformed_authenticated_editor_strip_rejects_without_publishing_any_set`
 - `user_toolbar_images::tests::authenticated_editor_action_cells_match_the_decompiled_command_tables`
+- `user_toolbar_images::tests::authenticated_catalog_action_cells_match_the_decompiled_command_tables`
 
 The native portable overworld, Map16, and palette editors consume the authenticated cells for their
-Save/Undo/Redo controls after texture initialization. Nearest-neighbor sampling is retained for
-user-supplied pixel artwork, with text and tooltip fallbacks.
+Save/Undo/Redo controls after texture initialization. The integrated standard, extended, and custom
+object and sprite catalogs consume cells 1 and 3 for the matching preview-icon and vertical-layout
+toggles; those settings affect the complete corresponding catalog family. Cells 2, 4, and 5 remain
+unrouted until the GFX-compatibility predicate, catalog-preview zoom, and separate preview pane are
+implemented. Nearest-neighbor sampling is retained for user-supplied pixel artwork, with text and
+tooltip fallbacks.

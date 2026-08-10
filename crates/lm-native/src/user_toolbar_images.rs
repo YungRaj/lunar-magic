@@ -32,6 +32,16 @@ pub(crate) enum OriginalToolbarAction {
     Redo,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[allow(dead_code)]
+pub(crate) enum OriginalCatalogAction {
+    PreviewIcons,
+    CompatibleGraphicsOnly,
+    VerticalLayout,
+    Zoom,
+    PreviewArea,
+}
+
 impl OriginalToolbarImages {
     const ALL: [Self; 8] = [
         Self::Overworld8x8,
@@ -74,6 +84,19 @@ impl OriginalToolbarImages {
             (Self::LevelPalette | Self::OverworldPalette, OriginalToolbarAction::Redo) => Some(3),
             _ => None,
         }
+    }
+
+    const fn catalog_action_index(self, action: OriginalCatalogAction) -> Option<usize> {
+        if !matches!(self, Self::AddObject | Self::AddSprite) {
+            return None;
+        }
+        Some(match action {
+            OriginalCatalogAction::PreviewIcons => 1,
+            OriginalCatalogAction::CompatibleGraphicsOnly => 2,
+            OriginalCatalogAction::VerticalLayout => 3,
+            OriginalCatalogAction::Zoom => 4,
+            OriginalCatalogAction::PreviewArea => 5,
+        })
     }
 }
 
@@ -271,6 +294,28 @@ impl MainToolbarImageSet {
             },
         );
         ui.add_enabled(enabled, button).on_hover_text(label)
+    }
+
+    pub(crate) fn original_catalog_button(
+        &self,
+        ui: &mut egui::Ui,
+        kind: OriginalToolbarImages,
+        action: OriginalCatalogAction,
+        label: &str,
+        selected: bool,
+    ) -> egui::Response {
+        let texture = kind
+            .catalog_action_index(action)
+            .and_then(|index| self.original_texture(kind, index));
+        let button = texture.map_or_else(
+            || egui::Button::new(label).selected(selected),
+            |texture| {
+                let size = self.original_icon_size(kind);
+                egui::Button::image(egui::Image::new((texture.id(), egui::vec2(size, size))))
+                    .selected(selected)
+            },
+        );
+        ui.add(button).on_hover_text(label)
     }
 
     pub(crate) fn tiled_texture(&self, kind: OriginalTiledImage) -> Option<&egui::TextureHandle> {
@@ -834,6 +879,28 @@ mod tests {
             Some(3)
         );
         assert_eq!(OriginalToolbarImages::AddObject.action_index(Save), None);
+    }
+
+    #[test]
+    fn authenticated_catalog_action_cells_match_the_decompiled_command_tables() {
+        use OriginalCatalogAction::{
+            CompatibleGraphicsOnly, PreviewArea, PreviewIcons, VerticalLayout, Zoom,
+        };
+
+        for kind in [
+            OriginalToolbarImages::AddObject,
+            OriginalToolbarImages::AddSprite,
+        ] {
+            assert_eq!(kind.catalog_action_index(PreviewIcons), Some(1));
+            assert_eq!(kind.catalog_action_index(CompatibleGraphicsOnly), Some(2));
+            assert_eq!(kind.catalog_action_index(VerticalLayout), Some(3));
+            assert_eq!(kind.catalog_action_index(Zoom), Some(4));
+            assert_eq!(kind.catalog_action_index(PreviewArea), Some(5));
+        }
+        assert_eq!(
+            OriginalToolbarImages::Map16.catalog_action_index(PreviewIcons),
+            None
+        );
     }
 
     #[test]

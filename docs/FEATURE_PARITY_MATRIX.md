@@ -809,6 +809,15 @@ collision.
 
 ## Current critical path
 
+The authenticated editor-image milestone now also recovers the identical six-word Add Object and
+Add Sprite command tables at `$005E5118` and `$005E40A8`. The integrated standard, extended, and
+custom object/sprite catalogs route the proven cell-1 preview-icon toggle and cell-3 vertical-layout
+toggle, retain text-list fallbacks, and avoid preview raster work while icons are hidden.
+`authenticated_catalog_action_cells_match_the_decompiled_command_tables` and
+`object_and_sprite_catalog_presentation_state_is_independent` bind the mapping and independent
+state. The compatibility filter, separate preview pane/zoom, and tiled surfaces remain open, so the
+Configuration/Toolbar row remains `Partial` and the aggregate remains 59/65.
+
 The fastest route to a broadly usable editor is:
 
 1. Finish the ordinary level-editing workflows and their native import/export dialogs.

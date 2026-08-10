@@ -14,6 +14,10 @@ use lm_rats::{AllocationPolicy, ProtectedRange};
 use lm_rom::{Mapper, Region, RomImage, SnesPointer24, SupportedGame};
 use std::collections::HashMap;
 
+use crate::user_toolbar_images::{
+    MainToolbarImageSet, OriginalCatalogAction, OriginalToolbarImages,
+};
+
 const ROM_LEVEL_CANVAS_CELL: f32 = 12.0;
 const ROM_LEVEL_CANVAS_MIN_ZOOM: u16 = 100;
 const ROM_LEVEL_CANVAS_MAX_ZOOM: u16 = 5_000;
@@ -353,6 +357,8 @@ pub(crate) struct VanillaLevelEditor {
     object_catalog_filter: String,
     extended_object_catalog_filter: String,
     custom_object_catalog_filter: String,
+    object_catalog_preview_icons: Option<bool>,
+    object_catalog_vertical_layout: Option<bool>,
     object_placement_template: Option<ObjectRecord>,
     selected_sprite: usize,
     selected_sprite_group: Vec<usize>,
@@ -362,6 +368,8 @@ pub(crate) struct VanillaLevelEditor {
     object_group_drag: Option<CanvasObjectGroupDrag>,
     sprite_catalog_filter: String,
     custom_sprite_catalog_filter: String,
+    sprite_catalog_preview_icons: Option<bool>,
+    sprite_catalog_vertical_layout: Option<bool>,
     canvas_zoom_percent: Option<u16>,
     canvas_previous_zoom_percent: Option<u16>,
     zoom_filter: Option<bool>,
@@ -502,6 +510,7 @@ impl VanillaLevelEditor {
         custom_objects: Option<&lm_level::OscResolvedTable>,
         custom_map16: Option<&lm_app::NativeMap16SidecarDocument>,
         live_frame: Option<(egui::TextureId, [usize; 2])>,
+        toolbar_images: &MainToolbarImageSet,
     ) -> Option<Command> {
         let snapshot = app.controller_snapshot().ok()?;
         let EditorMode::Level(level) = snapshot.mode else {
@@ -624,7 +633,12 @@ impl VanillaLevelEditor {
                             .default_open(true)
                             .show(ui, |ui| {
                                 self.object_list(ui);
-                                self.object_editor(ui, custom_objects, custom_map16);
+                                self.object_editor(
+                                    ui,
+                                    custom_objects,
+                                    custom_map16,
+                                    toolbar_images,
+                                );
                             });
                         egui::CollapsingHeader::new("Enemies and sprites")
                             .id_salt("vanilla-sprite-tools")
@@ -635,6 +649,7 @@ impl VanillaLevelEditor {
                                     custom_sprites,
                                     external_assets,
                                     custom_map16,
+                                    toolbar_images,
                                 );
                             });
                         self.show_map16_preview(ui, object_tileset);
@@ -6010,6 +6025,7 @@ impl VanillaLevelEditor {
         ui: &mut egui::Ui,
         custom_objects: Option<&lm_level::OscResolvedTable>,
         custom_map16: Option<&lm_app::NativeMap16SidecarDocument>,
+        toolbar_images: &MainToolbarImageSet,
     ) {
         let record_count = self.controller.as_ref().map_or(0, |controller| {
             controller.level().layer1.objects.records.len()
@@ -6032,6 +6048,12 @@ impl VanillaLevelEditor {
         } else {
             ui.label("No selected object.");
         }
+        self.catalog_presentation_toolbar(
+            ui,
+            toolbar_images,
+            OriginalToolbarImages::AddObject,
+            true,
+        );
         self.object_catalog(ui, custom_map16, false);
         self.extended_object_catalog(ui, custom_map16, false);
         self.custom_object_catalog(ui, custom_objects, custom_map16, false);
@@ -6106,6 +6128,59 @@ impl VanillaLevelEditor {
         self.handle_object_paste(ui, record_count);
     }
 
+    fn catalog_presentation_toolbar(
+        &mut self,
+        ui: &mut egui::Ui,
+        images: &MainToolbarImageSet,
+        kind: OriginalToolbarImages,
+        objects: bool,
+    ) {
+        let (mut previews, mut vertical) = if objects {
+            (
+                self.object_catalog_preview_icons.unwrap_or(true),
+                self.object_catalog_vertical_layout.unwrap_or(false),
+            )
+        } else {
+            (
+                self.sprite_catalog_preview_icons.unwrap_or(true),
+                self.sprite_catalog_vertical_layout.unwrap_or(false),
+            )
+        };
+        ui.horizontal(|ui| {
+            if images
+                .original_catalog_button(
+                    ui,
+                    kind,
+                    OriginalCatalogAction::PreviewIcons,
+                    "Show preview icons in list",
+                    previews,
+                )
+                .clicked()
+            {
+                previews = !previews;
+            }
+            if images
+                .original_catalog_button(
+                    ui,
+                    kind,
+                    OriginalCatalogAction::VerticalLayout,
+                    "Use vertical layout",
+                    vertical,
+                )
+                .clicked()
+            {
+                vertical = !vertical;
+            }
+        });
+        if objects {
+            self.object_catalog_preview_icons = Some(previews);
+            self.object_catalog_vertical_layout = Some(vertical);
+        } else {
+            self.sprite_catalog_preview_icons = Some(previews);
+            self.sprite_catalog_vertical_layout = Some(vertical);
+        }
+    }
+
     fn handle_object_paste(&mut self, ui: &egui::Ui, record_count: usize) {
         if self.paste_target == Some(EntityPasteTarget::Object)
             && let Some(text) = pasted_text(ui)
@@ -6169,6 +6244,8 @@ impl VanillaLevelEditor {
                 } else {
                     self.object_form.command_id
                 };
+                let preview_icons = self.object_catalog_preview_icons.unwrap_or(true);
+                let vertical_layout = self.object_catalog_vertical_layout.unwrap_or(false);
                 let mut chosen = None;
                 egui::ScrollArea::vertical()
                     .id_salt(if layer2 {
@@ -6178,18 +6255,25 @@ impl VanillaLevelEditor {
                     })
                     .max_height(280.0)
                     .show(ui, |ui| {
-                        ui.horizontal_wrapped(|ui| {
+                        catalog_entry_layout(ui, vertical_layout, |ui| {
                             for command in commands {
-                                let response = draw_object_catalog_entry(
-                                    ui,
-                                    texture.as_ref(),
-                                    foreground_texture.as_ref(),
-                                    custom_map16,
-                                    command,
-                                    &handler_map,
-                                    &definitions,
-                                    command == selected_command,
-                                );
+                                let response = if preview_icons {
+                                    draw_object_catalog_entry(
+                                        ui,
+                                        texture.as_ref(),
+                                        foreground_texture.as_ref(),
+                                        custom_map16,
+                                        command,
+                                        &handler_map,
+                                        &definitions,
+                                        command == selected_command,
+                                    )
+                                } else {
+                                    ui.selectable_label(
+                                        command == selected_command,
+                                        format!("Standard object ${command:02X}"),
+                                    )
+                                };
                                 if response.clicked() {
                                     chosen = Some(command);
                                 }
@@ -6253,6 +6337,8 @@ impl VanillaLevelEditor {
                 );
                 let map16_texture = self.map16_texture.clone();
                 let foreground_texture = self.foreground_texture.clone();
+                let preview_icons = self.object_catalog_preview_icons.unwrap_or(true);
+                let vertical_layout = self.object_catalog_vertical_layout.unwrap_or(false);
                 let mut chosen = None;
                 egui::ScrollArea::vertical()
                     .id_salt(if layer2 {
@@ -6262,15 +6348,27 @@ impl VanillaLevelEditor {
                     })
                     .max_height(280.0)
                     .show(ui, |ui| {
-                        ui.horizontal_wrapped(|ui| {
+                        catalog_entry_layout(ui, vertical_layout, |ui| {
                             for entry in entries {
-                                let response = draw_custom_object_catalog_entry(
-                                    ui,
-                                    map16_texture.as_ref(),
-                                    foreground_texture.as_ref(),
-                                    custom_map16,
-                                    entry,
-                                );
+                                let response = if preview_icons {
+                                    draw_custom_object_catalog_entry(
+                                        ui,
+                                        map16_texture.as_ref(),
+                                        foreground_texture.as_ref(),
+                                        custom_map16,
+                                        entry,
+                                    )
+                                } else {
+                                    ui.selectable_label(
+                                        false,
+                                        format!(
+                                            "${:02X}/${:02X} {}",
+                                            entry.selector.object_type,
+                                            entry.selector.parameter,
+                                            entry.description.as_deref().unwrap_or("custom object")
+                                        ),
+                                    )
+                                };
                                 if response.clicked() {
                                     chosen = Some(entry.selector);
                                 }
@@ -6360,6 +6458,8 @@ impl VanillaLevelEditor {
                     &self.object_form
                 };
                 let selected = (selected.command_id, selected.parameter);
+                let preview_icons = self.object_catalog_preview_icons.unwrap_or(true);
+                let vertical_layout = self.object_catalog_vertical_layout.unwrap_or(false);
                 let mut chosen = None;
                 egui::ScrollArea::vertical()
                     .id_salt(if layer2 {
@@ -6369,18 +6469,25 @@ impl VanillaLevelEditor {
                     })
                     .max_height(280.0)
                     .show(ui, |ui| {
-                        ui.horizontal_wrapped(|ui| {
+                        catalog_entry_layout(ui, vertical_layout, |ui| {
                             for selector in selectors {
-                                let response = draw_extended_object_catalog_entry(
-                                    ui,
-                                    texture.as_ref(),
-                                    foreground_texture.as_ref(),
-                                    custom_map16,
-                                    selector,
-                                    &handler_map,
-                                    &definitions,
-                                    selected == (0, selector),
-                                );
+                                let response = if preview_icons {
+                                    draw_extended_object_catalog_entry(
+                                        ui,
+                                        texture.as_ref(),
+                                        foreground_texture.as_ref(),
+                                        custom_map16,
+                                        selector,
+                                        &handler_map,
+                                        &definitions,
+                                        selected == (0, selector),
+                                    )
+                                } else {
+                                    ui.selectable_label(
+                                        selected == (0, selector),
+                                        format!("Extended object $00/${selector:02X}"),
+                                    )
+                                };
                                 if response.clicked() {
                                     chosen = Some(selector);
                                 }
@@ -6711,12 +6818,19 @@ impl VanillaLevelEditor {
         custom_sprites: Option<&lm_level::SscResolvedTable>,
         external_assets: &lm_graphics::ExternalSpriteAssets,
         custom_map16: Option<&lm_app::NativeMap16SidecarDocument>,
+        toolbar_images: &MainToolbarImageSet,
     ) {
         let token_count = self
             .controller
             .as_ref()
             .map_or(0, |controller| controller.level().sprites.tokens.len());
         ui.label("Enemies and sprites stored in this level");
+        self.catalog_presentation_toolbar(
+            ui,
+            toolbar_images,
+            OriginalToolbarImages::AddSprite,
+            false,
+        );
         self.sprite_catalog(ui);
         self.custom_sprite_catalog(ui, custom_sprites, external_assets, custom_map16);
         self.sprite_form_controls(ui);
@@ -6868,21 +6982,30 @@ impl VanillaLevelEditor {
                     self.form.sprite_tileset,
                 );
                 mode.alternate_display = self.silver_pow_active;
+                let preview_icons = self.sprite_catalog_preview_icons.unwrap_or(true);
+                let vertical_layout = self.sprite_catalog_vertical_layout.unwrap_or(false);
                 let mut chosen = None;
                 egui::ScrollArea::vertical()
                     .id_salt("vanilla-standard-sprite-catalog-scroll")
                     .max_height(280.0)
                     .show(ui, |ui| {
-                        ui.horizontal_wrapped(|ui| {
+                        catalog_entry_layout(ui, vertical_layout, |ui| {
                             for id in ids {
-                                let response = draw_sprite_catalog_entry(
-                                    ui,
-                                    texture.as_ref(),
-                                    animated_texture.as_ref(),
-                                    id,
-                                    mode,
-                                    id == self.sprite_form.sprite_number,
-                                );
+                                let response = if preview_icons {
+                                    draw_sprite_catalog_entry(
+                                        ui,
+                                        texture.as_ref(),
+                                        animated_texture.as_ref(),
+                                        id,
+                                        mode,
+                                        id == self.sprite_form.sprite_number,
+                                    )
+                                } else {
+                                    ui.selectable_label(
+                                        id == self.sprite_form.sprite_number,
+                                        format!("Standard sprite ${id:02X}"),
+                                    )
+                                };
                                 if response.clicked() {
                                     chosen = Some(id);
                                 }
@@ -6927,48 +7050,62 @@ impl VanillaLevelEditor {
                     .get(usize::from(animation_phase))
                     .cloned()
                     .or_else(|| texture.clone());
+                let preview_icons = self.sprite_catalog_preview_icons.unwrap_or(true);
+                let vertical_layout = self.sprite_catalog_vertical_layout.unwrap_or(false);
                 let mut chosen = None;
                 egui::ScrollArea::vertical()
                     .id_salt("vanilla-custom-sprite-catalog-scroll")
                     .max_height(280.0)
                     .show(ui, |ui| {
-                        ui.horizontal_wrapped(|ui| {
+                        catalog_entry_layout(ui, vertical_layout, |ui| {
                             for entry in entries {
-                                let atlas_parts =
-                                    lm_render::render_atlas_lunar_magic_custom_sprite_with(
-                                        custom_sprites,
+                                let response = if preview_icons {
+                                    let atlas_parts =
+                                        lm_render::render_atlas_lunar_magic_custom_sprite_with(
+                                            custom_sprites,
+                                            entry,
+                                            |index| external_sprite_definition(custom_map16, index),
+                                        );
+                                    let external_parts =
+                                        lm_render::render_remapped_lunar_magic_custom_sprite_with(
+                                            custom_sprites,
+                                            entry,
+                                            |index| external_sprite_definition(custom_map16, index),
+                                        );
+                                    if let Some(parts) = external_parts.as_deref() {
+                                        ensure_remapped_part_textures(
+                                            ui.ctx(),
+                                            &mut self.external_sprite_textures,
+                                            parts,
+                                            SpriteRasterAssets {
+                                                external: external_assets,
+                                                foreground_tiles: &self.foreground_tiles,
+                                                layer3_tiles: &self.layer3_tiles,
+                                                vanilla_tiles: &self.sprite_tiles,
+                                                vanilla_palette: self.sprite_palette.as_ref(),
+                                            },
+                                        );
+                                    }
+                                    draw_custom_sprite_catalog_entry(
+                                        ui,
+                                        texture.as_ref(),
+                                        animated_texture.as_ref(),
                                         entry,
-                                        |index| external_sprite_definition(custom_map16, index),
-                                    );
-                                let external_parts =
-                                    lm_render::render_remapped_lunar_magic_custom_sprite_with(
-                                        custom_sprites,
-                                        entry,
-                                        |index| external_sprite_definition(custom_map16, index),
-                                    );
-                                if let Some(parts) = external_parts.as_deref() {
-                                    ensure_remapped_part_textures(
-                                        ui.ctx(),
-                                        &mut self.external_sprite_textures,
-                                        parts,
-                                        SpriteRasterAssets {
-                                            external: external_assets,
-                                            foreground_tiles: &self.foreground_tiles,
-                                            layer3_tiles: &self.layer3_tiles,
-                                            vanilla_tiles: &self.sprite_tiles,
-                                            vanilla_palette: self.sprite_palette.as_ref(),
-                                        },
-                                    );
-                                }
-                                let response = draw_custom_sprite_catalog_entry(
-                                    ui,
-                                    texture.as_ref(),
-                                    animated_texture.as_ref(),
-                                    entry,
-                                    atlas_parts.as_deref(),
-                                    external_parts.as_deref(),
-                                    &self.external_sprite_textures,
-                                );
+                                        atlas_parts.as_deref(),
+                                        external_parts.as_deref(),
+                                        &self.external_sprite_textures,
+                                    )
+                                } else {
+                                    ui.selectable_label(
+                                        false,
+                                        format!(
+                                            "${:02X} · E{} {}",
+                                            entry.selector.sprite_number,
+                                            entry.selector.extra_bits,
+                                            entry.description.as_deref().unwrap_or("custom sprite")
+                                        ),
+                                    )
+                                };
                                 if response.clicked() {
                                     chosen = Some(entry.selector);
                                 }
@@ -8445,6 +8582,18 @@ fn draw_catalog_background(painter: &egui::Painter, rect: egui::Rect, selected: 
         ),
         egui::StrokeKind::Inside,
     );
+}
+
+fn catalog_entry_layout(
+    ui: &mut egui::Ui,
+    vertical: bool,
+    add_entries: impl FnOnce(&mut egui::Ui),
+) {
+    if vertical {
+        ui.vertical(add_entries);
+    } else {
+        ui.horizontal_wrapped(add_entries);
+    }
 }
 
 fn object_catalog_tiles(
@@ -12468,6 +12617,22 @@ fn pristine_sprite_bank_range(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn object_and_sprite_catalog_presentation_state_is_independent() {
+        let mut editor = VanillaLevelEditor::default();
+        assert!(editor.object_catalog_preview_icons.unwrap_or(true));
+        assert!(!editor.object_catalog_vertical_layout.unwrap_or(false));
+        assert!(editor.sprite_catalog_preview_icons.unwrap_or(true));
+        assert!(!editor.sprite_catalog_vertical_layout.unwrap_or(false));
+
+        editor.object_catalog_preview_icons = Some(false);
+        editor.object_catalog_vertical_layout = Some(true);
+        assert!(!editor.object_catalog_preview_icons.unwrap_or(true));
+        assert!(editor.object_catalog_vertical_layout.unwrap_or(false));
+        assert!(editor.sprite_catalog_preview_icons.unwrap_or(true));
+        assert!(!editor.sprite_catalog_vertical_layout.unwrap_or(false));
+    }
 
     #[test]
     fn staged_level_edit_rebases_across_expansion_then_commits_and_reopens() {
