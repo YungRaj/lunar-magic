@@ -3761,6 +3761,20 @@ also honors command `$13`'s special graphics source at `$005D1628`; selector `$7
 the `$005D1580`/`$005D1594` mode/graphics pair for object tilesets 4, 5, and D, requiring FG3 file
 `$07`. As in the original assembly, alternative zero may be all wildcards, while later
 all-wildcard alternatives are ignored unless at least one compared field is non-wildcard.
+The remaining `.ff7`/`.ff8` preview controls are symmetric. Cell 5 (`$0097`) toggles the dedicated
+preview window through `ToggleCustomObjectPreviewPane` or
+`ToggleSpritePlacementPreviewVisibility`, then disables cell 4 (`$2440`) and cell 3 (`$006A`)
+while hidden. Cell 4 opens the zoom popup created by `CreateCustomObjectZoomPopupMenu` at
+`$005301B0` or `CreateSpritePreviewZoomPopupMenu` at `$00579A10`. Both consume identical six-dword
+tables at `$005E50EC` and `$005E407C`: 100, 200, 300, 400, 600, and 800 percent (24-byte SHA-256
+`41a74ee91c9d91d765b71557be01522276a33d18d8568ae6d24ef73b00a72b80`).
+`ChangeCustomObjectZoom` at `$005305B0` and `ChangeSpritePreviewZoom` at `$00579E10` clamp
+absolute or relative changes to 100–5000 percent. `CalculateScaledCustomObjectCanvasSize` at
+`$00530710` and `CalculateSpritePreviewWindowSize` at `$00579F70` prove the common 256×256 logical
+surface, while `ApplyCustomObjectZoomLayout` at `$005304C0` and
+`ApplySpritePreviewZoomLayout` at `$00579D20` preserve the selected zoom across layout and DPI
+changes. Rust now mirrors these controls with independent object/sprite state and scrollable scaled
+surfaces rather than resizing the level canvas.
 Resolved OSC displays now supply a second active-variant Add Object catalog. It deduplicates
 object/parameter selectors for the current normal, castle, rope, underground, or ghost-house
 family; searches hexadecimal pairs and descriptions; and fits composite Map16 artwork using

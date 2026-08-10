@@ -24,6 +24,8 @@ const ROM_LEVEL_CANVAS_MAX_ZOOM: u16 = 5_000;
 const ROM_LEVEL_CANVAS_ZOOM_STEP: u16 = 100;
 const ROM_LEVEL_CANVAS_INITIAL_PREVIOUS_ZOOM: u16 = 200;
 const ROM_LEVEL_CANVAS_ZOOM_MENU: [u16; 9] = [100, 125, 150, 175, 200, 300, 400, 600, 800];
+const CATALOG_PREVIEW_LOGICAL_SIDE: f32 = 256.0;
+const CATALOG_PREVIEW_ZOOM_MENU: [u16; 6] = [100, 200, 300, 400, 600, 800];
 const LUNAR_MAGIC_ANIMATION_TICK_SECONDS: f64 = 0.06;
 const NATIVE_LEVEL_MINOR_TILES: u16 = 27;
 const VERTICAL_LEVEL_MINOR_TILES: u16 = 32;
@@ -360,6 +362,9 @@ pub(crate) struct VanillaLevelEditor {
     object_catalog_preview_icons: Option<bool>,
     object_catalog_compatible_only: Option<bool>,
     object_catalog_vertical_layout: Option<bool>,
+    object_catalog_preview_area: Option<bool>,
+    object_catalog_preview_zoom: Option<u16>,
+    object_catalog_preview_selector: Option<lm_level::OscObjectSelector>,
     object_placement_template: Option<ObjectRecord>,
     selected_sprite: usize,
     selected_sprite_group: Vec<usize>,
@@ -372,6 +377,9 @@ pub(crate) struct VanillaLevelEditor {
     sprite_catalog_preview_icons: Option<bool>,
     sprite_catalog_compatible_only: Option<bool>,
     sprite_catalog_vertical_layout: Option<bool>,
+    sprite_catalog_preview_area: Option<bool>,
+    sprite_catalog_preview_zoom: Option<u16>,
+    sprite_catalog_preview_selector: Option<lm_level::SscSpriteSelector>,
     canvas_zoom_percent: Option<u16>,
     canvas_previous_zoom_percent: Option<u16>,
     zoom_filter: Option<bool>,
@@ -840,6 +848,7 @@ impl VanillaLevelEditor {
                 self.object_catalog(ui, custom_map16, true);
                 self.extended_object_catalog(ui, custom_map16, true);
                 self.custom_object_catalog(ui, custom_objects, custom_map16, true);
+                self.object_catalog_preview_area(ui, custom_objects, custom_map16, true);
                 self.show_layer2_object_editor(ui, &objects.objects.records, custom_objects);
             }
         });
@@ -6059,6 +6068,7 @@ impl VanillaLevelEditor {
         self.object_catalog(ui, custom_map16, false);
         self.extended_object_catalog(ui, custom_map16, false);
         self.custom_object_catalog(ui, custom_objects, custom_map16, false);
+        self.object_catalog_preview_area(ui, custom_objects, custom_map16, false);
         if let Some((screen, destination_and_flags)) = &mut self.object_form.screen_exit {
             ui.label("Native screen-exit object");
             egui::Grid::new("vanilla-screen-exit-fields").show(ui, |ui| {
@@ -6137,19 +6147,24 @@ impl VanillaLevelEditor {
         kind: OriginalToolbarImages,
         objects: bool,
     ) {
-        let (mut previews, mut compatible_only, mut vertical) = if objects {
-            (
-                self.object_catalog_preview_icons.unwrap_or(true),
-                self.object_catalog_compatible_only.unwrap_or(false),
-                self.object_catalog_vertical_layout.unwrap_or(false),
-            )
-        } else {
-            (
-                self.sprite_catalog_preview_icons.unwrap_or(true),
-                self.sprite_catalog_compatible_only.unwrap_or(false),
-                self.sprite_catalog_vertical_layout.unwrap_or(false),
-            )
-        };
+        let (mut previews, mut compatible_only, mut vertical, mut preview_area, mut zoom) =
+            if objects {
+                (
+                    self.object_catalog_preview_icons.unwrap_or(true),
+                    self.object_catalog_compatible_only.unwrap_or(false),
+                    self.object_catalog_vertical_layout.unwrap_or(false),
+                    self.object_catalog_preview_area.unwrap_or(true),
+                    self.object_catalog_preview_zoom.unwrap_or(100),
+                )
+            } else {
+                (
+                    self.sprite_catalog_preview_icons.unwrap_or(true),
+                    self.sprite_catalog_compatible_only.unwrap_or(false),
+                    self.sprite_catalog_vertical_layout.unwrap_or(false),
+                    self.sprite_catalog_preview_area.unwrap_or(true),
+                    self.sprite_catalog_preview_zoom.unwrap_or(100),
+                )
+            };
         ui.horizontal(|ui| {
             if images
                 .original_catalog_button(
@@ -6179,28 +6194,178 @@ impl VanillaLevelEditor {
             {
                 compatible_only = !compatible_only;
             }
+            ui.add_enabled_ui(preview_area, |ui| {
+                if images
+                    .original_catalog_button(
+                        ui,
+                        kind,
+                        OriginalCatalogAction::VerticalLayout,
+                        "Use vertical layout",
+                        vertical,
+                    )
+                    .clicked()
+                {
+                    vertical = !vertical;
+                }
+                let zoom_response = images.original_catalog_button(
+                    ui,
+                    kind,
+                    OriginalCatalogAction::Zoom,
+                    &format!("Preview zoom: {zoom}%"),
+                    zoom != 100,
+                );
+                let popup_id = ui.make_persistent_id(if objects {
+                    "object-catalog-preview-zoom"
+                } else {
+                    "sprite-catalog-preview-zoom"
+                });
+                if zoom_response.clicked() {
+                    ui.memory_mut(|memory| memory.toggle_popup(popup_id));
+                }
+                egui::popup::popup_below_widget(
+                    ui,
+                    popup_id,
+                    &zoom_response,
+                    egui::popup::PopupCloseBehavior::CloseOnClickOutside,
+                    |ui| {
+                        for preset in CATALOG_PREVIEW_ZOOM_MENU {
+                            if ui
+                                .selectable_label(zoom == preset, format!("{preset}%"))
+                                .clicked()
+                            {
+                                zoom = preset;
+                                ui.close_menu();
+                            }
+                        }
+                        ui.separator();
+                        if ui.button("Zoom out").clicked() {
+                            zoom = change_catalog_preview_zoom(zoom, -100);
+                        }
+                        if ui.button("Zoom in").clicked() {
+                            zoom = change_catalog_preview_zoom(zoom, 100);
+                        }
+                        if ui.button("Default 100%").clicked() {
+                            zoom = 100;
+                            ui.close_menu();
+                        }
+                    },
+                );
+            });
             if images
                 .original_catalog_button(
                     ui,
                     kind,
-                    OriginalCatalogAction::VerticalLayout,
-                    "Use vertical layout",
-                    vertical,
+                    OriginalCatalogAction::PreviewArea,
+                    "Show preview area",
+                    preview_area,
                 )
                 .clicked()
             {
-                vertical = !vertical;
+                preview_area = !preview_area;
             }
         });
         if objects {
             self.object_catalog_preview_icons = Some(previews);
             self.object_catalog_compatible_only = Some(compatible_only);
             self.object_catalog_vertical_layout = Some(vertical);
+            self.object_catalog_preview_area = Some(preview_area);
+            self.object_catalog_preview_zoom = Some(zoom);
         } else {
             self.sprite_catalog_preview_icons = Some(previews);
             self.sprite_catalog_compatible_only = Some(compatible_only);
             self.sprite_catalog_vertical_layout = Some(vertical);
+            self.sprite_catalog_preview_area = Some(preview_area);
+            self.sprite_catalog_preview_zoom = Some(zoom);
         }
+    }
+
+    fn object_catalog_preview_area(
+        &self,
+        ui: &mut egui::Ui,
+        custom_objects: Option<&lm_level::OscResolvedTable>,
+        custom_map16: Option<&lm_app::NativeMap16SidecarDocument>,
+        layer2: bool,
+    ) {
+        if !self.object_catalog_preview_area.unwrap_or(true) {
+            return;
+        }
+        let zoom = self
+            .object_catalog_preview_zoom
+            .unwrap_or(100)
+            .clamp(100, 5_000);
+        ui.separator();
+        ui.label(format!("Object preview · {zoom}%"));
+        let side = catalog_preview_side(zoom);
+        egui::ScrollArea::both()
+            .id_salt("vanilla-object-catalog-preview-area")
+            .max_height(320.0)
+            .show(ui, |ui| {
+                let (rect, _) =
+                    ui.allocate_exact_size(egui::vec2(side, side), egui::Sense::hover());
+                let painter = ui.painter_at(rect);
+                draw_catalog_background(&painter, rect, false);
+                let scale = f32::from(zoom) / 100.0;
+                if let Some(object) = self
+                    .object_catalog_preview_selector
+                    .and_then(|selector| custom_objects.and_then(|table| table.get(selector)))
+                    && let Some(parts) =
+                        lm_render::render_resolved_lunar_magic_custom_object(object)
+                {
+                    draw_fitted_custom_object_preview(
+                        &painter,
+                        self.map16_texture.as_ref(),
+                        self.foreground_texture.as_ref(),
+                        custom_map16,
+                        rect,
+                        &parts,
+                        scale,
+                    );
+                    return;
+                }
+
+                let record = if layer2 {
+                    self.layer2_object_placement_template
+                        .clone()
+                        .or_else(|| self.layer2_object_form.ordinary_record().ok())
+                } else {
+                    self.object_placement_template
+                        .clone()
+                        .or_else(|| self.object_form.ordinary_record().ok())
+                };
+                let object_tileset = self.controller.as_ref().map_or(0, |controller| {
+                    controller.level().layer1.header.object_tileset()
+                });
+                let Some(mut definitions) = standard_object_definitions_for_tileset(object_tileset)
+                else {
+                    draw_catalog_preview_unavailable(&painter, rect);
+                    return;
+                };
+                if definitions
+                    .apply_lunar_magic_switch_view_state(self.switch_view_state)
+                    .is_err()
+                {
+                    draw_catalog_preview_unavailable(&painter, rect);
+                    return;
+                }
+                let Some(tiles) = record.as_ref().and_then(|record| {
+                    self.active_standard_object_handler_map()
+                        .and_then(|handlers| {
+                            object_catalog_record_tiles(record, handlers, &definitions)
+                        })
+                }) else {
+                    draw_catalog_preview_unavailable(&painter, rect);
+                    return;
+                };
+                draw_fitted_object_catalog_preview(
+                    &painter,
+                    self.map16_texture.as_ref(),
+                    self.foreground_texture.as_ref(),
+                    custom_map16,
+                    rect,
+                    &tiles,
+                    16.0 * scale,
+                );
+            });
     }
 
     fn handle_object_paste(&mut self, ui: &egui::Ui, record_count: usize) {
@@ -6318,6 +6483,7 @@ impl VanillaLevelEditor {
     }
 
     fn select_standard_object_from_catalog(&mut self, command: u8, layer2: bool) {
+        self.object_catalog_preview_selector = None;
         let form = if layer2 {
             &mut self.layer2_object_form
         } else {
@@ -6419,12 +6585,14 @@ impl VanillaLevelEditor {
     ) {
         match custom_object_native_record(selector) {
             Ok(record) if layer2 => {
+                self.object_catalog_preview_selector = Some(selector);
                 self.layer2_object_form = ObjectForm::from_record(&record);
                 self.layer2_object_placement_template = Some(record);
                 self.placement_mode = Some(CanvasPlacementMode::Layer2Object);
                 self.error = None;
             }
             Ok(record) => {
+                self.object_catalog_preview_selector = Some(selector);
                 self.object_form = ObjectForm::from_record(&record);
                 self.object_placement_template = Some(record);
                 self.placement_mode = Some(CanvasPlacementMode::Object);
@@ -6537,6 +6705,7 @@ impl VanillaLevelEditor {
     }
 
     fn select_extended_object_from_catalog(&mut self, selector: u8, layer2: bool) {
+        self.object_catalog_preview_selector = None;
         let record = ObjectRecord::new(vec![0, 0, selector])
             .expect("extended catalog selectors always encode three-byte objects");
         if layer2 {
@@ -6869,6 +7038,7 @@ impl VanillaLevelEditor {
         );
         self.sprite_catalog(ui);
         self.custom_sprite_catalog(ui, custom_sprites, external_assets, custom_map16);
+        self.sprite_catalog_preview_area(ui, custom_sprites, external_assets, custom_map16);
         self.sprite_form_controls(ui);
         sprite_save_constraint(ui, self.controller.as_ref());
         self.sprite_editor_actions(ui, token_count);
@@ -7159,6 +7329,140 @@ impl VanillaLevelEditor {
             });
     }
 
+    fn sprite_catalog_preview_area(
+        &mut self,
+        ui: &mut egui::Ui,
+        custom_sprites: Option<&lm_level::SscResolvedTable>,
+        external_assets: &lm_graphics::ExternalSpriteAssets,
+        custom_map16: Option<&lm_app::NativeMap16SidecarDocument>,
+    ) {
+        if !self.sprite_catalog_preview_area.unwrap_or(true) {
+            return;
+        }
+        let zoom = self
+            .sprite_catalog_preview_zoom
+            .unwrap_or(100)
+            .clamp(100, 5_000);
+        let scale = f32::from(zoom) / 100.0;
+        let side = catalog_preview_side(zoom);
+        let animation_phase =
+            sprite_animation_phase(self.animation_seconds(ui.input(|input| input.time)));
+        let texture = self.sprite_texture.clone();
+        let animated_texture = self
+            .animated_sprite_textures
+            .get(usize::from(animation_phase))
+            .cloned()
+            .or_else(|| texture.clone());
+        let custom = self
+            .sprite_catalog_preview_selector
+            .and_then(|selector| custom_sprites.and_then(|table| table.get(selector)));
+        let (atlas_parts, external_parts) = custom.map_or((None, None), |entry| {
+            (
+                lm_render::render_atlas_lunar_magic_custom_sprite_with(
+                    custom_sprites.expect("custom entry requires its table"),
+                    entry,
+                    |index| external_sprite_definition(custom_map16, index),
+                ),
+                lm_render::render_remapped_lunar_magic_custom_sprite_with(
+                    custom_sprites.expect("custom entry requires its table"),
+                    entry,
+                    |index| external_sprite_definition(custom_map16, index),
+                ),
+            )
+        });
+        if let Some(parts) = external_parts.as_deref() {
+            ensure_remapped_part_textures(
+                ui.ctx(),
+                &mut self.external_sprite_textures,
+                parts,
+                SpriteRasterAssets {
+                    external: external_assets,
+                    foreground_tiles: &self.foreground_tiles,
+                    layer3_tiles: &self.layer3_tiles,
+                    vanilla_tiles: &self.sprite_tiles,
+                    vanilla_palette: self.sprite_palette.as_ref(),
+                },
+            );
+        }
+
+        ui.separator();
+        ui.label(format!("Sprite preview · {zoom}%"));
+        egui::ScrollArea::both()
+            .id_salt("vanilla-sprite-catalog-preview-area")
+            .max_height(320.0)
+            .show(ui, |ui| {
+                let (rect, _) =
+                    ui.allocate_exact_size(egui::vec2(side, side), egui::Sense::hover());
+                let painter = ui.painter_at(rect);
+                draw_catalog_background(&painter, rect, false);
+                if custom.is_some()
+                    && let (Some(texture), Some(parts)) = (texture.as_ref(), atlas_parts.as_deref())
+                {
+                    draw_fitted_sprite_catalog_preview(
+                        &painter,
+                        texture,
+                        animated_texture.as_ref(),
+                        None,
+                        rect,
+                        parts,
+                        scale,
+                    );
+                    return;
+                }
+                if custom.is_some()
+                    && let Some(parts) = external_parts.as_deref()
+                    && parts
+                        .iter()
+                        .all(|part| self.external_sprite_textures.contains_key(part))
+                {
+                    draw_fitted_external_sprite_catalog_preview(
+                        &painter,
+                        rect,
+                        parts,
+                        &self.external_sprite_textures,
+                        scale,
+                    );
+                    return;
+                }
+
+                let Some(texture) = texture.as_ref() else {
+                    draw_catalog_preview_unavailable(&painter, rect);
+                    return;
+                };
+                let (vertical, level_mode) =
+                    self.controller.as_ref().map_or((false, 0), |controller| {
+                        let header = &controller.level().layer1.header;
+                        (
+                            lm_profile::smw_us_v1_level_mode(header.level_mode()).vertical,
+                            header.level_mode(),
+                        )
+                    });
+                let mut mode = sprite_catalog_preview_mode(
+                    &self.sprite_form,
+                    vertical,
+                    level_mode,
+                    self.form.sprite_tileset,
+                );
+                mode.alternate_display = self.silver_pow_active;
+                let Some(parts) = lm_render::render_lunar_magic_standard_sprite_with_mode(
+                    self.sprite_form.sprite_number,
+                    mode,
+                ) else {
+                    draw_catalog_preview_unavailable(&painter, rect);
+                    return;
+                };
+                draw_fitted_sprite_catalog_preview(
+                    &painter,
+                    texture,
+                    animated_texture.as_ref(),
+                    Some(self.sprite_form.sprite_number),
+                    rect,
+                    &parts,
+                    scale,
+                );
+            });
+    }
+
     fn choose_custom_sprite(&mut self, selector: lm_level::SscSpriteSelector) {
         let Some(controller) = self.controller.as_ref() else {
             self.error = Some("native level controller is unavailable".into());
@@ -7173,6 +7477,7 @@ impl VanillaLevelEditor {
         };
         match custom_sprite_token(fields, controller.sprite_lengths()) {
             Ok(token) => {
+                self.sprite_catalog_preview_selector = Some(selector);
                 self.sprite_form = SpriteForm::from_token(self.sprite_form.header, Some(&token));
                 self.placement_mode = Some(CanvasPlacementMode::Sprite);
                 self.error = None;
@@ -7182,6 +7487,7 @@ impl VanillaLevelEditor {
     }
 
     fn choose_standard_sprite(&mut self, sprite_number: u8) {
+        self.sprite_catalog_preview_selector = None;
         let fields = NativeSpriteRecordFields {
             y_low: self.sprite_form.y_low,
             extra_bits: self.sprite_form.extra_bits,
@@ -8304,6 +8610,16 @@ fn clamp_canvas_zoom(zoom: u16) -> u16 {
     zoom.clamp(ROM_LEVEL_CANVAS_MIN_ZOOM, ROM_LEVEL_CANVAS_MAX_ZOOM)
 }
 
+fn change_catalog_preview_zoom(current: u16, delta: i16) -> u16 {
+    i32::from(current)
+        .saturating_add(i32::from(delta))
+        .clamp(100, 5_000) as u16
+}
+
+fn catalog_preview_side(zoom: u16) -> f32 {
+    CATALOG_PREVIEW_LOGICAL_SIDE * f32::from(zoom.clamp(100, 5_000)) / 100.0
+}
+
 fn rom_canvas_size(major_tiles: u16, minor_tiles: u16, vertical: bool, cell: f32) -> egui::Vec2 {
     let major = f32::from(major_tiles) * cell;
     let minor = f32::from(minor_tiles) * cell;
@@ -8466,6 +8782,7 @@ fn draw_custom_object_catalog_entry(
             custom_map16,
             preview_rect,
             &parts,
+            1.0,
         );
     }
     painter.text(
@@ -8494,6 +8811,7 @@ fn draw_fitted_custom_object_preview(
     custom_map16: Option<&lm_app::NativeMap16SidecarDocument>,
     target: egui::Rect,
     parts: &[lm_render::CustomObjectPreviewTile],
+    max_scale: f32,
 ) {
     let min_x = parts.iter().map(|part| part.x).min().unwrap_or(0);
     let min_y = parts.iter().map(|part| part.y).min().unwrap_or(0);
@@ -8511,7 +8829,7 @@ fn draw_fitted_custom_object_preview(
     let height = f32::from(max_y.saturating_sub(min_y).max(1));
     let scale = (target.width() / width)
         .min(target.height() / height)
-        .min(1.0);
+        .min(max_scale);
     let origin = target.center() - egui::vec2(width * scale, height * scale) / 2.0;
     for part in parts {
         let position = origin
@@ -8583,6 +8901,7 @@ fn draw_object_catalog_entry(
             custom_map16,
             preview_rect,
             &tiles,
+            16.0,
         );
     } else {
         painter.text(
@@ -8630,6 +8949,7 @@ fn draw_extended_object_catalog_entry(
             custom_map16,
             preview_rect,
             &tiles,
+            16.0,
         );
     } else {
         painter.text(
@@ -8672,6 +8992,16 @@ fn draw_catalog_background(painter: &egui::Painter, rect: egui::Rect, selected: 
             },
         ),
         egui::StrokeKind::Inside,
+    );
+}
+
+fn draw_catalog_preview_unavailable(painter: &egui::Painter, rect: egui::Rect) {
+    painter.text(
+        rect.center(),
+        egui::Align2::CENTER_CENTER,
+        "preview unavailable",
+        egui::FontId::monospace(12.0),
+        egui::Color32::GRAY,
     );
 }
 
@@ -8747,6 +9077,7 @@ fn draw_fitted_object_catalog_preview(
     custom_map16: Option<&lm_app::NativeMap16SidecarDocument>,
     target: egui::Rect,
     tiles: &[(usize, usize, u16)],
+    max_cell: f32,
 ) {
     let Some(min_x) = tiles.iter().map(|(x, _, _)| *x).min() else {
         return;
@@ -8758,7 +9089,7 @@ fn draw_fitted_object_catalog_preview(
     let height = f32::from(u16::try_from(max_y - min_y + 1).expect("catalog height is at most 16"));
     let cell = (target.width() / width)
         .min(target.height() / height)
-        .min(16.0);
+        .min(max_cell);
     let origin = target.center() - egui::vec2(width * cell, height * cell) / 2.0;
     for &(x, y, tile) in tiles {
         let relative_x = u16::try_from(x - min_x).expect("catalog x is at most 15");
@@ -8985,6 +9316,7 @@ fn draw_custom_sprite_catalog_entry(
             None,
             preview_rect,
             parts,
+            1.0,
         );
     } else if let Some(parts) = external_parts
         && parts
@@ -8996,6 +9328,7 @@ fn draw_custom_sprite_catalog_entry(
             preview_rect,
             parts,
             external_textures,
+            1.0,
         );
     } else {
         painter.text(
@@ -9033,6 +9366,7 @@ fn draw_fitted_external_sprite_catalog_preview(
     target: egui::Rect,
     parts: &[lm_render::RemappedCustomSpritePreviewTile],
     textures: &HashMap<lm_render::RemappedCustomSpritePreviewTile, egui::TextureHandle>,
+    max_scale: f32,
 ) {
     let min_x = parts.iter().map(|part| part.x).min().unwrap_or(0);
     let min_y = parts.iter().map(|part| part.y).min().unwrap_or(0);
@@ -9050,7 +9384,7 @@ fn draw_fitted_external_sprite_catalog_preview(
     let height = f32::from(max_y.saturating_sub(min_y).max(1));
     let scale = (target.width() / width)
         .min(target.height() / height)
-        .min(1.0);
+        .min(max_scale);
     let origin = target.center() - egui::vec2(width * scale, height * scale) / 2.0;
     for part in parts {
         let Some(texture) = textures.get(part) else {
@@ -9093,6 +9427,7 @@ fn draw_sprite_catalog_entry(
             Some(sprite_number),
             preview_rect,
             &parts,
+            1.0,
         );
     } else if lm_render::lunar_magic_standard_sprite_preview_source(sprite_number)
         == lm_render::StandardSpritePreviewSource::NativeEmpty
@@ -9133,6 +9468,7 @@ fn draw_fitted_sprite_catalog_preview(
     standard_sprite_number: Option<u8>,
     target: egui::Rect,
     parts: &[lm_render::StandardSpritePreviewTile],
+    max_scale: f32,
 ) {
     let min_x = parts.iter().map(|part| part.x).min().unwrap_or(0);
     let min_y = parts.iter().map(|part| part.y).min().unwrap_or(0);
@@ -9150,7 +9486,7 @@ fn draw_fitted_sprite_catalog_preview(
     let height = f32::from(max_y.saturating_sub(min_y).max(1));
     let scale = (target.width() / width)
         .min(target.height() / height)
-        .min(1.0);
+        .min(max_scale);
     let origin = target.center() - egui::vec2(width * scale, height * scale) / 2.0;
     for part in parts {
         let position = origin
@@ -12733,19 +13069,41 @@ mod tests {
         assert!(editor.object_catalog_preview_icons.unwrap_or(true));
         assert!(!editor.object_catalog_compatible_only.unwrap_or(false));
         assert!(!editor.object_catalog_vertical_layout.unwrap_or(false));
+        assert!(editor.object_catalog_preview_area.unwrap_or(true));
+        assert_eq!(editor.object_catalog_preview_zoom.unwrap_or(100), 100);
         assert!(editor.sprite_catalog_preview_icons.unwrap_or(true));
         assert!(!editor.sprite_catalog_compatible_only.unwrap_or(false));
         assert!(!editor.sprite_catalog_vertical_layout.unwrap_or(false));
+        assert!(editor.sprite_catalog_preview_area.unwrap_or(true));
+        assert_eq!(editor.sprite_catalog_preview_zoom.unwrap_or(100), 100);
 
         editor.object_catalog_preview_icons = Some(false);
         editor.object_catalog_compatible_only = Some(true);
         editor.object_catalog_vertical_layout = Some(true);
+        editor.object_catalog_preview_area = Some(false);
+        editor.object_catalog_preview_zoom = Some(600);
         assert!(!editor.object_catalog_preview_icons.unwrap_or(true));
         assert!(editor.object_catalog_compatible_only.unwrap_or(false));
         assert!(editor.object_catalog_vertical_layout.unwrap_or(false));
+        assert!(!editor.object_catalog_preview_area.unwrap_or(true));
+        assert_eq!(editor.object_catalog_preview_zoom.unwrap_or(100), 600);
         assert!(editor.sprite_catalog_preview_icons.unwrap_or(true));
         assert!(!editor.sprite_catalog_compatible_only.unwrap_or(false));
         assert!(!editor.sprite_catalog_vertical_layout.unwrap_or(false));
+        assert!(editor.sprite_catalog_preview_area.unwrap_or(true));
+        assert_eq!(editor.sprite_catalog_preview_zoom.unwrap_or(100), 100);
+    }
+
+    #[test]
+    fn catalog_preview_zoom_matches_recovered_presets_bounds_and_canvas_size() {
+        assert_eq!(CATALOG_PREVIEW_ZOOM_MENU, [100, 200, 300, 400, 600, 800]);
+        assert_eq!(change_catalog_preview_zoom(100, -100), 100);
+        assert_eq!(change_catalog_preview_zoom(100, 100), 200);
+        assert_eq!(change_catalog_preview_zoom(4_950, 100), 5_000);
+        assert_eq!(change_catalog_preview_zoom(5_000, 100), 5_000);
+        assert_eq!(catalog_preview_side(100), 256.0);
+        assert_eq!(catalog_preview_side(200), 512.0);
+        assert_eq!(catalog_preview_side(5_000), 12_800.0);
     }
 
     #[test]
@@ -14992,6 +15350,10 @@ mod tests {
         let custom_selector =
             lm_level::OscResolvedTable::from_sidecar(&custom_sidecar).objects()[0].selector;
         editor.select_custom_object_from_catalog(custom_selector, true);
+        assert_eq!(
+            editor.object_catalog_preview_selector,
+            Some(custom_selector)
+        );
         let custom_template = editor.layer2_object_placement_template.as_ref().unwrap();
         assert_eq!(custom_template.command_id(), 0x22);
         assert_eq!(custom_template.parameter(), 2);
@@ -19279,6 +19641,10 @@ mod tests {
         for (case, sprite) in resolved.sprites().iter().enumerate() {
             let declared_length = case + 4;
             editor.choose_custom_sprite(sprite.selector);
+            assert_eq!(
+                editor.sprite_catalog_preview_selector,
+                Some(sprite.selector)
+            );
             let SpriteToken::Record(chosen) =
                 crate::native_level_document_form::parse_sprite_token(&editor.sprite_form.encoded)
                     .unwrap()

@@ -615,6 +615,13 @@ interactive frontends cannot bypass confirmation and request correlation through
   their dedicated 256-entry metadata and the `$7F` tileset-4/5/D override. Filtering remains
   disabled until foreground assets are loaded, and custom OSC entries retain their own external
   compatibility semantics rather than inheriting built-in requirements.
+  The final two catalog-strip controls now expose Lunar Magic's separate preview surface and zoom
+  menu for both objects and sprites. Each preview begins as a 256×256 logical canvas, uses the exact
+  100/200/300/400/600/800-percent presets, accepts 100-percent relative steps within the recovered
+  100–5000-percent bounds, and scrolls instead of forcing the surrounding level canvas to resize.
+  Hiding the preview keeps its zoom and layout choices but disables those controls until the pane
+  is restored. Standard and extended objects, OSC composites, standard sprites, SSC atlas parts,
+  and externally remapped SSC parts all render from the currently selected placement template.
   Attached `.osc` metadata adds an active-tileset custom catalog searchable by hexadecimal
   object/parameter pair or description. Its composites resolve ordinary and external Map16
   definitions, while placement constructs the native command-derived 3–8-byte stream shape and

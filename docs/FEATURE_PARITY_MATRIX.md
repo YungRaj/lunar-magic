@@ -824,8 +824,14 @@ table plus all five family overlays, command `$13`'s default-size table, and ext
 Custom OSC collections remain on their external-metadata path. Exact-shape predicate tests and
 `object_graphics_filters_are_gated_and_require_loaded_assets` cover alternatives, wildcards,
 family isolation, the `$7F` override, disabled state, and the no-assets fallback. The separate
-preview pane/zoom and tiled surfaces remain open, so the Configuration/Toolbar row remains
-`Partial` and the aggregate remains 59/65.
+preview pane and zoom actions are now live for both catalogs: cell 5 shows or hides an independently
+stateful 256×256 scrollable preview, cell 4 exposes the exact 100/200/300/400/600/800-percent
+presets plus bounded relative changes, and hiding the pane disables zoom/layout interaction without
+discarding either value. Standard, extended, OSC, SSC, and external-remapped artwork all reuse the
+same selected definition and active animation/palette sources as their list entries. The recovered
+100–5000-percent bounds and scaled-canvas dimensions have direct regression coverage. Original
+tiled bitmap surfaces remain open, so the Configuration/Toolbar row remains `Partial` and the
+aggregate remains 59/65.
 
 The fastest route to a broadly usable editor is:
 
