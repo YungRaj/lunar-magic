@@ -12,7 +12,7 @@ use lm_project::LevelSaveOptions;
 use lm_project::{Project, VanillaMainEntrance};
 use lm_rats::{AllocationPolicy, ProtectedRange};
 use lm_rom::{Mapper, Region, RomImage, SnesPointer24, SupportedGame};
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 
 use crate::user_toolbar_images::{
     MainToolbarImageSet, OriginalCatalogAction, OriginalTiledImage, OriginalToolbarImages,
@@ -394,6 +394,11 @@ struct PendingScreenExitFollowSave {
     intermediate_revision: Option<u64>,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct InvalidExitScanResult {
+    screens: Vec<u8>,
+}
+
 #[derive(Default)]
 pub(crate) struct VanillaLevelEditor {
     key: Option<EditorKey>,
@@ -463,6 +468,7 @@ pub(crate) struct VanillaLevelEditor {
     canvas_geometry: Option<LevelCanvasGeometry>,
     screen_exit_follow_prompt: Option<u16>,
     screen_exit_follow_after_save: Option<PendingScreenExitFollowSave>,
+    invalid_exit_scan_result: Option<InvalidExitScanResult>,
     game_preview: Option<bool>,
     snes_viewport: Option<bool>,
     draw_selection_over_live: Option<bool>,
@@ -619,6 +625,7 @@ impl VanillaLevelEditor {
         if self.key != Some(key) {
             self.load(&snapshot, key, custom_sprites);
         }
+        self.show_invalid_exit_scan_result(ui.ctx());
         if let Some(command) = self.show_screen_exit_follow_confirmation(ui.ctx(), &snapshot) {
             return Some(command);
         }
@@ -1702,6 +1709,7 @@ impl VanillaLevelEditor {
         self.screen_exit_table_selected = None;
         self.canvas_geometry = None;
         self.screen_exit_follow_prompt = None;
+        self.invalid_exit_scan_result = None;
         self.pending_layer2_mode_reset = None;
         self.canvas_entity_selection = None;
         if let Err(error) = validate_builtin_graphics_layout(snapshot) {
@@ -1901,6 +1909,7 @@ impl VanillaLevelEditor {
         self.canvas_geometry = None;
         self.screen_exit_follow_prompt = None;
         self.screen_exit_follow_after_save = None;
+        self.invalid_exit_scan_result = None;
         self.entrance_controller = None;
         self.secondary_exits = None;
         self.secondary_exit_references = None;
@@ -2798,6 +2807,119 @@ impl VanillaLevelEditor {
             Ok(None)
         } else {
             Ok(Some(Command::SelectLevel(destination)))
+        }
+    }
+
+    pub(crate) fn toolbar_scan_invalid_exits(
+        &mut self,
+        snapshot: &lm_app::ControllerSnapshot,
+        custom_dsc: Option<&lm_level::DscResolvedTable>,
+    ) -> Result<(), String> {
+        self.invalid_exit_scan_result = None;
+        self.error = None;
+        let screens = self.scan_invalid_exit_destinations(snapshot, custom_dsc)?;
+        self.invalid_exit_scan_result = Some(InvalidExitScanResult { screens });
+        Ok(())
+    }
+
+    fn scan_invalid_exit_destinations(
+        &self,
+        snapshot: &lm_app::ControllerSnapshot,
+        custom_dsc: Option<&lm_level::DscResolvedTable>,
+    ) -> Result<Vec<u8>, String> {
+        let controller = self
+            .controller
+            .as_ref()
+            .ok_or_else(|| "the current level is unavailable".to_owned())?;
+        let handler_map = self
+            .active_standard_object_handler_map()
+            .ok_or_else(|| "the active standard-object handler map is unavailable".to_owned())?;
+        let vertical = controller.level().layer1.header.is_vertical();
+        let major_tiles = (u16::from(controller.level().layer1.header.last_screen()) + 1) * 16;
+        let minor_tiles = level_minor_tile_limit(vertical);
+        let layout = lm_render::NativeLevelMap16Layout {
+            width: usize::from(if vertical { minor_tiles } else { major_tiles }),
+            height: usize::from(if vertical { major_tiles } else { minor_tiles }),
+            page_stride: 0x1b0,
+            base_cell: 0,
+            vertical,
+        };
+        let mut definitions = lm_render::StandardObjectDefinitionSet::empty();
+        lm_render::install_lunar_magic_shared_extended_objects(&mut definitions)
+            .map_err(|error| error.to_string())?;
+        lm_render::install_lunar_magic_tileset_extended_objects(
+            &mut definitions,
+            controller.level().layer1.header.object_tileset(),
+        )
+        .map_err(|error| error.to_string())?;
+        lm_render::install_lunar_magic_shared_standard_objects(&mut definitions)
+            .map_err(|error| error.to_string())?;
+        let project = Project::new(
+            RomImage::from_bytes(snapshot.rom_bytes.clone()).map_err(|error| error.to_string())?,
+        );
+        let map16 = lm_profile::load_smw_us_v1_primary_map16(&project)
+            .map_err(|error| error.to_string())?;
+        let exits = screen_exit_table(&controller.level().layer1.objects.records);
+        let mut screens = BTreeSet::new();
+        let layer2 = controller.layer2().and_then(|layer| match layer {
+            lm_level::NativeLayer2Data::Objects(data) => Some(&data.objects),
+            lm_level::NativeLayer2Data::Tilemap(_) => None,
+        });
+        for stream in std::iter::once(&controller.level().layer1.objects).chain(layer2) {
+            if stream.records.is_empty() {
+                continue;
+            }
+            let report = lm_render::render_mapped_standard_object_stream(
+                stream,
+                &definitions,
+                handler_map,
+                layout,
+                VANILLA_EMPTY_MAP16_TILE,
+            )
+            .map_err(|error| error.to_string())?;
+            mark_invalid_exit_screens(
+                &report.cache,
+                layout,
+                &map16.acts_like,
+                custom_dsc,
+                controller.level().layer1.header.level_mode(),
+                &exits,
+                self.secondary_exits.as_ref(),
+                &mut screens,
+            );
+        }
+        Ok(screens.into_iter().collect())
+    }
+
+    fn show_invalid_exit_scan_result(&mut self, context: &egui::Context) {
+        let Some(result) = self.invalid_exit_scan_result.clone() else {
+            return;
+        };
+        let mut close = false;
+        egui::Window::new("Scan for Undefined Exits")
+            .collapsible(false)
+            .resizable(false)
+            .show(context, |ui| {
+                if result.screens.is_empty() {
+                    ui.label("No undefined exit destinations were found.");
+                } else {
+                    ui.label("The following screens have exit-enabled objects that lead to level 0 or 0x100:");
+                    ui.monospace(
+                        result
+                            .screens
+                            .iter()
+                            .map(|screen| format!("{screen:02X}"))
+                            .collect::<Vec<_>>()
+                            .join(", "),
+                    );
+                    ui.label("Set an exit destination or remove the exit-enabled pipe or door objects on those screens; otherwise the player can become trapped in an endless bonus game.");
+                }
+                if ui.button("OK").clicked() {
+                    close = true;
+                }
+            });
+        if close {
+            self.invalid_exit_scan_result = None;
         }
     }
 
@@ -8835,6 +8957,83 @@ fn screen_exit_follow_destination(
         return Err("Destination is for overworld, not level.".into());
     }
     Ok(exit.destination_level)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn mark_invalid_exit_screens(
+    cache: &lm_render::NativeLevelMap16Cache,
+    layout: lm_render::NativeLevelMap16Layout,
+    acts_like: &[u16],
+    custom_dsc: Option<&lm_level::DscResolvedTable>,
+    level_mode: u8,
+    exits: &[Option<u16>; 32],
+    secondary_exits: Option<&SecondaryExitTable>,
+    screens: &mut BTreeSet<u8>,
+) {
+    for y in 0..layout.height {
+        for x in 0..layout.width {
+            let index = lm_render::NativeLevelMap16Cache::cell_index(layout, x, y);
+            let Some(&encoded_tile) = cache.cells().get(index) else {
+                continue;
+            };
+            let tile = encoded_tile & 0x7fff;
+            let root = resolve_acts_like_root(tile, acts_like);
+            let dsc_exit = custom_dsc.is_some_and(|table| {
+                table
+                    .get(tile)
+                    .is_some_and(|entry| entry.native_flags & 8 != 0)
+                    || table
+                        .get(root)
+                        .is_some_and(|entry| entry.native_flags & 8 != 0)
+            });
+            if !lm_level::lunar_magic_block_exit_marker(root, level_mode) && !dsc_exit {
+                continue;
+            }
+            let screen = if layout.vertical { y / 16 } else { x / 16 };
+            let Ok(screen) = u8::try_from(screen) else {
+                continue;
+            };
+            let Some(destination_and_flags) = exits.get(usize::from(screen)).copied().flatten()
+            else {
+                continue;
+            };
+            let mut destination =
+                (destination_and_flags >> 3) & 0x1e00 | destination_and_flags & 0x01ff;
+            if destination_and_flags & 0x0200 != 0 {
+                let Some(exit) =
+                    secondary_exits.and_then(|table| table.entries.get(usize::from(destination)))
+                else {
+                    destination = 0;
+                    if matches!(destination, 0 | 0x100) {
+                        screens.insert(screen);
+                    }
+                    continue;
+                };
+                if exit.x_and_overworld_flags & 0x80 != 0 {
+                    continue;
+                }
+                destination = exit.destination_level;
+            }
+            if matches!(destination, 0 | 0x100) {
+                screens.insert(screen);
+            }
+        }
+    }
+}
+
+fn resolve_acts_like_root(tile: u16, acts_like: &[u16]) -> u16 {
+    let mut current = tile & 0x7fff;
+    for _ in 0..acts_like.len().min(0x8000) {
+        let Some(&next) = acts_like.get(usize::from(current)) else {
+            return current;
+        };
+        let next = next & 0x7fff;
+        if next <= 0x1ff || next == current {
+            return next;
+        }
+        current = next;
+    }
+    current
 }
 
 fn level_screen_exit_annotations(
@@ -18318,6 +18517,95 @@ mod tests {
             screen_exit_follow_destination(&records, Some(&secondary), 2).unwrap_err(),
             "Destination is for overworld, not level."
         );
+    }
+
+    #[test]
+    fn undefined_exit_scan_marks_direct_secondary_acts_like_and_dsc_screens() {
+        let layout = lm_render::NativeLevelMap16Layout {
+            width: 64,
+            height: 27,
+            page_stride: 0x1b0,
+            base_cell: 0,
+            vertical: false,
+        };
+        let mut bytes = vec![0; lm_render::LEVEL_MAP16_CACHE_CELLS * 2];
+        for (x, tile) in [(1, 0x300_u16), (17, 0x020), (33, 0x400)] {
+            let index = lm_render::NativeLevelMap16Cache::cell_index(layout, x, 1);
+            bytes[index * 2..index * 2 + 2].copy_from_slice(&tile.to_le_bytes());
+        }
+        let cache = lm_render::NativeLevelMap16Cache::decode(&bytes).unwrap();
+        let mut acts_like = vec![0_u16; 0x8000];
+        acts_like[0x300] = 0x137;
+        acts_like[0x020] = 0x020;
+        acts_like[0x400] = 0x025;
+        let dsc = lm_level::DscSidecar::decode(b"0400\t20\tcustom exit\n").unwrap();
+        let dsc = lm_level::DscResolvedTable::from_sidecar(
+            &dsc,
+            lm_level::DscDescriptionStyle {
+                background: 0,
+                detail: 0,
+                foreground: 0,
+                mode: 0,
+            },
+        );
+        let mut exits = [None; 32];
+        exits[0] = Some(0);
+        exits[1] = Some(0x0200 | 0x0123);
+        exits[2] = Some(0x0100);
+        let mut secondary = SecondaryExitTable {
+            entries: vec![lm_level::SecondaryExit::default(); SecondaryExitTable::ENTRY_COUNT],
+        };
+        secondary.entries[0x123].destination_level = 0;
+        let mut screens = BTreeSet::new();
+        mark_invalid_exit_screens(
+            &cache,
+            layout,
+            &acts_like,
+            Some(&dsc),
+            0,
+            &exits,
+            Some(&secondary),
+            &mut screens,
+        );
+        assert_eq!(screens.into_iter().collect::<Vec<_>>(), vec![0, 1, 2]);
+    }
+
+    #[test]
+    fn undefined_exit_scan_skips_missing_valid_and_overworld_destinations() {
+        let layout = lm_render::NativeLevelMap16Layout {
+            width: 48,
+            height: 27,
+            page_stride: 0x1b0,
+            base_cell: 0,
+            vertical: false,
+        };
+        let mut bytes = vec![0; lm_render::LEVEL_MAP16_CACHE_CELLS * 2];
+        for x in [1, 17, 33] {
+            let index = lm_render::NativeLevelMap16Cache::cell_index(layout, x, 1);
+            bytes[index * 2..index * 2 + 2].copy_from_slice(&0x0020_u16.to_le_bytes());
+        }
+        let cache = lm_render::NativeLevelMap16Cache::decode(&bytes).unwrap();
+        let mut acts_like = vec![0_u16; 0x8000];
+        acts_like[0x20] = 0x20;
+        let mut exits = [None; 32];
+        exits[1] = Some(0x00105);
+        exits[2] = Some(0x0200 | 0x0123);
+        let mut secondary = SecondaryExitTable {
+            entries: vec![lm_level::SecondaryExit::default(); SecondaryExitTable::ENTRY_COUNT],
+        };
+        secondary.entries[0x123].x_and_overworld_flags = 0x80;
+        let mut screens = BTreeSet::new();
+        mark_invalid_exit_screens(
+            &cache,
+            layout,
+            &acts_like,
+            None,
+            0,
+            &exits,
+            Some(&secondary),
+            &mut screens,
+        );
+        assert!(screens.is_empty());
     }
 
     #[test]

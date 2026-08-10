@@ -6,7 +6,7 @@ use crate::{
 };
 use eframe::egui;
 use lm_app::DscSidecarController;
-use lm_level::MAX_DSC_SOURCE_LEN;
+use lm_level::{DscDescriptionStyle, DscResolvedTable, MAX_DSC_SOURCE_LEN};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum PendingClose {
@@ -17,6 +17,7 @@ enum PendingClose {
 #[derive(Default)]
 pub(crate) struct DscSidecarEditor {
     controller: Option<DscSidecarController>,
+    resolved: Option<DscResolvedTable>,
     form: DscSourceForm,
     loaded_revision: Option<u64>,
     entry_index: usize,
@@ -27,6 +28,10 @@ pub(crate) struct DscSidecarEditor {
 }
 
 impl DscSidecarEditor {
+    pub(crate) fn resolved(&self) -> Option<&DscResolvedTable> {
+        self.resolved.as_ref()
+    }
+
     pub(crate) fn is_open(&self) -> bool {
         self.controller.is_some() || self.loader.is_running()
     }
@@ -110,6 +115,15 @@ impl DscSidecarEditor {
         };
         if self.loaded_revision != Some(controller.revision()) {
             self.form = DscSourceForm::load(controller.value());
+            self.resolved = Some(DscResolvedTable::from_sidecar(
+                controller.value(),
+                DscDescriptionStyle {
+                    background: 0,
+                    detail: 0,
+                    foreground: 0,
+                    mode: 0,
+                },
+            ));
             self.loaded_revision = Some(controller.revision());
             self.entry_index = self
                 .entry_index
@@ -263,6 +277,7 @@ impl DscSidecarEditor {
 
     fn clear(&mut self) {
         self.controller = None;
+        self.resolved = None;
         self.loaded_revision = None;
         self.pending_close = None;
     }

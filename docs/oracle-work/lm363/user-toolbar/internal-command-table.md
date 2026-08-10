@@ -114,4 +114,9 @@ preselected. `$26FE` now resolves direct, midway, and secondary destinations, re
 overworld exits, and preserves the original dirty Save/Discard/Cancel gate; Save navigates only
 after successful commit and any required expansion, while stale/failing revisions cancel the
 deferred destination.
-The authenticated partition is therefore 235 routed and 82 pending slots.
+Level command `$2526` now performs the recovered undefined-exit scan over staged Layer 1 and
+object-backed Layer 2 Map16 caches. It follows Acts-Like chains, includes the built-in pipe/door
+set plus loaded `.dsc` exit markers, resolves direct and full-table secondary destinations, skips
+overworld destinations, and reports the exact affected screen numbers for destinations `$000` and
+`$100`.
+The authenticated partition is therefore 236 routed and 81 pending slots.
