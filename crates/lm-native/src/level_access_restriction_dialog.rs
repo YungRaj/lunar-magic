@@ -9,6 +9,25 @@ pub(crate) struct LevelAccessRestrictionDialog {
     title: String,
     acknowledged: bool,
     error: Option<String>,
+    stage: RestrictionStage,
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+enum RestrictionStage {
+    #[default]
+    Configure,
+    PersistBeforeIps,
+    OfferIps,
+    WaitForIps,
+    Complete,
+    Persisting,
+}
+
+pub(crate) enum LevelAccessRestrictionAction {
+    Restrict(Command),
+    PersistRestrictedRom,
+    CreateIps,
+    SaveAndClose,
 }
 
 impl LevelAccessRestrictionDialog {
@@ -16,11 +35,24 @@ impl LevelAccessRestrictionDialog {
         self.open = true;
         self.acknowledged = false;
         self.error = None;
+        self.stage = RestrictionStage::Configure;
     }
 
-    pub(crate) fn show(&mut self, context: &egui::Context, app: &AppState) -> Option<Command> {
-        let mut command = None;
-        if self.open {
+    pub(crate) fn show(
+        &mut self,
+        context: &egui::Context,
+        app: &AppState,
+        ips_workflow_active: bool,
+    ) -> Option<LevelAccessRestrictionAction> {
+        if self.stage == RestrictionStage::WaitForIps && !ips_workflow_active {
+            self.stage = RestrictionStage::Complete;
+        }
+        self.observe_persistence(
+            app.pending_save_request_id().is_some(),
+            app.project().map(lm_project::Project::is_modified),
+        );
+        let mut action = None;
+        if self.open && self.stage == RestrictionStage::Configure {
             egui::Window::new("Restrict Level Access by Lunar Magic (Version 1.1)")
                 .collapsible(false)
                 .resizable(false)
@@ -67,14 +99,77 @@ impl LevelAccessRestrictionDialog {
                                 } else {
                                     self.title.clone()
                                 };
-                                command = Some(Command::RestrictLevelAccess {
-                                    rev: app.project_revision(),
-                                    title,
-                                    keys: fresh_keys(),
-                                });
+                                action = Some(LevelAccessRestrictionAction::Restrict(
+                                    Command::RestrictLevelAccess {
+                                        rev: app.project_revision(),
+                                        title,
+                                        keys: fresh_keys(),
+                                    },
+                                ));
                             }
                         }
                     });
+                });
+        }
+        if self.stage == RestrictionStage::OfferIps {
+            egui::Window::new("Create an IPS patch?")
+                .collapsible(false)
+                .resizable(false)
+                .show(context, |ui| {
+                    ui.label("Do you want to create an IPS for this locked ROM?");
+                    ui.horizontal(|ui| {
+                        if ui.button("Yes").clicked() {
+                            action = Some(LevelAccessRestrictionAction::CreateIps);
+                        }
+                        if ui.button("No").clicked() {
+                            self.stage = RestrictionStage::Complete;
+                        }
+                    });
+                });
+        }
+        if self.stage == RestrictionStage::PersistBeforeIps {
+            egui::Window::new("Saving restricted ROM")
+                .collapsible(false)
+                .resizable(false)
+                .show(context, |ui| {
+                    if app.pending_save_request_id().is_some() {
+                        ui.label("Saving the restricted ROM before IPS creation…");
+                    } else {
+                        ui.label("The restricted ROM must be saved before an IPS can be created.");
+                        if ui.button("Retry Save").clicked() {
+                            action = Some(LevelAccessRestrictionAction::PersistRestrictedRom);
+                        }
+                    }
+                });
+        }
+        if self.stage == RestrictionStage::Complete {
+            egui::Window::new("Level Access Restriction Complete")
+                .collapsible(false)
+                .resizable(false)
+                .show(context, |ui| {
+                    ui.label(
+                        "Your modified levels are no longer accessible by Lunar Magic. \
+                         Performing any additional operations on this ROM is not recommended.",
+                    );
+                    if ui.button("OK").clicked() {
+                        self.stage = RestrictionStage::Persisting;
+                        action = Some(LevelAccessRestrictionAction::SaveAndClose);
+                    }
+                });
+        }
+        if self.stage == RestrictionStage::Persisting && app.project().is_some() {
+            egui::Window::new("Saving restricted ROM")
+                .collapsible(false)
+                .resizable(false)
+                .show(context, |ui| {
+                    if app.pending_save_request_id().is_some() {
+                        ui.label("Saving the restricted ROM before closing it…");
+                    } else {
+                        ui.label("The restricted ROM is still open and has not been saved.");
+                        if ui.button("Retry Save and Close").clicked() {
+                            action = Some(LevelAccessRestrictionAction::SaveAndClose);
+                        }
+                    }
                 });
         }
         if let Some(error) = self.error.clone() {
@@ -88,11 +183,36 @@ impl LevelAccessRestrictionDialog {
                     }
                 });
         }
-        command
+        action
     }
 
     pub(crate) fn commit_succeeded(&mut self) {
         self.open = false;
+        self.stage = RestrictionStage::PersistBeforeIps;
+    }
+
+    pub(crate) fn ips_choice_completed(&mut self, started: bool) {
+        self.stage = if started {
+            RestrictionStage::WaitForIps
+        } else {
+            RestrictionStage::Complete
+        };
+    }
+
+    pub(crate) fn workflow_failed(&mut self, error: impl Into<String>) {
+        self.error = Some(error.into());
+    }
+
+    fn observe_persistence(&mut self, save_pending: bool, project_modified: Option<bool>) {
+        if self.stage == RestrictionStage::PersistBeforeIps
+            && !save_pending
+            && project_modified == Some(false)
+        {
+            self.stage = RestrictionStage::OfferIps;
+        }
+        if self.stage == RestrictionStage::Persisting && project_modified.is_none() {
+            self.stage = RestrictionStage::Configure;
+        }
     }
 }
 
@@ -123,5 +243,41 @@ mod tests {
         for _ in 0..16 {
             assert_eq!(fresh_keys().per_save_low & 0x80, 0);
         }
+    }
+
+    #[test]
+    fn successful_restriction_orders_ips_completion_and_close() {
+        let mut dialog = LevelAccessRestrictionDialog::default();
+        dialog.open();
+        dialog.commit_succeeded();
+        assert_eq!(dialog.stage, RestrictionStage::PersistBeforeIps);
+        dialog.observe_persistence(true, Some(true));
+        assert_eq!(dialog.stage, RestrictionStage::PersistBeforeIps);
+        dialog.observe_persistence(false, Some(true));
+        assert_eq!(dialog.stage, RestrictionStage::PersistBeforeIps);
+        dialog.observe_persistence(false, Some(false));
+        assert_eq!(dialog.stage, RestrictionStage::OfferIps);
+        dialog.ips_choice_completed(true);
+        assert_eq!(dialog.stage, RestrictionStage::WaitForIps);
+
+        // The completion notice must not race an active asynchronous IPS workflow.
+        if dialog.stage == RestrictionStage::WaitForIps {
+            dialog.stage = RestrictionStage::Complete;
+        }
+        assert_eq!(dialog.stage, RestrictionStage::Complete);
+        dialog.stage = RestrictionStage::Persisting;
+        let context = egui::Context::default();
+        let app = AppState::default();
+        let _action = dialog.show(&context, &app, false);
+        assert_eq!(dialog.stage, RestrictionStage::Configure);
+    }
+
+    #[test]
+    fn cancelled_ips_chooser_advances_to_completion_notice() {
+        let mut dialog = LevelAccessRestrictionDialog::default();
+        dialog.commit_succeeded();
+        dialog.observe_persistence(false, Some(false));
+        dialog.ips_choice_completed(false);
+        assert_eq!(dialog.stage, RestrictionStage::Complete);
     }
 }

@@ -1,4 +1,6 @@
 use super::NativeApplication;
+use crate::effects::Confirmation;
+use crate::level_access_restriction_dialog::LevelAccessRestrictionAction;
 use eframe::egui;
 
 macro_rules! show_rom_editor {
@@ -112,7 +114,39 @@ impl NativeApplication {
             }
         }
         show_project_operation!(self, context, rom_expansion_dialog);
-        show_project_operation!(self, context, level_access_restriction_dialog);
+        let ips_workflow_active = self.ips_create_dialog.has_open_workflow();
+        if let Some(action) =
+            self.level_access_restriction_dialog
+                .show(context, &self.app, ips_workflow_active)
+        {
+            match action {
+                LevelAccessRestrictionAction::Restrict(command) => {
+                    if self.try_dispatch(context, command) {
+                        self.level_access_restriction_dialog.commit_succeeded();
+                        self.renderer.invalidate();
+                        let _accepted = self.try_dispatch(context, lm_app::Command::Save);
+                    }
+                }
+                LevelAccessRestrictionAction::PersistRestrictedRom => {
+                    let _accepted = self.try_dispatch(context, lm_app::Command::Save);
+                }
+                LevelAccessRestrictionAction::CreateIps => {
+                    match self.ips_create_dialog.choose_and_start() {
+                        Ok(started) => self
+                            .level_access_restriction_dialog
+                            .ips_choice_completed(started),
+                        Err(error) => self.level_access_restriction_dialog.workflow_failed(error),
+                    }
+                }
+                LevelAccessRestrictionAction::SaveAndClose => {
+                    self.effects.save_before_confirmation_action(
+                        &mut self.app,
+                        context,
+                        Confirmation::DiscardAndClose { quit_after: false },
+                    );
+                }
+            }
+        }
         show_project_operation!(self, context, graphics_migration_dialog);
         show_project_operation!(self, context, rats_reclamation_dialog);
         show_project_operation!(self, context, ips_patch_dialog);

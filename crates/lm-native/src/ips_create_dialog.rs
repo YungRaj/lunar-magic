@@ -27,6 +27,10 @@ impl IpsCreateDialog {
         self.running.is_some()
     }
 
+    pub(crate) const fn has_open_workflow(&self) -> bool {
+        self.running.is_some() || self.completed.is_some() || self.error.is_some()
+    }
+
     pub(crate) fn choose_and_start(&mut self) -> Result<bool, String> {
         if self.running.is_some() {
             return Err("an IPS creation workflow is already active".into());
