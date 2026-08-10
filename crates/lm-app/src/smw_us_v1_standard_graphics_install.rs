@@ -1,7 +1,7 @@
 use crate::PreparedRomCommit;
 use lm_project::{
-    GraphicsSaveOptions, PatchFixup, PatchFixupEncoding, PatchPayload, PatchWrite, Project,
-    RelocatablePatchPlan, RomMutation,
+    GraphicsCompression, GraphicsRomLayout, GraphicsSaveOptions, PatchFixup, PatchFixupEncoding,
+    PatchPayload, PatchWrite, PayloadReadPolicy, Project, RelocatablePatchPlan, RomMutation,
 };
 use lm_rats::{AllocationPolicy, ProtectedRange};
 use lm_rom::{Mapper, RomImage};
@@ -244,6 +244,37 @@ pub fn prepare_smw_us_v1_standard_graphics_install(
     image: RomImage,
     files: &[Vec<u8>],
 ) -> Result<PreparedRomCommit, String> {
+    prepare_smw_us_v1_standard_graphics_install_inner(expected_revision, image, files, None)
+}
+
+/// Performs Lunar Magic's first ordinary 4bpp insertion while honoring the dialog's logical PC
+/// allocation cursor. Only compressed streams authenticated through the vanilla pointer layouts
+/// are reclaimed; unrelated bytes below or above the cursor remain unavailable to allocation.
+///
+/// # Errors
+///
+/// Returns an error for an unsupported ROM/runtime, malformed input set, invalid cursor,
+/// authenticated-stream failure, allocation failure, or semantic reopen mismatch.
+pub fn prepare_smw_us_v1_standard_graphics_install_at(
+    expected_revision: u64,
+    image: RomImage,
+    files: &[Vec<u8>],
+    logical_pc_address: usize,
+) -> Result<PreparedRomCommit, String> {
+    prepare_smw_us_v1_standard_graphics_install_inner(
+        expected_revision,
+        image,
+        files,
+        Some(logical_pc_address),
+    )
+}
+
+fn prepare_smw_us_v1_standard_graphics_install_inner(
+    expected_revision: u64,
+    image: RomImage,
+    files: &[Vec<u8>],
+    allocation_cursor: Option<usize>,
+) -> Result<PreparedRomCommit, String> {
     if files.len() != FILE_SIZES.len() {
         return Err(format!(
             "standard GFX installation requires 52 files, got {}",
@@ -281,6 +312,16 @@ pub fn prepare_smw_us_v1_standard_graphics_install(
         }
         authenticate_pristine_patches(&image)?;
     }
+    if let Some(cursor) = allocation_cursor
+        && cursor >= TARGET_LOGICAL_LEN
+    {
+        return Err(format!(
+            "standard GFX allocation address {cursor:#X} must be below {TARGET_LOGICAL_LEN:#X}"
+        ));
+    }
+    let reclaimed = allocation_cursor
+        .map(|_| authenticated_vanilla_graphics_extents(&image, mapper))
+        .transpose()?;
     let before = image.logical_bytes().to_vec();
     let legacy_exgraphics_tables = legacy_upgrade
         .then(|| snapshot_exgraphics_pointer_tables(&image))
@@ -308,7 +349,18 @@ pub fn prepare_smw_us_v1_standard_graphics_install(
             .map_err(|error| error.to_string())?;
     }
 
-    let mut allocation = lm_rats::AllocationPolicy::lorom(0x80_028..project.rom.logical_len());
+    if let Some(extents) = reclaimed.as_ref() {
+        for extent in extents {
+            project
+                .rom
+                .write(extent.start, &vec![0xff; extent.end - extent.start])
+                .map_err(|error| error.to_string())?;
+        }
+    }
+
+    let allocation_start = allocation_cursor.unwrap_or(0x80_028);
+    let mut allocation =
+        lm_rats::AllocationPolicy::lorom(allocation_start..project.rom.logical_len());
     allocation.fill_bytes = vec![0x00, 0xff];
     let mut options = GraphicsSaveOptions {
         allocation,
@@ -326,6 +378,25 @@ pub fn prepare_smw_us_v1_standard_graphics_install(
     let mut ordinary = lm_profile::smw_us_v1_vanilla_graphics_layout();
     ordinary.mapper = mapper;
     protect_layout(&mut options, ordinary)?;
+    let insert_special = |project: &mut Project| -> Result<(), String> {
+        let special =
+            crate::graphics_batch_import::prepare_smw_us_v1_special_graphics_import_resized(
+                0,
+                project.rom.clone(),
+                CHECKSUM_FIELD,
+                &[files[0x33].clone(), files[0x32].clone()],
+                &options,
+            )?;
+        project
+            .apply_mutation(&special.description, &special.mutation)
+            .map(|_| ())
+            .map_err(|error| error.to_string())
+    };
+    // The original inserts GFX33/GFX32 first so their shared bank is selected before the ordinary
+    // table consumes fragmented space. Preserve the established quick-insert ordering separately.
+    if allocation_cursor.is_some() {
+        insert_special(&mut project)?;
+    }
     project
         .save_decompressed_graphics_slots_with_checksum(
             &(0..0x32).collect::<Vec<_>>(),
@@ -335,17 +406,9 @@ pub fn prepare_smw_us_v1_standard_graphics_install(
             &options,
         )
         .map_err(|error| error.to_string())?;
-
-    let special = crate::graphics_batch_import::prepare_smw_us_v1_special_graphics_import_resized(
-        0,
-        project.rom.clone(),
-        CHECKSUM_FIELD,
-        &[files[0x33].clone(), files[0x32].clone()],
-        &options,
-    )?;
-    project
-        .apply_mutation(&special.description, &special.mutation)
-        .map_err(|error| error.to_string())?;
+    if allocation_cursor.is_none() {
+        insert_special(&mut project)?;
+    }
     if project.rom.logical_len() == TARGET_LOGICAL_LEN {
         project
             .rom
@@ -367,6 +430,77 @@ pub fn prepare_smw_us_v1_standard_graphics_install(
         description: "Install 4bpp standard GFX system".into(),
         mutation,
     })
+}
+
+fn authenticated_vanilla_graphics_extents(
+    image: &RomImage,
+    mapper: Mapper,
+) -> Result<Vec<std::ops::Range<usize>>, String> {
+    let project = Project::new(image.clone());
+    let mut ordinary = lm_profile::smw_us_v1_vanilla_graphics_layout();
+    ordinary.mapper = mapper;
+    let special = lm_profile::smw_us_v1_special_graphics_layouts(image)
+        .map_err(|error| format!("special graphics startup layout: {error}"))?;
+    let mut requests = (0..0x32).map(|slot| (slot, ordinary)).collect::<Vec<_>>();
+    requests.push((
+        0,
+        GraphicsRomLayout {
+            mapper,
+            ..special.gfx33
+        },
+    ));
+    requests.push((
+        0,
+        GraphicsRomLayout {
+            mapper,
+            ..special.gfx32
+        },
+    ));
+    let mut extents = Vec::with_capacity(requests.len());
+    for (slot, layout) in requests {
+        let pointer = layout
+            .read_pointer(&project, slot)
+            .map_err(|error| format!("authenticate vanilla graphics pointer: {error}"))?;
+        let payload = project
+            .load_payload_from_pointer(
+                pointer,
+                mapper,
+                &PayloadReadPolicy::TaggedOrBounded {
+                    maximum_len: layout.maximum_compressed_len,
+                    bank_size: None,
+                },
+            )
+            .map_err(|error| format!("authenticate vanilla graphics stream: {error}"))?;
+        let consumed = match layout.compression {
+            GraphicsCompression::Lz2 => {
+                lm_codec::decode_lz2_prefix(&payload.bytes, layout.maximum_decompressed_len)
+                    .map(|decoded| decoded.consumed)
+            }
+            GraphicsCompression::Lz3 => {
+                lm_codec::decode_lz3_prefix(&payload.bytes, layout.maximum_decompressed_len)
+                    .map(|decoded| decoded.consumed)
+            }
+        }
+        .map_err(|error| format!("authenticate vanilla graphics stream: {error}"))?;
+        let end = payload
+            .pc_offset
+            .checked_add(consumed)
+            .filter(|end| *end <= image.logical_len())
+            .ok_or("vanilla graphics stream extent is outside the ROM")?;
+        extents.push(payload.pc_offset..end);
+    }
+    extents.sort_by_key(|extent| extent.start);
+    let mut merged: Vec<std::ops::Range<usize>> = Vec::new();
+    for extent in extents {
+        if let Some(previous) = merged.last_mut()
+            && extent.start <= previous.end
+        {
+            previous.end = previous.end.max(extent.end);
+        } else {
+            merged.push(extent);
+        }
+    }
+    Ok(merged)
 }
 
 /// Splits Lunar Magic's canonical joined 52-file image and prepares the same first installation.
@@ -393,6 +527,43 @@ pub fn prepare_smw_us_v1_joined_standard_graphics_install(
         })
         .collect::<Vec<_>>();
     prepare_smw_us_v1_standard_graphics_install(expected_revision, image, &files)
+}
+
+/// Splits the joined standard image and performs ordinary first-time insertion at `logical_pc_address`.
+///
+/// # Errors
+///
+/// Returns an error when the joined image has the wrong length or the underlying first-time
+/// insertion cannot authenticate, allocate, commit, or reopen the graphics set.
+pub fn prepare_smw_us_v1_joined_standard_graphics_install_at(
+    expected_revision: u64,
+    image: RomImage,
+    joined: &[u8],
+    logical_pc_address: usize,
+) -> Result<PreparedRomCommit, String> {
+    let expected = FILE_SIZES.iter().sum::<usize>();
+    if joined.len() != expected {
+        return Err(format!(
+            "AllGFX.bin requires {expected} bytes for 52 files, got {}",
+            joined.len()
+        ));
+    }
+    let mut cursor = 0usize;
+    let files = FILE_SIZES
+        .into_iter()
+        .map(|len| {
+            let end = cursor + len;
+            let file = joined[cursor..end].to_vec();
+            cursor = end;
+            file
+        })
+        .collect::<Vec<_>>();
+    prepare_smw_us_v1_standard_graphics_install_at(
+        expected_revision,
+        image,
+        &files,
+        logical_pc_address,
+    )
 }
 
 fn authenticate_pristine_patches(image: &RomImage) -> Result<(), String> {

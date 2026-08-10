@@ -2012,12 +2012,18 @@ impl RomGraphicsEditor {
             GraphicsInsertionFamily::ExGraphics => QuickGraphicsInsertion::ExGraphics,
         };
         let (mut source, target) = quick_graphics_import_source(app, action, joined_standard)?;
-        if !lm_profile::has_smw_us_v1_4bpp_graphics_prerequisite(&source.image) {
+        let has_4bpp = lm_profile::has_smw_us_v1_4bpp_graphics_prerequisite(&source.image);
+        let supported_first_4bpp = source.smw_us_v1_standard_install
+            && matches!(
+                (request.family, request.use_4bpp),
+                (GraphicsInsertionFamily::Standard, true)
+            );
+        if !has_4bpp && !supported_first_4bpp {
             let requested_format = if request.use_4bpp { "4bpp" } else { "3bpp" };
             return Err(match request.family {
                 GraphicsInsertionFamily::Standard => {
                     format!(
-                        "ordinary first-time {requested_format} GFX insertion is not yet available; use quick insertion for the existing 4bpp transaction"
+                        "ordinary first-time {requested_format} GFX insertion is not yet available"
                     )
                 }
                 GraphicsInsertionFamily::ExGraphics => {
@@ -2499,6 +2505,73 @@ mod tests {
             assert!(std::time::Instant::now() < deadline);
             std::thread::yield_now();
         }
+
+        let mut ordinary_first_app = lm_app::AppState::default();
+        ordinary_first_app.load_rom(original.clone()).unwrap();
+        ordinary_first_app.document_path = Some(root.path().join("ordinary-first.smc"));
+        let mut ordinary_first_editor = RomGraphicsEditor::default();
+        ordinary_first_editor
+            .start_ordinary_graphics_import(
+                &ordinary_first_app,
+                GraphicsInsertionRequest {
+                    family: GraphicsInsertionFamily::Standard,
+                    logical_pc_address: 0x40000,
+                    expand_rom: true,
+                    use_4bpp: true,
+                },
+                false,
+            )
+            .unwrap();
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(120);
+        let ordinary_first_commit = loop {
+            if let Some(result) = ordinary_first_editor.graphics_import.poll() {
+                break result
+                    .unwrap()
+                    .expect("ordinary first insertion prepares a commit");
+            }
+            assert!(std::time::Instant::now() < deadline);
+            std::thread::yield_now();
+        };
+        ordinary_first_app
+            .dispatch(ordinary_first_commit.into_command())
+            .unwrap();
+        let ordinary_first_image =
+            RomImage::from_bytes(ordinary_first_app.controller_snapshot().unwrap().rom_bytes)
+                .unwrap();
+        assert_eq!(ordinary_first_image.logical_len(), 0x100000);
+        assert!(lm_profile::has_smw_us_v1_4bpp_graphics_prerequisite(
+            &ordinary_first_image
+        ));
+        let ordinary_first_project = lm_project::Project::new(ordinary_first_image);
+        let ordinary_layout = lm_profile::smw_us_v1_vanilla_graphics_layout();
+        let first_pointer = ordinary_layout
+            .read_pointer(&ordinary_first_project, 0)
+            .unwrap()
+            .to_pc(lm_rom::Mapper::LoRom)
+            .unwrap();
+        assert!(first_pointer >= 0x40000);
+        let special_layouts =
+            lm_profile::smw_us_v1_special_graphics_layouts(&ordinary_first_project.rom).unwrap();
+        let gfx33_pointer = special_layouts
+            .gfx33
+            .read_pointer(&ordinary_first_project, 0)
+            .unwrap()
+            .to_pc(lm_rom::Mapper::LoRom)
+            .unwrap();
+        let gfx32_pointer = special_layouts
+            .gfx32
+            .read_pointer(&ordinary_first_project, 0)
+            .unwrap()
+            .to_pc(lm_rom::Mapper::LoRom)
+            .unwrap();
+        assert_eq!(gfx33_pointer / 0x8000, gfx32_pointer / 0x8000);
+        assert!(gfx33_pointer >= 0x40000);
+        assert!(gfx33_pointer < first_pointer);
+        ordinary_first_app.dispatch(lm_app::Command::Undo).unwrap();
+        assert_eq!(
+            ordinary_first_app.controller_snapshot().unwrap().rom_bytes,
+            original
+        );
 
         let mut editor = RomGraphicsEditor::default();
         editor

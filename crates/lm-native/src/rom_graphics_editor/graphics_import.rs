@@ -186,7 +186,11 @@ fn prepare_import(
     cancelled: &AtomicBool,
 ) -> Result<Option<PreparedRomCommit>, String> {
     let original_image = source.image.clone();
-    if let Some(ordinary) = source.ordinary_options {
+    let ordinary_first_install =
+        source.smw_us_v1_standard_install && source.ordinary_options.is_some();
+    if let Some(ordinary) = source.ordinary_options
+        && !ordinary_first_install
+    {
         apply_ordinary_options(
             &mut source.image,
             source.layout.mapper,
@@ -219,12 +223,22 @@ fn prepare_import(
                 return Ok(None);
             }
             if source.smw_us_v1_standard_install {
-                lm_app::prepare_smw_us_v1_standard_graphics_install(
-                    source.expected_revision,
-                    source.image,
-                    &files,
-                )
-                .map(Some)
+                if let Some(ordinary) = source.ordinary_options {
+                    lm_app::prepare_smw_us_v1_standard_graphics_install_at(
+                        source.expected_revision,
+                        source.image,
+                        &files,
+                        ordinary.logical_pc_address,
+                    )
+                    .map(Some)
+                } else {
+                    lm_app::prepare_smw_us_v1_standard_graphics_install(
+                        source.expected_revision,
+                        source.image,
+                        &files,
+                    )
+                    .map(Some)
+                }
             } else if source.smw_us_v1_exgraphics {
                 let files = source
                     .file_numbers
@@ -289,12 +303,22 @@ fn prepare_import(
                 return Ok(None);
             }
             if source.smw_us_v1_standard_install {
-                lm_app::prepare_smw_us_v1_joined_standard_graphics_install(
-                    source.expected_revision,
-                    source.image,
-                    &joined,
-                )
-                .map(Some)
+                if let Some(ordinary) = source.ordinary_options {
+                    lm_app::prepare_smw_us_v1_joined_standard_graphics_install_at(
+                        source.expected_revision,
+                        source.image,
+                        &joined,
+                        ordinary.logical_pc_address,
+                    )
+                    .map(Some)
+                } else {
+                    lm_app::prepare_smw_us_v1_joined_standard_graphics_install(
+                        source.expected_revision,
+                        source.image,
+                        &joined,
+                    )
+                    .map(Some)
+                }
             } else {
                 lm_app::prepare_joined_standard_graphics_import(
                     source.expected_revision,

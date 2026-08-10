@@ -6,6 +6,7 @@ license.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+lm-codec = { path = "../lm-codec" }
 lm-graphics = { path = "../lm-graphics" }
 lm-level = { path = "../lm-level" }
 lm-overworld = { path = "../lm-overworld" }
@@ -27,6 +28,5 @@ workspace = true
 
 [dev-dependencies]
 jpeg-encoder = "0.6"
-lm-codec = { path = "../lm-codec" }
 lm-oracle = { path = "../lm-oracle" }
 lm-profile = { path = "../lm-profile", features = ["test-support"] }

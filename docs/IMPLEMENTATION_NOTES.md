@@ -5085,7 +5085,12 @@ installed.
 `expansion_and_prepared_graphics_write_combine_into_one_original_length_mutation`, and
 `ordinary_insertion_dialog_opens_from_app_state_without_graphics_workspace` bind the recovered
 defaults, header variants, bounds, expansion composition, and global route. First-time ordinary
-3bpp insertion, first-time ordinary 4bpp placement at the user cursor, address-aware ordinary ExGFX
-allocation, and ExGFX `$E00..$FFF` conversion bypass remain deliberately rejected rather than being
-collapsed to quick-import defaults; therefore this is a partial command milestone and does not
-close the configuration gate.
+4bpp insertion now authenticates every vanilla compressed stream before reclaiming only those
+exact extents, expands and installs the recovered runtime, inserts GFX33/GFX32 first in one shared
+LoROM bank at or after the requested cursor, inserts the remaining 50 files, reopens all 52, and
+undoes to the byte-exact vanilla ROM. The quick route retains its established allocation order.
+`quick_standard_insertion_commits_reopens_and_undoes_from_fixed_directory` crosses that behavior
+through the installed modal worker from a pristine ROM. First-time ordinary 3bpp insertion,
+address-aware ordinary ExGFX allocation, and ExGFX `$E00..$FFF` conversion bypass remain
+deliberately rejected rather than being collapsed to quick-import defaults; therefore this is a
+partial command milestone and does not close the configuration gate.
