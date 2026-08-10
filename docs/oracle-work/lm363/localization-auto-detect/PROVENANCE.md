@@ -129,5 +129,7 @@ Two more procedure-bound forms consume the same inventory. The native undo-histo
 the extracted equivalent of General Options `$041F`: its title, maximum-undo label `$66`, OK ID 1,
 and Cancel ID 2 resolve independently. Graphics compression migration consumes Change Compression
 Options `$0416`: title, LZ Compression Type `$65`, original LZ2 `$294`, LZ3 `$296`, warning `$69`,
-OK, and Cancel are bound. Lunar Magic's optimized-LZ2 `$295` target remains a separate incomplete
-graphics option and is not presented as a completed mapping.
+OK, and Cancel are bound. The same selector now exposes optimized LZ2 `$295` as a distinct target:
+authenticated LZ2 Orig defaults to Speed, and selection routes to the existing revision-bound
+`InstallLz2SpeedRuntime` transaction. That transaction installs only the decoder for payload-
+compatible LZ2 Orig or performs the complete LZ3-to-Speed migration.

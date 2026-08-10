@@ -1005,4 +1005,8 @@ Local executable inventory was then checked for General Options `$041F` and Chan
 Options `$0416`. Native undo history now binds `$041F` title, `$66`, and IDs 1/2. Native graphics
 migration binds `$0416` title, `$65`, `$294`, `$296`, `$69`, and IDs 1/2. Focused tests inject
 partial translated inventories and prove exact-ID selection plus independent typed/English fallback.
-The unsupported optimized-LZ2 `$295` choice remains an explicit graphics gap.
+
+Optimized LZ2 `$295` was then added to the same native compression selector. A focused route test
+proves it emits `InstallLz2SpeedRuntime` at the exact open project revision without consulting the
+unrelated allocation text fields. Installed-mode detection chooses Speed as the next action from
+LZ2 Orig and LZ3 from installed Speed/LZ3.

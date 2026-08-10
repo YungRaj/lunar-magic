@@ -6,7 +6,7 @@ use lm_rom::RomImage;
 
 pub(crate) struct GraphicsMigrationDialog {
     open: bool,
-    target: GraphicsCompression,
+    target: GraphicsMigrationTarget,
     allocation_start: String,
     allocation_end: String,
     error: Option<String>,
@@ -16,7 +16,7 @@ impl Default for GraphicsMigrationDialog {
     fn default() -> Self {
         Self {
             open: false,
-            target: GraphicsCompression::Lz3,
+            target: GraphicsMigrationTarget::Lz3,
             allocation_start: "080000".into(),
             allocation_end: "400000".into(),
             error: None,
@@ -31,9 +31,16 @@ impl GraphicsMigrationDialog {
                 Some("install a matching revision profile before migrating graphics".into());
             return;
         };
-        self.target = match profile.graphics.compression {
-            GraphicsCompression::Lz2 => GraphicsCompression::Lz3,
-            GraphicsCompression::Lz3 => GraphicsCompression::Lz2,
+        self.target = match current_installed_mode(app) {
+            Some(lm_profile::SmwUsV1GraphicsCompressionMode::Lz2Original) => {
+                GraphicsMigrationTarget::Lz2Speed
+            }
+            Some(lm_profile::SmwUsV1GraphicsCompressionMode::Lz2Speed)
+            | Some(lm_profile::SmwUsV1GraphicsCompressionMode::Lz3) => GraphicsMigrationTarget::Lz3,
+            None => match profile.graphics.compression {
+                GraphicsCompression::Lz2 => GraphicsMigrationTarget::Lz3,
+                GraphicsCompression::Lz3 => GraphicsMigrationTarget::Lz2Original,
+            },
         };
         self.open = true;
         self.error = None;
@@ -55,17 +62,22 @@ impl GraphicsMigrationDialog {
                          matching in-game decoder in the same undoable transaction.",
                     ));
                     egui::ComboBox::from_label(dialog_control_text(catalog, 0x65, "Target codec"))
-                        .selected_text(codec_name(catalog, self.target))
+                        .selected_text(target_name(catalog, self.target))
                         .show_ui(ui, |ui| {
                             ui.selectable_value(
                                 &mut self.target,
-                                GraphicsCompression::Lz2,
-                                codec_name(catalog, GraphicsCompression::Lz2),
+                                GraphicsMigrationTarget::Lz2Original,
+                                target_name(catalog, GraphicsMigrationTarget::Lz2Original),
                             );
                             ui.selectable_value(
                                 &mut self.target,
-                                GraphicsCompression::Lz3,
-                                codec_name(catalog, GraphicsCompression::Lz3),
+                                GraphicsMigrationTarget::Lz2Speed,
+                                target_name(catalog, GraphicsMigrationTarget::Lz2Speed),
+                            );
+                            ui.selectable_value(
+                                &mut self.target,
+                                GraphicsMigrationTarget::Lz3,
+                                target_name(catalog, GraphicsMigrationTarget::Lz3),
                             );
                         });
                     ui.label("End-exclusive logical-PC allocation range (hexadecimal).");
@@ -125,13 +137,18 @@ impl GraphicsMigrationDialog {
 
 fn build_command(
     app: &AppState,
-    target: GraphicsCompression,
+    target: GraphicsMigrationTarget,
     start: &str,
     end: &str,
 ) -> Result<Command, String> {
     let snapshot = app
         .controller_snapshot()
         .map_err(|error| error.to_string())?;
+    if target == GraphicsMigrationTarget::Lz2Speed {
+        return Ok(Command::InstallLz2SpeedRuntime {
+            rev: snapshot.revision,
+        });
+    }
     let profile = app.revision_profile().ok_or_else(|| {
         "install a matching revision profile before migrating graphics".to_string()
     })?;
@@ -147,7 +164,7 @@ fn build_command(
     Ok(Command::MigrateGraphicsCompression {
         expected_revision: snapshot.revision,
         source: profile.graphics,
-        target,
+        target: target.codec(),
         options: GraphicsMigrationOptions {
             allocation,
             reuse_identical: true,
@@ -158,6 +175,22 @@ fn build_command(
 }
 
 const ORIGINAL_DIALOG_ID: u16 = 0x0416;
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum GraphicsMigrationTarget {
+    Lz2Original,
+    Lz2Speed,
+    Lz3,
+}
+
+impl GraphicsMigrationTarget {
+    const fn codec(self) -> GraphicsCompression {
+        match self {
+            Self::Lz2Original | Self::Lz2Speed => GraphicsCompression::Lz2,
+            Self::Lz3 => GraphicsCompression::Lz3,
+        }
+    }
+}
 
 fn dialog_title(catalog: Option<&LocalizationCatalog>) -> String {
     catalog
@@ -177,11 +210,23 @@ fn dialog_control_text(
         .to_owned()
 }
 
-fn codec_name(catalog: Option<&LocalizationCatalog>, codec: GraphicsCompression) -> String {
-    match codec {
-        GraphicsCompression::Lz2 => dialog_control_text(catalog, 0x294, "LZ2"),
-        GraphicsCompression::Lz3 => dialog_control_text(catalog, 0x296, "LZ3"),
+fn target_name(catalog: Option<&LocalizationCatalog>, target: GraphicsMigrationTarget) -> String {
+    match target {
+        GraphicsMigrationTarget::Lz2Original => {
+            dialog_control_text(catalog, 0x294, "LC_LZ2 — original game code")
+        }
+        GraphicsMigrationTarget::Lz2Speed => {
+            dialog_control_text(catalog, 0x295, "LC_LZ2 — optimized for speed")
+        }
+        GraphicsMigrationTarget::Lz3 => {
+            dialog_control_text(catalog, 0x296, "LC_LZ3 — better compression")
+        }
     }
+}
+
+fn current_installed_mode(app: &AppState) -> Option<lm_profile::SmwUsV1GraphicsCompressionMode> {
+    let image = RomImage::from_bytes(app.controller_snapshot().ok()?.rom_bytes).ok()?;
+    lm_profile::detect_smw_us_v1_graphics_compression_mode(&image).ok()
 }
 
 #[cfg(test)]
@@ -252,16 +297,37 @@ mod tests {
             "Type de compression LZ"
         );
         assert_eq!(
-            codec_name(Some(&catalog), GraphicsCompression::Lz2),
+            target_name(Some(&catalog), GraphicsMigrationTarget::Lz2Original),
             "LC_LZ2 — code original"
         );
         assert_eq!(
-            codec_name(Some(&catalog), GraphicsCompression::Lz3),
+            target_name(Some(&catalog), GraphicsMigrationTarget::Lz3),
             "LC_LZ3 — meilleure compression"
         );
         assert_eq!(
             dialog_control_text(Some(&catalog), 2, UiTextKey::CommonCancel.english()),
             UiTextKey::CommonCancel.english()
+        );
+    }
+
+    #[test]
+    fn optimized_lz2_target_routes_to_the_authenticated_runtime_command() {
+        let mut app = AppState::default();
+        app.load_rom(crate::test_support::pristine_smw_us_rom_bytes())
+            .unwrap();
+        assert!(matches!(
+            build_command(
+                &app,
+                GraphicsMigrationTarget::Lz2Speed,
+                "not consulted",
+                "not consulted",
+            )
+            .unwrap(),
+            Command::InstallLz2SpeedRuntime { rev: 0 }
+        ));
+        assert_eq!(
+            target_name(None, GraphicsMigrationTarget::Lz2Speed),
+            "LC_LZ2 — optimized for speed"
         );
     }
 }

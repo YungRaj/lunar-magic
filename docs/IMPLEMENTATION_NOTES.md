@@ -5323,3 +5323,9 @@ The same lookup boundary now drives the extracted undo-history form from origina
 owned strings because typed localization can synthesize an owned fallback while original-template
 text borrows the installed catalog. This prevents either lifetime source from escaping the frame
 and keeps partial original modules safe: every absent title/control falls back independently.
+
+`GraphicsMigrationTarget` separates Lunar Magic's three visible compression choices from the two
+payload codecs. LZ2 Orig and LZ2 Speed both map to `GraphicsCompression::Lz2`, but Speed routes to
+the authenticated runtime command instead of becoming a same-codec no-op. Installed runtime
+detection selects Speed from Orig and LZ3 from either installed Speed or LZ3 while preserving the
+existing profile, identity, and revision checks.
