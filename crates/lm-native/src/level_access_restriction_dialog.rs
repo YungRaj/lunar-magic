@@ -10,12 +10,14 @@ pub(crate) struct LevelAccessRestrictionDialog {
     acknowledged: bool,
     error: Option<String>,
     stage: RestrictionStage,
+    restore_point_pending: bool,
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 enum RestrictionStage {
     #[default]
     Configure,
+    CreateRestorePoint,
     PersistBeforeIps,
     OfferIps,
     WaitForIps,
@@ -25,6 +27,7 @@ enum RestrictionStage {
 
 pub(crate) enum LevelAccessRestrictionAction {
     Restrict(Command),
+    CreateRestorePoint,
     PersistRestrictedRom,
     CreateIps,
     SaveAndClose,
@@ -44,14 +47,16 @@ impl LevelAccessRestrictionDialog {
         app: &AppState,
         ips_workflow_active: bool,
     ) -> Option<LevelAccessRestrictionAction> {
+        let mut action = None;
         if self.stage == RestrictionStage::WaitForIps && !ips_workflow_active {
             self.stage = RestrictionStage::Complete;
         }
-        self.observe_persistence(
+        if self.observe_persistence(
             app.pending_save_request_id().is_some(),
             app.project().map(lm_project::Project::is_modified),
-        );
-        let mut action = None;
+        ) {
+            action = Some(LevelAccessRestrictionAction::CreateRestorePoint);
+        }
         if self.open && self.stage == RestrictionStage::Configure {
             egui::Window::new("Restrict Level Access by Lunar Magic (Version 1.1)")
                 .collapsible(false)
@@ -109,6 +114,20 @@ impl LevelAccessRestrictionDialog {
                             }
                         }
                     });
+                });
+        }
+        if self.stage == RestrictionStage::CreateRestorePoint {
+            egui::Window::new("Create Full Restore Point")
+                .collapsible(false)
+                .resizable(false)
+                .show(context, |ui| {
+                    ui.label(
+                        "A full restore point is required by the enabled destructive-operation \
+                         policy before IPS creation can continue.",
+                    );
+                    if ui.button("Retry Restore Point").clicked() {
+                        action = Some(LevelAccessRestrictionAction::CreateRestorePoint);
+                    }
                 });
         }
         if self.stage == RestrictionStage::OfferIps {
@@ -186,9 +205,15 @@ impl LevelAccessRestrictionDialog {
         action
     }
 
-    pub(crate) fn commit_succeeded(&mut self) {
+    pub(crate) fn commit_succeeded(&mut self, create_restore_point: bool) {
         self.open = false;
+        self.restore_point_pending = create_restore_point;
         self.stage = RestrictionStage::PersistBeforeIps;
+    }
+
+    pub(crate) fn restore_point_completed(&mut self) {
+        self.restore_point_pending = false;
+        self.stage = RestrictionStage::OfferIps;
     }
 
     pub(crate) fn ips_choice_completed(&mut self, started: bool) {
@@ -203,16 +228,22 @@ impl LevelAccessRestrictionDialog {
         self.error = Some(error.into());
     }
 
-    fn observe_persistence(&mut self, save_pending: bool, project_modified: Option<bool>) {
+    fn observe_persistence(&mut self, save_pending: bool, project_modified: Option<bool>) -> bool {
         if self.stage == RestrictionStage::PersistBeforeIps
             && !save_pending
             && project_modified == Some(false)
         {
-            self.stage = RestrictionStage::OfferIps;
+            self.stage = if self.restore_point_pending {
+                RestrictionStage::CreateRestorePoint
+            } else {
+                RestrictionStage::OfferIps
+            };
+            return self.restore_point_pending;
         }
         if self.stage == RestrictionStage::Persisting && project_modified.is_none() {
             self.stage = RestrictionStage::Configure;
         }
+        false
     }
 }
 
@@ -249,13 +280,13 @@ mod tests {
     fn successful_restriction_orders_ips_completion_and_close() {
         let mut dialog = LevelAccessRestrictionDialog::default();
         dialog.open();
-        dialog.commit_succeeded();
+        dialog.commit_succeeded(false);
         assert_eq!(dialog.stage, RestrictionStage::PersistBeforeIps);
-        dialog.observe_persistence(true, Some(true));
+        assert!(!dialog.observe_persistence(true, Some(true)));
         assert_eq!(dialog.stage, RestrictionStage::PersistBeforeIps);
-        dialog.observe_persistence(false, Some(true));
+        assert!(!dialog.observe_persistence(false, Some(true)));
         assert_eq!(dialog.stage, RestrictionStage::PersistBeforeIps);
-        dialog.observe_persistence(false, Some(false));
+        assert!(!dialog.observe_persistence(false, Some(false)));
         assert_eq!(dialog.stage, RestrictionStage::OfferIps);
         dialog.ips_choice_completed(true);
         assert_eq!(dialog.stage, RestrictionStage::WaitForIps);
@@ -275,9 +306,20 @@ mod tests {
     #[test]
     fn cancelled_ips_chooser_advances_to_completion_notice() {
         let mut dialog = LevelAccessRestrictionDialog::default();
-        dialog.commit_succeeded();
-        dialog.observe_persistence(false, Some(false));
+        dialog.commit_succeeded(false);
+        assert!(!dialog.observe_persistence(false, Some(false)));
         dialog.ips_choice_completed(false);
         assert_eq!(dialog.stage, RestrictionStage::Complete);
+    }
+
+    #[test]
+    fn enabled_restore_policy_blocks_persistence_until_checkpoint_succeeds() {
+        let mut dialog = LevelAccessRestrictionDialog::default();
+        dialog.commit_succeeded(true);
+        assert_eq!(dialog.stage, RestrictionStage::PersistBeforeIps);
+        assert!(dialog.observe_persistence(false, Some(false)));
+        assert_eq!(dialog.stage, RestrictionStage::CreateRestorePoint);
+        dialog.restore_point_completed();
+        assert_eq!(dialog.stage, RestrictionStage::OfferIps);
     }
 }

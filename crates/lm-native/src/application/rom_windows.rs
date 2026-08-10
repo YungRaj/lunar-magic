@@ -122,10 +122,16 @@ impl NativeApplication {
             match action {
                 LevelAccessRestrictionAction::Restrict(command) => {
                     if self.try_dispatch(context, command) {
-                        self.level_access_restriction_dialog.commit_succeeded();
+                        let create_restore_point =
+                            self.restore_point_dialog.destructive_full_enabled();
+                        self.level_access_restriction_dialog
+                            .commit_succeeded(create_restore_point);
                         self.renderer.invalidate();
                         let _accepted = self.try_dispatch(context, lm_app::Command::Save);
                     }
+                }
+                LevelAccessRestrictionAction::CreateRestorePoint => {
+                    self.create_restriction_restore_point();
                 }
                 LevelAccessRestrictionAction::PersistRestrictedRom => {
                     let _accepted = self.try_dispatch(context, lm_app::Command::Save);
@@ -168,5 +174,19 @@ impl NativeApplication {
             self.renderer.invalidate();
         }
         self.persist_recent_state();
+    }
+
+    fn create_restriction_restore_point(&mut self) {
+        match crate::restore_point_dialog::append_for_open_project(
+            &self.app,
+            crate::restore_point_dialog::RestoreAppendMode::Full,
+        ) {
+            Ok(true) => {
+                self.level_access_restriction_dialog
+                    .restore_point_completed();
+            }
+            Ok(false) => {}
+            Err(error) => self.level_access_restriction_dialog.workflow_failed(error),
+        }
     }
 }

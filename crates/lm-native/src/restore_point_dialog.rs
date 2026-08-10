@@ -24,6 +24,7 @@ struct AutomaticPolicyDraft {
     interval_enabled: bool,
     full_interval: u32,
     daily_full: bool,
+    destructive_full: bool,
 }
 
 impl Default for AutomaticPolicyDraft {
@@ -32,6 +33,7 @@ impl Default for AutomaticPolicyDraft {
             interval_enabled: false,
             full_interval: 10,
             daily_full: false,
+            destructive_full: false,
         }
     }
 }
@@ -333,10 +335,11 @@ pub(crate) struct RestorePointDialog {
 impl RestorePointDialog {
     pub(crate) fn automatic_preferences(&self) -> String {
         format!(
-            "{}:{}:{}",
+            "{}:{}:{}:{}",
             u8::from(self.automatic_defaults.interval_enabled),
             self.automatic_defaults.full_interval,
             u8::from(self.automatic_defaults.daily_full),
+            u8::from(self.automatic_defaults.destructive_full),
         )
     }
 
@@ -349,6 +352,10 @@ impl RestorePointDialog {
             .parse::<u32>()
             .map_err(|_| "invalid full interval".to_owned())?;
         let daily_full = parse_preference_bool(fields.next(), "daily full")?;
+        let destructive_full = match fields.next() {
+            Some(value) => parse_preference_bool(Some(value), "destructive full")?,
+            None => false,
+        };
         if fields.next().is_some() || full_interval == 0 {
             return Err("invalid automatic restore preference fields".to_owned());
         }
@@ -356,8 +363,13 @@ impl RestorePointDialog {
             interval_enabled,
             full_interval,
             daily_full,
+            destructive_full,
         };
         Ok(())
+    }
+
+    pub(crate) const fn destructive_full_enabled(&self) -> bool {
+        self.automatic_defaults.destructive_full
     }
 
     pub(crate) const fn is_busy(&self) -> bool {
@@ -440,6 +452,10 @@ impl RestorePointDialog {
                     egui::DragValue::new(&mut policy.full_interval).range(1..=u32::MAX),
                 );
                 ui.checkbox(&mut policy.daily_full, "Create one full point per day");
+                ui.checkbox(
+                    &mut policy.destructive_full,
+                    "Create a full point before destructive ROM operations",
+                );
                 ui.label(
                     "A ROM timestamp or checksum continuity break always forces a full point.",
                 );
@@ -921,7 +937,10 @@ mod tests {
     fn automatic_preferences_round_trip_and_reject_malformed_values() {
         let mut dialog = RestorePointDialog::default();
         dialog.load_automatic_preferences("1:27:1").unwrap();
-        assert_eq!(dialog.automatic_preferences(), "1:27:1");
+        assert_eq!(dialog.automatic_preferences(), "1:27:1:0");
+        dialog.load_automatic_preferences("1:27:1:1").unwrap();
+        assert_eq!(dialog.automatic_preferences(), "1:27:1:1");
+        assert!(dialog.destructive_full_enabled());
         assert!(dialog.load_automatic_preferences("1:0:1").is_err());
         assert!(dialog.load_automatic_preferences("yes:27:1").is_err());
         assert!(dialog.load_automatic_preferences("1:27:1:extra").is_err());
