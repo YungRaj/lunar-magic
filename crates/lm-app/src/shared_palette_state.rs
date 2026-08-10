@@ -1,8 +1,8 @@
 use crate::{AppError, AppState, FrontendEffect};
 use lm_graphics::{SmwPaletteBackend, SmwPaletteFile};
 use lm_profile::{
-    SMW_US_V1_CHECKSUM_FIELD, smw_us_v1_expanded_shared_palette_installation_plan,
-    smw_us_v1_shared_palette_layout,
+    SMW_US_V1_CHECKSUM_FIELD, smw_us_v1_expanded_shared_palette_installation_plan_for_mapper,
+    smw_us_v1_shared_palette_layout_for_mapper,
 };
 use lm_rom::{Mapper, Region, SupportedGame};
 
@@ -24,18 +24,21 @@ impl AppState {
         if identity.game != SupportedGame::SuperMarioWorld
             || identity.region != Region::NorthAmerica
             || identity.revision != 0
-            || identity.mapper != Mapper::LoRom
+            || !matches!(identity.mapper, Mapper::LoRom | Mapper::ExLoRom)
         {
             return Err(AppError::NativeSharedPaletteIdentityMismatch);
         }
-        let layout = smw_us_v1_shared_palette_layout();
+        let mapper = identity.mapper;
+        let layout = smw_us_v1_shared_palette_layout_for_mapper(mapper);
         let expected = project
             .rom
             .read(layout.table_offset, SmwPaletteFile::EXPANDED_FILE_LEN)?
             .to_vec();
         let palette =
             SmwPaletteFile::expanded(expected[0x10..].to_vec(), expected[..0x10].to_vec())?;
-        let plan = smw_us_v1_expanded_shared_palette_installation_plan(&palette, &expected)?;
+        let plan = smw_us_v1_expanded_shared_palette_installation_plan_for_mapper(
+            &palette, &expected, mapper,
+        )?;
         project.install_relocatable_patch(&plan)?;
         if project.load_shared_palette(layout)? != palette {
             return Err(AppError::NativeSharedPaletteReopenMismatch);
@@ -68,11 +71,12 @@ impl AppState {
         if identity.game != SupportedGame::SuperMarioWorld
             || identity.region != Region::NorthAmerica
             || identity.revision != 0
-            || identity.mapper != Mapper::LoRom
+            || !matches!(identity.mapper, Mapper::LoRom | Mapper::ExLoRom)
         {
             return Err(AppError::NativeSharedPaletteIdentityMismatch);
         }
-        let layout = smw_us_v1_shared_palette_layout();
+        let mapper = identity.mapper;
+        let layout = smw_us_v1_shared_palette_layout_for_mapper(mapper);
         let installed = project.load_shared_palette(layout)?.backend();
         if installed == SmwPaletteBackend::Legacy
             && palette.backend() == SmwPaletteBackend::Expanded
@@ -81,12 +85,14 @@ impl AppState {
                 .rom
                 .read(layout.table_offset, SmwPaletteFile::EXPANDED_FILE_LEN)?
                 .to_vec();
-            let plan = smw_us_v1_expanded_shared_palette_installation_plan(palette, &expected)?;
+            let plan = smw_us_v1_expanded_shared_palette_installation_plan_for_mapper(
+                palette, &expected, mapper,
+            )?;
             project.install_relocatable_patch(&plan)?;
         } else {
             project.save_shared_palette(palette, layout, SMW_US_V1_CHECKSUM_FIELD)?;
         }
-        if project.load_shared_palette(smw_us_v1_shared_palette_layout())? != *palette {
+        if project.load_shared_palette(layout)? != *palette {
             return Err(AppError::NativeSharedPaletteReopenMismatch);
         }
         self.advance_project_revision()?;
@@ -126,7 +132,7 @@ mod tests {
         assert_eq!(
             app.project()
                 .unwrap()
-                .load_shared_palette(smw_us_v1_shared_palette_layout())
+                .load_shared_palette(smw_us_v1_shared_palette_layout_for_mapper(Mapper::LoRom))
                 .unwrap(),
             palette
         );
@@ -158,6 +164,85 @@ mod tests {
                 .is_some()
         );
         assert_eq!(app.project().unwrap().history.undo_len(), 1);
+        app.dispatch(Command::Undo).unwrap();
+        assert_eq!(app.project().unwrap().save_snapshot(), original);
+    }
+
+    #[test]
+    fn converted_exlorom_installs_edits_reopens_and_undoes_expanded_palettes() {
+        let original = crate::test_support::pristine_smw_us_rom_bytes();
+        let mut app = AppState::default();
+        app.load_rom(original.clone()).unwrap();
+        app.dispatch(Command::ConvertRomTo64MbitExLoRom {
+            expected_revision: 0,
+        })
+        .unwrap();
+        assert_eq!(
+            app.project().unwrap().identity.as_ref().unwrap().mapper,
+            Mapper::ExLoRom
+        );
+        let converted = app.project().unwrap().save_snapshot();
+
+        app.dispatch(Command::InstallExpandedSharedPalettes { rev: 1 })
+            .unwrap();
+        let layout = smw_us_v1_shared_palette_layout_for_mapper(Mapper::ExLoRom);
+        let installed = app.project().unwrap().load_shared_palette(layout).unwrap();
+        assert_eq!(installed.backend(), SmwPaletteBackend::Expanded);
+        assert!(
+            lm_profile::smw_us_v1_custom_palette_installation_for_mapper(Mapper::ExLoRom)
+                .resolve(&app.project().unwrap().rom)
+                .unwrap()
+                .is_some()
+        );
+        let installed_identity = lm_rom::detect_identity(&app.project().unwrap().rom).unwrap();
+        assert!(
+            installed_identity.checksum_matches(),
+            "installed checksum: stored={:?}, computed={:?}, low-computed={:?}, low={:02x?}, high={:02x?}",
+            installed_identity.stored_checksum,
+            installed_identity.computed_checksum,
+            lm_rom::compute_snes_checksum(
+                app.project().unwrap().rom.logical_bytes(),
+                SMW_US_V1_CHECKSUM_FIELD,
+            )
+            .unwrap(),
+            app.project()
+                .unwrap()
+                .rom
+                .read(SMW_US_V1_CHECKSUM_FIELD, 4)
+                .unwrap(),
+            app.project()
+                .unwrap()
+                .rom
+                .read(0x40_0000 + SMW_US_V1_CHECKSUM_FIELD, 4)
+                .unwrap(),
+        );
+
+        let mut colors = installed.palette_bytes().to_vec();
+        colors[0x234] ^= 0x1f;
+        let changed =
+            SmwPaletteFile::expanded(colors, installed.auxiliary_bytes().to_vec()).unwrap();
+        app.dispatch(Command::ReplaceNativeSharedPalette {
+            rev: 2,
+            palette: Box::new(changed.clone()),
+        })
+        .unwrap();
+        assert_eq!(
+            app.project().unwrap().load_shared_palette(layout).unwrap(),
+            changed
+        );
+        assert!(
+            lm_rom::detect_identity(&app.project().unwrap().rom)
+                .unwrap()
+                .checksum_matches()
+        );
+
+        app.dispatch(Command::Undo).unwrap();
+        assert_eq!(
+            app.project().unwrap().load_shared_palette(layout).unwrap(),
+            installed
+        );
+        app.dispatch(Command::Undo).unwrap();
+        assert_eq!(app.project().unwrap().save_snapshot(), converted);
         app.dispatch(Command::Undo).unwrap();
         assert_eq!(app.project().unwrap().save_snapshot(), original);
     }

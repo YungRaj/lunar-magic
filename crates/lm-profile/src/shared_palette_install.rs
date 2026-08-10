@@ -15,10 +15,16 @@ pub const SMW_US_V1_CUSTOM_PALETTE_COLORS: usize = 257;
 
 #[must_use]
 pub const fn smw_us_v1_custom_palette_layout() -> PaletteRomLayout {
+    smw_us_v1_custom_palette_layout_for_mapper(Mapper::LoRom)
+}
+
+/// Returns the custom per-level palette table routed through the active SMW mapper descriptor.
+#[must_use]
+pub const fn smw_us_v1_custom_palette_layout_for_mapper(mapper: Mapper) -> PaletteRomLayout {
     PaletteRomLayout {
-        mapper: Mapper::LoRom,
+        mapper,
         pointers: LevelPointerTable {
-            offset: SMW_US_V1_CUSTOM_PALETTE_POINTER_TABLE_OFFSET,
+            offset: mapper_rom_offset(mapper, SMW_US_V1_CUSTOM_PALETTE_POINTER_TABLE_OFFSET),
             entries: SMW_US_V1_CUSTOM_PALETTE_ENTRIES,
             stride: 3,
         },
@@ -28,13 +34,21 @@ pub const fn smw_us_v1_custom_palette_layout() -> PaletteRomLayout {
 
 #[must_use]
 pub const fn smw_us_v1_custom_palette_installation() -> InstalledLayout<PaletteRomLayout> {
+    smw_us_v1_custom_palette_installation_for_mapper(Mapper::LoRom)
+}
+
+/// Returns the installed custom-palette detector for the active SMW mapper descriptor.
+#[must_use]
+pub const fn smw_us_v1_custom_palette_installation_for_mapper(
+    mapper: Mapper,
+) -> InstalledLayout<PaletteRomLayout> {
     InstalledLayout::Alternatives {
         primary: GatedLayout {
             marker: InstallationMarker {
-                offset: 0x77570,
+                offset: mapper_rom_offset(mapper, 0x77570),
                 expected: 0xc2,
             },
-            layout: smw_us_v1_custom_palette_layout(),
+            layout: smw_us_v1_custom_palette_layout_for_mapper(mapper),
         },
         fallback: None,
     }
@@ -59,6 +73,7 @@ const RUNTIME: [u8; 0x60] = [
 pub enum SharedPaletteInstallPlanError {
     RequiresExpandedPalette,
     ExpectedTableLength(usize),
+    UnsupportedMapper(Mapper),
 }
 
 impl std::fmt::Display for SharedPaletteInstallPlanError {
@@ -84,6 +99,26 @@ pub fn smw_us_v1_expanded_shared_palette_installation_plan(
     palette: &SmwPaletteFile,
     expected_table: &[u8],
 ) -> Result<RelocatablePatchPlan, SharedPaletteInstallPlanError> {
+    smw_us_v1_expanded_shared_palette_installation_plan_for_mapper(
+        palette,
+        expected_table,
+        Mapper::LoRom,
+    )
+}
+
+/// Builds the descriptor-routed expanded shared-palette installation for LoROM or ExLoROM.
+///
+/// # Errors
+///
+/// Rejects a legacy palette or an incorrectly sized table snapshot.
+pub fn smw_us_v1_expanded_shared_palette_installation_plan_for_mapper(
+    palette: &SmwPaletteFile,
+    expected_table: &[u8],
+    mapper: Mapper,
+) -> Result<RelocatablePatchPlan, SharedPaletteInstallPlanError> {
+    if !matches!(mapper, Mapper::LoRom | Mapper::ExLoRom) {
+        return Err(SharedPaletteInstallPlanError::UnsupportedMapper(mapper));
+    }
     if palette.backend() != SmwPaletteBackend::Expanded {
         return Err(SharedPaletteInstallPlanError::RequiresExpandedPalette);
     }
@@ -97,34 +132,60 @@ pub fn smw_us_v1_expanded_shared_palette_installation_plan(
     rom_palette.extend_from_slice(palette.palette_bytes());
     Ok(RelocatablePatchPlan {
         description: "install expanded shared SMW palettes".into(),
-        mapper: Mapper::LoRom,
+        mapper,
         allocation: AllocationPolicy::lorom(0..0x80000),
+        // ExLoROM executes the relocated SMW body, but its authoritative internal header and
+        // checksum remain in the preserved low first bank.
         checksum_field: SMW_US_V1_CHECKSUM_FIELD,
         expansion_fill: 0xff,
         payloads: Vec::new(),
         writes: vec![
             direct(
-                0x2d8e2,
+                mapper_rom_offset(mapper, 0x2d8e2),
                 &[0xa5, 0x0e, 0x0a, 0xa8],
                 &[0x22, 0x50, 0xf5, 0x0e],
             ),
-            direct(0x26b8, &[0x84, 0x76, 0x84, 0x89], &[0x22, 0x60, 0xf5, 0x0e]),
-            direct(0x25bf, &[0x22, 0x8a, 0xbe, 0x05], &[0x22, 0x70, 0xf5, 0x0e]),
-            direct(0x77550, &[0xff; 0x10], &HOOK_A_STUB),
-            direct(0x77560, &[0xff; 0x10], &HOOK_B_STUB),
-            direct(0x77570, &[0xff; 0x60], &RUNTIME),
             direct(
-                SMW_US_V1_CUSTOM_PALETTE_POINTER_TABLE_OFFSET,
+                mapper_rom_offset(mapper, 0x26b8),
+                &[0x84, 0x76, 0x84, 0x89],
+                &[0x22, 0x60, 0xf5, 0x0e],
+            ),
+            direct(
+                mapper_rom_offset(mapper, 0x25bf),
+                &[0x22, 0x8a, 0xbe, 0x05],
+                &[0x22, 0x70, 0xf5, 0x0e],
+            ),
+            direct(
+                mapper_rom_offset(mapper, 0x77550),
+                &[0xff; 0x10],
+                &HOOK_A_STUB,
+            ),
+            direct(
+                mapper_rom_offset(mapper, 0x77560),
+                &[0xff; 0x10],
+                &HOOK_B_STUB,
+            ),
+            direct(mapper_rom_offset(mapper, 0x77570), &[0xff; 0x60], &RUNTIME),
+            direct(
+                mapper_rom_offset(mapper, SMW_US_V1_CUSTOM_PALETTE_POINTER_TABLE_OFFSET),
                 &[0xff; 0x600],
                 &[0x00; 0x600],
             ),
             direct(
-                SMW_US_V1_SHARED_PALETTE_OFFSET,
+                mapper_rom_offset(mapper, SMW_US_V1_SHARED_PALETTE_OFFSET),
                 expected_table,
                 &rom_palette,
             ),
         ],
     })
+}
+
+const fn mapper_rom_offset(mapper: Mapper, lorom_offset: usize) -> usize {
+    if matches!(mapper, Mapper::ExLoRom) {
+        0x40_0000 + lorom_offset
+    } else {
+        lorom_offset
+    }
 }
 
 fn direct(offset: usize, expected: &[u8], replacement: &[u8]) -> PatchWrite {

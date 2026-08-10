@@ -514,12 +514,15 @@ pub use separate_midway_install::{
 pub use shared_palette::{
     SMW_US_V1_SHARED_PALETTE_EXPANDED_MARKER, SMW_US_V1_SHARED_PALETTE_EXPANDED_MARKER_OFFSET,
     SMW_US_V1_SHARED_PALETTE_OFFSET, smw_us_v1_shared_palette_layout,
+    smw_us_v1_shared_palette_layout_for_mapper,
 };
 pub use shared_palette_install::{
     SMW_US_V1_CUSTOM_PALETTE_COLORS, SMW_US_V1_CUSTOM_PALETTE_ENTRIES,
     SMW_US_V1_CUSTOM_PALETTE_POINTER_TABLE_OFFSET, SharedPaletteInstallPlanError,
-    smw_us_v1_custom_palette_installation, smw_us_v1_custom_palette_layout,
+    smw_us_v1_custom_palette_installation, smw_us_v1_custom_palette_installation_for_mapper,
+    smw_us_v1_custom_palette_layout, smw_us_v1_custom_palette_layout_for_mapper,
     smw_us_v1_expanded_shared_palette_installation_plan,
+    smw_us_v1_expanded_shared_palette_installation_plan_for_mapper,
 };
 pub use smw_us_v1_exgraphics::{
     SMW_US_V1_4BPP_GRAPHICS_MARKER, SMW_US_V1_4BPP_GRAPHICS_MARKER_OFFSETS,

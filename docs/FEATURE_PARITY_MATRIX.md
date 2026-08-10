@@ -398,8 +398,13 @@ The Patches/runtime row additionally routes authenticated SMW-US SA-1 sources th
 SA-1 expanded-settings hook and runtime family instead of rejecting their mapper. The native
 `InstallSettings` command preserves its revision gate and installs the owned allocation as one
 checksum-valid mutation. `application_installs_sa1_settings_reopens_and_undoes_exactly` proves
-command reachability, mapper-stable reopen, one history revision, and byte-exact Undo. ExLoROM,
-alternate identity, and remaining combined runtime variants keep the row `Partial`.
+command reachability, mapper-stable reopen, one history revision, and byte-exact Undo. Expanded
+shared/custom palettes are now descriptor-routed through the relocated SMW body after an actual
+LoROM-to-ExLoROM conversion, while checksum repair correctly remains on ExLoROM's authoritative
+low first-bank header. `converted_exlorom_installs_edits_reopens_and_undoes_expanded_palettes`
+proves native install, installed-layout resolution, palette edit/reopen, checksum validity, and all
+three exact Undo boundaries. Alternate identity and the remaining combined Layer 3/settings
+runtime variants keep the row `Partial`.
 
 The Configuration/Localization row additionally retains the original persistent distinction
 between `(AutoDetect)` and `(Default)` English. The localized native Language menu now exposes
