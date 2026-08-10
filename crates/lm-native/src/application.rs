@@ -76,8 +76,8 @@ use crate::{
 };
 use eframe::egui;
 use lm_app::{
-    AppState, Command, EditorMode, LocalizationCatalog, ShortcutConfig, ToolbarConfig, UiTextKey,
-    UserToolbar,
+    AppState, Command, EditorMode, ExternalTool, LocalizationCatalog, ShortcutConfig, ToolConfig,
+    ToolbarConfig, UiTextKey, UserToolbar,
 };
 
 mod document_menus;
@@ -237,6 +237,7 @@ impl NativeApplication {
     const LOCALIZATION_STORAGE_KEY: &'static str = "lunar_magic_rust.localization.v1";
     const UNDO_HISTORY_STORAGE_KEY: &'static str = "lunar_magic_rust.undo_history.v1";
     const JOINED_GRAPHICS_STORAGE_KEY: &'static str = "lunar_magic_rust.joined_graphics.v1";
+    const EXTERNAL_TOOLS_STORAGE_KEY: &'static str = "lunar_magic_rust.external_tools.v1";
 
     pub(crate) fn from_startup(
         initialized: Result<crate::startup::InitializedNative, String>,
@@ -428,6 +429,7 @@ impl NativeApplication {
 
     pub(crate) fn load_persistent_preferences(&mut self, storage: Option<&dyn eframe::Storage>) {
         let Some(storage) = storage else {
+            self.import_original_external_tools_if_unconfigured();
             self.auto_detect_localization = true;
             if let Err(error) = self.start_auto_detected_localization() {
                 self.effects.error = Some(error);
@@ -518,6 +520,44 @@ impl NativeApplication {
                     self.effects.error =
                         Some(format!("cannot load joined-GFX preference: {error}"));
                 }
+            }
+        }
+        if let Some(encoded) = storage.get_string(Self::EXTERNAL_TOOLS_STORAGE_KEY) {
+            match decode_external_tools_preference(&encoded).and_then(|config| {
+                self.app
+                    .set_external_tools(config.tools)
+                    .map_err(|error| error.to_string())
+            }) {
+                Ok(()) => {}
+                Err(error) => {
+                    self.effects.error =
+                        Some(format!("cannot load external-tool preferences: {error}"));
+                }
+            }
+        } else {
+            self.import_original_external_tools_if_unconfigured();
+        }
+    }
+
+    fn import_original_external_tools_if_unconfigured(&mut self) {
+        if !self.app.external_tools().is_empty() {
+            return;
+        }
+        match load_original_external_tool_settings()
+            .and_then(|settings| settings.map(original_external_tools).transpose())
+        {
+            Ok(Some(tools)) if !tools.is_empty() => {
+                if let Err(error) = self.app.set_external_tools(tools) {
+                    self.effects.error = Some(format!(
+                        "cannot migrate Lunar Magic external-tool settings: {error}"
+                    ));
+                }
+            }
+            Ok(_) => {}
+            Err(error) => {
+                self.effects.error = Some(format!(
+                    "cannot read Lunar Magic external-tool settings: {error}"
+                ));
             }
         }
     }
@@ -816,6 +856,13 @@ impl eframe::App for NativeApplication {
             Self::JOINED_GRAPHICS_STORAGE_KEY,
             encode_joined_graphics_preference(self.joined_graphics_files),
         );
+        match encode_external_tools_preference(self.app.external_tools()) {
+            Ok(encoded) => storage.set_string(Self::EXTERNAL_TOOLS_STORAGE_KEY, encoded),
+            Err(error) => {
+                self.effects.error =
+                    Some(format!("cannot save external-tool preferences: {error}"));
+            }
+        }
     }
 
     fn update(&mut self, context: &egui::Context, _frame: &mut eframe::Frame) {
@@ -1141,6 +1188,205 @@ fn decode_localization_preference(value: &str) -> Result<LocalizationCatalog, St
         .map_err(|error| error.to_string())
 }
 
+fn encode_external_tools_preference(tools: &[ExternalTool]) -> Result<String, String> {
+    let bytes = ToolConfig {
+        tools: tools.to_vec(),
+    }
+    .encode()
+    .map_err(|error| error.to_string())?;
+    Ok(format!("hex:{}", encode_hex(&bytes)))
+}
+
+fn decode_external_tools_preference(value: &str) -> Result<ToolConfig, String> {
+    let value = value
+        .strip_prefix("hex:")
+        .ok_or_else(|| "unknown external-tool preference version".to_owned())?;
+    ToolConfig::decode(&decode_hex(value, ToolConfig::MAX_ENCODED_LEN)?)
+        .map_err(|error| error.to_string())
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+struct OriginalExternalToolSettings {
+    emulator: Option<String>,
+    emulator_arguments: Option<String>,
+    gba_emulator: Option<String>,
+    gba_emulator_arguments: Option<String>,
+    tile_editor: Option<String>,
+    tile_editor_arguments: Option<String>,
+    options: u32,
+    options2: u32,
+}
+
+#[cfg(windows)]
+fn load_original_external_tool_settings() -> Result<Option<OriginalExternalToolSettings>, String> {
+    lm_windows::lunar_magic_external_tool_registry()
+        .map(|settings| {
+            settings.map(|settings| OriginalExternalToolSettings {
+                emulator: settings.emulator,
+                emulator_arguments: settings.emulator_arguments,
+                gba_emulator: settings.gba_emulator,
+                gba_emulator_arguments: settings.gba_emulator_arguments,
+                tile_editor: settings.tile_editor,
+                tile_editor_arguments: settings.tile_editor_arguments,
+                options: settings.options,
+                options2: settings.options2,
+            })
+        })
+        .map_err(|error| error.to_string())
+}
+
+#[cfg(not(windows))]
+fn load_original_external_tool_settings() -> Result<Option<OriginalExternalToolSettings>, String> {
+    Ok(None)
+}
+
+fn original_external_tools(
+    settings: OriginalExternalToolSettings,
+) -> Result<Vec<ExternalTool>, String> {
+    const EMULATOR_CUSTOM_ARGUMENTS: u32 = 1 << 29;
+    const EMULATOR_SHORT_PATH: u32 = 1 << 16;
+    const GBA_EMULATOR_SHORT_PATH: u32 = 1 << 17;
+    const GBA_EMULATOR_CUSTOM_ARGUMENTS: u32 = 1 << 18;
+    const TILE_EDITOR_CUSTOM_ARGUMENTS: u32 = 1 << 24;
+
+    let mut tools = Vec::new();
+    if let Some(executable) = nonempty_original_path(settings.emulator) {
+        let placeholder = if settings.options2 & EMULATOR_SHORT_PATH != 0 {
+            "rom_8dot3"
+        } else {
+            "rom"
+        };
+        tools.push(original_profile_tool(
+            "lunar-magic-snes-emulator",
+            "SNES Emulator",
+            executable,
+            settings.emulator_arguments,
+            settings.options & EMULATOR_CUSTOM_ARGUMENTS != 0,
+            placeholder,
+        )?);
+    }
+    if let Some(executable) = nonempty_original_path(settings.gba_emulator) {
+        let placeholder = if settings.options2 & GBA_EMULATOR_SHORT_PATH != 0 {
+            "rom_8dot3"
+        } else {
+            "rom"
+        };
+        tools.push(original_profile_tool(
+            "lunar-magic-gba-emulator",
+            "GBA Emulator",
+            executable,
+            settings.gba_emulator_arguments,
+            settings.options2 & GBA_EMULATOR_CUSTOM_ARGUMENTS != 0,
+            placeholder,
+        )?);
+    }
+    if let Some(executable) = nonempty_original_path(settings.tile_editor) {
+        tools.push(original_profile_tool(
+            "lunar-magic-tile-editor",
+            "Tile Editor",
+            executable,
+            settings.tile_editor_arguments,
+            settings.options2 & TILE_EDITOR_CUSTOM_ARGUMENTS != 0,
+            "graphics",
+        )?);
+    }
+    Ok(tools)
+}
+
+fn nonempty_original_path(path: Option<String>) -> Option<std::path::PathBuf> {
+    path.filter(|path| !path.trim().is_empty())
+        .map(std::path::PathBuf::from)
+}
+
+fn original_profile_tool(
+    id: &str,
+    name: &str,
+    executable: std::path::PathBuf,
+    arguments: Option<String>,
+    custom_arguments: bool,
+    placeholder: &str,
+) -> Result<ExternalTool, String> {
+    let arguments = if custom_arguments {
+        let command_line = arguments.as_deref().unwrap_or(r#""%1""#);
+        parse_windows_argument_tail(command_line)
+            .into_iter()
+            .map(|argument| translate_original_placeholder(&argument, placeholder))
+            .collect()
+    } else {
+        vec![format!("{{{placeholder}}}")]
+    };
+    let tool = ExternalTool {
+        id: id.into(),
+        name: name.into(),
+        executable,
+        arguments,
+        working_directory: None,
+        subscriptions: Vec::new(),
+    };
+    ToolConfig {
+        tools: vec![tool.clone()],
+    }
+    .encode()
+    .map_err(|error| error.to_string())?;
+    Ok(tool)
+}
+
+/// Splits an original registry argument tail with the quote/backslash rules used by the Microsoft
+/// C runtime. The registry wrapper bounds the input, so this parser cannot allocate without bound.
+fn parse_windows_argument_tail(value: &str) -> Vec<String> {
+    let chars = value.chars().collect::<Vec<_>>();
+    let mut arguments = Vec::new();
+    let mut offset = 0;
+    while offset < chars.len() {
+        while offset < chars.len() && chars[offset].is_whitespace() {
+            offset += 1;
+        }
+        if offset == chars.len() {
+            break;
+        }
+        let mut argument = String::new();
+        let mut quoted = false;
+        loop {
+            let mut backslashes = 0;
+            while offset < chars.len() && chars[offset] == '\\' {
+                backslashes += 1;
+                offset += 1;
+            }
+            if offset < chars.len() && chars[offset] == '"' {
+                argument.extend(std::iter::repeat_n('\\', backslashes / 2));
+                if backslashes % 2 == 0 {
+                    if quoted && chars.get(offset + 1) == Some(&'"') {
+                        argument.push('"');
+                        offset += 1;
+                    } else {
+                        quoted = !quoted;
+                    }
+                } else {
+                    argument.push('"');
+                }
+                offset += 1;
+            } else {
+                argument.extend(std::iter::repeat_n('\\', backslashes));
+                if offset == chars.len() || (!quoted && chars[offset].is_whitespace()) {
+                    break;
+                }
+                argument.push(chars[offset]);
+                offset += 1;
+            }
+        }
+        arguments.push(argument);
+    }
+    arguments
+}
+
+fn translate_original_placeholder(value: &str, placeholder: &str) -> String {
+    value
+        .split("%1")
+        .map(|literal| literal.replace('{', "{{").replace('}', "}}"))
+        .collect::<Vec<_>>()
+        .join(&format!("{{{placeholder}}}"))
+}
+
 fn encode_hex(bytes: &[u8]) -> String {
     use std::fmt::Write as _;
 
@@ -1175,7 +1421,136 @@ fn decode_hex(value: &str, max_bytes: usize) -> Result<Vec<u8>, String> {
 #[cfg(test)]
 mod preference_tests {
     use super::*;
+    use eframe::Storage as _;
     use lm_app::{ShortcutBinding, ShortcutGesture, ShortcutKey, ShortcutModifiers, ToolbarAction};
+    use std::collections::HashMap;
+
+    #[derive(Default)]
+    struct MemoryStorage(HashMap<String, String>);
+
+    impl eframe::Storage for MemoryStorage {
+        fn get_string(&self, key: &str) -> Option<String> {
+            self.0.get(key).cloned()
+        }
+
+        fn set_string(&mut self, key: &str, value: String) {
+            self.0.insert(key.into(), value);
+        }
+
+        fn flush(&mut self) {}
+    }
+
+    fn configured_tool() -> ExternalTool {
+        ExternalTool {
+            id: "emu".into(),
+            name: "Unicode Emulator 日本語".into(),
+            executable: "/tools/my emulator".into(),
+            arguments: vec!["--rom={rom}".into(), "two words".into()],
+            working_directory: Some("{project_dir}".into()),
+            subscriptions: vec![lm_app::ToolEvent::ProjectSaved],
+        }
+    }
+
+    #[test]
+    fn external_tool_preference_round_trips_canonical_configuration() {
+        let tools = vec![configured_tool()];
+        let encoded = encode_external_tools_preference(&tools).unwrap();
+        assert!(encoded.starts_with("hex:"));
+        assert_eq!(
+            decode_external_tools_preference(&encoded).unwrap().tools,
+            tools
+        );
+        assert!(decode_external_tools_preference("LMTOOLS1").is_err());
+        assert!(decode_external_tools_preference("hex:0").is_err());
+    }
+
+    #[test]
+    fn native_save_and_reopen_persist_external_tools_without_registry_fallback() {
+        let tools = vec![configured_tool()];
+        let mut source = NativeApplication::default();
+        source.app.set_external_tools(tools.clone()).unwrap();
+        let mut storage = MemoryStorage::default();
+        eframe::App::save(&mut source, &mut storage);
+
+        let mut reopened = NativeApplication::default();
+        reopened.load_persistent_preferences(Some(&storage));
+        assert_eq!(reopened.app.external_tools(), tools);
+    }
+
+    #[test]
+    fn malformed_native_tool_preference_is_authoritative_and_failure_atomic() {
+        let original = vec![configured_tool()];
+        let mut application = NativeApplication::default();
+        application
+            .app
+            .set_external_tools(original.clone())
+            .unwrap();
+        let mut storage = MemoryStorage::default();
+        storage.set_string(
+            NativeApplication::EXTERNAL_TOOLS_STORAGE_KEY,
+            "hex:00".into(),
+        );
+        application.load_persistent_preferences(Some(&storage));
+        assert_eq!(application.app.external_tools(), original);
+        assert!(
+            application
+                .effects
+                .error
+                .as_deref()
+                .is_some_and(|error| error.contains("external-tool preferences"))
+        );
+    }
+
+    #[test]
+    fn original_registry_profiles_map_every_recovered_option_and_placeholder() {
+        let settings = OriginalExternalToolSettings {
+            emulator: Some(r"C:\Emulators\snes9x.exe".into()),
+            emulator_arguments: Some(r#"--fullscreen --rom="%1" "literal {brace}" """#.into()),
+            gba_emulator: Some(r"C:\Emulators\mgba.exe".into()),
+            gba_emulator_arguments: Some(r#"--ignored "%1""#.into()),
+            tile_editor: Some(r"C:\Tools\yy-chr.exe".into()),
+            tile_editor_arguments: Some(r#"--palette=keep "%1""#.into()),
+            options: 1 << 29,
+            options2: (1 << 16) | (1 << 17) | (1 << 24),
+        };
+        let tools = original_external_tools(settings).unwrap();
+        assert_eq!(tools.len(), 3);
+        assert_eq!(tools[0].id, "lunar-magic-snes-emulator");
+        assert_eq!(
+            tools[0].arguments,
+            ["--fullscreen", "--rom={rom_8dot3}", "literal {{brace}}", ""]
+        );
+        assert_eq!(
+            tools[1].arguments,
+            ["{rom_8dot3}"],
+            "disabled GBA custom arguments ignore the stored tail"
+        );
+        assert_eq!(tools[2].id, "lunar-magic-tile-editor");
+        assert_eq!(tools[2].arguments, ["--palette=keep", "{graphics}"]);
+        ToolConfig { tools }.encode().unwrap();
+    }
+
+    #[test]
+    fn original_registry_migration_skips_empty_paths_and_defaults_missing_custom_tail() {
+        let tools = original_external_tools(OriginalExternalToolSettings {
+            emulator: Some("  ".into()),
+            tile_editor: Some("tile.exe".into()),
+            options2: 1 << 24,
+            ..OriginalExternalToolSettings::default()
+        })
+        .unwrap();
+        assert_eq!(tools.len(), 1);
+        assert_eq!(tools[0].arguments, ["{graphics}"]);
+    }
+
+    #[test]
+    fn windows_argument_tail_matches_quote_and_backslash_boundaries() {
+        assert_eq!(
+            parse_windows_argument_tail(r#"plain "two words" "" a\\\"b tail\\"#),
+            ["plain", "two words", "", "a\\\"b", "tail\\\\"]
+        );
+        assert_eq!(parse_windows_argument_tail(r#""a""b" """"#), ["a\"b", "\""]);
+    }
 
     #[test]
     fn joined_graphics_preference_round_trips_both_original_modes() {

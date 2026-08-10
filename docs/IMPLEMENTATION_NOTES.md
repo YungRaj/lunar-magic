@@ -5376,6 +5376,26 @@ restores the first minimized candidate with `ShowWindow(SW_RESTORE)`, and makes 
 that has not created a window yet remains a harmless no-op. `LM_ALLOW_MULT_INSTANCES` and its
 force-all form continue to bypass this reuse path.
 
+External-tool configuration now survives native application restarts and migrates the original
+Windows profiles once when no native or explicit startup configuration exists. Eframe storage owns
+canonical bounded `LMTOOLS1` bytes under a versioned key; decoding and publication are atomic, and
+malformed native data never falls through to a registry profile that could silently replace the
+active collection. Windows reads only the six recovered `REG_SZ` values and two option DWORDs from
+Lunar Magic's per-user settings key through `lm-windows`; each UTF-16 value is type-checked,
+NUL-checked, capped at the original 0x410 UTF-16-unit exchange shape, and rejected above 0x40f
+UTF-8 payload bytes before conversion. Missing keys and values are ordinary
+absence, while wrong types, invalid UTF-16, races beyond the probed size, and excess sizes fail.
+
+Migration reproduces the recovered packed flags: `Options` bit 29 selects SNES custom arguments;
+`Options2` bits 16/17 choose SNES/GBA 8.3 ROM paths, bit 18 selects GBA custom arguments, and bit 24
+selects the tile-editor template. Disabled custom arguments deliberately ignore stored tails and
+emit exactly one typed path placeholder. Enabled tails use Microsoft C-runtime quote/backslash
+splitting, retain empty arguments, escape literal Rust-template braces, and translate every `%1`
+to `{rom}`, `{rom_8dot3}`, or `{graphics}` without a command shell. Empty executable paths create
+no phantom tool. A seeded isolated-Wine registry test exercises the actual Win32 ABI, while native
+round-trip and failure-atomic tests cover all three profiles, every recovered launch bit, Unicode,
+spaces, empty arguments, default arguments, and malformed preferences.
+
 Lunar Magic notification payloads are a typed core value rather than scattered Win32 literals:
 message `$BECA`, confirmation `$6942`, six-bit kinds 0 through 6, and a checked ten-bit variable.
 The cancellable process worker publishes the OS PID after successful spawn. The Windows boundary

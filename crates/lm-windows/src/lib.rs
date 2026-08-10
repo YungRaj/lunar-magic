@@ -11,6 +11,9 @@ use windows_sys::Win32::Globalization::{
 use windows_sys::Win32::Storage::FileSystem::{
     BY_HANDLE_FILE_INFORMATION, GetFileInformationByHandle, GetShortPathNameW,
 };
+use windows_sys::Win32::System::Registry::{
+    HKEY_CURRENT_USER, RRF_RT_REG_DWORD, RRF_RT_REG_SZ, RegGetValueW,
+};
 use windows_sys::Win32::UI::Shell::ShellExecuteW;
 use windows_sys::Win32::UI::WindowsAndMessaging::{
     CreateWindowExW, DestroyWindow, EnumWindows, GetWindowThreadProcessId, IsIconic,
@@ -18,6 +21,186 @@ use windows_sys::Win32::UI::WindowsAndMessaging::{
 };
 
 const MAX_WINDOWS_PATH_UTF16_UNITS: usize = 32_768;
+const LUNAR_MAGIC_SETTINGS_KEY: &str = "Software\\LunarianConcepts\\LunarMagic\\Settings";
+const MAX_LUNAR_MAGIC_TOOL_UTF16_UNITS: usize = 0x410;
+const MAX_LUNAR_MAGIC_TOOL_UTF8_BYTES: usize = 0x40f;
+
+/// Original Lunar Magic 3.63 external-tool values read from its per-user settings key.
+///
+/// Missing values remain distinct from present empty strings so migration can reproduce the
+/// original profile loader's defaults without creating tools for unconfigured profiles.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct LunarMagicExternalToolRegistry {
+    pub emulator: Option<String>,
+    pub emulator_arguments: Option<String>,
+    pub gba_emulator: Option<String>,
+    pub gba_emulator_arguments: Option<String>,
+    pub tile_editor: Option<String>,
+    pub tile_editor_arguments: Option<String>,
+    pub options: u32,
+    pub options2: u32,
+}
+
+/// Reads Lunar Magic's three configured external-tool profiles without modifying the registry.
+///
+/// # Errors
+///
+/// Rejects wrong registry types, invalid UTF-16, values beyond the original-compatible bounded
+/// profile size, and all registry failures other than an absent key/value.
+pub fn lunar_magic_external_tool_registry()
+-> std::io::Result<Option<LunarMagicExternalToolRegistry>> {
+    let fields = [
+        read_registry_string("Emulator")?,
+        read_registry_string("EmulatorArg")?,
+        read_registry_string("Emulator2")?,
+        read_registry_string("Emulator2Arg")?,
+        read_registry_string("TileEditor")?,
+        read_registry_string("TileEditorArg")?,
+    ];
+    let options = read_registry_dword("Options")?;
+    let options2 = read_registry_dword("Options2")?;
+    if fields.iter().all(Option::is_none) && options.is_none() && options2.is_none() {
+        return Ok(None);
+    }
+    let [
+        emulator,
+        emulator_arguments,
+        gba_emulator,
+        gba_emulator_arguments,
+        tile_editor,
+        tile_editor_arguments,
+    ] = fields;
+    Ok(Some(LunarMagicExternalToolRegistry {
+        emulator,
+        emulator_arguments,
+        gba_emulator,
+        gba_emulator_arguments,
+        tile_editor,
+        tile_editor_arguments,
+        options: options.unwrap_or_default(),
+        options2: options2.unwrap_or_default(),
+    }))
+}
+
+fn read_registry_string(name: &str) -> std::io::Result<Option<String>> {
+    let subkey = wide_nul(LUNAR_MAGIC_SETTINGS_KEY);
+    let name = wide_nul(name);
+    let mut byte_count = 0_u32;
+    let status = unsafe {
+        // SAFETY: Both names are retained NUL-terminated UTF-16 strings; the size probe supplies
+        // no output allocation and `byte_count` is a live writable scalar.
+        RegGetValueW(
+            HKEY_CURRENT_USER,
+            subkey.as_ptr(),
+            name.as_ptr(),
+            RRF_RT_REG_SZ,
+            std::ptr::null_mut(),
+            std::ptr::null_mut(),
+            &mut byte_count,
+        )
+    };
+    if status == windows_sys::Win32::Foundation::ERROR_FILE_NOT_FOUND {
+        return Ok(None);
+    }
+    registry_status(status)?;
+    if byte_count % 2 != 0
+        || usize::try_from(byte_count).unwrap_or(usize::MAX) > MAX_LUNAR_MAGIC_TOOL_UTF16_UNITS * 2
+    {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            "Lunar Magic registry string exceeds its bounded UTF-16 shape",
+        ));
+    }
+    let units = usize::try_from(byte_count / 2)
+        .map_err(|_| std::io::Error::other("registry string size overflow"))?;
+    let mut value = vec![0_u16; units.max(1)];
+    let mut second_count = byte_count;
+    let status = unsafe {
+        // SAFETY: The allocation exposes at least the byte count returned by the size probe and
+        // remains live and writable for this non-mutating registry read.
+        RegGetValueW(
+            HKEY_CURRENT_USER,
+            subkey.as_ptr(),
+            name.as_ptr(),
+            RRF_RT_REG_SZ,
+            std::ptr::null_mut(),
+            value.as_mut_ptr().cast(),
+            &mut second_count,
+        )
+    };
+    registry_status(status)?;
+    if second_count > byte_count || second_count % 2 != 0 {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            "Lunar Magic registry string changed during bounded read",
+        ));
+    }
+    value.truncate(usize::try_from(second_count / 2).unwrap_or_default());
+    if value.last() == Some(&0) {
+        value.pop();
+    }
+    if value.contains(&0) {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            "Lunar Magic registry string contains an interior NUL",
+        ));
+    }
+    let value = String::from_utf16(&value).map_err(|_| {
+        std::io::Error::new(std::io::ErrorKind::InvalidData, "invalid registry UTF-16")
+    })?;
+    if value.len() > MAX_LUNAR_MAGIC_TOOL_UTF8_BYTES {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            "Lunar Magic registry string exceeds its original UTF-8 buffer",
+        ));
+    }
+    Ok(Some(value))
+}
+
+fn read_registry_dword(name: &str) -> std::io::Result<Option<u32>> {
+    let subkey = wide_nul(LUNAR_MAGIC_SETTINGS_KEY);
+    let name = wide_nul(name);
+    let mut value = 0_u32;
+    let mut byte_count = 4_u32;
+    let status = unsafe {
+        // SAFETY: Names are retained and NUL-terminated; `value` and `byte_count` are live writable
+        // scalars exactly matching the requested REG_DWORD representation.
+        RegGetValueW(
+            HKEY_CURRENT_USER,
+            subkey.as_ptr(),
+            name.as_ptr(),
+            RRF_RT_REG_DWORD,
+            std::ptr::null_mut(),
+            (&mut value as *mut u32).cast(),
+            &mut byte_count,
+        )
+    };
+    if status == windows_sys::Win32::Foundation::ERROR_FILE_NOT_FOUND {
+        return Ok(None);
+    }
+    registry_status(status)?;
+    if byte_count != 4 {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            "Lunar Magic registry DWORD has the wrong size",
+        ));
+    }
+    Ok(Some(value))
+}
+
+fn registry_status(status: u32) -> std::io::Result<()> {
+    if status == windows_sys::Win32::Foundation::ERROR_SUCCESS {
+        Ok(())
+    } else {
+        Err(std::io::Error::from_raw_os_error(
+            i32::try_from(status).unwrap_or(i32::MAX),
+        ))
+    }
+}
+
+fn wide_nul(value: &str) -> Vec<u16> {
+    value.encode_utf16().chain(std::iter::once(0)).collect()
+}
 
 /// Resolves an existing Windows path to its filesystem-provided 8.3 short form.
 ///
@@ -656,7 +839,7 @@ fn parse_utf16_multi_string(buffer: &[u16], expected_count: u32) -> Vec<String> 
 
 #[cfg(test)]
 mod tests {
-    use super::parse_utf16_multi_string;
+    use super::{LunarMagicExternalToolRegistry, parse_utf16_multi_string};
 
     #[test]
     fn parses_bounded_double_null_terminated_language_list() {
@@ -669,5 +852,25 @@ mod tests {
         assert!(parse_utf16_multi_string(&[u16::from(b'e'), 0], 1).is_empty());
         assert!(parse_utf16_multi_string(&[u16::from(b'e'), 0, 0], 2).is_empty());
         assert!(parse_utf16_multi_string(&[0xd800, 0, 0], 1).is_empty());
+    }
+
+    /// Opt-in Wine/Windows registry oracle. The runner seeds the original Lunar Magic key in an
+    /// isolated user hive before executing this exact test.
+    #[test]
+    #[ignore = "requires an isolated seeded Windows/Wine registry"]
+    fn reads_seeded_lunar_magic_external_tool_registry_exactly() {
+        assert_eq!(
+            super::lunar_magic_external_tool_registry().unwrap(),
+            Some(LunarMagicExternalToolRegistry {
+                emulator: Some(r"C:\Emulators\Snes 日本語.exe".into()),
+                emulator_arguments: Some(r#"--fullscreen "%1""#.into()),
+                gba_emulator: Some(r"C:\Emulators\mGBA.exe".into()),
+                gba_emulator_arguments: Some(r#"--gba "%1""#.into()),
+                tile_editor: Some(r"C:\Tools\YY-CHR.exe".into()),
+                tile_editor_arguments: Some(r#"--palette keep "%1""#.into()),
+                options: 0x2000_0000,
+                options2: 0x0107_0000,
+            })
+        );
     }
 }
