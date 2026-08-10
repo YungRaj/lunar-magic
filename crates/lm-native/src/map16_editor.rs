@@ -1,6 +1,8 @@
 use crate::{
-    dialogs, document_loader::DocumentLoader, map16_editor_render, map16_subtile_form,
-    native_clipboard,
+    dialogs,
+    document_loader::DocumentLoader,
+    map16_editor_render, map16_subtile_form, native_clipboard,
+    user_toolbar_images::{MainToolbarImageSet, OriginalToolbarAction, OriginalToolbarImages},
 };
 use eframe::egui;
 use lm_app::Map16PageDocumentController;
@@ -89,7 +91,11 @@ impl Map16Editor {
         false
     }
 
-    pub(crate) fn show(&mut self, context: &egui::Context) -> bool {
+    pub(crate) fn show(
+        &mut self,
+        context: &egui::Context,
+        toolbar_images: &MainToolbarImageSet,
+    ) -> bool {
         if let Some(result) = self.loader.show(context) {
             match result.and_then(document_io::decode_document) {
                 Ok(document) => {
@@ -110,7 +116,7 @@ impl Map16Editor {
             self.load_form();
             egui::Window::new("Portable Map16 Page Editor")
                 .default_size([760.0, 620.0])
-                .show(context, |ui| self.contents(ui));
+                .show(context, |ui| self.contents(ui, toolbar_images));
         }
         if let Some(pending) = self.pending_close {
             egui::Window::new("Unsaved Map16 page")
@@ -134,14 +140,14 @@ impl Map16Editor {
         quit_approved
     }
 
-    fn contents(&mut self, ui: &mut egui::Ui) {
+    fn contents(&mut self, ui: &mut egui::Ui, toolbar_images: &MainToolbarImageSet) {
         let pasted = ui.input(|input| {
             input.events.iter().find_map(|event| match event {
                 egui::Event::Paste(text) => Some(text.clone()),
                 _ => None,
             })
         });
-        self.toolbar(ui);
+        self.toolbar(ui, toolbar_images);
         if let Some(text) = pasted
             && let Some((revision, tile)) = self.clipboard_paste_target.take()
         {
@@ -154,7 +160,7 @@ impl Map16Editor {
         });
     }
 
-    fn toolbar(&mut self, ui: &mut egui::Ui) {
+    fn toolbar(&mut self, ui: &mut egui::Ui, toolbar_images: &MainToolbarImageSet) {
         let save_available = !self.save_worker.is_running();
         let Some(document) = self.document.as_mut() else {
             return;
@@ -163,22 +169,40 @@ impl Map16Editor {
         let revision = controller.revision();
         let mut native_paste = None;
         ui.horizontal(|ui| {
-            if ui
-                .add_enabled(controller.can_undo(), egui::Button::new("Undo"))
+            if toolbar_images
+                .original_action_button(
+                    ui,
+                    OriginalToolbarImages::Map16,
+                    OriginalToolbarAction::Undo,
+                    "Undo",
+                    controller.can_undo(),
+                )
                 .clicked()
                 && controller.undo(revision).is_ok()
             {
                 self.loaded_selection = None;
             }
-            if ui
-                .add_enabled(controller.can_redo(), egui::Button::new("Redo"))
+            if toolbar_images
+                .original_action_button(
+                    ui,
+                    OriginalToolbarImages::Map16,
+                    OriginalToolbarAction::Redo,
+                    "Redo",
+                    controller.can_redo(),
+                )
                 .clicked()
                 && controller.redo(revision).is_ok()
             {
                 self.loaded_selection = None;
             }
-            if ui
-                .add_enabled(save_available, egui::Button::new("Save"))
+            if toolbar_images
+                .original_action_button(
+                    ui,
+                    OriginalToolbarImages::Map16,
+                    OriginalToolbarAction::Save,
+                    "Save",
+                    save_available,
+                )
                 .clicked()
             {
                 document_io::begin_save(controller, &mut self.save_worker, &mut self.error);

@@ -10,6 +10,118 @@ use std::{fs, io::Read, path::Path};
 const MAX_STRIP_BYTES: u64 = 16 * 1024 * 1024;
 const MAX_ICON_SIZE: usize = 256;
 const MAX_ICONS: usize = 4096;
+const MAX_TILED_IMAGE_SIDE: usize = 4096;
+const MAX_TILED_IMAGE_PIXELS: usize = 16 * 1024 * 1024;
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum OriginalToolbarImages {
+    Overworld8x8,
+    Overworld,
+    LevelPalette,
+    Map16,
+    OverworldPalette,
+    AddObject,
+    AddSprite,
+    Background,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum OriginalToolbarAction {
+    Save,
+    Undo,
+    Redo,
+}
+
+impl OriginalToolbarImages {
+    const ALL: [Self; 8] = [
+        Self::Overworld8x8,
+        Self::Overworld,
+        Self::LevelPalette,
+        Self::Map16,
+        Self::OverworldPalette,
+        Self::AddObject,
+        Self::AddSprite,
+        Self::Background,
+    ];
+
+    const fn specification(self) -> (&'static str, usize) {
+        match self {
+            Self::Overworld8x8 => ("Lunar Magic.ff1", 6),
+            Self::Overworld => ("Lunar Magic.ff2", 32),
+            Self::LevelPalette => ("Lunar Magic.ff3", 12),
+            Self::Map16 => ("Lunar Magic.ff5", 20),
+            Self::OverworldPalette => ("Lunar Magic.ff6", 12),
+            Self::AddObject => ("Lunar Magic.ff7", 6),
+            Self::AddSprite => ("Lunar Magic.ff8", 6),
+            Self::Background => ("Lunar Magic.ff9", 10),
+        }
+    }
+
+    const fn index(self) -> usize {
+        self as usize
+    }
+
+    const fn action_index(self, action: OriginalToolbarAction) -> Option<usize> {
+        match (self, action) {
+            (Self::Overworld, OriginalToolbarAction::Save) => Some(1),
+            (Self::Overworld, OriginalToolbarAction::Undo) => Some(2),
+            (Self::Overworld, OriginalToolbarAction::Redo) => Some(3),
+            (Self::Map16, OriginalToolbarAction::Save) => Some(2),
+            (Self::Map16, OriginalToolbarAction::Undo) => Some(3),
+            (Self::Map16, OriginalToolbarAction::Redo) => Some(4),
+            (Self::LevelPalette | Self::OverworldPalette, OriginalToolbarAction::Save) => Some(11),
+            (Self::LevelPalette | Self::OverworldPalette, OriginalToolbarAction::Undo) => Some(2),
+            (Self::LevelPalette | Self::OverworldPalette, OriginalToolbarAction::Redo) => Some(3),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum OriginalTiledImage {
+    LevelCanvas,
+    OverworldCanvas,
+    BackgroundCanvas,
+    LevelToolbar,
+    OverworldToolbar,
+}
+
+impl OriginalTiledImage {
+    const ALL: [Self; 5] = [
+        Self::LevelCanvas,
+        Self::OverworldCanvas,
+        Self::BackgroundCanvas,
+        Self::LevelToolbar,
+        Self::OverworldToolbar,
+    ];
+
+    const fn filename(self) -> &'static str {
+        match self {
+            Self::LevelCanvas => "Lunar Magic.ffx",
+            Self::OverworldCanvas => "Lunar Magic.ffx2",
+            Self::BackgroundCanvas => "Lunar Magic.ffxhd",
+            Self::LevelToolbar => "Lunar Magic.ffxi",
+            Self::OverworldToolbar => "Lunar Magic.ffxii",
+        }
+    }
+
+    const fn index(self) -> usize {
+        self as usize
+    }
+}
+
+#[derive(Default)]
+struct OriginalStripImageSet {
+    images: Vec<egui::ColorImage>,
+    textures: Vec<egui::TextureHandle>,
+    icon_size: Option<usize>,
+}
+
+#[derive(Default)]
+struct OriginalTiledImageSet {
+    image: Option<egui::ColorImage>,
+    texture: Option<egui::TextureHandle>,
+}
 
 #[derive(Default)]
 pub(crate) struct UserToolbarImageSet {
@@ -26,15 +138,28 @@ pub(crate) struct MainToolbarImageSet {
     images: Vec<egui::ColorImage>,
     textures: Vec<egui::TextureHandle>,
     icon_size: Option<usize>,
+    original_strips: Vec<OriginalStripImageSet>,
+    original_tiles: Vec<OriginalTiledImageSet>,
 }
 
 impl MainToolbarImageSet {
     const IMAGE_COUNT: usize = 41;
 
     pub(crate) fn load(directory: &Path) -> Result<Self, String> {
+        let mut result = Self {
+            original_strips: OriginalToolbarImages::ALL
+                .iter()
+                .map(|kind| load_original_strip(directory, *kind))
+                .collect::<Result<_, _>>()?,
+            original_tiles: OriginalTiledImage::ALL
+                .iter()
+                .map(|kind| load_original_tile(directory, *kind))
+                .collect::<Result<_, _>>()?,
+            ..Self::default()
+        };
         let path = directory.join("Lunar Magic.ff4");
         if !path.exists() {
-            return Ok(Self::default());
+            return Ok(result);
         }
         let bytes = read_bounded(&path)?;
         let decoded = decode_map16_bitmap_bmp_image(&bytes).map_err(|error| {
@@ -52,11 +177,9 @@ impl MainToolbarImageSet {
                 decoded.height
             ));
         }
-        Ok(Self {
-            images: split_strip(&decoded, size)?,
-            textures: Vec::new(),
-            icon_size: Some(size),
-        })
+        result.images = split_strip(&decoded, size)?;
+        result.icon_size = Some(size);
+        Ok(result)
     }
 
     pub(crate) fn ensure_textures(&mut self, context: &egui::Context) {
@@ -74,6 +197,36 @@ impl MainToolbarImageSet {
                 })
                 .collect();
         }
+        for (kind, strip) in OriginalToolbarImages::ALL
+            .iter()
+            .zip(&mut self.original_strips)
+        {
+            if strip.textures.len() != strip.images.len() {
+                strip.textures = strip
+                    .images
+                    .iter()
+                    .enumerate()
+                    .map(|(index, image)| {
+                        context.load_texture(
+                            format!("original-toolbar-{kind:?}-{index}"),
+                            image.clone(),
+                            egui::TextureOptions::NEAREST,
+                        )
+                    })
+                    .collect();
+            }
+        }
+        for (kind, tile) in OriginalTiledImage::ALL.iter().zip(&mut self.original_tiles) {
+            if tile.texture.is_none()
+                && let Some(image) = &tile.image
+            {
+                tile.texture = Some(context.load_texture(
+                    format!("original-tiled-image-{kind:?}"),
+                    image.clone(),
+                    egui::TextureOptions::NEAREST,
+                ));
+            }
+        }
     }
 
     pub(crate) fn texture(&self, index: usize) -> Option<&egui::TextureHandle> {
@@ -83,6 +236,118 @@ impl MainToolbarImageSet {
     pub(crate) fn icon_size(&self) -> f32 {
         self.icon_size.unwrap_or(16) as f32
     }
+
+    pub(crate) fn original_texture(
+        &self,
+        kind: OriginalToolbarImages,
+        index: usize,
+    ) -> Option<&egui::TextureHandle> {
+        self.original_strips.get(kind.index())?.textures.get(index)
+    }
+
+    pub(crate) fn original_icon_size(&self, kind: OriginalToolbarImages) -> f32 {
+        self.original_strips
+            .get(kind.index())
+            .and_then(|strip| strip.icon_size)
+            .unwrap_or(16) as f32
+    }
+
+    pub(crate) fn original_action_button(
+        &self,
+        ui: &mut egui::Ui,
+        kind: OriginalToolbarImages,
+        action: OriginalToolbarAction,
+        label: &str,
+        enabled: bool,
+    ) -> egui::Response {
+        let texture = kind
+            .action_index(action)
+            .and_then(|index| self.original_texture(kind, index));
+        let button = texture.map_or_else(
+            || egui::Button::new(label),
+            |texture| {
+                let size = self.original_icon_size(kind);
+                egui::Button::image(egui::Image::new((texture.id(), egui::vec2(size, size))))
+            },
+        );
+        ui.add_enabled(enabled, button).on_hover_text(label)
+    }
+
+    pub(crate) fn tiled_texture(&self, kind: OriginalTiledImage) -> Option<&egui::TextureHandle> {
+        self.original_tiles.get(kind.index())?.texture.as_ref()
+    }
+}
+
+fn load_original_strip(
+    directory: &Path,
+    kind: OriginalToolbarImages,
+) -> Result<OriginalStripImageSet, String> {
+    let (filename, image_count) = kind.specification();
+    let path = directory.join(filename);
+    if !path.exists() {
+        return Ok(OriginalStripImageSet::default());
+    }
+    let decoded = decode_custom_bitmap(&path)?;
+    let size = decoded.height;
+    if !(1..=MAX_ICON_SIZE).contains(&size) || decoded.width != image_count * size {
+        return Err(format!(
+            "custom {filename} toolbar must contain {image_count} square images, got {}x{}",
+            decoded.width, decoded.height
+        ));
+    }
+    Ok(OriginalStripImageSet {
+        images: split_strip(&decoded, size)?,
+        textures: Vec::new(),
+        icon_size: Some(size),
+    })
+}
+
+fn load_original_tile(
+    directory: &Path,
+    kind: OriginalTiledImage,
+) -> Result<OriginalTiledImageSet, String> {
+    let filename = kind.filename();
+    let path = directory.join(filename);
+    if !path.exists() {
+        return Ok(OriginalTiledImageSet::default());
+    }
+    let decoded = decode_custom_bitmap(&path)?;
+    let pixels = decoded
+        .width
+        .checked_mul(decoded.height)
+        .ok_or_else(|| format!("custom tiled image {filename} dimensions overflow"))?;
+    if decoded.width == 0
+        || decoded.height == 0
+        || decoded.width > MAX_TILED_IMAGE_SIDE
+        || decoded.height > MAX_TILED_IMAGE_SIDE
+        || pixels > MAX_TILED_IMAGE_PIXELS
+    {
+        return Err(format!(
+            "custom tiled image {filename} has invalid bounded dimensions {}x{}",
+            decoded.width, decoded.height
+        ));
+    }
+    let mut rgba = Vec::with_capacity(pixels * 4);
+    for pixel in decoded.pixels {
+        rgba.extend_from_slice(&[pixel.red, pixel.green, pixel.blue, pixel.alpha]);
+    }
+    Ok(OriginalTiledImageSet {
+        image: Some(egui::ColorImage::from_rgba_unmultiplied(
+            [decoded.width, decoded.height],
+            &rgba,
+        )),
+        texture: None,
+    })
+}
+
+fn decode_custom_bitmap(path: &Path) -> Result<DecodedMap16Bitmap, String> {
+    let bytes = read_bounded(path)?;
+    decode_map16_bitmap_bmp_image(&bytes).map_err(|error| {
+        format!(
+            "cannot decode custom GUI bitmap {}: {error}",
+            path.display()
+        )
+    })
 }
 
 impl UserToolbarImageSet {
@@ -487,6 +752,96 @@ mod tests {
         let bad = lm_render::Canvas::try_new(40 * 3, 3).unwrap();
         fs::write(
             directory.path().join("Lunar Magic.ff4"),
+            lm_render::encode_bmp(&bad).unwrap(),
+        )
+        .unwrap();
+        assert!(MainToolbarImageSet::load(directory.path()).is_err());
+    }
+
+    #[test]
+    fn every_authenticated_editor_strip_and_tiled_gui_image_loads_at_its_exact_shape() {
+        let directory = tempfile::tempdir().unwrap();
+        for kind in OriginalToolbarImages::ALL {
+            let (filename, count) = kind.specification();
+            let canvas = lm_render::Canvas::try_new(count * 3, 3).unwrap();
+            fs::write(
+                directory.path().join(filename),
+                lm_render::encode_bmp(&canvas).unwrap(),
+            )
+            .unwrap();
+        }
+        for kind in OriginalTiledImage::ALL {
+            let canvas = lm_render::Canvas::try_new(3, 5).unwrap();
+            fs::write(
+                directory.path().join(kind.filename()),
+                lm_render::encode_bmp(&canvas).unwrap(),
+            )
+            .unwrap();
+        }
+        let mut loaded = MainToolbarImageSet::load(directory.path()).unwrap();
+        assert_eq!(loaded.original_strips.len(), 8);
+        for kind in OriginalToolbarImages::ALL {
+            let (_, count) = kind.specification();
+            let strip = &loaded.original_strips[kind.index()];
+            assert_eq!(strip.images.len(), count);
+            assert_eq!(strip.icon_size, Some(3));
+        }
+        assert_eq!(loaded.original_tiles.len(), 5);
+        for kind in OriginalTiledImage::ALL {
+            assert_eq!(
+                loaded.original_tiles[kind.index()]
+                    .image
+                    .as_ref()
+                    .map(|image| image.size),
+                Some([3, 5])
+            );
+        }
+        let context = egui::Context::default();
+        loaded.ensure_textures(&context);
+        assert!(
+            loaded
+                .original_texture(OriginalToolbarImages::Map16, 19)
+                .is_some()
+        );
+        assert_eq!(loaded.original_icon_size(OriginalToolbarImages::Map16), 3.0);
+        assert!(
+            loaded
+                .tiled_texture(OriginalTiledImage::BackgroundCanvas)
+                .is_some()
+        );
+    }
+
+    #[test]
+    fn authenticated_editor_action_cells_match_the_decompiled_command_tables() {
+        use OriginalToolbarAction::{Redo, Save, Undo};
+
+        assert_eq!(OriginalToolbarImages::Overworld.action_index(Save), Some(1));
+        assert_eq!(OriginalToolbarImages::Overworld.action_index(Undo), Some(2));
+        assert_eq!(OriginalToolbarImages::Overworld.action_index(Redo), Some(3));
+        assert_eq!(OriginalToolbarImages::Map16.action_index(Save), Some(2));
+        assert_eq!(OriginalToolbarImages::Map16.action_index(Undo), Some(3));
+        assert_eq!(OriginalToolbarImages::Map16.action_index(Redo), Some(4));
+        assert_eq!(
+            OriginalToolbarImages::LevelPalette.action_index(Save),
+            Some(11)
+        );
+        assert_eq!(
+            OriginalToolbarImages::LevelPalette.action_index(Undo),
+            Some(2)
+        );
+        assert_eq!(
+            OriginalToolbarImages::LevelPalette.action_index(Redo),
+            Some(3)
+        );
+        assert_eq!(OriginalToolbarImages::AddObject.action_index(Save), None);
+    }
+
+    #[test]
+    fn malformed_authenticated_editor_strip_rejects_without_publishing_any_set() {
+        let directory = tempfile::tempdir().unwrap();
+        let bad = lm_render::Canvas::try_new(31 * 4, 4).unwrap();
+        fs::write(
+            directory.path().join("Lunar Magic.ff2"),
             lm_render::encode_bmp(&bad).unwrap(),
         )
         .unwrap();

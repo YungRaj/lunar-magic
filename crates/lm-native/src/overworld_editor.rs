@@ -10,6 +10,7 @@ use crate::{
     overworld_editor_palette::OverworldPalettePanel,
     overworld_editor_records::OverworldRecordPanels,
     overworld_editor_render::{self, OverworldAssets},
+    user_toolbar_images::{MainToolbarImageSet, OriginalToolbarAction, OriginalToolbarImages},
 };
 use eframe::egui;
 use lm_app::OverworldDocumentController;
@@ -111,7 +112,11 @@ impl OverworldEditor {
         false
     }
 
-    pub(crate) fn show(&mut self, context: &egui::Context) -> bool {
+    pub(crate) fn show(
+        &mut self,
+        context: &egui::Context,
+        toolbar_images: &MainToolbarImageSet,
+    ) -> bool {
         if let Some(result) = self.loader.show(context) {
             match result.and_then(document_io::pending_from_loaded) {
                 Ok(pending) => self.pending_open = Some(pending),
@@ -129,7 +134,7 @@ impl OverworldEditor {
             self.load_tile();
             egui::Window::new("Portable Complete Overworld Editor")
                 .default_size([1020.0, 720.0])
-                .show(context, |ui| self.contents(ui));
+                .show(context, |ui| self.contents(ui, toolbar_images));
         }
         let approved = self.show_close_confirmation(context);
         self.show_error(context);
@@ -186,8 +191,8 @@ impl OverworldEditor {
         }
     }
 
-    fn contents(&mut self, ui: &mut egui::Ui) {
-        self.toolbar(ui);
+    fn contents(&mut self, ui: &mut egui::Ui, toolbar_images: &MainToolbarImageSet) {
+        self.toolbar(ui, toolbar_images);
         ui.separator();
         ui.columns(2, |columns| {
             self.world_view(&mut columns[0]);
@@ -195,7 +200,7 @@ impl OverworldEditor {
         });
     }
 
-    fn toolbar(&mut self, ui: &mut egui::Ui) {
+    fn toolbar(&mut self, ui: &mut egui::Ui, toolbar_images: &MainToolbarImageSet) {
         let Some(document) = self.document.as_ref() else {
             return;
         };
@@ -205,20 +210,38 @@ impl OverworldEditor {
         let mut history = None;
         let mut save_requested = false;
         ui.horizontal(|ui| {
-            if ui
-                .add_enabled(can_undo, egui::Button::new("Undo"))
+            if toolbar_images
+                .original_action_button(
+                    ui,
+                    OriginalToolbarImages::Overworld,
+                    OriginalToolbarAction::Undo,
+                    "Undo",
+                    can_undo,
+                )
                 .clicked()
             {
                 history = Some(true);
             }
-            if ui
-                .add_enabled(can_redo, egui::Button::new("Redo"))
+            if toolbar_images
+                .original_action_button(
+                    ui,
+                    OriginalToolbarImages::Overworld,
+                    OriginalToolbarAction::Redo,
+                    "Redo",
+                    can_redo,
+                )
                 .clicked()
             {
                 history = Some(false);
             }
-            if ui
-                .add_enabled(!self.persistence.is_running(), egui::Button::new("Save"))
+            if toolbar_images
+                .original_action_button(
+                    ui,
+                    OriginalToolbarImages::Overworld,
+                    OriginalToolbarAction::Save,
+                    "Save",
+                    !self.persistence.is_running(),
+                )
                 .clicked()
             {
                 save_requested = true;

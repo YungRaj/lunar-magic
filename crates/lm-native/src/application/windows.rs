@@ -3,6 +3,7 @@ use eframe::egui;
 
 impl NativeApplication {
     pub(super) fn show_editor_windows(&mut self, context: &egui::Context) {
+        self.main_toolbar_images.ensure_textures(context);
         if let Some(tools) = self
             .external_tool_config_editor
             .show(context, self.app.localization())
@@ -12,13 +13,13 @@ impl NativeApplication {
                 Err(error) => self.external_tool_config_editor.rejected(error.to_string()),
             }
         }
-        if self.palette_editor.show(context) {
+        if self.palette_editor.show(context, &self.main_toolbar_images) {
             self.request_quit(context);
         }
         if self.graphics_editor.show(context) {
             self.request_quit(context);
         }
-        if self.map16_editor.show(context) {
+        if self.map16_editor.show(context, &self.main_toolbar_images) {
             self.request_quit(context);
         }
         if self.exanimation_editor.show(context) {
@@ -27,7 +28,10 @@ impl NativeApplication {
         if self.level_editor.show(context) {
             self.request_quit(context);
         }
-        if self.overworld_editor.show(context) {
+        if self
+            .overworld_editor
+            .show(context, &self.main_toolbar_images)
+        {
             self.request_quit(context);
         }
         if self.path_editor.show(context) {

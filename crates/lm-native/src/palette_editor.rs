@@ -2,6 +2,7 @@ use crate::{
     dialogs,
     document_loader::{BoundedRead, DocumentLoader},
     native_clipboard,
+    user_toolbar_images::{MainToolbarImageSet, OriginalToolbarAction, OriginalToolbarImages},
 };
 use eframe::egui;
 use lm_app::{PaletteControllerEdit, PaletteDocumentController};
@@ -68,7 +69,11 @@ impl PaletteEditor {
         false
     }
 
-    pub(crate) fn show(&mut self, context: &egui::Context) -> bool {
+    pub(crate) fn show(
+        &mut self,
+        context: &egui::Context,
+        toolbar_images: &MainToolbarImageSet,
+    ) -> bool {
         if let Some(result) = self.loader.show(context) {
             match result.and_then(|mut loaded| {
                 let (path, bytes) = loaded
@@ -89,7 +94,7 @@ impl PaletteEditor {
         if self.controller.is_some() {
             egui::Window::new("Portable Palette Editor")
                 .default_size([520.0, 420.0])
-                .show(context, |ui| self.contents(ui));
+                .show(context, |ui| self.contents(ui, toolbar_images));
         }
         if let Some(pending) = self.pending_close {
             egui::Window::new("Unsaved palette")
@@ -124,7 +129,7 @@ impl PaletteEditor {
         quit_approved
     }
 
-    fn contents(&mut self, ui: &mut egui::Ui) {
+    fn contents(&mut self, ui: &mut egui::Ui, toolbar_images: &MainToolbarImageSet) {
         let save_available = !self.save_worker.is_running();
         let pasted = ui.input(|input| {
             input.events.iter().find_map(|event| match event {
@@ -137,24 +142,42 @@ impl PaletteEditor {
         };
         let revision = controller.revision();
         ui.horizontal(|ui| {
-            if ui
-                .add_enabled(controller.can_undo(), egui::Button::new("Undo"))
+            if toolbar_images
+                .original_action_button(
+                    ui,
+                    OriginalToolbarImages::LevelPalette,
+                    OriginalToolbarAction::Undo,
+                    "Undo",
+                    controller.can_undo(),
+                )
                 .clicked()
             {
                 if let Err(error) = controller.undo(revision) {
                     self.error = Some(error.to_string());
                 }
             }
-            if ui
-                .add_enabled(controller.can_redo(), egui::Button::new("Redo"))
+            if toolbar_images
+                .original_action_button(
+                    ui,
+                    OriginalToolbarImages::LevelPalette,
+                    OriginalToolbarAction::Redo,
+                    "Redo",
+                    controller.can_redo(),
+                )
                 .clicked()
             {
                 if let Err(error) = controller.redo(revision) {
                     self.error = Some(error.to_string());
                 }
             }
-            if ui
-                .add_enabled(save_available, egui::Button::new("Save"))
+            if toolbar_images
+                .original_action_button(
+                    ui,
+                    OriginalToolbarImages::LevelPalette,
+                    OriginalToolbarAction::Save,
+                    "Save",
+                    save_available,
+                )
                 .clicked()
             {
                 Self::begin_save(controller, &mut self.save_worker, &mut self.error);
