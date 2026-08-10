@@ -2517,7 +2517,13 @@ callback copies at most 256 memory-map descriptors and selects only a non-consta
 discarded at unload. The official ARM64 bsnes 2014 Accuracy core passes the complete live oracle
 with legitimate 512×224 doubled-width output, 32,041-Hz audio, direct levels, sprite hot reload,
 runtime sprite tables, switching, and exact reload reproduction. Current Snes9x and Snes9x 2010
-retain their prior exact 256×224 hashes. Non-macOS runtime execution remains incomplete.
+retain their prior exact 256×224 hashes. Cross-platform runtime evidence continues below.
+The same source cross-compiles as an optimized x86-64 Windows GNU PE32+ executable and executes
+through Wine 11.13 against the official Windows Snes9x 2010 DLL. `--backend-runner` lets the retained
+oracle prepend exactly one direct runner executable; it never introduces a command shell or
+reparses arguments. The Windows process passes every `$1FF` assertion and exactly reproduces the
+native ARM64 Snes9x 2010 frame/audio hashes. Linux remains the sole declared release runtime without
+an executed live-core oracle.
 The portable-release matrix now builds `lm-libretro` explicitly beside `lm-native` and `lm-cli`
 for Linux x86-64, Windows x86-64, Apple Silicon macOS, and Intel macOS before invoking the strict
 packager. Ordinary CI repeats the complete three-binary build and package operation on Linux,

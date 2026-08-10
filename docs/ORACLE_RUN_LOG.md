@@ -855,3 +855,20 @@ The gate retains every semantic assertion used for Snes9x, including actual edit
 instantiation without leaving mode `$14`, bounded save-RAM restoration, runtime table queries,
 distinct `$106`, and exact `$105` whole-ROM reload reproduction. Supporting both native SNES widths
 does not weaken those state or hash requirements.
+
+### Windows x86-64 live-backend runtime
+
+The optimized `x86_64-pc-windows-gnu` build at Git commit
+`adccf5074fddd91c8746caabf422798e36ba5b45` produced a PE32+ console executable with SHA-256
+`6cf214d5ac377c6eca7fd256495e3755a6ef7dbe5c9f030fe9f8b5565b165f90`. Wine Staging 11.13
+executed it against the official 2026-08-08 Windows x86-64 buildbot
+`snes9x2010_libretro.dll`, SHA-256
+`2ed66e60eb56b302128b9a3cb5831accf47f4e39f4b5a638862cccb339af1b82`, and the identical
+copier-headered vanilla ROM.
+
+The complete oracle exited zero. Every result—including transition frame, runtime state, camera,
+geometry, frame SHA-256, sample rate/count, and audio SHA-256—exactly matched the native ARM64
+Snes9x 2010 table above. It also passed the unprinted in-place edited-Goomba/runtime-table assertions,
+pause/step protocol, bounded save-RAM restoration, direct level switching, exact whole-ROM reload,
+Stop acknowledgement, and Windows process teardown. The driver invoked Wine as one explicit
+`--backend-runner`; no shell was involved.

@@ -23,9 +23,12 @@ def describe_event(event):
 
 
 class Backend:
-    def __init__(self, executable, core):
+    def __init__(self, executable, core, runner=None):
+        command = [executable, core]
+        if runner is not None:
+            command.insert(0, runner)
         self.process = subprocess.Popen(
-            [executable, core], stdin=subprocess.PIPE, stdout=subprocess.PIPE
+            command, stdin=subprocess.PIPE, stdout=subprocess.PIPE
         )
 
     def exchange(self, payload=None):
@@ -187,13 +190,14 @@ def runtime_sprite_sequence(backend, count, joypad):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--backend", required=True)
+    parser.add_argument("--backend-runner")
     parser.add_argument("--core", required=True)
     parser.add_argument("--rom", required=True)
     parser.add_argument("--initial-level", type=lambda value: int(value, 16), default=0x105)
     parser.add_argument("--switch-level", type=lambda value: int(value, 16), default=0x106)
     args = parser.parse_args()
     rom = open(args.rom, "rb").read()
-    backend = Backend(args.backend, args.core)
+    backend = Backend(args.backend, args.core, args.backend_runner)
     try:
         ready = backend.exchange()
         if ready[:1] != b"\x80" or struct.unpack("<I", ready[1:])[0] & 0x1FF != 0x1FF:

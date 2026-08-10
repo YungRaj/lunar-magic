@@ -86,7 +86,14 @@ level switching, deterministic whole-ROM reload, video, and audio. Its valid 512
 output is accepted alongside Snes9x's 256×224 geometry while preserving exact per-core reload hashes
 and distinct-level hashes. Rust also consumes libretro's bounded standard memory-map descriptors as
 a fallback for cores that do not implement memory ID 2, accepting only a mutable exact `$7E:0000`
-128-KiB WRAM mapping. Non-macOS runtime execution remains unverified, so the row stays `Partial`.
+128-KiB WRAM mapping. Cross-platform runtime status follows the Windows execution below.
+
+The optimized `x86_64-pc-windows-gnu` backend now passes that same complete oracle as a real PE32+
+process under Wine 11.13 with the official Windows Snes9x 2010 DLL. Its `$105`/`$106` frame and
+audio hashes exactly equal the native ARM64 Snes9x 2010 results, including live edited-sprite state,
+whole-ROM reload, and clean process teardown. The driver accepts one optional direct process runner
+without invoking a shell. Linux is the only declared release platform without an executed live-core
+runtime gate, so the LMSW row remains `Partial`.
 
 The native live window now also applies the recovered focus-only soft pause and main-window `$20`
 hard pause from egui's OS focus/minimize state. The same aggregate model preserves manual-hard-pause
