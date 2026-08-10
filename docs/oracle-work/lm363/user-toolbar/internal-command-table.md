@@ -33,7 +33,7 @@ ruby -e 'b=File.binread(ARGV[0]); 318.times{|i| p=b.byteslice(0x1e6a70+i*4,4).un
 slots, all 317 named entries in their original order, the terminal sentinel, duplicate-name and
 shared-ID behavior, and successful `usertoolbar.txt` parsing of every named entry. `lm-native`
 rejects invented internal names before dispatch, distinguishes an authenticated but not-yet-routed
-command by its original ID, and currently routes 179 authenticated table entries to native commands,
+command by its original ID, and currently routes 181 authenticated table entries to native commands,
 level-view actions, or the same native workflow used by the corresponding menu. The direct workflow
 set includes Help Contents/About, level analysis, restore-point creation/restoration, IPS
 creation/application, the authenticated Sprite 19 installer, the integrated object/sprite placers
@@ -42,5 +42,7 @@ selection-wide Select All/Delete/Delete All/Escape actions, typed multi-record C
 for Layer 1 objects, object-backed Layer 2, and sprites, and all six mapper-gated ROM-expansion
 commands: ordinary 2/3/4 MiB, warned 8 MiB ExLoROM conversion, and warned SA-1 6/8 MiB. The
 authenticated `$23A3` `LM_FILE_EXPORT_DIRECTORY` route also opens the same all-level MWL batch
-exporter used by the native Editors menu. Command enumeration rejects false acceptance, but does
-not claim that the remaining commands are implemented.
+exporter used by the native Editors menu. `LM_MOUSE_LEVEL_BACK` and `LM_MOUSE_LEVEL_FORWARD` share
+the same bounded navigation-history actions as their authenticated File-command counterparts.
+Command enumeration rejects false acceptance, but does not claim that the remaining commands are
+implemented.

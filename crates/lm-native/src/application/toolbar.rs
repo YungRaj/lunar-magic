@@ -851,8 +851,12 @@ fn user_toolbar_command(name: &str, current_level: Option<u16>) -> Option<Comman
         "LM_FILE_OPEN_ROM" => Command::Open,
         "LM_FILE_SAVE_BUTTON" | "LM_FILE_SAVE_FILE" => Command::Save,
         "LM_FILE_SAVE_FILE_AS" | "LM_FILE_SAVE_LEVEL_TO_ROM_AS" => Command::SaveAs,
-        "LM_FILE_PREVIOUS_LEVEL" => Command::NavigateLevel(LevelNavigationDirection::Back),
-        "LM_FILE_NEXT_LEVEL" => Command::NavigateLevel(LevelNavigationDirection::Forward),
+        "LM_FILE_PREVIOUS_LEVEL" | "LM_MOUSE_LEVEL_BACK" => {
+            Command::NavigateLevel(LevelNavigationDirection::Back)
+        }
+        "LM_FILE_NEXT_LEVEL" | "LM_MOUSE_LEVEL_FORWARD" => {
+            Command::NavigateLevel(LevelNavigationDirection::Forward)
+        }
         "LM_FILE_EXIT" => Command::Quit,
         "LM_FILE_CLOSE_ROM" => Command::Close,
         "LM_EDIT_UNDO" => Command::Undo,
@@ -1139,6 +1143,14 @@ mod user_toolbar_tests {
         assert_eq!(
             user_toolbar_command("LM_VIEW_OVERWORLD", None),
             Some(Command::ShowOverworld)
+        );
+        assert_eq!(
+            user_toolbar_command("LM_MOUSE_LEVEL_BACK", None),
+            Some(Command::NavigateLevel(LevelNavigationDirection::Back))
+        );
+        assert_eq!(
+            user_toolbar_command("LM_MOUSE_LEVEL_FORWARD", None),
+            Some(Command::NavigateLevel(LevelNavigationDirection::Forward))
         );
         assert_eq!(
             user_toolbar_command("LM_VIEW_8x8", Some(0x105)),
@@ -1433,7 +1445,7 @@ mod user_toolbar_tests {
                     || user_toolbar_native_action(entry.name).is_some()
             })
             .collect::<Vec<_>>();
-        assert_eq!(supported.len(), 179);
+        assert_eq!(supported.len(), 181);
         assert!(
             supported
                 .iter()
