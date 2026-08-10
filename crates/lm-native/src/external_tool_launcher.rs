@@ -2,7 +2,7 @@
 
 use crate::external_tools;
 use eframe::egui;
-use lm_app::{EmulatorTestRequest, ToolContext, ToolInvocation};
+use lm_app::{EmulatorTestRequest, LunarMagicNotification, ToolContext, ToolInvocation};
 use std::collections::VecDeque;
 use std::fs;
 use std::io::Write;
@@ -16,6 +16,8 @@ struct RunningTool {
     tool_id: String,
     result: Receiver<Result<external_tools::ProcessCompletion, String>>,
     cancel: mpsc::Sender<()>,
+    started: Receiver<u32>,
+    process_id: Option<u32>,
 }
 
 struct PendingTool {
@@ -36,6 +38,8 @@ pub(crate) struct ExternalToolLauncher {
     pending: VecDeque<PendingTool>,
     running: Vec<RunningTool>,
     next_instance_id: u64,
+    #[cfg(windows)]
+    notification_path_window: Option<lm_windows::MessageTextWindow>,
 }
 
 impl ExternalToolLauncher {
@@ -48,6 +52,7 @@ impl ExternalToolLauncher {
     }
 
     pub(crate) fn stop_tool(&mut self, tool_id: &str) -> bool {
+        self.refresh_process_ids();
         let pending_before = self.pending.len();
         self.pending
             .retain(|pending| pending.invocation.tool_id != tool_id);
@@ -61,6 +66,61 @@ impl ExternalToolLauncher {
             stopped = true;
         }
         stopped
+    }
+
+    pub(crate) fn notify_tool(
+        &mut self,
+        tool_id: &str,
+        notification: LunarMagicNotification,
+        rom_path: Option<&std::path::Path>,
+    ) -> Result<usize, String> {
+        self.refresh_process_ids();
+        #[cfg(windows)]
+        {
+            let wparam = if notification.kind == lm_app::LunarMagicNotificationKind::NewRom {
+                let path = rom_path.ok_or_else(|| {
+                    "new-ROM external-tool notification requires a ROM path".to_owned()
+                })?;
+                if let Some(window) = &mut self.notification_path_window {
+                    window
+                        .set_text(path.as_os_str())
+                        .map_err(|error| format!("could not update notification path: {error}"))?;
+                } else {
+                    self.notification_path_window = Some(
+                        lm_windows::MessageTextWindow::new(path.as_os_str()).map_err(|error| {
+                            format!("could not create notification path window: {error}")
+                        })?,
+                    );
+                }
+                self.notification_path_window
+                    .as_ref()
+                    .expect("notification window was established")
+                    .raw_handle() as usize
+            } else {
+                0
+            };
+            let mut posted = 0;
+            for process_id in self
+                .running
+                .iter()
+                .filter(|running| running.tool_id == tool_id)
+                .filter_map(|running| running.process_id)
+            {
+                posted += lm_windows::post_message_to_process_windows(
+                    process_id,
+                    LunarMagicNotification::MESSAGE_ID,
+                    wparam,
+                    notification.lparam() as isize,
+                )
+                .map_err(|error| format!("could not notify external tool {tool_id:?}: {error}"))?;
+            }
+            Ok(posted)
+        }
+        #[cfg(not(windows))]
+        {
+            let _ = (tool_id, notification, rom_path);
+            Ok(0)
+        }
     }
 
     pub(crate) fn enqueue(&mut self, invocation: ToolInvocation) -> Result<(), String> {
@@ -213,6 +273,7 @@ impl ExternalToolLauncher {
         let tool_id = invocation.tool_id.clone();
         let (sender, result) = mpsc::channel();
         let (cancel, cancellation) = mpsc::channel();
+        let (started_sender, started) = mpsc::channel();
         std::thread::Builder::new()
             .name(format!("lm-tool-{tool_id}"))
             .spawn(move || {
@@ -223,6 +284,7 @@ impl ExternalToolLauncher {
                     external_tools::execute_cancellable(
                         &invocation,
                         &cancellation,
+                        &started_sender,
                         external_tools::ProcessOptions {
                             hide_console_window: options.hide_console_window,
                         },
@@ -239,11 +301,14 @@ impl ExternalToolLauncher {
             tool_id,
             result,
             cancel,
+            started,
+            process_id: None,
         });
         Ok(())
     }
 
     fn poll(&mut self) -> Option<Result<String, String>> {
+        self.refresh_process_ids();
         for index in 0..self.running.len() {
             match self.running[index].result.try_recv() {
                 Ok(result) => {
@@ -267,6 +332,16 @@ impl ExternalToolLauncher {
             }
         }
         None
+    }
+
+    fn refresh_process_ids(&mut self) {
+        for running in &mut self.running {
+            if running.process_id.is_none()
+                && let Ok(process_id) = running.started.try_recv()
+            {
+                running.process_id = Some(process_id);
+            }
+        }
     }
 }
 
@@ -321,6 +396,7 @@ mod tests {
             mpsc::channel::<Result<external_tools::ProcessCompletion, String>>();
         drop(sender);
         let (cancel, _cancellation) = mpsc::channel();
+        let (_started_sender, started) = mpsc::channel();
         let mut launcher = ExternalToolLauncher {
             pending: VecDeque::new(),
             running: vec![RunningTool {
@@ -328,6 +404,8 @@ mod tests {
                 tool_id: "emu".into(),
                 result: receiver,
                 cancel,
+                started,
+                process_id: None,
             }],
             next_instance_id: 1,
         };
@@ -504,6 +582,23 @@ mod tests {
         assert_ne!(
             launcher.running[0].instance_id,
             launcher.running[1].instance_id
+        );
+        for _ in 0..100 {
+            launcher.refresh_process_ids();
+            if launcher
+                .running
+                .iter()
+                .all(|running| running.process_id.is_some())
+            {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        assert!(
+            launcher
+                .running
+                .iter()
+                .all(|running| running.process_id.is_some())
         );
         assert!(launcher.stop_tool("parallel"));
         for running in launcher.running.drain(..) {

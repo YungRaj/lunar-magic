@@ -5367,3 +5367,12 @@ NUL-validated target, quoted parameter line, and optional working directory thro
 macOS spawns `/usr/bin/open` and preserves optional application arguments after `--args`; other Unix
 systems spawn `xdg-open` only for an argument-free target. These opener processes are dropped
 immediately and the associated application is never entered into owned-child close/cancel state.
+
+Lunar Magic notification payloads are a typed core value rather than scattered Win32 literals:
+message `$BECA`, confirmation `$6942`, six-bit kinds 0 through 6, and a checked ten-bit variable.
+The cancellable process worker publishes the OS PID after successful spawn. The Windows boundary
+enumerates every top-level window owned by that PID and uses `PostMessageW`, intentionally applying
+no visibility filter. Type 0 uses a retained hidden top-level STATIC caption window so cross-process
+`GetWindowText(wParam)` returns the current ROM path; types 1 and 2 use zero `wParam`. Toolbar
+option selection is external-only and exact, including the documented new-ROM/new-level/close
+force-all directives. The save/delete/Map16/overworld completion routes remain a subsequent step.

@@ -61,3 +61,22 @@ line, and optional working directory. macOS uses one direct `/usr/bin/open` proc
 systems use `xdg-open` while rejecting unsupported extra application arguments rather than dropping
 them. Completion deliberately retains no opened-application child handle, so later close/notify
 policies cannot falsely claim ownership.
+
+## Interprocess notification evidence
+
+The same authenticated CHM button table specifies message `$BECA` (`WM_APP+$3ECA`), confirmation
+word `$6942`, a six-bit type, and a ten-bit variable. The complete documented types are new ROM 0,
+new level 1, close 2, save level 3, save Map16 4, save overworld 5, and delete level 6. Type 0 puts
+the supported ROM-family code in the variable and a window handle in `wParam`; receivers obtain the
+new ROM path with `GetWindowText`. Types 1, 3, 4, and 6 carry the level number. Ghidra's labeled
+callbacks through `$004D37D0` independently bind ROM open, level open/save, deletion, Map16, and
+overworld dispatch. The 3.63 change log additionally proves notification enumeration intentionally
+stopped filtering out invisible windows.
+
+Rust now models and exhaustively tests the exact wire packing. Directly launched child workers
+publish their PID to the UI owner; Windows synchronously enumerates top-level windows by PID and
+asynchronously calls `PostMessageW` without a visibility predicate. A retained hidden top-level STATIC
+window keeps the active ROM path as its caption and supplies the stable type-0 `wParam`. Native
+ROM-open, level-change, and application-close transitions select only external toolbar buttons and
+honor the three documented force-all globals. Save-level, delete-level, Map16-save, and
+overworld-save completion wiring remains deliberately unclaimed here.

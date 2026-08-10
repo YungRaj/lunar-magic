@@ -10,6 +10,49 @@ pub enum ToolEvent {
     LevelChanged,
 }
 
+/// Lunar Magic 3.63's documented `WM_APP + 0x3ECA` interprocess notification kinds.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[repr(u8)]
+pub enum LunarMagicNotificationKind {
+    NewRom = 0,
+    NewLevel = 1,
+    Close = 2,
+    SaveLevel = 3,
+    SaveMap16 = 4,
+    SaveOverworld = 5,
+    DeleteLevel = 6,
+}
+
+/// Exact bounded payload packed into Lunar Magic's notification `lParam`.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct LunarMagicNotification {
+    pub kind: LunarMagicNotificationKind,
+    /// Ten-bit notification variable: ROM identity or level number depending on `kind`.
+    pub variable: u16,
+}
+
+impl LunarMagicNotification {
+    pub const MESSAGE_ID: u32 = 0xBECA;
+    pub const CONFIRMATION: u16 = 0x6942;
+    pub const MAX_VARIABLE: u16 = 0x03ff;
+
+    /// Creates a notification only when its variable fits the original ten-bit wire field.
+    #[must_use]
+    pub const fn new(kind: LunarMagicNotificationKind, variable: u16) -> Option<Self> {
+        if variable <= Self::MAX_VARIABLE {
+            Some(Self { kind, variable })
+        } else {
+            None
+        }
+    }
+
+    /// Returns the exact confirmation/type/variable bit packing used as Win32 `lParam`.
+    #[must_use]
+    pub const fn lparam(self) -> u32 {
+        ((Self::CONFIRMATION as u32) << 16) | ((self.variable as u32) << 6) | self.kind as u32
+    }
+}
+
 /// A frontend-owned executable and its argument templates.
 ///
 /// Arguments are expanded independently and are never interpreted by a shell. Consequently paths
@@ -342,6 +385,28 @@ mod tests {
             working_directory: Some("{project_dir}".into()),
             subscriptions: vec![ToolEvent::ProjectSaved],
         }
+    }
+
+    #[test]
+    fn lunar_magic_notification_wire_format_binds_every_documented_type_and_boundary() {
+        let kinds = [
+            LunarMagicNotificationKind::NewRom,
+            LunarMagicNotificationKind::NewLevel,
+            LunarMagicNotificationKind::Close,
+            LunarMagicNotificationKind::SaveLevel,
+            LunarMagicNotificationKind::SaveMap16,
+            LunarMagicNotificationKind::SaveOverworld,
+            LunarMagicNotificationKind::DeleteLevel,
+        ];
+        for (value, kind) in kinds.into_iter().enumerate() {
+            let notification = LunarMagicNotification::new(kind, 0x03ff).unwrap();
+            assert_eq!(notification.lparam() >> 16, 0x6942);
+            assert_eq!(notification.lparam() & 0x3f, value as u32);
+            assert_eq!((notification.lparam() >> 6) & 0x03ff, 0x03ff);
+        }
+        assert!(
+            LunarMagicNotification::new(LunarMagicNotificationKind::NewLevel, 0x0400).is_none()
+        );
     }
 
     #[test]

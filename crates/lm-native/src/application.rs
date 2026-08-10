@@ -145,6 +145,7 @@ pub(crate) struct NativeApplication {
     user_toolbar_images: UserToolbarImageSet,
     main_toolbar_images: MainToolbarImageSet,
     user_toolbar_observed_document: Option<std::path::PathBuf>,
+    user_toolbar_observed_level: Option<u16>,
     level_text: String,
     special_world_passed: bool,
     joined_graphics_files: bool,
@@ -628,6 +629,7 @@ impl NativeApplication {
         self.show_configuration_loader(context);
         self.show_profile_loader(context);
         self.handle_user_toolbar_document_change(context);
+        self.handle_user_toolbar_level_change();
         if !self.shortcut_editor.is_open() && !self.toolbar_editor.is_open() {
             self.handle_shortcuts(context);
         }

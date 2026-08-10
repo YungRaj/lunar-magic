@@ -8,9 +8,9 @@ use crate::{
 };
 use eframe::egui;
 use lm_app::{
-    Command, LevelNavigationDirection, ShortcutGesture, ShortcutKey, ShortcutModifiers,
-    ToolInvocation, ToolbarActivation, UserToolbarButton, UserToolbarTarget,
-    user_toolbar_internal_command,
+    Command, LevelNavigationDirection, LunarMagicNotification, LunarMagicNotificationKind,
+    ShortcutGesture, ShortcutKey, ShortcutModifiers, ToolInvocation, ToolbarActivation,
+    UserToolbarButton, UserToolbarTarget, user_toolbar_internal_command,
 };
 
 impl NativeApplication {
@@ -20,6 +20,7 @@ impl NativeApplication {
             return;
         }
         self.user_toolbar_observed_document = current.clone();
+        self.user_toolbar_observed_level = None;
         if current.is_none() {
             return;
         }
@@ -44,6 +45,23 @@ impl NativeApplication {
                 .external_tools
                 .stop_tool(&format!("usertoolbar-{index}"));
         }
+        if let (Some(path), Some(identity)) = (
+            current.as_deref(),
+            self.app
+                .project()
+                .and_then(|project| project.identity.as_ref()),
+        ) {
+            self.notify_user_toolbar_tools(
+                LunarMagicNotification::new(
+                    LunarMagicNotificationKind::NewRom,
+                    lunar_magic_rom_identity_code(identity),
+                )
+                .expect("supported ROM identity code is bounded"),
+                Some(path),
+                "LM_NOTIFY_ON_NEW_ROM",
+                Some("LM_NOTIFY_ON_NEW_ROM_FORCE_ALL"),
+            );
+        }
         let buttons = autorun
             .into_iter()
             .filter_map(|index| {
@@ -60,7 +78,32 @@ impl NativeApplication {
         }
     }
 
+    pub(super) fn handle_user_toolbar_level_change(&mut self) {
+        let current = self.app.current_level();
+        if current == self.user_toolbar_observed_level {
+            return;
+        }
+        self.user_toolbar_observed_level = current;
+        let Some(level) = current else {
+            return;
+        };
+        self.notify_user_toolbar_tools(
+            LunarMagicNotification::new(LunarMagicNotificationKind::NewLevel, level)
+                .expect("native level numbers fit the ten-bit notification variable"),
+            None,
+            "LM_NOTIFY_ON_NEW_LEVEL",
+            Some("LM_NOTIFY_ON_NEW_LEVEL_FORCE_ALL"),
+        );
+    }
+
     pub(super) fn stop_user_toolbar_tools_on_close(&mut self) {
+        self.notify_user_toolbar_tools(
+            LunarMagicNotification::new(LunarMagicNotificationKind::Close, 0)
+                .expect("zero is a bounded notification variable"),
+            None,
+            "LM_NOTIFY_ON_CLOSE",
+            Some("LM_NOTIFY_ON_CLOSE_FORCE_ALL"),
+        );
         let Some(toolbar) = self.user_toolbar.as_ref() else {
             return;
         };
@@ -70,6 +113,27 @@ impl NativeApplication {
             self.effects
                 .external_tools
                 .stop_tool(&format!("usertoolbar-{index}"));
+        }
+    }
+
+    fn notify_user_toolbar_tools(
+        &mut self,
+        notification: LunarMagicNotification,
+        rom_path: Option<&std::path::Path>,
+        option: &str,
+        force_option: Option<&str>,
+    ) {
+        let tool_ids = self.user_toolbar.as_ref().map_or_else(Vec::new, |toolbar| {
+            toolbar_notification_tool_ids(toolbar, option, force_option)
+        });
+        for tool_id in tool_ids {
+            if let Err(error) =
+                self.effects
+                    .external_tools
+                    .notify_tool(&tool_id, notification, rom_path)
+            {
+                self.effects.error = Some(error);
+            }
         }
     }
 
@@ -600,6 +664,37 @@ fn toolbar_lifecycle_indexes(
         return (0..toolbar.buttons.len()).collect();
     }
     toolbar_button_indexes_with_option(toolbar, option)
+}
+
+fn toolbar_notification_tool_ids(
+    toolbar: &lm_app::UserToolbar,
+    option: &str,
+    force_option: Option<&str>,
+) -> Vec<String> {
+    let force_all = force_option.is_some_and(|force_option| {
+        toolbar.global_options.iter().any(
+            |value| matches!(value, lm_app::UserToolbarGlobalOption::Flag(flag) if flag == force_option),
+        )
+    });
+    toolbar
+        .buttons
+        .iter()
+        .enumerate()
+        .filter_map(|(index, button)| {
+            matches!(button.target, UserToolbarTarget::External(_))
+                .then(|| force_all || button.options.iter().any(|candidate| candidate == option))
+                .unwrap_or(false)
+                .then(|| format!("usertoolbar-{index}"))
+        })
+        .collect()
+}
+
+const fn lunar_magic_rom_identity_code(identity: &lm_rom::RomIdentity) -> u16 {
+    match (identity.game, identity.region) {
+        (lm_rom::SupportedGame::SuperMarioWorld, lm_rom::Region::NorthAmerica) => 0,
+        (lm_rom::SupportedGame::SuperMarioWorld, lm_rom::Region::Japan) => 1,
+        (lm_rom::SupportedGame::AllStarsAndWorld, _) => 2,
+    }
 }
 
 fn user_toolbar_launch_options(
@@ -1773,6 +1868,33 @@ mod user_toolbar_tests {
                 hide_console_window: false,
                 open_other: true,
             }
+        );
+    }
+
+    #[test]
+    fn notification_selection_is_external_only_exact_and_honors_documented_force_all() {
+        let toolbar = lm_app::UserToolbar::parse(
+            "LM_NOTIFY_ON_NEW_LEVEL_FORCE_ALL\n***START***\n\"one\"\nLM_DEFAULT\nLM_NOTIFY_ON_NEW_ROM\n***START***\nLM_FILE_SAVE\nLM_DEFAULT\nLM_NOTIFY_ON_NEW_ROM\n***START***\n\"two\"\n***END***",
+        )
+        .unwrap();
+        assert_eq!(
+            toolbar_notification_tool_ids(
+                &toolbar,
+                "LM_NOTIFY_ON_NEW_ROM",
+                Some("LM_NOTIFY_ON_NEW_ROM_FORCE_ALL")
+            ),
+            ["usertoolbar-0"]
+        );
+        assert_eq!(
+            toolbar_notification_tool_ids(
+                &toolbar,
+                "LM_NOTIFY_ON_NEW_LEVEL",
+                Some("LM_NOTIFY_ON_NEW_LEVEL_FORCE_ALL")
+            ),
+            ["usertoolbar-0", "usertoolbar-2"]
+        );
+        assert!(
+            toolbar_notification_tool_ids(&toolbar, "LM_NOTIFY_ON_SAVE_LEVEL", None).is_empty()
         );
     }
 

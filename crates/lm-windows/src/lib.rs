@@ -12,6 +12,10 @@ use windows_sys::Win32::Storage::FileSystem::{
     BY_HANDLE_FILE_INFORMATION, GetFileInformationByHandle, GetShortPathNameW,
 };
 use windows_sys::Win32::UI::Shell::ShellExecuteW;
+use windows_sys::Win32::UI::WindowsAndMessaging::{
+    CreateWindowExW, DestroyWindow, EnumWindows, GetWindowThreadProcessId, PostMessageW,
+    SetWindowTextW,
+};
 
 const MAX_WINDOWS_PATH_UTF16_UNITS: usize = 32_768;
 
@@ -101,6 +105,132 @@ pub fn shell_open(
     } else {
         Ok(())
     }
+}
+
+/// Hidden top-level window whose caption can carry the current ROM path to notified tools.
+pub struct MessageTextWindow {
+    handle: windows_sys::Win32::Foundation::HWND,
+}
+
+impl MessageTextWindow {
+    /// Creates the hidden top-level window with `text` as its cross-process-readable caption.
+    pub fn new(text: &std::ffi::OsStr) -> std::io::Result<Self> {
+        let class = "STATIC\0".encode_utf16().collect::<Vec<_>>();
+        let text = nul_terminated_wide(text)?;
+        let handle = unsafe {
+            // SAFETY: Class and caption are valid NUL-terminated strings. All optional handles and
+            // creation data are null. A null parent creates the hidden top-level caption window
+            // required for cross-process GetWindowText rather than a child/message-only control.
+            CreateWindowExW(
+                0,
+                class.as_ptr(),
+                text.as_ptr(),
+                0,
+                0,
+                0,
+                0,
+                0,
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+                std::ptr::null(),
+            )
+        };
+        if handle.is_null() {
+            Err(std::io::Error::last_os_error())
+        } else {
+            Ok(Self { handle })
+        }
+    }
+
+    /// Replaces the caption while retaining the stable HWND supplied in notification `wParam`.
+    pub fn set_text(&mut self, text: &std::ffi::OsStr) -> std::io::Result<()> {
+        let text = nul_terminated_wide(text)?;
+        let succeeded = unsafe {
+            // SAFETY: `self.handle` remains owned and live; `text` is NUL-terminated for the call.
+            SetWindowTextW(self.handle, text.as_ptr())
+        };
+        if succeeded == 0 {
+            Err(std::io::Error::last_os_error())
+        } else {
+            Ok(())
+        }
+    }
+
+    #[must_use]
+    pub fn raw_handle(&self) -> isize {
+        self.handle as isize
+    }
+}
+
+impl Drop for MessageTextWindow {
+    fn drop(&mut self) {
+        unsafe {
+            // SAFETY: This object uniquely owns the hidden HWND and destroys it at most once.
+            DestroyWindow(self.handle);
+        }
+    }
+}
+
+/// Posts one Lunar Magic-compatible message to every top-level window owned by `process_id`.
+pub fn post_message_to_process_windows(
+    process_id: u32,
+    message: u32,
+    wparam: usize,
+    lparam: isize,
+) -> std::io::Result<usize> {
+    struct Context {
+        process_id: u32,
+        message: u32,
+        wparam: usize,
+        lparam: isize,
+        posted: usize,
+    }
+
+    unsafe extern "system" fn callback(
+        window: windows_sys::Win32::Foundation::HWND,
+        raw: isize,
+    ) -> i32 {
+        let context = unsafe { &mut *(raw as *mut Context) };
+        let mut owner = 0_u32;
+        unsafe { GetWindowThreadProcessId(window, &mut owner) };
+        if owner == context.process_id
+            && unsafe { PostMessageW(window, context.message, context.wparam, context.lparam) } != 0
+        {
+            context.posted += 1;
+        }
+        1
+    }
+
+    let mut context = Context {
+        process_id,
+        message,
+        wparam,
+        lparam,
+        posted: 0,
+    };
+    let succeeded = unsafe {
+        // SAFETY: `context` remains live and exclusively borrowed throughout synchronous
+        // enumeration; the callback always returns TRUE and validates window ownership.
+        EnumWindows(Some(callback), (&mut context as *mut Context) as isize)
+    };
+    if succeeded == 0 {
+        Err(std::io::Error::last_os_error())
+    } else {
+        Ok(context.posted)
+    }
+}
+
+fn nul_terminated_wide(value: &std::ffi::OsStr) -> std::io::Result<Vec<u16>> {
+    let mut value = value.encode_wide().collect::<Vec<_>>();
+    if value.contains(&0) {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "window text contains an interior NUL",
+        ));
+    }
+    value.push(0);
+    Ok(value)
 }
 use windows_sys::Win32::System::{
     DataExchange::{

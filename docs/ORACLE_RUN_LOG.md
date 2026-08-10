@@ -1042,3 +1042,11 @@ the original documentation requires. Focused tests bind option selection, macOS 
 boundaries, and Windows quoting of empty, spaced, quoted, and trailing-backslash parameters; both
 `lm-windows` and `lm-native` cross-compile the `ShellExecuteW` path for
 `x86_64-pc-windows-gnu`.
+
+The original CHM and Ghidra callback inventory now bind the `$BECA` process-notification wire.
+`lunar_magic_notification_wire_format_binds_every_documented_type_and_boundary` covers all seven
+types, `$6942`, and the exact ten-bit limit. Native workers publish real child PIDs; the Windows
+safe boundary retains the ROM-path caption HWND, enumerates PID-owned top-level windows without a
+visibility check, and posts the packed payload. Exact option-selection tests cover per-button and
+force-all new-ROM/new-level/close routes, and the complete native Windows target cross-compiles.
+Save/delete/Map16/overworld event publication is not yet claimed.

@@ -2,7 +2,7 @@ use lm_app::ToolInvocation;
 use std::ffi::OsString;
 use std::path::PathBuf;
 use std::process::Command as ProcessCommand;
-use std::sync::mpsc::{Receiver, RecvTimeoutError};
+use std::sync::mpsc::{Receiver, RecvTimeoutError, Sender};
 use std::time::Duration;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -75,6 +75,7 @@ pub(crate) fn execute(invocation: &ToolInvocation) -> Result<(), String> {
 pub(crate) fn execute_cancellable(
     invocation: &ToolInvocation,
     cancel: &Receiver<()>,
+    started: &Sender<u32>,
     options: ProcessOptions,
 ) -> Result<ProcessCompletion, String> {
     let launch = process_launch(invocation);
@@ -90,6 +91,7 @@ pub(crate) fn execute_cancellable(
             invocation.tool_id
         )
     })?;
+    let _ = started.send(child.id());
     loop {
         if let Some(status) = child.try_wait().map_err(|error| {
             format!(
