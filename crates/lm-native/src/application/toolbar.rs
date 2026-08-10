@@ -483,6 +483,10 @@ impl NativeApplication {
                 self.rom_mwl_batch_export_dialog
                     .open(&self.app, lm_app::MwlBatchExportMode::All);
             }
+            UserToolbarNativeAction::ExportModifiedLevels => {
+                self.rom_mwl_batch_export_dialog
+                    .open(&self.app, lm_app::MwlBatchExportMode::Modified);
+            }
             UserToolbarNativeAction::ExportCurrentLevelBitmap => self
                 .rom_level_assets_editor
                 .toolbar_export_current_level_bitmap(
@@ -1232,6 +1236,7 @@ enum UserToolbarNativeAction {
     OverlapZOrder(crate::vanilla_level_editor::ZOrderTraversal),
     ExpandRom(RomExpansionPreset),
     ExportAllLevels,
+    ExportModifiedLevels,
     ExportCurrentLevelBitmap,
     ExportLevelBitmapDirectory,
     SharedPaletteTransfer(crate::rom_shared_palette_editor::SharedPaletteTransferAction),
@@ -1322,6 +1327,7 @@ fn user_toolbar_native_action(name: &str) -> Option<UserToolbarNativeAction> {
             UserToolbarNativeAction::ExpandRom(RomExpansionPreset::Sa1_8MiB)
         }
         "LM_FILE_EXPORT_DIRECTORY" => UserToolbarNativeAction::ExportAllLevels,
+        "LM_FILE_SAVE_DIRECTORY" => UserToolbarNativeAction::ExportModifiedLevels,
         "LM_FILE_EXPORT_DIRECTORY_BITMAP" => UserToolbarNativeAction::ExportLevelBitmapDirectory,
         "LM_FILE_EXPORT_BITMAP" => UserToolbarNativeAction::ExportCurrentLevelBitmap,
         "LM_FILE_EXTRACT_PALETTE" => UserToolbarNativeAction::SharedPaletteTransfer(
@@ -1756,6 +1762,10 @@ mod user_toolbar_tests {
                 UserToolbarNativeAction::ExportAllLevels,
             ),
             (
+                "LM_FILE_SAVE_DIRECTORY",
+                UserToolbarNativeAction::ExportModifiedLevels,
+            ),
+            (
                 "LM_FILE_EXPORT_DIRECTORY_BITMAP",
                 UserToolbarNativeAction::ExportLevelBitmapDirectory,
             ),
@@ -2075,7 +2085,7 @@ mod user_toolbar_tests {
                     || user_toolbar_native_action(entry.name).is_some()
             })
             .collect::<Vec<_>>();
-        assert_eq!(supported.len(), 230);
+        assert_eq!(supported.len(), 231);
         assert!(
             supported
                 .iter()
@@ -2092,7 +2102,7 @@ mod user_toolbar_tests {
                     && user_toolbar_native_action(entry.name).is_none()
             })
             .collect::<Vec<_>>();
-        assert_eq!(unsupported.len(), 87);
+        assert_eq!(unsupported.len(), 86);
         if std::env::var_os("LM_DIAGNOSTIC_UNSUPPORTED_TOOLBAR_COMMANDS").is_some() {
             for entry in unsupported {
                 eprintln!(

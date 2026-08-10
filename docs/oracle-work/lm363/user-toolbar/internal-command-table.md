@@ -98,5 +98,7 @@ requiring a palette-ownership sidecar. `$23BD` (`LM_FILE_EXPORT_BITMAP`) capture
 level with automatic screen extent and publishes an original-format Windows BMP. `$23BC`
 (`LM_FILE_EXPORT_DIRECTORY_BITMAP`) starts the cancellable all-slot directory worker in its
 recovered default state: only expanded-area levels, stored screen extents, uppercase three-digit
-slot suffixes, and failure-atomic group publication. The authenticated partition is therefore 230
-routed and 87 pending slots.
+slot suffixes, and failure-atomic group publication. `$2393` (`LM_FILE_SAVE_DIRECTORY`) now routes
+to the distinct modified-level MWL batch mode; `$2392` continues to export all 512 level slots.
+Both retain the bounded worker, cancellation, and all-or-rollback directory publication boundary.
+The authenticated partition is therefore 231 routed and 86 pending slots.
