@@ -111,8 +111,11 @@ live frame is drawn directly in the level canvas and refits whenever the canvas 
 size; canvas selection and placement hit testing remains active. **Selection over game** defaults
 on and draws only the currently selected object/sprite artwork and outlines over the live frame;
 turn it off to view the unobstructed emulator image. LMSW's optimized sprite-stream-only hot reload
-and audio output are not implemented yet. Alt-tabbing away soft-pauses the core; minimizing the editor hard-
-pauses it, and restoring focus resumes only when no manual pause remains.
+is not implemented yet. The **Audio** toggle mutes/unmutes the core without stopping emulation.
+Audio uses the core's declared rate and is resampled to the current output device; pause, mute,
+reload, stop, and project close discard queued sound so stale audio cannot play later. Alt-tabbing
+away soft-pauses the core; minimizing the editor hard-pauses it, and restoring focus resumes only
+when no manual pause remains.
 Collapsing the live window or opening an editor menu also hard-pauses the core; menu closure retains
 the original short input grace before gameplay resumes.
 Pausing the level editor's animation clock also hard-pauses the live core; resuming that clock

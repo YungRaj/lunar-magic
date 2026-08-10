@@ -37,6 +37,7 @@ pub(crate) struct LiveEmulator {
     source_revision: Option<u64>,
     texture: Option<egui::TextureHandle>,
     frame_size: Option<[usize; 2]>,
+    audio: crate::live_audio::LiveAudio,
     status: String,
 }
 
@@ -100,6 +101,7 @@ impl LiveEmulator {
         self.source_revision = Some(revision);
         self.texture = None;
         self.frame_size = None;
+        self.audio.stop();
         self.status = format!("Starting live emulator for level {level:03X}");
         Ok(())
     }
@@ -147,6 +149,7 @@ impl LiveEmulator {
             .map_err(|_| "live emulator worker disconnected".to_string())?;
         self.source_level = Some(level);
         self.source_revision = Some(revision);
+        self.audio.clear();
         self.status = format!("Switching live emulator to level {level:03X}");
         Ok(())
     }
@@ -178,6 +181,7 @@ impl LiveEmulator {
         self.source_revision = Some(revision);
         self.texture = None;
         self.frame_size = None;
+        self.audio.clear();
         self.status = format!("Reloading revision {revision} into level {level:03X}");
         Ok(())
     }
@@ -268,6 +272,15 @@ impl LiveEmulator {
                         }
                     }
                     stop = ui.button(text(UiTextKey::LiveEmulatorStop)).clicked();
+                    let mut muted = self.audio.muted();
+                    let audio_label = if muted { "Audio muted" } else { "Audio" };
+                    if ui
+                        .toggle_value(&mut muted, audio_label)
+                        .on_hover_text("Mute or unmute internal emulator audio")
+                        .changed()
+                    {
+                        self.audio.set_muted(muted);
+                    }
                 });
             });
         let viewport_paused = window_response
@@ -288,6 +301,9 @@ impl LiveEmulator {
             }
             send_session_action(&running.commands, session_action);
         }
+        if running.pause != EmulatorPauseMode::Running {
+            self.audio.clear();
+        }
         let joypad = context.input(joypad_from_input);
         if joypad != running.joypad {
             running.joypad = joypad;
@@ -303,6 +319,9 @@ impl LiveEmulator {
             return Some("Stopped live emulator".into());
         }
         context.request_repaint_after(Duration::from_millis(16));
+        if let Some(error) = self.audio.take_error() {
+            self.status = error;
+        }
         None
     }
 
@@ -359,6 +378,36 @@ impl LiveEmulator {
                             state.camera_x,
                             state.camera_y
                         );
+                    }
+                    EmulatorBackendEvent::RuntimeFrameAudio {
+                        width,
+                        height,
+                        rgba,
+                        state,
+                        sample_rate,
+                        audio,
+                    } => {
+                        install_frame(
+                            context,
+                            &mut self.texture,
+                            &mut self.frame_size,
+                            width,
+                            height,
+                            &rgba,
+                        );
+                        if let Err(error) = self.audio.push(sample_rate, &audio) {
+                            self.status = format!("Live emulator audio unavailable: {error}");
+                        } else {
+                            self.status = format!(
+                                "Live mode ${:02X}, sublevel {:03X}, translevel {:02X}, camera ({}, {}), audio {} Hz",
+                                state.game_mode,
+                                state.sublevel,
+                                state.translevel,
+                                state.camera_x,
+                                state.camera_y,
+                                sample_rate,
+                            );
+                        }
                     }
                     EmulatorBackendEvent::Error(error) => {
                         self.status = format!("Live emulator error: {error}");
@@ -596,6 +645,46 @@ mod tests {
         let mut header = *b"LMEMU001\0\0\0\0";
         header[8..12].copy_from_slice(&u32::MAX.to_le_bytes());
         assert!(read_event(&mut header.as_slice()).is_err());
+    }
+
+    #[test]
+    fn muted_runtime_audio_frame_still_installs_video_and_runtime_state() {
+        let (commands, _command_receiver) = mpsc::channel();
+        let (event_sender, events) = mpsc::channel();
+        let mut model = EmulatorSessionState::default();
+        let _ = model.start();
+        let mut emulator = LiveEmulator::default();
+        emulator.audio.set_muted(true);
+        emulator.running = Some(RunningSession {
+            commands,
+            events,
+            model,
+            pause: EmulatorPauseMode::Running,
+            capabilities: None,
+            joypad: 0,
+            input_pause_until: None,
+        });
+        event_sender
+            .send(Ok(EmulatorBackendEvent::RuntimeFrameAudio {
+                width: 1,
+                height: 1,
+                rgba: vec![1, 2, 3, 255],
+                state: lm_app::EmulatorRuntimeState {
+                    game_mode: 0x14,
+                    sublevel: 0x105,
+                    translevel: 0x28,
+                    camera_x: 0,
+                    camera_y: 192,
+                },
+                sample_rate: 32_040,
+                audio: vec![1, -1],
+            }))
+            .unwrap();
+        emulator.poll(&egui::Context::default());
+        assert_eq!(emulator.frame_size, Some([1, 1]));
+        assert!(emulator.texture.is_some());
+        assert!(emulator.status.contains("audio 32040 Hz"));
+        assert!(emulator.audio.muted());
     }
 
     #[test]

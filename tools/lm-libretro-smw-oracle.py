@@ -41,14 +41,23 @@ class Backend:
 
 
 def runtime_frame(event):
-    if not event or event[0] != 0x85:
+    if not event or event[0] not in (0x85, 0x86):
         raise RuntimeError(f"expected runtime frame, got tag {event[:1].hex()}")
     width, height, byte_count = struct.unpack("<III", event[1:13])
     rgba = event[13 : 13 + byte_count]
     if len(rgba) != width * height * 4:
         raise RuntimeError("runtime frame geometry does not match RGBA payload")
     state = struct.unpack("<BHBHH", event[13 + byte_count : 21 + byte_count])
-    return width, height, rgba, state
+    if event[0] == 0x85:
+        return width, height, rgba, state, None, b""
+    audio_offset = 21 + byte_count
+    sample_rate, sample_count = struct.unpack("<II", event[audio_offset : audio_offset + 8])
+    audio = event[audio_offset + 8 :]
+    if len(audio) != sample_count * 2 or sample_count % 2:
+        raise RuntimeError("runtime audio payload is not bounded interleaved stereo")
+    if not 8_000 <= sample_rate <= 384_000:
+        raise RuntimeError("runtime audio sample rate is invalid")
+    return width, height, rgba, state, sample_rate, audio
 
 
 def await_level(backend, level, limit):
@@ -56,7 +65,7 @@ def await_level(backend, level, limit):
     transitions = []
     previous = None
     for frame in range(limit):
-        width, height, rgba, state = runtime_frame(backend.exchange(b"\x05"))
+        width, height, rgba, state, sample_rate, audio = runtime_frame(backend.exchange(b"\x05"))
         mode, sublevel, translevel, camera_x, camera_y = state
         if mode != previous:
             transitions.append((frame, mode, sublevel))
@@ -67,6 +76,8 @@ def await_level(backend, level, limit):
                 raise RuntimeError("selected level did not publish a bounded nonuniform frame")
             if any(rgba[index] != 0xFF for index in range(3, len(rgba), 4)):
                 raise RuntimeError("selected-level frame has invalid alpha")
+            if sample_rate is None or not audio or len(set(audio)) < 4:
+                raise RuntimeError("selected level did not publish nonuniform stereo audio")
             return {
                 "frame": frame,
                 "mode": mode,
@@ -77,6 +88,9 @@ def await_level(backend, level, limit):
                 "width": width,
                 "height": height,
                 "sha256": hashlib.sha256(rgba).hexdigest(),
+                "sample_rate": sample_rate,
+                "audio_frames": len(audio) // 4,
+                "audio_sha256": hashlib.sha256(audio).hexdigest(),
                 "transitions": transitions,
             }
     raise RuntimeError(f"level {level:03X} was not entered: {transitions!r}")
@@ -94,7 +108,7 @@ def main():
     backend = Backend(args.backend, args.core)
     try:
         ready = backend.exchange()
-        if ready[:1] != b"\x80" or struct.unpack("<I", ready[1:])[0] & 0x7F != 0x7F:
+        if ready[:1] != b"\x80" or struct.unpack("<I", ready[1:])[0] & 0xFF != 0xFF:
             raise RuntimeError(f"backend lacks required capabilities: {ready.hex()}")
         initialize = (
             b"\x00"
@@ -120,7 +134,7 @@ def main():
         if backend.exchange(b"\x04\x02") != b"\x81":
             raise RuntimeError("backend rejected hard pause")
         runtime_frame(backend.exchange(b"\x05"))
-        print("result\tlevel\tframe\tmode\ttranslevel\tcamera\tsize\tframe_sha256")
+        print("result\tlevel\tframe\tmode\ttranslevel\tcamera\tsize\tframe_sha256\taudio")
         for label, level, result in (
             ("initial", args.initial_level, initial),
             ("switch", args.switch_level, switched),
@@ -129,7 +143,8 @@ def main():
             print(
                 f"{label}\t{level:03X}\t{result['frame']}\t{result['mode']:02X}\t"
                 f"{result['translevel']:02X}\t{result['camera_x']},{result['camera_y']}\t"
-                f"{result['width']}x{result['height']}\t{result['sha256']}"
+                f"{result['width']}x{result['height']}\t{result['sha256']}\t"
+                f"{result['sample_rate']}Hz/{result['audio_frames']}f/{result['audio_sha256']}"
             )
         print(f"rom_sha256\t{hashlib.sha256(rom).hexdigest()}")
     finally:

@@ -41,14 +41,20 @@ window; the oracle proves an identical revision reload reproduces level `$105` a
 When **Game pixels** and the SNES viewport are enabled, the running core's RGBA frame is now
 composited into the level-editor canvas using the same centered cover geometry as the deterministic
 game-pixel view. It recomputes from the current canvas dimensions on horizontal, vertical, and
-full-screen resize while preserving the canvas response used for entity hit testing. The row remains
-The default-on **Selection over game** option reproduces the recovered `$004530A0` compositor
+full-screen resize while preserving the canvas response used for entity hit testing. The default-on
+**Selection over game** option reproduces the recovered `$004530A0` compositor
 ordering by repainting only selected Layer 1/Layer 2 object tiles and selected sprite artwork after
 the live frame, including transparent pixels and selection outlines; it can be disabled without
-affecting canvas hit testing. The row remains `Partial`: LMSW's optimized sprite-stream-only hot
-reload, audio, and broader core/runtime/platform variants are still missing. This addendum
-supersedes only the older clauses that list the now-proved backend, native
-control, selected-level, input, and compatible-core runtime boundaries as missing.
+affecting canvas hit testing. Audio callbacks now preserve bounded interleaved stereo samples in the
+same atomic runtime-frame response. The native frontend plays them through a two-second bounded
+queue, linearly resamples the core's actual rate to the device rate, exposes mute, and clears queued
+audio on pause, mute, reload, stop, and teardown. The retained official-Snes9x oracle requires
+nonuniform 32,040-Hz audio at `$105` and `$106`; identical ROM reload reproduces the exact `$105`
+audio hash, while the native hardware-output smoke gate opens and closes the actual output device.
+The row remains `Partial`: LMSW's optimized sprite-stream-only hot reload and broader
+core/runtime/platform variants are still missing. This addendum
+supersedes only the older clauses that list the now-proved backend, native control, selected-level,
+input, audio, and compatible-core runtime boundaries as missing.
 
 The native live window now also applies the recovered focus-only soft pause and main-window `$20`
 hard pause from egui's OS focus/minimize state. The same aggregate model preserves manual-hard-pause
@@ -112,7 +118,8 @@ viewport. `pristine_full_level_render` composes the stored full extent with auth
 background, object, sprite, entrance, orientation, palette, and animation state. The responsive
 viewport fits exactly one 256-by-224 SNES screen into the available canvas and recomputes that fit
 for horizontal, vertical, and full-screen window changes. The current fixture-backed `lm-native`
-gate has 929 passing tests and 11 explicitly ignored external-fixture tests;
+gate has 933 passing tests and 12 explicitly ignored external/hardware-fixture tests (the audio
+hardware gate was also rerun explicitly and passed);
 `every_pristine_level_materializes_its_builtin_render_assets` traverses all
 512 pristine level slots, while `pristine_full_render_matches_native_dimensions_and_empty_outcomes`
 checks full-render dimensions and empty outcomes.

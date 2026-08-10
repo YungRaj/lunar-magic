@@ -3,7 +3,8 @@
 use libloading::Library;
 use lm_app::{
     EmulatorBackendCommand, EmulatorBackendEvent, EmulatorPauseMode, EmulatorRuntimeState,
-    EmulatorViewport, MAX_EMULATOR_FRAME_HEIGHT, MAX_EMULATOR_FRAME_WIDTH,
+    EmulatorViewport, MAX_EMULATOR_AUDIO_FRAMES, MAX_EMULATOR_AUDIO_RATE,
+    MAX_EMULATOR_FRAME_HEIGHT, MAX_EMULATOR_FRAME_WIDTH, MIN_EMULATOR_AUDIO_RATE,
 };
 use std::ffi::{c_char, c_void};
 use std::io::{self, Read, Write};
@@ -28,8 +29,15 @@ const CAP_STEP: u32 = 1 << 3;
 const CAP_VIEWPORT: u32 = 1 << 4;
 const CAP_INPUT: u32 = 1 << 5;
 const CAP_LEVEL_LOAD: u32 = 1 << 6;
-const CAPABILITIES: u32 =
-    CAP_ROM_LOAD | CAP_FRAME | CAP_PAUSE | CAP_STEP | CAP_VIEWPORT | CAP_INPUT | CAP_LEVEL_LOAD;
+const CAP_AUDIO: u32 = 1 << 7;
+const CAPABILITIES: u32 = CAP_ROM_LOAD
+    | CAP_FRAME
+    | CAP_PAUSE
+    | CAP_STEP
+    | CAP_VIEWPORT
+    | CAP_INPUT
+    | CAP_LEVEL_LOAD
+    | CAP_AUDIO;
 const MAX_PROTOCOL_RECORD: usize = 40 * 1024 * 1024;
 
 #[repr(C)]
@@ -47,6 +55,27 @@ struct RetroSystemInfo {
     valid_extensions: *const c_char,
     need_fullpath: bool,
     block_extract: bool,
+}
+
+#[repr(C)]
+struct RetroGameGeometry {
+    base_width: u32,
+    base_height: u32,
+    max_width: u32,
+    max_height: u32,
+    aspect_ratio: f32,
+}
+
+#[repr(C)]
+struct RetroSystemTiming {
+    fps: f64,
+    sample_rate: f64,
+}
+
+#[repr(C)]
+struct RetroSystemAvInfo {
+    geometry: RetroGameGeometry,
+    timing: RetroSystemTiming,
 }
 
 type EnvironmentFn = unsafe extern "C" fn(u32, *mut c_void) -> bool;
@@ -67,6 +96,7 @@ struct CoreApi {
     init: unsafe extern "C" fn(),
     api_version: unsafe extern "C" fn() -> u32,
     get_system_info: unsafe extern "C" fn(*mut RetroSystemInfo),
+    get_system_av_info: unsafe extern "C" fn(*mut RetroSystemAvInfo),
     load_game: unsafe extern "C" fn(*const RetroGameInfo) -> bool,
     run: unsafe extern "C" fn(),
     unload_game: unsafe extern "C" fn(),
@@ -104,6 +134,10 @@ impl CoreApi {
                 "retro_get_system_info",
                 unsafe extern "C" fn(*mut RetroSystemInfo)
             ),
+            get_system_av_info: symbol!(
+                "retro_get_system_av_info",
+                unsafe extern "C" fn(*mut RetroSystemAvInfo)
+            ),
             load_game: symbol!(
                 "retro_load_game",
                 unsafe extern "C" fn(*const RetroGameInfo) -> bool
@@ -135,7 +169,13 @@ struct VideoState {
     bytes: Vec<u8>,
 }
 
+#[derive(Default)]
+struct AudioState {
+    samples: Vec<i16>,
+}
+
 static VIDEO: OnceLock<Mutex<VideoState>> = OnceLock::new();
+static AUDIO: OnceLock<Mutex<AudioState>> = OnceLock::new();
 static JOYPAD: AtomicU16 = AtomicU16::new(0);
 static AUTOMATION_JOYPAD: AtomicU16 = AtomicU16::new(0);
 
@@ -203,8 +243,34 @@ unsafe extern "C" fn video_refresh(data: *const c_void, width: u32, height: u32,
     }
 }
 
-unsafe extern "C" fn audio_sample(_left: i16, _right: i16) {}
-unsafe extern "C" fn audio_batch(_data: *const i16, frames: usize) -> usize {
+unsafe extern "C" fn audio_sample(left: i16, right: i16) {
+    if let Ok(mut audio) = AUDIO.get_or_init(Default::default).lock()
+        && audio.samples.len()
+            <= MAX_EMULATOR_AUDIO_FRAMES
+                .saturating_mul(2)
+                .saturating_sub(2)
+    {
+        audio.samples.extend_from_slice(&[left, right]);
+    }
+}
+unsafe extern "C" fn audio_batch(data: *const i16, frames: usize) -> usize {
+    if data.is_null() || frames == 0 {
+        return frames;
+    }
+    let retained_frames = frames.min(MAX_EMULATOR_AUDIO_FRAMES);
+    let Some(sample_count) = retained_frames.checked_mul(2) else {
+        return frames;
+    };
+    // SAFETY: libretro guarantees `data` contains `frames * 2` interleaved stereo samples for
+    // the duration of this callback; the retained prefix is bounded above by that size.
+    let samples = unsafe { std::slice::from_raw_parts(data, sample_count) };
+    if let Ok(mut audio) = AUDIO.get_or_init(Default::default).lock() {
+        let remaining = MAX_EMULATOR_AUDIO_FRAMES
+            .saturating_mul(2)
+            .saturating_sub(audio.samples.len());
+        let retained = remaining.min(samples.len()) & !1;
+        audio.samples.extend_from_slice(&samples[..retained]);
+    }
     frames
 }
 unsafe extern "C" fn input_poll() {}
@@ -228,6 +294,7 @@ struct Backend {
     reached_overworld: bool,
     previous_mode: u8,
     mode_age: u32,
+    sample_rate: u32,
 }
 
 impl Backend {
@@ -271,6 +338,7 @@ impl Backend {
             reached_overworld: false,
             previous_mode: 0xff,
             mode_age: 0,
+            sample_rate: 32_040,
         })
     }
 
@@ -292,7 +360,36 @@ impl Backend {
             self.rom.clear();
             return Err("libretro core rejected the ROM image".into());
         }
+        let mut av = RetroSystemAvInfo {
+            geometry: RetroGameGeometry {
+                base_width: 0,
+                base_height: 0,
+                max_width: 0,
+                max_height: 0,
+                aspect_ratio: 0.0,
+            },
+            timing: RetroSystemTiming {
+                fps: 0.0,
+                sample_rate: 0.0,
+            },
+        };
+        // SAFETY: A game is loaded and `av` has the exact writable libretro-v1 layout.
+        unsafe { (self.api.get_system_av_info)(&raw mut av) };
+        if !av.timing.sample_rate.is_finite()
+            || av.timing.sample_rate < f64::from(MIN_EMULATOR_AUDIO_RATE)
+            || av.timing.sample_rate > f64::from(MAX_EMULATOR_AUDIO_RATE)
+        {
+            // SAFETY: `retro_load_game` succeeded above, so this balances that load before
+            // rejecting malformed timing metadata.
+            unsafe { (self.api.unload_game)() };
+            self.rom.clear();
+            return Err(format!(
+                "libretro core reported invalid audio sample rate {}",
+                av.timing.sample_rate
+            ));
+        }
         self.loaded = true;
+        self.sample_rate = av.timing.sample_rate.round() as u32;
         self.reached_overworld = false;
         self.previous_mode = 0xff;
         self.mode_age = 0;
@@ -305,6 +402,9 @@ impl Backend {
         }
         let automatic_buttons = self.prepare_selected_level_boot()?;
         AUTOMATION_JOYPAD.store(automatic_buttons, Ordering::Relaxed);
+        if let Ok(mut audio) = AUDIO.get_or_init(Default::default).lock() {
+            audio.samples.clear();
+        }
         // SAFETY: A game is loaded and all callbacks are installed.
         unsafe { (self.api.run)() };
         AUTOMATION_JOYPAD.store(0, Ordering::Relaxed);
@@ -320,11 +420,19 @@ impl Backend {
         else {
             unreachable!("frame_event always returns Frame")
         };
-        Ok(EmulatorBackendEvent::RuntimeFrame {
+        let audio = AUDIO
+            .get_or_init(Default::default)
+            .lock()
+            .map_err(|_| "audio callback state is poisoned".to_string())?
+            .samples
+            .clone();
+        Ok(EmulatorBackendEvent::RuntimeFrameAudio {
             width,
             height,
             rgba,
             state,
+            sample_rate: self.sample_rate,
+            audio,
         })
     }
 
@@ -686,5 +794,34 @@ mod tests {
                 assert_eq!(old, new, "unexpected WRAM change at ${offset:04X}");
             }
         }
+    }
+
+    #[test]
+    fn audio_callbacks_preserve_interleaved_stereo_samples_and_bound_batches() {
+        AUDIO
+            .get_or_init(Default::default)
+            .lock()
+            .unwrap()
+            .samples
+            .clear();
+        // SAFETY: These callbacks are invoked with the same valid scalar/slice contracts as
+        // libretro and inspected synchronously under the shared callback mutex.
+        unsafe { audio_sample(i16::MIN, i16::MAX) };
+        let batch = [1_i16, 2, 3, 4];
+        assert_eq!(unsafe { audio_batch(batch.as_ptr(), 2) }, 2);
+        assert_eq!(
+            AUDIO.get().unwrap().lock().unwrap().samples,
+            [i16::MIN, i16::MAX, 1, 2, 3, 4]
+        );
+        let oversized = vec![7_i16; (MAX_EMULATOR_AUDIO_FRAMES + 1) * 2];
+        AUDIO.get().unwrap().lock().unwrap().samples.clear();
+        assert_eq!(
+            unsafe { audio_batch(oversized.as_ptr(), MAX_EMULATOR_AUDIO_FRAMES + 1) },
+            MAX_EMULATOR_AUDIO_FRAMES + 1
+        );
+        assert_eq!(
+            AUDIO.get().unwrap().lock().unwrap().samples.len(),
+            MAX_EMULATOR_AUDIO_FRAMES * 2
+        );
     }
 }

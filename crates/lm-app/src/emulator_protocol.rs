@@ -7,6 +7,9 @@ pub const MAX_EMULATOR_ROM_BYTES: usize = 32 * 1024 * 1024;
 pub const MAX_EMULATOR_SPRITE_BYTES: usize = 1024 * 1024;
 pub const MAX_EMULATOR_FRAME_WIDTH: u32 = 512;
 pub const MAX_EMULATOR_FRAME_HEIGHT: u32 = 478;
+pub const MAX_EMULATOR_AUDIO_FRAMES: usize = 8192;
+pub const MIN_EMULATOR_AUDIO_RATE: u32 = 8_000;
+pub const MAX_EMULATOR_AUDIO_RATE: u32 = 384_000;
 pub const EMULATOR_JOYPAD_B: u16 = 1 << 0;
 pub const EMULATOR_JOYPAD_Y: u16 = 1 << 1;
 pub const EMULATOR_JOYPAD_SELECT: u16 = 1 << 2;
@@ -83,6 +86,15 @@ pub enum EmulatorBackendEvent {
         rgba: Vec<u8>,
         state: EmulatorRuntimeState,
     },
+    RuntimeFrameAudio {
+        width: u32,
+        height: u32,
+        rgba: Vec<u8>,
+        state: EmulatorRuntimeState,
+        sample_rate: u32,
+        /// Interleaved signed 16-bit stereo samples (left, right).
+        audio: Vec<i16>,
+    },
     Error(String),
 }
 
@@ -97,6 +109,7 @@ pub enum EmulatorProtocolError {
     SpriteDataTooLarge(usize),
     InvalidViewport,
     InvalidFrame,
+    InvalidAudio,
     InvalidJoypad(u16),
     InvalidUtf8,
     ErrorMessageTooLarge(usize),
@@ -252,6 +265,28 @@ impl EmulatorBackendEvent {
                 payload.extend_from_slice(&state.camera_x.to_le_bytes());
                 payload.extend_from_slice(&state.camera_y.to_le_bytes());
             }
+            Self::RuntimeFrameAudio {
+                width,
+                height,
+                rgba,
+                state,
+                sample_rate,
+                audio,
+            } => {
+                validate_frame(*width, *height, rgba)?;
+                validate_audio(*sample_rate, audio)?;
+                payload.push(0x86);
+                payload.extend_from_slice(&width.to_le_bytes());
+                payload.extend_from_slice(&height.to_le_bytes());
+                put_bytes(&mut payload, rgba)?;
+                payload.push(state.game_mode);
+                payload.extend_from_slice(&state.sublevel.to_le_bytes());
+                payload.push(state.translevel);
+                payload.extend_from_slice(&state.camera_x.to_le_bytes());
+                payload.extend_from_slice(&state.camera_y.to_le_bytes());
+                payload.extend_from_slice(&sample_rate.to_le_bytes());
+                put_i16s(&mut payload, audio)?;
+            }
             Self::Error(message) => {
                 if message.len() > MAX_ERROR_BYTES {
                     return Err(EmulatorProtocolError::ErrorMessageTooLarge(message.len()));
@@ -308,6 +343,30 @@ impl EmulatorBackendEvent {
                         camera_x: input.u16()?,
                         camera_y: input.u16()?,
                     },
+                }
+            }
+            0x86 => {
+                let width = input.u32()?;
+                let height = input.u32()?;
+                let rgba = input.bytes(max_frame_bytes()?, false)?;
+                validate_frame(width, height, &rgba)?;
+                let state = EmulatorRuntimeState {
+                    game_mode: input.byte()?,
+                    sublevel: input.u16()?,
+                    translevel: input.byte()?,
+                    camera_x: input.u16()?,
+                    camera_y: input.u16()?,
+                };
+                let sample_rate = input.u32()?;
+                let audio = input.i16s(MAX_EMULATOR_AUDIO_FRAMES * 2)?;
+                validate_audio(sample_rate, &audio)?;
+                Self::RuntimeFrameAudio {
+                    width,
+                    height,
+                    rgba,
+                    state,
+                    sample_rate,
+                    audio,
                 }
             }
             0xff => {
@@ -380,6 +439,16 @@ fn validate_frame(width: u32, height: u32, rgba: &[u8]) -> Result<(), EmulatorPr
     Ok(())
 }
 
+fn validate_audio(sample_rate: u32, samples: &[i16]) -> Result<(), EmulatorProtocolError> {
+    if !(MIN_EMULATOR_AUDIO_RATE..=MAX_EMULATOR_AUDIO_RATE).contains(&sample_rate)
+        || samples.len() > MAX_EMULATOR_AUDIO_FRAMES * 2
+        || samples.len() % 2 != 0
+    {
+        return Err(EmulatorProtocolError::InvalidAudio);
+    }
+    Ok(())
+}
+
 fn validate_joypad(buttons: u16) -> Result<(), EmulatorProtocolError> {
     if buttons & !EMULATOR_JOYPAD_ALL != 0 {
         return Err(EmulatorProtocolError::InvalidJoypad(buttons));
@@ -398,6 +467,15 @@ fn put_bytes(output: &mut Vec<u8>, bytes: &[u8]) -> Result<(), EmulatorProtocolE
     let length = u32::try_from(bytes.len()).map_err(|_| EmulatorProtocolError::LengthOverflow)?;
     output.extend_from_slice(&length.to_le_bytes());
     output.extend_from_slice(bytes);
+    Ok(())
+}
+
+fn put_i16s(output: &mut Vec<u8>, samples: &[i16]) -> Result<(), EmulatorProtocolError> {
+    let length = u32::try_from(samples.len()).map_err(|_| EmulatorProtocolError::LengthOverflow)?;
+    output.extend_from_slice(&length.to_le_bytes());
+    for sample in samples {
+        output.extend_from_slice(&sample.to_le_bytes());
+    }
     Ok(())
 }
 
@@ -467,6 +545,21 @@ impl<'a> Input<'a> {
 
     fn u64(&mut self) -> Result<u64, EmulatorProtocolError> {
         Ok(u64::from_le_bytes(self.take(8)?.try_into().unwrap()))
+    }
+
+    fn i16s(&mut self, maximum: usize) -> Result<Vec<i16>, EmulatorProtocolError> {
+        let length = self.u32()? as usize;
+        if length > maximum {
+            return Err(EmulatorProtocolError::InvalidAudio);
+        }
+        let byte_length = length
+            .checked_mul(2)
+            .ok_or(EmulatorProtocolError::LengthOverflow)?;
+        Ok(self
+            .take(byte_length)?
+            .chunks_exact(2)
+            .map(|bytes| i16::from_le_bytes(bytes.try_into().unwrap()))
+            .collect())
     }
 
     fn bytes(&mut self, maximum: usize, rom: bool) -> Result<Vec<u8>, EmulatorProtocolError> {
@@ -583,6 +676,20 @@ mod tests {
                     camera_y: 0x0056,
                 },
             },
+            EmulatorBackendEvent::RuntimeFrameAudio {
+                width: 1,
+                height: 1,
+                rgba: vec![9, 8, 7, 6],
+                state: EmulatorRuntimeState {
+                    game_mode: 0x14,
+                    sublevel: 0x106,
+                    translevel: 0x2a,
+                    camera_x: 0x0040,
+                    camera_y: 0x00c0,
+                },
+                sample_rate: 32_040,
+                audio: vec![i16::MIN, i16::MAX, -1, 1],
+            },
             EmulatorBackendEvent::Error("backend failed".into()),
         ];
         for event in events {
@@ -630,6 +737,32 @@ mod tests {
         assert_eq!(
             EmulatorBackendCommand::SetJoypad(0x8000).encode(),
             Err(EmulatorProtocolError::InvalidJoypad(0x8000))
+        );
+        let audio_event = |sample_rate, audio| EmulatorBackendEvent::RuntimeFrameAudio {
+            width: 1,
+            height: 1,
+            rgba: vec![0; 4],
+            state: EmulatorRuntimeState {
+                game_mode: 0x14,
+                sublevel: 0x105,
+                translevel: 0x28,
+                camera_x: 0,
+                camera_y: 0,
+            },
+            sample_rate,
+            audio,
+        };
+        assert_eq!(
+            audio_event(MIN_EMULATOR_AUDIO_RATE - 1, vec![]).encode(),
+            Err(EmulatorProtocolError::InvalidAudio)
+        );
+        assert_eq!(
+            audio_event(32_040, vec![0]).encode(),
+            Err(EmulatorProtocolError::InvalidAudio)
+        );
+        assert_eq!(
+            audio_event(32_040, vec![0; MAX_EMULATOR_AUDIO_FRAMES * 2 + 2]).encode(),
+            Err(EmulatorProtocolError::InvalidAudio)
         );
     }
 

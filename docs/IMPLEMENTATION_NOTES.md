@@ -2479,8 +2479,16 @@ without replacing the canvas interaction response. Ghidra's `RenderLevelEditorVi
 `$004530A0` proves Lunar Magic redraws only Map16 cells carrying selection flags `$60` after the
 LMSW viewport pass. Rust's default-on Selection over game pass follows that order for selected
 Layer 1/Layer 2 objects and sprites, preserving transparency and selection outlines while filtering
-all nonselected entities; the toggle changes only this final pass. LMSW's optimized
-sprite-stream-only hot reload and audio remain incomplete. Native OS focus loss
+all nonselected entities; the toggle changes only this final pass. `RuntimeFrameAudio` extends the
+bounded transport without changing the older frame tags or its one-command/one-response invariant.
+The backend reads `retro_get_system_av_info`, validates 8–384 kHz, retains at most 8,192 stereo
+frames from either libretro audio callback, and advertises capability bit `$80`. Native playback
+uses a maximum two-second queue and linear rate conversion to the default stereo device, supports
+signed, unsigned, and floating device formats, and clears latency state on mute, pause, reload,
+stop, or teardown. The official Snes9x oracle proves 533 nonuniform stereo frames at 32,040 Hz per
+captured video frame, distinct `$105`/`$106` hashes, and exact `$105` audio reproduction after ROM
+reload; the opt-in hardware gate proves native stream creation, resampling, mute, and teardown.
+LMSW's optimized sprite-stream-only hot reload remains incomplete. Native OS focus loss
 now drives the original focus-only soft pause, while minimizing the main viewport drives hard-pause
 reason `$20`; manual hard pause retains
 precedence through the shared aggregate. A collapsed live window drives viewport reason `$04`.

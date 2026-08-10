@@ -27,6 +27,7 @@ tempfile = "3"
 directories = "6"
 fs2 = "0.4"
 png = "0.17"
+cpal = "0.15"
 
 [target.'cfg(windows)'.dependencies]
 lm-windows = { path = "../lm-windows" }
