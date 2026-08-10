@@ -46,6 +46,7 @@ mod level_editor_render;
 mod level_graphics_export;
 mod level_outline;
 mod level_usage_dialog;
+mod live_emulator;
 mod map16_editor;
 mod map16_editor_render;
 mod map16_set_editor;

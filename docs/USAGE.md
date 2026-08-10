@@ -96,8 +96,13 @@ process; the editor waits for and reaps the process before removing the private 
 Installed external-tool configurations whose direct arguments contain `{rom}` appear in a
 **Test ROM in Emulator** submenu. Such tools may also use `{level_hex}` or `{level_dec}` to pass
 the selected level to an emulator wrapper. A directly chosen emulator receives only the staged ROM
-and follows its normal boot path. Direct selected-level injection, live ROM reload, pause, and
-single-frame stepping are not implemented yet.
+and follows its normal boot path.
+
+For an embedded live frame, build both `lm-native` and `lm-libretro`, keep the executables in the
+same directory, open a level, and choose **Tools → Live ROM Test (Libretro)…**. Select a
+libretro-v1 SNES core that supports in-memory ROM loading. The live window exposes pause, resume,
+single-frame step, and stop. It currently boots the exact unsaved ROM snapshot; direct selected-
+level injection, edited-sprite reload, gameplay input, and audio are not implemented yet.
 
 ## Rendering validation
 

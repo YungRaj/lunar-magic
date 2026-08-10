@@ -820,7 +820,9 @@ cargo clippy --workspace --all-targets -- -D warnings
 cargo fmt --all -- --check
 ```
 
-The workspace declares Rust 1.85 as its minimum supported version and forbids unsafe code.
+The workspace declares Rust 1.85 as its minimum supported version. Editor/model crates forbid
+unsafe code. The optional `lm-libretro` executable is a separate process with an audited unsafe
+libretro ABI boundary; the safe editor exchanges only bounded `LMEMU001` records with it.
 
 ## CLI examples
 
@@ -2450,8 +2452,17 @@ stop. Events cover backend capabilities, acknowledgement, active state, viewport
 bounded RGBA frames, and bounded UTF-8 diagnostics. ROMs are limited to 32 MiB, sprite payloads to
 1 MiB, diagnostics to 4 KiB, and frames to 512×478 RGBA; empty ROMs, invalid pause values,
 zero/oversized geometry, inconsistent raster lengths, bad UTF-8, unknown tags, every truncation,
-and trailing bytes reject before backend state changes. The codec establishes the process boundary
-but does not yet claim that a native frontend has spawned or driven a concrete backend.
+and trailing bytes reject before backend state changes. The codec is consumed by the separately
+unsafe-isolated `lm-libretro` process. That backend resolves the libretro-v1 ABI, rejects
+full-path-only cores so ROM bytes remain the editor's immutable snapshot, balances game/core
+teardown, and advertises only ROM load, RGBA frame, pause, step, and viewport capabilities. Its
+callbacks bound geometry, pitch, and allocation before copying and convert XRGB8888, RGB565, or
+XRGB1555 frames to RGBA. The localized native Tools action chooses a core, starts the sibling
+backend without a shell, validates Ready before Initialize, drives frames at a bounded cadence,
+and exposes Pause/Resume, single Step, and Stop. Closing the project or leaving the source level
+stops/reaps the snapshot session. Portable packaging includes the sibling backend. Direct selected-
+level injection, sprite reload, gameplay input/audio, and a retained compatible-core runtime oracle
+remain explicitly unadvertised and incomplete.
 The runnable frontend accepts `tools-config FILE`, lists configured identifiers with `tools-status`,
 and resolves typed requests with `tool-run ID` or `tool-event opened|saved|level`. Those preview
 commands print the executable, working directory, and every argument on separate lines. Explicit

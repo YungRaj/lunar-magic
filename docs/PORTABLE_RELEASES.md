@@ -11,7 +11,7 @@ maintains isolated local crash-recovery records for committed unsaved ROM change
 `.tar.gz.sha256` checksum. The archive contains one top-level directory and these files in a stable
 order:
 
-- `lm-native` and `lm-cli` (with `.exe` on Windows)
+- `lm-native`, `lm-cli`, and the isolated `lm-libretro` live-emulator backend (with `.exe` on Windows)
 - `README.md`
 - `LICENSE-MIT` and `LICENSE-APACHE`
 - `RELEASE-MANIFEST.txt`
@@ -27,7 +27,7 @@ also be created; an existing output is never replaced.
 For a native Linux x86-64 build, run:
 
 ```sh
-cargo build --locked --release --target x86_64-unknown-linux-gnu -p lm-native -p lm-cli
+cargo build --locked --release --target x86_64-unknown-linux-gnu -p lm-native -p lm-cli -p lm-libretro
 cargo run --locked --release -p lm-package -- \
   --bin-dir target/x86_64-unknown-linux-gnu/release \
   --output-dir dist \

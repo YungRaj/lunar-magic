@@ -29,7 +29,9 @@ right. The screenshot shows the built-in SMW-US profile rendering level `$001`; 
 - Platform build dependencies required by
   [`eframe`](https://github.com/emilk/egui/tree/master/crates/eframe)
 
-The workspace uses Rust edition 2024 and forbids unsafe Rust.
+The workspace uses Rust edition 2024. Editor/model crates forbid unsafe Rust; the optional
+`lm-libretro` process isolates the small audited unsafe ABI boundary required to load third-party
+libretro cores, and communicates with the editor through bounded binary messages.
 
 ### Build and test
 

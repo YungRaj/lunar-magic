@@ -583,6 +583,21 @@ impl NativeApplication {
             if !tools.is_empty() {
                 ui.separator();
             }
+            let live_enabled =
+                matches!(self.app.mode, EditorMode::Level(_)) && self.app.project().is_some();
+            if ui
+                .add_enabled(
+                    live_enabled,
+                    egui::Button::new(self.menu_text(UiTextKey::ToolsLiveEmulator)),
+                )
+                .clicked()
+            {
+                ui.close_menu();
+                self.begin_live_emulator_test();
+            }
+            if !tools.is_empty() {
+                ui.separator();
+            }
             for (id, name) in tools {
                 if ui.button(name).clicked() {
                     ui.close_menu();
@@ -625,6 +640,28 @@ impl NativeApplication {
             rom_bytes: snapshot.rom_bytes,
         };
         if let Err(error) = self.effects.external_tools.enqueue_emulator_test(request) {
+            self.effects.error = Some(error);
+        }
+    }
+
+    fn begin_live_emulator_test(&mut self) {
+        let Some(core) = crate::live_emulator::choose_core() else {
+            return;
+        };
+        let EditorMode::Level(level) = self.app.mode else {
+            return;
+        };
+        let snapshot = match self.app.controller_snapshot() {
+            Ok(snapshot) => snapshot,
+            Err(error) => {
+                self.effects.error = Some(error.to_string());
+                return;
+            }
+        };
+        if let Err(error) =
+            self.live_emulator
+                .start(core, snapshot.revision, level, snapshot.rom_bytes)
+        {
             self.effects.error = Some(error);
         }
     }

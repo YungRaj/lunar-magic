@@ -1711,6 +1711,14 @@ name = "lm-level"
 version = "0.1.0"
 
 [[package]]
+name = "lm-libretro"
+version = "0.1.0"
+dependencies = [
+ "libloading",
+ "lm-app",
+]
+
+[[package]]
 name = "lm-native"
 version = "0.1.0"
 dependencies = [

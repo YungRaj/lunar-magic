@@ -6,7 +6,8 @@ const MAGIC: &[u8; 8] = b"LMLOC001";
 const MAX_LOCALE_BYTES: usize = 64;
 const MAX_TEXT_BYTES: usize = 4096;
 const LEGACY_CHROME_KEY_COUNT: usize = 19;
-const PREVIOUS_COMPLETE_KEY_COUNT: usize = 183;
+const PREVIOUS_COMPLETE_KEY_COUNT: usize = 184;
+const EARLIER_COMPLETE_KEY_COUNT: usize = 183;
 const MAX_ENCODED_BYTES: usize =
     MAGIC.len() + 2 + MAX_LOCALE_BYTES + 2 + UiTextKey::ALL.len() * (1 + 2 + MAX_TEXT_BYTES);
 
@@ -197,6 +198,12 @@ pub enum UiTextKey {
     UndoHistoryHint,
     CommonApply,
     ToolsAutoDetectLanguage,
+    ToolsLiveEmulator,
+    LiveEmulatorWindowTitle,
+    LiveEmulatorPause,
+    LiveEmulatorResume,
+    LiveEmulatorStep,
+    LiveEmulatorStop,
 }
 
 impl UiTextKey {
@@ -259,6 +266,12 @@ impl UiTextKey {
             Self::ToolsInstallLanguage => "Install Language Catalog…",
             Self::ToolsUseBuiltInEnglish => "Use Built-in English",
             Self::ToolsAutoDetectLanguage => "Auto-detect System Language",
+            Self::ToolsLiveEmulator => "Live ROM Test (Libretro)…",
+            Self::LiveEmulatorWindowTitle => "Live ROM Test",
+            Self::LiveEmulatorPause => "Pause",
+            Self::LiveEmulatorResume => "Resume",
+            Self::LiveEmulatorStep => "Step",
+            Self::LiveEmulatorStop => "Stop",
             Self::ToolsInstallFrontendConfiguration => "Install Frontend Configuration…",
             Self::ToolsInstallToolConfiguration => "Install Tool Configuration…",
             Self::ToolsTestRomInEmulator => "Test ROM in Emulator",
@@ -424,7 +437,7 @@ impl UiTextKey {
         }
     }
 
-    pub const ALL: [Self; 184] = [
+    pub const ALL: [Self; 190] = [
         Self::AppTitle,
         Self::FileOpen,
         Self::FileSave,
@@ -609,6 +622,12 @@ impl UiTextKey {
         Self::UndoHistoryHint,
         Self::CommonApply,
         Self::ToolsAutoDetectLanguage,
+        Self::ToolsLiveEmulator,
+        Self::LiveEmulatorWindowTitle,
+        Self::LiveEmulatorPause,
+        Self::LiveEmulatorResume,
+        Self::LiveEmulatorStep,
+        Self::LiveEmulatorStop,
     ];
 
     fn from_byte(value: u8) -> Option<Self> {
@@ -761,6 +780,7 @@ impl LocalizationCatalog {
         let count = usize::from(reader.u16()?);
         if count != UiTextKey::ALL.len()
             && count != PREVIOUS_COMPLETE_KEY_COUNT
+            && count != EARLIER_COMPLETE_KEY_COUNT
             && count != LEGACY_CHROME_KEY_COUNT
         {
             return Err(LocalizationError::WrongEntryCount(count));
@@ -901,28 +921,27 @@ mod tests {
     }
 
     #[test]
-    fn previous_complete_catalogs_append_auto_detect_with_english_fallback() {
-        let mut bytes = MAGIC.to_vec();
-        write_string(&mut bytes, "es-MX", MAX_LOCALE_BYTES).unwrap();
-        bytes.extend_from_slice(&(PREVIOUS_COMPLETE_KEY_COUNT as u16).to_le_bytes());
-        for key in UiTextKey::ALL[..PREVIOUS_COMPLETE_KEY_COUNT]
-            .iter()
-            .copied()
-        {
-            bytes.push(key as u8);
-            write_string(&mut bytes, &format!("viejo-{key:?}"), MAX_TEXT_BYTES).unwrap();
-        }
+    fn previous_complete_catalogs_append_new_keys_with_english_fallback() {
+        for count in [EARLIER_COMPLETE_KEY_COUNT, PREVIOUS_COMPLETE_KEY_COUNT] {
+            let mut bytes = MAGIC.to_vec();
+            write_string(&mut bytes, "es-MX", MAX_LOCALE_BYTES).unwrap();
+            bytes.extend_from_slice(&(count as u16).to_le_bytes());
+            for key in UiTextKey::ALL[..count].iter().copied() {
+                bytes.push(key as u8);
+                write_string(&mut bytes, &format!("viejo-{key:?}"), MAX_TEXT_BYTES).unwrap();
+            }
 
-        let upgraded = LocalizationCatalog::decode(&bytes).unwrap();
-        assert_eq!(upgraded.text(UiTextKey::CommonApply), "viejo-CommonApply");
-        assert_eq!(
-            upgraded.text(UiTextKey::ToolsAutoDetectLanguage),
-            "Auto-detect System Language"
-        );
-        assert_eq!(
-            LocalizationCatalog::decode(&upgraded.encode().unwrap()).unwrap(),
-            upgraded
-        );
+            let upgraded = LocalizationCatalog::decode(&bytes).unwrap();
+            assert_eq!(upgraded.text(UiTextKey::CommonApply), "viejo-CommonApply");
+            assert_eq!(
+                upgraded.text(UiTextKey::ToolsLiveEmulator),
+                "Live ROM Test (Libretro)…"
+            );
+            assert_eq!(
+                LocalizationCatalog::decode(&upgraded.encode().unwrap()).unwrap(),
+                upgraded
+            );
+        }
     }
 
     #[test]

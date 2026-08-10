@@ -154,6 +154,13 @@ fn package(options: &Options) -> Result<PackageResult, PackageError> {
             0o755,
         )?,
         input_file(
+            &options
+                .bin_dir
+                .join(format!("lm-libretro{executable_suffix}")),
+            format!("lm-libretro{executable_suffix}"),
+            0o755,
+        )?,
+        input_file(
             &options.project_root.join("README.md"),
             "README.md".into(),
             0o644,
@@ -465,6 +472,7 @@ mod tests {
             (project.join("LICENSE-APACHE"), b"apache"),
             (bin.join("lm-native"), b"native"),
             (bin.join("lm-cli"), b"cli"),
+            (bin.join("lm-libretro"), b"libretro"),
         ] {
             fs::write(path, bytes).unwrap();
         }
@@ -520,12 +528,14 @@ mod tests {
                 "lunar-magic-rust-1.2.3-x86_64-test-none/README.md",
                 "lunar-magic-rust-1.2.3-x86_64-test-none/RELEASE-MANIFEST.txt",
                 "lunar-magic-rust-1.2.3-x86_64-test-none/lm-cli",
+                "lunar-magic-rust-1.2.3-x86_64-test-none/lm-libretro",
                 "lunar-magic-rust-1.2.3-x86_64-test-none/lm-native",
             ]
         );
         let manifest = std::str::from_utf8(&entries[3].1).unwrap();
         assert!(manifest.starts_with("LMRELEASE1\nversion 1.2.3\ntarget x86_64-test-none\n"));
         assert!(manifest.contains(&format!("file lm-native 6 {}", hex_sha256(b"native"))));
+        assert!(manifest.contains(&format!("file lm-libretro 8 {}", hex_sha256(b"libretro"))));
     }
 
     #[test]

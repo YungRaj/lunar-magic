@@ -26,6 +26,16 @@ no corresponding gate, with the reason recorded in evidence.
 Broad format support does not promote a row. For example, decoding MWL files does not prove the
 interactive level import workflow, and a CLI transaction does not prove its native dialog.
 
+Current LMSW-row addendum: the concrete, separately unsafe-isolated `lm-libretro` backend and its
+localized native control window now implement ROM load, bounded RGBA frames, pause/resume,
+single-frame stepping, viewport cropping, process teardown, and capability negotiation through
+`LMEMU001`. Portable packages now contain `lm-native`, `lm-cli`, and the required sibling
+`lm-libretro` executable. The row remains `Partial`: direct selected-level injection, sprite/live
+edit reload, gameplay input/audio, editor-canvas overlay synchronization, and retained compatible-
+core runtime/platform oracles are still missing. This addendum supersedes only the older
+“concrete backend process/native control wiring missing” clauses in that row; all other evidence and
+missing boundaries remain current.
+
 Current Map16 bitmap variant evidence additionally covers the 12-byte `BITMAPCOREHEADER`: its
 unsigned dimensions, bottom-up DWORD-padded rows, RGBTRIPLE palettes, indexed 1-/4-/8-bit pixels,
 and 24-bit BGR pixels reach the installed native preview. Malformed core headers, palettes, and

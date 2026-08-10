@@ -155,6 +155,7 @@ pub(crate) struct NativeApplication {
     level_editor: LevelEditor,
     level_access_restriction_dialog: LevelAccessRestrictionDialog,
     level_usage_dialog: LevelUsageDialog,
+    live_emulator: crate::live_emulator::LiveEmulator,
     overworld_editor: OverworldEditor,
     path_editor: PathEditor,
     metadata_editor: MetadataEditor,
@@ -685,6 +686,21 @@ impl NativeApplication {
         self.effects.show_rom_loader(context, &mut self.app);
         self.effects.show_persistence(context, &mut self.app);
         self.effects.show_external_tools(context, &mut self.app);
+        let live_context = match self.app.mode {
+            EditorMode::Level(level) if self.app.project().is_some() => {
+                Some((level, self.app.project_revision()))
+            }
+            _ => None,
+        };
+        self.live_emulator.retain_only_for_context(live_context);
+        let localization = self.app.localization().cloned();
+        if let Some(status) = self.live_emulator.show(context, |key| {
+            localization
+                .as_ref()
+                .map_or_else(|| key.english().into(), |catalog| catalog.text(key).into())
+        }) {
+            self.app.status = status;
+        }
         if let Some(error) = self.effects.error.clone() {
             let ok = self.localized(UiTextKey::CommonOk, UiTextKey::CommonOk.english());
             egui::Window::new(self.localized(

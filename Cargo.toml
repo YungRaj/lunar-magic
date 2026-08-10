@@ -17,6 +17,7 @@ members = [
     "crates/lm-title",
     "crates/lm-package",
     "crates/lm-windows",
+    "crates/lm-libretro",
 ]
 resolver = "2"
 
