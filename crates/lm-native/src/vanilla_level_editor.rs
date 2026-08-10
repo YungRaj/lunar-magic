@@ -500,6 +500,7 @@ impl VanillaLevelEditor {
         external_asset_revision: u64,
         custom_objects: Option<&lm_level::OscResolvedTable>,
         custom_map16: Option<&lm_app::NativeMap16SidecarDocument>,
+        live_frame: Option<(egui::TextureId, [usize; 2])>,
     ) -> Option<Command> {
         let snapshot = app.controller_snapshot().ok()?;
         let EditorMode::Level(level) = snapshot.mode else {
@@ -653,6 +654,7 @@ impl VanillaLevelEditor {
                         external_assets,
                         custom_objects,
                         custom_map16,
+                        live_frame,
                     );
                 },
             );
@@ -1967,6 +1969,7 @@ impl VanillaLevelEditor {
         external_assets: &lm_graphics::ExternalSpriteAssets,
         custom_objects: Option<&lm_level::OscResolvedTable>,
         custom_map16: Option<&lm_app::NativeMap16SidecarDocument>,
+        live_frame: Option<(egui::TextureId, [usize; 2])>,
     ) {
         let CanvasModel {
             layer1_records: records,
@@ -2175,6 +2178,15 @@ impl VanillaLevelEditor {
                     custom_objects,
                     custom_map16,
                 );
+                if snes_viewport && let Some((texture, size)) = live_frame {
+                    let live_rect = live_frame_rect(rect, size, cell);
+                    painter.image(
+                        texture,
+                        live_rect,
+                        egui::Rect::from_min_max(egui::Pos2::ZERO, egui::pos2(1.0, 1.0)),
+                        egui::Color32::WHITE,
+                    );
+                }
             }
         };
         if snes_viewport {
@@ -11762,6 +11774,14 @@ fn fitted_snes_viewport_cell(available: egui::Vec2, zoom_percent: u16) -> f32 {
     (fitted_pixel_scale * zoom_steps).max(1.0 / TILE_PIXELS) * TILE_PIXELS
 }
 
+fn live_frame_rect(canvas: egui::Rect, size: [usize; 2], cell: f32) -> egui::Rect {
+    let pixels_per_source_pixel = cell / 16.0;
+    egui::Rect::from_center_size(
+        canvas.center(),
+        egui::vec2(size[0] as f32, size[1] as f32) * pixels_per_source_pixel,
+    )
+}
+
 fn game_preview_origin(
     entrance: VanillaMainEntrance,
     major_tiles: u16,
@@ -16782,6 +16802,18 @@ mod tests {
         // Cover mode must reach both pane edges; the mismatched axis is centered and clipped.
         assert!(canvas.x >= 800.0);
         assert!(canvas.y >= 600.0);
+    }
+
+    #[test]
+    fn live_frame_uses_the_same_centered_cover_geometry_as_game_pixels() {
+        let canvas = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(800.0, 600.0));
+        let cell = fitted_snes_viewport_cell(canvas.size(), 100);
+        let frame = live_frame_rect(canvas, [256, 224], cell);
+        assert_eq!(frame.width(), 800.0);
+        assert_eq!(frame.height(), 700.0);
+        assert_eq!(frame.center(), canvas.center());
+        assert_eq!(frame.min.y, -50.0);
+        assert_eq!(frame.max.y, 650.0);
     }
 
     #[test]

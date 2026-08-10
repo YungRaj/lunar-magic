@@ -2471,16 +2471,20 @@ mode stops/reaps the session. A level-only editor transition sends `LoadLevel`; 
 revision sends `ReloadRom` with the exact current in-memory physical ROM followed by `LoadLevel`,
 clears the stale texture, and reuses the same worker/window. This makes every committed ROM domain,
 including edited sprites, visible without a manual restart while preserving the immutable revision
-boundary. Portable packaging includes the sibling backend. LMSW's optimized sprite-stream-only hot
-reload and audio remain incomplete. Native OS focus loss now drives the original focus-only soft
-pause, while minimizing the main viewport drives hard-pause reason `$20`; manual hard pause retains
+boundary. Portable packaging includes the sibling backend. The running RGBA texture is also
+composited into the level canvas when Game pixels/SNES viewport mode is active. Its rectangle uses
+the same centered cover scale as deterministic game pixels and is recomputed from the available
+canvas on every layout pass, so horizontal, vertical, and full-screen resizing remain synchronized
+without replacing the canvas interaction response. LMSW's optional selected-tile-over-emulator
+pass, optimized sprite-stream-only hot reload, and audio remain incomplete. Native OS focus loss
+now drives the original focus-only soft pause, while minimizing the main viewport drives hard-pause
+reason `$20`; manual hard pause retains
 precedence through the shared aggregate. A collapsed live window drives viewport reason `$04`.
 An open egui popup drives input reason `$08`; closure retains the recovered 100-millisecond timer
 grace from `MainFrameWindowProc`/`RenderLmswViewportOverlay` before clearing it. Editor-mode hard
 pause reason `$40` follows `HandleLevelEditorCommand` exactly: disabling the shared level-editor
 animation clock sets it and resuming the clock clears it. The frontend now drives every recovered
-pause input into the already-proven aggregate. Editor-overlay synchronization and broader
-core/platform variants remain incomplete.
+pause input into the already-proven aggregate. Broader core/platform variants remain incomplete.
 The runnable frontend accepts `tools-config FILE`, lists configured identifiers with `tools-status`,
 and resolves typed requests with `tool-run ID` or `tool-event opened|saved|level`. Those preview
 commands print the executable, working directory, and every argument on separate lines. Explicit

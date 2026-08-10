@@ -120,6 +120,11 @@ impl LiveEmulator {
             .and(self.source_level.zip(self.source_revision))
     }
 
+    pub(crate) fn canvas_frame(&self) -> Option<(egui::TextureId, [usize; 2])> {
+        self.running.as_ref()?;
+        Some((self.texture.as_ref()?.id(), self.frame_size?))
+    }
+
     /// Stops a live session only when there is no longer an open level/project context.
     pub(crate) fn retain_for_open_project(&mut self, context: Option<(u16, u64)>) -> bool {
         if self.running.is_some() && context.is_none() {

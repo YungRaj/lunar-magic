@@ -804,6 +804,7 @@ impl eframe::App for NativeApplication {
         egui::CentralPanel::default().show(context, |ui| {
             let vanilla_level = VanillaLevelEditor::handles(&self.app);
             let vanilla_graphics = VanillaGraphicsEditor::handles(&self.app);
+            let live_frame = self.live_emulator.canvas_frame();
             if vanilla_level
                 && let Some(command) = self.vanilla_level_editor.show(
                     ui,
@@ -815,6 +816,7 @@ impl eframe::App for NativeApplication {
                     self.ssc_sidecar_editor.asset_revision(),
                     self.osc_sidecar_editor.resolved(),
                     self.native_map16_sidecar_editor.value(),
+                    live_frame,
                 )
             {
                 self.dispatch(context, command);

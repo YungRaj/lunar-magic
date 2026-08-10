@@ -106,8 +106,11 @@ level, and supports live SNES joypad input with Z=B, A=Y, X=A, S=X, Enter=Start,
 and the arrow keys. Switching the editor level updates the running core directly. Committing any
 edit reloads the exact new in-memory ROM revision and re-enters the selected level in the same live
 window, so object, block, sprite, palette, graphics, and other committed ROM changes are testable
-without manually restarting the session. LMSW's optimized sprite-stream-only hot reload and audio
-output are not implemented yet. Alt-tabbing away soft-pauses the core; minimizing the editor hard-
+without manually restarting the session. With **Game pixels** and the SNES viewport enabled, the
+live frame is drawn directly in the level canvas and refits whenever the canvas or window changes
+size; canvas selection and placement hit testing remains active. LMSW's optional selected-tile
+overlay over that live frame, optimized sprite-stream-only hot reload, and audio output are not
+implemented yet. Alt-tabbing away soft-pauses the core; minimizing the editor hard-
 pauses it, and restoring focus resumes only when no manual pause remains.
 Collapsing the live window or opening an editor menu also hard-pauses the core; menu closure retains
 the original short input grace before gameplay resumes.
