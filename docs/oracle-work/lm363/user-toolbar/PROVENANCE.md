@@ -30,6 +30,15 @@ then run under Wine 11.13 in a newly created isolated prefix and extracted index
 prefix's real `C:\\windows\\notepad.exe`; the safe wrapper returned exactly 1,024 RGBA bytes for a
 16×16 icon with nonzero alpha. The prefix was deleted after the passing test.
 
+## Pause and numeric-keypad shortcut evidence (2026-08-10)
+
+The original user-toolbar shortcut grammar uses Windows virtual-key names and accepts their raw
+hexadecimal values. Rust now retains Pause (`VK_PAUSE`, `0x13`) and all six distinct numeric-keypad
+operator codes (`VK_MULTIPLY` through `VK_DIVIDE`, `0x6A..=0x6F`) instead of rejecting Pause or
+collapsing operators into ordinary punctuation. An isolated Wine execution covers the frontend's
+focus-aware rising-edge state machine for all seven keys; the same binary links the real
+`GetAsyncKeyState` ABI, while the Windows cross-build binds the complete parser-to-frontend route.
+
 ## Live Wine observation (2026-08-06)
 
 Lunar Magic 3.63 was copied under the unique process name `LMToolbarOracle363.exe`, with

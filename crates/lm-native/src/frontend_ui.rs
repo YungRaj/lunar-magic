@@ -48,8 +48,8 @@ pub(crate) fn shortcut_activation(
 }
 
 pub(crate) fn shortcut_gestures(context: &egui::Context) -> Vec<ShortcutGesture> {
-    context.input(|input| {
-        input
+    let (gestures, focused, modifiers) = context.input(|input| {
+        let gestures: Vec<ShortcutGesture> = input
             .events
             .iter()
             .filter_map(|event| {
@@ -80,8 +80,38 @@ pub(crate) fn shortcut_gestures(context: &egui::Context) -> Vec<ShortcutGesture>
                     _ => return None,
                 })
             })
-            .collect()
-    })
+            .collect();
+        (gestures, input.focused, input.modifiers)
+    });
+    #[cfg(windows)]
+    let gestures = {
+        let mut gestures = gestures;
+        gestures.extend(
+            lm_windows::special_virtual_key_presses(focused)
+                .into_iter()
+                .map(|key| ShortcutGesture {
+                    modifiers: translate_modifiers(modifiers),
+                    key: translate_special_virtual_key(key),
+                }),
+        );
+        gestures
+    };
+    #[cfg(not(windows))]
+    let _ = (focused, modifiers);
+    gestures
+}
+
+#[cfg(windows)]
+const fn translate_special_virtual_key(key: lm_windows::SpecialVirtualKey) -> ShortcutKey {
+    match key {
+        lm_windows::SpecialVirtualKey::Pause => ShortcutKey::Pause,
+        lm_windows::SpecialVirtualKey::NumpadMultiply => ShortcutKey::NumpadMultiply,
+        lm_windows::SpecialVirtualKey::NumpadAdd => ShortcutKey::NumpadAdd,
+        lm_windows::SpecialVirtualKey::NumpadSeparator => ShortcutKey::NumpadSeparator,
+        lm_windows::SpecialVirtualKey::NumpadSubtract => ShortcutKey::NumpadSubtract,
+        lm_windows::SpecialVirtualKey::NumpadDecimal => ShortcutKey::NumpadDecimal,
+        lm_windows::SpecialVirtualKey::NumpadDivide => ShortcutKey::NumpadDivide,
+    }
 }
 
 fn translate_pointer_button(button: egui::PointerButton) -> ShortcutKey {

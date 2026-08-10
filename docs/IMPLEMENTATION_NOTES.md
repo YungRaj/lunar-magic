@@ -3392,8 +3392,8 @@ available with textual fallback. The main toolbar additionally discovers the doc
 `Lunar Magic.ff4` file, requires its exact 41-square-cell geometry, and uses retained live 3.63
 `TBBUTTON` bitmap indexes 1/3/5/6 for native Open/Save/Undo/Redo. Missing or invalid overrides keep
 the default text controls rather than publishing a partial strip. Other editor-specific `.ff*`
-strips, the exhaustive internal/options table,
-mouse/Pause/numpad-operator distinctions, and process notification/lifecycle options remain open.
+strips, the exhaustive internal/options table, remaining mouse distinctions, and process
+notification/lifecycle options remain open.
 
 On Windows, external buttons without an image-list or force override now use the documented icon
 field as an `ExtractIconExW` resource index (default zero) against the executable token. Quoted and
@@ -3404,6 +3404,17 @@ and modern alpha icons, and releases every icon, bitmap, and memory-DC handle be
 Missing/non-file/invalid resources retain the existing text fallback. Focused mock-resolution tests,
 Windows cross-compilation, and an isolated Wine ABI test against its icon-bearing `notepad.exe`
 cover precedence, index/path selection, bounded raster shape, and nonempty alpha output.
+
+The user-toolbar shortcut bridge now preserves the formerly collapsed `VK_PAUSE` and numeric
+keypad `VK_MULTIPLY`, `VK_ADD`, `VK_SEPARATOR`, `VK_SUBTRACT`, `VK_DECIMAL`, and `VK_DIVIDE`
+families, including their raw `0x13` and `0x6A..=0x6F` virtual-key forms. `LMSHORT1` appends seven key
+kinds after the already published mouse-key discriminants, so every earlier configuration retains
+its exact encoding; the native shortcut editor parses and formats stable names for all seven. Since
+egui 0.31 does not expose Pause or keypad location, the Windows frontend supplements its normal
+event stream with a narrow `GetAsyncKeyState` bridge. It tracks every key while unfocused, emits
+only focused rising edges, and therefore neither repeats a held key nor creates a false activation
+when focus returns. Schema, parser, editor, focus/hold/release edge tests, an isolated Wine test, and
+the complete Windows frontend cross-build cover the path.
 
 The first option semantics are now active rather than merely retained strings. `LM_NO_BUTTON`
 hides a control without disabling its shortcut. `LM_USEIMAGE_FORCE` sequentially assigns global

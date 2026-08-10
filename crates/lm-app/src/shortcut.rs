@@ -52,6 +52,13 @@ pub enum ShortcutKey {
     MouseMiddle,
     MouseExtra1,
     MouseExtra2,
+    Pause,
+    NumpadMultiply,
+    NumpadAdd,
+    NumpadSeparator,
+    NumpadSubtract,
+    NumpadDecimal,
+    NumpadDivide,
 }
 
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -236,6 +243,13 @@ fn encode_key(key: ShortcutKey) -> (u8, u32) {
         ShortcutKey::MouseMiddle => (19, 0),
         ShortcutKey::MouseExtra1 => (20, 0),
         ShortcutKey::MouseExtra2 => (21, 0),
+        ShortcutKey::Pause => (22, 0),
+        ShortcutKey::NumpadMultiply => (23, 0),
+        ShortcutKey::NumpadAdd => (24, 0),
+        ShortcutKey::NumpadSeparator => (25, 0),
+        ShortcutKey::NumpadSubtract => (26, 0),
+        ShortcutKey::NumpadDecimal => (27, 0),
+        ShortcutKey::NumpadDivide => (28, 0),
     }
 }
 
@@ -247,7 +261,7 @@ fn decode_key(kind: u8, value: u32) -> Result<ShortcutKey, ShortcutError> {
         1 => u8::try_from(value)
             .map(ShortcutKey::Function)
             .map_err(|_| ShortcutError::InvalidFunctionKey(u8::MAX)),
-        2..=21 if value != 0 => Err(ShortcutError::UnknownKey(kind)),
+        2..=28 if value != 0 => Err(ShortcutError::UnknownKey(kind)),
         2 => Ok(ShortcutKey::Backspace),
         3 => Ok(ShortcutKey::Delete),
         4 => Ok(ShortcutKey::Enter),
@@ -268,6 +282,13 @@ fn decode_key(kind: u8, value: u32) -> Result<ShortcutKey, ShortcutError> {
         19 => Ok(ShortcutKey::MouseMiddle),
         20 => Ok(ShortcutKey::MouseExtra1),
         21 => Ok(ShortcutKey::MouseExtra2),
+        22 => Ok(ShortcutKey::Pause),
+        23 => Ok(ShortcutKey::NumpadMultiply),
+        24 => Ok(ShortcutKey::NumpadAdd),
+        25 => Ok(ShortcutKey::NumpadSeparator),
+        26 => Ok(ShortcutKey::NumpadSubtract),
+        27 => Ok(ShortcutKey::NumpadDecimal),
+        28 => Ok(ShortcutKey::NumpadDivide),
         _ => Err(ShortcutError::UnknownKey(kind)),
     }
 }
@@ -422,6 +443,33 @@ mod tests {
                 bindings: vec![ShortcutBinding {
                     gesture: ShortcutGesture {
                         modifiers: ShortcutModifiers::ALT,
+                        key,
+                    },
+                    action: ToolbarAction::ShowMap16,
+                }],
+            };
+            let bytes = expected.encode().unwrap();
+            assert_eq!(bytes[11], kind);
+            assert_eq!(ShortcutConfig::decode(&bytes).unwrap(), expected);
+        }
+    }
+
+    #[test]
+    fn appended_pause_and_numpad_operators_round_trip_without_renumbering_prior_keys() {
+        assert_eq!(encode_key(ShortcutKey::MouseExtra2), (21, 0));
+        for (key, kind) in [
+            (ShortcutKey::Pause, 22),
+            (ShortcutKey::NumpadMultiply, 23),
+            (ShortcutKey::NumpadAdd, 24),
+            (ShortcutKey::NumpadSeparator, 25),
+            (ShortcutKey::NumpadSubtract, 26),
+            (ShortcutKey::NumpadDecimal, 27),
+            (ShortcutKey::NumpadDivide, 28),
+        ] {
+            let expected = ShortcutConfig {
+                bindings: vec![ShortcutBinding {
+                    gesture: ShortcutGesture {
+                        modifiers: ShortcutModifiers::SHIFT,
                         key,
                     },
                     action: ToolbarAction::ShowMap16,

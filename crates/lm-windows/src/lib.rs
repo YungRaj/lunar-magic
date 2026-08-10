@@ -18,6 +18,7 @@ use windows_sys::Win32::Storage::FileSystem::{
 use windows_sys::Win32::System::Registry::{
     HKEY_CURRENT_USER, RRF_RT_REG_DWORD, RRF_RT_REG_SZ, RegGetValueW,
 };
+use windows_sys::Win32::UI::Input::KeyboardAndMouse::GetAsyncKeyState;
 use windows_sys::Win32::UI::Shell::{ExtractIconExW, ShellExecuteW};
 use windows_sys::Win32::UI::WindowsAndMessaging::{
     CreateWindowExW, DI_NORMAL, DestroyIcon, DestroyWindow, DrawIconEx, EnumWindows,
@@ -26,6 +27,62 @@ use windows_sys::Win32::UI::WindowsAndMessaging::{
 };
 
 const MAX_WINDOWS_PATH_UTF16_UNITS: usize = 32_768;
+
+/// Virtual keys that egui 0.31 does not preserve distinctly from text/punctuation events.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum SpecialVirtualKey {
+    Pause,
+    NumpadMultiply,
+    NumpadAdd,
+    NumpadSeparator,
+    NumpadSubtract,
+    NumpadDecimal,
+    NumpadDivide,
+}
+
+/// Returns focused rising edges for Pause and numpad operators while continuously tracking state.
+///
+/// Polling while unfocused prevents a key held during focus restoration from becoming a false
+/// press. The process-global edge state matches the native frontend's one-window event source.
+pub fn special_virtual_key_presses(focused: bool) -> Vec<SpecialVirtualKey> {
+    use std::sync::atomic::AtomicBool;
+    static DOWN: [AtomicBool; 7] = [const { AtomicBool::new(false) }; 7];
+    const KEYS: [i32; 7] = [0x13, 0x6a, 0x6b, 0x6c, 0x6d, 0x6e, 0x6f];
+    let sampled = KEYS.map(|virtual_key| {
+        (unsafe {
+            // SAFETY: Every value is a documented bounded Win32 virtual-key code.
+            GetAsyncKeyState(virtual_key)
+        }) as u16
+            & 0x8000
+            != 0
+    });
+    special_virtual_key_edges(focused, sampled, &DOWN)
+}
+
+fn special_virtual_key_edges(
+    focused: bool,
+    sampled: [bool; 7],
+    previous: &[std::sync::atomic::AtomicBool; 7],
+) -> Vec<SpecialVirtualKey> {
+    use std::sync::atomic::Ordering;
+    const KEYS: [SpecialVirtualKey; 7] = [
+        SpecialVirtualKey::Pause,
+        SpecialVirtualKey::NumpadMultiply,
+        SpecialVirtualKey::NumpadAdd,
+        SpecialVirtualKey::NumpadSeparator,
+        SpecialVirtualKey::NumpadSubtract,
+        SpecialVirtualKey::NumpadDecimal,
+        SpecialVirtualKey::NumpadDivide,
+    ];
+    KEYS.iter()
+        .enumerate()
+        .filter_map(|(index, key)| {
+            let down = sampled[index];
+            let was_down = previous[index].swap(down, Ordering::Relaxed);
+            (focused && down && !was_down).then_some(*key)
+        })
+        .collect()
+}
 
 /// One bounded executable icon converted to unpremultiplied RGBA pixels.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -1058,6 +1115,68 @@ mod tests {
         assert!(parse_utf16_multi_string(&[u16::from(b'e'), 0], 1).is_empty());
         assert!(parse_utf16_multi_string(&[u16::from(b'e'), 0, 0], 2).is_empty());
         assert!(parse_utf16_multi_string(&[0xd800, 0, 0], 1).is_empty());
+    }
+
+    #[test]
+    fn special_virtual_key_edges_track_focus_hold_release_and_every_distinct_key() {
+        use std::sync::atomic::AtomicBool;
+        let previous = [const { AtomicBool::new(false) }; 7];
+        assert_eq!(
+            super::special_virtual_key_edges(
+                true,
+                [true, true, true, true, true, true, true],
+                &previous,
+            ),
+            [
+                super::SpecialVirtualKey::Pause,
+                super::SpecialVirtualKey::NumpadMultiply,
+                super::SpecialVirtualKey::NumpadAdd,
+                super::SpecialVirtualKey::NumpadSeparator,
+                super::SpecialVirtualKey::NumpadSubtract,
+                super::SpecialVirtualKey::NumpadDecimal,
+                super::SpecialVirtualKey::NumpadDivide,
+            ]
+        );
+        assert!(
+            super::special_virtual_key_edges(
+                true,
+                [true, true, true, true, true, true, true],
+                &previous,
+            )
+            .is_empty()
+        );
+        assert!(
+            super::special_virtual_key_edges(
+                false,
+                [false, false, true, false, false, false, false],
+                &previous,
+            )
+            .is_empty()
+        );
+        assert!(
+            super::special_virtual_key_edges(
+                true,
+                [false, false, true, false, false, false, false],
+                &previous,
+            )
+            .is_empty()
+        );
+        assert!(
+            super::special_virtual_key_edges(
+                true,
+                [false, false, false, false, false, false, false],
+                &previous,
+            )
+            .is_empty()
+        );
+        assert_eq!(
+            super::special_virtual_key_edges(
+                true,
+                [false, false, true, false, false, false, false],
+                &previous,
+            ),
+            [super::SpecialVirtualKey::NumpadAdd]
+        );
     }
 
     /// Opt-in Wine/Windows registry oracle. The runner seeds the original Lunar Magic key in an

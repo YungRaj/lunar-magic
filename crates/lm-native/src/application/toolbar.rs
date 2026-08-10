@@ -1027,6 +1027,13 @@ fn parse_user_toolbar_key(value: &str) -> Option<ShortcutKey> {
         "VK_LEFT" => ShortcutKey::ArrowLeft,
         "VK_RIGHT" => ShortcutKey::ArrowRight,
         "VK_SPACE" => ShortcutKey::Space,
+        "VK_PAUSE" => ShortcutKey::Pause,
+        "VK_MULTIPLY" => ShortcutKey::NumpadMultiply,
+        "VK_ADD" => ShortcutKey::NumpadAdd,
+        "VK_SEPARATOR" => ShortcutKey::NumpadSeparator,
+        "VK_SUBTRACT" => ShortcutKey::NumpadSubtract,
+        "VK_DECIMAL" => ShortcutKey::NumpadDecimal,
+        "VK_DIVIDE" => ShortcutKey::NumpadDivide,
         "VK_LBUTTON" => ShortcutKey::MouseLeft,
         "VK_RBUTTON" => ShortcutKey::MouseRight,
         "VK_MBUTTON" => ShortcutKey::MouseMiddle,
@@ -1052,6 +1059,7 @@ fn virtual_key(value: u8) -> Option<ShortcutKey> {
         0x08 => ShortcutKey::Backspace,
         0x09 => ShortcutKey::Tab,
         0x0d => ShortcutKey::Enter,
+        0x13 => ShortcutKey::Pause,
         0x1b => ShortcutKey::Escape,
         0x20 => ShortcutKey::Space,
         0x21 => ShortcutKey::PageUp,
@@ -1065,6 +1073,12 @@ fn virtual_key(value: u8) -> Option<ShortcutKey> {
         0x2d => ShortcutKey::Insert,
         0x2e => ShortcutKey::Delete,
         0x30..=0x39 | 0x41..=0x5a => ShortcutKey::Character(char::from(value).to_ascii_lowercase()),
+        0x6a => ShortcutKey::NumpadMultiply,
+        0x6b => ShortcutKey::NumpadAdd,
+        0x6c => ShortcutKey::NumpadSeparator,
+        0x6d => ShortcutKey::NumpadSubtract,
+        0x6e => ShortcutKey::NumpadDecimal,
+        0x6f => ShortcutKey::NumpadDivide,
         0x70..=0x87 => ShortcutKey::Function(value - 0x6f),
         _ => return None,
     })
@@ -1953,7 +1967,18 @@ mod user_toolbar_tests {
             assert_eq!(parse_user_toolbar_key(token), Some(key));
             assert_eq!(parse_user_toolbar_key(numeric), Some(key));
         }
-        assert_eq!(parse_user_toolbar_key("VK_PAUSE"), None);
+        for (token, numeric, key) in [
+            ("VK_PAUSE", "0x13", ShortcutKey::Pause),
+            ("VK_MULTIPLY", "0x6A", ShortcutKey::NumpadMultiply),
+            ("VK_ADD", "0x6B", ShortcutKey::NumpadAdd),
+            ("VK_SEPARATOR", "0x6C", ShortcutKey::NumpadSeparator),
+            ("VK_SUBTRACT", "0x6D", ShortcutKey::NumpadSubtract),
+            ("VK_DECIMAL", "0x6E", ShortcutKey::NumpadDecimal),
+            ("VK_DIVIDE", "0x6F", ShortcutKey::NumpadDivide),
+        ] {
+            assert_eq!(parse_user_toolbar_key(token), Some(key));
+            assert_eq!(parse_user_toolbar_key(numeric), Some(key));
+        }
         assert!(user_toolbar_shortcut(&["'a'".into(), "'b'".into()]).is_none());
     }
 

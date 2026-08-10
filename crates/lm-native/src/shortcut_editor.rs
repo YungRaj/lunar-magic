@@ -210,6 +210,13 @@ fn parse_key(value: &str) -> Result<ShortcutKey, String> {
         "mousemiddle" => Some(ShortcutKey::MouseMiddle),
         "mouseextra1" => Some(ShortcutKey::MouseExtra1),
         "mouseextra2" => Some(ShortcutKey::MouseExtra2),
+        "pause" => Some(ShortcutKey::Pause),
+        "numpadmultiply" => Some(ShortcutKey::NumpadMultiply),
+        "numpadadd" => Some(ShortcutKey::NumpadAdd),
+        "numpadseparator" => Some(ShortcutKey::NumpadSeparator),
+        "numpadsubtract" => Some(ShortcutKey::NumpadSubtract),
+        "numpaddecimal" => Some(ShortcutKey::NumpadDecimal),
+        "numpaddivide" => Some(ShortcutKey::NumpadDivide),
         _ => None,
     };
     if let Some(key) = named {
@@ -266,6 +273,13 @@ fn format_gesture(gesture: ShortcutGesture) -> String {
         ShortcutKey::MouseMiddle => "mousemiddle".into(),
         ShortcutKey::MouseExtra1 => "mouseextra1".into(),
         ShortcutKey::MouseExtra2 => "mouseextra2".into(),
+        ShortcutKey::Pause => "pause".into(),
+        ShortcutKey::NumpadMultiply => "numpadmultiply".into(),
+        ShortcutKey::NumpadAdd => "numpadadd".into(),
+        ShortcutKey::NumpadSeparator => "numpadseparator".into(),
+        ShortcutKey::NumpadSubtract => "numpadsubtract".into(),
+        ShortcutKey::NumpadDecimal => "numpaddecimal".into(),
+        ShortcutKey::NumpadDivide => "numpaddivide".into(),
     });
     parts.join("+")
 }
@@ -306,6 +320,13 @@ mod tests {
             "mousemiddle",
             "mouseextra1",
             "mouseextra2",
+            "pause",
+            "numpadmultiply",
+            "numpadadd",
+            "numpadseparator",
+            "numpadsubtract",
+            "numpaddecimal",
+            "numpaddivide",
             "primary+É",
         ] {
             let gesture = parse_gesture(value).unwrap();
