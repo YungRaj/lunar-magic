@@ -33,6 +33,9 @@ ruby -e 'b=File.binread(ARGV[0]); 318.times{|i| p=b.byteslice(0x1e6a70+i*4,4).un
 slots, all 317 named entries in their original order, the terminal sentinel, duplicate-name and
 shared-ID behavior, and successful `usertoolbar.txt` parsing of every named entry. `lm-native`
 rejects invented internal names before dispatch, distinguishes an authenticated but not-yet-routed
-command by its original ID, and currently routes 145 authenticated table entries to native commands
-or level-view actions. This closes command enumeration and prevents false acceptance, but does not
-claim that the remaining commands are implemented.
+command by its original ID, and currently routes 161 authenticated table entries to native commands,
+level-view actions, or the same native workflow used by the corresponding menu. The direct workflow
+set includes Help Contents/About, level analysis, restore-point creation/restoration, IPS
+creation/application, the authenticated Sprite 19 installer, the integrated object/sprite placers
+and their legacy aliases, and return-to-level routing. This closes command enumeration and prevents
+false acceptance, but does not claim that the remaining commands are implemented.

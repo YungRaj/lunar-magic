@@ -28,6 +28,13 @@ impl BuiltInRuntimeInstaller {
         }
     }
 
+    pub(crate) fn open_sprite19_fix(&mut self, app: &AppState) {
+        self.open(app);
+        if let Some(workspace) = self.workspace.as_mut() {
+            workspace.runtime = BuiltInRuntime::Sprite19Fix;
+        }
+    }
+
     pub(crate) fn show(
         &mut self,
         context: &egui::Context,
@@ -170,6 +177,26 @@ mod tests {
     use lm_profile::{smw_us_v1_custom_palette_installation, smw_us_v1_expanded_settings_layout};
     use lm_rom::{CopierHeader, Mapper, RomImage};
     use std::{fs, path::PathBuf};
+
+    #[test]
+    fn sprite19_toolbar_route_opens_the_exact_recovered_runtime() {
+        let mut app = AppState::default();
+        app.load_rom(crate::test_support::pristine_smw_us_rom_bytes())
+            .unwrap();
+        let mut installer = BuiltInRuntimeInstaller::default();
+        installer.open_sprite19_fix(&app);
+        assert_eq!(
+            installer
+                .workspace
+                .as_ref()
+                .unwrap()
+                .prepare(app.project_revision())
+                .unwrap(),
+            Command::InstallSprite19Fix {
+                rev: app.project_revision()
+            }
+        );
+    }
 
     #[test]
     fn pristine_rom_settings_install_reopens_and_undoes_exactly() {

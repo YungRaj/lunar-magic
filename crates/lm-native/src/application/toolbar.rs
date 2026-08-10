@@ -161,6 +161,10 @@ impl NativeApplication {
                     ));
                     return;
                 };
+                if let Some(action) = user_toolbar_native_action(name) {
+                    self.apply_user_toolbar_native_action(action);
+                    return;
+                }
                 if let Some(action) = user_toolbar_local_action(name) {
                     self.apply_user_toolbar_local_action(action);
                     return;
@@ -204,6 +208,49 @@ impl NativeApplication {
                 }
                 Err(error) => self.effects.error = Some(error),
             },
+        }
+    }
+
+    fn apply_user_toolbar_native_action(&mut self, action: UserToolbarNativeAction) {
+        match action {
+            UserToolbarNativeAction::HelpContents => self.help_dialog.open(),
+            UserToolbarNativeAction::HelpAbout => self.about_dialog.open(),
+            UserToolbarNativeAction::Sprite19Fix => {
+                self.built_in_runtime_installer.open_sprite19_fix(&self.app);
+            }
+            UserToolbarNativeAction::AnalyzeLevels => {
+                if let Err(error) = self.level_usage_dialog.open(&self.app) {
+                    self.effects.error = Some(error);
+                }
+            }
+            UserToolbarNativeAction::RestoreRom => {
+                if let Err(error) = self.restore_point_dialog.choose_and_open() {
+                    self.effects.error = Some(error);
+                }
+            }
+            UserToolbarNativeAction::CreateRestorePoint => {
+                if let Err(error) =
+                    crate::restore_point_dialog::create_full_for_open_project(&self.app)
+                {
+                    self.effects.error = Some(error);
+                }
+            }
+            UserToolbarNativeAction::CreateIps => {
+                if let Err(error) = self.ips_create_dialog.choose_and_start() {
+                    self.effects.error = Some(error);
+                }
+            }
+            UserToolbarNativeAction::ApplyIps => {
+                if let Err(error) = self.ips_patch_dialog.choose_and_start(&self.app) {
+                    self.effects.error = Some(error);
+                }
+            }
+            UserToolbarNativeAction::PlaceObject => {
+                self.vanilla_level_editor.toolbar_place_object();
+            }
+            UserToolbarNativeAction::PlaceSprite => {
+                self.vanilla_level_editor.toolbar_place_sprite();
+            }
         }
     }
 
@@ -766,8 +813,43 @@ fn user_toolbar_command(name: &str, current_level: Option<u16>) -> Option<Comman
         "LM_VIEW_16x16" | "LM_VIEW_16x16_OLD" => Command::ShowMap16,
         "LM_VIEW_8x8" => Command::ShowGraphics(0),
         "LM_VIEW_PALETTES" => Command::ShowPalette(0),
+        "LM_VIEW_BACK" | "LM_VIEW_BACK_OLD" => Command::SelectLevel(current_level?),
         "LM_KEY_EXANIM_SLOTS" => Command::ShowExAnimation(current_level.unwrap_or(0)),
         "LM_VIEW_LAYER_3_EDITOR" => Command::ShowLayer3(current_level?),
+        _ => return None,
+    })
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum UserToolbarNativeAction {
+    HelpContents,
+    HelpAbout,
+    Sprite19Fix,
+    AnalyzeLevels,
+    RestoreRom,
+    CreateRestorePoint,
+    CreateIps,
+    ApplyIps,
+    PlaceObject,
+    PlaceSprite,
+}
+
+fn user_toolbar_native_action(name: &str) -> Option<UserToolbarNativeAction> {
+    Some(match name {
+        "LM_HELP_CONTENTS" => UserToolbarNativeAction::HelpContents,
+        "LM_HELP_ABOUT" => UserToolbarNativeAction::HelpAbout,
+        "LM_KEY_SPRITE19_FIX" => UserToolbarNativeAction::Sprite19Fix,
+        "LM_FILE_ANALYZE_LEVELS" => UserToolbarNativeAction::AnalyzeLevels,
+        "LM_FILE_RESTORE" => UserToolbarNativeAction::RestoreRom,
+        "LM_FILE_CREATE_RESTORE" => UserToolbarNativeAction::CreateRestorePoint,
+        "LM_FILE_CREATE_IPS" => UserToolbarNativeAction::CreateIps,
+        "LM_FILE_APPLY_IPS" => UserToolbarNativeAction::ApplyIps,
+        "LM_VIEW_ADD_OBJECT" | "LM_VIEW_OBJECT" | "LM_VIEW_ADD_OBJECT_OLD" => {
+            UserToolbarNativeAction::PlaceObject
+        }
+        "LM_VIEW_ADD_SPRITE" | "LM_VIEW_SPRITE" | "LM_VIEW_ADD_SPRITE_OLD" => {
+            UserToolbarNativeAction::PlaceSprite
+        }
         _ => return None,
     })
 }
@@ -990,6 +1072,46 @@ mod user_toolbar_tests {
         assert_eq!(user_toolbar_command("LM_VIEW_LAYER_3_EDITOR", None), None);
         assert_eq!(user_toolbar_command("LM_UNKNOWN", None), None);
         assert_eq!(
+            user_toolbar_native_action("LM_HELP_CONTENTS"),
+            Some(UserToolbarNativeAction::HelpContents)
+        );
+        assert_eq!(
+            user_toolbar_native_action("LM_HELP_ABOUT"),
+            Some(UserToolbarNativeAction::HelpAbout)
+        );
+        assert_eq!(user_toolbar_native_action("LM_HELP_UNKNOWN"), None);
+        assert_eq!(
+            user_toolbar_native_action("LM_KEY_SPRITE19_FIX"),
+            Some(UserToolbarNativeAction::Sprite19Fix)
+        );
+        for (name, action) in [
+            (
+                "LM_FILE_ANALYZE_LEVELS",
+                UserToolbarNativeAction::AnalyzeLevels,
+            ),
+            ("LM_FILE_RESTORE", UserToolbarNativeAction::RestoreRom),
+            (
+                "LM_FILE_CREATE_RESTORE",
+                UserToolbarNativeAction::CreateRestorePoint,
+            ),
+            ("LM_FILE_CREATE_IPS", UserToolbarNativeAction::CreateIps),
+            ("LM_FILE_APPLY_IPS", UserToolbarNativeAction::ApplyIps),
+            ("LM_VIEW_ADD_OBJECT", UserToolbarNativeAction::PlaceObject),
+            ("LM_VIEW_OBJECT", UserToolbarNativeAction::PlaceObject),
+            (
+                "LM_VIEW_ADD_OBJECT_OLD",
+                UserToolbarNativeAction::PlaceObject,
+            ),
+            ("LM_VIEW_ADD_SPRITE", UserToolbarNativeAction::PlaceSprite),
+            ("LM_VIEW_SPRITE", UserToolbarNativeAction::PlaceSprite),
+            (
+                "LM_VIEW_ADD_SPRITE_OLD",
+                UserToolbarNativeAction::PlaceSprite,
+            ),
+        ] {
+            assert_eq!(user_toolbar_native_action(name), Some(action));
+        }
+        assert_eq!(
             user_toolbar_command("LM_FILE_CLOSE_ROM", None),
             Some(Command::Close)
         );
@@ -997,6 +1119,11 @@ mod user_toolbar_tests {
             user_toolbar_command("LM_VIEW_16x16_OLD", None),
             Some(Command::ShowMap16)
         );
+        assert_eq!(
+            user_toolbar_command("LM_VIEW_BACK", Some(0x106)),
+            Some(Command::SelectLevel(0x106))
+        );
+        assert_eq!(user_toolbar_command("LM_VIEW_BACK_OLD", None), None);
         assert_eq!(
             user_toolbar_local_action("LM_VIEW_LAYER_1"),
             Some(UserToolbarLocalAction::Layer1)
@@ -1182,9 +1309,10 @@ mod user_toolbar_tests {
             .filter(|entry| {
                 user_toolbar_command(entry.name, Some(0x105)).is_some()
                     || user_toolbar_local_action(entry.name).is_some()
+                    || user_toolbar_native_action(entry.name).is_some()
             })
             .collect::<Vec<_>>();
-        assert_eq!(supported.len(), 145);
+        assert_eq!(supported.len(), 161);
         assert!(
             supported
                 .iter()

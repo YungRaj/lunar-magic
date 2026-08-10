@@ -2331,6 +2331,18 @@ impl VanillaLevelEditor {
         self.zoom_popup_open = true;
     }
 
+    pub(crate) fn toolbar_place_object(&mut self) {
+        self.tools_panel_visible = Some(true);
+        self.placement_mode = Some(CanvasPlacementMode::Object);
+        self.error = None;
+    }
+
+    pub(crate) fn toolbar_place_sprite(&mut self) {
+        self.tools_panel_visible = Some(true);
+        self.placement_mode = Some(CanvasPlacementMode::Sprite);
+        self.error = None;
+    }
+
     pub(crate) fn toolbar_zoom_filter_toggle(&mut self) {
         self.zoom_filter = Some(!self.zoom_filter());
         self.invalidate_graphics_preview();
@@ -11513,6 +11525,26 @@ mod tests {
             CanvasPlacementMode::Layer2Tile,
             visibility
         ));
+    }
+
+    #[test]
+    fn authenticated_add_object_and_sprite_toolbar_routes_select_the_integrated_placer() {
+        let mut editor = VanillaLevelEditor {
+            tools_panel_visible: Some(false),
+            error: Some("old error".into()),
+            ..VanillaLevelEditor::default()
+        };
+        editor.toolbar_place_object();
+        assert_eq!(editor.tools_panel_visible, Some(true));
+        assert_eq!(editor.placement_mode, Some(CanvasPlacementMode::Object));
+        assert_eq!(editor.error, None);
+
+        editor.tools_panel_visible = Some(false);
+        editor.error = Some("old error".into());
+        editor.toolbar_place_sprite();
+        assert_eq!(editor.tools_panel_visible, Some(true));
+        assert_eq!(editor.placement_mode, Some(CanvasPlacementMode::Sprite));
+        assert_eq!(editor.error, None);
     }
 
     #[test]
