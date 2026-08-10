@@ -50,6 +50,19 @@ const ROM_LEVEL_TOOL_PANEL_WIDTH: f32 = 530.0;
 const STANDARD_SPRITE_MAX: u8 = 0xed;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum LevelToolPanel {
+    Settings,
+    Layer2,
+    Sprites,
+}
+
+impl LevelToolPanel {
+    const fn index(self) -> usize {
+        self as usize
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct EditorKey {
     revision: u64,
     level: u16,
@@ -397,6 +410,8 @@ pub(crate) struct VanillaLevelEditor {
     background_512_height: bool,
     translucent_overlays: bool,
     tools_panel_visible: Option<bool>,
+    tool_panel_generations: [u64; 3],
+    requested_tool_panel: Option<LevelToolPanel>,
     game_preview: Option<bool>,
     snes_viewport: Option<bool>,
     draw_selection_over_live: Option<bool>,
@@ -607,6 +622,7 @@ impl VanillaLevelEditor {
         });
         let workspace_size = ui.available_size();
         let tool_width = workspace_tool_width(workspace_size.x);
+        let requested_tool_panel = self.requested_tool_panel.take();
         let mut pending_command = None;
         ui.horizontal_top(|ui| {
             if self.tools_panel_visible() {
@@ -631,14 +647,24 @@ impl VanillaLevelEditor {
                     .show(&mut tool_ui, |ui| {
                         self.show_staged_history(ui);
                         egui::CollapsingHeader::new("Level and entrance settings")
-                            .id_salt("vanilla-level-settings")
+                            .id_salt((
+                                "vanilla-level-settings",
+                                self.tool_panel_generations[LevelToolPanel::Settings.index()],
+                            ))
+                            .default_open(requested_tool_panel == Some(LevelToolPanel::Settings))
                             .show(ui, |ui| {
                                 self.show_header_editor(ui, object_count, sprite_count);
                                 if pending_command.is_none() {
                                     pending_command = self.show_entrance_editor(ui, level);
                                 }
                             });
-                        self.show_layer2_editor(ui, custom_objects, custom_map16, toolbar_images);
+                        self.show_layer2_editor(
+                            ui,
+                            custom_objects,
+                            custom_map16,
+                            toolbar_images,
+                            requested_tool_panel == Some(LevelToolPanel::Layer2),
+                        );
                         egui::CollapsingHeader::new("Layer 1 objects")
                             .id_salt("vanilla-layer1-tools")
                             .default_open(true)
@@ -652,7 +678,11 @@ impl VanillaLevelEditor {
                                 );
                             });
                         egui::CollapsingHeader::new("Enemies and sprites")
-                            .id_salt("vanilla-sprite-tools")
+                            .id_salt((
+                                "vanilla-sprite-tools",
+                                self.tool_panel_generations[LevelToolPanel::Sprites.index()],
+                            ))
+                            .default_open(requested_tool_panel == Some(LevelToolPanel::Sprites))
                             .show(ui, |ui| {
                                 self.sprite_list(ui);
                                 self.sprite_editor(
@@ -793,6 +823,7 @@ impl VanillaLevelEditor {
         custom_objects: Option<&lm_level::OscResolvedTable>,
         custom_map16: Option<&lm_app::NativeMap16SidecarDocument>,
         toolbar_images: &MainToolbarImageSet,
+        requested_open: bool,
     ) {
         let Some(layer2) = self
             .controller
@@ -802,60 +833,68 @@ impl VanillaLevelEditor {
         else {
             return;
         };
-        ui.collapsing("Layer 2", |ui| match &layer2 {
-            lm_level::NativeLayer2Data::Tilemap(bytes) => {
-                let count = bytes.len() / 2;
-                self.selected_layer2_tile = self.selected_layer2_tile.min(count.saturating_sub(1));
-                ui.label(format!(
-                    "Compressed 32×32 background tilemap · selected storage word {}",
-                    self.selected_layer2_tile
-                ));
-                if layer2_tilemap_editable(self.shared_vanilla_background) {
-                    ui.horizontal_wrapped(|ui| {
-                        ui.label("Map16 word");
-                        ui.add(
-                            egui::DragValue::new(&mut self.layer2_word).hexadecimal(4, false, true),
-                        );
-                        if ui.button("Stage selected tile").clicked() {
-                            let result = self
-                                .controller
-                                .as_mut()
-                                .expect("controller presence checked above")
-                                .apply_layer2_tilemap_words(&[(
-                                    self.selected_layer2_tile,
-                                    self.layer2_word,
-                                )]);
-                            match result {
-                                Ok(()) => self.error = None,
-                                Err(error) => self.error = Some(error.to_string()),
+        egui::CollapsingHeader::new("Layer 2")
+            .id_salt((
+                "vanilla-layer2-tools",
+                self.tool_panel_generations[LevelToolPanel::Layer2.index()],
+            ))
+            .default_open(requested_open)
+            .show(ui, |ui| match &layer2 {
+                lm_level::NativeLayer2Data::Tilemap(bytes) => {
+                    let count = bytes.len() / 2;
+                    self.selected_layer2_tile =
+                        self.selected_layer2_tile.min(count.saturating_sub(1));
+                    ui.label(format!(
+                        "Compressed 32×32 background tilemap · selected storage word {}",
+                        self.selected_layer2_tile
+                    ));
+                    if layer2_tilemap_editable(self.shared_vanilla_background) {
+                        ui.horizontal_wrapped(|ui| {
+                            ui.label("Map16 word");
+                            ui.add(
+                                egui::DragValue::new(&mut self.layer2_word)
+                                    .hexadecimal(4, false, true),
+                            );
+                            if ui.button("Stage selected tile").clicked() {
+                                let result = self
+                                    .controller
+                                    .as_mut()
+                                    .expect("controller presence checked above")
+                                    .apply_layer2_tilemap_words(&[(
+                                        self.selected_layer2_tile,
+                                        self.layer2_word,
+                                    )]);
+                                match result {
+                                    Ok(()) => self.error = None,
+                                    Err(error) => self.error = Some(error.to_string()),
+                                }
                             }
-                        }
-                    });
-                    ui.small(
-                        "Choose “Paint Layer 2 tile” and click the canvas to write this word. \
+                        });
+                        ui.small(
+                            "Choose “Paint Layer 2 tile” and click the canvas to write this word. \
                          Selection follows Lunar Magic's column-major two-plane storage.",
-                    );
-                } else {
-                    ui.small(
+                        );
+                    } else {
+                        ui.small(
                         "This is a shared pristine SMW background. It remains read-only until the \
                          format-$103 Layer 2 runtime can be installed copy-on-write; editing the \
                          shared bank-$0C payload directly would change every level that uses it.",
                     );
+                    }
+                    self.show_layer2_tilemap_canvas(ui, bytes, toolbar_images);
                 }
-                self.show_layer2_tilemap_canvas(ui, bytes, toolbar_images);
-            }
-            lm_level::NativeLayer2Data::Objects(objects) => {
-                ui.label(format!(
-                    "{} native Layer 2 object records are decoded and rendered.",
-                    objects.objects.records.len()
-                ));
-                self.object_catalog(ui, custom_map16, true);
-                self.extended_object_catalog(ui, custom_map16, true);
-                self.custom_object_catalog(ui, custom_objects, custom_map16, true);
-                self.object_catalog_preview_area(ui, custom_objects, custom_map16, true);
-                self.show_layer2_object_editor(ui, &objects.objects.records, custom_objects);
-            }
-        });
+                lm_level::NativeLayer2Data::Objects(objects) => {
+                    ui.label(format!(
+                        "{} native Layer 2 object records are decoded and rendered.",
+                        objects.objects.records.len()
+                    ));
+                    self.object_catalog(ui, custom_map16, true);
+                    self.extended_object_catalog(ui, custom_map16, true);
+                    self.custom_object_catalog(ui, custom_objects, custom_map16, true);
+                    self.object_catalog_preview_area(ui, custom_objects, custom_map16, true);
+                    self.show_layer2_object_editor(ui, &objects.objects.records, custom_objects);
+                }
+            });
     }
 
     fn show_layer2_tilemap_canvas(
@@ -2526,6 +2565,13 @@ impl VanillaLevelEditor {
 
     pub(crate) fn toolbar_zoom_popup(&mut self) {
         self.zoom_popup_open = true;
+    }
+
+    pub(crate) fn toolbar_open_tool_panel(&mut self, panel: LevelToolPanel) {
+        self.tools_panel_visible = Some(true);
+        let generation = &mut self.tool_panel_generations[panel.index()];
+        *generation = generation.wrapping_add(1);
+        self.requested_tool_panel = Some(panel);
     }
 
     pub(crate) fn toolbar_place_object(&mut self) {
@@ -13457,6 +13503,26 @@ mod tests {
         assert_eq!(editor.canvas_entity_selection, None);
         assert!(editor.selected_sprite_group.is_empty());
         assert_eq!(editor.dragging_sprite, None);
+    }
+
+    #[test]
+    fn authenticated_level_editor_commands_reopen_the_matching_integrated_tool_panel() {
+        let mut editor = VanillaLevelEditor {
+            tools_panel_visible: Some(false),
+            ..VanillaLevelEditor::default()
+        };
+        for (generation, panel) in [
+            (1, LevelToolPanel::Layer2),
+            (1, LevelToolPanel::Sprites),
+            (1, LevelToolPanel::Settings),
+            (2, LevelToolPanel::Layer2),
+        ] {
+            editor.toolbar_open_tool_panel(panel);
+            assert_eq!(editor.tools_panel_visible, Some(true));
+            assert_eq!(editor.requested_tool_panel, Some(panel));
+            assert_eq!(editor.tool_panel_generations[panel.index()], generation);
+            editor.tools_panel_visible = Some(false);
+        }
     }
 
     #[test]

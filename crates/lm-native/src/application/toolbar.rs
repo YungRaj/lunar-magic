@@ -428,6 +428,9 @@ impl NativeApplication {
             UserToolbarNativeAction::PlaceSprite => {
                 self.vanilla_level_editor.toolbar_place_sprite();
             }
+            UserToolbarNativeAction::OpenLevelToolPanel(panel) => {
+                self.vanilla_level_editor.toolbar_open_tool_panel(panel);
+            }
             UserToolbarNativeAction::SelectAll => {
                 self.vanilla_level_editor.toolbar_select_all();
             }
@@ -1156,10 +1159,14 @@ fn user_toolbar_command(name: &str, current_level: Option<u16>) -> Option<Comman
         "LM_VIEW_OVERWORLD" => Command::ShowOverworld,
         "LM_VIEW_16x16" | "LM_VIEW_16x16_OLD" => Command::ShowMap16,
         "LM_VIEW_8x8" => Command::ShowGraphics(0),
+        "LM_LEVEL_GRAPHICS" => Command::ShowGraphics(current_level?),
         "LM_VIEW_PALETTES" => Command::ShowPalette(0),
         "LM_VIEW_BACK" | "LM_VIEW_BACK_OLD" => Command::SelectLevel(current_level?),
         "LM_KEY_EXANIM_SLOTS" => Command::ShowExAnimation(current_level.unwrap_or(0)),
-        "LM_VIEW_LAYER_3_EDITOR" => Command::ShowLayer3(current_level?),
+        "LM_LEVEL_EXTEND_ANI" => Command::ShowExAnimation(current_level?),
+        "LM_VIEW_LAYER_3_EDITOR" | "LM_LEVEL_LAYER3_SETTINGS" => {
+            Command::ShowLayer3(current_level?)
+        }
         _ => return None,
     })
 }
@@ -1185,6 +1192,7 @@ enum UserToolbarNativeAction {
     DeleteLevel,
     PlaceObject,
     PlaceSprite,
+    OpenLevelToolPanel(crate::vanilla_level_editor::LevelToolPanel),
     SelectAll,
     DeleteSelection,
     DeleteAll,
@@ -1233,6 +1241,18 @@ fn user_toolbar_native_action(name: &str) -> Option<UserToolbarNativeAction> {
         "LM_VIEW_ADD_SPRITE" | "LM_VIEW_SPRITE" | "LM_VIEW_ADD_SPRITE_OLD" => {
             UserToolbarNativeAction::PlaceSprite
         }
+        "LM_VIEW_BACKGROUND" | "LM_LEVEL_BG" => UserToolbarNativeAction::OpenLevelToolPanel(
+            crate::vanilla_level_editor::LevelToolPanel::Layer2,
+        ),
+        "LM_VIEW_SPRITE_DATA" | "LM_LEVEL_SPRITES" => UserToolbarNativeAction::OpenLevelToolPanel(
+            crate::vanilla_level_editor::LevelToolPanel::Sprites,
+        ),
+        "LM_LEVEL_ENTRANCE"
+        | "LM_LEVEL_PROPERTIES"
+        | "LM_LEVEL_OTHER"
+        | "LM_LEVEL_LAYER12_SETTINGS" => UserToolbarNativeAction::OpenLevelToolPanel(
+            crate::vanilla_level_editor::LevelToolPanel::Settings,
+        ),
         "LM_EDIT_SELECT_ALL" => UserToolbarNativeAction::SelectAll,
         "LM_EDIT_DELETE" => UserToolbarNativeAction::DeleteSelection,
         "LM_EDIT_DELETE_ALL" => UserToolbarNativeAction::DeleteAll,
@@ -1536,11 +1556,42 @@ mod user_toolbar_tests {
             user_toolbar_command("LM_VIEW_LAYER_3_EDITOR", Some(0x106)),
             Some(Command::ShowLayer3(0x106))
         );
+        assert_eq!(
+            user_toolbar_command("LM_LEVEL_GRAPHICS", Some(0x106)),
+            Some(Command::ShowGraphics(0x106))
+        );
+        assert_eq!(
+            user_toolbar_command("LM_LEVEL_EXTEND_ANI", Some(0x106)),
+            Some(Command::ShowExAnimation(0x106))
+        );
+        assert_eq!(
+            user_toolbar_command("LM_LEVEL_LAYER3_SETTINGS", Some(0x106)),
+            Some(Command::ShowLayer3(0x106))
+        );
         assert_eq!(user_toolbar_command("LM_VIEW_LAYER_3_EDITOR", None), None);
+        assert_eq!(user_toolbar_command("LM_LEVEL_GRAPHICS", None), None);
         assert_eq!(user_toolbar_command("LM_UNKNOWN", None), None);
         assert_eq!(
             user_toolbar_native_action("LM_HELP_CONTENTS"),
             Some(UserToolbarNativeAction::HelpContents)
+        );
+        assert_eq!(
+            user_toolbar_native_action("LM_LEVEL_BG"),
+            Some(UserToolbarNativeAction::OpenLevelToolPanel(
+                crate::vanilla_level_editor::LevelToolPanel::Layer2
+            ))
+        );
+        assert_eq!(
+            user_toolbar_native_action("LM_LEVEL_SPRITES"),
+            Some(UserToolbarNativeAction::OpenLevelToolPanel(
+                crate::vanilla_level_editor::LevelToolPanel::Sprites
+            ))
+        );
+        assert_eq!(
+            user_toolbar_native_action("LM_LEVEL_PROPERTIES"),
+            Some(UserToolbarNativeAction::OpenLevelToolPanel(
+                crate::vanilla_level_editor::LevelToolPanel::Settings
+            ))
         );
         assert_eq!(
             user_toolbar_native_action("LM_HELP_ABOUT"),
@@ -1914,12 +1965,32 @@ mod user_toolbar_tests {
                     || user_toolbar_native_action(entry.name).is_some()
             })
             .collect::<Vec<_>>();
-        assert_eq!(supported.len(), 209);
+        assert_eq!(supported.len(), 220);
         assert!(
             supported
                 .iter()
                 .all(|entry| { lm_app::user_toolbar_internal_command(entry.name).is_some() })
         );
+    }
+
+    #[test]
+    fn diagnostic_authenticated_internal_routes_partition_the_complete_original_table() {
+        let unsupported = lm_app::lunar_magic_363_user_toolbar_commands()
+            .filter(|entry| {
+                user_toolbar_command(entry.name, Some(0x105)).is_none()
+                    && user_toolbar_local_action(entry.name).is_none()
+                    && user_toolbar_native_action(entry.name).is_none()
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(unsupported.len(), 97);
+        if std::env::var_os("LM_DIAGNOSTIC_UNSUPPORTED_TOOLBAR_COMMANDS").is_some() {
+            for entry in unsupported {
+                eprintln!(
+                    "{:03}\t{:04X}\t{}",
+                    entry.slot, entry.command_id, entry.name
+                );
+            }
+        }
     }
 
     #[test]

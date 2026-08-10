@@ -628,6 +628,10 @@ interactive frontends cannot bypass confirmation and request correlation through
   over them, and clicks in the tiled margin cannot select or mutate a level/overworld/background
   cell. The compact background preview maps selection through Lunar Magic's two 16×32 storage
   planes rather than treating its bytes as a visually row-major array.
+  Authenticated level-editor user-toolbar aliases now enter the same current-level editors and
+  integrated tool panels as the native menu. Graphics, ExAnimation, and Layer 3 settings retain the
+  active level number; background/Layer 2, sprite-data, properties, other settings, Layer 1/2
+  settings, and entrance actions restore the tool column and reopen the matching collapsed section.
   Attached `.osc` metadata adds an active-tileset custom catalog searchable by hexadecimal
   object/parameter pair or description. Its composites resolve ordinary and external Map16
   definitions, while placement constructs the native command-derived 3–8-byte stream shape and
