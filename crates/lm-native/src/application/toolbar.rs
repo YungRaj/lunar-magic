@@ -568,6 +568,12 @@ impl NativeApplication {
             UserToolbarNativeAction::OverlapZOrder(traversal) => {
                 self.vanilla_level_editor.toolbar_overlap_z_order(traversal);
             }
+            UserToolbarNativeAction::ConditionalDirectMap16 => self
+                .vanilla_level_editor
+                .toolbar_edit_conditional_direct_map16(),
+            UserToolbarNativeAction::RemapDirectMap16 => {
+                self.vanilla_level_editor.toolbar_remap_direct_map16();
+            }
             UserToolbarNativeAction::ExpandRom(preset) => {
                 self.rom_expansion_dialog.open_preset(&self.app, preset);
             }
@@ -1351,6 +1357,8 @@ enum UserToolbarNativeAction {
     Nudge { x: i32, y: i32 },
     ZOrderStep { increase: bool },
     OverlapZOrder(crate::vanilla_level_editor::ZOrderTraversal),
+    ConditionalDirectMap16,
+    RemapDirectMap16,
     ExpandRom(RomExpansionPreset),
     ExportAllLevels,
     ExportModifiedLevels,
@@ -1452,6 +1460,8 @@ fn user_toolbar_native_action(name: &str) -> Option<UserToolbarNativeAction> {
         "LM_EDIT_SEND_TO_BACK" => UserToolbarNativeAction::OverlapZOrder(
             crate::vanilla_level_editor::ZOrderTraversal::Back,
         ),
+        "LM_EDIT_CDM16" => UserToolbarNativeAction::ConditionalDirectMap16,
+        "LM_EDIT_REMAP_DM16" => UserToolbarNativeAction::RemapDirectMap16,
         "LM_FILE_EXPAND_ROM2" => UserToolbarNativeAction::ExpandRom(RomExpansionPreset::LoRom2MiB),
         "LM_FILE_EXPAND_ROM3" => UserToolbarNativeAction::ExpandRom(RomExpansionPreset::LoRom3MiB),
         "LM_FILE_EXPAND_ROM4" => UserToolbarNativeAction::ExpandRom(RomExpansionPreset::LoRom4MiB),
@@ -1952,6 +1962,14 @@ mod user_toolbar_tests {
             ("LM_EDIT_CUT", UserToolbarNativeAction::Cut),
             ("LM_EDIT_PASTE", UserToolbarNativeAction::Paste),
             (
+                "LM_EDIT_CDM16",
+                UserToolbarNativeAction::ConditionalDirectMap16,
+            ),
+            (
+                "LM_EDIT_REMAP_DM16",
+                UserToolbarNativeAction::RemapDirectMap16,
+            ),
+            (
                 "LM_FILE_EXPAND_ROM2",
                 UserToolbarNativeAction::ExpandRom(RomExpansionPreset::LoRom2MiB),
             ),
@@ -2303,7 +2321,7 @@ mod user_toolbar_tests {
                     || user_toolbar_native_action(entry.name).is_some()
             })
             .collect::<Vec<_>>();
-        assert_eq!(supported.len(), 250);
+        assert_eq!(supported.len(), 252);
         assert!(
             supported
                 .iter()
@@ -2342,7 +2360,7 @@ mod user_toolbar_tests {
                     && user_toolbar_native_action(entry.name).is_none()
             })
             .collect::<Vec<_>>();
-        assert_eq!(unsupported.len(), 67);
+        assert_eq!(unsupported.len(), 65);
         if std::env::var_os("LM_DIAGNOSTIC_UNSUPPORTED_TOOLBAR_COMMANDS").is_some() {
             for entry in unsupported {
                 eprintln!(

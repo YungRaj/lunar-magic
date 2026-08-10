@@ -5570,3 +5570,24 @@ the same explicit Insert diagnostic as the keyboard path. Tests cover Layer 1, o
 2, sprites, horizontal coordinate recovery, canonical control-stream changes, missing context,
 commit/reopen, controller Undo, and application Undo. Authenticated native command coverage is now
 250 of 317 named table slots, leaving 67 pending.
+
+## Conditional and remapped Direct Map16 objects (`$2466/$2467`)
+
+The bundled 3.63 Help topics and the labeled Ghidra program agree on the model boundary.
+`ApplyExtendedObject27PropertiesToSelection` stores the conditional-presence bit in byte 2 bit 7,
+the `$00..=$7F` RAM-bit index in the optional eighth byte's low seven bits, and Always Show in that
+byte's high bit. Removing the check restores the ordinary seven-byte record. The renderer hides a
+non-Always-Show object while the condition view is off; Always Show retains the object and selects
+its second definition bank (`source + $100`) while the condition view is on.
+
+`RemapDirectMap16ObjectReferences` invokes the remapping worker, reports a no-match outcome without
+creating history, and otherwise rebuilds once, captures one undo snapshot, and reports the exact
+changed-object count. Rust implements the Help grammar for single tiles/ranges, fixed destinations,
+signed offsets, moving destinations, and rectangular ranges. A 32,768-entry pre-state table ensures
+that mappings never cascade and that later duplicate sources supersede earlier ones. Grouped
+objects match only their upper-left source and retain their complete pattern/output dimensions,
+coordinates, screen flags, and optional condition byte. Layer 1 and object-backed Layer 2 publish
+atomically through one controller snapshot. Focused tests cover every documented grammar example,
+rectangle geometry, malformed/out-of-range atomicity, cross-namespace `$27/$29` conversion, mixed
+selection, sprite rejection, both renderer states, one Undo boundary, and ROM save/reopen.
+Authenticated native command coverage is now 252 of 317 named table slots, leaving 65 pending.

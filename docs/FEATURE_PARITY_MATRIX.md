@@ -901,3 +901,15 @@ object-backed Layer 2, and sprites all insert at that cell; missing pointer cont
 explicit boundary, and commit/reopen plus application Undo are covered. This supersedes the 249/68
 count above: the authenticated partition is now **250 routed / 67 pending**. The aggregate remains
 59/65 because the configuration row is still Partial.
+
+Toolbar coverage update (2026-08-10, Direct Map16 editing): authenticated `LM_EDIT_CDM16`
+`$2466` and `LM_EDIT_REMAP_DM16` `$2467` now route to native staged dialogs. Conditional editing
+applies flag `$00..=$7F`, Always Show (`+$100` display bank), or flag removal to every selected
+Direct Map16 object in the active object layer as one Undo operation, while mixed ordinary-object
+selection is ignored and sprite selection rejects explicitly. Remapping implements the original
+hexadecimal single/range, fixed, signed-offset, moving (`M`), and rectangular (`R`) grammar,
+evaluates every source from pre-remap state, gives later duplicate mappings precedence, preserves
+group dimensions/conditions/coordinates, and changes Layer 1 plus object-backed Layer 2 through one
+failure-atomic history boundary. Save/reopen and renderer-state tests pass. This supersedes the
+250/67 count above: the authenticated partition is now **252 routed / 65 pending**. The aggregate
+remains 59/65 because the configuration row is still Partial.

@@ -211,6 +211,18 @@ struct ObjectForm {
     extended_command27_size: Option<(u8, u8)>,
 }
 
+#[derive(Clone, Debug)]
+struct ConditionalDirectMap16Form {
+    flag: String,
+    always_show: bool,
+    remove_flag_check: bool,
+}
+
+#[derive(Clone, Debug, Default)]
+struct DirectMap16RemapForm {
+    script: String,
+}
+
 #[derive(Clone, Debug, Default)]
 struct SpriteForm {
     header: u8,
@@ -477,6 +489,8 @@ pub(crate) struct VanillaLevelEditor {
     canvas_previous_zoom_percent: Option<u16>,
     zoom_filter: Option<bool>,
     zoom_popup_open: bool,
+    conditional_direct_map16_form: Option<ConditionalDirectMap16Form>,
+    direct_map16_remap_form: Option<DirectMap16RemapForm>,
     animation_playing: Option<bool>,
     animation_last_wall_seconds: f64,
     animation_time_offset_seconds: f64,
@@ -679,6 +693,8 @@ impl VanillaLevelEditor {
             }
         }
         self.show_zoom_popup(ui.ctx());
+        self.show_conditional_direct_map16_dialog(ui.ctx());
+        self.show_direct_map16_remap_dialog(ui.ctx());
         let Some(controller) = self.controller.as_ref() else {
             ui.colored_label(
                 egui::Color32::RED,
@@ -3160,6 +3176,130 @@ impl VanillaLevelEditor {
         self.toolbar_delete_selection();
     }
 
+    pub(crate) fn toolbar_edit_conditional_direct_map16(&mut self) {
+        let selected = match self.selected_direct_map16_records() {
+            Ok(selected) => selected,
+            Err(error) => {
+                self.error = Some(error);
+                return;
+            }
+        };
+        let common = selected
+            .first()
+            .and_then(|(_, record)| record.direct_map16_condition())
+            .filter(|condition| {
+                selected
+                    .iter()
+                    .all(|(_, record)| record.direct_map16_condition() == Some(*condition))
+            });
+        self.conditional_direct_map16_form = Some(ConditionalDirectMap16Form {
+            flag: common.map_or_else(|| "0".into(), |condition| format!("{:X}", condition.flag)),
+            always_show: common.is_some_and(|condition| condition.always_show),
+            remove_flag_check: false,
+        });
+        self.error = None;
+    }
+
+    pub(crate) fn toolbar_remap_direct_map16(&mut self) {
+        if self.controller.is_none() {
+            self.error = Some("Direct Map16 remapping requires an open level".into());
+            return;
+        }
+        self.direct_map16_remap_form = Some(DirectMap16RemapForm::default());
+        self.error = None;
+    }
+
+    fn selected_direct_map16_records(&self) -> Result<Vec<(usize, ObjectRecord)>, String> {
+        let controller = self
+            .controller
+            .as_ref()
+            .ok_or_else(|| "conditional Direct Map16 editing requires an open level".to_owned())?;
+        let (records, indexes): (&[ObjectRecord], Vec<usize>) = match self.canvas_entity_selection {
+            Some(CanvasEntitySelection::Layer1Object) => {
+                let records = &controller.level().layer1.objects.records;
+                let indexes = selected_indexes(&self.selected_object_group, self.selected_object);
+                (records, indexes)
+            }
+            Some(CanvasEntitySelection::Layer2Object) => {
+                let Some(lm_level::NativeLayer2Data::Objects(objects)) = controller.layer2() else {
+                    return Err("the current Layer 2 is not object-backed".into());
+                };
+                let records = &objects.objects.records;
+                let indexes = selected_indexes(
+                    &self.selected_layer2_object_group,
+                    self.selected_layer2_object,
+                );
+                (records, indexes)
+            }
+            Some(CanvasEntitySelection::Sprite) => {
+                return Err(
+                    "conditional Direct Map16 attributes cannot be applied to sprites".into(),
+                );
+            }
+            None => return Err("select one or more Direct Map16 Access objects first".into()),
+        };
+        let selected: Vec<_> = indexes
+            .into_iter()
+            .filter_map(|index| {
+                records
+                    .get(index)
+                    .filter(|record| record.direct_map16_fields().is_some())
+                    .cloned()
+                    .map(|record| (index, record))
+            })
+            .collect();
+        if selected.is_empty() {
+            Err("none of the selected objects use Direct Map16 Access".into())
+        } else {
+            Ok(selected)
+        }
+    }
+
+    fn apply_conditional_direct_map16_form(
+        &mut self,
+        form: &ConditionalDirectMap16Form,
+    ) -> Result<usize, String> {
+        let condition = if form.remove_flag_check {
+            None
+        } else {
+            let flag = u8::from_str_radix(form.flag.trim().trim_start_matches('$'), 16)
+                .map_err(|_| "flag number must be hexadecimal $00–$7F".to_owned())?;
+            if flag > 0x7f {
+                return Err("flag number must be hexadecimal $00–$7F".into());
+            }
+            Some(lm_level::DirectMap16Condition {
+                flag,
+                always_show: form.always_show,
+            })
+        };
+        let selected = self.selected_direct_map16_records()?;
+        let mut edits = Vec::new();
+        for (index, mut record) in selected {
+            if record.direct_map16_condition() != condition {
+                record
+                    .set_direct_map16_condition(condition)
+                    .map_err(|error| error.to_string())?;
+                edits.push(ObjectEdit::Replace { index, record });
+            }
+        }
+        if edits.is_empty() {
+            return Ok(0);
+        }
+        let changed = edits.len();
+        match self.canvas_entity_selection {
+            Some(CanvasEntitySelection::Layer1Object) => {
+                self.apply_object_result(Ok(NativeLevelEdit::Objects(edits)))
+            }
+            Some(CanvasEntitySelection::Layer2Object) => self.apply_layer2_object_result(Ok(edits)),
+            Some(CanvasEntitySelection::Sprite) | None => unreachable!(),
+        }
+        if self.error.is_some() {
+            Err(self.error.clone().unwrap_or_default())
+        } else {
+            Ok(changed)
+        }
+    }
+
     pub(crate) fn toolbar_escape(&mut self) {
         self.placement_mode = None;
         self.canvas_entity_selection = None;
@@ -3844,6 +3984,117 @@ impl VanillaLevelEditor {
             open = false;
         }
         self.zoom_popup_open = open;
+    }
+
+    fn show_conditional_direct_map16_dialog(&mut self, context: &egui::Context) {
+        let Some(mut form) = self.conditional_direct_map16_form.take() else {
+            return;
+        };
+        let mut open = true;
+        let mut apply = false;
+        let mut cancel = false;
+        egui::Window::new("Conditional Direct Map16 Access")
+            .id(egui::Id::new("conditional-direct-map16-dialog"))
+            .collapsible(false)
+            .resizable(false)
+            .open(&mut open)
+            .show(context, |ui| {
+                ui.label("Runtime flag ($7FC060–$7FC06F bit index)");
+                ui.add_enabled(
+                    !form.remove_flag_check,
+                    egui::TextEdit::singleline(&mut form.flag).desired_width(80.0),
+                );
+                ui.add_enabled(
+                    !form.remove_flag_check,
+                    egui::Checkbox::new(
+                        &mut form.always_show,
+                        "Always show objects (flag selects the +$100 tile bank)",
+                    ),
+                );
+                ui.checkbox(&mut form.remove_flag_check, "Remove flag check");
+                ui.horizontal(|ui| {
+                    apply = ui.button("Apply").clicked();
+                    cancel = ui.button("Cancel").clicked();
+                });
+            });
+        if apply {
+            match self.apply_conditional_direct_map16_form(&form) {
+                Ok(changed) => {
+                    self.error = Some(format!(
+                        "Changed {changed} Direct Map16 Access object{}.",
+                        if changed == 1 { "" } else { "s" }
+                    ));
+                    open = false;
+                }
+                Err(error) => self.error = Some(error),
+            }
+        }
+        if cancel {
+            open = false;
+        }
+        if open {
+            self.conditional_direct_map16_form = Some(form);
+        }
+    }
+
+    fn show_direct_map16_remap_dialog(&mut self, context: &egui::Context) {
+        let Some(mut form) = self.direct_map16_remap_form.take() else {
+            return;
+        };
+        let mut open = true;
+        let mut apply = false;
+        let mut cancel = false;
+        egui::Window::new("Remap Direct Map16 Access")
+            .id(egui::Id::new("direct-map16-remap-dialog"))
+            .collapsible(false)
+            .default_width(460.0)
+            .open(&mut open)
+            .show(context, |ui| {
+                ui.label("Hexadecimal source/destination pairs");
+                ui.add(
+                    egui::TextEdit::multiline(&mut form.script)
+                        .desired_rows(8)
+                        .hint_text("100-10F,M200\nR300-311,M400\n500,+20"),
+                );
+                ui.small("Use M for a moving destination, +/− for offsets, and R for rectangles.");
+                ui.horizontal(|ui| {
+                    apply = ui.button("Apply").clicked();
+                    cancel = ui.button("Cancel").clicked();
+                });
+            });
+        if apply {
+            let result = lm_level::DirectMap16RemapProgram::parse(&form.script)
+                .map_err(|error| error.to_string())
+                .and_then(|program| {
+                    self.controller
+                        .as_mut()
+                        .ok_or_else(|| "level controller is unavailable".to_owned())?
+                        .remap_direct_map16_objects(&program)
+                        .map_err(|error| error.to_string())
+                });
+            match result {
+                Ok(0) => {
+                    self.error = Some("No Direct Map16 Access objects matched the pattern.".into());
+                    open = false;
+                }
+                Ok(changed) => {
+                    self.reload_object_form();
+                    self.reload_layer2_object_form();
+                    self.error = Some(format!(
+                        "Changed {changed} Direct Map16 Access object{}.",
+                        if changed == 1 { "" } else { "s" }
+                    ));
+                    open = false;
+                }
+                Err(error) => self.error = Some(error),
+            }
+        }
+        if cancel {
+            open = false;
+        }
+        if open {
+            self.direct_map16_remap_form = Some(form);
+        }
     }
 
     pub(crate) fn toolbar_zoom_toggle(&mut self) {
@@ -14149,6 +14400,84 @@ mod tests {
         assert!(!editor.sprite_catalog_vertical_layout.unwrap_or(false));
         assert!(editor.sprite_catalog_preview_area.unwrap_or(true));
         assert_eq!(editor.sprite_catalog_preview_zoom.unwrap_or(100), 100);
+    }
+
+    #[test]
+    fn conditional_direct_map16_command_filters_mixed_selection_and_undoes_once() {
+        let bytes = crate::test_support::pristine_smw_us_rom_bytes();
+        let mut app = AppState::default();
+        app.load_rom(bytes).unwrap();
+        app.dispatch(Command::SelectLevel(0x105)).unwrap();
+        let snapshot = app.controller_snapshot().unwrap();
+        let mut editor = VanillaLevelEditor::default();
+        editor.load(
+            &snapshot,
+            EditorKey {
+                revision: snapshot.revision,
+                level: 0x105,
+                sprite_lengths_signature: ssc_sprite_lengths_signature(None),
+            },
+            None,
+        );
+        let direct = ObjectRecord::direct_map16_rectangle(0x120, 2, 1).unwrap();
+        editor
+            .controller
+            .as_mut()
+            .unwrap()
+            .apply_edits(&[NativeLevelEdit::Objects(vec![ObjectEdit::Replace {
+                index: 0,
+                record: direct.clone(),
+            }])])
+            .unwrap();
+        editor.canvas_entity_selection = Some(CanvasEntitySelection::Layer1Object);
+        editor.selected_object = 0;
+        editor.selected_object_group = vec![0, 1];
+        editor.toolbar_edit_conditional_direct_map16();
+        let mut form = editor.conditional_direct_map16_form.take().unwrap();
+        form.flag = "25".into();
+        form.always_show = true;
+        assert_eq!(
+            editor.apply_conditional_direct_map16_form(&form).unwrap(),
+            1
+        );
+        let record = &editor
+            .controller
+            .as_ref()
+            .unwrap()
+            .level()
+            .layer1
+            .objects
+            .records[0];
+        assert_eq!(
+            record.direct_map16_condition(),
+            Some(lm_level::DirectMap16Condition {
+                flag: 0x25,
+                always_show: true
+            })
+        );
+        assert!(editor.controller.as_mut().unwrap().undo());
+        assert_eq!(
+            editor
+                .controller
+                .as_ref()
+                .unwrap()
+                .level()
+                .layer1
+                .objects
+                .records[0],
+            direct
+        );
+
+        editor.canvas_entity_selection = Some(CanvasEntitySelection::Sprite);
+        editor.toolbar_edit_conditional_direct_map16();
+        assert!(
+            editor
+                .error
+                .as_deref()
+                .unwrap()
+                .contains("cannot be applied to sprites")
+        );
+        assert!(editor.conditional_direct_map16_form.is_none());
     }
 
     #[test]

@@ -1,9 +1,9 @@
 use crate::{ControllerSnapshot, EditorMode};
 use lm_level::{
-    CustomMusicError, CustomMusicTrack, CustomTimeError, CustomTimeSettings, HeaderValueError,
-    LegacyHeaderEdit, LevelEditError, MwlLayer2Descriptor, NATIVE_LAYER2_TILEMAP_LEN,
-    NativeLayer2Data, NativeSpriteRecordFields, ObjectEdit, ObjectEditError, ObjectStreamError,
-    SpriteRecord, SpriteToken,
+    CustomMusicError, CustomMusicTrack, CustomTimeError, CustomTimeSettings,
+    DirectMap16RemapProgram, HeaderValueError, LegacyHeaderEdit, LevelEditError,
+    MwlLayer2Descriptor, NATIVE_LAYER2_TILEMAP_LEN, NativeLayer2Data, NativeSpriteRecordFields,
+    ObjectEdit, ObjectEditError, ObjectFieldError, ObjectStreamError, SpriteRecord, SpriteToken,
 };
 use lm_project::{
     LevelLayer2IoError, LevelLayer2RomLayout, LevelLoadError, LevelRomLayout, LevelSaveError,
@@ -143,6 +143,7 @@ pub enum LevelControllerError {
         to: u8,
     },
     Layer2ObjectEdit(ObjectEditError),
+    DirectMap16(ObjectFieldError),
     Layer2TileIndex(usize),
     Layer2TileDuplicate(usize),
     NonCanonicalLayer2Encoding,
@@ -549,6 +550,30 @@ impl LevelController {
         Ok(())
     }
 
+    /// Remaps every matching Direct Map16 object in Layer 1 and object-backed Layer 2 as one
+    /// failure-atomic history operation. Each lookup uses the record's pre-remap source tile.
+    pub fn remap_direct_map16_objects(
+        &mut self,
+        program: &DirectMap16RemapProgram,
+    ) -> Result<usize, LevelControllerError> {
+        let previous = self.state();
+        let mut next = previous.clone();
+        let mut changed = 0;
+        for record in &mut next.level.layer1.objects.records {
+            changed += remap_direct_map16_record(record, program)?;
+        }
+        if let Some(NativeLayer2Data::Objects(objects)) = &mut next.layer2 {
+            for record in &mut objects.objects.records {
+                changed += remap_direct_map16_record(record, program)?;
+            }
+        }
+        if changed != 0 {
+            self.restore(next);
+            self.finish_edit(previous);
+        }
+        Ok(changed)
+    }
+
     /// Replaces selected little-endian Layer 2 tilemap words atomically.
     ///
     /// # Errors
@@ -608,6 +633,25 @@ impl LevelController {
             self.redo.clear();
         }
     }
+}
+
+fn remap_direct_map16_record(
+    record: &mut lm_level::ObjectRecord,
+    program: &DirectMap16RemapProgram,
+) -> Result<usize, LevelControllerError> {
+    let Some(source) = record
+        .direct_map16_fields()
+        .map(|fields| fields.source_tile)
+    else {
+        return Ok(0);
+    };
+    let Some(target) = program.remap(source).filter(|target| *target != source) else {
+        return Ok(0);
+    };
+    record
+        .set_direct_map16_source_tile(target)
+        .map_err(LevelControllerError::DirectMap16)?;
+    Ok(1)
 }
 
 fn reset_layer2_after_mode_change(

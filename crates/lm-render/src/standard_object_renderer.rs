@@ -806,6 +806,13 @@ pub fn render_mapped_standard_object_placement_with_view_state(
     view_state: LunarMagicConditionalViewState,
 ) -> Result<Option<NativeLevelMap16Cache>, StandardObjectRenderError> {
     if let Some(fields) = record.direct_map16_fields() {
+        if record
+            .direct_map16_condition()
+            .is_some_and(|condition| !condition.always_show)
+            && !view_state.conditional_direct_map16
+        {
+            return Ok(None);
+        }
         let mut cache = NativeLevelMap16Cache::filled(blank_tile);
         let fields = conditional_direct_map16_fields(record, fields, view_state);
         render_direct_map16_rectangle(&mut cache, layout, placement, fields)?;
@@ -843,13 +850,8 @@ fn conditional_direct_map16_fields(
 ) -> lm_level::DirectMap16Rectangle {
     if view_state.conditional_direct_map16
         && record
-            .encoded()
-            .get(2)
-            .is_some_and(|flags| flags & 0x80 != 0)
-        && record
-            .encoded()
-            .get(3)
-            .is_some_and(|flags| flags & 0x80 != 0)
+            .direct_map16_condition()
+            .is_some_and(|condition| condition.always_show)
     {
         fields.source_tile = fields.source_tile.saturating_add(0x100);
     }
@@ -5343,7 +5345,13 @@ mod tests {
 
     #[test]
     fn conditional_direct_map16_view_selects_the_second_definition_bank() {
-        let record = ObjectRecord::new(vec![0x40, 0x70, 0x80, 0xc1, 0x20, 0, 0]).unwrap();
+        let mut record = ObjectRecord::direct_map16_rectangle(0x120, 1, 1).unwrap();
+        record
+            .set_direct_map16_condition(Some(lm_level::DirectMap16Condition {
+                flag: 5,
+                always_show: true,
+            }))
+            .unwrap();
         let stream = ObjectStream {
             records: vec![record.clone()],
         };
@@ -5395,6 +5403,51 @@ mod tests {
         .unwrap()
         .unwrap();
         assert_eq!(ordinary_cache.get(layout(), 0, 0).unwrap(), 0x120);
+    }
+
+    #[test]
+    fn conditional_direct_map16_without_always_show_is_hidden_until_enabled() {
+        let mut record = ObjectRecord::direct_map16_rectangle(0x120, 1, 1).unwrap();
+        record
+            .set_direct_map16_condition(Some(lm_level::DirectMap16Condition {
+                flag: 5,
+                always_show: false,
+            }))
+            .unwrap();
+        let placement = ObjectStream {
+            records: vec![record.clone()],
+        }
+        .native_placements_for_orientation(false)[0];
+        let definitions = StandardObjectDefinitionSet::empty();
+        let handlers = [0xff; 64];
+        assert!(
+            render_mapped_standard_object_placement_with_view_state(
+                &record,
+                placement,
+                &definitions,
+                &handlers,
+                layout(),
+                0x25,
+                LunarMagicConditionalViewState {
+                    conditional_direct_map16: false,
+                    ..LunarMagicConditionalViewState::default()
+                },
+            )
+            .unwrap()
+            .is_none()
+        );
+        let visible = render_mapped_standard_object_placement_with_view_state(
+            &record,
+            placement,
+            &definitions,
+            &handlers,
+            layout(),
+            0x25,
+            LunarMagicConditionalViewState::default(),
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(visible.get(layout(), 0, 0).unwrap(), 0x120);
     }
 
     #[test]

@@ -19,6 +19,8 @@ pub enum ObjectFieldError {
     InvalidDirectMap16Source(u16),
     InvalidDirectMap16Pattern { width: u8, height: u8 },
     DirectMap16PatternCrossesBoundary,
+    NotDirectMap16,
+    InvalidDirectMap16ConditionFlag(u8),
 }
 
 impl std::fmt::Display for ObjectFieldError {
@@ -128,6 +130,78 @@ impl ObjectRecord {
             output_height: (self.encoded[6] & 0x7f) + 1,
         };
         fields.validate().ok().map(|()| fields)
+    }
+
+    /// Decodes Lunar Magic's optional Direct Map16 condition byte.
+    #[must_use]
+    pub fn direct_map16_condition(&self) -> Option<DirectMap16Condition> {
+        (self.direct_map16_fields().is_some() && self.encoded[2] & 0x80 != 0)
+            .then(|| self.encoded.get(7).copied())
+            .flatten()
+            .map(|condition| DirectMap16Condition {
+                flag: condition & 0x7f,
+                always_show: condition & 0x80 != 0,
+            })
+    }
+
+    /// Adds, replaces, or removes Lunar Magic's conditional Direct Map16 attributes.
+    ///
+    /// # Errors
+    ///
+    /// Rejects non-Direct-Map16 records and flag numbers outside the recovered `$00..=$7F`
+    /// bit-table range. Every other encoded field remains byte-exact.
+    pub fn set_direct_map16_condition(
+        &mut self,
+        condition: Option<DirectMap16Condition>,
+    ) -> Result<(), ObjectFieldError> {
+        if self.direct_map16_fields().is_none() {
+            return Err(ObjectFieldError::NotDirectMap16);
+        }
+        let mut candidate = self.encoded.clone();
+        match condition {
+            Some(condition) => {
+                if condition.flag > 0x7f {
+                    return Err(ObjectFieldError::InvalidDirectMap16ConditionFlag(
+                        condition.flag,
+                    ));
+                }
+                candidate[2] |= 0x80;
+                let encoded = condition.flag | if condition.always_show { 0x80 } else { 0 };
+                if candidate.len() == 7 {
+                    candidate.push(encoded);
+                } else {
+                    candidate[7] = encoded;
+                }
+            }
+            None => {
+                candidate[2] &= 0x7f;
+                candidate.truncate(7);
+            }
+        }
+        validate_candidate(&candidate)?;
+        self.encoded = candidate;
+        Ok(())
+    }
+
+    /// Changes only the upper-left source tile of a Direct Map16 object.
+    pub fn set_direct_map16_source_tile(
+        &mut self,
+        source_tile: u16,
+    ) -> Result<(), ObjectFieldError> {
+        let Some(mut fields) = self.direct_map16_fields() else {
+            return Err(ObjectFieldError::NotDirectMap16);
+        };
+        fields.source_tile = source_tile;
+        fields.validate()?;
+        let mut candidate = self.encoded.clone();
+        let command = if source_tile < 0x4000 { 0x27 } else { 0x29 };
+        candidate[0] = (candidate[0] & !0x60) | ((command & 0x30) << 1);
+        candidate[1] = (candidate[1] & 0x0f) | ((command & 0x0f) << 4);
+        candidate[3] = (candidate[3] & 0xc0) | ((source_tile >> 8) as u8 & 0x3f);
+        candidate[4] = source_tile as u8;
+        validate_candidate(&candidate)?;
+        self.encoded = candidate;
+        Ok(())
     }
 
     /// Changes only Lunar Magic's recovered extended command `$27` size fields.
@@ -435,6 +509,13 @@ pub struct DirectMap16Rectangle {
     pub pattern_height: u8,
     pub output_width: u8,
     pub output_height: u8,
+}
+
+/// Optional runtime condition attached to a Direct Map16 object.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct DirectMap16Condition {
+    pub flag: u8,
+    pub always_show: bool,
 }
 
 impl DirectMap16Rectangle {
@@ -754,6 +835,73 @@ mod tests {
             })
         );
         assert_eq!(record.extended_command27_tile_size(), Some((128, 128)));
+    }
+
+    #[test]
+    fn direct_map16_condition_add_replace_remove_is_exact() {
+        let mut record = ObjectRecord::direct_map16_rectangle(0x120, 2, 3).unwrap();
+        let ordinary = record.clone();
+        assert_eq!(record.direct_map16_condition(), None);
+        record
+            .set_direct_map16_condition(Some(DirectMap16Condition {
+                flag: 0x25,
+                always_show: true,
+            }))
+            .unwrap();
+        assert_eq!(record.encoded()[2] & 0x80, 0x80);
+        assert_eq!(record.encoded()[7], 0xa5);
+        assert_eq!(
+            record.direct_map16_condition(),
+            Some(DirectMap16Condition {
+                flag: 0x25,
+                always_show: true,
+            })
+        );
+        record
+            .set_direct_map16_condition(Some(DirectMap16Condition {
+                flag: 0x7f,
+                always_show: false,
+            }))
+            .unwrap();
+        assert_eq!(record.encoded()[7], 0x7f);
+        record.set_direct_map16_condition(None).unwrap();
+        assert_eq!(record, ordinary);
+    }
+
+    #[test]
+    fn direct_map16_source_edit_preserves_shape_coordinates_and_condition() {
+        let mut record = ObjectRecord::direct_map16_rectangle(0x3ffe, 2, 1).unwrap();
+        record
+            .set_coordinate_nibbles(ObjectCoordinateNibbles {
+                first: 4,
+                second: 9,
+            })
+            .unwrap();
+        record
+            .set_direct_map16_condition(Some(DirectMap16Condition {
+                flag: 7,
+                always_show: true,
+            }))
+            .unwrap();
+        let before = record.encoded().to_vec();
+        record.set_direct_map16_source_tile(0x4001).unwrap();
+        assert_eq!(record.direct_map16_fields().unwrap().source_tile, 0x4001);
+        assert_eq!(record.command_id(), 0x29);
+        assert_eq!(&record.encoded()[5..], &before[5..]);
+        assert_eq!(
+            record.coordinate_nibbles(),
+            ObjectCoordinateNibbles {
+                first: 4,
+                second: 9
+            }
+        );
+        assert_eq!(
+            record.direct_map16_condition(),
+            Some(DirectMap16Condition {
+                flag: 7,
+                always_show: true
+            })
+        );
     }
 
     #[test]

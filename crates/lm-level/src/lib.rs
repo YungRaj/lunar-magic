@@ -4,6 +4,7 @@ mod binary;
 mod complete_file;
 mod custom_object_library;
 mod custom_sprite_library;
+mod direct_map16_remap;
 mod dsc_display;
 mod dsc_materialize;
 mod dsc_sidecar;
@@ -57,6 +58,7 @@ pub use custom_object_library::{
 pub use custom_sprite_library::{
     CustomSpriteEntry, CustomSpriteLibrary, CustomSpriteLibraryError, MAX_CUSTOM_SPRITE_SIDECAR_LEN,
 };
+pub use direct_map16_remap::{DirectMap16RemapError, DirectMap16RemapProgram};
 pub use dsc_display::{DscDisplayContext, DscDisplayResolution};
 pub use dsc_materialize::{
     DscMaterialization, DscMaterializationContext, DscMaterializationError,
@@ -139,8 +141,9 @@ pub use object::{
 };
 pub use object_editing::{NativeObjectRecordFields, ObjectEdit, ObjectEditError};
 pub use object_fields::{
-    DirectMap16Rectangle, ObjectCoordinateNibbles, ObjectFieldError, ObjectScreenExit,
-    ObjectScreenJump, SCREEN_EXIT_REQUIRED_FLAG, ScreenExitObjectEncoding, ScreenJumpEncoding,
+    DirectMap16Condition, DirectMap16Rectangle, ObjectCoordinateNibbles, ObjectFieldError,
+    ObjectScreenExit, ObjectScreenJump, SCREEN_EXIT_REQUIRED_FLAG, ScreenExitObjectEncoding,
+    ScreenJumpEncoding,
 };
 pub use object_placement::NativeObjectPlacement;
 pub use object_relocation::ObjectRelocationError;

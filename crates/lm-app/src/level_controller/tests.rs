@@ -486,6 +486,106 @@ fn layer2_object_edits_share_history_and_commit_with_the_level() {
 }
 
 #[test]
+fn direct_map16_remap_updates_both_object_layers_with_one_undo_and_reopens() {
+    let mut app = AppState::default();
+    app.load_rom(layer2_object_test_rom()).unwrap();
+    let snapshot = app.controller_snapshot().unwrap();
+    let mut controller = LevelController::decode_with_layer2(
+        &snapshot,
+        layout(),
+        Some(layer2_layout()),
+        &SpriteLengthTable::standard(),
+    )
+    .unwrap();
+    let layer1 = ObjectRecord::direct_map16_rectangle(0x100, 2, 2).unwrap();
+    let mut layer2 = ObjectRecord::direct_map16_rectangle(0x110, 1, 1).unwrap();
+    layer2
+        .set_direct_map16_condition(Some(lm_level::DirectMap16Condition {
+            flag: 9,
+            always_show: true,
+        }))
+        .unwrap();
+    controller
+        .apply_edits(&[NativeLevelEdit::Objects(vec![ObjectEdit::Replace {
+            index: 0,
+            record: layer1,
+        }])])
+        .unwrap();
+    controller
+        .apply_layer2_object_edits(&[ObjectEdit::Replace {
+            index: 0,
+            record: layer2,
+        }])
+        .unwrap();
+
+    let before_remap = controller.state();
+    let program = DirectMap16RemapProgram::parse("100,M200 110,300").unwrap();
+    assert_eq!(controller.remap_direct_map16_objects(&program).unwrap(), 2);
+    assert_eq!(
+        controller.level().layer1.objects.records[0]
+            .direct_map16_fields()
+            .unwrap()
+            .source_tile,
+        0x200
+    );
+    let NativeLayer2Data::Objects(objects) = controller.layer2().unwrap() else {
+        panic!("expected object-backed Layer 2");
+    };
+    assert_eq!(
+        objects.objects.records[0]
+            .direct_map16_fields()
+            .unwrap()
+            .source_tile,
+        0x300
+    );
+    assert_eq!(
+        objects.objects.records[0].direct_map16_condition(),
+        Some(lm_level::DirectMap16Condition {
+            flag: 9,
+            always_show: true
+        })
+    );
+    assert!(controller.undo());
+    assert_eq!(controller.state(), before_remap);
+    assert!(controller.redo());
+
+    let layer2_options = LevelLayer2SaveOptions {
+        allocation: options().layer1_allocation,
+        previous_block: None,
+        reuse_identical: true,
+        erase_fill: 0xff,
+    };
+    let prepared = controller
+        .prepare_commit_with_layer2("Remap Direct Map16", &options(), &layer2_options, false)
+        .unwrap();
+    app.dispatch(prepared.into_command()).unwrap();
+    let reopened = LevelController::decode_with_layer2(
+        &app.controller_snapshot().unwrap(),
+        layout(),
+        Some(layer2_layout()),
+        &SpriteLengthTable::standard(),
+    )
+    .unwrap();
+    assert_eq!(
+        reopened.level().layer1.objects.records[0]
+            .direct_map16_fields()
+            .unwrap()
+            .source_tile,
+        0x200
+    );
+    let NativeLayer2Data::Objects(objects) = reopened.layer2().unwrap() else {
+        panic!("expected object-backed Layer 2");
+    };
+    assert_eq!(
+        objects.objects.records[0]
+            .direct_map16_fields()
+            .unwrap()
+            .source_tile,
+        0x300
+    );
+}
+
+#[test]
 fn level_mode_storage_change_requires_approval_resets_and_reopens_atomically() {
     let mut app = AppState::default();
     app.load_rom(layer2_object_test_rom()).unwrap();
