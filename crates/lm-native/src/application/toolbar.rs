@@ -574,6 +574,12 @@ impl NativeApplication {
             UserToolbarNativeAction::RemapDirectMap16 => {
                 self.vanilla_level_editor.toolbar_remap_direct_map16();
             }
+            UserToolbarNativeAction::TogglePropertiesWindow => {
+                self.vanilla_level_editor.toolbar_toggle_properties_window()
+            }
+            UserToolbarNativeAction::OpenManualEditDialog => {
+                self.vanilla_level_editor.toolbar_open_manual_edit_dialog()
+            }
             UserToolbarNativeAction::ExpandRom(preset) => {
                 self.rom_expansion_dialog.open_preset(&self.app, preset);
             }
@@ -1359,6 +1365,8 @@ enum UserToolbarNativeAction {
     OverlapZOrder(crate::vanilla_level_editor::ZOrderTraversal),
     ConditionalDirectMap16,
     RemapDirectMap16,
+    TogglePropertiesWindow,
+    OpenManualEditDialog,
     ExpandRom(RomExpansionPreset),
     ExportAllLevels,
     ExportModifiedLevels,
@@ -1462,6 +1470,8 @@ fn user_toolbar_native_action(name: &str) -> Option<UserToolbarNativeAction> {
         ),
         "LM_EDIT_CDM16" => UserToolbarNativeAction::ConditionalDirectMap16,
         "LM_EDIT_REMAP_DM16" => UserToolbarNativeAction::RemapDirectMap16,
+        "LM_EDIT_PROPERTIES" => UserToolbarNativeAction::TogglePropertiesWindow,
+        "LM_EDIT_EDIT_MANUAL" => UserToolbarNativeAction::OpenManualEditDialog,
         "LM_FILE_EXPAND_ROM2" => UserToolbarNativeAction::ExpandRom(RomExpansionPreset::LoRom2MiB),
         "LM_FILE_EXPAND_ROM3" => UserToolbarNativeAction::ExpandRom(RomExpansionPreset::LoRom3MiB),
         "LM_FILE_EXPAND_ROM4" => UserToolbarNativeAction::ExpandRom(RomExpansionPreset::LoRom4MiB),
@@ -1970,6 +1980,14 @@ mod user_toolbar_tests {
                 UserToolbarNativeAction::RemapDirectMap16,
             ),
             (
+                "LM_EDIT_PROPERTIES",
+                UserToolbarNativeAction::TogglePropertiesWindow,
+            ),
+            (
+                "LM_EDIT_EDIT_MANUAL",
+                UserToolbarNativeAction::OpenManualEditDialog,
+            ),
+            (
                 "LM_FILE_EXPAND_ROM2",
                 UserToolbarNativeAction::ExpandRom(RomExpansionPreset::LoRom2MiB),
             ),
@@ -2321,7 +2339,7 @@ mod user_toolbar_tests {
                     || user_toolbar_native_action(entry.name).is_some()
             })
             .collect::<Vec<_>>();
-        assert_eq!(supported.len(), 252);
+        assert_eq!(supported.len(), 254);
         assert!(
             supported
                 .iter()
@@ -2360,7 +2378,7 @@ mod user_toolbar_tests {
                     && user_toolbar_native_action(entry.name).is_none()
             })
             .collect::<Vec<_>>();
-        assert_eq!(unsupported.len(), 65);
+        assert_eq!(unsupported.len(), 63);
         if std::env::var_os("LM_DIAGNOSTIC_UNSUPPORTED_TOOLBAR_COMMANDS").is_some() {
             for entry in unsupported {
                 eprintln!(

@@ -491,6 +491,8 @@ pub(crate) struct VanillaLevelEditor {
     zoom_popup_open: bool,
     conditional_direct_map16_form: Option<ConditionalDirectMap16Form>,
     direct_map16_remap_form: Option<DirectMap16RemapForm>,
+    properties_window_open: bool,
+    manual_edit_dialog_open: bool,
     animation_playing: Option<bool>,
     animation_last_wall_seconds: f64,
     animation_time_offset_seconds: f64,
@@ -695,6 +697,7 @@ impl VanillaLevelEditor {
         self.show_zoom_popup(ui.ctx());
         self.show_conditional_direct_map16_dialog(ui.ctx());
         self.show_direct_map16_remap_dialog(ui.ctx());
+        self.show_modeless_entity_edit_windows(ui.ctx());
         let Some(controller) = self.controller.as_ref() else {
             ui.colored_label(
                 egui::Color32::RED,
@@ -3209,6 +3212,14 @@ impl VanillaLevelEditor {
         self.error = None;
     }
 
+    pub(crate) fn toolbar_toggle_properties_window(&mut self) {
+        self.properties_window_open = !self.properties_window_open;
+    }
+
+    pub(crate) fn toolbar_open_manual_edit_dialog(&mut self) {
+        self.manual_edit_dialog_open = true;
+    }
+
     fn selected_direct_map16_records(&self) -> Result<Vec<(usize, ObjectRecord)>, String> {
         let controller = self
             .controller
@@ -4094,6 +4105,147 @@ impl VanillaLevelEditor {
         }
         if open {
             self.direct_map16_remap_form = Some(form);
+        }
+    }
+
+    fn show_modeless_entity_edit_windows(&mut self, context: &egui::Context) {
+        if self.properties_window_open {
+            let mut open = true;
+            egui::Window::new("Object/Sprite Properties")
+                .id(egui::Id::new("level-entity-properties-window"))
+                .open(&mut open)
+                .resizable(true)
+                .show(context, |ui| self.show_selected_entity_properties(ui));
+            self.properties_window_open = open;
+        }
+        if self.manual_edit_dialog_open {
+            let mut open = true;
+            egui::Window::new("Edit Manual")
+                .id(egui::Id::new("level-entity-manual-edit-window"))
+                .open(&mut open)
+                .collapsible(false)
+                .resizable(true)
+                .show(context, |ui| self.show_selected_entity_manual_editor(ui));
+            self.manual_edit_dialog_open = open;
+        }
+    }
+
+    fn show_selected_entity_properties(&mut self, ui: &mut egui::Ui) {
+        match self.canvas_entity_selection {
+            Some(CanvasEntitySelection::Layer1Object) => {
+                ui.label(format!("Layer 1 object {}", self.selected_object));
+                show_compact_object_fields(
+                    ui,
+                    "modeless-layer1-object-properties",
+                    &mut self.object_form,
+                );
+                if ui.button("Apply properties").clicked() {
+                    let edit = self
+                        .selected_object_field_edits()
+                        .map(NativeLevelEdit::Objects);
+                    self.apply_object_result(edit);
+                }
+            }
+            Some(CanvasEntitySelection::Layer2Object) => {
+                ui.label(format!("Layer 2 object {}", self.selected_layer2_object));
+                show_compact_object_fields(
+                    ui,
+                    "modeless-layer2-object-properties",
+                    &mut self.layer2_object_form,
+                );
+                if ui.button("Apply properties").clicked() {
+                    let current = self.controller.as_ref().and_then(|controller| {
+                        controller.layer2().and_then(|layer2| match layer2 {
+                            lm_level::NativeLayer2Data::Objects(objects) => {
+                                objects.objects.records.get(self.selected_layer2_object)
+                            }
+                            lm_level::NativeLayer2Data::Tilemap(_) => None,
+                        })
+                    });
+                    let edits = object_field_edits(
+                        &self.layer2_object_form,
+                        self.selected_layer2_object,
+                        current,
+                    );
+                    self.apply_layer2_object_result(edits);
+                }
+            }
+            Some(CanvasEntitySelection::Sprite) => {
+                ui.label(format!("Sprite record {}", self.selected_sprite));
+                show_modeless_sprite_properties(ui, &mut self.sprite_form);
+                if ui
+                    .add_enabled(
+                        self.sprite_form.semantic_record,
+                        egui::Button::new("Apply properties"),
+                    )
+                    .clicked()
+                {
+                    self.apply_sprite_semantic_fields();
+                }
+            }
+            None => {
+                ui.label("Select one object or sprite to inspect its properties.");
+            }
+        }
+    }
+
+    fn show_selected_entity_manual_editor(&mut self, ui: &mut egui::Ui) {
+        let selection_count = match self.canvas_entity_selection {
+            Some(CanvasEntitySelection::Layer1Object) => self.selected_object_group.len().max(1),
+            Some(CanvasEntitySelection::Layer2Object) => {
+                self.selected_layer2_object_group.len().max(1)
+            }
+            Some(CanvasEntitySelection::Sprite) => self.selected_sprite_group.len().max(1),
+            None => 0,
+        };
+        if selection_count > 1 {
+            ui.label("Edit Manual requires exactly one selected object or sprite.");
+            return;
+        }
+        match self.canvas_entity_selection {
+            Some(CanvasEntitySelection::Layer1Object) => {
+                ui.label(format!("Layer 1 object {}", self.selected_object));
+                manual_record_field(ui, &mut self.object_form.encoded);
+                if ui.button("Apply complete record").clicked() {
+                    let edit = self.object_form.raw_record().map(|record| {
+                        NativeLevelEdit::Objects(vec![ObjectEdit::Replace {
+                            index: self.selected_object,
+                            record,
+                        }])
+                    });
+                    self.apply_object_result(edit);
+                }
+            }
+            Some(CanvasEntitySelection::Layer2Object) => {
+                ui.label(format!("Layer 2 object {}", self.selected_layer2_object));
+                manual_record_field(ui, &mut self.layer2_object_form.encoded);
+                if ui.button("Apply complete record").clicked() {
+                    let edit = self.layer2_object_form.raw_record().map(|record| {
+                        vec![ObjectEdit::Replace {
+                            index: self.selected_layer2_object,
+                            record,
+                        }]
+                    });
+                    self.apply_layer2_object_result(edit);
+                }
+            }
+            Some(CanvasEntitySelection::Sprite) => {
+                ui.label(format!("Sprite token {}", self.selected_sprite));
+                manual_record_field(ui, &mut self.sprite_form.encoded);
+                if ui.button("Apply complete record").clicked() {
+                    let edit = crate::native_level_document_form::parse_sprite_token(
+                        &self.sprite_form.encoded,
+                    )
+                    .map(|token| NativeLevelEdit::ReplaceSprite {
+                        index: self.selected_sprite,
+                        token,
+                    });
+                    self.apply_sprite_result(edit);
+                }
+            }
+            None => {
+                ui.label("Select one object or sprite to edit it manually.");
+            }
         }
     }
 
@@ -13473,6 +13625,29 @@ fn show_compact_object_fields(ui: &mut egui::Ui, id: &str, form: &mut ObjectForm
     });
 }
 
+fn show_modeless_sprite_properties(ui: &mut egui::Ui, form: &mut SpriteForm) {
+    if !form.semantic_record {
+        ui.small("The selected sprite-stream control has no editable placement properties.");
+        return;
+    }
+    egui::Grid::new("modeless-sprite-properties").show(ui, |ui| {
+        header_row(ui, "Sprite number", &mut form.sprite_number, 0xff);
+        header_row(ui, "Screen", &mut form.screen, 0xff);
+        header_row(ui, "X", &mut form.x, 0x0f);
+        header_row(ui, "Y", &mut form.y_low, 0x0f);
+        header_row(ui, "Extra bits", &mut form.extra_bits, 0x0f);
+    });
+}
+
+fn manual_record_field(ui: &mut egui::Ui, encoded: &mut String) {
+    ui.horizontal(|ui| {
+        ui.label("Bytes");
+        ui.text_edit_singleline(encoded)
+            .on_hover_text("Complete native record bytes separated by whitespace");
+    });
+    ui.small("The complete command-specific record is validated before any staged data changes.");
+}
+
 fn show_raw_object_record(ui: &mut egui::Ui, id: &str, form: &mut ObjectForm) {
     egui::CollapsingHeader::new("Raw native object record")
         .id_salt(id)
@@ -14478,6 +14653,41 @@ mod tests {
                 .contains("cannot be applied to sprites")
         );
         assert!(editor.conditional_direct_map16_form.is_none());
+    }
+
+    #[test]
+    fn properties_toggles_while_repeated_manual_requests_keep_the_dialog_open() {
+        let mut editor = VanillaLevelEditor::default();
+        assert!(!editor.properties_window_open);
+        assert!(!editor.manual_edit_dialog_open);
+        editor.toolbar_toggle_properties_window();
+        assert!(editor.properties_window_open);
+        assert!(!editor.manual_edit_dialog_open);
+        editor.toolbar_open_manual_edit_dialog();
+        assert!(editor.properties_window_open);
+        assert!(editor.manual_edit_dialog_open);
+        editor.toolbar_toggle_properties_window();
+        assert!(!editor.properties_window_open);
+        assert!(editor.manual_edit_dialog_open);
+        editor.toolbar_open_manual_edit_dialog();
+        assert!(editor.manual_edit_dialog_open);
+    }
+
+    #[test]
+    fn modeless_properties_and_manual_dialog_render_without_an_entity_selection() {
+        let context = egui::Context::default();
+        let mut editor = VanillaLevelEditor {
+            properties_window_open: true,
+            manual_edit_dialog_open: true,
+            ..VanillaLevelEditor::default()
+        };
+        let _ = context.run(egui::RawInput::default(), |context| {
+            egui::CentralPanel::default().show(context, |_ui| {
+                editor.show_modeless_entity_edit_windows(context);
+            });
+        });
+        assert!(editor.properties_window_open);
+        assert!(editor.manual_edit_dialog_open);
     }
 
     #[test]

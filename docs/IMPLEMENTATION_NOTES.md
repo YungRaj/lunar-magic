@@ -5591,3 +5591,17 @@ atomically through one controller snapshot. Focused tests cover every documented
 rectangle geometry, malformed/out-of-range atomicity, cross-namespace `$27/$29` conversion, mixed
 selection, sprite rejection, both renderer states, one Undo boundary, and ROM save/reopen.
 Authenticated native command coverage is now 252 of 317 named table slots, leaving 65 pending.
+
+## Properties and Edit Manual selection editors (`$2468/$2469`)
+
+These adjacent names have different lifecycles in the original. The Properties command belongs to
+the outer-window auxiliary-editor state and toggles a checked modeless surface. The level command
+lookup maps Edit Manual to the branch that calls `EditObjectAtSelectionOrCell` in object mode or
+`EditSpriteAtSelectionOrCell` in sprite mode, so repeated activation opens/reuses an editor instead
+of toggling it closed. Rust retains that distinction. The properties window follows the active
+Layer 1, object-backed Layer 2, or sprite selection and publishes through the existing semantic
+field transactions. Edit Manual exposes the complete native record, validates command-specific
+width before publication, requires exactly one selected entity, and uses the same atomic object or
+sprite replacement and Undo history as the integrated editor. Independent visibility/reuse tests,
+render-without-selection coverage, and authenticated route-partition tests bind the native path.
+Authenticated native command coverage is now 254 of 317 named table slots, leaving 63 pending.

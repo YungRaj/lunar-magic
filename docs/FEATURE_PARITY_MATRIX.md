@@ -913,3 +913,13 @@ group dimensions/conditions/coordinates, and changes Layer 1 plus object-backed 
 failure-atomic history boundary. Save/reopen and renderer-state tests pass. This supersedes the
 250/67 count above: the authenticated partition is now **252 routed / 65 pending**. The aggregate
 remains 59/65 because the configuration row is still Partial.
+
+Toolbar coverage update (2026-08-10, selection editors): `LM_EDIT_PROPERTIES` `$2468` now toggles
+an independent modeless properties window, while `LM_EDIT_EDIT_MANUAL` `$2469` opens (and repeated
+activation reuses) the manual editor dialog. Both follow the live Layer 1, object-backed Layer 2,
+or sprite selection and share the canonical semantic/raw validation and staged Undo paths; the
+manual dialog rejects multi-selection rather than applying a single-record edit ambiguously.
+Ghidra's outer-window visibility state plus level-dispatch `EditObjectAtSelectionOrCell` and
+`EditSpriteAtSelectionOrCell` establish the distinct toggle-versus-open lifecycles. This supersedes
+the 252/65 count above: the authenticated partition is now **254 routed / 63 pending**. The
+aggregate remains 59/65 because the configuration row is still Partial.
