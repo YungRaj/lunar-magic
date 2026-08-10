@@ -11,6 +11,7 @@ use windows_sys::Win32::Globalization::{
 use windows_sys::Win32::Storage::FileSystem::{
     BY_HANDLE_FILE_INFORMATION, GetFileInformationByHandle, GetShortPathNameW,
 };
+use windows_sys::Win32::UI::Shell::ShellExecuteW;
 
 const MAX_WINDOWS_PATH_UTF16_UNITS: usize = 32_768;
 
@@ -50,6 +51,56 @@ pub fn short_path(path: &std::path::Path) -> std::io::Result<std::path::PathBuf>
     Ok(std::path::PathBuf::from(std::ffi::OsString::from_wide(
         &output,
     )))
+}
+
+/// Opens a file, directory, URL, or other shell-associated target without retaining a process.
+///
+/// This matches the ownership boundary of `ShellExecuteW`: success does not imply that a child
+/// process was created, and no process handle is returned to the caller.
+pub fn shell_open(
+    target: &std::ffi::OsStr,
+    parameters: Option<&std::ffi::OsStr>,
+    directory: Option<&std::path::Path>,
+) -> std::io::Result<()> {
+    fn wide_nul(value: &std::ffi::OsStr) -> std::io::Result<Vec<u16>> {
+        let mut value = value.encode_wide().collect::<Vec<_>>();
+        if value.contains(&0) {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "ShellExecute text contains an interior NUL",
+            ));
+        }
+        value.push(0);
+        Ok(value)
+    }
+
+    let target = wide_nul(target)?;
+    let parameters = parameters.map(wide_nul).transpose()?;
+    let directory = directory
+        .map(|path| wide_nul(path.as_os_str()))
+        .transpose()?;
+    let result = unsafe {
+        // SAFETY: Every supplied pointer is either null or references a NUL-terminated UTF-16
+        // allocation retained across the call. A null owner and show mode 1 are valid inputs.
+        ShellExecuteW(
+            std::ptr::null_mut(),
+            std::ptr::null(),
+            target.as_ptr(),
+            parameters
+                .as_ref()
+                .map_or(std::ptr::null(), |value| value.as_ptr()),
+            directory
+                .as_ref()
+                .map_or(std::ptr::null(), |value| value.as_ptr()),
+            1,
+        )
+    };
+    let code = result as isize;
+    if code <= 32 {
+        Err(std::io::Error::from_raw_os_error(code as i32))
+    } else {
+        Ok(())
+    }
 }
 use windows_sys::Win32::System::{
     DataExchange::{

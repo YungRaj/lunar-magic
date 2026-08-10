@@ -1035,3 +1035,10 @@ native user-toolbar launcher. Focused policy tests prove per-button/global selec
 same-button de-duplication; a real two-child Unix process test proves concurrent ownership and
 cancellation. `cargo check -p lm-native --target x86_64-pc-windows-gnu` proves the conditional
 `CREATE_NO_WINDOW` launch path compiles.
+
+The same authenticated option table now binds `LM_OPEN_OTHER`. Rust routes it through the existing
+approval gate and a platform association opener, then intentionally retains no child ownership, as
+the original documentation requires. Focused tests bind option selection, macOS target/argument
+boundaries, and Windows quoting of empty, spaced, quoted, and trailing-backslash parameters; both
+`lm-windows` and `lm-native` cross-compile the `ShellExecuteW` path for
+`x86_64-pc-windows-gnu`.

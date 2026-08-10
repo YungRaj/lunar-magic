@@ -28,6 +28,7 @@ struct PendingTool {
 pub(crate) struct LaunchOptions {
     pub(crate) allow_multiple_instances: bool,
     pub(crate) hide_console_window: bool,
+    pub(crate) open_other: bool,
 }
 
 #[derive(Default)]
@@ -215,13 +216,18 @@ impl ExternalToolLauncher {
         std::thread::Builder::new()
             .name(format!("lm-tool-{tool_id}"))
             .spawn(move || {
-                let execution = external_tools::execute_cancellable(
-                    &invocation,
-                    &cancellation,
-                    external_tools::ProcessOptions {
-                        hide_console_window: options.hide_console_window,
-                    },
-                );
+                let execution = if options.open_other {
+                    external_tools::execute_associated(&invocation)
+                        .map(|()| external_tools::ProcessCompletion::Exited)
+                } else {
+                    external_tools::execute_cancellable(
+                        &invocation,
+                        &cancellation,
+                        external_tools::ProcessOptions {
+                            hide_console_window: options.hide_console_window,
+                        },
+                    )
+                };
                 drop(workspace);
                 let _send_result = sender.send(execution);
             })
@@ -457,6 +463,7 @@ mod tests {
                 LaunchOptions {
                     allow_multiple_instances: true,
                     hide_console_window: true,
+                    open_other: false,
                 },
             )
             .unwrap();
@@ -466,6 +473,7 @@ mod tests {
             LaunchOptions {
                 allow_multiple_instances: true,
                 hide_console_window: true,
+                open_other: false,
             }
         );
     }
@@ -487,6 +495,7 @@ mod tests {
                     options: LaunchOptions {
                         allow_multiple_instances: true,
                         hide_console_window: false,
+                        open_other: false,
                     },
                 })
                 .unwrap();

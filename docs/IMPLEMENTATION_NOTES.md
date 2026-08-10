@@ -5360,3 +5360,10 @@ same-button de-duplication; approved children run concurrently and retain indepe
 channels and UI identities. `LM_NO_CONSOLE_WINDOW` is applied only at the Windows process boundary
 as `CREATE_NO_WINDOW`. Other systems accept the portable toolbar configuration but make no false
 claim that a Windows console exists to hide.
+
+`LM_OPEN_OTHER` branches only after the ordinary permission approval. Windows passes a
+NUL-validated target, quoted parameter line, and optional working directory through the safe
+`lm-windows::shell_open` wrapper to `ShellExecuteW`; the API intentionally yields no process handle.
+macOS spawns `/usr/bin/open` and preserves optional application arguments after `--args`; other Unix
+systems spawn `xdg-open` only for an argument-free target. These opener processes are dropped
+immediately and the associated application is never entered into owned-child close/cancel state.

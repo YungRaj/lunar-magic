@@ -16,6 +16,39 @@ pub(crate) struct ProcessOptions {
     pub(crate) hide_console_window: bool,
 }
 
+pub(crate) fn execute_associated(invocation: &ToolInvocation) -> Result<(), String> {
+    #[cfg(windows)]
+    {
+        let parameters = windows_parameter_line(&invocation.arguments);
+        return lm_windows::shell_open(
+            invocation.executable.as_os_str(),
+            (!parameters.is_empty()).then(|| std::ffi::OsStr::new(&parameters)),
+            invocation.working_directory.as_deref(),
+        )
+        .map_err(|error| {
+            format!(
+                "could not open associated target {:?}: {error}",
+                invocation.tool_id
+            )
+        });
+    }
+    #[cfg(not(windows))]
+    {
+        let launch = associated_process_launch(invocation)?;
+        let mut command = ProcessCommand::new(&launch.executable);
+        command.args(&launch.arguments);
+        if let Some(directory) = &invocation.working_directory {
+            command.current_dir(directory);
+        }
+        command.spawn().map(|_| ()).map_err(|error| {
+            format!(
+                "could not open associated target {:?}: {error}",
+                invocation.tool_id
+            )
+        })
+    }
+}
+
 pub(crate) fn execute(invocation: &ToolInvocation) -> Result<(), String> {
     let launch = process_launch(invocation);
     let mut command = ProcessCommand::new(&launch.executable);
@@ -107,6 +140,69 @@ fn configure_process_options(command: &mut ProcessCommand, options: ProcessOptio
 #[cfg(not(windows))]
 fn configure_process_options(_command: &mut ProcessCommand, _options: ProcessOptions) {}
 
+fn windows_parameter_line(arguments: &[String]) -> String {
+    arguments
+        .iter()
+        .map(|argument| {
+            if !argument.is_empty()
+                && !argument
+                    .chars()
+                    .any(|character| matches!(character, ' ' | '\t' | '"'))
+            {
+                return argument.clone();
+            }
+            let mut quoted = String::from('"');
+            let mut backslashes = 0;
+            for character in argument.chars() {
+                if character == '\\' {
+                    backslashes += 1;
+                } else {
+                    if character == '"' {
+                        quoted.extend(std::iter::repeat_n('\\', backslashes * 2 + 1));
+                    } else {
+                        quoted.extend(std::iter::repeat_n('\\', backslashes));
+                    }
+                    backslashes = 0;
+                    quoted.push(character);
+                }
+            }
+            quoted.extend(std::iter::repeat_n('\\', backslashes * 2));
+            quoted.push('"');
+            quoted
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+#[cfg(not(windows))]
+fn associated_process_launch(invocation: &ToolInvocation) -> Result<ProcessLaunch, String> {
+    #[cfg(target_os = "macos")]
+    {
+        let mut arguments = vec![invocation.executable.as_os_str().to_owned()];
+        if !invocation.arguments.is_empty() {
+            arguments.push(OsString::from("--args"));
+            arguments.extend(invocation.arguments.iter().map(OsString::from));
+        }
+        Ok(ProcessLaunch {
+            executable: PathBuf::from("/usr/bin/open"),
+            arguments,
+        })
+    }
+    #[cfg(all(unix, not(target_os = "macos")))]
+    {
+        if !invocation.arguments.is_empty() {
+            return Err(
+                "associated opening with application arguments is unsupported on this platform"
+                    .into(),
+            );
+        }
+        Ok(ProcessLaunch {
+            executable: PathBuf::from("xdg-open"),
+            arguments: vec![invocation.executable.as_os_str().to_owned()],
+        })
+    }
+}
+
 #[derive(Debug, Eq, PartialEq)]
 struct ProcessLaunch {
     executable: PathBuf,
@@ -179,6 +275,42 @@ mod tests {
             ProcessLaunch {
                 executable: PathBuf::from("/tmp/Editor With Spaces"),
                 arguments: vec!["".into(), "two words".into(), "{literal}".into()],
+            }
+        );
+    }
+
+    #[test]
+    fn windows_association_parameters_quote_empty_whitespace_quotes_and_trailing_slashes() {
+        assert_eq!(
+            windows_parameter_line(&[
+                "plain".into(),
+                String::new(),
+                "two words".into(),
+                "quote\"here".into(),
+                "C:\\tail\\".into(),
+            ]),
+            r#"plain "" "two words" "quote\"here" C:\tail\"#
+        );
+        assert_eq!(
+            windows_parameter_line(&["C:\\tail space\\".into()]),
+            "\"C:\\tail space\\\\\""
+        );
+    }
+
+    #[test]
+    #[cfg(target_os = "macos")]
+    fn associated_targets_use_the_platform_opener_and_preserve_application_arguments() {
+        let invocation = process("/tmp/document with spaces.bin", &["", "two words"]);
+        assert_eq!(
+            associated_process_launch(&invocation).unwrap(),
+            ProcessLaunch {
+                executable: PathBuf::from("/usr/bin/open"),
+                arguments: vec![
+                    "/tmp/document with spaces.bin".into(),
+                    "--args".into(),
+                    "".into(),
+                    "two words".into(),
+                ],
             }
         );
     }

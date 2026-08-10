@@ -624,6 +624,10 @@ fn user_toolbar_launch_options(
             .options
             .iter()
             .any(|option| option == "LM_NO_CONSOLE_WINDOW"),
+        open_other: button
+            .options
+            .iter()
+            .any(|option| option == "LM_OPEN_OTHER"),
     }
 }
 
@@ -1747,6 +1751,7 @@ mod user_toolbar_tests {
             crate::external_tool_launcher::LaunchOptions {
                 allow_multiple_instances: true,
                 hide_console_window: true,
+                open_other: false,
             }
         );
         assert_eq!(
@@ -1754,15 +1759,20 @@ mod user_toolbar_tests {
             crate::external_tool_launcher::LaunchOptions {
                 allow_multiple_instances: true,
                 hide_console_window: false,
+                open_other: false,
             }
         );
         let individual = lm_app::UserToolbar::parse(
-            "***START***\n\"one\"\nLM_DEFAULT\nLM_ALLOW_MULT_INSTANCES\n***END***",
+            "***START***\n\"one\"\nLM_DEFAULT\nLM_ALLOW_MULT_INSTANCES,LM_OPEN_OTHER\n***END***",
         )
         .unwrap();
-        assert!(
-            user_toolbar_launch_options(Some(&individual), &individual.buttons[0])
-                .allow_multiple_instances
+        assert_eq!(
+            user_toolbar_launch_options(Some(&individual), &individual.buttons[0]),
+            crate::external_tool_launcher::LaunchOptions {
+                allow_multiple_instances: true,
+                hide_console_window: false,
+                open_other: true,
+            }
         );
     }
 

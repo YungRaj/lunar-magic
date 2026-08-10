@@ -54,3 +54,10 @@ identity, supports cancelling every child owned by one button, and suppresses du
 running requests under the default single-instance policy. On Windows only, the no-console option
 adds `CREATE_NO_WINDOW` to the direct `std::process::Command`; it does not invoke a shell or affect
 other platforms.
+
+`LM_OPEN_OTHER` now takes the separate association-opening route promised by the same table. On
+Windows a bounded UTF-16 `ShellExecuteW` wrapper receives the target, correctly quoted parameter
+line, and optional working directory. macOS uses one direct `/usr/bin/open` process, and other Unix
+systems use `xdg-open` while rejecting unsupported extra application arguments rather than dropping
+them. Completion deliberately retains no opened-application child handle, so later close/notify
+policies cannot falsely claim ownership.
