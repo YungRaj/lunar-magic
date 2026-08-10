@@ -159,6 +159,13 @@ pub(crate) fn apply_native_level_edits(
                     .adjust_record_z_order(selected, *increase, vertical)
                     .map_err(|error| LevelControllerError::SpriteEdit { command, error })?;
             }
+            NativeLevelEdit::ReorderSpriteZOrder { order, selected } => {
+                let vertical =
+                    lm_profile::smw_us_v1_level_mode(staged_layer1.header.level_mode()).vertical;
+                staged_sprites
+                    .reorder_records_for_z_order(order, selected, vertical)
+                    .map_err(|error| LevelControllerError::SpriteEdit { command, error })?;
+            }
             NativeLevelEdit::RelocateExpandedSprite {
                 selected,
                 screen,

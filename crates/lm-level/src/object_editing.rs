@@ -102,6 +102,10 @@ pub enum ObjectEdit {
         selected: Vec<usize>,
         increase: bool,
     },
+    ReorderOrdinaryZOrder {
+        order: Vec<usize>,
+        selected: Vec<usize>,
+    },
 }
 
 /// Proven semantic fields of one positioned native object record.
@@ -284,6 +288,10 @@ impl ObjectStream {
                     .map_err(LevelEditError::ObjectRelocation),
                 ObjectEdit::AdjustOrdinaryZOrder { selected, increase } => staged
                     .adjust_ordinary_object_z_order(selected, *increase)
+                    .map(drop)
+                    .map_err(LevelEditError::ObjectRelocation),
+                ObjectEdit::ReorderOrdinaryZOrder { order, selected } => staged
+                    .reorder_ordinary_objects(order, selected)
                     .map(drop)
                     .map_err(LevelEditError::ObjectRelocation),
             };

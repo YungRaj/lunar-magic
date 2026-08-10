@@ -301,6 +301,9 @@ impl NativeApplication {
             UserToolbarNativeAction::ZOrderStep { increase } => {
                 self.vanilla_level_editor.toolbar_z_order_step(increase);
             }
+            UserToolbarNativeAction::OverlapZOrder(traversal) => {
+                self.vanilla_level_editor.toolbar_overlap_z_order(traversal);
+            }
             UserToolbarNativeAction::ExpandRom(preset) => {
                 self.rom_expansion_dialog.open_preset(&self.app, preset);
             }
@@ -934,6 +937,7 @@ enum UserToolbarNativeAction {
     Paste,
     Nudge { x: i32, y: i32 },
     ZOrderStep { increase: bool },
+    OverlapZOrder(crate::vanilla_level_editor::ZOrderTraversal),
     ExpandRom(RomExpansionPreset),
     ExportAllLevels,
     ExtractGraphics(QuickGraphicsExtraction),
@@ -973,6 +977,18 @@ fn user_toolbar_native_action(name: &str) -> Option<UserToolbarNativeAction> {
         "LM_EDIT_DECREASE_Y" => UserToolbarNativeAction::Nudge { x: 0, y: -1 },
         "LM_EDIT_ZORDER_UP" => UserToolbarNativeAction::ZOrderStep { increase: true },
         "LM_EDIT_ZORDER_DOWN" => UserToolbarNativeAction::ZOrderStep { increase: false },
+        "LM_EDIT_BRING_FORWARD" => UserToolbarNativeAction::OverlapZOrder(
+            crate::vanilla_level_editor::ZOrderTraversal::Forward,
+        ),
+        "LM_EDIT_SEND_BACKWARD" => UserToolbarNativeAction::OverlapZOrder(
+            crate::vanilla_level_editor::ZOrderTraversal::Backward,
+        ),
+        "LM_EDIT_BRING_TO_FRONT" => UserToolbarNativeAction::OverlapZOrder(
+            crate::vanilla_level_editor::ZOrderTraversal::Front,
+        ),
+        "LM_EDIT_SEND_TO_BACK" => UserToolbarNativeAction::OverlapZOrder(
+            crate::vanilla_level_editor::ZOrderTraversal::Back,
+        ),
         "LM_FILE_EXPAND_ROM2" => UserToolbarNativeAction::ExpandRom(RomExpansionPreset::LoRom2MiB),
         "LM_FILE_EXPAND_ROM3" => UserToolbarNativeAction::ExpandRom(RomExpansionPreset::LoRom3MiB),
         "LM_FILE_EXPAND_ROM4" => UserToolbarNativeAction::ExpandRom(RomExpansionPreset::LoRom4MiB),
@@ -1536,7 +1552,7 @@ mod user_toolbar_tests {
                     || user_toolbar_native_action(entry.name).is_some()
             })
             .collect::<Vec<_>>();
-        assert_eq!(supported.len(), 193);
+        assert_eq!(supported.len(), 197);
         assert!(
             supported
                 .iter()

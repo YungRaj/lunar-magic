@@ -315,6 +315,14 @@ enum CanvasEntityShortcut {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum ZOrderTraversal {
+    Forward,
+    Backward,
+    Front,
+    Back,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct CanvasObjectGroupDrag {
     domain: CanvasEntitySelection,
     origin_major: i32,
@@ -427,6 +435,9 @@ pub(crate) struct VanillaLevelEditor {
     external_asset_revision: u64,
     external_sprite_textures:
         HashMap<lm_render::RemappedCustomSpritePreviewTile, egui::TextureHandle>,
+    layer1_z_order_bounds: HashMap<usize, egui::Rect>,
+    layer2_z_order_bounds: HashMap<usize, egui::Rect>,
+    sprite_z_order_bounds: HashMap<usize, egui::Rect>,
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -1294,6 +1305,7 @@ impl VanillaLevelEditor {
     }
 
     fn refresh_forms_after_history(&mut self) {
+        self.clear_z_order_bounds();
         let Some(controller) = self.controller.as_ref() else {
             return;
         };
@@ -1375,6 +1387,7 @@ impl VanillaLevelEditor {
         key: EditorKey,
         custom_sprites: Option<&lm_level::SscResolvedTable>,
     ) {
+        self.clear_z_order_bounds();
         self.pending_layer2_mode_reset = None;
         self.canvas_entity_selection = None;
         if let Err(error) = validate_builtin_graphics_layout(snapshot) {
@@ -1553,6 +1566,7 @@ impl VanillaLevelEditor {
     }
 
     fn clear(&mut self) {
+        self.clear_z_order_bounds();
         self.key = None;
         self.controller = None;
         self.pending_expansion_commit = None;
@@ -2805,6 +2819,177 @@ impl VanillaLevelEditor {
         }
     }
 
+    pub(crate) fn toolbar_overlap_z_order(&mut self, traversal: ZOrderTraversal) {
+        let Some(domain) = self.canvas_entity_selection else {
+            self.error = Some("Z-order adjustment requires an object or sprite selection".into());
+            return;
+        };
+        let Some(controller) = self.controller.as_mut() else {
+            self.error = Some("level controller is unavailable".into());
+            return;
+        };
+        match domain {
+            CanvasEntitySelection::Layer1Object | CanvasEntitySelection::Layer2Object => {
+                let (selected, bounds, stream) = match domain {
+                    CanvasEntitySelection::Layer1Object => (
+                        selected_indexes(&self.selected_object_group, self.selected_object),
+                        &self.layer1_z_order_bounds,
+                        &controller.level().layer1.objects,
+                    ),
+                    CanvasEntitySelection::Layer2Object => {
+                        let Some(lm_level::NativeLayer2Data::Objects(layer2)) = controller.layer2()
+                        else {
+                            self.error =
+                                Some("the current level does not use object-backed Layer 2".into());
+                            return;
+                        };
+                        (
+                            selected_indexes(
+                                &self.selected_layer2_object_group,
+                                self.selected_layer2_object,
+                            ),
+                            &self.layer2_z_order_bounds,
+                            &layer2.objects,
+                        )
+                    }
+                    CanvasEntitySelection::Sprite => unreachable!(),
+                };
+                let order = stream
+                    .native_placements()
+                    .into_iter()
+                    .map(|placement| placement.record_index)
+                    .collect::<Vec<_>>();
+                let reordered = match overlap_z_order_permutation(
+                    &order,
+                    &selected,
+                    bounds,
+                    traversal,
+                    |_, _| true,
+                ) {
+                    Ok(reordered) => reordered,
+                    Err(error) => {
+                        self.error = Some(error);
+                        return;
+                    }
+                };
+                if reordered == order {
+                    self.error = None;
+                    return;
+                }
+                let mut predicted = stream.clone();
+                let moved = match predicted.reorder_ordinary_objects(&reordered, &selected) {
+                    Ok(moved) => moved,
+                    Err(error) => {
+                        self.error = Some(error.to_string());
+                        return;
+                    }
+                };
+                let edit = ObjectEdit::ReorderOrdinaryZOrder {
+                    order: reordered,
+                    selected,
+                };
+                let result = match domain {
+                    CanvasEntitySelection::Layer1Object => {
+                        controller.apply_edits(&[NativeLevelEdit::Objects(vec![edit])])
+                    }
+                    CanvasEntitySelection::Layer2Object => {
+                        controller.apply_layer2_object_edits(&[edit])
+                    }
+                    CanvasEntitySelection::Sprite => unreachable!(),
+                };
+                match result {
+                    Ok(()) => {
+                        match domain {
+                            CanvasEntitySelection::Layer1Object => {
+                                self.selected_object_group = moved;
+                                self.selected_object = self.selected_object_group[0];
+                                self.reload_object_form();
+                            }
+                            CanvasEntitySelection::Layer2Object => {
+                                self.selected_layer2_object_group = moved;
+                                self.selected_layer2_object = self.selected_layer2_object_group[0];
+                                self.reload_layer2_object_form();
+                            }
+                            CanvasEntitySelection::Sprite => unreachable!(),
+                        }
+                        self.error = None;
+                    }
+                    Err(error) => self.error = Some(error.to_string()),
+                }
+            }
+            CanvasEntitySelection::Sprite => {
+                let selected = selected_indexes(&self.selected_sprite_group, self.selected_sprite);
+                let vertical =
+                    lm_profile::smw_us_v1_level_mode(controller.level().layer1.header.level_mode())
+                        .vertical;
+                let expanded = controller.level().sprites.expanded;
+                let placements = controller.level().sprites.native_placements();
+                let groups = placements
+                    .iter()
+                    .map(|placement| {
+                        (
+                            placement.token_index,
+                            (
+                                placement.screen,
+                                if expanded { placement.minor / 32 } else { 0 },
+                                if expanded && vertical {
+                                    placement.minor & 0x0f
+                                } else {
+                                    0
+                                },
+                            ),
+                        )
+                    })
+                    .collect::<HashMap<_, _>>();
+                let order = placements
+                    .iter()
+                    .map(|placement| placement.token_index)
+                    .collect::<Vec<_>>();
+                let reordered = match overlap_z_order_permutation(
+                    &order,
+                    &selected,
+                    &self.sprite_z_order_bounds,
+                    traversal,
+                    |left, right| groups.get(left) == groups.get(right),
+                ) {
+                    Ok(reordered) => reordered,
+                    Err(error) => {
+                        self.error = Some(error);
+                        return;
+                    }
+                };
+                if reordered == order {
+                    self.error = None;
+                    return;
+                }
+                let mut predicted = controller.level().sprites.clone();
+                let moved =
+                    match predicted.reorder_records_for_z_order(&reordered, &selected, vertical) {
+                        Ok(moved) => moved,
+                        Err(error) => {
+                            self.error = Some(error.to_string());
+                            return;
+                        }
+                    };
+                match controller.apply_edits(&[NativeLevelEdit::ReorderSpriteZOrder {
+                    order: reordered,
+                    selected,
+                }]) {
+                    Ok(()) => {
+                        self.selected_sprite_group = moved;
+                        self.selected_sprite = self.selected_sprite_group[0];
+                        self.sprite_form = SpriteForm::from_token(
+                            controller.level().sprites.header,
+                            controller.level().sprites.tokens.get(self.selected_sprite),
+                        );
+                        self.error = None;
+                    }
+                    Err(error) => self.error = Some(error.to_string()),
+                }
+            }
+        }
+    }
+
     pub(crate) fn toolbar_zoom_filter_toggle(&mut self) {
         self.zoom_filter = Some(!self.zoom_filter());
         self.invalidate_graphics_preview();
@@ -3287,6 +3472,15 @@ impl VanillaLevelEditor {
         } else {
             HashMap::new()
         };
+        self.layer1_z_order_bounds =
+            object_interactive_bounds(rect, vertical, placements, &layer1_artwork_bounds, cell);
+        self.layer2_z_order_bounds = object_interactive_bounds(
+            rect,
+            vertical,
+            layer2_placements,
+            &layer2_artwork_bounds,
+            cell,
+        );
         if visibility.layer3
             && game_camera.is_none()
             && !self.layer3_between_background_and_foreground
@@ -3400,42 +3594,42 @@ impl VanillaLevelEditor {
         let sprite_limit = visual_smoke_editor_sprite_limit()
             .unwrap_or(sprite_placements.len())
             .min(sprite_placements.len());
-        let hit_sprite = (visibility.sprites && visual_smoke_editor_sprites())
-            .then(|| {
-                draw_sprite_placements(SpritePlacementDraw {
-                    painter,
-                    overlay_painter: &overlay_painter,
-                    target: rect,
-                    cell_size: cell,
-                    texture: self.sprite_texture.as_ref(),
-                    animated_texture: self
-                        .animated_sprite_textures
-                        .get(usize::from(animation_phase))
-                        .or(self.sprite_texture.as_ref()),
-                    placements: &sprite_placements[..sprite_limit],
-                    cursor: response.interact_pointer_pos(),
-                    selected_group: &self.selected_sprite_group,
-                    selected: self.selected_sprite,
-                    vertical,
-                    level_mode,
-                    sprite_tileset: self.form.sprite_tileset,
-                    sprite_memory_index: self
-                        .controller
-                        .as_ref()
-                        .map_or(0, |controller| controller.level().sprites.header & 0x3f),
-                    animation_phase,
-                    silver_pow_active: self.silver_pow_active,
-                    custom_sprites,
-                    custom_map16,
-                    external_textures: &self.external_sprite_textures,
-                    editor_overlays,
-                    selection_visible: matches!(
-                        self.canvas_entity_selection,
-                        Some(CanvasEntitySelection::Sprite)
-                    ),
-                })
+        let sprite_draw = (visibility.sprites && visual_smoke_editor_sprites()).then(|| {
+            draw_sprite_placements(SpritePlacementDraw {
+                painter,
+                overlay_painter: &overlay_painter,
+                target: rect,
+                cell_size: cell,
+                texture: self.sprite_texture.as_ref(),
+                animated_texture: self
+                    .animated_sprite_textures
+                    .get(usize::from(animation_phase))
+                    .or(self.sprite_texture.as_ref()),
+                placements: &sprite_placements[..sprite_limit],
+                cursor: response.interact_pointer_pos(),
+                selected_group: &self.selected_sprite_group,
+                selected: self.selected_sprite,
+                vertical,
+                level_mode,
+                sprite_tileset: self.form.sprite_tileset,
+                sprite_memory_index: self
+                    .controller
+                    .as_ref()
+                    .map_or(0, |controller| controller.level().sprites.header & 0x3f),
+                animation_phase,
+                silver_pow_active: self.silver_pow_active,
+                custom_sprites,
+                custom_map16,
+                external_textures: &self.external_sprite_textures,
+                editor_overlays,
+                selection_visible: matches!(
+                    self.canvas_entity_selection,
+                    Some(CanvasEntitySelection::Sprite)
+                ),
             })
-            .flatten();
+        });
+        let hit_sprite = sprite_draw.as_ref().and_then(|result| result.hit);
+        self.sprite_z_order_bounds = sprite_draw.map_or_else(HashMap::new, |result| result.bounds);
         if visibility.layer3
             && game_camera.is_some()
             && !self.layer3_between_background_and_foreground
@@ -4409,6 +4603,12 @@ impl VanillaLevelEditor {
             self.finish_canvas_entity_drag(position, canvas, cell, vertical);
         }
         self.secondary_duplicate_drag = false;
+    }
+
+    fn clear_z_order_bounds(&mut self) {
+        self.layer1_z_order_bounds.clear();
+        self.layer2_z_order_bounds.clear();
+        self.sprite_z_order_bounds.clear();
     }
 
     /// Reproduces Lunar Magic's unmodified right-click placement boundary for the one selected
@@ -7097,6 +7297,92 @@ fn screen_nudge_delta(vertical: bool, x_delta: i32, y_delta: i32) -> (i32, i32) 
     } else {
         (x_delta, y_delta)
     }
+}
+
+fn overlap_z_order_permutation(
+    order: &[usize],
+    selected: &[usize],
+    bounds: &HashMap<usize, egui::Rect>,
+    traversal: ZOrderTraversal,
+    can_cross: impl Fn(&usize, &usize) -> bool,
+) -> Result<Vec<usize>, String> {
+    if selected.is_empty() {
+        return Err("Z-order adjustment requires a nonempty selection".into());
+    }
+    let selected_set = selected
+        .iter()
+        .copied()
+        .collect::<std::collections::BTreeSet<_>>();
+    for identity in selected_set.iter().copied() {
+        if !order.contains(&identity) {
+            return Err(format!("selected Z-order record {identity} is unavailable"));
+        }
+        if !bounds.contains_key(&identity) {
+            return Err("render the active canvas before changing overlap-aware Z order".into());
+        }
+    }
+    let increase = matches!(traversal, ZOrderTraversal::Forward | ZOrderTraversal::Front);
+    let farthest = matches!(traversal, ZOrderTraversal::Front | ZOrderTraversal::Back);
+    let selected_iteration = if increase {
+        selected.iter().rev().copied().collect::<Vec<_>>()
+    } else {
+        selected.to_vec()
+    };
+    let mut reordered = order.to_vec();
+    for identity in selected_iteration {
+        let Some(position) = reordered.iter().position(|value| *value == identity) else {
+            continue;
+        };
+        let source_bounds = bounds[&identity];
+        let candidates = if increase {
+            reordered[position + 1..]
+                .iter()
+                .copied()
+                .collect::<Vec<_>>()
+        } else {
+            reordered[..position]
+                .iter()
+                .rev()
+                .copied()
+                .collect::<Vec<_>>()
+        };
+        let mut matches = candidates.into_iter().filter(|candidate| {
+            !selected_set.contains(candidate)
+                && can_cross(&identity, candidate)
+                && bounds.get(candidate).is_some_and(|candidate_bounds| {
+                    strict_rect_overlap(source_bounds, *candidate_bounds)
+                })
+        });
+        let target = if farthest {
+            matches.last()
+        } else {
+            matches.next()
+        };
+        let Some(target) = target else {
+            continue;
+        };
+        reordered.remove(position);
+        let target_position = reordered
+            .iter()
+            .position(|value| *value == target)
+            .expect("overlap target remains after removing a selected identity");
+        reordered.insert(
+            if increase {
+                target_position + 1
+            } else {
+                target_position
+            },
+            identity,
+        );
+    }
+    Ok(reordered)
+}
+
+fn strict_rect_overlap(left: egui::Rect, right: egui::Rect) -> bool {
+    left.min.x < right.max.x
+        && right.min.x < left.max.x
+        && left.min.y < right.max.y
+        && right.min.y < left.max.y
 }
 
 fn object_insertion_index(selected: usize, record_count: usize) -> usize {
@@ -10151,6 +10437,27 @@ fn draw_object_placement_markers(
     hits
 }
 
+fn object_interactive_bounds(
+    canvas: egui::Rect,
+    vertical: bool,
+    placements: &[lm_level::NativeObjectPlacement],
+    artwork_bounds: &HashMap<usize, egui::Rect>,
+    cell: f32,
+) -> HashMap<usize, egui::Rect> {
+    placements
+        .iter()
+        .map(|placement| {
+            (
+                placement.record_index,
+                artwork_bounds
+                    .get(&placement.record_index)
+                    .copied()
+                    .unwrap_or_else(|| encoded_object_rect(canvas, *placement, vertical, cell)),
+            )
+        })
+        .collect()
+}
+
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 struct ObjectPlacementHits {
     body: Option<usize>,
@@ -10416,7 +10723,12 @@ struct SpritePlacementDraw<'a> {
 }
 
 #[allow(clippy::too_many_lines)]
-fn draw_sprite_placements(request: SpritePlacementDraw<'_>) -> Option<usize> {
+struct SpritePlacementDrawResult {
+    hit: Option<usize>,
+    bounds: HashMap<usize, egui::Rect>,
+}
+
+fn draw_sprite_placements(request: SpritePlacementDraw<'_>) -> SpritePlacementDrawResult {
     let SpritePlacementDraw {
         painter,
         overlay_painter,
@@ -10441,6 +10753,7 @@ fn draw_sprite_placements(request: SpritePlacementDraw<'_>) -> Option<usize> {
         selection_visible,
     } = request;
     let mut hit = None;
+    let mut bounds = HashMap::with_capacity(placements.len());
     let mut standard_8a_count = 0_u8;
     for placement in placements {
         let (tile_x, tile_y) = presented_sprite_tile_coordinates(*placement, vertical);
@@ -10495,6 +10808,7 @@ fn draw_sprite_placements(request: SpritePlacementDraw<'_>) -> Option<usize> {
             external_preview.as_deref(),
             cell_size,
         );
+        bounds.insert(placement.token_index, interactive_rect);
         if let (Some(texture), Some(parts)) = (texture, preview.as_deref()) {
             for part in parts {
                 draw_sprite_preview_definition_tinted(
@@ -10574,7 +10888,7 @@ fn draw_sprite_placements(request: SpritePlacementDraw<'_>) -> Option<usize> {
             hit = Some(placement.token_index);
         }
     }
-    hit
+    SpritePlacementDrawResult { hit, bounds }
 }
 
 fn sprite_preview_part_rect(marker: egui::Rect, x: i16, y: i16, cell_size: f32) -> egui::Rect {
@@ -18015,7 +18329,7 @@ mod tests {
     }
 
     #[test]
-    fn toolbar_legacy_z_order_steps_preserve_positions_commit_reopen_and_undo() {
+    fn toolbar_z_order_commands_preserve_positions_commit_reopen_and_undo() {
         let mut app = AppState::default();
         app.load_rom(crate::test_support::pristine_smw_us_rom_bytes())
             .unwrap();
@@ -18087,6 +18401,50 @@ mod tests {
         assert!(editor.controller.as_mut().unwrap().undo());
         assert_eq!(editor.controller.as_ref().unwrap().level(), &original_level);
 
+        let source_ordinal = object_placements
+            .iter()
+            .position(|placement| placement.record_index == object_pair[0].record_index)
+            .unwrap();
+        let overlap_target = object_placements[source_ordinal + 2];
+        let overlap_target_object =
+            original_level.layer1.objects.records[overlap_target.record_index].clone();
+        editor.layer1_z_order_bounds = object_placements
+            .iter()
+            .enumerate()
+            .map(|(ordinal, placement)| {
+                let x = ordinal as f32 * 32.0;
+                (
+                    placement.record_index,
+                    egui::Rect::from_min_max(egui::pos2(x, 0.0), egui::pos2(x + 10.0, 10.0)),
+                )
+            })
+            .collect();
+        let shared_bounds = egui::Rect::from_min_max(egui::Pos2::ZERO, egui::pos2(10.0, 10.0));
+        editor
+            .layer1_z_order_bounds
+            .insert(object_pair[0].record_index, shared_bounds);
+        editor
+            .layer1_z_order_bounds
+            .insert(overlap_target.record_index, shared_bounds);
+        editor.selected_object = object_pair[0].record_index;
+        editor.selected_object_group = vec![object_pair[0].record_index];
+        editor.canvas_entity_selection = Some(CanvasEntitySelection::Layer1Object);
+        editor.toolbar_overlap_z_order(ZOrderTraversal::Forward);
+        assert!(editor.error.is_none(), "{:?}", editor.error);
+        let overlap_reordered = &editor.controller.as_ref().unwrap().level().layer1.objects;
+        assert!(
+            overlap_reordered
+                .records
+                .iter()
+                .position(|record| record == &first_object)
+                .unwrap()
+                > overlap_reordered
+                    .records
+                    .iter()
+                    .position(|record| record == &overlap_target_object)
+                    .unwrap()
+        );
+
         let sprite_placements = original_level.sprites.native_placements();
         let sprite_pair = sprite_placements
             .windows(2)
@@ -18128,6 +18486,22 @@ mod tests {
                 &SpriteLengthTable::standard(),
             )
             .unwrap();
+        assert!(
+            reopened
+                .layer1
+                .objects
+                .records
+                .iter()
+                .position(|record| record == &first_object)
+                .unwrap()
+                > reopened
+                    .layer1
+                    .objects
+                    .records
+                    .iter()
+                    .position(|record| record == &overlap_target_object)
+                    .unwrap()
+        );
         assert!(
             reopened
                 .sprites
@@ -18831,7 +19205,8 @@ mod tests {
                     external_textures: &HashMap::new(),
                     editor_overlays: false,
                     selection_visible: false,
-                });
+                })
+                .hit;
             });
         });
         assert_eq!(hit, Some(7));
@@ -19017,6 +19392,145 @@ mod tests {
         assert_eq!(object_insertion_index(0, 3), 1);
         assert_eq!(object_insertion_index(2, 3), 3);
         assert_eq!(object_insertion_index(99, 3), 3);
+    }
+
+    #[test]
+    fn overlap_z_order_traversal_skips_nonintersections_and_distinguishes_near_from_far() {
+        let bounds = [
+            (
+                0,
+                egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(9.0, 9.0)),
+            ),
+            (
+                1,
+                egui::Rect::from_min_max(egui::pos2(2.0, 2.0), egui::pos2(8.0, 8.0)),
+            ),
+            (
+                2,
+                egui::Rect::from_min_max(egui::pos2(20.0, 20.0), egui::pos2(30.0, 30.0)),
+            ),
+            (
+                3,
+                egui::Rect::from_min_max(egui::pos2(4.0, 4.0), egui::pos2(12.0, 12.0)),
+            ),
+            (
+                4,
+                egui::Rect::from_min_max(egui::pos2(7.0, 7.0), egui::pos2(15.0, 15.0)),
+            ),
+        ]
+        .into_iter()
+        .collect::<HashMap<_, _>>();
+        let order = [0, 1, 2, 3, 4];
+        assert_eq!(
+            overlap_z_order_permutation(&order, &[1], &bounds, ZOrderTraversal::Forward, |_, _| {
+                true
+            },)
+            .unwrap(),
+            [0, 2, 3, 1, 4]
+        );
+        assert_eq!(
+            overlap_z_order_permutation(
+                &order,
+                &[1],
+                &bounds,
+                ZOrderTraversal::Front,
+                |_, _| true,
+            )
+            .unwrap(),
+            [0, 2, 3, 4, 1]
+        );
+        assert_eq!(
+            overlap_z_order_permutation(
+                &order,
+                &[3],
+                &bounds,
+                ZOrderTraversal::Backward,
+                |_, _| true,
+            )
+            .unwrap(),
+            [0, 3, 1, 2, 4]
+        );
+        assert_eq!(
+            overlap_z_order_permutation(&order, &[3], &bounds, ZOrderTraversal::Back, |_, _| true,)
+                .unwrap(),
+            [3, 0, 1, 2, 4]
+        );
+        assert_eq!(
+            overlap_z_order_permutation(
+                &order,
+                &[1],
+                &bounds,
+                ZOrderTraversal::Front,
+                |_, right| *right != 4,
+            )
+            .unwrap(),
+            [0, 2, 3, 1, 4],
+            "an incompatible sprite sort group is not crossed"
+        );
+        assert!(!strict_rect_overlap(
+            egui::Rect::from_min_max(egui::Pos2::ZERO, egui::pos2(1.0, 1.0)),
+            egui::Rect::from_min_max(egui::pos2(1.0, 0.0), egui::pos2(2.0, 1.0)),
+        ));
+    }
+
+    #[test]
+    fn overlap_z_order_traversal_keeps_multi_selection_order_stable() {
+        let order = [0, 1, 2, 3, 4, 5];
+        let bounds = order
+            .into_iter()
+            .map(|identity| {
+                (
+                    identity,
+                    egui::Rect::from_min_max(egui::Pos2::ZERO, egui::pos2(16.0, 16.0)),
+                )
+            })
+            .collect::<HashMap<_, _>>();
+        let selected = [1, 3];
+
+        assert_eq!(
+            overlap_z_order_permutation(
+                &order,
+                &selected,
+                &bounds,
+                ZOrderTraversal::Forward,
+                |_, _| true,
+            )
+            .unwrap(),
+            [0, 2, 1, 4, 3, 5]
+        );
+        assert_eq!(
+            overlap_z_order_permutation(
+                &order,
+                &selected,
+                &bounds,
+                ZOrderTraversal::Front,
+                |_, _| true,
+            )
+            .unwrap(),
+            [0, 2, 4, 5, 1, 3]
+        );
+        assert_eq!(
+            overlap_z_order_permutation(
+                &order,
+                &selected,
+                &bounds,
+                ZOrderTraversal::Backward,
+                |_, _| true,
+            )
+            .unwrap(),
+            [1, 0, 3, 2, 4, 5]
+        );
+        assert_eq!(
+            overlap_z_order_permutation(
+                &order,
+                &selected,
+                &bounds,
+                ZOrderTraversal::Back,
+                |_, _| true,
+            )
+            .unwrap(),
+            [1, 3, 0, 2, 4, 5]
+        );
     }
 
     #[test]

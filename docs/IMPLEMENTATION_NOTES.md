@@ -5039,5 +5039,25 @@ boundaries, and expanded vertical grouping. The installed-editor test performs b
 sprite actions against vanilla level `$105`, proves placement preservation and staged Undo, commits
 the sprite ordering, semantically reopens it, and restores the byte-exact expanded ROM through
 application Undo. Native authenticated routing advances from 191 to 193 table slots. The four
-overlap-aware front/back commands remain intentionally separate and unrouted until their rendered
-intersection traversal is implemented.
+overlap-aware commands are implemented separately in the following milestone.
+
+## Rendered-overlap-aware level Z order
+
+The CHM defines Bring Forward and Send Backward as moving past at least one overlapping creation,
+while Bring to Front and Send to Back traverse every overlapping creation. Non-overlapping records
+on the same screen are skipped. Rust keeps these four commands separate from legacy one-step order.
+
+The canvas caches the exact interactive regions already used for selection: complete built-in and
+custom object artwork with encoded fallback regions, and complete standard, custom, external, or
+unresolved sprite preview bounds. Touching edges are not an overlap. Forward/backward selects the
+nearest eligible intersection; front/back selects the farthest. Stable reverse/forward traversal
+preserves relative order for multi-selections. Sprites cannot cross a distinct native screen or an
+expanded upper-Y/orientation sort group.
+
+The resulting full identity permutation is applied as one semantic transaction. Object streams
+regenerate all necessary forward/backtracking jumps while preserving absolute coordinates; sprite
+streams rebuild minimum upper-Y controls and reject a noncanonical permutation. Tests distinguish
+nearest/farthest traversal, skipped nonintersections, strict edge contact, incompatible sprite
+groups, invalid permutations, position preservation, staged Undo, vanilla-ROM commit/reopen, and
+byte-exact application Undo. Commands `$246A..$246D` raise authenticated native routing from 193 to
+197 table slots.

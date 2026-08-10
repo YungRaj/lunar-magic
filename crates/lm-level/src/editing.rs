@@ -22,6 +22,12 @@ pub enum LevelEditError {
     LegacySpriteYOutOfRange(u16),
     EmptySpriteSelection,
     DuplicateSpriteSelection(usize),
+    SpriteOrderLength {
+        expected: usize,
+        actual: usize,
+    },
+    DuplicateSpriteOrderIndex(usize),
+    IncompatibleSpriteOrder,
     SpriteGroupTargetOutOfRange {
         index: usize,
         major: i32,
@@ -633,6 +639,55 @@ impl NativeSpriteStream {
             .collect()
     }
 
+    /// Applies a complete record-order permutation without changing any sprite field. The
+    /// canonical game sort-key sequence must remain identical, so callers cannot move records
+    /// across an unrepresentable screen/upper-Y/orientation boundary.
+    pub fn reorder_records_for_z_order(
+        &mut self,
+        order: &[usize],
+        selected: &[usize],
+        vertical: bool,
+    ) -> Result<Vec<usize>, LevelEditError> {
+        let records = decode_group_sprite_records(self)?;
+        if order.len() != records.len() {
+            return Err(LevelEditError::SpriteOrderLength {
+                expected: records.len(),
+                actual: order.len(),
+            });
+        }
+        let expected_groups = records
+            .iter()
+            .map(|record| sprite_z_order_group(record, self.expanded, vertical))
+            .collect::<Vec<_>>();
+        let mut by_identity = records
+            .into_iter()
+            .map(|record| (record.identity, record))
+            .collect::<std::collections::BTreeMap<_, _>>();
+        let mut reordered = Vec::with_capacity(order.len());
+        for identity in order.iter().copied() {
+            let Some(record) = by_identity.remove(&identity) else {
+                return Err(if identity >= self.tokens.len() {
+                    LevelEditError::IndexOutOfBounds {
+                        index: identity,
+                        len: self.tokens.len(),
+                    }
+                } else {
+                    LevelEditError::DuplicateSpriteOrderIndex(identity)
+                });
+            };
+            reordered.push(record);
+        }
+        if !by_identity.is_empty()
+            || reordered
+                .iter()
+                .map(|record| sprite_z_order_group(record, self.expanded, vertical))
+                .ne(expected_groups)
+        {
+            return Err(LevelEditError::IncompatibleSpriteOrder);
+        }
+        rebuild_z_order_sprite_records(self, reordered, selected)
+    }
+
     /// Replaces every proven native base field of one sprite record while preserving its extension
     /// bytes and current expanded upper-Y band. The record is then tracked through Lunar Magic's
     /// legacy or orientation-aware expanded ordering. Returns its resulting token index.
@@ -876,6 +931,87 @@ struct GroupSpriteRecord {
     record: crate::SpriteRecord,
 }
 
+fn decode_group_sprite_records(
+    stream: &NativeSpriteStream,
+) -> Result<Vec<GroupSpriteRecord>, LevelEditError> {
+    let mut active_upper_y = 0_u16;
+    let mut records = Vec::with_capacity(stream.tokens.len());
+    for (index, token) in stream.tokens.iter().enumerate() {
+        match token {
+            SpriteToken::Screen(value) => {
+                if !stream.expanded {
+                    return Err(LevelEditError::LegacyIncompatibleSpriteToken { index });
+                }
+                active_upper_y = u16::from(*value) * 32;
+            }
+            SpriteToken::Control(_) if !stream.expanded => {
+                return Err(LevelEditError::LegacyIncompatibleSpriteToken { index });
+            }
+            SpriteToken::Control(value) if (0x80..=0xfd).contains(value) => {}
+            SpriteToken::Control(value) => {
+                return Err(LevelEditError::InvalidExpandedSpriteControl {
+                    index,
+                    value: *value,
+                });
+            }
+            SpriteToken::Record(record) => {
+                let fields =
+                    record
+                        .native_fields()
+                        .map_err(|_| LevelEditError::ShortSpriteRecord {
+                            index,
+                            len: record.encoded.len(),
+                        })?;
+                records.push(GroupSpriteRecord {
+                    identity: index,
+                    major: u16::from(fields.screen) * 16 + u16::from(fields.x),
+                    minor: active_upper_y + u16::from(fields.y_low),
+                    record: record.clone(),
+                });
+            }
+        }
+    }
+    Ok(records)
+}
+
+fn rebuild_z_order_sprite_records(
+    stream: &mut NativeSpriteStream,
+    records: Vec<GroupSpriteRecord>,
+    selected: &[usize],
+) -> Result<Vec<usize>, LevelEditError> {
+    let mut rebuilt = Vec::with_capacity(records.len().saturating_mul(2));
+    let mut emitted_upper_y = 0_u16;
+    let mut selected_indexes = vec![None; selected.len()];
+    for record in records {
+        let upper_y = record.minor / 32;
+        if stream.expanded && upper_y != emitted_upper_y {
+            rebuilt.push(SpriteToken::Screen(u8::try_from(upper_y).map_err(
+                |_| LevelEditError::ExpandedSpriteYOutOfRange(record.minor),
+            )?));
+            emitted_upper_y = upper_y;
+        }
+        if let Some(ordinal) = selected
+            .iter()
+            .position(|identity| *identity == record.identity)
+        {
+            selected_indexes[ordinal] = Some(rebuilt.len());
+        }
+        rebuilt.push(SpriteToken::Record(record.record));
+    }
+    stream.tokens = rebuilt;
+    stream.canonicalize_framing();
+    selected_indexes
+        .into_iter()
+        .enumerate()
+        .map(|(ordinal, index)| {
+            index.ok_or(LevelEditError::IndexOutOfBounds {
+                index: selected[ordinal],
+                len: stream.tokens.len(),
+            })
+        })
+        .collect()
+}
+
 fn sprite_z_order_group(
     record: &GroupSpriteRecord,
     expanded: bool,
@@ -1094,6 +1230,43 @@ mod tests {
             stream.adjust_record_z_order(&[4], false, true).unwrap(),
             [4]
         );
+    }
+
+    #[test]
+    fn complete_sprite_z_order_permutation_accepts_only_equal_sort_groups() {
+        let mut stream = NativeSpriteStream {
+            header: 0,
+            expanded: false,
+            tokens: vec![
+                sprite_on_screen(0, 0x10),
+                sprite_on_screen(0, 0x20),
+                sprite_on_screen(0, 0x30),
+                sprite_on_screen(1, 0x40),
+            ],
+        };
+        assert_eq!(
+            stream
+                .reorder_records_for_z_order(&[2, 0, 1, 3], &[0, 2], false)
+                .unwrap(),
+            [1, 0]
+        );
+        assert_eq!(
+            stream
+                .tokens
+                .iter()
+                .map(|token| match token {
+                    SpriteToken::Record(record) => record.encoded[2],
+                    _ => unreachable!(),
+                })
+                .collect::<Vec<_>>(),
+            [0x30, 0x10, 0x20, 0x40]
+        );
+        let original = stream.clone();
+        assert_eq!(
+            stream.reorder_records_for_z_order(&[3, 0, 1, 2], &[3], false),
+            Err(LevelEditError::IncompatibleSpriteOrder)
+        );
+        assert_eq!(stream, original);
     }
 
     #[test]

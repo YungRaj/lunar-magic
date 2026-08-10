@@ -76,6 +76,10 @@ pub enum NativeLevelEdit {
         selected: Vec<usize>,
         increase: bool,
     },
+    ReorderSpriteZOrder {
+        order: Vec<usize>,
+        selected: Vec<usize>,
+    },
     RelocateExpandedSprite {
         selected: usize,
         screen: u8,

@@ -9,6 +9,11 @@ pub enum ObjectRelocationError {
     },
     EmptySelection,
     DuplicateSelection(usize),
+    OrderLength {
+        expected: usize,
+        actual: usize,
+    },
+    DuplicateOrderIndex(usize),
     NotOrdinaryObject(usize),
     UnsupportedControl(usize),
     TargetScreenOutOfRange(u16),
@@ -446,6 +451,47 @@ impl ObjectStream {
         self.records = records;
         Ok(selected_indexes)
     }
+
+    /// Applies a complete creation-order permutation while preserving absolute placements and
+    /// returning the tracked selection's regenerated stream indexes.
+    pub fn reorder_ordinary_objects(
+        &mut self,
+        order: &[usize],
+        selected: &[usize],
+    ) -> Result<Vec<usize>, ObjectRelocationError> {
+        let (positioned, trailing_controls) = decode_positioned_objects(self)?;
+        if order.len() != positioned.len() {
+            return Err(ObjectRelocationError::OrderLength {
+                expected: positioned.len(),
+                actual: order.len(),
+            });
+        }
+        let mut by_identity = positioned
+            .into_iter()
+            .map(|object| (object.original_index, object))
+            .collect::<std::collections::BTreeMap<_, _>>();
+        let mut reordered = Vec::with_capacity(order.len());
+        for identity in order.iter().copied() {
+            let Some(object) = by_identity.remove(&identity) else {
+                return Err(if identity >= self.records.len() {
+                    ObjectRelocationError::IndexOutOfBounds {
+                        index: identity,
+                        len: self.records.len(),
+                    }
+                } else {
+                    ObjectRelocationError::DuplicateOrderIndex(identity)
+                });
+            };
+            reordered.push(object);
+        }
+        if let Some(identity) = by_identity.keys().next().copied() {
+            return Err(ObjectRelocationError::NotOrdinaryObject(identity));
+        }
+        let (mut records, selected_indexes) = encode_positioned_object_group(reordered, selected)?;
+        records.extend(trailing_controls);
+        self.records = records;
+        Ok(selected_indexes)
+    }
 }
 
 pub(crate) fn shift_selected_one_step<T>(
@@ -865,6 +911,50 @@ mod tests {
                 .collect::<Vec<_>>(),
             [0x10, 0x20, 0x30, 0x40]
         );
+    }
+
+    #[test]
+    fn complete_z_order_permutation_preserves_every_position_and_tracks_selection() {
+        let mut stream = ObjectStream {
+            records: vec![
+                object(false, 1, 1, 0x10),
+                ObjectRecord::new(vec![2, 0, 1]).unwrap(),
+                object(false, 2, 2, 0x20),
+                object(false, 3, 3, 0x30),
+            ],
+        };
+        let original_positions = stream
+            .native_placements()
+            .into_iter()
+            .map(|placement| {
+                (
+                    stream.records[placement.record_index].parameter(),
+                    placement.major,
+                    placement.minor,
+                )
+            })
+            .collect::<std::collections::BTreeSet<_>>();
+        let moved = stream
+            .reorder_ordinary_objects(&[3, 0, 2], &[0, 3])
+            .unwrap();
+        assert_eq!(moved, [3, 1]);
+        assert_eq!(
+            stream
+                .native_placements()
+                .into_iter()
+                .map(|placement| {
+                    (
+                        stream.records[placement.record_index].parameter(),
+                        placement.major,
+                        placement.minor,
+                    )
+                })
+                .collect::<std::collections::BTreeSet<_>>(),
+            original_positions
+        );
+        let original = stream.clone();
+        assert!(stream.reorder_ordinary_objects(&[0, 0, 2], &[0]).is_err());
+        assert_eq!(stream, original);
     }
 
     #[test]
