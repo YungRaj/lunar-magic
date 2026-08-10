@@ -780,6 +780,10 @@ the fully recovered `$004D7010` checksum transform and a bounded PE32/PE32+ reso
 `$01F4:$0DB7` magic plus `$01F4:$0DB6` display/version/locale/code-page metadata. Six focused tests
 bind exact transform arithmetic, trailer placement, BOM/CRLF handling, both PE optional-header
 forms, integer resource traversal, missing/out-of-bounds resources, and every truncated prefix
-through the final required payload byte. Native installed-DLL discovery and conversion of original
-localized dialog/string resources into the typed catalog remain open, so the Localization row
-remains `Partial`.
+through the final required payload byte. Native startup now separately inventories up to 64
+checksum-valid `.dll` regular files from the exact executable-adjacent `sysLMLanguage` directory,
+skips unreadable/oversized/invalid siblings, and deterministically retains their complete metadata
+without treating them as selectable canonical catalogs. Two discovery tests cover extension/type
+filtering, invalid and sparse-oversized files, metadata ordering, and the 64-module ceiling.
+Conversion of original localized dialog/string resources into the typed catalog remains open, so
+the Localization row remains `Partial`.

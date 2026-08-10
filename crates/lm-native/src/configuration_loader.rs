@@ -5,14 +5,24 @@ use crate::{
     document_loader::{BoundedRead, DocumentLoader, LoadedDocument},
 };
 use eframe::egui;
-use lm_app::{FrontendConfig, LocalizationCatalog, ToolConfig};
+use lm_app::{
+    FrontendConfig, LocalizationCatalog, OriginalLanguageModuleMetadata, ToolConfig,
+    decode_original_language_module,
+};
 use std::path::{Path, PathBuf};
 
 const MAX_INSTALLED_LOCALIZATIONS: usize = 64;
+const MAX_ORIGINAL_LANGUAGE_MODULE_BYTES: u64 = 64 * 1024 * 1024;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct InstalledLocalization {
     pub(crate) locale: String,
+    pub(crate) path: PathBuf,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct InstalledOriginalLocalization {
+    pub(crate) metadata: OriginalLanguageModuleMetadata,
     pub(crate) path: PathBuf,
 }
 
@@ -173,6 +183,14 @@ impl ConfigurationLoader {
         Ok(installed)
     }
 
+    pub(crate) fn discover_installed_original_localizations(
+        executable_directory: &Path,
+    ) -> Result<Vec<InstalledOriginalLocalization>, String> {
+        discover_installed_original_localizations_with(executable_directory, |bytes| {
+            decode_original_language_module(bytes).ok()
+        })
+    }
+
     fn start(&mut self, kind: ConfigurationKind, request: BoundedRead) -> Result<(), String> {
         self.loader.start(vec![request])?;
         self.kind = Some(kind);
@@ -191,6 +209,80 @@ impl ConfigurationLoader {
             decode(kind, result?)
         })
     }
+}
+
+fn discover_installed_original_localizations_with(
+    executable_directory: &Path,
+    decode: impl Fn(&[u8]) -> Option<OriginalLanguageModuleMetadata>,
+) -> Result<Vec<InstalledOriginalLocalization>, String> {
+    let directory = executable_directory.join("sysLMLanguage");
+    let entries = match std::fs::read_dir(&directory) {
+        Ok(entries) => entries,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(error) => {
+            return Err(format!(
+                "cannot enumerate installed language directory {}: {error}",
+                directory.display()
+            ));
+        }
+    };
+    let mut paths = Vec::new();
+    for entry in entries {
+        let entry = entry.map_err(|error| {
+            format!(
+                "cannot enumerate installed language directory {}: {error}",
+                directory.display()
+            )
+        })?;
+        let file_type = entry
+            .file_type()
+            .map_err(|error| format!("cannot inspect installed language entry: {error}"))?;
+        if !file_type.is_file()
+            || !entry
+                .path()
+                .extension()
+                .and_then(|extension| extension.to_str())
+                .is_some_and(|extension| extension.eq_ignore_ascii_case("dll"))
+        {
+            continue;
+        }
+        paths.push(entry.path());
+        if paths.len() > MAX_INSTALLED_LOCALIZATIONS {
+            return Err(format!(
+                "installed language directory exceeds {MAX_INSTALLED_LOCALIZATIONS} original modules"
+            ));
+        }
+    }
+    paths.sort_by(|left, right| {
+        left.file_name()
+            .cmp(&right.file_name())
+            .then_with(|| left.cmp(right))
+    });
+    let mut installed = Vec::with_capacity(paths.len());
+    for path in paths {
+        let Ok(metadata) = std::fs::metadata(&path) else {
+            continue;
+        };
+        if metadata.len() > MAX_ORIGINAL_LANGUAGE_MODULE_BYTES {
+            continue;
+        }
+        let Ok(bytes) = std::fs::read(&path) else {
+            continue;
+        };
+        let Some(metadata) = decode(&bytes) else {
+            continue;
+        };
+        installed.push(InstalledOriginalLocalization { metadata, path });
+    }
+    installed.sort_by(|left, right| {
+        left.metadata
+            .display_name
+            .to_ascii_lowercase()
+            .cmp(&right.metadata.display_name.to_ascii_lowercase())
+            .then_with(|| left.metadata.display_name.cmp(&right.metadata.display_name))
+            .then_with(|| left.path.cmp(&right.path))
+    });
+    Ok(installed)
 }
 
 fn decode(kind: ConfigurationKind, loaded: LoadedDocument) -> Result<LoadedConfiguration, String> {
@@ -324,6 +416,62 @@ mod tests {
             ConfigurationLoader::discover_installed_localizations(&root.path().join("absent"))
                 .unwrap()
                 .is_empty()
+        );
+    }
+
+    #[test]
+    fn original_module_discovery_is_filtered_bounded_and_metadata_sorted() {
+        let root = tempfile::tempdir().unwrap();
+        let directory = root.path().join("sysLMLanguage");
+        std::fs::create_dir(&directory).unwrap();
+        std::fs::write(directory.join("zeta.DLL"), b"zeta").unwrap();
+        std::fs::write(directory.join("alpha.dll"), b"alpha").unwrap();
+        std::fs::write(directory.join("invalid.dll"), b"invalid").unwrap();
+        std::fs::write(directory.join("ignored.txt"), b"alpha").unwrap();
+        std::fs::create_dir(directory.join("directory.dll")).unwrap();
+        std::fs::File::create(directory.join("oversized.dll"))
+            .unwrap()
+            .set_len(MAX_ORIGINAL_LANGUAGE_MODULE_BYTES + 1)
+            .unwrap();
+        let installed = discover_installed_original_localizations_with(root.path(), |bytes| {
+            let name = match bytes {
+                b"alpha" => "Deutsch",
+                b"zeta" => "Français",
+                _ => return None,
+            };
+            Some(OriginalLanguageModuleMetadata {
+                display_name: name.into(),
+                version: "3.63".into(),
+                locale: if bytes == b"alpha" { "de-DE" } else { "fr-FR" }.into(),
+                code_page: "1252".into(),
+            })
+        })
+        .unwrap();
+        assert_eq!(installed.len(), 2);
+        assert_eq!(installed[0].metadata.display_name, "Deutsch");
+        assert_eq!(installed[1].metadata.display_name, "Français");
+        assert_eq!(
+            installed[0].path.file_name().unwrap(),
+            std::ffi::OsStr::new("alpha.dll")
+        );
+    }
+
+    #[test]
+    fn original_module_discovery_rejects_more_than_sixty_four_candidates() {
+        let root = tempfile::tempdir().unwrap();
+        let directory = root.path().join("sysLMLanguage");
+        std::fs::create_dir(&directory).unwrap();
+        for index in 0..=MAX_INSTALLED_LOCALIZATIONS {
+            std::fs::write(
+                directory.join(format!("language-{index:02}.dll")),
+                b"module",
+            )
+            .unwrap();
+        }
+        assert!(
+            discover_installed_original_localizations_with(root.path(), |_| None)
+                .unwrap_err()
+                .contains("exceeds 64 original modules")
         );
     }
 }

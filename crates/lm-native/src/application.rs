@@ -2,7 +2,10 @@ use crate::{
     about_dialog::{AboutDialog, DiagnosticsDialog},
     appearance_editor::AppearanceEditor,
     built_in_runtime_installer::BuiltInRuntimeInstaller,
-    configuration_loader::{ConfigurationLoader, InstalledLocalization, LoadedConfiguration},
+    configuration_loader::{
+        ConfigurationLoader, InstalledLocalization, InstalledOriginalLocalization,
+        LoadedConfiguration,
+    },
     copier_header_dialog::CopierHeaderDialog,
     custom_object_editor::CustomObjectEditor,
     custom_sprite_editor::CustomSpriteEditor,
@@ -212,6 +215,7 @@ pub(crate) struct NativeApplication {
     recent_state: Option<lm_app::recent_state_file::RecentStateFile>,
     configuration_loader: ConfigurationLoader,
     installed_localizations: Vec<InstalledLocalization>,
+    _installed_original_localizations: Vec<InstalledOriginalLocalization>,
     auto_detect_localization: bool,
     profile_loader: crate::profile_loader::ProfileLoader,
     #[cfg(feature = "visual-smoke")]
@@ -258,10 +262,16 @@ impl NativeApplication {
                 let directory = path
                     .parent()
                     .ok_or_else(|| "application executable has no parent directory".to_owned())?;
-                ConfigurationLoader::discover_installed_localizations(directory)
+                let catalogs = ConfigurationLoader::discover_installed_localizations(directory)?;
+                let original_modules =
+                    ConfigurationLoader::discover_installed_original_localizations(directory)?;
+                Ok((catalogs, original_modules))
             });
         match result {
-            Ok(installed) => self.installed_localizations = installed,
+            Ok((catalogs, original_modules)) => {
+                self.installed_localizations = catalogs;
+                self._installed_original_localizations = original_modules;
+            }
             Err(error) => self.effects.error = Some(error),
         }
     }

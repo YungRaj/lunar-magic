@@ -919,3 +919,10 @@ executing module initialization. Synthetic images retain the exact three-level i
 tree (type, resource ID, language), section-relative RVA mapping, and separately placed marker and
 metadata payloads. Missing `$DB7`, an unmappable data RVA, and every truncated prefix through the
 last required marker byte reject without a panic. All six `original_language_*` tests pass.
+
+The native startup inventory then applies that decoder to regular `.dll` files only in the exact
+executable-adjacent `sysLMLanguage` directory. It bounds candidates to 64 and each read to 64 MiB,
+skips invalid/unreadable/oversized modules like the original enumeration skips failed loads, and
+retains validated filename plus display/version/locale/code-page metadata separately from canonical
+`.lmlang` catalogs. Eight configuration-loader tests pass, including deterministic metadata order
+and exact candidate-count rejection.

@@ -3543,9 +3543,11 @@ and code-page fields. Its non-executing PE reader accepts PE32 and PE32+, bounds
 headers, resource-directory entry counts, relative offsets, RVA-to-file mappings, raw section
 extents, language leaves, data entries, and payload slices before exposing either resource. Short
 modules, checksum mismatches, malformed/truncated images, missing resources, wrong markers,
-oversized metadata, invalid UTF-8, and incomplete fields reject. Native installed-DLL discovery and
-conversion of the original dialog/string resources into the typed catalog remain before DLLs can
-be selected live.
+oversized metadata, invalid UTF-8, and incomplete fields reject. Native startup separately scans
+the exact executable-adjacent `sysLMLanguage` directory for at most 64 `.dll` regular files, reads
+at most 64 MiB per candidate, skips invalid siblings, and retains checksum-validated metadata in
+deterministic display-name/path order. Original modules remain distinct from selectable `.lmlang`
+catalogs until conversion of their dialog/string resources into the typed catalog is complete.
 
 The native frontend now has an opt-in, self-capturing `visual-smoke` build. It waits until the
 workspace has rendered across multiple frames, requests the real Glow viewport through egui, and
