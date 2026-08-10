@@ -101,4 +101,8 @@ recovered default state: only expanded-area levels, stored screen extents, upper
 slot suffixes, and failure-atomic group publication. `$2393` (`LM_FILE_SAVE_DIRECTORY`) now routes
 to the distinct modified-level MWL batch mode; `$2392` continues to export all 512 level slots.
 Both retain the bounded worker, cancellation, and all-or-rollback directory publication boundary.
-The authenticated partition is therefore 231 routed and 86 pending slots.
+`$2525` (`LM_LEVEL_ENTRANCE2`) now directly opens or reuses the native Modify Secondary Entrances
+workspace. It therefore reaches the complete 8,192-entry table and all six original packed planes,
+with the existing detected-layout, staged-edit, revision, checksum, Undo, save, and reopen boundary;
+it is not reduced to the unrelated current-level main-entrance section.
+The authenticated partition is therefore 232 routed and 85 pending slots.

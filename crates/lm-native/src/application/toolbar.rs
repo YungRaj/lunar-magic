@@ -422,6 +422,9 @@ impl NativeApplication {
             UserToolbarNativeAction::DeleteLevel => {
                 self.level_deletion_dialog.open(&self.app);
             }
+            UserToolbarNativeAction::OpenSecondaryEntrances => {
+                self.rom_secondary_exit_editor.open(&self.app);
+            }
             UserToolbarNativeAction::PlaceObject => {
                 self.vanilla_level_editor.toolbar_place_object();
             }
@@ -1218,6 +1221,7 @@ enum UserToolbarNativeAction {
     LiveEmulatorMute,
     LiveEmulatorFrameAdvance,
     DeleteLevel,
+    OpenSecondaryEntrances,
     PlaceObject,
     PlaceSprite,
     OpenLevelToolPanel(crate::vanilla_level_editor::LevelToolPanel),
@@ -1268,6 +1272,7 @@ fn user_toolbar_native_action(name: &str) -> Option<UserToolbarNativeAction> {
         "LM_FILE_INT_EMULATOR_MUTE" => UserToolbarNativeAction::LiveEmulatorMute,
         "LM_FILE_INT_EMULATOR_FRAME_ADVANCE" => UserToolbarNativeAction::LiveEmulatorFrameAdvance,
         "LM_FILE_DELETE_LEVEL" => UserToolbarNativeAction::DeleteLevel,
+        "LM_LEVEL_ENTRANCE2" => UserToolbarNativeAction::OpenSecondaryEntrances,
         "LM_VIEW_ADD_OBJECT" | "LM_VIEW_OBJECT" | "LM_VIEW_ADD_OBJECT_OLD" => {
             UserToolbarNativeAction::PlaceObject
         }
@@ -1653,6 +1658,10 @@ mod user_toolbar_tests {
             Some(UserToolbarNativeAction::OpenLevelToolPanel(
                 crate::vanilla_level_editor::LevelToolPanel::Settings
             ))
+        );
+        assert_eq!(
+            user_toolbar_native_action("LM_LEVEL_ENTRANCE2"),
+            Some(UserToolbarNativeAction::OpenSecondaryEntrances)
         );
         assert_eq!(
             user_toolbar_native_action("LM_HELP_ABOUT"),
@@ -2085,7 +2094,7 @@ mod user_toolbar_tests {
                     || user_toolbar_native_action(entry.name).is_some()
             })
             .collect::<Vec<_>>();
-        assert_eq!(supported.len(), 231);
+        assert_eq!(supported.len(), 232);
         assert!(
             supported
                 .iter()
@@ -2102,7 +2111,7 @@ mod user_toolbar_tests {
                     && user_toolbar_native_action(entry.name).is_none()
             })
             .collect::<Vec<_>>();
-        assert_eq!(unsupported.len(), 86);
+        assert_eq!(unsupported.len(), 85);
         if std::env::var_os("LM_DIAGNOSTIC_UNSUPPORTED_TOOLBAR_COMMANDS").is_some() {
             for entry in unsupported {
                 eprintln!(
