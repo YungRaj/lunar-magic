@@ -573,6 +573,11 @@ impl RestorePointDialog {
         self.error = None;
     }
 
+    #[cfg(test)]
+    pub(crate) const fn automatic_policy_is_open(&self) -> bool {
+        self.automatic_policy.is_some()
+    }
+
     pub(crate) fn choose_and_open(&mut self) -> Result<bool, String> {
         if self.is_busy() {
             return Err("a restore-point workflow is already active".into());

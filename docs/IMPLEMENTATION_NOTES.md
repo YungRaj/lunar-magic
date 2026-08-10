@@ -5378,6 +5378,11 @@ Authenticated internal command `LM_OPTIONS_GENERAL` (`$24D7`) now opens that sam
 the application's current undo-history limit. A dispatch-level gate proves the toolbar route opens
 the real native workspace rather than merely counting the command as supported; Apply, Cancel,
 bounded persistence, and restart behavior remain shared with the existing Tools-menu route.
+Authenticated internal command `LM_OPTIONS_RESTORE` (`$24CE`) likewise opens the existing automatic
+restore-point policy workspace. It loads the persisted interval-enabled/count, daily-full, and
+pre-destructive-full defaults; the established Apply/Cancel path and archive tests remain shared.
+The dispatch gate proves the command opens that workspace, and ten restore-point tests cover policy
+encoding, daily decisions, associated files, publication, and archive continuity.
 
 `GraphicsMigrationTarget` separates Lunar Magic's three visible compression choices from the two
 payload codecs. LZ2 Orig and LZ2 Speed both map to `GraphicsCompression::Lz2`, but Speed routes to

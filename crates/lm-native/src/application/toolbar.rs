@@ -394,6 +394,9 @@ impl NativeApplication {
                 self.undo_history_settings
                     .open(self.app.undo_snapshot_limit());
             }
+            UserToolbarNativeAction::RestoreOptions => {
+                self.restore_point_dialog.open_automatic_policy();
+            }
             UserToolbarNativeAction::EmulatorSettings => {
                 self.external_tool_config_editor
                     .open(self.app.external_tools());
@@ -1309,6 +1312,7 @@ enum UserToolbarNativeAction {
     ApplyIps,
     GraphicsCompressionOptions,
     GeneralOptions,
+    RestoreOptions,
     EmulatorSettings,
     ExternalEmulatorRun,
     LiveEmulatorRun,
@@ -1367,6 +1371,7 @@ fn user_toolbar_native_action(name: &str) -> Option<UserToolbarNativeAction> {
         "LM_FILE_APPLY_IPS" => UserToolbarNativeAction::ApplyIps,
         "LM_OPTIONS_COMPRESSION" => UserToolbarNativeAction::GraphicsCompressionOptions,
         "LM_OPTIONS_GENERAL" => UserToolbarNativeAction::GeneralOptions,
+        "LM_OPTIONS_RESTORE" => UserToolbarNativeAction::RestoreOptions,
         "LM_FILE_EMULATOR_SETTINGS" | "LM_FILE_TILE_EDITOR_SETTINGS" => {
             UserToolbarNativeAction::EmulatorSettings
         }
@@ -1790,6 +1795,10 @@ mod user_toolbar_tests {
         assert_eq!(
             user_toolbar_native_action("LM_OPTIONS_GENERAL"),
             Some(UserToolbarNativeAction::GeneralOptions)
+        );
+        assert_eq!(
+            user_toolbar_native_action("LM_OPTIONS_RESTORE"),
+            Some(UserToolbarNativeAction::RestoreOptions)
         );
         assert_eq!(
             user_toolbar_native_action("LM_LEVEL_ENTRANCE2"),
@@ -2280,7 +2289,7 @@ mod user_toolbar_tests {
                     || user_toolbar_native_action(entry.name).is_some()
             })
             .collect::<Vec<_>>();
-        assert_eq!(supported.len(), 247);
+        assert_eq!(supported.len(), 248);
         assert!(
             supported
                 .iter()
@@ -2300,6 +2309,17 @@ mod user_toolbar_tests {
     }
 
     #[test]
+    fn restore_options_toolbar_route_opens_the_native_automatic_policy_workspace() {
+        let mut native = NativeApplication::default();
+        assert!(!native.restore_point_dialog.automatic_policy_is_open());
+        native.apply_user_toolbar_native_action(
+            &egui::Context::default(),
+            UserToolbarNativeAction::RestoreOptions,
+        );
+        assert!(native.restore_point_dialog.automatic_policy_is_open());
+    }
+
+    #[test]
     fn diagnostic_authenticated_internal_routes_partition_the_complete_original_table() {
         let unsupported = lm_app::lunar_magic_363_user_toolbar_commands()
             .filter(|entry| {
@@ -2308,7 +2328,7 @@ mod user_toolbar_tests {
                     && user_toolbar_native_action(entry.name).is_none()
             })
             .collect::<Vec<_>>();
-        assert_eq!(unsupported.len(), 70);
+        assert_eq!(unsupported.len(), 69);
         if std::env::var_os("LM_DIAGNOSTIC_UNSUPPORTED_TOOLBAR_COMMANDS").is_some() {
             for entry in unsupported {
                 eprintln!(
