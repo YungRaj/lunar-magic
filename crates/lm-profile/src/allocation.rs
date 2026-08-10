@@ -95,6 +95,14 @@ impl RevisionProfile {
         protected.extend(sprite_ranges(self.level.sprites, image_len)?);
         protected.extend(graphics_ranges(self.graphics, image_len)?);
         protected.extend(installation_marker_ranges(self, image_len)?);
+        if let Some(offset) = self.object_tileset_graphics_offset {
+            protected.push(protected_range(
+                "graphics.object_tileset_assignments",
+                offset,
+                crate::OBJECT_TILESET_GRAPHICS_TILESETS * crate::OBJECT_TILESET_GRAPHICS_SLOTS,
+                image_len,
+            )?);
+        }
         if let Some(layer2) = self.layer2 {
             protected.push(table_range("level.layer2", layer2.pointers, image_len)?);
             if let Some(descriptor) = layer2.descriptor_table {
@@ -539,8 +547,9 @@ mod tests {
         let policy = profile
             .allocation_policy(0x6000..0x7000, 0x3_0000, 0x7fc0)
             .unwrap();
-        assert_eq!(policy.protected.len(), 18);
+        assert_eq!(policy.protected.len(), 19);
         assert!(policy.protected.contains(&ProtectedRange(0x7fc0..0x8000)));
+        assert!(policy.protected.contains(&ProtectedRange(0x1800..0x1840)));
         let level = profile.level.layer1;
         let end = level.offset + (level.entries - 1) * level.stride + 3;
         assert!(

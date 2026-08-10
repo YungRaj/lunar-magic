@@ -155,6 +155,15 @@ pub(super) fn audit(
         selected_exanimation_features,
         &mut metadata,
     )?;
+    if let Some(offset) = profile.object_tileset_graphics_offset {
+        append_metadata_span(
+            rom,
+            &mut metadata,
+            "graphics.object_tileset_assignments",
+            offset,
+            crate::OBJECT_TILESET_GRAPHICS_TILESETS * crate::OBJECT_TILESET_GRAPHICS_SLOTS,
+        )?;
+    }
     let expanded_settings = if let Some(layout) = profile.expanded_settings {
         let expanded_settings = expanded_settings_span(layout)?;
         if expanded_settings.end > rom.logical_len() {

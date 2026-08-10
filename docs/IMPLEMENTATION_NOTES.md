@@ -1911,6 +1911,13 @@ Row wrapping, namespace overflow, complete-container substitution, malformed sem
 stale completion reject before staged mutation. Built-in graphics `$0000–$01FF` remain protected
 and background Acts-Like words canonicalize to zero. Original prompt gestures and a retained Wine
 selected-range fixture remain oracle gaps.
+Installed bitmap-to-Map16 graphics lookup is profile-routed rather than SMW-US hardcoded. Lunar
+Magic's ROM-open path loads the complete 64-byte object-tileset assignment table from active
+ROM-layout descriptor field `+0x94` into the live 16-by-4 workspace. Revision profiles therefore
+carry `graphics.object_tileset_assignments_offset`; allocation and ROM audit protect its entire
+logical span, and bitmap sessions reject an absent declaration. The direct pristine SMW-US route
+continues to use its separately authenticated fixed table.
+
 Complete structured `.map16` loading uses the same asynchronous safety boundary: the editor records
 the application revision only after the bounded loader accepts the request, consumes that token once
 when the result arrives, and rejects the decoded file before controller mutation if the staged ROM

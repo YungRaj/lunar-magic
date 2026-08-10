@@ -58,27 +58,14 @@ pub struct NativeMap16BitmapGraphicsWorkspace {
 }
 
 impl NativeMap16BitmapGraphicsWorkspace {
-    /// Loads the four object-tileset GFX slots and two explicit import slots from an SMW-US ROM.
-    ///
-    /// `extra_assignments` represents FG/BG slots 4 and 5. Passing `None` preserves Lunar Magic's
-    /// `$7f` blank sentinel; passing a file number loads a concrete GFX/ExGFX target that can later
-    /// participate in the grouped ROM commit.
-    ///
-    /// # Errors
-    ///
-    /// Rejects an invalid object tileset, malformed assignment table, graphics pointer/codec
-    /// failure, or a decoded file that is not exactly one `$80`-tile native slot.
-    pub fn load_smw_us_v1(
+    /// Loads six native slots from four already-resolved object-tileset assignments and two
+    /// explicit import assignments.
+    pub fn load(
         project: &Project,
-        object_tileset: u8,
+        base: [usize; 4],
         extra_assignments: [Option<usize>; 2],
         graphics_layout: GraphicsRomLayout,
     ) -> Result<Self, NativeMap16BitmapWorkspaceLoadError> {
-        let base = lm_profile::smw_us_v1_object_tileset_graphics_files(
-            &project.rom,
-            usize::from(object_tileset),
-        )
-        .map_err(NativeMap16BitmapWorkspaceLoadError::ObjectTileset)?;
         let assignments = [
             Some(base[0]),
             Some(base[1]),
@@ -115,6 +102,30 @@ impl NativeMap16BitmapGraphicsWorkspace {
             }
         }
         Self::assemble(assignments, slots).map_err(NativeMap16BitmapWorkspaceLoadError::Workspace)
+    }
+
+    /// Loads the four object-tileset GFX slots and two explicit import slots from an SMW-US ROM.
+    ///
+    /// `extra_assignments` represents FG/BG slots 4 and 5. Passing `None` preserves Lunar Magic's
+    /// `$7f` blank sentinel; passing a file number loads a concrete GFX/ExGFX target that can later
+    /// participate in the grouped ROM commit.
+    ///
+    /// # Errors
+    ///
+    /// Rejects an invalid object tileset, malformed assignment table, graphics pointer/codec
+    /// failure, or a decoded file that is not exactly one `$80`-tile native slot.
+    pub fn load_smw_us_v1(
+        project: &Project,
+        object_tileset: u8,
+        extra_assignments: [Option<usize>; 2],
+        graphics_layout: GraphicsRomLayout,
+    ) -> Result<Self, NativeMap16BitmapWorkspaceLoadError> {
+        let base = lm_profile::smw_us_v1_object_tileset_graphics_files(
+            &project.rom,
+            usize::from(object_tileset),
+        )
+        .map_err(NativeMap16BitmapWorkspaceLoadError::ObjectTileset)?;
+        Self::load(project, base, extra_assignments, graphics_layout)
     }
 
     /// Assembles six exact `$80`-tile slots into Lunar Magic's `$000..$2ff` workspace.
@@ -526,5 +537,63 @@ mod tests {
                 .iter()
                 .all(|tile| tile.pixels().iter().all(|pixel| *pixel == 0))
         );
+    }
+
+    #[test]
+    fn resolved_loader_uses_the_profile_assignment_row_instead_of_the_us_v1_offset() {
+        let mut bytes = vec![0xff; 0x8000];
+        let assignment_offset = 0x1800;
+        bytes[assignment_offset + 12..assignment_offset + 16].copy_from_slice(&[5, 4, 3, 2]);
+        let mut project = Project::new(RomImage::from_bytes(bytes).unwrap());
+        let layout = GraphicsRomLayout {
+            mapper: Mapper::LoRom,
+            pointers: LevelPointerTable {
+                offset: 0x20,
+                entries: 6,
+                stride: 3,
+            },
+            split_pointer_planes: None,
+            compression: GraphicsCompression::Lz2,
+            maximum_compressed_len: 0x8000,
+            maximum_decompressed_len: 0x1000,
+        };
+        let options = GraphicsSaveOptions {
+            allocation: AllocationPolicy {
+                search: 0x100..0x7000,
+                bank_size: Some(0x8000),
+                fill_bytes: vec![0xff],
+                protected: vec![
+                    ProtectedRange(0x20..0x32),
+                    ProtectedRange(assignment_offset..assignment_offset + 0x40),
+                ],
+            },
+            previous_block: None,
+            reuse_identical: false,
+            erase_fill: 0xff,
+        };
+        for file_number in 0..6 {
+            project
+                .save_graphics_file(file_number, &slot(file_number as u8 + 1), layout, &options)
+                .unwrap();
+        }
+        let mut profile = lm_profile::test_support::profile();
+        profile.mapper = Mapper::LoRom;
+        profile.object_tileset_graphics_offset = Some(assignment_offset);
+        let assignments = profile
+            .object_tileset_graphics_files(&project.rom, 3)
+            .unwrap();
+        let workspace = NativeMap16BitmapGraphicsWorkspace::load(
+            &project,
+            assignments,
+            [Some(1), Some(0)],
+            layout,
+        )
+        .unwrap();
+        assert_eq!(
+            workspace.assignments,
+            [Some(5), Some(4), Some(3), Some(2), Some(1), Some(0)]
+        );
+        assert_eq!(workspace.graphics.tiles[0].pixels()[0], 6);
+        assert_eq!(workspace.graphics.tiles[5 * 0x80].pixels()[0], 1);
     }
 }

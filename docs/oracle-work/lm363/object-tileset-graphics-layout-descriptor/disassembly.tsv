@@ -1,0 +1,9 @@
+address	bytes	instruction	meaning
+0047D02E	a19078e200	MOV EAX,[00E27890]	active ROM stream
+0047D033	8d5364	LEA EDX,[EBX+64]	complete table length
+0047D036	b9a86a8100	MOV ECX,00816AA8	live object-tileset assignment destination
+0047D03B	e8209d0200	CALL 004A6D60	read 64 bytes
+0047D040	8b0dc8039200	MOV ECX,[009203C8]	active ROM layout descriptor
+0047D046	8b8194000000	MOV EAX,[ECX+94]	descriptor-provided logical source offset
+0047D04C	8b0d9078e200	MOV ECX,[00E27890]	active ROM stream
+0047D052	e8699b0200	CALL 004A6BC0	seek selected stream to descriptor offset

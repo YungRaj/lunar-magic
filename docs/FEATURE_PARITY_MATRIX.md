@@ -245,7 +245,16 @@ header equivalence. Static original-program evidence closes the option truth tab
 `004EE470` graphics branch and `004EF2D0` Map16 branch prove the switches independently control
 their respective allocations, including the intervening zero-occupancy recomputation at
 `004EEE40`. The complete control inventory below supersedes the former open option-product note;
-the aggregate workflow remains Partial for its installed-ROM identity/mapper variants.
+the aggregate workflow remains Partial for its complete installed-ROM transaction product. The
+formerly hardcoded installed graphics lookup is now corrected: Ghidra's ROM-open instruction
+window proves active layout-descriptor field `+0x94` supplies the 64-byte, 16-by-4 object-tileset
+graphics-assignment table. `RevisionProfile` carries that logical offset explicitly, protects and
+audits the complete table as metadata, and refuses profiles that omit it rather than borrowing the
+SMW-US-v1 offset. `object_tileset_graphics_lookup_covers_every_supported_identity_mapper_header_and_checksum_form`
+binds the lookup to all 48 authenticated identity/map-mode/copier/checksum forms, while
+`resolved_loader_uses_the_profile_assignment_row_instead_of_the_us_v1_offset` proves the bitmap
+workspace consumes a relocated row. Full bitmap save/reopen/undo across that 48-case product is
+still required before the Variants gate can be promoted.
 
 The original bitmap-dialog control inventory is now complete rather than inferred from sampled
 captures. Resources `$418/$419` and procedures `004F15E0`/`004F1FA0` bind all 20 editable

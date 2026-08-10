@@ -142,6 +142,18 @@ pub(super) fn parse(input: &str) -> Result<RevisionProfile, RevisionProfileError
     let graphics_compression =
         parse_graphics_compression(&take(&mut values, "graphics.compression")?)?;
     let graphics_split_pointer_planes = parse_graphics_pointer_planes(&mut values, tables[4])?;
+    let object_tileset_graphics_offset = values
+        .remove("graphics.object_tileset_assignments_offset")
+        .map(|value| {
+            value
+                .strip_prefix("0x")
+                .map_or_else(|| value.parse(), |hex| usize::from_str_radix(hex, 16))
+                .map_err(|_| RevisionProfileError::InvalidNumber {
+                    key: "graphics.object_tileset_assignments_offset".into(),
+                    value,
+                })
+        })
+        .transpose()?;
     let palette_colors = number(&mut values, "palette.colors")?;
     let exanimation_maximum_records = number(&mut values, "exanimation.maximum_records")?;
     let exanimation_maximum_encoded_len = number(&mut values, "exanimation.maximum_encoded_len")?;
@@ -191,6 +203,7 @@ pub(super) fn parse(input: &str) -> Result<RevisionProfile, RevisionProfileError
             maximum_compressed_len: graphics_maximum_compressed_len,
             maximum_decompressed_len: graphics_maximum_decompressed_len,
         },
+        object_tileset_graphics_offset,
         palette,
         palette_installation,
         exanimation,

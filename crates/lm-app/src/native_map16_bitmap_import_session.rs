@@ -70,9 +70,15 @@ impl NativeMap16BitmapImportSession {
         let loaded = project
             .load_level_slot(request.level, level_layout, &profile.sprite_lengths)
             .map_err(|error| NativeMap16BitmapImportSessionError::Level(error.to_string()))?;
-        let workspace = NativeMap16BitmapGraphicsWorkspace::load_smw_us_v1(
+        let assignments = profile
+            .object_tileset_graphics_files(
+                &project.rom,
+                usize::from(loaded.layer1.header.object_tileset()),
+            )
+            .map_err(|error| NativeMap16BitmapImportSessionError::Profile(error.to_string()))?;
+        let workspace = NativeMap16BitmapGraphicsWorkspace::load(
             &project,
-            loaded.layer1.header.object_tileset(),
+            assignments,
             request.extra_graphics,
             profile.graphics,
         )

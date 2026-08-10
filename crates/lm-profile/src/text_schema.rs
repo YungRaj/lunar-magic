@@ -42,6 +42,8 @@ pub(super) const EXPANDED_SETTINGS_KEYS: [&str; 3] = [
     "expanded_settings.stride",
 ];
 
+pub(super) const OPTIONAL_KEYS: [&str; 1] = ["graphics.object_tileset_assignments_offset"];
+
 pub(super) const LAYER2_KEYS: [&str; 9] = [
     "level.layer2.offset",
     "level.layer2.entries",

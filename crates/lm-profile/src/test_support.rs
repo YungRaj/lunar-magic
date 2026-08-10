@@ -10,7 +10,7 @@ use lm_project::{
 };
 use lm_rom::{Mapper, Region, SupportedGame};
 #[cfg(test)]
-use lm_rom::{RomIdentity, SnesChecksum};
+use lm_rom::{RomIdentity, RomImage, SnesChecksum, compute_snes_checksum, detect_identity};
 #[cfg(test)]
 use std::path::PathBuf;
 
@@ -156,6 +156,7 @@ pub fn profile() -> RevisionProfile {
             maximum_compressed_len: 0x8000,
             maximum_decompressed_len: 0x10000,
         },
+        object_tileset_graphics_offset: Some(0x1800),
         palette: PaletteRomLayout {
             mapper,
             pointers: pointer(0x1400, 0x200),
@@ -773,4 +774,135 @@ fn installed_layer2_descriptor_layout_round_trips_and_requires_all_fields() {
         RevisionProfile::parse(&partial),
         Err(RevisionProfileError::IncompleteLayer2Layout)
     ));
+}
+
+#[test]
+fn object_tileset_graphics_layout_round_trips_reads_every_row_and_never_guesses() {
+    let expected = profile();
+    let encoded = expected.encode();
+    assert!(encoded.contains("graphics.object_tileset_assignments_offset=0x1800\n"));
+    assert_eq!(RevisionProfile::parse(&encoded).unwrap(), expected);
+
+    let mut bytes = vec![0xff; 0x20_000];
+    for tileset in 0..crate::OBJECT_TILESET_GRAPHICS_TILESETS {
+        let start = 0x1800 + tileset * crate::OBJECT_TILESET_GRAPHICS_SLOTS;
+        bytes[start..start + 4].copy_from_slice(&[
+            tileset as u8,
+            tileset as u8 + 0x10,
+            tileset as u8 + 0x20,
+            tileset as u8 + 0x30,
+        ]);
+    }
+    let rom = RomImage::from_bytes(bytes).unwrap();
+
+    for mapper in [Mapper::LoRom, Mapper::Sa1, Mapper::ExLoRom] {
+        for headered in [false, true] {
+            let physical = if headered {
+                let mut physical = vec![0x5a; lm_rom::COPIER_HEADER_LEN];
+                physical.extend_from_slice(rom.logical_bytes());
+                physical
+            } else {
+                rom.logical_bytes().to_vec()
+            };
+            let variant = RomImage::from_bytes(physical).unwrap();
+            let mut routed = expected.clone();
+            routed.mapper = mapper;
+            assert_eq!(
+                routed.object_tileset_graphics_files(&variant, 15).unwrap(),
+                [15, 31, 47, 63]
+            );
+        }
+    }
+    for tileset in 0..crate::OBJECT_TILESET_GRAPHICS_TILESETS {
+        assert_eq!(
+            expected
+                .object_tileset_graphics_files(&rom, tileset)
+                .unwrap(),
+            [tileset, tileset + 0x10, tileset + 0x20, tileset + 0x30]
+        );
+    }
+    assert!(matches!(
+        expected.object_tileset_graphics_files(&rom, 16),
+        Err(crate::ObjectTilesetGraphicsError::TilesetOutOfRange(16))
+    ));
+
+    let legacy = encoded
+        .lines()
+        .filter(|line| !line.starts_with("graphics.object_tileset_assignments_offset="))
+        .collect::<Vec<_>>()
+        .join("\n")
+        + "\n";
+    let legacy = RevisionProfile::parse(&legacy).unwrap();
+    assert_eq!(legacy.object_tileset_graphics_offset, None);
+    assert!(matches!(
+        legacy.object_tileset_graphics_files(&rom, 0),
+        Err(crate::ObjectTilesetGraphicsError::LayoutMissing)
+    ));
+}
+
+#[test]
+fn object_tileset_graphics_lookup_covers_every_supported_identity_mapper_header_and_checksum_form()
+{
+    const SMW: &[u8; 21] = b"SUPER MARIOWORLD     ";
+    const ALL_STARS_WORLD: &[u8; 21] = b"ALL_STARS + WORLD    ";
+    let identities = [
+        (SupportedGame::SuperMarioWorld, SMW, Region::Japan, 0),
+        (SupportedGame::SuperMarioWorld, SMW, Region::NorthAmerica, 1),
+        (
+            SupportedGame::AllStarsAndWorld,
+            ALL_STARS_WORLD,
+            Region::NorthAmerica,
+            1,
+        ),
+    ];
+    let mappings = [
+        (0x20, Mapper::LoRom),
+        (0x30, Mapper::LoRom),
+        (0x23, Mapper::Sa1),
+        (0x32, Mapper::ExLoRom),
+    ];
+    let mut cases = 0;
+    for (game, title, region, region_byte) in identities {
+        for (map_mode, mapper) in mappings {
+            for headered in [false, true] {
+                for corrupt_checksum in [false, true] {
+                    let mut logical = vec![0; 0x8000];
+                    logical[0x1800 + 8..0x1800 + 12].copy_from_slice(&[0x11, 0x22, 0x33, 0x44]);
+                    logical[0x7fc0..0x7fc0 + 21].copy_from_slice(title);
+                    logical[0x7fc0 + 0x15] = map_mode;
+                    logical[0x7fc0 + 0x19] = region_byte;
+                    let checksum = compute_snes_checksum(&logical, 0x7fc0 + 0x1c).unwrap();
+                    logical[0x7fc0 + 0x1c..0x7fc0 + 0x20].copy_from_slice(&checksum.encoded());
+                    if corrupt_checksum {
+                        logical[0] ^= 1;
+                    }
+                    let physical = if headered {
+                        let mut physical = vec![0x5a; lm_rom::COPIER_HEADER_LEN];
+                        physical.extend(logical);
+                        physical
+                    } else {
+                        logical
+                    };
+                    let rom = RomImage::from_bytes(physical).unwrap();
+                    let detected = detect_identity(&rom).unwrap();
+                    assert_eq!(detected.game, game);
+                    assert_eq!(detected.region, region);
+                    assert_eq!(detected.mapper, mapper);
+                    assert_eq!(detected.checksum_matches(), !corrupt_checksum);
+                    let mut routed = profile();
+                    routed.game = game;
+                    routed.region = region;
+                    routed.revision = detected.revision;
+                    routed.mapper = mapper;
+                    routed.ensure_identity(&detected).unwrap();
+                    assert_eq!(
+                        routed.object_tileset_graphics_files(&rom, 2).unwrap(),
+                        [0x11, 0x22, 0x33, 0x44]
+                    );
+                    cases += 1;
+                }
+            }
+        }
+    }
+    assert_eq!(cases, 48);
 }

@@ -48,6 +48,13 @@ pub(super) fn encode(profile: &RevisionProfile) -> String {
         .unwrap();
     }
     encode_sprite_pointers(&mut out, profile);
+    if let Some(offset) = profile.object_tileset_graphics_offset {
+        writeln!(
+            out,
+            "graphics.object_tileset_assignments_offset=0x{offset:x}"
+        )
+        .unwrap();
+    }
     encode_layer2(&mut out, profile);
     encode_installations(&mut out, profile);
     if let Some(layout) = profile.expanded_settings {

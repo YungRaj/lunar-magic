@@ -1,6 +1,8 @@
 use super::RevisionProfileError;
 use crate::RevisionProfile;
-use crate::text_schema::{EXPANDED_SETTINGS_KEYS, INSTALLATION_KEYS, LAYER2_KEYS, SCALARS, TABLES};
+use crate::text_schema::{
+    EXPANDED_SETTINGS_KEYS, INSTALLATION_KEYS, LAYER2_KEYS, OPTIONAL_KEYS, SCALARS, TABLES,
+};
 use lm_project::GraphicsCompression;
 use lm_rom::{Mapper, Region, SupportedGame};
 use std::collections::BTreeMap;
@@ -93,6 +95,7 @@ fn known_keys() -> Vec<String> {
     keys.extend(EXPANDED_SETTINGS_KEYS.into_iter().map(str::to_owned));
     keys.extend(LAYER2_KEYS.into_iter().map(str::to_owned));
     keys.extend(INSTALLATION_KEYS.into_iter().map(str::to_owned));
+    keys.extend(OPTIONAL_KEYS.into_iter().map(str::to_owned));
     keys
 }
 

@@ -86,7 +86,7 @@ use lm_project::{
     ExpandedLevelSettingsLayout, GraphicsRomLayout, InstalledExAnimationRomLayout, InstalledLayout,
     LevelLayer2RomLayout, LevelPointerTable, LevelRomLayout, Map16RomLayout, PaletteRomLayout,
 };
-use lm_rom::{Mapper, Region, RomIdentity, SupportedGame, pc_to_snes};
+use lm_rom::{Mapper, Region, RomError, RomIdentity, RomImage, SupportedGame, pc_to_snes};
 use std::fmt;
 use std::ops::Range;
 
@@ -639,6 +639,10 @@ pub struct RevisionProfile {
     pub layer2: Option<LevelLayer2RomLayout>,
     pub map16: Map16RomLayout,
     pub graphics: GraphicsRomLayout,
+    /// Logical PC offset of the 16-by-4 FG/BG graphics-assignment table loaded from active ROM
+    /// layout-descriptor entry `+0x94`. Older profiles may omit it, but workflows that require
+    /// object-tileset graphics must then reject instead of assuming the SMW-US-v1 address.
+    pub object_tileset_graphics_offset: Option<usize>,
     pub palette: PaletteRomLayout,
     pub palette_installation: InstalledLayout<PaletteRomLayout>,
     pub exanimation: ExAnimationRomLayout,
@@ -651,6 +655,24 @@ pub struct RevisionProfile {
     pub sprite_lengths: SpriteLengthTable,
     pub exanimation_double_size_modes: [bool; 256],
 }
+
+pub const OBJECT_TILESET_GRAPHICS_TILESETS: usize = 16;
+pub const OBJECT_TILESET_GRAPHICS_SLOTS: usize = 4;
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum ObjectTilesetGraphicsError {
+    LayoutMissing,
+    TilesetOutOfRange(usize),
+    Rom(RomError),
+}
+
+impl fmt::Display for ObjectTilesetGraphicsError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(formatter, "object-tileset graphics lookup failed: {self:?}")
+    }
+}
+
+impl std::error::Error for ObjectTilesetGraphicsError {}
 
 impl RevisionProfile {
     pub const MAGIC: &'static str = "LMREVPRO1";
@@ -725,6 +747,43 @@ impl RevisionProfile {
         }
     }
 
+    /// Reads the four FG/BG graphics-file assignments selected by an object tileset.
+    ///
+    /// Lunar Magic loads the complete 64-byte source table through active ROM-layout descriptor
+    /// entry `+0x94`; this profile field is consequently identity- and mapper-specific.
+    pub fn object_tileset_graphics_files(
+        &self,
+        rom: &RomImage,
+        tileset: usize,
+    ) -> Result<[usize; OBJECT_TILESET_GRAPHICS_SLOTS], ObjectTilesetGraphicsError> {
+        let base = self
+            .object_tileset_graphics_offset
+            .ok_or(ObjectTilesetGraphicsError::LayoutMissing)?;
+        if tileset >= OBJECT_TILESET_GRAPHICS_TILESETS {
+            return Err(ObjectTilesetGraphicsError::TilesetOutOfRange(tileset));
+        }
+        let offset = base
+            .checked_add(tileset * OBJECT_TILESET_GRAPHICS_SLOTS)
+            .ok_or_else(|| {
+                ObjectTilesetGraphicsError::Rom(RomError::RangeOutOfBounds {
+                    offset: base,
+                    len: OBJECT_TILESET_GRAPHICS_SLOTS,
+                    image_len: rom.logical_len(),
+                })
+            })?;
+        let bytes = rom
+            .logical_bytes()
+            .get(offset..offset + OBJECT_TILESET_GRAPHICS_SLOTS)
+            .ok_or_else(|| {
+                ObjectTilesetGraphicsError::Rom(RomError::RangeOutOfBounds {
+                    offset,
+                    len: OBJECT_TILESET_GRAPHICS_SLOTS,
+                    image_len: rom.logical_len(),
+                })
+            })?;
+        Ok(std::array::from_fn(|index| usize::from(bytes[index])))
+    }
+
     /// Validates a programmatically constructed profile before it is used or persisted.
     ///
     /// # Errors
@@ -746,6 +805,16 @@ impl RevisionProfile {
         self.validate_mappers()?;
         self.validate_installations()?;
         self.validate_tables()?;
+        if let Some(offset) = self.object_tileset_graphics_offset {
+            let final_offset = offset
+                .checked_add(OBJECT_TILESET_GRAPHICS_TILESETS * OBJECT_TILESET_GRAPHICS_SLOTS - 1)
+                .ok_or(RevisionProfileError::AddressOverflow(
+                    "graphics.object_tileset_assignments",
+                ))?;
+            pc_to_snes(self.mapper, final_offset).map_err(|_| {
+                RevisionProfileError::UnmappedPointerTable("graphics.object_tileset_assignments")
+            })?;
+        }
         self.validate_expanded_settings()?;
         self.validate_shapes()?;
         if self
