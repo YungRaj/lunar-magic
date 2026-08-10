@@ -154,7 +154,7 @@ impl GraphicsImportWorker {
         completion
     }
 
-    fn poll(&mut self) -> Option<Result<Option<PreparedRomCommit>, String>> {
+    pub(super) fn poll(&mut self) -> Option<Result<Option<PreparedRomCommit>, String>> {
         let running = self.running.as_ref()?;
         match running.result.try_recv() {
             Ok(result) => {

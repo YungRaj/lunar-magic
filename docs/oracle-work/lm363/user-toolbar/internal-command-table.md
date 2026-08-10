@@ -33,7 +33,7 @@ ruby -e 'b=File.binread(ARGV[0]); 318.times{|i| p=b.byteslice(0x1e6a70+i*4,4).un
 slots, all 317 named entries in their original order, the terminal sentinel, duplicate-name and
 shared-ID behavior, and successful `usertoolbar.txt` parsing of every named entry. `lm-native`
 rejects invented internal names before dispatch, distinguishes an authenticated but not-yet-routed
-command by its original ID, and currently routes 185 authenticated table entries to native commands,
+command by its original ID, and currently routes 187 authenticated table entries to native commands,
 level-view actions, or the same native workflow used by the corresponding menu. The direct workflow
 set includes Help Contents/About, level analysis, restore-point creation/restoration, IPS
 creation/application, the authenticated Sprite 19 installer, the integrated object/sprite placers
@@ -49,5 +49,10 @@ The authenticated ordinary `LM_FILE_EXTRACT_GFX`/`LM_FILE_EXTRACT_EXGFX` and qui
 without an ownership chooser and target the ROM-sibling `Graphics` (`AllGFX.bin` when enabled) and
 `ExGraphics` paths. Ordinary commands show the recovered success resource after publication; quick
 commands suppress only that completion presentation.
+The authenticated quick insertion handlers `LM_FILE_INSERT_GFX_BUTTON` and
+`LM_FILE_INSERT_EXGFX_BUTTON` use those same fixed sibling paths, retain the conditional 4bpp
+format warning, validate in a cancellable worker, and publish one revision-bound atomic ROM commit.
+Their ordinary counterparts remain distinct because original resources `$03EC` and `$03FE` expose
+PC address, expansion, and 3bpp/4bpp ASM choices before insertion.
 Command enumeration rejects false acceptance, but does not claim that the remaining commands are
 implemented.

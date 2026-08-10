@@ -83,6 +83,12 @@ struct PendingGraphicsFormatWarning {
 const GRAPHICS_FORMAT_WARNING_TITLE: &str = "Graphics Format Change Warning!";
 const GRAPHICS_FORMAT_WARNING_BODY: &str = "The GFX are about to be inserted as 4bpp, but any ExGFX already in the ROM are still stored in 3bpp format.  Make sure to re-insert the ExGFX too after this so the program can store them as 4bpp as well (if you don't yet have an external copy of them, you should cancel this and extract the ExGFX first).  Unless for some reason you actually like looking at garbled graphics...\n\nProceed anyway?";
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum QuickGraphicsInsertion {
+    Standard,
+    ExGraphics,
+}
+
 #[derive(Default)]
 pub(crate) struct RomGraphicsEditor {
     workspace: Option<Workspace>,
@@ -119,6 +125,29 @@ pub(crate) struct RomGraphicsEditor {
 }
 
 impl RomGraphicsEditor {
+    pub(crate) fn start_quick_import(
+        &mut self,
+        app: &AppState,
+        action: QuickGraphicsInsertion,
+        joined_standard: bool,
+    ) -> Result<(), String> {
+        if self.graphics_import.is_running() || self.pending_graphics_format_warning.is_some() {
+            return Err("a graphics insertion is already running".into());
+        }
+        if self.error.is_some() {
+            return Err("dismiss the current ROM graphics error before inserting GFX".into());
+        }
+        if modified_controller(self.workspace.as_ref()) {
+            return Err("commit or discard staged graphics edits before inserting GFX".into());
+        }
+        let (source, target) = quick_graphics_import_source(app, action, joined_standard)?;
+        self.start_graphics_import_or_warn(source, target);
+        if let Some(error) = self.error.take() {
+            return Err(error);
+        }
+        Ok(())
+    }
+
     fn refresh_internal_cache(&mut self, level: Option<u16>, special_world_passed: bool) {
         let Some(workspace) = self.workspace.as_mut() else {
             return;
@@ -1949,6 +1978,145 @@ fn modified_controller(workspace: Option<&Workspace>) -> bool {
     workspace.is_some_and(|workspace| workspace.controller.is_modified())
 }
 
+fn quick_graphics_import_source(
+    app: &AppState,
+    action: QuickGraphicsInsertion,
+    joined_standard: bool,
+) -> Result<
+    (
+        graphics_import::GraphicsImportSource,
+        PendingGraphicsFormatWarningTarget,
+    ),
+    String,
+> {
+    let snapshot = app
+        .controller_snapshot()
+        .map_err(|error| error.to_string())?;
+    let rom_path = snapshot
+        .document_path
+        .as_deref()
+        .ok_or("save the ROM to a named path before quick GFX insertion")?;
+    let parent = rom_path
+        .parent()
+        .ok_or("the open ROM path has no parent directory")?;
+    let image = lm_rom::RomImage::from_bytes(snapshot.rom_bytes.clone())
+        .map_err(|error| error.to_string())?;
+    let (layout, options, smw_us_special) = match app.profiled_controller_snapshot() {
+        Ok(profiled) => {
+            let allocation = profiled
+                .profile
+                .allocation_policy_for_rom(
+                    0..image.logical_len(),
+                    &image,
+                    snapshot.identity.internal_header_offset,
+                )
+                .map_err(|error| error.to_string())?;
+            (
+                profiled.profile.graphics,
+                lm_project::GraphicsSaveOptions {
+                    allocation,
+                    previous_block: None,
+                    reuse_identical: true,
+                    erase_fill: 0xff,
+                },
+                pristine_special_graphics(&profiled.profile),
+            )
+        }
+        Err(lm_app::AppError::NoRevisionProfile)
+            if snapshot.identity.game == lm_rom::SupportedGame::SuperMarioWorld
+                && snapshot.identity.region == lm_rom::Region::NorthAmerica
+                && snapshot.identity.revision == 0
+                && snapshot.identity.mapper == lm_rom::Mapper::LoRom =>
+        {
+            (
+                lm_profile::smw_us_v1_vanilla_graphics_layout(),
+                lm_project::GraphicsSaveOptions {
+                    allocation: lm_rats::AllocationPolicy {
+                        search: 0..image.logical_len(),
+                        bank_size: Some(0x8000),
+                        fill_bytes: vec![0x00, 0xff],
+                        protected: Vec::new(),
+                    },
+                    previous_block: None,
+                    reuse_identical: true,
+                    erase_fill: 0xff,
+                },
+                true,
+            )
+        }
+        Err(error) => return Err(error.to_string()),
+    };
+    let checksum_field = snapshot.identity.internal_header_offset + 0x1c;
+    match action {
+        QuickGraphicsInsertion::Standard => {
+            let pristine_install =
+                smw_us_special && !lm_profile::has_smw_us_v1_4bpp_graphics_prerequisite(&image);
+            let (slots, file_numbers) = if pristine_install {
+                let files = (0..0x34).collect::<Vec<_>>();
+                (files.clone(), files)
+            } else {
+                let slots = standard_graphics_slots(layout);
+                (slots.clone(), slots)
+            };
+            let source = graphics_import::GraphicsImportSource {
+                expected_revision: snapshot.revision,
+                image,
+                layout,
+                checksum_field,
+                options,
+                slots,
+                file_numbers,
+                family: "standard",
+                description: "Quick insert all standard GFX files",
+                smw_us_v1_special: false,
+                smw_us_v1_standard_install: pristine_install,
+                smw_us_v1_exgraphics: false,
+                exgraphics_names: false,
+            };
+            let target = if joined_standard {
+                PendingGraphicsFormatWarningTarget::Joined(
+                    parent.join("Graphics").join("AllGFX.bin"),
+                )
+            } else {
+                PendingGraphicsFormatWarningTarget::Directory(parent.join("Graphics"))
+            };
+            Ok((source, target))
+        }
+        QuickGraphicsInsertion::ExGraphics => {
+            let native_exgraphics = smw_us_special
+                && (lm_profile::has_smw_us_v1_4bpp_graphics_prerequisite(&image)
+                    || lm_profile::probe_smw_us_v1_exgraphics_runtime(&image).is_ok());
+            let directory = parent.join("ExGraphics");
+            let slots = graphics_import::enumerate_exgraphics_files(
+                &directory,
+                if native_exgraphics {
+                    EXGFX_LIMIT
+                } else {
+                    layout.pointers.entries
+                },
+            )?;
+            Ok((
+                graphics_import::GraphicsImportSource {
+                    expected_revision: snapshot.revision,
+                    image,
+                    layout,
+                    checksum_field,
+                    options,
+                    slots: slots.clone(),
+                    file_numbers: slots,
+                    family: "extended",
+                    description: "Quick insert ExGFX files",
+                    smw_us_v1_special: false,
+                    smw_us_v1_standard_install: false,
+                    smw_us_v1_exgraphics: native_exgraphics,
+                    exgraphics_names: true,
+                },
+                PendingGraphicsFormatWarningTarget::Directory(directory),
+            ))
+        }
+    }
+}
+
 fn ensure_external_edit_revision(expected: u64, current: u64) -> Result<(), String> {
     crate::rom_load::ensure_current_revision(expected, current, "external graphics reload")
 }
@@ -2105,10 +2273,12 @@ fn installed_exgraphics_slots(
 #[cfg(test)]
 mod tests {
     use super::{
+        PendingGraphicsFormatWarningTarget, QuickGraphicsInsertion, RomGraphicsEditor,
         diagnostic_sheet_paste_editable, ensure_external_edit_revision, installed_exgraphics_slots,
         internal_cache_level_graphics_overrides, lunar_magic_standard_graphics_sources,
         overlay_current_graphics_file, paste_target_permitted, pristine_special_graphics,
-        replace_internal_cache_tile, supports_exgraphics, supports_native_exgraphics,
+        quick_graphics_import_source, replace_internal_cache_tile, supports_exgraphics,
+        supports_native_exgraphics,
     };
     use crate::{
         level_graphics_export::CurrentLevelGraphicsAssignments,
@@ -2117,6 +2287,126 @@ mod tests {
     use lm_graphics::{GraphicsFile4bpp, IndexedTile};
     use lm_project::{GraphicsCompression, GraphicsRomLayout, LevelPointerTable};
     use lm_rom::{Mapper, RomImage};
+
+    #[test]
+    fn quick_standard_insertion_uses_lunar_magics_fixed_sibling_targets() {
+        let root = tempfile::tempdir().unwrap();
+        let mut app = lm_app::AppState::default();
+        app.load_rom(crate::test_support::pristine_smw_us_rom_bytes())
+            .unwrap();
+        app.document_path = Some(root.path().join("game.smc"));
+        let (separate, separate_target) =
+            quick_graphics_import_source(&app, QuickGraphicsInsertion::Standard, false).unwrap();
+        assert_eq!(separate.file_numbers, (0..0x34).collect::<Vec<_>>());
+        assert!(separate.smw_us_v1_standard_install);
+        assert!(matches!(
+            separate_target,
+            PendingGraphicsFormatWarningTarget::Directory(path)
+                if path == root.path().join("Graphics")
+        ));
+        let (_, joined_target) =
+            quick_graphics_import_source(&app, QuickGraphicsInsertion::Standard, true).unwrap();
+        assert!(matches!(
+            joined_target,
+            PendingGraphicsFormatWarningTarget::Joined(path)
+                if path == root.path().join("Graphics").join("AllGFX.bin")
+        ));
+    }
+
+    #[test]
+    fn quick_exgraphics_insertion_rejects_pristine_rom_before_starting_work() {
+        let root = tempfile::tempdir().unwrap();
+        std::fs::create_dir(root.path().join("ExGraphics")).unwrap();
+        let mut app = lm_app::AppState::default();
+        app.load_rom(crate::test_support::pristine_smw_us_rom_bytes())
+            .unwrap();
+        app.document_path = Some(root.path().join("game.smc"));
+        let mut editor = RomGraphicsEditor::default();
+        assert!(
+            editor
+                .start_quick_import(&app, QuickGraphicsInsertion::ExGraphics, false)
+                .is_err()
+        );
+        assert!(!editor.graphics_import.is_running());
+    }
+
+    #[test]
+    fn quick_standard_insertion_commits_reopens_and_undoes_from_fixed_directory() {
+        let root = tempfile::tempdir().unwrap();
+        let original = crate::test_support::pristine_smw_us_rom_bytes();
+        let mut app = lm_app::AppState::default();
+        app.load_rom(original.clone()).unwrap();
+        app.document_path = Some(root.path().join("game.smc"));
+        let image = RomImage::from_bytes(original.clone()).unwrap();
+        let source = super::standard_graphics_batch_source(
+            image,
+            lm_profile::smw_us_v1_vanilla_graphics_layout(),
+            true,
+        )
+        .unwrap();
+        std::fs::create_dir(root.path().join("Graphics")).unwrap();
+        let mut extraction = super::graphics_batch::GraphicsBatchWorker::default();
+        extraction
+            .start(source, root.path().join("Graphics"))
+            .unwrap();
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(120);
+        loop {
+            if let Some(result) = extraction.poll() {
+                assert_eq!(result.unwrap(), Some(0x34));
+                break;
+            }
+            assert!(std::time::Instant::now() < deadline);
+            std::thread::yield_now();
+        }
+
+        let mut editor = RomGraphicsEditor::default();
+        editor
+            .start_quick_import(&app, QuickGraphicsInsertion::Standard, false)
+            .unwrap();
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(120);
+        let commit = loop {
+            if let Some(result) = editor.graphics_import.poll() {
+                break result.unwrap().expect("quick insertion prepares a commit");
+            }
+            assert!(std::time::Instant::now() < deadline);
+            std::thread::yield_now();
+        };
+        app.dispatch(commit.into_command()).unwrap();
+        let installed = app.controller_snapshot().unwrap().rom_bytes;
+        let installed_image = RomImage::from_bytes(installed).unwrap();
+        assert!(lm_profile::has_smw_us_v1_4bpp_graphics_prerequisite(
+            &installed_image
+        ));
+        assert_eq!(app.project_revision(), 1);
+        std::fs::create_dir(root.path().join("ExGraphics")).unwrap();
+        std::fs::write(
+            root.path().join("ExGraphics").join("ExGFX80.bin"),
+            vec![0; 0x1000],
+        )
+        .unwrap();
+        editor
+            .start_quick_import(&app, QuickGraphicsInsertion::ExGraphics, false)
+            .unwrap();
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(120);
+        let exgraphics_commit = loop {
+            if let Some(result) = editor.graphics_import.poll() {
+                break result
+                    .unwrap()
+                    .expect("quick ExGFX insertion prepares a commit");
+            }
+            assert!(std::time::Instant::now() < deadline);
+            std::thread::yield_now();
+        };
+        app.dispatch(exgraphics_commit.into_command()).unwrap();
+        let exgraphics_image =
+            RomImage::from_bytes(app.controller_snapshot().unwrap().rom_bytes).unwrap();
+        assert!(lm_profile::probe_smw_us_v1_exgraphics_runtime(&exgraphics_image).is_ok());
+        assert_eq!(app.project_revision(), 2);
+        app.dispatch(lm_app::Command::Undo).unwrap();
+        assert_eq!(app.project_revision(), 3);
+        app.dispatch(lm_app::Command::Undo).unwrap();
+        assert_eq!(app.controller_snapshot().unwrap().rom_bytes, original);
+    }
 
     #[test]
     fn non_vanilla_standard_export_retains_profile_table_and_native_encoding() {

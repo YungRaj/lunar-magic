@@ -2115,6 +2115,22 @@ missing target directory, and publishes through the same cancellable all-or-noth
 the installed editor. Ordinary commands present the recovered success title/body after publication;
 quick commands suppress that success window, and cancellation presents neither success nor error.
 
+Insertion uses a different split. Ordinary standard command `$2398` enters dialog resource `$03EC`
+with procedure `$00405590`; ordinary ExGFX command `$239A` enters resource `$03FE` with procedure
+`$00405700`. The retained PE resources prove both dialogs expose a hexadecimal PC insertion address,
+an expansion checkbox, and a `Modify the ROM with ASM to use 4bpp tiles instead of 3bpp tiles`
+checkbox. Standard recommends expansion below 1 MiB, while ExGFX recommends it below 2 MiB; their
+notes reciprocally require GFX and ExGFX to use the same bit depth. Only after OK does the handler
+call `InsertAllGFXFiles` at `$0047E720` or `ImportExtendedGraphicsIntoRom` at `$0047F470`.
+Quick commands `$23D4` and `$23D6` bypass those option dialogs and enter the same routines at
+`$00493C67` and `$00493D18` with quiet bit 1 set. Rust now routes those two authenticated quick
+commands through the fixed ROM-sibling `Graphics`/`AllGFX.bin` and `ExGraphics` paths, the existing
+conditional format-change warning, the cancellable validator, and one revision-bound atomic ROM
+commit. A vanilla standard insertion followed by ExGFX insertion semantically reopens both installed
+runtimes and two Undo operations restore the byte-exact source. The two ordinary commands remain
+unrouted until their address, expansion, and ASM choices are all represented rather than collapsed
+to the quick defaults.
+
 Both bulk extraction functions use the same recovered `wb` mode string at image address
 `005B2D3C`. `ExtractAllGFXFiles` therefore truncates/replaces every fixed
 `Graphics/GFX%02X.bin` output, or `Graphics/AllGFX.bin` in joined mode, on a repeated export;
