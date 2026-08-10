@@ -77,3 +77,20 @@ Conversion removes Windows mnemonic ampersands and tab-delimited accelerator tex
 to a literal ampersand, normalizes a trailing `...` to `…`, and substitutes `Lunar Magic Rust` for
 the About `%s`. A missing, cleared, or empty original slot falls back independently to the typed
 English value.
+
+`FindLocalizedDialogResourceId` at `$004D76E0` binary-searches 107 built-in dialog IDs in
+`$005E61B8..$005E628D` and returns the corresponding language-DLL ID from
+`$005E62A8..$005E637D` only when that module actually contains a type-5 resource with the mapped
+ID. The original-ID table's raw SHA-256 is
+`24cb467274b98621cbc92985af83fe0e2e5b918f6d95038f17117e58be3cbdfa`; the localized-ID
+table's is `c45a14ded0e8e4c062f828a93784ef1a85a4181eb6a4cddb3d55bf6d73b462da`. Re-encoding the
+107 Rust pairs as consecutive little-endian words produces those same two hashes.
+
+`ShowLocalizedModalDialog` at `$004D7FE0` and `CreateLocalizedModelessDialog` at `$004D80C0`
+fall back independently to the executable's original dialog ID when the map lookup or DLL resource
+probe fails. Otherwise they use the mapped type-5 template, either by locking it and calling the
+indirect Win32 API or by passing the module plus mapped ID according to the original compatibility
+flag. Rust now validates the complete module marker/metadata contract and exposes borrowed bytes
+for every present mapped type-5 resource while omitting missing mappings, preserving that exact
+per-dialog fallback boundary without loading or executing the DLL. Parsing and applying those
+Win32 templates to native Rust dialog controls remains separate unfinished work.

@@ -3,6 +3,7 @@
 use flate2::{Decompress, FlushDecompress, Status};
 use std::collections::BTreeMap;
 
+use crate::original_language_dialog_map::ORIGINAL_LANGUAGE_DIALOG_RESOURCE_IDS;
 use crate::original_language_validation::{
     RANGE_STRING_LENGTH_CEILINGS, SINGLE_STRING_LENGTH_CEILINGS,
 };
@@ -35,6 +36,21 @@ pub struct OriginalLanguageModuleMetadata {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct OriginalLanguageStringPool {
     strings: Vec<Option<String>>,
+}
+
+/// One localized Win32 dialog resource paired with its built-in Lunar Magic dialog ID.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct OriginalLanguageDialogResource<'a> {
+    pub original_id: u16,
+    pub localized_id: u16,
+    bytes: &'a [u8],
+}
+
+impl<'a> OriginalLanguageDialogResource<'a> {
+    #[must_use]
+    pub const fn bytes(&self) -> &'a [u8] {
+        self.bytes
+    }
 }
 
 impl OriginalLanguageStringPool {
@@ -236,6 +252,36 @@ pub fn decode_original_language_module_strings(
         resources.resource(0x0dad)?,
         resources.resource(0x0dae)?,
     )
+}
+
+/// Validates an original DLL and returns every mapped type-5 dialog resource it actually contains.
+/// Missing mapped dialogs are omitted, matching Lunar Magic's per-dialog built-in fallback.
+///
+/// # Errors
+///
+/// Returns [`OriginalLanguageModuleError`] for checksum, PE, directory, or resource-bound failures.
+pub fn decode_original_language_module_dialogs(
+    bytes: &[u8],
+) -> Result<Vec<OriginalLanguageDialogResource<'_>>, OriginalLanguageModuleError> {
+    validate_original_language_module_checksum(bytes)?;
+    let resources = PeResources::parse(bytes)?;
+    OriginalLanguageModuleMetadata::decode(
+        resources.resource(0x0db7)?,
+        resources.resource(0x0db6)?,
+    )?;
+    let mut dialogs = Vec::new();
+    for &(original_id, localized_id) in ORIGINAL_LANGUAGE_DIALOG_RESOURCE_IDS {
+        match resources.resource_of_type(5, localized_id) {
+            Ok(bytes) => dialogs.push(OriginalLanguageDialogResource {
+                original_id,
+                localized_id,
+                bytes,
+            }),
+            Err(OriginalLanguageModuleError::MissingResource(_)) => {}
+            Err(error) => return Err(error),
+        }
+    }
+    Ok(dialogs)
 }
 
 /// Validates one original DLL and converts its supported strings into a complete typed catalog.
@@ -555,7 +601,15 @@ impl<'a> PeResources<'a> {
     }
 
     fn resource(&self, id: u16) -> Result<&'a [u8], OriginalLanguageModuleError> {
-        let type_directory = self.find_id(0, PE_RESOURCE_TYPE, true)?;
+        self.resource_of_type(PE_RESOURCE_TYPE, id)
+    }
+
+    fn resource_of_type(
+        &self,
+        resource_type: u16,
+        id: u16,
+    ) -> Result<&'a [u8], OriginalLanguageModuleError> {
+        let type_directory = self.find_id(0, resource_type, true)?;
         let language_directory = self.find_id(type_directory, id, true)?;
         let data_entry = self.first_data_entry(language_directory)?;
         let entry = self.relative_range(data_entry, 16)?;
@@ -1764,6 +1818,93 @@ mod tests {
         checksummed_original_module(&payload)
     }
 
+    fn original_language_dialog_pe(metadata: &[u8], dialogs: &[(u16, &[u8])]) -> Vec<u8> {
+        assert!(dialogs.len() <= 2);
+        let mut payload = vec![0_u8; 0x1200];
+        payload[..2].copy_from_slice(b"MZ");
+        write_u32(&mut payload, 0x3c, 0x80);
+        payload[0x80..0x84].copy_from_slice(b"PE\0\0");
+        write_u16(&mut payload, 0x84, 0x014c);
+        write_u16(&mut payload, 0x86, 1);
+        let optional = 0x98;
+        write_u16(&mut payload, 0x94, 0xe0);
+        write_u16(&mut payload, optional, 0x010b);
+        write_u32(&mut payload, optional + 60, 0x200);
+        write_u32(&mut payload, optional + 92, 16);
+        write_u32(&mut payload, optional + 96 + 16, 0x1000);
+        write_u32(&mut payload, optional + 96 + 20, 0x1000);
+        let section = optional + 0xe0;
+        payload[section..section + 8].copy_from_slice(b".rsrc\0\0\0");
+        write_u32(&mut payload, section + 8, 0x1000);
+        write_u32(&mut payload, section + 12, 0x1000);
+        write_u32(&mut payload, section + 16, 0x1000);
+        write_u32(&mut payload, section + 20, 0x200);
+
+        let root = 0x200;
+        write_u16(&mut payload, root + 14, 2);
+        write_u32(&mut payload, root + 0x10, 5);
+        write_u32(&mut payload, root + 0x14, 0x8000_0060);
+        write_u32(&mut payload, root + 0x18, u32::from(PE_RESOURCE_TYPE));
+        write_u32(&mut payload, root + 0x1c, 0x8000_0030);
+
+        let marker = ORIGINAL_LANGUAGE_MARKER.to_le_bytes();
+        let metadata_resources: [(u16, &[u8]); 2] = [(0x0db6, metadata), (0x0db7, &marker)];
+        write_u16(&mut payload, root + 0x30 + 14, 2);
+        for (index, (id, _)) in metadata_resources.iter().enumerate() {
+            write_u32(&mut payload, root + 0x40 + index * 8, u32::from(*id));
+            write_u32(
+                &mut payload,
+                root + 0x44 + index * 8,
+                0x8000_0000 | (0x90 + u32::try_from(index).unwrap() * 0x20),
+            );
+        }
+
+        write_u16(
+            &mut payload,
+            root + 0x60 + 14,
+            u16::try_from(dialogs.len()).unwrap(),
+        );
+        for (index, (id, _)) in dialogs.iter().enumerate() {
+            write_u32(&mut payload, root + 0x70 + index * 8, u32::from(*id));
+            write_u32(
+                &mut payload,
+                root + 0x74 + index * 8,
+                0x8000_0000 | (0xd0 + u32::try_from(index).unwrap() * 0x20),
+            );
+        }
+
+        let resources = metadata_resources
+            .iter()
+            .map(|(_, bytes)| *bytes)
+            .chain(dialogs.iter().map(|(_, bytes)| *bytes));
+        let mut blob = 0x180;
+        for (index, bytes) in resources.enumerate() {
+            let language = 0x90 + index * 0x20;
+            let data = 0x120 + index * 0x10;
+            write_u16(&mut payload, root + language + 14, 1);
+            write_u32(&mut payload, root + language + 16, 0x0409);
+            write_u32(
+                &mut payload,
+                root + language + 20,
+                u32::try_from(data).unwrap(),
+            );
+            write_u32(
+                &mut payload,
+                root + data,
+                0x1000 + u32::try_from(blob).unwrap(),
+            );
+            write_u32(
+                &mut payload,
+                root + data + 4,
+                u32::try_from(bytes.len()).unwrap(),
+            );
+            payload[root + blob..root + blob + bytes.len()].copy_from_slice(bytes);
+            blob = (blob + bytes.len() + 3) & !3;
+        }
+        assert!(blob <= 0x1000);
+        checksummed_original_module(&payload)
+    }
+
     fn encoded_original_string_pool(decoded: &[u8]) -> Vec<u8> {
         let mut encoder = DeflateEncoder::new(Vec::new(), Compression::default());
         encoder.write_all(decoded).unwrap();
@@ -2068,6 +2209,69 @@ mod tests {
         assert_eq!(
             catalog.text(UiTextKey::MenuTools),
             UiTextKey::MenuTools.english()
+        );
+    }
+
+    #[test]
+    fn original_language_dialog_map_matches_recovered_contract() {
+        assert_eq!(ORIGINAL_LANGUAGE_DIALOG_RESOURCE_IDS.len(), 107);
+        assert_eq!(
+            ORIGINAL_LANGUAGE_DIALOG_RESOURCE_IDS.first(),
+            Some(&(0x03e8, 0x07d0))
+        );
+        assert_eq!(
+            ORIGINAL_LANGUAGE_DIALOG_RESOURCE_IDS.last(),
+            Some(&(0x04d7, 0x08bf))
+        );
+        assert!(
+            ORIGINAL_LANGUAGE_DIALOG_RESOURCE_IDS
+                .windows(2)
+                .all(|pair| pair[0].0 < pair[1].0)
+        );
+    }
+
+    #[test]
+    fn original_language_dialogs_decode_type_five_resources_and_omit_missing_mappings() {
+        let first = b"first Win32 dialog template";
+        let last = b"last Win32 dialog template";
+        let module = original_language_dialog_pe(
+            b"Deutsch - Test\n3.63\nde-DE\n1252\n",
+            &[(0x07d0, first), (0x08bf, last)],
+        );
+        let dialogs = decode_original_language_module_dialogs(&module).unwrap();
+        assert_eq!(dialogs.len(), 2);
+        assert_eq!(dialogs[0].original_id, 0x03e8);
+        assert_eq!(dialogs[0].localized_id, 0x07d0);
+        assert_eq!(dialogs[0].bytes(), first);
+        assert_eq!(dialogs[1].original_id, 0x04d7);
+        assert_eq!(dialogs[1].localized_id, 0x08bf);
+        assert_eq!(dialogs[1].bytes(), last);
+    }
+
+    #[test]
+    fn original_language_dialogs_require_valid_module_metadata_and_resource_bounds() {
+        let mut wrong_marker = original_language_dialog_pe(
+            b"English - Test\n3.63\nen\n1252\n",
+            &[(0x07d0, b"dialog")],
+        );
+        let marker_rva = u32::from_le_bytes(wrong_marker[0x330..0x334].try_into().unwrap());
+        let marker_offset = 0x200 + usize::try_from(marker_rva - 0x1000).unwrap();
+        wrong_marker[marker_offset] ^= 1;
+        sign_original_module(&mut wrong_marker);
+        assert_eq!(
+            decode_original_language_module_dialogs(&wrong_marker),
+            Err(OriginalLanguageModuleError::WrongMarker)
+        );
+
+        let mut out_of_bounds = original_language_dialog_pe(
+            b"English - Test\n3.63\nen\n1252\n",
+            &[(0x07d0, b"dialog")],
+        );
+        write_u32(&mut out_of_bounds, 0x200 + 0x140, 0xffff_f000);
+        sign_original_module(&mut out_of_bounds);
+        assert_eq!(
+            decode_original_language_module_dialogs(&out_of_bounds),
+            Err(OriginalLanguageModuleError::ResourceBounds)
         );
     }
 

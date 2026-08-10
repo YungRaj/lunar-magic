@@ -60,6 +60,7 @@ mod native_map16_bitmap_workspace;
 mod native_map16_sidecar_controller;
 mod native_overworld_appearance_controller;
 mod navigation_state;
+mod original_language_dialog_map;
 mod original_language_validation;
 mod osc_sidecar_controller;
 mod overworld_appearance_document_controller;
@@ -222,10 +223,11 @@ pub use level_usage_scan::{
 };
 pub use lm_project::{MwlOptionalAssetsEdit, MwlOptionalAssetsEditError};
 pub use localization::{
-    LocalizationCatalog, LocalizationError, OriginalLanguageModuleError,
-    OriginalLanguageModuleMetadata, OriginalLanguageStringPool, UiTextKey,
-    decode_original_language_module, decode_original_language_module_catalog,
-    decode_original_language_module_strings, validate_original_language_module_checksum,
+    LocalizationCatalog, LocalizationError, OriginalLanguageDialogResource,
+    OriginalLanguageModuleError, OriginalLanguageModuleMetadata, OriginalLanguageStringPool,
+    UiTextKey, decode_original_language_module, decode_original_language_module_catalog,
+    decode_original_language_module_dialogs, decode_original_language_module_strings,
+    validate_original_language_module_checksum,
 };
 pub use map16_bitmap_allocation::{
     LUNAR_MAGIC_BLANK_MAP16_WORD, Map16BitmapAllocation, Map16BitmapAllocationError,

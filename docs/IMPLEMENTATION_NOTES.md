@@ -3530,9 +3530,8 @@ siblings. Automatic selection remains persistently distinct from fixed built-in 
 explicit catalog; it compares at most the original 64 entries from the bounded Windows
 preferred-UI-language list (or ordered locale environment values elsewhere), prefers an exact
 normalized locale, then a primary-language match,
-and safely retains English when no catalog matches. The original DLL resource fallback/version
-metadata ABI, complete remaining editor-dialog localization, and retained live Wine evidence remain
-open.
+and safely retains English when no catalog matches. Applying recovered original DLL dialog-template
+text throughout the remaining native editor surface and retained live Wine evidence remain open.
 
 The portable localization core now implements the prerequisite original-DLL validation ABI rather
 than trusting or executing a candidate module. It reproduces all three offset-selected byte
@@ -3547,7 +3546,8 @@ oversized metadata, invalid UTF-8, and incomplete fields reject. Native startup 
 the exact executable-adjacent `sysLMLanguage` directory for at most 64 `.dll` regular files, reads
 at most 64 MiB per candidate, skips invalid siblings, and retains checksum-validated metadata in
 deterministic display-name/path order. Original modules remain distinct from selectable `.lmlang`
-catalogs until conversion of their dialog/string resources into the typed catalog is complete.
+catalogs at this prerequisite stage; the subsequent string conversion and selection implementation
+below closes that boundary.
 
 The portable core now decodes the original localized string payload as well. It reads `$0DAC`,
 `$0DAD`, and `$0DAE` through the validated PE resource tree, reproduces the recovered chained
@@ -3562,7 +3562,18 @@ slots and Rust-only workflows retain English independently. Native startup conve
 DLLs without executing them, exposes their metadata display names in Tools → Language, includes
 their locale tags in the exact-then-primary auto-detection pass, installs a selected catalog
 atomically, and persists its canonical typed bytes. Remaining original dialog-template mapping and
-retained live-module evidence keep localization incomplete.
+retained live-module evidence kept localization incomplete at that milestone; the dispatch mapping
+is recovered in the next milestone, while native dialog-control application remains open.
+
+The original dialog-resource dispatch boundary is now recovered too. Two 107-word tables map
+built-in dialog IDs to language-DLL type-5 IDs; the Rust table reproduces both independent Ghidra
+memory dumps byte-for-byte. The portable PE reader can query an explicit resource type, and the
+public dialog decoder first validates checksum plus `$DB7/$DB6` module identity, then returns only
+mapped type-5 resources actually present in the DLL. Missing individual templates are omitted so
+callers retain the original's per-dialog built-in fallback; malformed resource bounds still reject
+the module. Synthetic two-type PE tests cover the first and last mappings, exact borrowed payloads,
+missing mappings, wrong marker, and invalid RVA. Native control-text application and retained
+live-module/Wine evidence remain open, so Configuration/Localization stays `Partial`.
 
 The native frontend now has an opt-in, self-capturing `visual-smoke` build. It waits until the
 workspace has rendered across multiple frames, requests the real Glow viewport through egui, and

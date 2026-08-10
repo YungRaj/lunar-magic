@@ -961,3 +961,22 @@ guards, normalization, typed conversion, and fallback in one call. All 20 locali
 Native discovery now retains the converted catalog beside original metadata, Language-menu choices
 install it directly, and auto-detection compares canonical `.lmlang` and converted `.dll` candidates
 in the same exact-then-primary pass. Eight loader tests and 11 preference tests pass.
+
+## Original language-module dialog resource mapping
+
+On 2026-08-10, the labeled project was queried headlessly for `FindLocalizedDialogResourceId`
+(`004D76E0`), `ShowLocalizedModalDialog` (`004D7FE0`), and
+`CreateLocalizedModelessDialog` (`004D80C0`). The lookup binary-searches 107 original IDs at
+`$005E61B8..$005E628D`, maps them through 107 localized IDs at
+`$005E62A8..$005E637D`, and accepts a mapping only when the active module contains that type-5
+resource. The two 214-byte dumps hash respectively to
+`24cb467274b98621cbc92985af83fe0e2e5b918f6d95038f17117e58be3cbdfa` and
+`c45a14ded0e8e4c062f828a93784ef1a85a4181eb6a4cddb3d55bf6d73b462da`; rebuilding both
+byte streams from the checked-in Rust pairs produced the same hashes.
+
+The portable decoder now authenticates checksum, PE resources, marker, and metadata before exposing
+present mapped type-5 templates as borrowed slices. Its synthetic PE fixture contains both the
+original `$01F4` resource tree and a separate type-5 tree. Three focused tests prove the exact
+107-entry boundary, first/last payload extraction, omission of absent resources, wrong-marker
+rejection, and malformed-RVA rejection. This establishes the original fallback ABI but does not
+claim native control localization or a live third-party language-DLL gate.
