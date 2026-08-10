@@ -17,6 +17,11 @@ impl UndoHistorySettings {
         self.open = true;
     }
 
+    #[cfg(test)]
+    pub(super) const fn is_open(&self) -> bool {
+        self.open
+    }
+
     pub(super) fn show(
         &mut self,
         context: &egui::Context,

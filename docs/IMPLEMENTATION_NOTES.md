@@ -5374,6 +5374,10 @@ The same lookup boundary now drives the extracted undo-history form from origina
 owned strings because typed localization can synthesize an owned fallback while original-template
 text borrows the installed catalog. This prevents either lifetime source from escaping the frame
 and keeps partial original modules safe: every absent title/control falls back independently.
+Authenticated internal command `LM_OPTIONS_GENERAL` (`$24D7`) now opens that same `$041F` form at
+the application's current undo-history limit. A dispatch-level gate proves the toolbar route opens
+the real native workspace rather than merely counting the command as supported; Apply, Cancel,
+bounded persistence, and restart behavior remain shared with the existing Tools-menu route.
 
 `GraphicsMigrationTarget` separates Lunar Magic's three visible compression choices from the two
 payload codecs. LZ2 Orig and LZ2 Speed both map to `GraphicsCompression::Lz2`, but Speed routes to
