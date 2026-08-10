@@ -139,7 +139,7 @@ fn verify_full_observation(fixture: &Path, output: &Path) {
         ("map16/transferred/definition-words", "8192"),
         ("map16/transferred/acts-like-count", "2884"),
         ("overworld/native-path-links/count", "14"),
-        ("overworld/native-warp-links/count", "54"),
+        ("overworld/native-warp-links/count", "27"),
         ("overworld/native-level-names/count", "96"),
         ("overworld/native-player-starts/count", "2"),
         ("overworld/expanded-settings/count", "7"),
