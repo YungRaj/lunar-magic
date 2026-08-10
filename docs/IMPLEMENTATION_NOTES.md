@@ -5329,3 +5329,14 @@ payload codecs. LZ2 Orig and LZ2 Speed both map to `GraphicsCompression::Lz2`, b
 the authenticated runtime command instead of becoming a same-codec no-op. Installed runtime
 detection selects Speed from Orig and LZ3 from either installed Speed or LZ3 while preserving the
 existing profile, identity, and revision checks.
+
+## Native external-tool configuration editor
+
+The native editor drafts the complete `ExternalTool` collection and publishes it only through
+`AppState::set_external_tools`, reusing the canonical duplicate-ID, duplicate-subscription, empty
+field, and placeholder validation boundary. Executable paths remain platform paths; arguments are
+entered one per line and retained as independent argv elements; an empty working-directory field
+maps to `None`; and three booleans reconstruct subscriptions in canonical event order. Cancel and
+window close discard the draft without touching active tools. Setup Emulator resource `$0407`
+supplies every equivalent caption while Rust-only safety and subscription controls retain explicit
+English labels.

@@ -3,6 +3,15 @@ use eframe::egui;
 
 impl NativeApplication {
     pub(super) fn show_editor_windows(&mut self, context: &egui::Context) {
+        if let Some(tools) = self
+            .external_tool_config_editor
+            .show(context, self.app.localization())
+        {
+            match self.app.set_external_tools(tools) {
+                Ok(()) => self.external_tool_config_editor.applied(),
+                Err(error) => self.external_tool_config_editor.rejected(error.to_string()),
+            }
+        }
         if self.palette_editor.show(context) {
             self.request_quit(context);
         }

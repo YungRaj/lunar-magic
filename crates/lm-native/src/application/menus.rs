@@ -555,6 +555,19 @@ impl NativeApplication {
                     self.effects.error = Some(error);
                 }
             }
+            if ui
+                .add_enabled(
+                    !self.external_tool_config_editor.is_open(),
+                    egui::Button::new(crate::external_tool_config_editor::menu_text(
+                        self.app.localization(),
+                    )),
+                )
+                .clicked()
+            {
+                ui.close_menu();
+                self.external_tool_config_editor
+                    .open(self.app.external_tools());
+            }
             let tools = self
                 .app
                 .external_tools()

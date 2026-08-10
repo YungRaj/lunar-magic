@@ -133,3 +133,9 @@ OK, and Cancel are bound. The same selector now exposes optimized LZ2 `$295` as 
 authenticated LZ2 Orig defaults to Speed, and selection routes to the existing revision-bound
 `InstallLz2SpeedRuntime` transaction. That transaction installs only the decoder for payload-
 compatible LZ2 Orig or performs the complete LZ3-to-Speed migration.
+
+Setup SNES Emulator `$0407` now has a native in-app configuration consumer. Its title, emulator
+path `$66`, command-line arguments `$68`, OK, and Cancel resolve from the original dialog inventory
+with independent fallback. The native editor deliberately represents arguments one per line so
+each becomes one direct process argument without shell parsing; it additionally exposes stable ID,
+display name, optional working-directory template, and portable opened/saved/level subscriptions.

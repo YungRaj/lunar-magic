@@ -21,6 +21,7 @@ mod exanimation_editor;
 mod exanimation_form;
 mod expanded_settings_editor;
 mod expanded_settings_editor_form;
+mod external_tool_config_editor;
 mod external_tool_launcher;
 mod external_tools;
 mod frontend_ui;

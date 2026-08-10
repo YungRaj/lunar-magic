@@ -1010,3 +1010,10 @@ Optimized LZ2 `$295` was then added to the same native compression selector. A f
 proves it emits `InstallLz2SpeedRuntime` at the exact open project revision without consulting the
 unrelated allocation text fields. Installed-mode detection chooses Speed as the next action from
 LZ2 Orig and LZ3 from installed Speed/LZ3.
+
+The Tools menu now opens an in-app external-tool/emulator editor rather than requiring every user
+to author `LMTOOLS1` bytes externally. Setup Emulator `$0407` binds the visible title, executable
+path `$66`, arguments `$68`, and IDs 1/2. A focused round-trip test preserves argv boundaries,
+working-directory template, and all three event subscriptions; a partial translated inventory test
+proves exact control selection and fallback. Existing `state::tests::tools` gates retain atomic
+duplicate-ID/event rejection for the final `AppState::set_external_tools` publication boundary.

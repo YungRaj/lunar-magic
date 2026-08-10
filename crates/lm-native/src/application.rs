@@ -140,6 +140,7 @@ pub(crate) struct NativeApplication {
     toolbar_editor: ToolbarEditor,
     toolbar_graphics_transfer: ToolbarGraphicsTransfer,
     undo_history_settings: undo_history_settings::UndoHistorySettings,
+    external_tool_config_editor: crate::external_tool_config_editor::ExternalToolConfigEditor,
     user_toolbar: Option<UserToolbar>,
     user_toolbar_images: UserToolbarImageSet,
     main_toolbar_images: MainToolbarImageSet,

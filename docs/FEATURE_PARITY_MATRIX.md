@@ -563,6 +563,14 @@ the existing one-revision fast-runtime transaction; a focused test binds that co
 without parsing irrelevant allocation fields. Other native forms remain unbound and no live
 language-DLL gesture has passed, so both affected rows and the aggregate remain unchanged.
 
+Setup SNES Emulator `$0407` now drives the corresponding native in-app external-tool editor title,
+executable-path `$66`, arguments `$68`, OK, and Cancel. The editor adds/removes tools, preserves
+independent argv elements, optional working-directory templates, and all three portable event
+subscriptions, then publishes the entire draft through the already failure-atomic authoritative
+validator. Focused form/inventory tests and existing duplicate-ID/event application tests cover the
+boundary. Original 8.3-path behavior, GBA-specific `$0408`, and broader process notifications remain
+incomplete, so Configuration/External tools and Localization remain `Partial`.
+
 The overworld Palette/ExAnimation row additionally has the exact per-map option representation.
 Four independently inverted feature bits retain their unrelated low nibble, while original
 lightning is decoded from its separate high-bit-first seven-map disable mask. The preview gates
