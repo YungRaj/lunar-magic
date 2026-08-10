@@ -954,3 +954,18 @@ ignores; and the 513-line renderer manifest retains SHA-256
 `254a1a050d12785973241910e26d8b7917a5cb5e2a56602a330fc6cbd833c04d`. The authenticated
 partition is now **258 routed / 59 pending**. The aggregate remains 59/65 because the
 configuration row is still Partial.
+
+Toolbar coverage update (2026-08-10, Open Level Number): `LM_FILE_OPEN_LEVEL` `$238E` now opens
+the native equivalent of original dialog resource `1000`. It uses the authenticated title,
+`Level Number (0-1FF)` label, OK/Cancel controls, and original-language resource overrides; seeds
+the current three-digit hexadecimal slot; rejects empty, prefixed, nonhexadecimal, trailing, and
+`$200+` values without navigating; and remains unavailable without an open ROM. The normal File
+menu and original-toolbar command share this dialog, while acceptance routes through the existing
+bounded `SelectLevel` transaction and therefore the established 512-slot viewport-history and
+renderer lifecycle. Focused parser, resource-localization, no-ROM, pristine-ROM, and command
+partition tests pass. The Windows cross-build passes, the complete native suite passes 1,016 tests
+with 12 explicit external-fixture ignores, all 512 pristine levels materialize, and the 513-line
+renderer manifest retains SHA-256
+`254a1a050d12785973241910e26d8b7917a5cb5e2a56602a330fc6cbd833c04d`. The authenticated
+partition is now **259 routed / 58 pending**. The aggregate remains 59/65 because the
+configuration row is still Partial.

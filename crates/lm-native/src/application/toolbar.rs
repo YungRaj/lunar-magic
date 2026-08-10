@@ -357,6 +357,11 @@ impl NativeApplication {
         match action {
             UserToolbarNativeAction::HelpContents => self.help_dialog.open(),
             UserToolbarNativeAction::HelpAbout => self.about_dialog.open(),
+            UserToolbarNativeAction::OpenLevelNumber => {
+                if let Some(level) = self.app.current_level() {
+                    self.open_level_number_dialog.open(Some(level));
+                }
+            }
             UserToolbarNativeAction::Sprite19Fix => {
                 self.built_in_runtime_installer.open_sprite19_fix(&self.app);
             }
@@ -1329,6 +1334,7 @@ fn legacy_graphics_bypass_prerequisite_installed(app: &lm_app::AppState) -> Resu
 enum UserToolbarNativeAction {
     HelpContents,
     HelpAbout,
+    OpenLevelNumber,
     Sprite19Fix,
     AnalyzeLevels,
     RestoreRom,
@@ -1396,6 +1402,7 @@ fn user_toolbar_native_action(name: &str) -> Option<UserToolbarNativeAction> {
     Some(match name {
         "LM_HELP_CONTENTS" => UserToolbarNativeAction::HelpContents,
         "LM_HELP_ABOUT" => UserToolbarNativeAction::HelpAbout,
+        "LM_FILE_OPEN_LEVEL" => UserToolbarNativeAction::OpenLevelNumber,
         "LM_KEY_SPRITE19_FIX" => UserToolbarNativeAction::Sprite19Fix,
         "LM_FILE_ANALYZE_LEVELS" => UserToolbarNativeAction::AnalyzeLevels,
         "LM_FILE_RESTORE" => UserToolbarNativeAction::RestoreRom,
@@ -1852,6 +1859,10 @@ mod user_toolbar_tests {
         assert_eq!(
             user_toolbar_native_action("LM_OPTIONS_ANIM_RATE"),
             Some(UserToolbarNativeAction::AnimationRate)
+        );
+        assert_eq!(
+            user_toolbar_native_action("LM_FILE_OPEN_LEVEL"),
+            Some(UserToolbarNativeAction::OpenLevelNumber)
         );
         assert_eq!(
             user_toolbar_native_action("LM_LEVEL_ENTRANCE2"),
@@ -2370,7 +2381,7 @@ mod user_toolbar_tests {
                     || user_toolbar_native_action(entry.name).is_some()
             })
             .collect::<Vec<_>>();
-        assert_eq!(supported.len(), 258);
+        assert_eq!(supported.len(), 259);
         assert!(
             supported
                 .iter()
@@ -2412,6 +2423,27 @@ mod user_toolbar_tests {
     }
 
     #[test]
+    fn open_level_number_toolbar_route_requires_a_rom_and_seeds_the_current_slot() {
+        let mut native = NativeApplication::default();
+        native.apply_user_toolbar_native_action(
+            &egui::Context::default(),
+            UserToolbarNativeAction::OpenLevelNumber,
+        );
+        assert!(!native.open_level_number_dialog.is_open());
+
+        native
+            .app
+            .load_rom(crate::test_support::pristine_smw_us_rom_bytes())
+            .unwrap();
+        native.apply_user_toolbar_native_action(
+            &egui::Context::default(),
+            UserToolbarNativeAction::OpenLevelNumber,
+        );
+        assert!(native.open_level_number_dialog.is_open());
+        assert_eq!(native.open_level_number_dialog.draft(), "105");
+    }
+
+    #[test]
     fn diagnostic_authenticated_internal_routes_partition_the_complete_original_table() {
         let unsupported = lm_app::lunar_magic_363_user_toolbar_commands()
             .filter(|entry| {
@@ -2420,7 +2452,7 @@ mod user_toolbar_tests {
                     && user_toolbar_native_action(entry.name).is_none()
             })
             .collect::<Vec<_>>();
-        assert_eq!(unsupported.len(), 59);
+        assert_eq!(unsupported.len(), 58);
         if std::env::var_os("LM_DIAGNOSTIC_UNSUPPORTED_TOOLBAR_COMMANDS").is_some() {
             for entry in unsupported {
                 eprintln!(

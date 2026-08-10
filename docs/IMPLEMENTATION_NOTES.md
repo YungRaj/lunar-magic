@@ -5649,3 +5649,21 @@ ignores, and its all-512-level renderer traversal passes. The regenerated 513-li
 manifest remains byte-identical at SHA-256
 `254a1a050d12785973241910e26d8b7917a5cb5e2a56602a330fc6cbd833c04d`. Authenticated native
 command coverage is now 258 of 317 named table slots, leaving 59 pending.
+
+## Open Level Number (`$238E`)
+
+The bundled 3.63 Help fixes the semantic range at `$000..$1FF` and explicitly states that opening
+a numbered slot abandons unsaved editor-local changes. Executable dialog resource `1000` provides
+the exact `Open Level Number (in hex)` title, `Level Number (0-1FF)` label, edit control `$7F`,
+label `$66`, and standard OK/Cancel controls. Rust now exposes that dialog through both the normal
+File menu and authenticated `LM_FILE_OPEN_LEVEL` command. It starts at the active three-digit slot,
+accepts bounded unprefixed hexadecimal case-insensitively, retains the dialog on invalid input, and
+does nothing without an open ROM. Accepted values dispatch the existing `SelectLevel` transaction,
+preserving its navigation history, complete editor teardown/reload, and 512-slot renderer boundary.
+
+Focused parsing, resource-localization, closed-ROM, pristine-ROM, and route-partition tests pass.
+The Windows cross-build passes. The full native gate passes 1,016 tests with 12 explicit
+external-fixture ignores, including the all-512-level materialization traversal; the regenerated
+513-line renderer manifest remains byte-identical at SHA-256
+`254a1a050d12785973241910e26d8b7917a5cb5e2a56602a330fc6cbd833c04d`. Authenticated native
+command coverage is now 259 of 317 named table slots, leaving 58 pending.

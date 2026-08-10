@@ -103,6 +103,16 @@ impl NativeApplication {
             let enabled = !matches!(status, ProjectStatus::Closed);
             if ui
                 .add_enabled(
+                    enabled,
+                    egui::Button::new(self.menu_text(UiTextKey::FileOpenLevelNumber)),
+                )
+                .clicked()
+            {
+                ui.close_menu();
+                self.open_level_number_dialog.open(self.app.current_level());
+            }
+            if ui
+                .add_enabled(
                     self.app.current_level_deletion_available()
                         && !self.level_deletion_dialog.is_open(),
                     egui::Button::new(self.menu_text(UiTextKey::FileDeleteLevel)),

@@ -143,6 +143,7 @@ pub(crate) struct NativeApplication {
     toolbar_editor: ToolbarEditor,
     toolbar_graphics_transfer: ToolbarGraphicsTransfer,
     undo_history_settings: undo_history_settings::UndoHistorySettings,
+    open_level_number_dialog: crate::open_level_number_dialog::OpenLevelNumberDialog,
     animation_rate_dialog: crate::animation_rate::AnimationRateDialog,
     animation_rate: crate::animation_rate::AnimationRate,
     external_tool_config_editor: crate::external_tool_config_editor::ExternalToolConfigEditor,
@@ -999,6 +1000,12 @@ impl eframe::App for NativeApplication {
         self.diagnostics_dialog
             .show(context, self.app.localization());
         self.help_dialog.show(context, self.app.localization());
+        if let Some(level) = self
+            .open_level_number_dialog
+            .show(context, self.app.localization())
+        {
+            self.dispatch(context, Command::SelectLevel(level));
+        }
         if let Some(shortcuts) = self.shortcut_editor.show(context) {
             match self.app.set_shortcuts(shortcuts) {
                 Ok(()) => self.app.status = "Updated keyboard shortcuts".into(),
