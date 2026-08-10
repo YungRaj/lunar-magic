@@ -512,10 +512,11 @@ language, and safely remains in English when no catalog matches. The new localiz
 append-only: complete 183-key catalogs and historical 19-key catalogs upgrade with its English
 fallback and re-encode canonically. Direct Ghidra evidence at `004D7360`, `004D7940`, `004DB640`,
 and `004DB810` binds the original selection and fallback state machine; `004D7010` and the retained
-`localization-auto-detect` fixture bind the still-future proprietary DLL checksum/resource adapter.
-Six catalog tests, nine preference tests, and eight frontend localization audits pass. Remaining
-editor-dialog coverage, compatible DLL resource loading, and a retained Wine gesture keep the row
-`Partial`.
+`localization-auto-detect` fixture bind the non-executing proprietary DLL checksum/resource adapter,
+including `$DAC/$DAD/$DAE` string decoding and the exact 272 single-index plus 22 range fixed-buffer
+ceilings. Seventeen localization tests, nine preference tests, and eight frontend localization
+audits pass. Remaining typed original-string-index mapping, editor-dialog coverage, selectable DLL
+catalog conversion, and a retained Wine gesture keep the row `Partial`.
 
 The overworld Palette/ExAnimation row additionally has the exact per-map option representation.
 Four independently inverted feature bits retain their unrelated low nibble, while original

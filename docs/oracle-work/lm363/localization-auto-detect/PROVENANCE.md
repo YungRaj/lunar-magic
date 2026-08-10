@@ -41,3 +41,11 @@ lengths. The effective count is the minimum of the declaration, both complete ta
 `$16EE` (5,869). Each entry is retained only when offset plus length is in the inflated pool and
 the following byte is NUL. `LoadSelectedLanguageModule` at `$004D7110` requires this string load
 and the whole-file checksum before publishing the module.
+
+The loader then applies two fixed-buffer safety tables before publication. `$005E6420..$005E685F`
+contains 272 `(string index, exclusive byte-length ceiling)` pairs (raw-table SHA-256
+`7c32c38900036af820ddda9311a66617c00c1882475182fd80a28358d7097903`).
+`$005E6398..$005E641B` contains 22 `(inclusive start, exclusive end, exclusive byte-length
+ceiling)` triples (raw-table SHA-256
+`cabeed1bfddffaeca5550aababd4c59da60a901cae92b39f5a9f2950e279978e`). The loader clears both
+offset and length when `length >= ceiling`; indices beyond the effective string count are ignored.

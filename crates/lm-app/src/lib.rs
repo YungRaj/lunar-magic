@@ -60,6 +60,7 @@ mod native_map16_bitmap_workspace;
 mod native_map16_sidecar_controller;
 mod native_overworld_appearance_controller;
 mod navigation_state;
+mod original_language_validation;
 mod osc_sidecar_controller;
 mod overworld_appearance_document_controller;
 mod overworld_boss_sequence_state;

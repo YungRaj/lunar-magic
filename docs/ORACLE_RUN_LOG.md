@@ -937,3 +937,10 @@ byte transform, requires `StreamEnd`, and applies the recovered
 a 5,870-entry declaration truncates exactly; one bad terminator clears only its entry; malformed
 tables, junk compression, invalid UTF-8, and output past a reduced test limit reject. All three
 `original_language_string_resources_*` tests pass.
+
+The same function proves a second validation phase backed by 1,088 bytes at `$005E6420` and 132
+bytes at `$005E6398`. Headless byte extraction recovers 272 single-index and 22 range records. Each
+record carries an exclusive byte-length ceiling: an in-count string is cleared when its decoded
+length is greater than or equal to that ceiling; ranges use an exclusive end. Rust retains the
+tables verbatim in `original_language_validation.rs`. Boundary, neighboring-range, exclusive-end,
+and isolated-entry regression tests pass as part of the 17-test localization suite.

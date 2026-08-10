@@ -3,6 +3,10 @@
 use flate2::{Decompress, FlushDecompress, Status};
 use std::collections::BTreeMap;
 
+use crate::original_language_validation::{
+    RANGE_STRING_LENGTH_CEILINGS, SINGLE_STRING_LENGTH_CEILINGS,
+};
+
 const MAGIC: &[u8; 8] = b"LMLOC001";
 const MAX_LOCALE_BYTES: usize = 64;
 const MAX_TEXT_BYTES: usize = 4096;
@@ -249,11 +253,27 @@ fn decode_original_language_string_resources(
             strings.push(None);
             continue;
         }
+        if !original_language_string_length_is_allowed(index, length) {
+            strings.push(None);
+            continue;
+        }
         let string = std::str::from_utf8(&inflated[offset..end])
             .map_err(|_| OriginalLanguageModuleError::InvalidStringUtf8(index))?;
         strings.push(Some(string.to_owned()));
     }
     Ok(OriginalLanguageStringPool { strings })
+}
+
+fn original_language_string_length_is_allowed(index: usize, length: usize) -> bool {
+    if SINGLE_STRING_LENGTH_CEILINGS
+        .iter()
+        .any(|&(guarded_index, ceiling)| guarded_index == index && length >= ceiling)
+    {
+        return false;
+    }
+    !RANGE_STRING_LENGTH_CEILINGS
+        .iter()
+        .any(|(range, ceiling)| range.contains(&index) && length >= *ceiling)
 }
 
 fn inflate_original_language_pool(
@@ -1731,6 +1751,46 @@ mod tests {
         .unwrap();
         assert_eq!(pool.get(0), None);
         assert_eq!(pool.get(1), Some("world"));
+    }
+
+    #[test]
+    fn original_language_fixed_buffer_ceilings_match_recovered_boundaries() {
+        assert!(original_language_string_length_is_allowed(0x0119, 0x007f));
+        assert!(!original_language_string_length_is_allowed(0x0119, 0x0080));
+
+        assert!(original_language_string_length_is_allowed(0x0212, 0x05ff));
+        assert!(!original_language_string_length_is_allowed(0x0212, 0x0600));
+        assert!(!original_language_string_length_is_allowed(0x071b, 0x0600));
+        assert!(original_language_string_length_is_allowed(0x071c, 0x00ff));
+        assert!(!original_language_string_length_is_allowed(0x071c, 0x0100));
+
+        assert!(original_language_string_length_is_allowed(0x071b, 0x05ff));
+        assert!(original_language_string_length_is_allowed(
+            0x16c6,
+            usize::MAX
+        ));
+        assert!(original_language_string_length_is_allowed(0, usize::MAX));
+    }
+
+    #[test]
+    fn original_language_decoder_clears_oversized_guarded_entry_only() {
+        let mut inflated = vec![b'a'; 0x80];
+        inflated.push(0);
+        inflated.extend_from_slice(b"kept\0");
+        let encoded = encoded_original_string_pool(&inflated);
+        let count = 0x011a;
+        let mut offsets = vec![0x81_u32; count];
+        let mut lengths = vec![4_u32; count];
+        offsets[0x0119] = 0;
+        lengths[0x0119] = 0x80;
+        let pool = decode_original_language_string_resources(
+            &encoded,
+            &string_table(&offsets, true),
+            &string_table(&lengths, false),
+        )
+        .unwrap();
+        assert_eq!(pool.get(0x0118), Some("kept"));
+        assert_eq!(pool.get(0x0119), None);
     }
 
     #[test]
