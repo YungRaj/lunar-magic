@@ -554,6 +554,13 @@ resource/control identities with independent English fallback. The combined PE-t
 native forms and a retained live language-DLL Wine gesture remain incomplete, so Localization and
 the aggregate remain `Partial` and 58/65.
 
+General Options `$041F` now supplies the complete native undo-history form's title, maximum-undo
+label `$66`, OK, and Cancel. Change Compression Options `$0416` supplies the native migration title,
+compression label `$65`, original-LZ2 `$294`, LZ3 `$296`, warning `$69`, OK, and Cancel. Focused
+partial-catalog tests prove exact resource/control selection and independent fallback. The original
+optimized-LZ2 `$295` target is still absent, other native forms remain unbound, and no live
+language-DLL gesture has passed; both affected rows and the aggregate therefore remain unchanged.
+
 The overworld Palette/ExAnimation row additionally has the exact per-map option representation.
 Four independently inverted feature bits retain their unrelated low nibble, while original
 lightning is decoded from its separate high-bit-first seven-map disable mask. The preview gates

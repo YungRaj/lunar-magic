@@ -1000,3 +1000,9 @@ all-five-resource synthetic PE gate now verifies this inventory through the publ
 conversion path. Native Modify Secondary Entrances (`$03F1`) consumes its exact title and six
 procedure-bound field/action captions with per-control English fallback. The focused localization
 suite passed 26 tests (one local-executable gate ignored), and the native binding test passed.
+
+Local executable inventory was then checked for General Options `$041F` and Change Compression
+Options `$0416`. Native undo history now binds `$041F` title, `$66`, and IDs 1/2. Native graphics
+migration binds `$0416` title, `$65`, `$294`, `$296`, `$69`, and IDs 1/2. Focused tests inject
+partial translated inventories and prove exact-ID selection plus independent typed/English fallback.
+The unsupported optimized-LZ2 `$295` choice remains an explicit graphics gap.

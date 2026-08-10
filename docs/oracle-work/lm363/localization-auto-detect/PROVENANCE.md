@@ -124,3 +124,10 @@ Clear Slot (`$66`), Clear All Slots (`$65`), Destination Level Number (`$6C`), S
 Entrance (`$DB`), X (`$67`), and Y (`$69`) captions resolve from the converted original template
 and fall back independently to the built-in English labels. The remaining native forms and a
 retained live language-DLL Wine gesture are still required before Localization can pass.
+
+Two more procedure-bound forms consume the same inventory. The native undo-history preference is
+the extracted equivalent of General Options `$041F`: its title, maximum-undo label `$66`, OK ID 1,
+and Cancel ID 2 resolve independently. Graphics compression migration consumes Change Compression
+Options `$0416`: title, LZ Compression Type `$65`, original LZ2 `$294`, LZ3 `$296`, warning `$69`,
+OK, and Cancel are bound. Lunar Magic's optimized-LZ2 `$295` target remains a separate incomplete
+graphics option and is not presented as a completed mapping.

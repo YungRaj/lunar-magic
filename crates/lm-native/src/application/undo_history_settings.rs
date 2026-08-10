@@ -3,6 +3,8 @@ use lm_app::{AppState, LocalizationCatalog, UiTextKey};
 
 use crate::frontend_ui::localized_text;
 
+const ORIGINAL_DIALOG_ID: u16 = 0x041f;
+
 #[derive(Default)]
 pub(super) struct UndoHistorySettings {
     open: bool,
@@ -26,13 +28,14 @@ impl UndoHistorySettings {
         let mut accepted = None;
         let mut open = self.open;
         let mut close = false;
-        egui::Window::new(localized_text(catalog, UiTextKey::UndoHistoryWindowTitle))
+        egui::Window::new(dialog_title(catalog))
             .collapsible(false)
             .resizable(false)
             .open(&mut open)
             .show(context, |ui| {
-                ui.label(localized_text(
+                ui.label(dialog_control_text(
                     catalog,
+                    0x66,
                     UiTextKey::UndoHistorySnapshotsLabel,
                 ));
                 ui.add(
@@ -42,14 +45,14 @@ impl UndoHistorySettings {
                 ui.small(localized_text(catalog, UiTextKey::UndoHistoryHint));
                 ui.horizontal(|ui| {
                     if ui
-                        .button(localized_text(catalog, UiTextKey::CommonApply))
+                        .button(dialog_control_text(catalog, 1, UiTextKey::CommonApply))
                         .clicked()
                     {
                         accepted = Some(self.draft);
                         close = true;
                     }
                     if ui
-                        .button(localized_text(catalog, UiTextKey::CommonCancel))
+                        .button(dialog_control_text(catalog, 2, UiTextKey::CommonCancel))
                         .clicked()
                     {
                         close = true;
@@ -59,6 +62,24 @@ impl UndoHistorySettings {
         self.open = open && !close;
         accepted
     }
+}
+
+fn dialog_title(catalog: Option<&LocalizationCatalog>) -> String {
+    catalog
+        .and_then(|catalog| catalog.original_dialog_title(ORIGINAL_DIALOG_ID))
+        .map(str::to_owned)
+        .unwrap_or_else(|| localized_text(catalog, UiTextKey::UndoHistoryWindowTitle))
+}
+
+fn dialog_control_text(
+    catalog: Option<&LocalizationCatalog>,
+    control_id: u32,
+    fallback: UiTextKey,
+) -> String {
+    catalog
+        .and_then(|catalog| catalog.original_dialog_control_text(ORIGINAL_DIALOG_ID, control_id))
+        .map(str::to_owned)
+        .unwrap_or_else(|| localized_text(catalog, fallback))
 }
 
 pub(super) fn encode_preference(limit: usize) -> String {
@@ -83,6 +104,7 @@ pub(super) fn decode_preference(encoded: &str) -> Result<usize, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use lm_app::OriginalDialogTextKey;
 
     #[test]
     fn preference_round_trips_every_original_boundary_and_rejects_bad_values() {
@@ -94,5 +116,55 @@ mod tests {
         assert!(decode_preference("v1:-1").is_err());
         assert!(decode_preference("v1:52").is_err());
         assert!(decode_preference("v1:33:extra").is_err());
+    }
+
+    #[test]
+    fn original_general_options_inventory_localizes_the_complete_undo_form() {
+        let catalog = LocalizationCatalog::new(
+            "fr-FR",
+            UiTextKey::ALL.map(|key| (key, key.english().into())),
+        )
+        .unwrap()
+        .with_original_dialog_texts([
+            (
+                OriginalDialogTextKey {
+                    dialog_id: ORIGINAL_DIALOG_ID,
+                    item_index: u16::MAX,
+                    control_id: u32::MAX,
+                },
+                "Options générales".into(),
+            ),
+            (
+                OriginalDialogTextKey {
+                    dialog_id: ORIGINAL_DIALOG_ID,
+                    item_index: 22,
+                    control_id: 0x66,
+                },
+                "Nombre maximal d’annulations (0-50)".into(),
+            ),
+            (
+                OriginalDialogTextKey {
+                    dialog_id: ORIGINAL_DIALOG_ID,
+                    item_index: 0,
+                    control_id: 1,
+                },
+                "Valider".into(),
+            ),
+        ])
+        .unwrap();
+
+        assert_eq!(dialog_title(Some(&catalog)), "Options générales");
+        assert_eq!(
+            dialog_control_text(Some(&catalog), 0x66, UiTextKey::UndoHistorySnapshotsLabel),
+            "Nombre maximal d’annulations (0-50)"
+        );
+        assert_eq!(
+            dialog_control_text(Some(&catalog), 1, UiTextKey::CommonApply),
+            "Valider"
+        );
+        assert_eq!(
+            dialog_control_text(Some(&catalog), 2, UiTextKey::CommonCancel),
+            UiTextKey::CommonCancel.english()
+        );
     }
 }

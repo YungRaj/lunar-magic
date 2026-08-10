@@ -5317,3 +5317,9 @@ query this inventory: original dialog `$03F1` supplies the window title and exac
 `$6C`, `$DB`, `$67`, and `$69` captions, while every absent caption retains its native English
 fallback. This establishes the reusable binding path without falsely treating untranslated
 native forms as complete Localization parity.
+
+The same lookup boundary now drives the extracted undo-history form from original General Options
+`$041F` and every equivalent control in graphics compression dialog `$0416`. Both helpers return
+owned strings because typed localization can synthesize an owned fallback while original-template
+text borrows the installed catalog. This prevents either lifetime source from escaping the frame
+and keeps partial original modules safe: every absent title/control falls back independently.
