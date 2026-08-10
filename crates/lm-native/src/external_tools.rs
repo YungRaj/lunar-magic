@@ -11,6 +11,11 @@ pub(crate) enum ProcessCompletion {
     Stopped,
 }
 
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub(crate) struct ProcessOptions {
+    pub(crate) hide_console_window: bool,
+}
+
 pub(crate) fn execute(invocation: &ToolInvocation) -> Result<(), String> {
     let launch = process_launch(invocation);
     let mut command = ProcessCommand::new(&launch.executable);
@@ -37,6 +42,7 @@ pub(crate) fn execute(invocation: &ToolInvocation) -> Result<(), String> {
 pub(crate) fn execute_cancellable(
     invocation: &ToolInvocation,
     cancel: &Receiver<()>,
+    options: ProcessOptions,
 ) -> Result<ProcessCompletion, String> {
     let launch = process_launch(invocation);
     let mut command = ProcessCommand::new(&launch.executable);
@@ -44,6 +50,7 @@ pub(crate) fn execute_cancellable(
     if let Some(directory) = &invocation.working_directory {
         command.current_dir(directory);
     }
+    configure_process_options(&mut command, options);
     let mut child = command.spawn().map_err(|error| {
         format!(
             "could not start external tool {:?}: {error}",
@@ -86,6 +93,19 @@ pub(crate) fn execute_cancellable(
         }
     }
 }
+
+#[cfg(windows)]
+fn configure_process_options(command: &mut ProcessCommand, options: ProcessOptions) {
+    use std::os::windows::process::CommandExt;
+
+    // CREATE_NO_WINDOW. It applies only to console applications; GUI applications ignore it.
+    if options.hide_console_window {
+        command.creation_flags(0x0800_0000);
+    }
+}
+
+#[cfg(not(windows))]
+fn configure_process_options(_command: &mut ProcessCommand, _options: ProcessOptions) {}
 
 #[derive(Debug, Eq, PartialEq)]
 struct ProcessLaunch {

@@ -38,3 +38,19 @@ SHA-256 identities:
 - visible oracle fixture: `78e6cf6f2f3b889c0db59fb9d9f39674c4fc926f8bf1c6fc38212b572693e49f`
 - hidden/complete parser fixture: `a76724ba30c0159d979c06427e093dfeaa83c53348800fb259bd0c116936ee54`
 - toolbar enumeration helper source: `aea041a52e108aebd615965547280587dc30c605da24106d37ae1a85f0c6bd8b`
+
+## Process launch policy evidence
+
+The authenticated Lunar Magic 3.63 CHM (SHA-256
+`6ff2a44ff32902aed11d1969970e2c19a91ef336c29795fed823b78e577d60be`) documents the exact
+button contracts in `html/info_LM_options_button.htm` and the corresponding global contract in
+`html/info_LM_options_global.htm`. `LM_ALLOW_MULT_INSTANCES` permits another process from the same
+button instead of retaining a single tracked instance; `LM_ALLOW_MULT_INSTANCES_FORCE_ALL` applies
+that policy to every button. `LM_NO_CONSOLE_WINDOW` requests a hidden console for directly launched
+console programs and is explicitly inapplicable to `LM_OPEN_OTHER` ShellExecute launches.
+
+The Rust launcher now retains every approved concurrent child independently, assigns a distinct UI
+identity, supports cancelling every child owned by one button, and suppresses duplicate pending or
+running requests under the default single-instance policy. On Windows only, the no-console option
+adds `CREATE_NO_WINDOW` to the direct `std::process::Command`; it does not invoke a shell or affect
+other platforms.

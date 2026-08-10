@@ -205,7 +205,13 @@ impl NativeApplication {
                         });
                     match expanded {
                         Ok(invocation) => {
-                            if let Err(error) = self.effects.external_tools.enqueue(invocation) {
+                            let options =
+                                user_toolbar_launch_options(self.user_toolbar.as_ref(), button);
+                            if let Err(error) = self
+                                .effects
+                                .external_tools
+                                .enqueue_with_options(invocation, options)
+                            {
                                 self.effects.error = Some(error);
                             }
                         }
@@ -594,6 +600,31 @@ fn toolbar_lifecycle_indexes(
         return (0..toolbar.buttons.len()).collect();
     }
     toolbar_button_indexes_with_option(toolbar, option)
+}
+
+fn user_toolbar_launch_options(
+    toolbar: Option<&lm_app::UserToolbar>,
+    button: &UserToolbarButton,
+) -> crate::external_tool_launcher::LaunchOptions {
+    crate::external_tool_launcher::LaunchOptions {
+        allow_multiple_instances: button
+            .options
+            .iter()
+            .any(|option| option == "LM_ALLOW_MULT_INSTANCES")
+            || toolbar.is_some_and(|toolbar| {
+                toolbar.global_options.iter().any(|option| {
+                    matches!(
+                        option,
+                        lm_app::UserToolbarGlobalOption::Flag(value)
+                            if value == "LM_ALLOW_MULT_INSTANCES_FORCE_ALL"
+                    )
+                })
+            }),
+        hide_console_window: button
+            .options
+            .iter()
+            .any(|option| option == "LM_NO_CONSOLE_WINDOW"),
+    }
 }
 
 fn external_working_directory(
@@ -1702,6 +1733,36 @@ mod user_toolbar_tests {
         assert_eq!(
             toolbar_lifecycle_indexes(&forced, "LM_CLOSE_ON_CLOSE", "LM_CLOSE_ON_CLOSE_FORCE_ALL"),
             [0, 1]
+        );
+    }
+
+    #[test]
+    fn process_launch_options_honor_per_button_and_force_all_contracts() {
+        let toolbar = lm_app::UserToolbar::parse(
+            "LM_ALLOW_MULT_INSTANCES_FORCE_ALL\n***START***\n\"one\"\nLM_DEFAULT\nLM_NO_CONSOLE_WINDOW\n***START***\n\"two\"\n***END***",
+        )
+        .unwrap();
+        assert_eq!(
+            user_toolbar_launch_options(Some(&toolbar), &toolbar.buttons[0]),
+            crate::external_tool_launcher::LaunchOptions {
+                allow_multiple_instances: true,
+                hide_console_window: true,
+            }
+        );
+        assert_eq!(
+            user_toolbar_launch_options(Some(&toolbar), &toolbar.buttons[1]),
+            crate::external_tool_launcher::LaunchOptions {
+                allow_multiple_instances: true,
+                hide_console_window: false,
+            }
+        );
+        let individual = lm_app::UserToolbar::parse(
+            "***START***\n\"one\"\nLM_DEFAULT\nLM_ALLOW_MULT_INSTANCES\n***END***",
+        )
+        .unwrap();
+        assert!(
+            user_toolbar_launch_options(Some(&individual), &individual.buttons[0])
+                .allow_multiple_instances
         );
     }
 

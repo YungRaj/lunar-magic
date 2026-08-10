@@ -12,6 +12,7 @@ use tempfile::TempDir;
 const MAX_PENDING: usize = 64;
 
 struct RunningTool {
+    instance_id: u64,
     tool_id: String,
     result: Receiver<Result<external_tools::ProcessCompletion, String>>,
     cancel: mpsc::Sender<()>,
@@ -20,12 +21,20 @@ struct RunningTool {
 struct PendingTool {
     invocation: ToolInvocation,
     workspace: Option<TempDir>,
+    options: LaunchOptions,
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub(crate) struct LaunchOptions {
+    pub(crate) allow_multiple_instances: bool,
+    pub(crate) hide_console_window: bool,
 }
 
 #[derive(Default)]
 pub(crate) struct ExternalToolLauncher {
     pending: VecDeque<PendingTool>,
-    running: Option<RunningTool>,
+    running: Vec<RunningTool>,
+    next_instance_id: u64,
 }
 
 impl ExternalToolLauncher {
@@ -42,8 +51,10 @@ impl ExternalToolLauncher {
         self.pending
             .retain(|pending| pending.invocation.tool_id != tool_id);
         let mut stopped = self.pending.len() != pending_before;
-        if let Some(running) = &self.running
-            && running.tool_id == tool_id
+        for running in self
+            .running
+            .iter()
+            .filter(|running| running.tool_id == tool_id)
         {
             let _ = running.cancel.send(());
             stopped = true;
@@ -52,9 +63,30 @@ impl ExternalToolLauncher {
     }
 
     pub(crate) fn enqueue(&mut self, invocation: ToolInvocation) -> Result<(), String> {
+        self.enqueue_with_options(invocation, LaunchOptions::default())
+    }
+
+    pub(crate) fn enqueue_with_options(
+        &mut self,
+        invocation: ToolInvocation,
+        options: LaunchOptions,
+    ) -> Result<(), String> {
+        if !options.allow_multiple_instances
+            && (self
+                .pending
+                .iter()
+                .any(|pending| pending.invocation.tool_id == invocation.tool_id)
+                || self
+                    .running
+                    .iter()
+                    .any(|running| running.tool_id == invocation.tool_id))
+        {
+            return Ok(());
+        }
         self.enqueue_pending(PendingTool {
             invocation,
             workspace: None,
+            options,
         })
     }
 
@@ -99,6 +131,7 @@ impl ExternalToolLauncher {
         self.enqueue_pending(PendingTool {
             invocation,
             workspace: Some(workspace),
+            options: LaunchOptions::default(),
         })
     }
 
@@ -115,8 +148,12 @@ impl ExternalToolLauncher {
     /// Draws permission/running state and returns one completed launch result, if available.
     pub(crate) fn show(&mut self, context: &egui::Context) -> Option<Result<String, String>> {
         let completion = self.poll();
-        if let Some(running) = &self.running {
-            egui::Window::new("External tool running")
+        for running in &self.running {
+            egui::Window::new(format!("External tool {:?} running", running.tool_id))
+                .id(egui::Id::new((
+                    "external-tool-running",
+                    running.instance_id,
+                )))
                 .collapsible(false)
                 .resizable(false)
                 .show(context, |ui| {
@@ -126,7 +163,6 @@ impl ExternalToolLauncher {
                     }
                 });
             context.request_repaint_after(std::time::Duration::from_millis(100));
-            return completion;
         }
 
         let Some(pending) = self.pending.front() else {
@@ -172,18 +208,28 @@ impl ExternalToolLauncher {
     fn start(&mut self, pending: PendingTool) -> Result<(), String> {
         let invocation = pending.invocation;
         let workspace = pending.workspace;
+        let options = pending.options;
         let tool_id = invocation.tool_id.clone();
         let (sender, result) = mpsc::channel();
         let (cancel, cancellation) = mpsc::channel();
         std::thread::Builder::new()
             .name(format!("lm-tool-{tool_id}"))
             .spawn(move || {
-                let execution = external_tools::execute_cancellable(&invocation, &cancellation);
+                let execution = external_tools::execute_cancellable(
+                    &invocation,
+                    &cancellation,
+                    external_tools::ProcessOptions {
+                        hide_console_window: options.hide_console_window,
+                    },
+                );
                 drop(workspace);
                 let _send_result = sender.send(execution);
             })
             .map_err(|error| format!("could not create external-tool worker: {error}"))?;
-        self.running = Some(RunningTool {
+        let instance_id = self.next_instance_id;
+        self.next_instance_id = self.next_instance_id.wrapping_add(1);
+        self.running.push(RunningTool {
+            instance_id,
             tool_id,
             result,
             cancel,
@@ -192,29 +238,29 @@ impl ExternalToolLauncher {
     }
 
     fn poll(&mut self) -> Option<Result<String, String>> {
-        let running = self.running.as_ref()?;
-        match running.result.try_recv() {
-            Ok(result) => {
-                let tool_id = running.tool_id.clone();
-                self.running = None;
-                Some(result.map(|completion| match completion {
-                    external_tools::ProcessCompletion::Exited => {
-                        format!("External tool {tool_id:?} completed successfully")
-                    }
-                    external_tools::ProcessCompletion::Stopped => {
-                        format!("External tool {tool_id:?} stopped")
-                    }
-                }))
-            }
-            Err(TryRecvError::Empty) => None,
-            Err(TryRecvError::Disconnected) => {
-                let tool_id = running.tool_id.clone();
-                self.running = None;
-                Some(Err(format!(
-                    "external-tool worker for {tool_id:?} stopped without reporting a result"
-                )))
+        for index in 0..self.running.len() {
+            match self.running[index].result.try_recv() {
+                Ok(result) => {
+                    let tool_id = self.running.swap_remove(index).tool_id;
+                    return Some(result.map(|completion| match completion {
+                        external_tools::ProcessCompletion::Exited => {
+                            format!("External tool {tool_id:?} completed successfully")
+                        }
+                        external_tools::ProcessCompletion::Stopped => {
+                            format!("External tool {tool_id:?} stopped")
+                        }
+                    }));
+                }
+                Err(TryRecvError::Empty) => {}
+                Err(TryRecvError::Disconnected) => {
+                    let tool_id = self.running.swap_remove(index).tool_id;
+                    return Some(Err(format!(
+                        "external-tool worker for {tool_id:?} stopped without reporting a result"
+                    )));
+                }
             }
         }
+        None
     }
 }
 
@@ -248,7 +294,7 @@ mod tests {
             launcher.pending.back().map(|pending| &pending.invocation),
             Some(&invocation(MAX_PENDING - 1))
         );
-        assert!(launcher.running.is_none());
+        assert!(launcher.running.is_empty());
     }
 
     #[test]
@@ -271,14 +317,16 @@ mod tests {
         let (cancel, _cancellation) = mpsc::channel();
         let mut launcher = ExternalToolLauncher {
             pending: VecDeque::new(),
-            running: Some(RunningTool {
+            running: vec![RunningTool {
+                instance_id: 0,
                 tool_id: "emu".into(),
                 result: receiver,
                 cancel,
-            }),
+            }],
+            next_instance_id: 1,
         };
         assert!(matches!(launcher.poll(), Some(Err(error)) if error.contains("emu")));
-        assert!(launcher.running.is_none());
+        assert!(launcher.running.is_empty());
     }
 
     #[test]
@@ -328,9 +376,10 @@ mod tests {
                     working_directory: None,
                 },
                 workspace: Some(workspace),
+                options: LaunchOptions::default(),
             })
             .unwrap();
-        let running = launcher.running.take().unwrap();
+        let running = launcher.running.pop().unwrap();
         running.cancel.send(()).unwrap();
         assert_eq!(
             running
@@ -358,6 +407,7 @@ mod tests {
                     working_directory: None,
                 },
                 workspace: Some(workspace),
+                options: LaunchOptions::default(),
             })
             .unwrap();
         drop(launcher);
@@ -384,13 +434,78 @@ mod tests {
                     working_directory: None,
                 },
                 workspace: None,
+                options: LaunchOptions::default(),
             })
             .unwrap();
-        let running = launcher.running.take().unwrap();
+        let running = launcher.running.pop().unwrap();
         let result = running
             .result
             .recv_timeout(std::time::Duration::from_secs(5))
             .expect("worker must report a process result");
         assert!(matches!(result, Err(error) if error.contains("missing")));
+    }
+
+    #[test]
+    fn default_policy_deduplicates_a_tool_but_allow_multiple_retains_each_request() {
+        let mut launcher = ExternalToolLauncher::default();
+        launcher.enqueue(invocation(1)).unwrap();
+        launcher.enqueue(invocation(1)).unwrap();
+        assert_eq!(launcher.pending.len(), 1);
+        launcher
+            .enqueue_with_options(
+                invocation(1),
+                LaunchOptions {
+                    allow_multiple_instances: true,
+                    hide_console_window: true,
+                },
+            )
+            .unwrap();
+        assert_eq!(launcher.pending.len(), 2);
+        assert_eq!(
+            launcher.pending[1].options,
+            LaunchOptions {
+                allow_multiple_instances: true,
+                hide_console_window: true,
+            }
+        );
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn multiple_instances_are_tracked_and_cancelled_independently() {
+        let mut launcher = ExternalToolLauncher::default();
+        for _ in 0..2 {
+            launcher
+                .start(PendingTool {
+                    invocation: ToolInvocation {
+                        tool_id: "parallel".into(),
+                        executable: "/bin/sleep".into(),
+                        arguments: vec!["30".into()],
+                        working_directory: None,
+                    },
+                    workspace: None,
+                    options: LaunchOptions {
+                        allow_multiple_instances: true,
+                        hide_console_window: false,
+                    },
+                })
+                .unwrap();
+        }
+        assert_eq!(launcher.running.len(), 2);
+        assert_ne!(
+            launcher.running[0].instance_id,
+            launcher.running[1].instance_id
+        );
+        assert!(launcher.stop_tool("parallel"));
+        for running in launcher.running.drain(..) {
+            assert_eq!(
+                running
+                    .result
+                    .recv_timeout(std::time::Duration::from_secs(5))
+                    .unwrap()
+                    .unwrap(),
+                external_tools::ProcessCompletion::Stopped
+            );
+        }
     }
 }

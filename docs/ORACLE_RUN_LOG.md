@@ -1028,3 +1028,10 @@ ordinary argument template. Seven core expansion tests and four editor tests pas
 `lm-windows` and `lm-app` cross-compile for `x86_64-pc-windows-gnu`, binding the safe bounded
 `GetShortPathNameW` route; the portable gate proves non-Windows invocation fails explicitly while
 still recognizing the placeholder for configuration inspection.
+
+The authenticated 3.63 CHM's button/global option tables now bind
+`LM_ALLOW_MULT_INSTANCES`, `LM_ALLOW_MULT_INSTANCES_FORCE_ALL`, and `LM_NO_CONSOLE_WINDOW` to the
+native user-toolbar launcher. Focused policy tests prove per-button/global selection and default
+same-button de-duplication; a real two-child Unix process test proves concurrent ownership and
+cancellation. `cargo check -p lm-native --target x86_64-pc-windows-gnu` proves the conditional
+`CREATE_NO_WINDOW` launch path compiles.

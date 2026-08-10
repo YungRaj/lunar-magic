@@ -5353,3 +5353,10 @@ a fixed 32,768-unit output buffer to `GetShortPathNameW`, rejects zero/oversized
 an owned platform path. No shell, lossy tokenization, registry lookup, or unbounded allocation is
 involved. Non-Windows builds keep the configuration readable but reject execution with
 `ShortRomPathUnavailable`.
+
+User-toolbar external launch policy now carries two original options through the permission gate.
+`LM_ALLOW_MULT_INSTANCES` and global `LM_ALLOW_MULT_INSTANCES_FORCE_ALL` bypass the default
+same-button de-duplication; approved children run concurrently and retain independent cancellation
+channels and UI identities. `LM_NO_CONSOLE_WINDOW` is applied only at the Windows process boundary
+as `CREATE_NO_WINDOW`. Other systems accept the portable toolbar configuration but make no false
+claim that a Windows console exists to hide.
