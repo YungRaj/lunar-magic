@@ -692,7 +692,31 @@ impl NativeApplication {
             }
             _ => None,
         };
-        self.live_emulator.retain_only_for_context(live_context);
+        if self.live_emulator.retain_for_open_project(live_context) {
+            if let (Some(source), Some(target)) =
+                (self.live_emulator.source_context(), live_context)
+            {
+                let synchronization = if source.1 != target.1 {
+                    self.app
+                        .controller_snapshot()
+                        .map_err(|error| error.to_string())
+                        .and_then(|snapshot| {
+                            self.live_emulator.reload_snapshot(
+                                snapshot.revision,
+                                target.0,
+                                snapshot.rom_bytes,
+                            )
+                        })
+                } else if source.0 != target.0 {
+                    self.live_emulator.switch_level(target.0, target.1)
+                } else {
+                    Ok(())
+                };
+                if let Err(error) = synchronization {
+                    self.effects.error = Some(error);
+                }
+            }
+        }
         let localization = self.app.localization().cloned();
         if let Some(status) = self.live_emulator.show(context, |key| {
             localization

@@ -103,9 +103,11 @@ same directory, open a level, and choose **Tools → Live ROM Test (Libretro)…
 libretro-v1 SNES core that supports in-memory ROM loading. The live window exposes pause, resume,
 single-frame step, and stop. It boots the exact unsaved ROM snapshot directly into the selected
 level, and supports live SNES joypad input with Z=B, A=Y, X=A, S=X, Enter=Start, Backspace=Select,
-and the arrow keys. Switching the editor level or changing its revision closes the immutable
-snapshot session; start it again to test the new state. Edited-sprite hot reload and audio output
-are not implemented yet.
+and the arrow keys. Switching the editor level updates the running core directly. Committing any
+edit reloads the exact new in-memory ROM revision and re-enters the selected level in the same live
+window, so object, block, sprite, palette, graphics, and other committed ROM changes are testable
+without manually restarting the session. LMSW's optimized sprite-stream-only hot reload and audio
+output are not implemented yet.
 
 ## Rendering validation
 

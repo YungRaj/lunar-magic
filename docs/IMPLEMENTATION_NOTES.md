@@ -2466,10 +2466,14 @@ commands use the same transition without restarting the core. The localized nati
 chooses a core, starts the sibling backend without a shell, validates Ready before Initialize,
 drives frames at a bounded cadence, and exposes Pause/Resume, single Step, Stop, and a standard
 keyboard-to-SNES joypad mapping. `tools/lm-libretro-smw-oracle.py` retains the end-to-end gate
-against a supplied official Snes9x core and vanilla ROM. Closing the project, leaving the source
-level, or changing its revision stops/reaps the immutable snapshot session. Portable packaging
-includes the sibling backend. Sprite/ROM hot reload, audio, complete pause-reason and editor-overlay
-synchronization, and broader core/platform variants remain incomplete.
+against a supplied official Snes9x core and vanilla ROM. Closing the project or leaving level-editor
+mode stops/reaps the session. A level-only editor transition sends `LoadLevel`; a committed
+revision sends `ReloadRom` with the exact current in-memory physical ROM followed by `LoadLevel`,
+clears the stale texture, and reuses the same worker/window. This makes every committed ROM domain,
+including edited sprites, visible without a manual restart while preserving the immutable revision
+boundary. Portable packaging includes the sibling backend. LMSW's optimized sprite-stream-only hot
+reload, audio, complete pause-reason and editor-overlay synchronization, and broader core/platform
+variants remain incomplete.
 The runnable frontend accepts `tools-config FILE`, lists configured identifiers with `tools-status`,
 and resolves typed requests with `tool-run ID` or `tool-event opened|saved|level`. Those preview
 commands print the executable, working directory, and every argument on separate lines. Explicit

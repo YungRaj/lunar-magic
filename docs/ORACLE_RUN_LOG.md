@@ -803,11 +803,13 @@ python3 tools/lm-libretro-smw-oracle.py \
 result  level  frame  mode  translevel  camera  size     frame_sha256
 initial 105    1769   14    28          0,192   256x224  5bdb35bb32c3d52815d0dc961ce1a27d9890a9972c30c45648377701bb5aa597
 switch  106    110    14    25          0,192   256x224  3cfb24c3958eb8e0c0c8d8ea373d69be18b236f0d695a86829e0109a0607d963
+reload  105    1769   14    28          0,192   256x224  5bdb35bb32c3d52815d0dc961ce1a27d9890a9972c30c45648377701bb5aa597
 ```
 
 The run required capability mask `$7F`, automatically traversed vanilla game modes `$00..$0E`,
 entered selected sublevel `$105` through `$0F..$14`, switched the active core to `$106` through a
 second `$0F..$14` transition, required distinct nonuniform 256×224 opaque RGBA frames, acknowledged
-hard pause, produced exactly one requested paused frame, stopped, and exited zero. Port-8089 Ghidra
+hard pause, reloaded ROM revision 2 in the same process, reproduced level `$105` and its exact frame,
+produced exactly one requested paused frame, stopped, and exited zero. Port-8089 Ghidra
 independently proves Lunar Magic 3.63 resolves `LMSW_LoadLevel` and calls it with
 `g_dwCurrentLevelNumber` after ROM load and again when the current editor level finishes loading.

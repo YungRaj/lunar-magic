@@ -35,7 +35,10 @@ switch levels through the same `$0F..$14` game-mode sequence. The retained
 `tools/lm-libretro-smw-oracle.py` run against the official ARM64 Snes9x core proves vanilla level
 `$105`, live switch to `$106`, distinct nonuniform 256×224 RGBA frames, hard pause/one-step, and
 clean teardown. Portable packages contain `lm-native`, `lm-cli`, and the required sibling
-`lm-libretro` executable. The row remains `Partial`: edited-sprite/live ROM reload, audio, complete
+`lm-libretro` executable. Active editor-level changes use `LoadLevel`, while committed revision
+changes send the exact new in-memory ROM and re-enter the selected level without closing the live
+window; the oracle proves an identical revision reload reproduces level `$105` and its exact frame.
+The row remains `Partial`: LMSW's optimized sprite-stream-only hot reload, audio, complete
 pause-reason/viewport overlay synchronization, and broader core/runtime/platform variants are still
 missing. This addendum supersedes only the older clauses that list the now-proved backend, native
 control, selected-level, input, and compatible-core runtime boundaries as missing.

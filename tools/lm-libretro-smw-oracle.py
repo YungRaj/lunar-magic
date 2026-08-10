@@ -109,6 +109,14 @@ def main():
         if backend.exchange(b"\x02" + struct.pack("<H", args.switch_level)) != b"\x81":
             raise RuntimeError("backend rejected live level switch")
         switched = await_level(backend, args.switch_level, 300)
+        reload_rom = b"\x01" + struct.pack("<Q", 2) + struct.pack("<I", len(rom)) + rom
+        if backend.exchange(reload_rom) != b"\x82\x01":
+            raise RuntimeError("backend rejected live ROM revision reload")
+        if backend.exchange(b"\x02" + struct.pack("<H", args.initial_level)) != b"\x81":
+            raise RuntimeError("backend rejected selected level after ROM reload")
+        reloaded = await_level(backend, args.initial_level, 5000)
+        if reloaded["sha256"] != initial["sha256"]:
+            raise RuntimeError("identical ROM reload did not reproduce the selected-level frame")
         if backend.exchange(b"\x04\x02") != b"\x81":
             raise RuntimeError("backend rejected hard pause")
         runtime_frame(backend.exchange(b"\x05"))
@@ -116,6 +124,7 @@ def main():
         for label, level, result in (
             ("initial", args.initial_level, initial),
             ("switch", args.switch_level, switched),
+            ("reload", args.initial_level, reloaded),
         ):
             print(
                 f"{label}\t{level:03X}\t{result['frame']}\t{result['mode']:02X}\t"

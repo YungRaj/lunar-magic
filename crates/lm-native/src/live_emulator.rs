@@ -112,13 +112,67 @@ impl LiveEmulator {
         self.source_revision = None;
     }
 
-    /// Stops a snapshot-backed session when its source project/level context is no longer active.
-    pub(crate) fn retain_only_for_context(&mut self, context: Option<(u16, u64)>) -> bool {
-        if self.running.is_some() && self.source_level.zip(self.source_revision) != context {
+    pub(crate) fn source_context(&self) -> Option<(u16, u64)> {
+        self.running
+            .as_ref()
+            .and(self.source_level.zip(self.source_revision))
+    }
+
+    /// Stops a live session only when there is no longer an open level/project context.
+    pub(crate) fn retain_for_open_project(&mut self, context: Option<(u16, u64)>) -> bool {
+        if self.running.is_some() && context.is_none() {
             self.stop();
             return false;
         }
         self.running.is_some()
+    }
+
+    pub(crate) fn switch_level(&mut self, level: u16, revision: u64) -> Result<(), String> {
+        let running = self
+            .running
+            .as_ref()
+            .ok_or_else(|| "live emulator is not running".to_string())?;
+        running
+            .commands
+            .send(WorkerCommand::Protocol(EmulatorBackendCommand::LoadLevel(
+                level,
+            )))
+            .map_err(|_| "live emulator worker disconnected".to_string())?;
+        self.source_level = Some(level);
+        self.source_revision = Some(revision);
+        self.status = format!("Switching live emulator to level {level:03X}");
+        Ok(())
+    }
+
+    pub(crate) fn reload_snapshot(
+        &mut self,
+        revision: u64,
+        level: u16,
+        rom: Vec<u8>,
+    ) -> Result<(), String> {
+        let running = self
+            .running
+            .as_ref()
+            .ok_or_else(|| "live emulator is not running".to_string())?;
+        running
+            .commands
+            .send(WorkerCommand::Protocol(EmulatorBackendCommand::ReloadRom {
+                revision,
+                rom,
+            }))
+            .map_err(|_| "live emulator worker disconnected".to_string())?;
+        running
+            .commands
+            .send(WorkerCommand::Protocol(EmulatorBackendCommand::LoadLevel(
+                level,
+            )))
+            .map_err(|_| "live emulator worker disconnected".to_string())?;
+        self.source_level = Some(level);
+        self.source_revision = Some(revision);
+        self.texture = None;
+        self.frame_size = None;
+        self.status = format!("Reloading revision {revision} into level {level:03X}");
+        Ok(())
     }
 
     pub(crate) fn show(
@@ -478,7 +532,7 @@ mod tests {
     }
 
     #[test]
-    fn snapshot_session_is_retained_only_for_exact_level_and_revision() {
+    fn live_session_survives_context_changes_and_stops_when_project_closes() {
         let (commands, _command_receiver) = mpsc::channel();
         let (_event_sender, events) = mpsc::channel();
         let mut emulator = LiveEmulator::default();
@@ -492,11 +546,50 @@ mod tests {
         });
         emulator.source_level = Some(0x105);
         emulator.source_revision = Some(7);
-        assert!(emulator.retain_only_for_context(Some((0x105, 7))));
-        assert!(!emulator.retain_only_for_context(Some((0x105, 8))));
+        assert_eq!(emulator.source_context(), Some((0x105, 7)));
+        assert!(emulator.retain_for_open_project(Some((0x105, 8))));
+        assert!(!emulator.retain_for_open_project(None));
         assert!(emulator.running.is_none());
         assert_eq!(emulator.source_level, None);
         assert_eq!(emulator.source_revision, None);
+    }
+
+    #[test]
+    fn level_switch_and_revision_reload_queue_exact_backend_commands() {
+        let (commands, command_receiver) = mpsc::channel();
+        let (_event_sender, events) = mpsc::channel();
+        let mut emulator = LiveEmulator::default();
+        emulator.running = Some(RunningSession {
+            commands,
+            events,
+            model: EmulatorSessionState::default(),
+            pause: EmulatorPauseMode::Running,
+            capabilities: None,
+            joypad: 0,
+        });
+        emulator.source_level = Some(0x105);
+        emulator.source_revision = Some(7);
+
+        emulator.switch_level(0x106, 7).unwrap();
+        assert!(matches!(
+            command_receiver.recv().unwrap(),
+            WorkerCommand::Protocol(EmulatorBackendCommand::LoadLevel(0x106))
+        ));
+        assert_eq!(emulator.source_context(), Some((0x106, 7)));
+
+        emulator.reload_snapshot(8, 0x107, vec![1, 2, 3]).unwrap();
+        assert!(matches!(
+            command_receiver.recv().unwrap(),
+            WorkerCommand::Protocol(EmulatorBackendCommand::ReloadRom {
+                revision: 8,
+                rom
+            }) if rom == vec![1, 2, 3]
+        ));
+        assert!(matches!(
+            command_receiver.recv().unwrap(),
+            WorkerCommand::Protocol(EmulatorBackendCommand::LoadLevel(0x107))
+        ));
+        assert_eq!(emulator.source_context(), Some((0x107, 8)));
     }
 
     #[test]
