@@ -1017,3 +1017,8 @@ path `$66`, arguments `$68`, and IDs 1/2. A focused round-trip test preserves ar
 working-directory template, and all three event subscriptions; a partial translated inventory test
 proves exact control selection and fallback. Existing `state::tests::tools` gates retain atomic
 duplicate-ID/event rejection for the final `AppState::set_external_tools` publication boundary.
+
+A second creation action now builds a persisted GBA emulator profile. Its stable `gba-` ID prefix
+round-trips through `ExternalTool`, causes the reopened draft to select original dialog `$0408`, and
+uses that dialog's exact title/control inventory. A focused test proves `$0408` selection, default
+`{rom}` argv, stable generated identity, and fallback title without changing `LMTOOLS1` framing.

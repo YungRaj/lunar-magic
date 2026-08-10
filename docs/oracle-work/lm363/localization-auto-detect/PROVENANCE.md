@@ -139,3 +139,8 @@ path `$66`, command-line arguments `$68`, OK, and Cancel resolve from the origin
 with independent fallback. The native editor deliberately represents arguments one per line so
 each becomes one direct process argument without shell parsing; it additionally exposes stable ID,
 display name, optional working-directory template, and portable opened/saved/level subscriptions.
+
+GBA profiles use a stable `gba-` ID prefix and select Setup GBA Emulator `$0408` for their title,
+path `$66`, arguments `$68`, OK, and Cancel captions. The prefix survives existing `LMTOOLS1`
+serialization and reopen without changing that interchange schema; ordinary and SNES tool IDs
+continue selecting `$0407`.

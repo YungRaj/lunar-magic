@@ -568,8 +568,10 @@ executable-path `$66`, arguments `$68`, OK, and Cancel. The editor adds/removes 
 independent argv elements, optional working-directory templates, and all three portable event
 subscriptions, then publishes the entire draft through the already failure-atomic authoritative
 validator. Focused form/inventory tests and existing duplicate-ID/event application tests cover the
-boundary. Original 8.3-path behavior, GBA-specific `$0408`, and broader process notifications remain
-incomplete, so Configuration/External tools and Localization remain `Partial`.
+boundary. GBA drafts persist under a stable `gba-` ID namespace and select Setup GBA Emulator
+`$0408` plus its exact title/path/arguments/OK/Cancel inventory after reopen without changing the
+portable schema. Original 8.3-path behavior and broader process notifications remain incomplete,
+so Configuration/External tools and Localization remain `Partial`.
 
 The overworld Palette/ExAnimation row additionally has the exact per-map option representation.
 Four independently inverted feature bits retain their unrelated low nibble, while original

@@ -2,7 +2,8 @@ use eframe::egui;
 use lm_app::{ExternalTool, LocalizationCatalog, ToolEvent};
 use std::path::PathBuf;
 
-const ORIGINAL_EMULATOR_DIALOG_ID: u16 = 0x0407;
+const ORIGINAL_SNES_EMULATOR_DIALOG_ID: u16 = 0x0407;
+const ORIGINAL_GBA_EMULATOR_DIALOG_ID: u16 = 0x0408;
 
 #[derive(Clone, Debug, Default)]
 struct ToolDraft {
@@ -36,6 +37,23 @@ impl ToolDraft {
             name: "SNES Emulator".into(),
             arguments: "{rom}".into(),
             ..Self::default()
+        }
+    }
+
+    fn gba_emulator(index: usize) -> Self {
+        Self {
+            id: format!("gba-emulator-{}", index + 1),
+            name: "GBA Emulator".into(),
+            arguments: "{rom}".into(),
+            ..Self::default()
+        }
+    }
+
+    fn original_dialog_id(&self) -> u16 {
+        if self.id.trim().to_ascii_lowercase().starts_with("gba-") {
+            ORIGINAL_GBA_EMULATOR_DIALOG_ID
+        } else {
+            ORIGINAL_SNES_EMULATOR_DIALOG_ID
         }
     }
 
@@ -93,7 +111,11 @@ impl ExternalToolConfigEditor {
         let mut replacement = None;
         let mut open = self.open;
         let mut close = false;
-        egui::Window::new(dialog_title(catalog))
+        let dialog_id = self.drafts.get(self.selected).map_or(
+            ORIGINAL_SNES_EMULATOR_DIALOG_ID,
+            ToolDraft::original_dialog_id,
+        );
+        egui::Window::new(dialog_title(catalog, dialog_id))
             .open(&mut open)
             .resizable(true)
             .default_width(620.0)
@@ -111,8 +133,13 @@ impl ExternalToolConfigEditor {
                                 self.selected = index;
                             }
                         }
-                        if ui.button("Add emulator").clicked() {
+                        if ui.button("Add SNES emulator").clicked() {
                             self.drafts.push(ToolDraft::emulator(self.drafts.len()));
+                            self.selected = self.drafts.len() - 1;
+                        }
+                        if ui.button("Add GBA emulator").clicked() {
+                            self.drafts
+                                .push(ToolDraft::gba_emulator(self.drafts.len()));
                             self.selected = self.drafts.len() - 1;
                         }
                         if ui
@@ -134,10 +161,10 @@ impl ExternalToolConfigEditor {
                         field(ui, "Display name", &mut draft.name);
                         field(
                             ui,
-                            &dialog_control_text(catalog, 0x66, "Executable path"),
+                            &dialog_control_text(catalog, dialog_id, 0x66, "Executable path"),
                             &mut draft.executable,
                         );
-                        ui.label(dialog_control_text(catalog, 0x68, "Arguments"));
+                        ui.label(dialog_control_text(catalog, dialog_id, 0x68, "Arguments"));
                         ui.small("One direct process argument per line; use {rom}, {project_dir}, {level_hex}, or {level_dec}.");
                         ui.add(egui::TextEdit::multiline(&mut draft.arguments).desired_rows(4));
                         field(ui, "Working directory template (optional)", &mut draft.working_directory);
@@ -153,10 +180,16 @@ impl ExternalToolConfigEditor {
                 }
                 ui.separator();
                 ui.horizontal(|ui| {
-                    if ui.button(dialog_control_text(catalog, 2, "Cancel")).clicked() {
+                    if ui
+                        .button(dialog_control_text(catalog, dialog_id, 2, "Cancel"))
+                        .clicked()
+                    {
                         close = true;
                     }
-                    if ui.button(dialog_control_text(catalog, 1, "Apply")).clicked() {
+                    if ui
+                        .button(dialog_control_text(catalog, dialog_id, 1, "Apply"))
+                        .clicked()
+                    {
                         replacement = Some(self.drafts.iter().map(ToolDraft::build).collect());
                     }
                 });
@@ -176,25 +209,28 @@ impl ExternalToolConfigEditor {
 }
 
 pub(crate) fn menu_text(catalog: Option<&LocalizationCatalog>) -> String {
-    dialog_title(catalog)
+    dialog_title(catalog, ORIGINAL_SNES_EMULATOR_DIALOG_ID)
 }
 
-fn dialog_title(catalog: Option<&LocalizationCatalog>) -> String {
+fn dialog_title(catalog: Option<&LocalizationCatalog>, dialog_id: u16) -> String {
     catalog
-        .and_then(|catalog| catalog.original_dialog_title(ORIGINAL_EMULATOR_DIALOG_ID))
-        .unwrap_or("Setup SNES Emulator…")
+        .and_then(|catalog| catalog.original_dialog_title(dialog_id))
+        .unwrap_or(if dialog_id == ORIGINAL_GBA_EMULATOR_DIALOG_ID {
+            "Setup GBA Emulator…"
+        } else {
+            "Setup SNES Emulator…"
+        })
         .to_owned()
 }
 
 fn dialog_control_text(
     catalog: Option<&LocalizationCatalog>,
+    dialog_id: u16,
     control_id: u32,
     fallback: &str,
 ) -> String {
     catalog
-        .and_then(|catalog| {
-            catalog.original_dialog_control_text(ORIGINAL_EMULATOR_DIALOG_ID, control_id)
-        })
+        .and_then(|catalog| catalog.original_dialog_control_text(dialog_id, control_id))
         .unwrap_or(fallback)
         .to_owned()
 }
@@ -234,7 +270,7 @@ mod tests {
         .with_original_dialog_texts([
             (
                 OriginalDialogTextKey {
-                    dialog_id: ORIGINAL_EMULATOR_DIALOG_ID,
+                    dialog_id: ORIGINAL_SNES_EMULATOR_DIALOG_ID,
                     item_index: u16::MAX,
                     control_id: u32::MAX,
                 },
@@ -242,7 +278,7 @@ mod tests {
             ),
             (
                 OriginalDialogTextKey {
-                    dialog_id: ORIGINAL_EMULATOR_DIALOG_ID,
+                    dialog_id: ORIGINAL_SNES_EMULATOR_DIALOG_ID,
                     item_index: 2,
                     control_id: 0x66,
                 },
@@ -252,12 +288,39 @@ mod tests {
         .unwrap();
         assert_eq!(menu_text(Some(&catalog)), "Configurer l’émulateur SNES");
         assert_eq!(
-            dialog_control_text(Some(&catalog), 0x66, "Executable path"),
+            dialog_control_text(
+                Some(&catalog),
+                ORIGINAL_SNES_EMULATOR_DIALOG_ID,
+                0x66,
+                "Executable path"
+            ),
             "Chemin de l’émulateur :"
         );
         assert_eq!(
-            dialog_control_text(Some(&catalog), 0x68, "Arguments"),
+            dialog_control_text(
+                Some(&catalog),
+                ORIGINAL_SNES_EMULATOR_DIALOG_ID,
+                0x68,
+                "Arguments"
+            ),
             "Arguments"
         );
+    }
+
+    #[test]
+    fn gba_profiles_persist_their_kind_and_select_dialog_0408() {
+        let draft = ToolDraft::gba_emulator(2);
+        let tool = draft.build();
+        let reopened = ToolDraft::from_tool(&tool);
+        assert_eq!(
+            reopened.original_dialog_id(),
+            ORIGINAL_GBA_EMULATOR_DIALOG_ID
+        );
+        assert_eq!(
+            dialog_title(None, reopened.original_dialog_id()),
+            "Setup GBA Emulator…"
+        );
+        assert_eq!(tool.id, "gba-emulator-3");
+        assert_eq!(tool.arguments, ["{rom}"]);
     }
 }

@@ -5340,3 +5340,8 @@ maps to `None`; and three booleans reconstruct subscriptions in canonical event 
 window close discard the draft without touching active tools. Setup Emulator resource `$0407`
 supplies every equivalent caption while Rust-only safety and subscription controls retain explicit
 English labels.
+
+Emulator family identity is append-free: IDs beginning with canonical `gba-` select original GBA
+dialog `$0408`; every other tool selects the SNES `$0407` form. New GBA drafts use
+`gba-emulator-N`, so kind survives publication, configuration encode/decode, and editor reopen with
+no new persisted field. Users can intentionally change the stable ID and thereby reclassify a tool.
