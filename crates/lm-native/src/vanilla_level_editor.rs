@@ -2566,6 +2566,147 @@ impl VanillaLevelEditor {
         context.send_viewport_cmd(egui::ViewportCommand::RequestPaste);
     }
 
+    /// Moves the active selection in screen-space tiles. Vertical levels swap the native stream's
+    /// major/minor axes, but Lunar Magic's coordinate commands remain X/Y oriented.
+    pub(crate) fn toolbar_nudge_selection(&mut self, x_delta: i32, y_delta: i32) {
+        let Some(domain) = self.canvas_entity_selection else {
+            self.error =
+                Some("Coordinate adjustment requires an object or sprite selection".into());
+            return;
+        };
+        let Some(controller) = self.controller.as_ref() else {
+            self.error = Some("level controller is unavailable".into());
+            return;
+        };
+        let vertical =
+            lm_profile::smw_us_v1_level_mode(controller.level().layer1.header.level_mode())
+                .vertical;
+        let (major_delta, minor_delta) = screen_nudge_delta(vertical, x_delta, y_delta);
+        if major_delta == 0 && minor_delta == 0 {
+            return;
+        }
+        match domain {
+            CanvasEntitySelection::Layer1Object => {
+                let selected = selected_indexes(&self.selected_object_group, self.selected_object);
+                self.relocate_selected_objects(domain, selected, major_delta, minor_delta);
+            }
+            CanvasEntitySelection::Layer2Object => {
+                let selected = selected_indexes(
+                    &self.selected_layer2_object_group,
+                    self.selected_layer2_object,
+                );
+                self.relocate_selected_objects(domain, selected, major_delta, minor_delta);
+            }
+            CanvasEntitySelection::Sprite => {
+                let selected = selected_indexes(&self.selected_sprite_group, self.selected_sprite);
+                let controller = self
+                    .controller
+                    .as_mut()
+                    .expect("controller presence checked above");
+                let mut predicted = controller.level().sprites.clone();
+                let moved = match predicted.relocate_record_group(
+                    &selected,
+                    major_delta,
+                    minor_delta,
+                    vertical,
+                    controller.sprite_lengths(),
+                ) {
+                    Ok(moved) => moved,
+                    Err(error) => {
+                        self.error = Some(error.to_string());
+                        return;
+                    }
+                };
+                let result = controller.apply_edits(&[NativeLevelEdit::RelocateSpriteGroup {
+                    selected: selected.clone(),
+                    major_delta,
+                    minor_delta,
+                }]);
+                match result {
+                    Ok(()) => {
+                        self.selected_sprite_group = moved;
+                        self.selected_sprite = self.selected_sprite_group[0];
+                        if let Some(controller) = self.controller.as_ref() {
+                            self.sprite_form = SpriteForm::from_token(
+                                controller.level().sprites.header,
+                                controller.level().sprites.tokens.get(self.selected_sprite),
+                            );
+                        }
+                        self.error = None;
+                    }
+                    Err(error) => self.error = Some(error.to_string()),
+                }
+            }
+        }
+    }
+
+    fn relocate_selected_objects(
+        &mut self,
+        domain: CanvasEntitySelection,
+        selected: Vec<usize>,
+        major_delta: i32,
+        minor_delta: i32,
+    ) {
+        let edit = ObjectEdit::RelocateOrdinaryGroup {
+            selected: selected.clone(),
+            major_delta,
+            minor_delta,
+        };
+        let controller = self
+            .controller
+            .as_mut()
+            .expect("toolbar nudge requires a loaded controller");
+        let moved = match domain {
+            CanvasEntitySelection::Layer1Object => {
+                let mut predicted = controller.level().layer1.objects.clone();
+                predicted.relocate_ordinary_object_group(&selected, major_delta, minor_delta)
+            }
+            CanvasEntitySelection::Layer2Object => {
+                let Some(lm_level::NativeLayer2Data::Objects(layer2)) = controller.layer2() else {
+                    self.error =
+                        Some("the current level does not use object-backed Layer 2".into());
+                    return;
+                };
+                let mut predicted = layer2.objects.clone();
+                predicted.relocate_ordinary_object_group(&selected, major_delta, minor_delta)
+            }
+            CanvasEntitySelection::Sprite => unreachable!("sprite nudge has a dedicated edit"),
+        };
+        let moved = match moved {
+            Ok(moved) => moved,
+            Err(error) => {
+                self.error = Some(error.to_string());
+                return;
+            }
+        };
+        let result = match domain {
+            CanvasEntitySelection::Layer1Object => {
+                controller.apply_edits(&[NativeLevelEdit::Objects(vec![edit])])
+            }
+            CanvasEntitySelection::Layer2Object => controller.apply_layer2_object_edits(&[edit]),
+            CanvasEntitySelection::Sprite => unreachable!("sprite nudge has a dedicated edit"),
+        };
+        match result {
+            Ok(()) => {
+                match domain {
+                    CanvasEntitySelection::Layer1Object => {
+                        self.selected_object_group = moved;
+                        self.selected_object = self.selected_object_group[0];
+                        self.reload_object_form();
+                    }
+                    CanvasEntitySelection::Layer2Object => {
+                        self.selected_layer2_object_group = moved;
+                        self.selected_layer2_object = self.selected_layer2_object_group[0];
+                        self.reload_layer2_object_form();
+                    }
+                    CanvasEntitySelection::Sprite => unreachable!(),
+                }
+                self.error = None;
+            }
+            Err(error) => self.error = Some(error.to_string()),
+        }
+    }
+
     pub(crate) fn toolbar_zoom_filter_toggle(&mut self) {
         self.zoom_filter = Some(!self.zoom_filter());
         self.invalidate_graphics_preview();
@@ -6850,6 +6991,14 @@ fn selected_indexes(group: &[usize], fallback: usize) -> Vec<usize> {
     indexes.sort_unstable();
     indexes.dedup();
     indexes
+}
+
+fn screen_nudge_delta(vertical: bool, x_delta: i32, y_delta: i32) -> (i32, i32) {
+    if vertical {
+        (y_delta, x_delta)
+    } else {
+        (x_delta, y_delta)
+    }
 }
 
 fn object_insertion_index(selected: usize, record_count: usize) -> usize {
@@ -17646,6 +17795,125 @@ mod tests {
         );
         assert!(editor.selected_sprite_group.is_empty());
         assert_eq!(editor.canvas_entity_selection, None);
+    }
+
+    #[test]
+    fn toolbar_coordinate_commands_nudge_objects_and_sprites_through_staged_history() {
+        assert_eq!(screen_nudge_delta(false, 1, -2), (1, -2));
+        assert_eq!(screen_nudge_delta(true, 1, -2), (-2, 1));
+
+        let mut app = AppState::default();
+        app.load_rom(crate::test_support::pristine_smw_us_rom_bytes())
+            .unwrap();
+        app.dispatch(Command::ExpandRom(lm_app::RomExpansionCommand {
+            expected_revision: 0,
+            mapper: Mapper::LoRom,
+            target_logical_len: 0x10_0000,
+            fill: 0xff,
+            checksum_field: 0x7fdc,
+        }))
+        .unwrap();
+        let expanded_baseline = app.project().unwrap().rom.logical_bytes().to_vec();
+        app.dispatch(Command::SelectLevel(0x105)).unwrap();
+        let snapshot = app.controller_snapshot().unwrap();
+        let mut editor = VanillaLevelEditor::default();
+        editor.load(
+            &snapshot,
+            EditorKey {
+                revision: snapshot.revision,
+                level: 0x105,
+                sprite_lengths_signature: ssc_sprite_lengths_signature(None),
+            },
+            None,
+        );
+
+        let original_level = editor.controller.as_ref().unwrap().level().clone();
+        let object = original_level
+            .layer1
+            .objects
+            .native_placements()
+            .into_iter()
+            .find(|placement| placement.major < 511)
+            .unwrap();
+        editor.selected_object = object.record_index;
+        editor.selected_object_group = vec![object.record_index];
+        editor.canvas_entity_selection = Some(CanvasEntitySelection::Layer1Object);
+        editor.toolbar_nudge_selection(1, 0);
+        assert!(editor.error.is_none(), "{:?}", editor.error);
+        let moved_object = editor
+            .controller
+            .as_ref()
+            .unwrap()
+            .level()
+            .layer1
+            .objects
+            .native_placements()
+            .into_iter()
+            .find(|placement| {
+                editor
+                    .selected_object_group
+                    .contains(&placement.record_index)
+            })
+            .unwrap();
+        assert_eq!(moved_object.major, object.major + 1);
+        assert_eq!(moved_object.minor, object.minor);
+        assert!(editor.controller.as_mut().unwrap().undo());
+        assert_eq!(editor.controller.as_ref().unwrap().level(), &original_level);
+
+        let sprite = original_level
+            .sprites
+            .native_placements()
+            .into_iter()
+            .find(|placement| placement.minor > 0)
+            .unwrap();
+        editor.selected_sprite = sprite.token_index;
+        editor.selected_sprite_group = vec![sprite.token_index];
+        editor.canvas_entity_selection = Some(CanvasEntitySelection::Sprite);
+        editor.toolbar_nudge_selection(0, -1);
+        assert!(editor.error.is_none(), "{:?}", editor.error);
+        let moved_sprite = editor
+            .controller
+            .as_ref()
+            .unwrap()
+            .level()
+            .sprites
+            .native_placements()
+            .into_iter()
+            .find(|placement| {
+                editor
+                    .selected_sprite_group
+                    .contains(&placement.token_index)
+            })
+            .unwrap();
+        assert_eq!(moved_sprite.major, sprite.major);
+        assert_eq!(moved_sprite.minor + 1, sprite.minor);
+
+        app.dispatch(prepare_commit(editor.controller.as_ref().unwrap(), &snapshot).unwrap())
+            .unwrap();
+        let reopened = app
+            .project()
+            .unwrap()
+            .load_level_slot(
+                0x105,
+                lm_profile::smw_us_v1_vanilla_level_layout(),
+                &SpriteLengthTable::standard(),
+            )
+            .unwrap();
+        let reopened_sprite = reopened
+            .sprites
+            .native_placements()
+            .into_iter()
+            .find(|placement| {
+                placement.major == moved_sprite.major
+                    && placement.minor == moved_sprite.minor
+                    && placement.sprite_number == moved_sprite.sprite_number
+            });
+        assert!(reopened_sprite.is_some());
+        app.dispatch(Command::Undo).unwrap();
+        assert_eq!(
+            app.project().unwrap().rom.logical_bytes(),
+            expanded_baseline
+        );
     }
 
     #[test]

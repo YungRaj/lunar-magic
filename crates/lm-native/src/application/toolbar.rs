@@ -295,6 +295,9 @@ impl NativeApplication {
             UserToolbarNativeAction::Paste => {
                 self.vanilla_level_editor.toolbar_request_paste(context);
             }
+            UserToolbarNativeAction::Nudge { x, y } => {
+                self.vanilla_level_editor.toolbar_nudge_selection(x, y);
+            }
             UserToolbarNativeAction::ExpandRom(preset) => {
                 self.rom_expansion_dialog.open_preset(&self.app, preset);
             }
@@ -926,6 +929,7 @@ enum UserToolbarNativeAction {
     Copy,
     Cut,
     Paste,
+    Nudge { x: i32, y: i32 },
     ExpandRom(RomExpansionPreset),
     ExportAllLevels,
     ExtractGraphics(QuickGraphicsExtraction),
@@ -959,6 +963,10 @@ fn user_toolbar_native_action(name: &str) -> Option<UserToolbarNativeAction> {
         "LM_EDIT_COPY" => UserToolbarNativeAction::Copy,
         "LM_EDIT_CUT" => UserToolbarNativeAction::Cut,
         "LM_EDIT_PASTE" => UserToolbarNativeAction::Paste,
+        "LM_EDIT_INCREASE_X" => UserToolbarNativeAction::Nudge { x: 1, y: 0 },
+        "LM_EDIT_DECREASE_X" => UserToolbarNativeAction::Nudge { x: -1, y: 0 },
+        "LM_EDIT_INCREASE_Y" => UserToolbarNativeAction::Nudge { x: 0, y: 1 },
+        "LM_EDIT_DECREASE_Y" => UserToolbarNativeAction::Nudge { x: 0, y: -1 },
         "LM_FILE_EXPAND_ROM2" => UserToolbarNativeAction::ExpandRom(RomExpansionPreset::LoRom2MiB),
         "LM_FILE_EXPAND_ROM3" => UserToolbarNativeAction::ExpandRom(RomExpansionPreset::LoRom3MiB),
         "LM_FILE_EXPAND_ROM4" => UserToolbarNativeAction::ExpandRom(RomExpansionPreset::LoRom4MiB),
@@ -1522,7 +1530,7 @@ mod user_toolbar_tests {
                     || user_toolbar_native_action(entry.name).is_some()
             })
             .collect::<Vec<_>>();
-        assert_eq!(supported.len(), 187);
+        assert_eq!(supported.len(), 191);
         assert!(
             supported
                 .iter()

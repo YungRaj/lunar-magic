@@ -5004,3 +5004,18 @@ records with a drawable definition do not gain an invisible anchor target. An oc
 selects the last/topmost matching record and reloads its complete variable-width form. A drag
 captures that record identity and stages exactly one replacement at release; an empty click retains
 insert/move behavior. Cross-plane points cannot select or mutate a record.
+
+## User-toolbar coordinate adjustment
+
+The authenticated Lunar Magic 3.63 internal-command table assigns `$2460..$2463` to increase and
+decrease X/Y. The native toolbar routes all four commands into the installed level editor and
+translates the complete active Layer 1, object-backed Layer 2, or sprite selection by one visible
+tile. Horizontal levels map X/Y to native major/minor coordinates directly; vertical levels swap
+those storage axes while preserving the screen-space meaning.
+
+These actions share canvas dragging's semantic group-relocation edits. They regenerate owned
+screen controls, reject invalid boundary movement atomically, and follow canonical post-rewrite
+record indexes. `toolbar_coordinate_commands_nudge_objects_and_sprites_through_staged_history`
+moves both domains, proves staged Undo, commits into an expanded vanilla ROM, semantically reopens
+the moved sprite, and proves application Undo restores the byte-exact expanded baseline. The
+authenticated native-route count therefore advances from 187 to 191 table slots.
