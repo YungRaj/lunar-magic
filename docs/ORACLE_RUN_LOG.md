@@ -775,3 +775,12 @@ and performs a seven-region guarded runtime upgrade during bulk resave. Portable
 and application tests cover the descriptor, validate-all-before-write atomicity, and mapper route.
 Full provenance and recovered boundaries are retained in
 `oracle-work/level-access-restriction-sa1-363.md`.
+
+Follow-up port-8089 recovery of `BuildRestoreArchiveFilename` (`004AED30`),
+`OpenOrCreateRestoreArchive` (`004AEFB0`), `EnsureRestoreDirectoryExists` (`004AEF00`), and
+`EnsureOriginalRomCopyInRestoreFolder` (`004AEE90`) closes the last restriction-workflow variant
+gap. The archive is not registry-associated: it is deterministically
+`<ROM directory>/sysLMRestore/<ROM stem>.lrp`. Registry values `OrigROMn` are only a later fallback
+for finding the pristine original after the project-local `smwOrig.smc`, `smwjOrig.smc`, or
+`AllWorldOrig.smc` search. Rust now creates or appends that exact associated archive and reuses the
+validated project-local original without opening either chooser.

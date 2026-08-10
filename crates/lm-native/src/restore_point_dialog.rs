@@ -13,6 +13,7 @@ use std::{
 };
 
 const MAX_ARCHIVE_LEN: u64 = 256 * 1024 * 1024;
+const RESTORE_DIRECTORY_README: &str = "This folder contains restore information for ROMs in the folder one level above it.\r\nMove this folder with those ROMs, and rename a ROM's .lrp file when renaming the ROM.\r\nDo not modify original-ROM copies or .lrp contents if you want restore operations to remain reliable.\r\n";
 
 struct CapturedAssociatedFiles {
     files: [Option<Vec<u8>>; LUNAR_RESTORE_ASSOCIATED_FILE_COUNT],
@@ -100,11 +101,29 @@ fn build_full_archive(
     created: PackedRestoreDate,
     created_time: PackedRestoreTime,
 ) -> Result<Vec<u8>, String> {
+    build_full_archive_with_description(
+        original,
+        current,
+        document_path,
+        created,
+        created_time,
+        "Manual Full Restore Point.",
+    )
+}
+
+fn build_full_archive_with_description(
+    original: &[u8],
+    current: &[u8],
+    document_path: Option<&Path>,
+    created: PackedRestoreDate,
+    created_time: PackedRestoreTime,
+    description: &str,
+) -> Result<Vec<u8>, String> {
     let associated = capture_associated_files(document_path)?;
     let mut request = LunarRestoreArchiveCreateRequest::new(
         original,
         current,
-        "Manual Full Restore Point.",
+        description,
         created,
         created_time,
     );
@@ -145,6 +164,33 @@ fn build_appended_archive(
     created: PackedRestoreDate,
     created_time: PackedRestoreTime,
 ) -> Result<Vec<u8>, String> {
+    build_appended_archive_with_description(
+        archive,
+        original,
+        current,
+        observed,
+        document_path,
+        mode,
+        automatic_policy,
+        created,
+        created_time,
+        None,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn build_appended_archive_with_description(
+    archive: &LunarRestoreArchive,
+    original: &[u8],
+    current: &[u8],
+    observed: &[u8],
+    document_path: &Path,
+    mode: RestoreAppendMode,
+    automatic_policy: LunarRestoreAutomaticPolicy,
+    created: PackedRestoreDate,
+    created_time: PackedRestoreTime,
+    description_override: Option<&str>,
+) -> Result<Vec<u8>, String> {
     let record_id = archive.header.latest_record_id;
     let base = archive
         .restore_through(record_id, original)
@@ -159,7 +205,7 @@ fn build_appended_archive(
         },
         explicit => explicit,
     };
-    let description = match (mode, automatic) {
+    let description = description_override.unwrap_or(match (mode, automatic) {
         (RestoreAppendMode::Automatic, LunarRestoreAutomaticDecision::Delta) => {
             "Automatic Delta Restore Point."
         }
@@ -170,7 +216,7 @@ fn build_appended_archive(
             "Manual Delta Restore Point."
         }
         _ => "Manual Full Restore Point.",
-    };
+    });
     let mut associated = capture_associated_files(Some(document_path))?;
     if matches!(selected_mode, RestoreAppendMode::Delta) {
         for (slot, timestamp) in associated.timestamps.iter().enumerate() {
@@ -239,6 +285,151 @@ pub(crate) fn append_for_open_project(
     mode: RestoreAppendMode,
 ) -> Result<bool, String> {
     append_for_open_project_with_policy(app, mode, LunarRestoreAutomaticPolicy::default())
+}
+
+pub(crate) fn create_or_append_associated_full_for_open_project(
+    app: &lm_app::AppState,
+) -> Result<bool, String> {
+    let project = app
+        .project()
+        .ok_or_else(|| "open a ROM before creating a restore point".to_owned())?;
+    let document_path = app
+        .document_path
+        .as_deref()
+        .ok_or_else(|| "save the open ROM before creating a restore point".to_owned())?;
+    let identity = project
+        .identity
+        .as_ref()
+        .ok_or_else(|| "the open ROM has no supported restore identity".to_owned())?;
+    let (restore_directory, archive_path, original_path) =
+        associated_restore_paths(document_path, identity)?;
+    ensure_restore_directory(&restore_directory)?;
+
+    let original = match crate::dialogs::read_regular_bounded(
+        &original_path,
+        crate::dialogs::MAX_ROM_FILE_LEN,
+        "original restore ROM",
+    ) {
+        Ok(bytes) => bytes,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            let Some(selected_path) = crate::dialogs::choose_restore_original_rom() else {
+                return Ok(false);
+            };
+            let bytes = crate::dialogs::read_regular_bounded(
+                &selected_path,
+                crate::dialogs::MAX_ROM_FILE_LEN,
+                "original restore ROM",
+            )
+            .map_err(|error| error.to_string())?;
+            validate_original_identity(&bytes, identity)?;
+            lm_app::file_persistence::write_new(&original_path, &bytes)
+                .map_err(|error| error.to_string())?;
+            bytes
+        }
+        Err(error) => return Err(error.to_string()),
+    };
+    validate_original_identity(&original, identity)?;
+
+    let current = project.save_snapshot();
+    let observed = crate::dialogs::read_regular_bounded(
+        document_path,
+        crate::dialogs::MAX_ROM_FILE_LEN,
+        "open ROM",
+    )
+    .map_err(|error| error.to_string())?;
+    let (created, created_time) = local_restore_date_time()?;
+    match crate::dialogs::read_regular_bounded(&archive_path, MAX_ARCHIVE_LEN, "restore archive") {
+        Ok(archive_bytes) => {
+            let archive =
+                LunarRestoreArchive::decode(&archive_bytes).map_err(|error| error.to_string())?;
+            let bytes = build_appended_archive_with_description(
+                &archive,
+                &original,
+                &current,
+                &observed,
+                document_path,
+                RestoreAppendMode::Full,
+                LunarRestoreAutomaticPolicy::default(),
+                created,
+                created_time,
+                Some("Restrict Level Access."),
+            )?;
+            lm_app::file_persistence::replace_existing(&archive_path, &bytes)
+                .map_err(|error| error.to_string())?;
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            let bytes = build_full_archive_with_description(
+                &original,
+                &current,
+                Some(document_path),
+                created,
+                created_time,
+                "Restrict Level Access.",
+            )?;
+            lm_app::file_persistence::write_new(&archive_path, &bytes)
+                .map_err(|error| error.to_string())?;
+        }
+        Err(error) => return Err(error.to_string()),
+    }
+    Ok(true)
+}
+
+fn associated_restore_paths(
+    document_path: &Path,
+    identity: &lm_rom::RomIdentity,
+) -> Result<(PathBuf, PathBuf, PathBuf), String> {
+    let parent = document_path
+        .parent()
+        .ok_or_else(|| "the open ROM path has no parent directory".to_owned())?;
+    let file_name = document_path
+        .file_name()
+        .ok_or_else(|| "the open ROM path has no file name".to_owned())?;
+    let restore_directory = parent.join("sysLMRestore");
+    let archive_path = restore_directory.join(file_name).with_extension("lrp");
+    let original_name = match (identity.game, identity.region) {
+        (lm_rom::SupportedGame::SuperMarioWorld, lm_rom::Region::NorthAmerica) => "smwOrig.smc",
+        (lm_rom::SupportedGame::SuperMarioWorld, lm_rom::Region::Japan) => "smwjOrig.smc",
+        (lm_rom::SupportedGame::AllStarsAndWorld, lm_rom::Region::NorthAmerica) => {
+            "AllWorldOrig.smc"
+        }
+        (lm_rom::SupportedGame::AllStarsAndWorld, lm_rom::Region::Japan) => {
+            return Err("the active game/region has no Lunar Magic restore identity".to_owned());
+        }
+    };
+    let original_path = restore_directory.join(original_name);
+    Ok((restore_directory, archive_path, original_path))
+}
+
+fn ensure_restore_directory(path: &Path) -> Result<(), String> {
+    match fs::symlink_metadata(path) {
+        Ok(metadata) if metadata.file_type().is_dir() => Ok(()),
+        Ok(_) => Err(format!(
+            "restore directory path is not a regular directory: {}",
+            path.display()
+        )),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            fs::create_dir(path).map_err(|error| error.to_string())?;
+            let _ = lm_app::file_persistence::write_new(
+                &path.join("readme.txt"),
+                RESTORE_DIRECTORY_README.as_bytes(),
+            );
+            Ok(())
+        }
+        Err(error) => Err(error.to_string()),
+    }
+}
+
+fn validate_original_identity(bytes: &[u8], active: &lm_rom::RomIdentity) -> Result<(), String> {
+    let image = lm_rom::RomImage::from_bytes(bytes.to_vec()).map_err(|error| error.to_string())?;
+    let original = lm_rom::detect_identity(&image).map_err(|error| error.to_string())?;
+    if original.game != active.game
+        || original.region != active.region
+        || original.revision != active.revision
+        || !original.checksum_matches()
+    {
+        return Err("the selected original ROM does not match the open game and region".to_owned());
+    }
+    Ok(())
 }
 
 fn append_for_open_project_with_policy(
@@ -879,6 +1070,93 @@ mod tests {
             std::process::id(),
             NEXT_TEST_DIRECTORY.fetch_add(1, Ordering::Relaxed)
         ))
+    }
+
+    #[test]
+    fn associated_paths_match_lunar_magics_restore_directory_and_variant_names() {
+        let image = lm_rom::RomImage::from_bytes(rom()).unwrap();
+        let mut identity = lm_rom::detect_identity(&image).unwrap();
+        let document = Path::new("/projects/world/My Hack.v2.smc");
+
+        let (directory, archive, original) = associated_restore_paths(document, &identity).unwrap();
+        assert_eq!(directory, Path::new("/projects/world/sysLMRestore"));
+        assert_eq!(
+            archive,
+            Path::new("/projects/world/sysLMRestore/My Hack.v2.lrp")
+        );
+        assert_eq!(
+            original,
+            Path::new("/projects/world/sysLMRestore/smwOrig.smc")
+        );
+
+        identity.region = lm_rom::Region::Japan;
+        assert_eq!(
+            associated_restore_paths(document, &identity).unwrap().2,
+            Path::new("/projects/world/sysLMRestore/smwjOrig.smc")
+        );
+        identity.game = lm_rom::SupportedGame::AllStarsAndWorld;
+        identity.region = lm_rom::Region::NorthAmerica;
+        assert_eq!(
+            associated_restore_paths(document, &identity).unwrap().2,
+            Path::new("/projects/world/sysLMRestore/AllWorldOrig.smc")
+        );
+    }
+
+    #[test]
+    fn restriction_restore_uses_and_reuses_the_automatic_associated_archive() {
+        let directory = test_directory();
+        let restore_directory = directory.join("sysLMRestore");
+        fs::create_dir_all(&restore_directory).unwrap();
+        let document = directory.join("A New World.smc");
+        let original_path = restore_directory.join("smwOrig.smc");
+        let bytes = rom();
+        fs::write(&document, &bytes).unwrap();
+        fs::write(&original_path, &bytes).unwrap();
+        let mut app = lm_app::AppState::default();
+        app.load_rom_at(bytes, Some(document)).unwrap();
+
+        assert!(create_or_append_associated_full_for_open_project(&app).unwrap());
+        let archive_path = restore_directory.join("A New World.lrp");
+        let first = LunarRestoreArchive::decode(&fs::read(&archive_path).unwrap()).unwrap();
+        assert_eq!(first.records.len(), 1);
+        assert_eq!(
+            first.records[0].description_text(),
+            "Restrict Level Access."
+        );
+
+        assert!(create_or_append_associated_full_for_open_project(&app).unwrap());
+        let second = LunarRestoreArchive::decode(&fs::read(&archive_path).unwrap()).unwrap();
+        assert_eq!(second.records.len(), 2);
+        assert_eq!(
+            second.records[1].description_text(),
+            "Restrict Level Access."
+        );
+        assert_eq!(
+            second
+                .restore_through(
+                    second.header.latest_record_id,
+                    &fs::read(original_path).unwrap()
+                )
+                .unwrap(),
+            app.project().unwrap().save_snapshot()
+        );
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn restore_directory_creation_publishes_readme_once_and_reuses_the_directory() {
+        let parent = test_directory();
+        fs::create_dir(&parent).unwrap();
+        let directory = parent.join("sysLMRestore");
+
+        ensure_restore_directory(&directory).unwrap();
+        assert_eq!(
+            fs::read(directory.join("readme.txt")).unwrap(),
+            RESTORE_DIRECTORY_README.as_bytes()
+        );
+        ensure_restore_directory(&directory).unwrap();
+
+        fs::remove_dir_all(parent).unwrap();
     }
 
     #[test]

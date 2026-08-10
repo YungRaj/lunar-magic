@@ -177,9 +177,8 @@ impl NativeApplication {
     }
 
     fn create_restriction_restore_point(&mut self) {
-        match crate::restore_point_dialog::append_for_open_project(
+        match crate::restore_point_dialog::create_or_append_associated_full_for_open_project(
             &self.app,
-            crate::restore_point_dialog::RestoreAppendMode::Full,
         ) {
             Ok(true) => {
                 self.level_access_restriction_dialog

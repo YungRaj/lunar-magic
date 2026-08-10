@@ -49,7 +49,22 @@ failed save leaves the restricted project open and offers Retry Save; it never l
 compare against stale pre-restriction bytes. Final close is also save-acknowledged, so a later failed
 write leaves the project open with Retry Save and Close. The native restore preferences retain the
 independent destructive-operation bit. When enabled, restriction first publishes the locked ROM,
-then appends a full record to the selected existing `.lrp` archive before IPS creation. The ROM
+then creates or appends a full record in its associated `.lrp` archive before IPS creation. The ROM
 cannot advance to the IPS offer until both persistence and the checkpoint succeed.
-The current Rust frontend still asks for the original and archive paths because it has not yet
-reproduced Lunar Magic's registry-backed archive association.
+
+Follow-up recovery corrected the earlier assumption that the archive itself is registry-backed.
+`OpenOrCreateRestoreArchive` at `004AEFB0` calls `EnsureRestoreDirectoryExists` (`004AEF00`) and
+`BuildRestoreArchiveFilename` (`004AED30`). The original creates `sysLMRestore` beneath the active
+ROM's directory, publishes its explanatory `readme.txt`, replaces the active ROM filename's
+extension with `.lrp`, and opens or creates that archive without a chooser. The three supported
+original-ROM names selected by the active game/region are `smwOrig.smc`, `smwjOrig.smc`, and
+`AllWorldOrig.smc`. Only the fallback original-ROM location is persisted as `OrigROMn`; the first
+search is always the corresponding `sysLMRestore` file.
+
+Rust now follows that association directly. Restriction creates or appends the full checkpoint in
+`<ROM directory>/sysLMRestore/<ROM stem>.lrp`, reuses the variant-specific original copy without a
+chooser, validates its game, region, revision, and checksum, and asks once only when that copy is
+missing before publishing it under the original name. Archive publication remains create-new or
+atomic replacement as appropriate. Portable tests bind all three supported names, dotted ROM
+filenames, initial archive creation, repeated append, reconstruction, and the no-chooser reuse
+path.
