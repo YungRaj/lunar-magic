@@ -27,6 +27,7 @@ mod frontend_ui;
 #[path = "rom_graphics_editor/graphics_batch.rs"]
 mod graphics_batch;
 mod graphics_editor;
+mod graphics_insertion_dialog;
 mod graphics_migration_dialog;
 mod graphics_painter;
 mod help_dialog;

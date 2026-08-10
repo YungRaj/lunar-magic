@@ -2,7 +2,9 @@ use super::{LevelScreenOverlay, LevelViewVisibility, NativeApplication};
 use crate::frontend_ui;
 use crate::rom_expansion_dialog::RomExpansionPreset;
 use crate::{
-    rom_graphics_editor::QuickGraphicsInsertion, toolbar_graphics_transfer::QuickGraphicsExtraction,
+    graphics_insertion_dialog::GraphicsInsertionFamily,
+    rom_graphics_editor::QuickGraphicsInsertion,
+    toolbar_graphics_transfer::QuickGraphicsExtraction,
 };
 use eframe::egui;
 use lm_app::{
@@ -337,6 +339,14 @@ impl NativeApplication {
                     action,
                     self.joined_graphics_files,
                 ) {
+                    self.effects.error = Some(error);
+                }
+            }
+            UserToolbarNativeAction::OrdinaryInsertGraphics(family) => {
+                if let Err(error) = self
+                    .rom_graphics_editor
+                    .open_ordinary_import(&self.app, family)
+                {
                     self.effects.error = Some(error);
                 }
             }
@@ -943,6 +953,7 @@ enum UserToolbarNativeAction {
     ExtractGraphics(QuickGraphicsExtraction),
     QuickExtractGraphics(QuickGraphicsExtraction),
     QuickInsertGraphics(QuickGraphicsInsertion),
+    OrdinaryInsertGraphics(GraphicsInsertionFamily),
 }
 
 fn user_toolbar_native_action(name: &str) -> Option<UserToolbarNativeAction> {
@@ -1019,6 +1030,12 @@ fn user_toolbar_native_action(name: &str) -> Option<UserToolbarNativeAction> {
         }
         "LM_FILE_INSERT_EXGFX_BUTTON" => {
             UserToolbarNativeAction::QuickInsertGraphics(QuickGraphicsInsertion::ExGraphics)
+        }
+        "LM_FILE_INSERT_GFX" => {
+            UserToolbarNativeAction::OrdinaryInsertGraphics(GraphicsInsertionFamily::Standard)
+        }
+        "LM_FILE_INSERT_EXGFX" => {
+            UserToolbarNativeAction::OrdinaryInsertGraphics(GraphicsInsertionFamily::ExGraphics)
         }
         _ => return None,
     })
@@ -1348,6 +1365,16 @@ mod user_toolbar_tests {
                 "LM_FILE_INSERT_EXGFX_BUTTON",
                 UserToolbarNativeAction::QuickInsertGraphics(QuickGraphicsInsertion::ExGraphics),
             ),
+            (
+                "LM_FILE_INSERT_GFX",
+                UserToolbarNativeAction::OrdinaryInsertGraphics(GraphicsInsertionFamily::Standard),
+            ),
+            (
+                "LM_FILE_INSERT_EXGFX",
+                UserToolbarNativeAction::OrdinaryInsertGraphics(
+                    GraphicsInsertionFamily::ExGraphics,
+                ),
+            ),
         ] {
             assert_eq!(user_toolbar_native_action(name), Some(action));
         }
@@ -1552,7 +1579,7 @@ mod user_toolbar_tests {
                     || user_toolbar_native_action(entry.name).is_some()
             })
             .collect::<Vec<_>>();
-        assert_eq!(supported.len(), 197);
+        assert_eq!(supported.len(), 199);
         assert!(
             supported
                 .iter()

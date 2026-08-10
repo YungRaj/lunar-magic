@@ -1,6 +1,9 @@
 use crate::{
     document_loader::DocumentLoader,
     graphics_batch,
+    graphics_insertion_dialog::{
+        GraphicsInsertionDialog, GraphicsInsertionFamily, GraphicsInsertionRequest,
+    },
     graphics_painter::{
         GraphicsCharacterShortcut, GraphicsColorMapEditor, GraphicsDisplayPalette,
         GraphicsEditorStatus, GraphicsTileGrid, GraphicsTileTransform, PalettePointerAction,
@@ -119,12 +122,49 @@ pub(crate) struct RomGraphicsEditor {
     level_graphics_batch_running: bool,
     graphics_import: graphics_import::GraphicsImportWorker,
     pending_graphics_format_warning: Option<PendingGraphicsFormatWarning>,
+    ordinary_insertion_dialog: Option<GraphicsInsertionDialog>,
     external_editor: external_edit::ExternalGraphicsEditor,
     external_tool_id: Option<String>,
     internal_cache_unlocked: bool,
 }
 
 impl RomGraphicsEditor {
+    pub(crate) fn open_ordinary_import(
+        &mut self,
+        app: &AppState,
+        family: GraphicsInsertionFamily,
+    ) -> Result<(), String> {
+        if self.graphics_import.is_running()
+            || self.pending_graphics_format_warning.is_some()
+            || self.ordinary_insertion_dialog.is_some()
+        {
+            return Err("a graphics insertion is already running".into());
+        }
+        if self.error.is_some() {
+            return Err("dismiss the current ROM graphics error before inserting GFX".into());
+        }
+        if modified_controller(self.workspace.as_ref()) {
+            return Err("commit or discard staged graphics edits before inserting GFX".into());
+        }
+        let snapshot = app
+            .controller_snapshot()
+            .map_err(|error| error.to_string())?;
+        let image =
+            lm_rom::RomImage::from_bytes(snapshot.rom_bytes).map_err(|error| error.to_string())?;
+        let copier_prefix_len = match image.copier_header() {
+            lm_rom::CopierHeader::Absent => 0,
+            lm_rom::CopierHeader::Present => lm_rom::COPIER_HEADER_LEN,
+        };
+        let use_4bpp = lm_profile::has_smw_us_v1_4bpp_graphics_prerequisite(&image);
+        self.ordinary_insertion_dialog = Some(GraphicsInsertionDialog::new(
+            family,
+            copier_prefix_len,
+            image.logical_len(),
+            use_4bpp,
+        ));
+        Ok(())
+    }
+
     pub(crate) fn start_quick_import(
         &mut self,
         app: &AppState,
@@ -302,6 +342,7 @@ impl RomGraphicsEditor {
                 None => None,
             });
         self.graphics_format_warning(context);
+        self.ordinary_graphics_insertion_dialog(context, app, *joined_graphics_files);
         if self.workspace.is_some() {
             egui::Window::new("ROM Graphics Editor")
                 .default_size([780.0, 680.0])
@@ -340,6 +381,7 @@ impl RomGraphicsEditor {
             || self.graphics_batch.is_running()
             || self.graphics_import.is_running()
             || self.pending_graphics_format_warning.is_some()
+            || self.ordinary_insertion_dialog.is_some()
             || self.external_editor.is_running();
         if stale {
             ui.colored_label(
@@ -1686,6 +1728,7 @@ impl RomGraphicsEditor {
             smw_us_v1_standard_install: pristine_install,
             smw_us_v1_exgraphics: false,
             exgraphics_names: false,
+            ordinary_options: None,
         };
         self.start_graphics_import_or_warn(
             source,
@@ -1762,6 +1805,7 @@ impl RomGraphicsEditor {
             smw_us_v1_standard_install: pristine_install,
             smw_us_v1_exgraphics: false,
             exgraphics_names: false,
+            ordinary_options: None,
         };
         self.start_graphics_import_or_warn(
             source,
@@ -1835,6 +1879,7 @@ impl RomGraphicsEditor {
             smw_us_v1_standard_install: false,
             smw_us_v1_exgraphics: false,
             exgraphics_names: false,
+            ordinary_options: None,
         };
         match self.graphics_import.start(source, directory) {
             Ok(()) => self.io_status = None,
@@ -1905,6 +1950,7 @@ impl RomGraphicsEditor {
             smw_us_v1_standard_install: false,
             smw_us_v1_exgraphics: supports_native_exgraphics(&workspace.profile, &workspace.image),
             exgraphics_names: true,
+            ordinary_options: None,
         };
         match self.graphics_import.start(source, directory) {
             Ok(()) => self.io_status = None,
@@ -1926,6 +1972,86 @@ impl RomGraphicsEditor {
             return;
         }
         self.start_graphics_import(source, target);
+    }
+
+    fn ordinary_graphics_insertion_dialog(
+        &mut self,
+        context: &egui::Context,
+        app: &AppState,
+        joined_standard: bool,
+    ) {
+        let completion = self
+            .ordinary_insertion_dialog
+            .as_mut()
+            .and_then(|dialog| dialog.show(context));
+        match completion {
+            Some(None) => {
+                self.ordinary_insertion_dialog = None;
+                self.io_status = Some("GFX insertion cancelled.".into());
+            }
+            Some(Some(request)) => {
+                self.ordinary_insertion_dialog = None;
+                if let Err(error) =
+                    self.start_ordinary_graphics_import(app, request, joined_standard)
+                {
+                    self.error = Some(error);
+                }
+            }
+            None => {}
+        }
+    }
+
+    fn start_ordinary_graphics_import(
+        &mut self,
+        app: &AppState,
+        request: GraphicsInsertionRequest,
+        joined_standard: bool,
+    ) -> Result<(), String> {
+        let action = match request.family {
+            GraphicsInsertionFamily::Standard => QuickGraphicsInsertion::Standard,
+            GraphicsInsertionFamily::ExGraphics => QuickGraphicsInsertion::ExGraphics,
+        };
+        let (mut source, target) = quick_graphics_import_source(app, action, joined_standard)?;
+        if !lm_profile::has_smw_us_v1_4bpp_graphics_prerequisite(&source.image) {
+            let requested_format = if request.use_4bpp { "4bpp" } else { "3bpp" };
+            return Err(match request.family {
+                GraphicsInsertionFamily::Standard => {
+                    format!(
+                        "ordinary first-time {requested_format} GFX insertion is not yet available; use quick insertion for the existing 4bpp transaction"
+                    )
+                }
+                GraphicsInsertionFamily::ExGraphics => {
+                    "insert regular GFX as 4bpp before ordinary ExGFX insertion".into()
+                }
+            });
+        }
+        if source.smw_us_v1_exgraphics {
+            return Err(
+                "ordinary ExGFX address-aware allocation is not yet available; use quick ExGFX insertion for the existing atomic transaction"
+                    .into(),
+            );
+        }
+        // Lunar Magic documents the 4bpp patch as irreversible. Clearing the box after the patch
+        // exists therefore retains the installed format and changes no runtime byte.
+        let expansion_target = (request.expand_rom
+            && source.image.logical_len() < request.family.expansion_target())
+        .then(|| request.family.expansion_target());
+        source.ordinary_options = Some(graphics_import::OrdinaryGraphicsImportOptions {
+            logical_pc_address: request.logical_pc_address,
+            expansion_target,
+        });
+        source.description = match request.family {
+            GraphicsInsertionFamily::Standard => {
+                "Insert all standard GFX files with ordinary options"
+            }
+            GraphicsInsertionFamily::ExGraphics => "Insert ExGFX files with ordinary options",
+        };
+        self.start_graphics_import_or_warn(source, target);
+        if let Some(error) = self.error.take() {
+            Err(error)
+        } else {
+            Ok(())
+        }
     }
 
     fn start_graphics_import(
@@ -2072,6 +2198,7 @@ fn quick_graphics_import_source(
                 smw_us_v1_standard_install: pristine_install,
                 smw_us_v1_exgraphics: false,
                 exgraphics_names: false,
+                ordinary_options: None,
             };
             let target = if joined_standard {
                 PendingGraphicsFormatWarningTarget::Joined(
@@ -2110,6 +2237,7 @@ fn quick_graphics_import_source(
                     smw_us_v1_standard_install: false,
                     smw_us_v1_exgraphics: native_exgraphics,
                     exgraphics_names: true,
+                    ordinary_options: None,
                 },
                 PendingGraphicsFormatWarningTarget::Directory(directory),
             ))
@@ -2281,6 +2409,7 @@ mod tests {
         supports_native_exgraphics,
     };
     use crate::{
+        graphics_insertion_dialog::{GraphicsInsertionFamily, GraphicsInsertionRequest},
         level_graphics_export::CurrentLevelGraphicsAssignments,
         vanilla_map16_preview::VanillaInternalGraphicsCache,
     };
@@ -2328,6 +2457,18 @@ mod tests {
                 .is_err()
         );
         assert!(!editor.graphics_import.is_running());
+    }
+
+    #[test]
+    fn ordinary_insertion_dialog_opens_from_app_state_without_graphics_workspace() {
+        let mut app = lm_app::AppState::default();
+        app.load_rom(crate::test_support::pristine_smw_us_rom_bytes())
+            .unwrap();
+        let mut editor = RomGraphicsEditor::default();
+        editor
+            .open_ordinary_import(&app, GraphicsInsertionFamily::Standard)
+            .unwrap();
+        assert!(editor.ordinary_insertion_dialog.is_some());
     }
 
     #[test]
@@ -2402,8 +2543,55 @@ mod tests {
             RomImage::from_bytes(app.controller_snapshot().unwrap().rom_bytes).unwrap();
         assert!(lm_profile::probe_smw_us_v1_exgraphics_runtime(&exgraphics_image).is_ok());
         assert_eq!(app.project_revision(), 2);
-        app.dispatch(lm_app::Command::Undo).unwrap();
+
+        let gfx00_path = root.path().join("Graphics").join("GFX00.bin");
+        let mut changed_gfx00 = std::fs::read(&gfx00_path).unwrap();
+        changed_gfx00[0] ^= 1;
+        std::fs::write(&gfx00_path, &changed_gfx00).unwrap();
+        editor
+            .start_ordinary_graphics_import(
+                &app,
+                GraphicsInsertionRequest {
+                    family: GraphicsInsertionFamily::Standard,
+                    logical_pc_address: 0x90000,
+                    expand_rom: false,
+                    use_4bpp: false,
+                },
+                false,
+            )
+            .unwrap();
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(120);
+        let ordinary_commit = loop {
+            if let Some(result) = editor.graphics_import.poll() {
+                break result
+                    .unwrap()
+                    .expect("ordinary insertion prepares a commit");
+            }
+            assert!(std::time::Instant::now() < deadline);
+            std::thread::yield_now();
+        };
+        app.dispatch(ordinary_commit.into_command()).unwrap();
+        let ordinary_bytes = app.controller_snapshot().unwrap().rom_bytes;
+        let ordinary_project =
+            lm_project::Project::new(RomImage::from_bytes(ordinary_bytes).unwrap());
+        let (reopened_source, _) =
+            quick_graphics_import_source(&app, QuickGraphicsInsertion::Standard, false).unwrap();
+        let pointer = reopened_source
+            .layout
+            .read_pointer(&ordinary_project, 0)
+            .unwrap();
+        assert!(pointer.get() >= 0x90000);
+        assert_eq!(
+            ordinary_project
+                .load_decompressed_graphics_file(0, reopened_source.layout)
+                .unwrap(),
+            changed_gfx00
+        );
         assert_eq!(app.project_revision(), 3);
+        app.dispatch(lm_app::Command::Undo).unwrap();
+        assert_eq!(app.project_revision(), 4);
+        app.dispatch(lm_app::Command::Undo).unwrap();
+        assert_eq!(app.project_revision(), 5);
         app.dispatch(lm_app::Command::Undo).unwrap();
         assert_eq!(app.controller_snapshot().unwrap().rom_bytes, original);
     }

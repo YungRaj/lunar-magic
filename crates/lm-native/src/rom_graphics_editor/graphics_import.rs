@@ -25,6 +25,13 @@ pub(super) struct GraphicsImportSource {
     pub(super) smw_us_v1_exgraphics: bool,
     /// Uses Lunar Magic's `ExGFX` namespace even for reserved files `$60` through `$63`.
     pub(super) exgraphics_names: bool,
+    pub(super) ordinary_options: Option<OrdinaryGraphicsImportOptions>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) struct OrdinaryGraphicsImportOptions {
+    pub(super) logical_pc_address: usize,
+    pub(super) expansion_target: Option<usize>,
 }
 
 struct RunningImport {
@@ -173,13 +180,24 @@ impl GraphicsImportWorker {
 }
 
 fn prepare_import(
-    source: GraphicsImportSource,
+    mut source: GraphicsImportSource,
     target: &GraphicsImportTarget,
     completed: &AtomicUsize,
     cancelled: &AtomicBool,
 ) -> Result<Option<PreparedRomCommit>, String> {
+    let original_image = source.image.clone();
+    if let Some(ordinary) = source.ordinary_options {
+        apply_ordinary_options(
+            &mut source.image,
+            source.layout.mapper,
+            source.checksum_field,
+            &mut source.options,
+            ordinary,
+        )?;
+    }
+    let prepared_image = source.image.clone();
     let total = source.file_numbers.len();
-    match target {
+    let result = match target {
         GraphicsImportTarget::Directory(directory) => {
             let mut files = Vec::with_capacity(total);
             for file_number in source.file_numbers.iter().copied() {
@@ -289,7 +307,66 @@ fn prepare_import(
                 .map(Some)
             }
         }
+    }?;
+    let Some(prepared) = result else {
+        return Ok(None);
+    };
+    if original_image.logical_len() == prepared_image.logical_len() {
+        return Ok(Some(prepared));
     }
+    combine_expansion_commit(original_image, prepared_image, prepared).map(Some)
+}
+
+fn combine_expansion_commit(
+    original_image: RomImage,
+    prepared_image: RomImage,
+    prepared: PreparedRomCommit,
+) -> Result<PreparedRomCommit, String> {
+    let mut combined = lm_project::Project::new(prepared_image);
+    combined
+        .apply_mutation(prepared.description.clone(), &prepared.mutation)
+        .map_err(|error| format!("could not combine graphics insertion with expansion: {error}"))?;
+    let mutation = lm_project::RomMutation::between(
+        prepared.mutation.mapper,
+        original_image.logical_bytes(),
+        combined.rom.logical_bytes(),
+    )
+    .map_err(|error| error.to_string())?;
+    Ok(PreparedRomCommit {
+        expected_revision: prepared.expected_revision,
+        description: prepared.description,
+        mutation,
+    })
+}
+
+fn apply_ordinary_options(
+    image: &mut RomImage,
+    fallback_mapper: lm_rom::Mapper,
+    checksum_field: usize,
+    options: &mut GraphicsSaveOptions,
+    ordinary: OrdinaryGraphicsImportOptions,
+) -> Result<(), String> {
+    if let Some(target_len) = ordinary.expansion_target
+        && target_len > image.logical_len()
+    {
+        let mapper = lm_rom::detect_identity(image)
+            .map(|identity| identity.mapper)
+            .unwrap_or(fallback_mapper);
+        let mut expanded = lm_project::Project::new(image.clone());
+        expanded
+            .expand_rom(mapper, target_len, 0, checksum_field)
+            .map_err(|error| format!("could not expand ROM before graphics insertion: {error}"))?;
+        *image = expanded.rom;
+    }
+    let end = image.logical_len();
+    if ordinary.logical_pc_address >= end {
+        return Err(format!(
+            "graphics insertion address ${:X} is outside the ${end:X}-byte ROM",
+            ordinary.logical_pc_address
+        ));
+    }
+    options.allocation.search = ordinary.logical_pc_address..end;
+    Ok(())
 }
 
 fn graphics_file_name(slot: usize, exgraphics: bool) -> String {
@@ -358,7 +435,13 @@ pub(super) fn enumerate_exgraphics_files(
 
 #[cfg(test)]
 mod tests {
-    use super::{GraphicsImportTarget, RunningImport, enumerate_exgraphics_files};
+    use super::{
+        GraphicsImportTarget, OrdinaryGraphicsImportOptions, RunningImport, apply_ordinary_options,
+        combine_expansion_commit, enumerate_exgraphics_files,
+    };
+    use lm_project::GraphicsSaveOptions;
+    use lm_rats::AllocationPolicy;
+    use lm_rom::{Mapper, RomImage};
     use std::sync::{
         Arc,
         atomic::{AtomicBool, AtomicUsize, Ordering},
@@ -399,5 +482,73 @@ mod tests {
         fs::write(directory.join("ExGFX081.bin"), []).unwrap();
         assert!(enumerate_exgraphics_files(&directory, 0x200).is_err());
         fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn ordinary_options_expand_before_binding_the_exact_allocation_cursor() {
+        let mut image = RomImage::from_bytes(vec![0xff; 0x8000]).unwrap();
+        let mut options = GraphicsSaveOptions {
+            allocation: AllocationPolicy::lorom(0..0x8000),
+            previous_block: None,
+            reuse_identical: true,
+            erase_fill: 0xff,
+        };
+        apply_ordinary_options(
+            &mut image,
+            Mapper::LoRom,
+            0x7fdc,
+            &mut options,
+            OrdinaryGraphicsImportOptions {
+                logical_pc_address: 0x9000,
+                expansion_target: Some(0x10000),
+            },
+        )
+        .unwrap();
+        assert_eq!(image.logical_len(), 0x10000);
+        assert_eq!(options.allocation.search, 0x9000..0x10000);
+
+        let error = apply_ordinary_options(
+            &mut image,
+            Mapper::LoRom,
+            0x7fdc,
+            &mut options,
+            OrdinaryGraphicsImportOptions {
+                logical_pc_address: 0x10000,
+                expansion_target: None,
+            },
+        )
+        .unwrap_err();
+        assert!(error.contains("outside"));
+    }
+
+    #[test]
+    fn expansion_and_prepared_graphics_write_combine_into_one_original_length_mutation() {
+        let original = RomImage::from_bytes(vec![0xff; 0x8000]).unwrap();
+        let mut expanded_project = lm_project::Project::new(original.clone());
+        expanded_project
+            .expand_rom(Mapper::LoRom, 0x10000, 0, 0x7fdc)
+            .unwrap();
+        let expanded = expanded_project.rom.clone();
+        let mut final_bytes = expanded.logical_bytes().to_vec();
+        final_bytes[0x9000..0x9004].copy_from_slice(&[1, 2, 3, 4]);
+        let prepared = lm_app::PreparedRomCommit {
+            expected_revision: 7,
+            description: "graphics".into(),
+            mutation: lm_project::RomMutation::between(
+                Mapper::LoRom,
+                expanded.logical_bytes(),
+                &final_bytes,
+            )
+            .unwrap(),
+        };
+        let combined = combine_expansion_commit(original.clone(), expanded, prepared).unwrap();
+        assert_eq!(combined.expected_revision, 7);
+        assert_eq!(combined.mutation.expected_len, 0x8000);
+        let mut reopened = lm_project::Project::new(original);
+        reopened
+            .apply_mutation("combined", &combined.mutation)
+            .unwrap();
+        assert_eq!(reopened.rom.logical_len(), 0x10000);
+        assert_eq!(&reopened.rom.logical_bytes()[0x9000..0x9004], &[1, 2, 3, 4]);
     }
 }

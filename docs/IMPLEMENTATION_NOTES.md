@@ -5061,3 +5061,31 @@ nearest/farthest traversal, skipped nonintersections, strict edge contact, incom
 groups, invalid permutations, position preservation, staged Undo, vanilla-ROM commit/reopen, and
 byte-exact application Undo. Commands `$246A..$246D` raise authenticated native routing from 193 to
 197 table slots.
+
+## Ordinary graphics insertion option boundary
+
+Lunar Magic's CHM and PE dialogs `$03EC`/`$03FE` distinguish ordinary GFX/ExGFX insertion from the
+quiet toolbar buttons. Standard GFX defaults to physical PC `$40200` and offers pre-expansion to
+1 MiB; ExGFX defaults to `$100200` and offers 2 MiB. Both expose the irreversible 3bpp-to-4bpp ASM
+choice. The physical defaults include the original copier prefix, so Rust normalizes them to
+logical `$40000`/`$100000` and adjusts the displayed address for headerless images.
+
+Rust now has a typed, bounded modal for both authenticated ordinary commands. It accepts original
+`$`, `0x`, or bare hexadecimal forms, rejects copier-prefix and 8 MiB overrun addresses, retains the
+original expansion thresholds and reciprocal GFX/ExGFX format warnings, and opens directly from an
+application ROM snapshot without requiring the graphics-editor window. On an already authenticated
+4bpp installation, standard-GFX acceptance consumes the same fixed ROM-sibling
+`Graphics`/`AllGFX.bin` source as Lunar Magic, starts allocation at the requested logical cursor,
+optionally expands first, and combines expansion plus graphics writes into one original-length
+mutation and Undo step. Clearing 4bpp after installation correctly leaves the irreversible runtime
+installed.
+
+`graphics_insertion_dialog::tests`,
+`ordinary_options_expand_before_binding_the_exact_allocation_cursor`,
+`expansion_and_prepared_graphics_write_combine_into_one_original_length_mutation`, and
+`ordinary_insertion_dialog_opens_from_app_state_without_graphics_workspace` bind the recovered
+defaults, header variants, bounds, expansion composition, and global route. First-time ordinary
+3bpp insertion, first-time ordinary 4bpp placement at the user cursor, address-aware ordinary ExGFX
+allocation, and ExGFX `$E00..$FFF` conversion bypass remain deliberately rejected rather than being
+collapsed to quick-import defaults; therefore this is a partial command milestone and does not
+close the configuration gate.
