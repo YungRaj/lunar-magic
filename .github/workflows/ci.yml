@@ -57,22 +57,31 @@ jobs:
           --output-dir target/portable-ci
           --target ${{ matrix.package_target }}
           --version ci
-      - name: Execute Linux live-backend runtime gate
-        if: runner.os == 'Linux'
-        shell: bash
-        run: |
-          cc -std=c11 -Wall -Wextra -Werror -shared -fPIC \
-            tools/lm-libretro-platform-core.c \
-            -o target/debug/lm-libretro-platform-core.so
-          python3 tools/lm-libretro-platform-oracle.py \
-            --backend target/debug/lm-libretro \
-            --core target/debug/lm-libretro-platform-core.so
       - name: Compile Snes9x gameplay driver
         if: runner.os != 'Windows'
         shell: bash
         run: tools/build-snes9x-gameplay-driver.sh "$RUNNER_TEMP/lm-snes9x-gameplay-driver"
       - name: Run self-contained core tests
         run: cargo test -p lm-rom -p lm-codec -p lm-rats -p lm-snes
+
+  live-backend-linux:
+    name: Execute Linux live-backend runtime
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Build isolated backend
+        run: cargo build --locked -p lm-libretro
+      - name: Build deterministic libretro platform core
+        run: >-
+          cc -std=c11 -Wall -Wextra -Werror -shared -fPIC
+          tools/lm-libretro-platform-core.c
+          -o target/debug/lm-libretro-platform-core.so
+      - name: Exercise every advertised backend capability
+        run: >-
+          python3 tools/lm-libretro-platform-oracle.py
+          --backend target/debug/lm-libretro
+          --core target/debug/lm-libretro-platform-core.so
 
   intel-macos:
     name: Check Intel macOS GUI
