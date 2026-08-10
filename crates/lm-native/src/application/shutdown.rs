@@ -35,6 +35,8 @@ impl NativeApplication {
         close_or_pause!(self, native_level_document_editor);
         close_or_pause!(self, native_level_assets_editor);
         close_or_pause!(self, rom_expanded_settings_editor);
+        close_or_pause!(self, rom_legacy_fg_bg_bypass_editor);
+        close_or_pause!(self, rom_legacy_sprite_bypass_editor);
         close_or_pause!(self, rom_lunar_magic_metadata_editor);
         close_or_pause!(self, rom_shared_palette_editor);
         close_or_pause!(self, rom_boss_sequence_editor);

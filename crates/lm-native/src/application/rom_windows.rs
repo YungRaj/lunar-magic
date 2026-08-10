@@ -45,6 +45,8 @@ macro_rules! show_project_operation {
 impl NativeApplication {
     pub(super) fn show_rom_editors(&mut self, context: &egui::Context) {
         show_rom_editor!(self, context, rom_expanded_settings_editor);
+        show_rom_editor!(self, context, rom_legacy_fg_bg_bypass_editor);
+        show_rom_editor!(self, context, rom_legacy_sprite_bypass_editor);
         show_rom_editor!(self, context, rom_lunar_magic_metadata_editor);
         show_rom_editor!(self, context, rom_shared_palette_editor);
         show_rom_editor!(self, context, rom_boss_sequence_editor);
@@ -257,6 +259,22 @@ impl NativeApplication {
                 && let Err(error) = self.rom_expanded_settings_editor.open_detected(&self.app)
             {
                 self.effects.error = Some(error);
+            }
+            if let Some(domain) = self
+                .built_in_runtime_installer
+                .take_legacy_bypass_continuation()
+            {
+                let editor = match domain {
+                    crate::rom_legacy_graphics_bypass_editor::LegacyGraphicsBypassDomain::ForegroundBackground => {
+                        &mut self.rom_legacy_fg_bg_bypass_editor
+                    }
+                    crate::rom_legacy_graphics_bypass_editor::LegacyGraphicsBypassDomain::Sprites => {
+                        &mut self.rom_legacy_sprite_bypass_editor
+                    }
+                };
+                if let Err(error) = editor.open_domain(&self.app, domain) {
+                    self.effects.error = Some(error);
+                }
             }
             self.renderer.invalidate();
         }

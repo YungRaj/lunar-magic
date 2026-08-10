@@ -95,6 +95,7 @@ mod rom_exanimation_editor;
 mod rom_expanded_settings_editor;
 mod rom_expansion_dialog;
 mod rom_graphics_editor;
+mod rom_legacy_graphics_bypass_editor;
 mod rom_level_assets_editor;
 mod rom_load;
 mod rom_loader;

@@ -1,5 +1,6 @@
 mod workspace;
 
+use crate::rom_legacy_graphics_bypass_editor::LegacyGraphicsBypassDomain;
 use eframe::egui;
 use lm_app::{AppState, Command};
 use workspace::{BuiltInRuntime, BuiltInRuntimeWorkspace};
@@ -9,6 +10,7 @@ pub(crate) struct BuiltInRuntimeInstaller {
     workspace: Option<BuiltInRuntimeWorkspace>,
     error: Option<String>,
     open_expanded_settings_after_commit: bool,
+    open_legacy_bypass_after_commit: Option<LegacyGraphicsBypassDomain>,
 }
 
 impl BuiltInRuntimeInstaller {
@@ -25,6 +27,7 @@ impl BuiltInRuntimeInstaller {
                 self.workspace = Some(workspace);
                 self.error = None;
                 self.open_expanded_settings_after_commit = false;
+                self.open_legacy_bypass_after_commit = None;
             }
             Err(error) => self.error = Some(error),
         }
@@ -43,6 +46,19 @@ impl BuiltInRuntimeInstaller {
         if let Some(workspace) = self.workspace.as_mut() {
             workspace.runtime = BuiltInRuntime::CompleteLayer3;
             self.open_expanded_settings_after_commit = true;
+        }
+    }
+
+    pub(crate) fn open_expanded_settings_for_legacy_bypass(
+        &mut self,
+        app: &AppState,
+        domain: LegacyGraphicsBypassDomain,
+    ) {
+        self.open(app);
+        if let Some(workspace) = self.workspace.as_mut() {
+            workspace.runtime = BuiltInRuntime::ExpandedSettings;
+            self.open_expanded_settings_after_commit = false;
+            self.open_legacy_bypass_after_commit = Some(domain);
         }
     }
 
@@ -163,6 +179,7 @@ impl BuiltInRuntimeInstaller {
         if cancel {
             self.workspace = None;
             self.open_expanded_settings_after_commit = false;
+            self.open_legacy_bypass_after_commit = None;
         }
         command
     }
@@ -182,6 +199,10 @@ impl BuiltInRuntimeInstaller {
         self.workspace = None;
         std::mem::take(&mut self.open_expanded_settings_after_commit)
     }
+
+    pub(crate) fn take_legacy_bypass_continuation(&mut self) -> Option<LegacyGraphicsBypassDomain> {
+        self.open_legacy_bypass_after_commit.take()
+    }
 }
 
 #[cfg(test)]
@@ -190,6 +211,35 @@ mod tests {
     use lm_profile::{smw_us_v1_custom_palette_installation, smw_us_v1_expanded_settings_layout};
     use lm_rom::{CopierHeader, Mapper, RomImage};
     use std::{fs, path::PathBuf};
+
+    #[test]
+    fn pristine_legacy_bypass_request_installs_then_opens_the_requested_editor() {
+        let mut app = AppState::default();
+        app.load_rom(crate::test_support::pristine_smw_us_rom_bytes())
+            .unwrap();
+        app.dispatch(Command::SelectLevel(0x105)).unwrap();
+        let mut installer = BuiltInRuntimeInstaller::default();
+        installer
+            .open_expanded_settings_for_legacy_bypass(&app, LegacyGraphicsBypassDomain::Sprites);
+        assert_eq!(
+            installer.workspace.as_ref().unwrap().runtime,
+            BuiltInRuntime::ExpandedSettings
+        );
+        let command = installer
+            .workspace
+            .as_ref()
+            .unwrap()
+            .prepare(app.project_revision())
+            .unwrap();
+        app.dispatch(command).unwrap();
+        assert!(!installer.commit_succeeded());
+        let domain = installer.take_legacy_bypass_continuation().unwrap();
+        assert_eq!(domain, LegacyGraphicsBypassDomain::Sprites);
+        let mut editor =
+            crate::rom_legacy_graphics_bypass_editor::RomLegacyGraphicsBypassEditor::default();
+        editor.open_domain(&app, domain).unwrap();
+        assert!(editor.is_open());
+    }
 
     #[test]
     fn sprite19_toolbar_route_opens_the_exact_recovered_runtime() {

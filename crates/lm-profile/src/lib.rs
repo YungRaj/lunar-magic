@@ -26,6 +26,7 @@ mod layer3_main_runtime;
 mod layer3_runtime;
 mod layer3_scroll;
 mod layer3_scroll_code;
+mod legacy_graphics_bypass;
 mod level_access_restriction;
 mod lfix3_install;
 mod lfix3_runtime;
@@ -276,6 +277,10 @@ pub use layer3_scroll::{
 };
 pub use layer3_scroll_code::{
     Layer3ScrollHelperLibrary, Layer3ScrollHelperTarget, smw_us_v1_layer3_scroll_helper_library,
+};
+pub use legacy_graphics_bypass::{
+    SMW_US_V1_LEGACY_GRAPHICS_BYPASS_TABLE_OFFSET, SmwUsV1LegacyGraphicsBypassError,
+    load_smw_us_v1_legacy_graphics_bypass_table,
 };
 pub use level_access_restriction::{
     smw_us_v1_exlorom_level_access_restriction_layout, smw_us_v1_level_access_restriction_layout,

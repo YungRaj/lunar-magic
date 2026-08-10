@@ -44,6 +44,16 @@ pub struct ObjectStream {
     pub records: Vec<ObjectRecord>,
 }
 
+/// Zero-based rows selected from Lunar Magic's two legacy standard-GFX bypass lists.
+///
+/// The physical command stores each enabled selector plus one, reserving zero for disabled. The
+/// original dialogs expose rows `$00..=$FE`, so every `u8` value accepted here is representable.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct LegacyGraphicsBypassSelectors {
+    pub foreground_background: Option<u8>,
+    pub sprites: Option<u8>,
+}
+
 /// Lunar Magic's custom level timer stored in object-stream control command `$28`.
 ///
 /// The ordinary five-byte level header can only select a preset timer. This control record
@@ -233,6 +243,64 @@ impl ObjectStream {
             return Err(ObjectStreamError::BankLimitExceeded);
         }
         self.encode()
+    }
+
+    /// Returns the last command `$24`, matching Lunar Magic's decode overwrite behavior.
+    #[must_use]
+    pub fn legacy_graphics_bypass_selectors(
+        &self,
+        vertical: bool,
+    ) -> LegacyGraphicsBypassSelectors {
+        self.records
+            .iter()
+            .rev()
+            .find(|record| record.command_id() == 0x24)
+            .map_or_else(LegacyGraphicsBypassSelectors::default, |record| {
+                let first = record.encoded[0] & 0x0f;
+                let second = record.encoded[1] & 0x0f;
+                let sprite_stored = if vertical {
+                    (second << 4) | first
+                } else {
+                    (first << 4) | second
+                };
+                LegacyGraphicsBypassSelectors {
+                    foreground_background: record.encoded[2].checked_sub(1),
+                    sprites: sprite_stored.checked_sub(1),
+                }
+            })
+    }
+
+    /// Replaces all command-`$24` records with Lunar Magic's canonical leading representation.
+    /// Failure is atomic if the resulting stream would exceed the native one-bank limit.
+    pub fn set_legacy_graphics_bypass_selectors(
+        &mut self,
+        vertical: bool,
+        selectors: LegacyGraphicsBypassSelectors,
+    ) -> Result<(), ObjectStreamError> {
+        let mut staged = self.clone();
+        staged.records.retain(|record| record.command_id() != 0x24);
+        if selectors.foreground_background.is_some() || selectors.sprites.is_some() {
+            let sprite_stored = selectors.sprites.map_or(0, |value| value.wrapping_add(1));
+            let high = sprite_stored >> 4;
+            let low = sprite_stored & 0x0f;
+            let (first, second) = if vertical {
+                (low | 0x40, high | 0x40)
+            } else {
+                (high | 0x40, low | 0x40)
+            };
+            let foreground_background = selectors
+                .foreground_background
+                .map_or(0, |value| value.wrapping_add(1));
+            staged.records.insert(
+                0,
+                ObjectRecord {
+                    encoded: vec![first, second, foreground_background],
+                },
+            );
+        }
+        staged.encode_banked()?;
+        *self = staged;
+        Ok(())
     }
 
     /// Returns the last custom-time control value, matching Lunar Magic's decoder behavior.
@@ -434,5 +502,56 @@ mod tests {
             Err(CustomTimeError::DisabledEncoding)
         );
         assert_eq!(CustomTimeSettings::new(0, true).unwrap().value(), 0);
+    }
+
+    #[test]
+    fn legacy_graphics_bypass_selectors_match_horizontal_and_vertical_command_24() {
+        let selectors = LegacyGraphicsBypassSelectors {
+            foreground_background: Some(5),
+            sprites: Some(0xab),
+        };
+        let mut horizontal = ObjectStream::default();
+        horizontal
+            .set_legacy_graphics_bypass_selectors(false, selectors)
+            .unwrap();
+        assert_eq!(horizontal.encode().unwrap(), [0x4a, 0x4c, 6, 0xff]);
+        assert_eq!(
+            horizontal.legacy_graphics_bypass_selectors(false),
+            selectors
+        );
+
+        let mut vertical = ObjectStream::default();
+        vertical
+            .set_legacy_graphics_bypass_selectors(true, selectors)
+            .unwrap();
+        assert_eq!(vertical.encode().unwrap(), [0x4c, 0x4a, 6, 0xff]);
+        assert_eq!(vertical.legacy_graphics_bypass_selectors(true), selectors);
+    }
+
+    #[test]
+    fn legacy_graphics_bypass_edit_collapses_duplicates_and_preserves_other_controls() {
+        let mut stream = ObjectStream::parse(&[
+            0x40, 0x41, 2, 0x11, 0x22, 0x33, 0x40, 0x42, 3, 0x48, 0x89, 7, 0xff,
+        ])
+        .unwrap();
+        let ordinary = stream.records[1].clone();
+        let timer = stream.records[3].clone();
+        stream
+            .set_legacy_graphics_bypass_selectors(
+                false,
+                LegacyGraphicsBypassSelectors {
+                    foreground_background: Some(0xfe),
+                    sprites: None,
+                },
+            )
+            .unwrap();
+        assert_eq!(stream.records.len(), 3);
+        assert_eq!(stream.records[1], ordinary);
+        assert_eq!(stream.records[2], timer);
+        assert_eq!(stream.encode().unwrap()[..3], [0x40, 0x40, 0xff]);
+        stream
+            .set_legacy_graphics_bypass_selectors(false, LegacyGraphicsBypassSelectors::default())
+            .unwrap();
+        assert_eq!(stream.records, [ordinary, timer]);
     }
 }

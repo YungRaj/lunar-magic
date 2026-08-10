@@ -5486,3 +5486,22 @@ oracle matches all modeled pointers and
 direct records; Lunar Magic's two zero-filled `$1FE` reservation tags are retained as an explicit
 allocator-bookkeeping difference rather than being misrepresented as live level data. This route
 raises authenticated native user-toolbar coverage to 200 table slots.
+## Legacy standard-GFX bypass lists (`$2520` / `$2521`)
+
+Port-8089 recovery of `ManageSuperExGfxConfiguration` (`$0048E900`) binds selector 1/resource
+`$03FB` to the standard FG/BG dialog and selector 0/resource `$03FC` to the sprite dialog. Both
+dialogs read and write one exact `$400`-byte table through active-descriptor field `+$194`, expose
+rows `$00..=$FE`, and retain row `$FF` without making it selectable. Physical rows reverse the four
+dialog/VRAM slots. A retained Wine differential selected FG/BG row `$05`, entered files
+`01,02,03,04`, and produced physical bytes `03 04 02 01` at logical `$07F200`.
+
+The selected rows live in three-byte object-stream command `$24`. Zero disables a domain and an
+enabled row is stored plus one. Horizontal levels store the sprite selector high nibble then low
+nibble; vertical levels swap those nibbles. The FG/BG selector occupies byte three. Rust models the
+complete shared table and both selectors, commits table and any required Layer 1 relocation as one
+revision-checked mutation, repairs checksum, and verifies semantic reopen. Separate native dialogs
+route `LM_LEVEL_BYPASS_FG` and `LM_LEVEL_BYPASS_SP`; pristine ROMs install the expanded-settings
+prerequisite and resume the requested dialog. Headered and headerless transaction tests prove exact
+logical equivalence and one-step Undo. The complete native suite passes 998 tests with 12 explicit
+external-fixture ignores; the 512-slot renderer manifest remains byte-identical at SHA-256
+`254a1a050d12785973241910e26d8b7917a5cb5e2a56602a330fc6cbd833c04d`.

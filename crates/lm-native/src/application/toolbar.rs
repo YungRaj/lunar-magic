@@ -469,6 +469,41 @@ impl NativeApplication {
                     Err(error) => self.effects.error = Some(error),
                 }
             }
+            UserToolbarNativeAction::OpenLegacyForegroundBackgroundBypass => {
+                let domain = crate::rom_legacy_graphics_bypass_editor::LegacyGraphicsBypassDomain::ForegroundBackground;
+                match legacy_graphics_bypass_prerequisite_installed(&self.app) {
+                    Ok(true) => {
+                        if let Err(error) = self
+                            .rom_legacy_fg_bg_bypass_editor
+                            .open_domain(&self.app, domain)
+                        {
+                            self.effects.error = Some(error);
+                        }
+                    }
+                    Ok(false) => self
+                        .built_in_runtime_installer
+                        .open_expanded_settings_for_legacy_bypass(&self.app, domain),
+                    Err(error) => self.effects.error = Some(error),
+                }
+            }
+            UserToolbarNativeAction::OpenLegacySpriteBypass => {
+                let domain =
+                    crate::rom_legacy_graphics_bypass_editor::LegacyGraphicsBypassDomain::Sprites;
+                match legacy_graphics_bypass_prerequisite_installed(&self.app) {
+                    Ok(true) => {
+                        if let Err(error) = self
+                            .rom_legacy_sprite_bypass_editor
+                            .open_domain(&self.app, domain)
+                        {
+                            self.effects.error = Some(error);
+                        }
+                    }
+                    Ok(false) => self
+                        .built_in_runtime_installer
+                        .open_expanded_settings_for_legacy_bypass(&self.app, domain),
+                    Err(error) => self.effects.error = Some(error),
+                }
+            }
             UserToolbarNativeAction::PlaceObject => {
                 self.vanilla_level_editor.toolbar_place_object();
             }
@@ -1246,6 +1281,18 @@ fn user_toolbar_command(name: &str, current_level: Option<u16>) -> Option<Comman
     })
 }
 
+fn legacy_graphics_bypass_prerequisite_installed(app: &lm_app::AppState) -> Result<bool, String> {
+    let snapshot = app
+        .controller_snapshot()
+        .map_err(|error| error.to_string())?;
+    let image =
+        lm_rom::RomImage::from_bytes(snapshot.rom_bytes).map_err(|error| error.to_string())?;
+    let project = lm_project::Project::new(image);
+    lm_profile::smw_us_v1_installed_expanded_settings_layout(&project)
+        .map(|layout| layout.is_some())
+        .map_err(|error| error.to_string())
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum UserToolbarNativeAction {
     HelpContents,
@@ -1272,6 +1319,8 @@ enum UserToolbarNativeAction {
     OpenLevelExAnimation,
     OpenGlobalExAnimation,
     OpenLayer3Bypass,
+    OpenLegacyForegroundBackgroundBypass,
+    OpenLegacySpriteBypass,
     PlaceObject,
     PlaceSprite,
     OpenLevelToolPanel(crate::vanilla_level_editor::LevelToolPanel),
@@ -1334,6 +1383,8 @@ fn user_toolbar_native_action(name: &str) -> Option<UserToolbarNativeAction> {
         | "LM_LEVEL_SUPER_BYPASS2"
         | "LM_LEVEL_LAYER3_BYPASS"
         | "LM_LEVEL_LAYER3_BYPASS2" => UserToolbarNativeAction::OpenLayer3Bypass,
+        "LM_LEVEL_BYPASS_FG" => UserToolbarNativeAction::OpenLegacyForegroundBackgroundBypass,
+        "LM_LEVEL_BYPASS_SP" => UserToolbarNativeAction::OpenLegacySpriteBypass,
         "LM_VIEW_ADD_OBJECT" | "LM_VIEW_OBJECT" | "LM_VIEW_ADD_OBJECT_OLD" => {
             UserToolbarNativeAction::PlaceObject
         }
@@ -1774,6 +1825,14 @@ mod user_toolbar_tests {
             Some(UserToolbarNativeAction::OpenLayer3Bypass)
         );
         assert_eq!(
+            user_toolbar_native_action("LM_LEVEL_BYPASS_FG"),
+            Some(UserToolbarNativeAction::OpenLegacyForegroundBackgroundBypass)
+        );
+        assert_eq!(
+            user_toolbar_native_action("LM_LEVEL_BYPASS_SP"),
+            Some(UserToolbarNativeAction::OpenLegacySpriteBypass)
+        );
+        assert_eq!(
             user_toolbar_native_action("LM_HELP_ABOUT"),
             Some(UserToolbarNativeAction::HelpAbout)
         );
@@ -2204,7 +2263,7 @@ mod user_toolbar_tests {
                     || user_toolbar_native_action(entry.name).is_some()
             })
             .collect::<Vec<_>>();
-        assert_eq!(supported.len(), 243);
+        assert_eq!(supported.len(), 245);
         assert!(
             supported
                 .iter()
@@ -2221,7 +2280,7 @@ mod user_toolbar_tests {
                     && user_toolbar_native_action(entry.name).is_none()
             })
             .collect::<Vec<_>>();
-        assert_eq!(unsupported.len(), 74);
+        assert_eq!(unsupported.len(), 72);
         if std::env::var_os("LM_DIAGNOSTIC_UNSUPPORTED_TOOLBAR_COMMANDS").is_some() {
             for entry in unsupported {
                 eprintln!(

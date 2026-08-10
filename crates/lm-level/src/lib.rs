@@ -16,6 +16,7 @@ mod header;
 mod layer3;
 mod layer3_editing;
 mod layer3_tilemap_workspace;
+mod legacy_graphics_bypass;
 mod legacy_mwl;
 mod level_layer_slots;
 mod lm16_map16_file;
@@ -86,6 +87,10 @@ pub use layer3_editing::{Layer3Edit, Layer3EditError};
 pub use layer3_tilemap_workspace::{
     LAYER3_TILEMAP_WORKSPACE_LEN, Layer3TilemapWorkspace, Layer3TilemapWorkspaceError,
 };
+pub use legacy_graphics_bypass::{
+    LEGACY_GRAPHICS_BYPASS_ENTRIES, LEGACY_GRAPHICS_BYPASS_SELECTABLE_ENTRIES,
+    LegacyGraphicsAssignment, LegacyGraphicsBypassTable, LegacyGraphicsBypassTableError,
+};
 pub use legacy_mwl::{
     LegacyMwlDecodeReport, LegacyMwlDiagnostic, LegacyMwlError, LegacyMwlManifest,
     LegacyMwlSecondaryExit, LegacyMwlSidecar,
@@ -128,8 +133,8 @@ pub use native_sprite::{
     SpriteToken,
 };
 pub use object::{
-    CustomTimeError, CustomTimeSettings, LevelObjectData, ObjectRecord, ObjectStream,
-    ObjectStreamError, encoded_record_length,
+    CustomTimeError, CustomTimeSettings, LegacyGraphicsBypassSelectors, LevelObjectData,
+    ObjectRecord, ObjectStream, ObjectStreamError, encoded_record_length,
 };
 pub use object_editing::{NativeObjectRecordFields, ObjectEdit, ObjectEditError};
 pub use object_fields::{
