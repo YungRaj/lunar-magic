@@ -16,6 +16,20 @@ Authoritative original implementation labels recovered from the Lunar Magic 3.63
 The canonical source file is UTF-8 and is loaded beside the executable at process startup. No ROM
 is required for parsing or toolbar creation.
 
+## Executable-icon evidence (2026-08-10)
+
+The authenticated CHM's button format assigns the second-line numeric field to the executable icon
+resource unless `LM_USEIMAGE_LIST` selects a bitmap strip. Its global-option table independently
+describes `LM_USEIMAGE_FORCE` as replacing the executable-derived icons of external buttons, while
+`LM_USEIMAGE_FORCE_ALL` also replaces internal-command images. This agrees with the recovered
+`AppendUserToolbarIcon` and executable-icon loading path named above.
+
+The Rust path preserves that precedence and uses the number as an `ExtractIconExW` index, with zero
+for `LM_DEFAULT`. A Windows cross-build verifies the exact API surface. An opt-in test binary was
+then run under Wine 11.13 in a newly created isolated prefix and extracted index zero from the
+prefix's real `C:\\windows\\notepad.exe`; the safe wrapper returned exactly 1,024 RGBA bytes for a
+16×16 icon with nonzero alpha. The prefix was deleted after the passing test.
+
 ## Live Wine observation (2026-08-06)
 
 Lunar Magic 3.63 was copied under the unique process name `LMToolbarOracle363.exe`, with

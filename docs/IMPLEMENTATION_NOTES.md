@@ -3392,8 +3392,18 @@ available with textual fallback. The main toolbar additionally discovers the doc
 `Lunar Magic.ff4` file, requires its exact 41-square-cell geometry, and uses retained live 3.63
 `TBBUTTON` bitmap indexes 1/3/5/6 for native Open/Save/Undo/Redo. Missing or invalid overrides keep
 the default text controls rather than publishing a partial strip. Other editor-specific `.ff*`
-strips, executable icon extraction, the exhaustive internal/options table,
+strips, the exhaustive internal/options table,
 mouse/Pause/numpad-operator distinctions, and process notification/lifecycle options remain open.
+
+On Windows, external buttons without an image-list or force override now use the documented icon
+field as an `ExtractIconExW` resource index (default zero) against the executable token. Quoted and
+relative paths plus `%4` executable-directory expansion are resolved before extraction. A narrow
+safe wrapper rasterizes the retained icon at the configured toolbar size into a top-down 32-bit DIB
+against both black and white backgrounds, reconstructs unpremultiplied RGBA for both legacy masks
+and modern alpha icons, and releases every icon, bitmap, and memory-DC handle before publication.
+Missing/non-file/invalid resources retain the existing text fallback. Focused mock-resolution tests,
+Windows cross-compilation, and an isolated Wine ABI test against its icon-bearing `notepad.exe`
+cover precedence, index/path selection, bounded raster shape, and nonempty alpha output.
 
 The first option semantics are now active rather than merely retained strings. `LM_NO_BUTTON`
 hides a control without disabling its shortcut. `LM_USEIMAGE_FORCE` sequentially assigns global

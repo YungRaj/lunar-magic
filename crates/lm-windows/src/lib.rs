@@ -8,19 +8,225 @@ use windows_sys::Win32::Foundation::GlobalFree;
 use windows_sys::Win32::Globalization::{
     GetThreadPreferredUILanguages, GetUserDefaultUILanguage, LCIDToLocaleName,
 };
+use windows_sys::Win32::Graphics::Gdi::{
+    BI_RGB, BITMAPINFO, BITMAPINFOHEADER, CreateCompatibleDC, CreateDIBSection, DIB_RGB_COLORS,
+    DeleteDC, DeleteObject, HGDIOBJ, SelectObject,
+};
 use windows_sys::Win32::Storage::FileSystem::{
     BY_HANDLE_FILE_INFORMATION, GetFileInformationByHandle, GetShortPathNameW,
 };
 use windows_sys::Win32::System::Registry::{
     HKEY_CURRENT_USER, RRF_RT_REG_DWORD, RRF_RT_REG_SZ, RegGetValueW,
 };
-use windows_sys::Win32::UI::Shell::ShellExecuteW;
+use windows_sys::Win32::UI::Shell::{ExtractIconExW, ShellExecuteW};
 use windows_sys::Win32::UI::WindowsAndMessaging::{
-    CreateWindowExW, DestroyWindow, EnumWindows, GetWindowThreadProcessId, IsIconic,
-    IsWindowVisible, PostMessageW, SW_RESTORE, SetForegroundWindow, SetWindowTextW, ShowWindow,
+    CreateWindowExW, DI_NORMAL, DestroyIcon, DestroyWindow, DrawIconEx, EnumWindows,
+    GetWindowThreadProcessId, IsIconic, IsWindowVisible, PostMessageW, SW_RESTORE,
+    SetForegroundWindow, SetWindowTextW, ShowWindow,
 };
 
 const MAX_WINDOWS_PATH_UTF16_UNITS: usize = 32_768;
+
+/// One bounded executable icon converted to unpremultiplied RGBA pixels.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ExecutableIcon {
+    pub width: u32,
+    pub height: u32,
+    pub rgba: Vec<u8>,
+}
+
+/// Extracts and rasterizes one icon resource from an executable, DLL, or icon file.
+///
+/// Rendering against both black and white preserves legacy one-bit masks and modern alpha icons.
+pub fn executable_icon(
+    path: &std::path::Path,
+    icon_index: i32,
+    size: u32,
+) -> std::io::Result<ExecutableIcon> {
+    if !(1..=256).contains(&size) {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "executable icon size must be 1..=256",
+        ));
+    }
+    if !std::fs::metadata(path)?.is_file() {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "executable icon source is not a regular file",
+        ));
+    }
+    let wide = path
+        .as_os_str()
+        .encode_wide()
+        .chain(std::iter::once(0))
+        .collect::<Vec<_>>();
+    if wide.len() > MAX_WINDOWS_PATH_UTF16_UNITS || wide[..wide.len() - 1].contains(&0) {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "executable icon path has an invalid bounded UTF-16 shape",
+        ));
+    }
+    let mut icon = std::ptr::null_mut();
+    let extracted = unsafe {
+        // SAFETY: `wide` remains NUL-terminated and `icon` is a live output slot.
+        ExtractIconExW(
+            wide.as_ptr(),
+            icon_index,
+            std::ptr::null_mut(),
+            &mut icon,
+            1,
+        )
+    };
+    if extracted != 1 || icon.is_null() {
+        return Err(std::io::Error::last_os_error());
+    }
+    let rendered = render_icon_on_background(icon, size, 0)
+        .and_then(|black| render_icon_on_background(icon, size, 255).map(|white| (black, white)));
+    unsafe {
+        // SAFETY: `icon` is the owned handle returned above and is destroyed exactly once.
+        DestroyIcon(icon);
+    }
+    let (black, white) = rendered?;
+    let pixel_count = usize::try_from(size)
+        .ok()
+        .and_then(|side| side.checked_mul(side))
+        .ok_or_else(|| std::io::Error::other("icon pixel count overflow"))?;
+    let mut rgba = Vec::with_capacity(pixel_count * 4);
+    for pixel in 0..pixel_count {
+        let offset = pixel * 4;
+        let alpha_sum = (0..3)
+            .map(|channel| {
+                u16::from(255_u8.saturating_sub(
+                    white[offset + channel].saturating_sub(black[offset + channel]),
+                ))
+            })
+            .sum::<u16>();
+        let alpha = u8::try_from((alpha_sum + 1) / 3).unwrap_or(255);
+        for channel in [2, 1, 0] {
+            let value = if alpha == 0 {
+                0
+            } else {
+                u8::try_from(
+                    (u32::from(black[offset + channel]) * 255 + u32::from(alpha) / 2)
+                        / u32::from(alpha),
+                )
+                .unwrap_or(255)
+            };
+            rgba.push(value);
+        }
+        rgba.push(alpha);
+    }
+    Ok(ExecutableIcon {
+        width: size,
+        height: size,
+        rgba,
+    })
+}
+
+fn render_icon_on_background(
+    icon: windows_sys::Win32::UI::WindowsAndMessaging::HICON,
+    size: u32,
+    background: u8,
+) -> std::io::Result<Vec<u8>> {
+    let side = i32::try_from(size).map_err(|_| std::io::Error::other("icon size overflow"))?;
+    let byte_count = usize::try_from(size)
+        .ok()
+        .and_then(|value| value.checked_mul(value))
+        .and_then(|value| value.checked_mul(4))
+        .ok_or_else(|| std::io::Error::other("icon allocation overflow"))?;
+    let info = BITMAPINFO {
+        bmiHeader: BITMAPINFOHEADER {
+            biSize: u32::try_from(std::mem::size_of::<BITMAPINFOHEADER>()).unwrap_or(40),
+            biWidth: side,
+            biHeight: -side,
+            biPlanes: 1,
+            biBitCount: 32,
+            biCompression: BI_RGB,
+            biSizeImage: u32::try_from(byte_count).unwrap_or_default(),
+            biXPelsPerMeter: 0,
+            biYPelsPerMeter: 0,
+            biClrUsed: 0,
+            biClrImportant: 0,
+        },
+        bmiColors: [windows_sys::Win32::Graphics::Gdi::RGBQUAD {
+            rgbBlue: 0,
+            rgbGreen: 0,
+            rgbRed: 0,
+            rgbReserved: 0,
+        }],
+    };
+    let dc = unsafe {
+        // SAFETY: A null source requests a memory DC compatible with the current display.
+        CreateCompatibleDC(std::ptr::null_mut())
+    };
+    if dc.is_null() {
+        return Err(std::io::Error::last_os_error());
+    }
+    let mut bits = std::ptr::null_mut();
+    let bitmap = unsafe {
+        // SAFETY: `info` is initialized, `bits` is live, and no file mapping is supplied.
+        CreateDIBSection(
+            dc,
+            &info,
+            DIB_RGB_COLORS,
+            &mut bits,
+            std::ptr::null_mut(),
+            0,
+        )
+    };
+    if bitmap.is_null() || bits.is_null() {
+        unsafe {
+            // SAFETY: `dc` is the owned memory DC created above.
+            DeleteDC(dc);
+        }
+        return Err(std::io::Error::last_os_error());
+    }
+    let previous = unsafe {
+        // SAFETY: Both handles remain live until the previous selection is restored.
+        SelectObject(dc, bitmap as HGDIOBJ)
+    };
+    if previous.is_null() || previous == -1_isize as HGDIOBJ {
+        unsafe {
+            // SAFETY: The bitmap was not selected and both handles are owned here.
+            DeleteObject(bitmap as HGDIOBJ);
+            DeleteDC(dc);
+        }
+        return Err(std::io::Error::last_os_error());
+    }
+    unsafe {
+        // SAFETY: `bits` exposes this DIB's exact writable byte count.
+        std::ptr::write_bytes(bits.cast::<u8>(), background, byte_count);
+    }
+    let drawn = unsafe {
+        // SAFETY: The retained icon and selected memory DC are valid for these dimensions.
+        DrawIconEx(
+            dc,
+            0,
+            0,
+            icon,
+            side,
+            side,
+            0,
+            std::ptr::null_mut(),
+            DI_NORMAL,
+        )
+    };
+    let output = if drawn != 0 {
+        Some(unsafe {
+            // SAFETY: The selected DIB remains readable for exactly `byte_count` bytes.
+            std::slice::from_raw_parts(bits.cast::<u8>(), byte_count).to_vec()
+        })
+    } else {
+        None
+    };
+    unsafe {
+        // SAFETY: Restore the original object before destroying owned GDI handles.
+        SelectObject(dc, previous);
+        DeleteObject(bitmap as HGDIOBJ);
+        DeleteDC(dc);
+    }
+    output.ok_or_else(std::io::Error::last_os_error)
+}
 const LUNAR_MAGIC_SETTINGS_KEY: &str = "Software\\LunarianConcepts\\LunarMagic\\Settings";
 const MAX_LUNAR_MAGIC_TOOL_UTF16_UNITS: usize = 0x410;
 const MAX_LUNAR_MAGIC_TOOL_UTF8_BYTES: usize = 0x40f;
@@ -872,5 +1078,17 @@ mod tests {
                 options2: 0x0107_0000,
             })
         );
+    }
+
+    /// Opt-in ABI oracle against the icon-bearing Notepad executable supplied by Windows/Wine.
+    #[test]
+    #[ignore = "requires an icon-bearing Windows system executable"]
+    fn extracts_system_executable_icon_to_bounded_rgba() {
+        let root = std::env::var_os("SystemRoot").expect("Windows must define SystemRoot");
+        let path = std::path::PathBuf::from(root).join("notepad.exe");
+        let icon = super::executable_icon(&path, 0, 16).unwrap();
+        assert_eq!((icon.width, icon.height), (16, 16));
+        assert_eq!(icon.rgba.len(), 16 * 16 * 4);
+        assert!(icon.rgba.chunks_exact(4).any(|pixel| pixel[3] != 0));
     }
 }

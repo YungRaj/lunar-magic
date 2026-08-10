@@ -16,6 +16,8 @@ pub(crate) struct UserToolbarImageSet {
     images: Vec<egui::ColorImage>,
     entry_starts: Vec<usize>,
     textures: Vec<egui::TextureHandle>,
+    executable_images: Vec<Option<egui::ColorImage>>,
+    executable_textures: Vec<Option<egui::TextureHandle>>,
     icon_size: Option<usize>,
 }
 
@@ -85,6 +87,14 @@ impl MainToolbarImageSet {
 
 impl UserToolbarImageSet {
     pub(crate) fn load(directory: &Path, toolbar: &UserToolbar) -> Result<Self, String> {
+        Self::load_with_icon_extractor(directory, toolbar, platform_executable_icon)
+    }
+
+    fn load_with_icon_extractor(
+        directory: &Path,
+        toolbar: &UserToolbar,
+        mut extract: impl FnMut(&Path, i32, usize) -> Option<egui::ColorImage>,
+    ) -> Result<Self, String> {
         let mut result = Self {
             icon_size: toolbar.image_size.map(usize::from),
             ..Self::default()
@@ -122,25 +132,50 @@ impl UserToolbarImageSet {
             }
             result.images.extend(images);
         }
+        let executable_size = result.icon_size.unwrap_or(16);
+        result.executable_images = toolbar
+            .buttons
+            .iter()
+            .enumerate()
+            .map(|(index, button)| {
+                executable_icon_request(directory, toolbar, index, button)
+                    .and_then(|(path, icon)| extract(&path, icon, executable_size))
+            })
+            .collect();
         Ok(result)
     }
 
     pub(crate) fn ensure_textures(&mut self, context: &egui::Context) {
-        if self.textures.len() == self.images.len() {
-            return;
+        if self.textures.len() != self.images.len() {
+            self.textures = self
+                .images
+                .iter()
+                .enumerate()
+                .map(|(index, image)| {
+                    context.load_texture(
+                        format!("user-toolbar-icon-{index}"),
+                        image.clone(),
+                        egui::TextureOptions::NEAREST,
+                    )
+                })
+                .collect();
         }
-        self.textures = self
-            .images
-            .iter()
-            .enumerate()
-            .map(|(index, image)| {
-                context.load_texture(
-                    format!("user-toolbar-icon-{index}"),
-                    image.clone(),
-                    egui::TextureOptions::NEAREST,
-                )
-            })
-            .collect();
+        if self.executable_textures.len() != self.executable_images.len() {
+            self.executable_textures = self
+                .executable_images
+                .iter()
+                .enumerate()
+                .map(|(index, image)| {
+                    image.as_ref().map(|image| {
+                        context.load_texture(
+                            format!("user-toolbar-executable-icon-{index}"),
+                            image.clone(),
+                            egui::TextureOptions::LINEAR,
+                        )
+                    })
+                })
+                .collect();
+        }
     }
 
     pub(crate) fn texture_for(
@@ -151,7 +186,10 @@ impl UserToolbarImageSet {
         let button = toolbar.buttons.get(button_index)?;
         let forced = forced_image_index(toolbar, button_index);
         if forced.is_none() && !uses_image_list(button) {
-            return None;
+            return self
+                .executable_textures
+                .get(button_index)
+                .and_then(Option::as_ref);
         }
         let relative = isize::try_from(forced.map(i32::from).or(button.icon)?).ok()?;
         let base = match forced.map_or(button.image_base, |_| UserToolbarImageBase::Global) {
@@ -165,6 +203,52 @@ impl UserToolbarImageSet {
     pub(crate) fn icon_size(&self) -> Option<f32> {
         self.icon_size.map(|size| size as f32)
     }
+}
+
+fn executable_icon_request(
+    directory: &Path,
+    toolbar: &UserToolbar,
+    button_index: usize,
+    button: &UserToolbarButton,
+) -> Option<(std::path::PathBuf, i32)> {
+    if forced_image_index(toolbar, button_index).is_some() || uses_image_list(button) {
+        return None;
+    }
+    let UserToolbarTarget::External(command_line) = &button.target else {
+        return None;
+    };
+    let executable = first_command_word(command_line)?;
+    Some((
+        resolve_path(directory, &executable),
+        button.icon.unwrap_or(0),
+    ))
+}
+
+fn first_command_word(value: &str) -> Option<String> {
+    let value = value.trim_start();
+    if let Some(rest) = value.strip_prefix('"') {
+        let end = rest.find('"')?;
+        (!rest[..end].is_empty()).then(|| rest[..end].to_owned())
+    } else {
+        let end = value.find(char::is_whitespace).unwrap_or(value.len());
+        (end != 0).then(|| value[..end].to_owned())
+    }
+}
+
+#[cfg(windows)]
+fn platform_executable_icon(path: &Path, icon: i32, size: usize) -> Option<egui::ColorImage> {
+    let decoded = lm_windows::executable_icon(path, icon, u32::try_from(size).ok()?).ok()?;
+    let width = usize::try_from(decoded.width).ok()?;
+    let height = usize::try_from(decoded.height).ok()?;
+    Some(egui::ColorImage::from_rgba_unmultiplied(
+        [width, height],
+        &decoded.rgba,
+    ))
+}
+
+#[cfg(not(windows))]
+fn platform_executable_icon(_: &Path, _: i32, _: usize) -> Option<egui::ColorImage> {
+    None
 }
 
 fn forced_image_index(toolbar: &UserToolbar, button_index: usize) -> Option<u16> {
@@ -322,6 +406,7 @@ mod tests {
             entry_starts: vec![0, 2],
             textures: Vec::new(),
             icon_size: Some(16),
+            ..UserToolbarImageSet::default()
         };
         let context = egui::Context::default();
         set.ensure_textures(&context);
@@ -424,5 +509,62 @@ mod tests {
         assert_eq!(forced_image_index(&all, 0), Some(4));
         assert_eq!(forced_image_index(&all, 1), None);
         assert_eq!(forced_image_index(&all, 2), Some(5));
+    }
+
+    #[test]
+    fn external_buttons_extract_the_requested_executable_icon_only_without_image_overrides() {
+        let directory = tempfile::tempdir().unwrap();
+        let toolbar = UserToolbar::parse(
+            "***START***\n\"tool one.exe\" argument\n3,external\n***START***\nLM_VIEW_16x16\n0,internal\n***START***\ntool-two.exe\n2,list\nLM_USEIMAGE_LIST\n***END***",
+        )
+        .unwrap();
+        let mut requests = Vec::new();
+        let marker = egui::ColorImage::new([16, 16], egui::Color32::RED);
+        let mut loaded = UserToolbarImageSet::load_with_icon_extractor(
+            directory.path(),
+            &toolbar,
+            |path, icon, size| {
+                requests.push((path.to_owned(), icon, size));
+                Some(marker.clone())
+            },
+        )
+        .unwrap();
+        assert_eq!(
+            requests,
+            vec![(directory.path().join("tool one.exe"), 3, 16)]
+        );
+        let context = egui::Context::default();
+        loaded.ensure_textures(&context);
+        assert!(loaded.texture_for(&toolbar, 0).is_some());
+        assert!(loaded.texture_for(&toolbar, 1).is_none());
+        assert!(loaded.texture_for(&toolbar, 2).is_none());
+    }
+
+    #[test]
+    fn forced_images_suppress_executable_extraction_and_percent_four_resolves() {
+        let directory = tempfile::tempdir().unwrap();
+        let toolbar =
+            UserToolbar::parse("LM_USEIMAGE_FORCE 1\n***START***\n%4tool.exe\n0,forced\n***END***")
+                .unwrap();
+        let mut called = false;
+        UserToolbarImageSet::load_with_icon_extractor(directory.path(), &toolbar, |_, _, _| {
+            called = true;
+            None
+        })
+        .unwrap();
+        assert!(!called);
+
+        let plain = UserToolbar::parse("***START***\n%4tool.exe\nLM_DEFAULT\n***END***").unwrap();
+        let mut path = None;
+        UserToolbarImageSet::load_with_icon_extractor(
+            directory.path(),
+            &plain,
+            |value, icon, _| {
+                path = Some((value.to_owned(), icon));
+                None
+            },
+        )
+        .unwrap();
+        assert_eq!(path, Some((directory.path().join("tool.exe"), 0)));
     }
 }
