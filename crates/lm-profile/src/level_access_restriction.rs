@@ -1,6 +1,9 @@
 //! SMW-US revision-0 layout for Lunar Magic's permanent level-access restriction.
 
-use lm_project::{ExLoRomRestrictionBulkSaveLayout, LevelAccessRestrictionLayout};
+use lm_project::{
+    ExLoRomRestrictionBulkSaveLayout, LevelAccessRestrictionLayout,
+    LevelAccessRestrictionPrerequisitePatch,
+};
 use lm_rom::Mapper;
 
 /// Returns the headerless locations recovered from Lunar Magic 3.63's active `LoROM` descriptor.
@@ -39,6 +42,7 @@ pub const fn smw_us_v1_level_access_restriction_layout() -> LevelAccessRestricti
         version_mirror: None,
         checksum_field: crate::SMW_US_V1_CHECKSUM_FIELD,
         exlorom_bulk_save: None,
+        prerequisite_patches: &[],
     }
 }
 
@@ -77,7 +81,63 @@ pub const fn smw_us_v1_exlorom_level_access_restriction_layout() -> LevelAccessR
             auxiliary_pointer_bank: 0x0047_7100,
             allocation_cursor: 0x0047_fffc,
         }),
+        prerequisite_patches: &[],
     }
+}
+
+const SA1_RESTRICTION_PREREQUISITES: &[LevelAccessRestrictionPrerequisitePatch] = &[
+    LevelAccessRestrictionPrerequisitePatch {
+        offset: 0x0006_e1db,
+        expected: &[0x19],
+        replacement: &[0x79],
+    },
+    LevelAccessRestrictionPrerequisitePatch {
+        offset: 0x0006_e1de,
+        expected: &[0x1b],
+        replacement: &[0x7b],
+    },
+    LevelAccessRestrictionPrerequisitePatch {
+        offset: 0x0006_e1f0,
+        expected: &[
+            0x64, 0x8a, 0x64, 0x8b, 0xa7, 0x65, 0x6b, 0xff, 0xff, 0xff, 0xff, 0xff, 0x4c, 0x4d,
+            0x00, 0x01, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+        ],
+        replacement: &[
+            0xc2, 0x20, 0xa2, 0x0e, 0xbf, 0x60, 0xc0, 0x7f, 0x9f, 0x00, 0x00, 0x41, 0xca, 0xca,
+            0x10, 0xf4, 0x64, 0x8a, 0xe2, 0x20, 0xa7, 0x65, 0x6b,
+        ],
+    },
+    LevelAccessRestrictionPrerequisitePatch {
+        offset: 0x0006_e20c,
+        expected: &[0xff, 0xff, 0xff, 0xff],
+        replacement: &[0x4c, 0x4d, 0x01, 0x01],
+    },
+    LevelAccessRestrictionPrerequisitePatch {
+        offset: 0x0006_f2a9,
+        expected: &[0x60, 0xc0, 0x7f],
+        replacement: &[0x00, 0x00, 0x41],
+    },
+    LevelAccessRestrictionPrerequisitePatch {
+        offset: 0x0007_ffe7,
+        expected: &[0x00],
+        replacement: &[0x02],
+    },
+    LevelAccessRestrictionPrerequisitePatch {
+        offset: 0x0007_ffe9,
+        expected: &[0xf8],
+        replacement: &[0xfa],
+    },
+];
+
+/// Returns the descriptor-routed layout used for an installed SA-1 Pack SMW-US ROM.
+#[must_use]
+pub const fn smw_us_v1_sa1_level_access_restriction_layout() -> LevelAccessRestrictionLayout {
+    let mut layout = smw_us_v1_level_access_restriction_layout();
+    layout.mapper = Mapper::Sa1;
+    layout.metadata_compensation_len = 0x21;
+    layout.metadata_compensation_byte = 0x0007_f026;
+    layout.prerequisite_patches = SA1_RESTRICTION_PREREQUISITES;
+    layout
 }
 
 #[cfg(test)]
@@ -323,6 +383,66 @@ mod tests {
         assert!(matches!(error, LevelAccessRestrictionError::InvalidLayout));
         assert_eq!(project.save_snapshot(), before);
         assert_eq!(project.history.undo_len(), history_before);
+    }
+
+    #[test]
+    fn sa1_layout_retains_base_descriptor_offsets_and_authenticated_bulk_resave_patches() {
+        let base = smw_us_v1_level_access_restriction_layout();
+        let sa1 = smw_us_v1_sa1_level_access_restriction_layout();
+
+        assert_eq!(sa1.mapper, Mapper::Sa1);
+        assert_eq!(sa1.per_save_hook, base.per_save_hook);
+        assert_eq!(sa1.per_save_code, base.per_save_code);
+        assert_eq!(sa1.bulk_save_hook, base.bulk_save_hook);
+        assert_eq!(sa1.bulk_save_code, base.bulk_save_code);
+        assert_eq!(sa1.restriction_marker_mirror, None);
+        assert_eq!(sa1.title_mirror, None);
+        assert_eq!(sa1.version_mirror, None);
+        assert_eq!(sa1.exlorom_bulk_save, None);
+        assert_eq!(sa1.metadata_compensation_fill, 0x0007_f005);
+        assert_eq!(sa1.metadata_compensation_len, 0x21);
+        assert_eq!(sa1.metadata_compensation_byte, 0x0007_f026);
+        assert_eq!(sa1.prerequisite_patches, SA1_RESTRICTION_PREREQUISITES);
+        assert_eq!(sa1.prerequisite_patches.len(), 7);
+    }
+
+    #[test]
+    #[ignore = "requires locally generated authentic Lunar Magic 3.63 SA-1 restriction pair"]
+    fn sa1_restriction_matches_authentic_lunar_magic_output_exactly() {
+        let before = fs::read(
+            std::env::var_os("LM_SA1_RESTRICTION_BEFORE")
+                .expect("LM_SA1_RESTRICTION_BEFORE must name the authentic source ROM"),
+        )
+        .unwrap();
+        let expected = fs::read(
+            std::env::var_os("LM_SA1_RESTRICTION_AFTER")
+                .expect("LM_SA1_RESTRICTION_AFTER must name the Lunar Magic output"),
+        )
+        .unwrap();
+        let mut project =
+            Project::open_supported(RomImage::from_bytes(before.clone()).unwrap()).unwrap();
+
+        project
+            .restrict_level_access(
+                "Codex Parity Test",
+                LevelAccessRestrictionKeys {
+                    per_save_low: 0x48,
+                    per_save_high: 0x16,
+                    graphics: 0x4dc8,
+                },
+                smw_us_v1_sa1_level_access_restriction_layout(),
+            )
+            .unwrap();
+
+        let actual = project.save_snapshot();
+        if let Some(path) = std::env::var_os("LM_SA1_RESTRICTION_RUST_OUTPUT") {
+            fs::write(path, &actual).unwrap();
+        }
+        assert_eq!(actual, expected);
+        project.undo().unwrap();
+        assert_eq!(project.save_snapshot(), before);
+        project.redo().unwrap();
+        assert_eq!(project.save_snapshot(), expected);
     }
 
     const fn fnv1a64(bytes: &[u8]) -> u64 {

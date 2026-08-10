@@ -745,3 +745,33 @@ The capture disproved the prior assumption that all `$15` auxiliary bytes stay i
 seven-entry 24-bit pointer table. The authentic first pointer `C2 C8 11` resolves to the adjacent
 compact owner, while each empty slot remains exactly `FF 00 00`. Rust now authenticates the full
 runtime, fixed writes, and owner chain; the focused six-test runtime suite passes.
+
+## 2026-08-09 — SA-1 permanent level-access restriction
+
+An isolated unmodified Lunar Magic 3.63 process restricted an authenticated copier-headered
+SMW-US ROM with SA-1 Pack v1.40 installed. The `$100200`-byte source SHA-256 is
+`827f396152867cf296b4e481d916cebd432ae616fee392e488f5828b91cc226d`; the restricted output
+SHA-256 is `fd0c016b4ac94849ac1b8b3e546d0c8a80cc87ec23dde3716a8f68357ae78604`.
+The retained title is `Codex Parity Test`, keys are `$48/$16/$4DC8`, and the complete output has
+29 changed physical ranges while retaining a valid stored checksum of `$D9B0`.
+
+```text
+LM_SA1_RESTRICTION_BEFORE=... LM_SA1_RESTRICTION_AFTER=... \
+cargo test -p lm-profile \
+  level_access_restriction::tests::sa1_restriction_matches_authentic_lunar_magic_output_exactly \
+  -- --ignored --exact
+1 passed; 0 failed
+
+cargo test -p lm-render
+233 passed; 0 failed
+
+cargo test -p lm-native
+915 passed; 0 failed; 11 ignored
+```
+
+The exact comparison covers every physical byte plus exact Undo/Redo. Ghidra descriptor recovery
+proves SA-1 retains the base lower-ROM physical locations, takes no ExLoROM metadata-mirror branch,
+and performs a seven-region guarded runtime upgrade during bulk resave. Portable profile, project,
+and application tests cover the descriptor, validate-all-before-write atomicity, and mapper route.
+Full provenance and recovered boundaries are retained in
+`oracle-work/level-access-restriction-sa1-363.md`.

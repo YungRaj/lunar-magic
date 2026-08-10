@@ -279,6 +279,7 @@ pub use layer3_scroll_code::{
 };
 pub use level_access_restriction::{
     smw_us_v1_exlorom_level_access_restriction_layout, smw_us_v1_level_access_restriction_layout,
+    smw_us_v1_sa1_level_access_restriction_layout,
 };
 pub use lfix3_install::{
     SMW_US_V1_LFIX3_SEARCH_END, SMW_US_V1_LFIX3_SEARCH_START, SmwUsV1Lfix3DetectError,

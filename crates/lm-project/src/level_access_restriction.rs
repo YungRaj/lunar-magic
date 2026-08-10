@@ -40,6 +40,15 @@ pub struct LevelAccessRestrictionLayout {
     pub version_mirror: Option<usize>,
     pub checksum_field: usize,
     pub exlorom_bulk_save: Option<ExLoRomRestrictionBulkSaveLayout>,
+    pub prerequisite_patches: &'static [LevelAccessRestrictionPrerequisitePatch],
+}
+
+/// One descriptor-authenticated prerequisite write performed by Lunar Magic's bulk resave.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct LevelAccessRestrictionPrerequisitePatch {
+    pub offset: usize,
+    pub expected: &'static [u8],
+    pub replacement: &'static [u8],
 }
 
 /// Descriptor-backed allocation migration performed while Lunar Magic bulk-resaves ExLoROM.
@@ -127,6 +136,8 @@ impl Project {
         let original = self.rom.logical_bytes().to_vec();
         let mut staged = original.clone();
 
+        apply_prerequisite_patches(&mut staged, layout.prerequisite_patches)?;
+
         let per_save_mask = u16::from(keys.per_save_low) | u16::from(keys.per_save_high) << 8;
         if let Some(migration) = layout.exlorom_bulk_save {
             migrate_exlorom_bulk_save_owners(&mut staged, migration, per_save_mask)?;
@@ -209,6 +220,24 @@ impl Project {
         commit_complete_restriction(self, layout.mapper, &original, &staged, replacement_header)?;
         Ok(true)
     }
+}
+
+fn apply_prerequisite_patches(
+    staged: &mut [u8],
+    patches: &[LevelAccessRestrictionPrerequisitePatch],
+) -> Result<(), LevelAccessRestrictionError> {
+    for patch in patches {
+        if patch.expected.len() != patch.replacement.len()
+            || staged.get(patch.offset..patch.offset.saturating_add(patch.expected.len()))
+                != Some(patch.expected)
+        {
+            return Err(LevelAccessRestrictionError::InvalidLayout);
+        }
+    }
+    for patch in patches {
+        copy(staged, patch.offset, patch.replacement)?;
+    }
+    Ok(())
 }
 
 fn migrate_exlorom_bulk_save_owners(
@@ -468,4 +497,48 @@ fn commit_complete_restriction(
     project.history.push_batch(batch);
     project.synchronize_identity_checksums();
     Ok(())
+}
+
+#[cfg(test)]
+mod prerequisite_patch_tests {
+    use super::*;
+
+    const VALID_PATCH: LevelAccessRestrictionPrerequisitePatch =
+        LevelAccessRestrictionPrerequisitePatch {
+            offset: 1,
+            expected: &[0x20],
+            replacement: &[0xa0],
+        };
+    const INVALID_LATER_PATCH: LevelAccessRestrictionPrerequisitePatch =
+        LevelAccessRestrictionPrerequisitePatch {
+            offset: 3,
+            expected: &[0x99],
+            replacement: &[0xb0],
+        };
+
+    #[test]
+    fn prerequisite_patches_validate_every_source_before_writing_any_byte() {
+        let mut bytes = [0x10, 0x20, 0x30, 0x40];
+        let original = bytes;
+
+        let error = apply_prerequisite_patches(&mut bytes, &[VALID_PATCH, INVALID_LATER_PATCH])
+            .unwrap_err();
+
+        assert!(matches!(error, LevelAccessRestrictionError::InvalidLayout));
+        assert_eq!(bytes, original);
+    }
+
+    #[test]
+    fn prerequisite_patches_apply_in_descriptor_order_after_validation() {
+        let mut bytes = [0x10, 0x20, 0x30, 0x40];
+        let second = LevelAccessRestrictionPrerequisitePatch {
+            offset: 3,
+            expected: &[0x40],
+            replacement: &[0xb0],
+        };
+
+        apply_prerequisite_patches(&mut bytes, &[VALID_PATCH, second]).unwrap();
+
+        assert_eq!(bytes, [0x10, 0xa0, 0x30, 0xb0]);
+    }
 }
