@@ -668,6 +668,50 @@ fn sprite_encoded_lengths_follow_staged_history_and_exact_record_table() {
 }
 
 #[test]
+fn complete_screen_exit_table_is_one_undo_step_and_reopens_after_commit() {
+    let mut app = AppState::default();
+    app.load_rom(test_rom()).unwrap();
+    let snapshot = app.controller_snapshot().unwrap();
+    let mut controller =
+        LevelController::decode(&snapshot, layout(), &SpriteLengthTable::standard()).unwrap();
+    let baseline = controller.level().layer1.objects.clone();
+    let mut exits = [None; 32];
+    exits[0] = Some(0x1000);
+    exits[0x1f] = Some(0xffff);
+    controller
+        .apply_edits(&[NativeLevelEdit::Objects(vec![
+            ObjectEdit::ReplaceScreenExitTable { exits },
+        ])])
+        .unwrap();
+    assert!(controller.can_undo());
+    assert!(controller.undo());
+    assert_eq!(controller.level().layer1.objects, baseline);
+    assert!(!controller.can_undo());
+    assert!(controller.redo());
+
+    let prepared = controller
+        .prepare_commit("replace complete screen-exit table", &options())
+        .unwrap();
+    app.dispatch(prepared.into_command()).unwrap();
+    let reopened = LevelController::decode(
+        &app.controller_snapshot().unwrap(),
+        layout(),
+        &SpriteLengthTable::standard(),
+    )
+    .unwrap();
+    let table = reopened
+        .level()
+        .layer1
+        .objects
+        .records
+        .iter()
+        .filter_map(ObjectRecord::screen_exit)
+        .map(|exit| (exit.screen, exit.destination_and_flags))
+        .collect::<Vec<_>>();
+    assert_eq!(table, [(0, 0x1400), (0x1f, 0xffff)]);
+}
+
+#[test]
 fn failed_and_noop_staged_edits_do_not_create_history() {
     let mut app = AppState::default();
     app.load_rom(test_rom()).unwrap();

@@ -1291,6 +1291,9 @@ fn user_toolbar_native_action(name: &str) -> Option<UserToolbarNativeAction> {
         | "LM_LEVEL_LAYER12_SETTINGS" => UserToolbarNativeAction::OpenLevelToolPanel(
             crate::vanilla_level_editor::LevelToolPanel::Settings,
         ),
+        "LM_LEVEL_EXITS" => UserToolbarNativeAction::OpenLevelToolPanel(
+            crate::vanilla_level_editor::LevelToolPanel::ScreenExits,
+        ),
         "LM_EDIT_SELECT_ALL" => UserToolbarNativeAction::SelectAll,
         "LM_EDIT_DELETE" => UserToolbarNativeAction::DeleteSelection,
         "LM_EDIT_DELETE_ALL" => UserToolbarNativeAction::DeleteAll,
@@ -1662,6 +1665,12 @@ mod user_toolbar_tests {
         assert_eq!(
             user_toolbar_native_action("LM_LEVEL_ENTRANCE2"),
             Some(UserToolbarNativeAction::OpenSecondaryEntrances)
+        );
+        assert_eq!(
+            user_toolbar_native_action("LM_LEVEL_EXITS"),
+            Some(UserToolbarNativeAction::OpenLevelToolPanel(
+                crate::vanilla_level_editor::LevelToolPanel::ScreenExits
+            ))
         );
         assert_eq!(
             user_toolbar_native_action("LM_HELP_ABOUT"),
@@ -2094,7 +2103,7 @@ mod user_toolbar_tests {
                     || user_toolbar_native_action(entry.name).is_some()
             })
             .collect::<Vec<_>>();
-        assert_eq!(supported.len(), 232);
+        assert_eq!(supported.len(), 233);
         assert!(
             supported
                 .iter()
@@ -2111,7 +2120,7 @@ mod user_toolbar_tests {
                     && user_toolbar_native_action(entry.name).is_none()
             })
             .collect::<Vec<_>>();
-        assert_eq!(unsupported.len(), 85);
+        assert_eq!(unsupported.len(), 84);
         if std::env::var_os("LM_DIAGNOSTIC_UNSUPPORTED_TOOLBAR_COMMANDS").is_some() {
             for entry in unsupported {
                 eprintln!(

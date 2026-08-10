@@ -105,4 +105,8 @@ Both retain the bounded worker, cancellation, and all-or-rollback directory publ
 workspace. It therefore reaches the complete 8,192-entry table and all six original packed planes,
 with the existing detected-layout, staged-edit, revision, checksum, Undo, save, and reopen boundary;
 it is not reduced to the unrelated current-level main-entrance section.
-The authenticated partition is therefore 232 routed and 85 pending slots.
+`$2523` (`LM_LEVEL_EXITS`) opens the integrated complete 32-screen staged form. Its one-batch
+publication matches the recovered last-duplicate-wins normalization, absent-entry deletion,
+advance-bit retention, compact/extended encoding selection, ascending list-end placement, and one
+Undo boundary. The cursor-cell-specific `$26FE/$26FF` commands remain separate and pending.
+The authenticated partition is therefore 233 routed and 84 pending slots.

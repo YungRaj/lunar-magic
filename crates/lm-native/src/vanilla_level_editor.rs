@@ -54,6 +54,7 @@ pub(crate) enum LevelToolPanel {
     Settings,
     Layer2,
     Sprites,
+    ScreenExits,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -439,8 +440,9 @@ pub(crate) struct VanillaLevelEditor {
     background_512_height: bool,
     translucent_overlays: bool,
     tools_panel_visible: Option<bool>,
-    tool_panel_generations: [u64; 3],
+    tool_panel_generations: [u64; 4],
     requested_tool_panel: Option<LevelToolPanel>,
+    screen_exit_table_form: Option<[Option<u16>; 32]>,
     game_preview: Option<bool>,
     snes_viewport: Option<bool>,
     draw_selection_over_live: Option<bool>,
@@ -687,6 +689,13 @@ impl VanillaLevelEditor {
                                     pending_command = self.show_entrance_editor(ui, level);
                                 }
                             });
+                        egui::CollapsingHeader::new("Screen exits")
+                            .id_salt((
+                                "vanilla-screen-exit-table",
+                                self.tool_panel_generations[LevelToolPanel::ScreenExits.index()],
+                            ))
+                            .default_open(requested_tool_panel == Some(LevelToolPanel::ScreenExits))
+                            .show(ui, |ui| self.show_screen_exit_table_editor(ui));
                         self.show_layer2_editor(
                             ui,
                             custom_objects,
@@ -1495,11 +1504,85 @@ impl VanillaLevelEditor {
         }
     }
 
+    fn show_screen_exit_table_editor(&mut self, ui: &mut egui::Ui) {
+        let Some(controller) = self.controller.as_ref() else {
+            ui.label("The current level is unavailable.");
+            return;
+        };
+        let current = screen_exit_table(&controller.level().layer1.objects.records);
+        let form = self.screen_exit_table_form.get_or_insert(current);
+        ui.label(
+            "Stage all 32 source screens together. Apply creates one level-editor Undo step; Reset discards this form only.",
+        );
+        egui::Grid::new("vanilla-screen-exit-table-grid")
+            .num_columns(3)
+            .striped(true)
+            .show(ui, |ui| {
+                ui.label("Screen");
+                ui.label("Present");
+                ui.label("Destination / flags");
+                ui.end_row();
+                for (screen, entry) in form.iter_mut().enumerate() {
+                    ui.monospace(format!("{screen:02X}"));
+                    let mut present = entry.is_some();
+                    if ui.checkbox(&mut present, "").changed() {
+                        *entry = present.then_some(0);
+                    }
+                    if let Some(value) = entry {
+                        ui.add(egui::DragValue::new(value).hexadecimal(4, false, true));
+                    } else {
+                        ui.label("—");
+                    }
+                    ui.end_row();
+                }
+            });
+        let dirty = *form != current;
+        let mut apply = false;
+        let mut reset = false;
+        ui.horizontal_wrapped(|ui| {
+            apply = ui
+                .add_enabled(dirty, egui::Button::new("Apply all screen exits"))
+                .clicked();
+            reset = ui
+                .add_enabled(dirty, egui::Button::new("Reset screen exits"))
+                .clicked();
+        });
+        if reset {
+            self.screen_exit_table_form = Some(current);
+        } else if apply {
+            let exits = *self
+                .screen_exit_table_form
+                .as_ref()
+                .expect("the form was initialized above");
+            let result = self
+                .controller
+                .as_mut()
+                .expect("the controller was checked above")
+                .apply_edits(&[NativeLevelEdit::Objects(vec![
+                    ObjectEdit::ReplaceScreenExitTable { exits },
+                ])]);
+            match result {
+                Ok(()) => {
+                    let controller = self.controller.as_ref().expect("apply retained controller");
+                    self.screen_exit_table_form = Some(screen_exit_table(
+                        &controller.level().layer1.objects.records,
+                    ));
+                    self.reload_object_form();
+                    self.error = None;
+                }
+                Err(error) => self.error = Some(error.to_string()),
+            }
+        }
+    }
+
     fn refresh_forms_after_history(&mut self) {
         self.clear_z_order_bounds();
         let Some(controller) = self.controller.as_ref() else {
             return;
         };
+        self.screen_exit_table_form = Some(screen_exit_table(
+            &controller.level().layer1.objects.records,
+        ));
         self.form = HeaderForm::from_controller(controller);
         self.selected_object = self.selected_object.min(
             controller
@@ -1579,6 +1662,7 @@ impl VanillaLevelEditor {
         custom_sprites: Option<&lm_level::SscResolvedTable>,
     ) {
         self.clear_z_order_bounds();
+        self.screen_exit_table_form = None;
         self.pending_layer2_mode_reset = None;
         self.canvas_entity_selection = None;
         if let Err(error) = validate_builtin_graphics_layout(snapshot) {
@@ -1773,6 +1857,7 @@ impl VanillaLevelEditor {
         self.key = None;
         self.controller = None;
         self.pending_expansion_commit = None;
+        self.screen_exit_table_form = None;
         self.entrance_controller = None;
         self.secondary_exits = None;
         self.secondary_exit_references = None;
@@ -8504,6 +8589,14 @@ struct LevelScreenExitAnnotation {
     label: String,
 }
 
+fn screen_exit_table(records: &[ObjectRecord]) -> [Option<u16>; 32] {
+    let mut exits = [None; 32];
+    for exit in records.iter().filter_map(ObjectRecord::screen_exit) {
+        exits[usize::from(exit.screen)] = Some(exit.destination_and_flags);
+    }
+    exits
+}
+
 fn level_screen_exit_annotations(
     major_tiles: u16,
     minor_tiles: u16,
@@ -13778,6 +13871,7 @@ mod tests {
             (1, LevelToolPanel::Layer2),
             (1, LevelToolPanel::Sprites),
             (1, LevelToolPanel::Settings),
+            (1, LevelToolPanel::ScreenExits),
             (2, LevelToolPanel::Layer2),
         ] {
             editor.toolbar_open_tool_panel(panel);
@@ -17868,6 +17962,19 @@ mod tests {
         assert_eq!(annotations[2].label, "02 : Midway Exit to Level 123");
         assert_eq!(annotations[3].label, "03 : Secondary Exit 102 to OV");
         assert_eq!((annotations[3].x, annotations[3].height), (48, 27));
+    }
+
+    #[test]
+    fn complete_screen_exit_form_uses_last_duplicate_for_each_of_all_32_screens() {
+        let records = vec![
+            ObjectRecord::new(vec![0x00, 0x05, 0, 0x11]).unwrap(),
+            ObjectRecord::new(vec![0x1f, 0x06, 0, 0x22]).unwrap(),
+            ObjectRecord::new(vec![0x80, 0x07, 0, 0x33]).unwrap(),
+        ];
+        let exits = screen_exit_table(&records);
+        assert_eq!(exits[0], Some(0x0733));
+        assert_eq!(exits[0x1f], Some(0x0622));
+        assert_eq!(exits.iter().filter(|entry| entry.is_some()).count(), 2);
     }
 
     #[test]

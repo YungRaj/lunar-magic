@@ -72,6 +72,14 @@ pub enum ObjectEdit {
         screen: u8,
         destination_and_flags: u16,
     },
+    /// Replaces the complete 32-screen exit table using Lunar Magic's dialog semantics.
+    ///
+    /// Existing duplicate exits are collapsed with the last record winning, retained records keep
+    /// their unrelated advance-screen bit, new records start without it, and the resulting exits
+    /// are placed at the end of the stream in ascending screen order.
+    ReplaceScreenExitTable {
+        exits: [Option<u16>; 32],
+    },
     /// Relocates one ordinary object and canonically regenerates owned screen transitions.
     RelocateOrdinary {
         index: usize,
@@ -248,6 +256,10 @@ impl ObjectStream {
                         .map_err(|error| ObjectEditError::Field { command, error })?;
                     Ok(())
                 }
+                ObjectEdit::ReplaceScreenExitTable { exits } => {
+                    staged.replace_screen_exit_table(exits);
+                    Ok(())
+                }
                 ObjectEdit::RelocateOrdinary {
                     index,
                     screen,
@@ -309,6 +321,29 @@ impl ObjectStream {
 }
 
 impl ObjectStream {
+    fn replace_screen_exit_table(&mut self, exits: &[Option<u16>; 32]) {
+        let mut retained: [Option<ObjectRecord>; 32] = std::array::from_fn(|_| None);
+        for record in self.records.iter().rev() {
+            if let Some(exit) = record.screen_exit() {
+                retained[usize::from(exit.screen)].get_or_insert_with(|| record.clone());
+            }
+        }
+        self.records.retain(|record| record.screen_exit().is_none());
+        for (screen, destination_and_flags) in exits.iter().enumerate() {
+            let Some(destination_and_flags) = destination_and_flags else {
+                continue;
+            };
+            let mut record = retained[screen].take().unwrap_or_else(|| {
+                ObjectRecord::new(vec![screen as u8, 0, 0, 0])
+                    .expect("a compact screen-exit record is always valid")
+            });
+            record
+                .set_screen_exit(screen as u8, *destination_and_flags)
+                .expect("the screen table and screen-exit record are bounded and valid");
+            self.records.push(record);
+        }
+    }
+
     /// Replaces all proven semantic fields of one ordinary object, preserves extension bytes, and
     /// tracks it through canonical absolute-screen ordering. Returns its resulting record index.
     ///
@@ -617,6 +652,42 @@ mod tests {
             })
         ));
         assert_eq!(stream, original);
+    }
+
+    #[test]
+    fn complete_screen_exit_table_matches_original_dedup_order_and_presence_semantics() {
+        let ordinary = record(3);
+        let first_duplicate = ObjectRecord::new(vec![0x02, 0x05, 0, 0x11]).unwrap();
+        let last_duplicate = ObjectRecord::new(vec![0x82, 0x06, 0, 0x22]).unwrap();
+        let removed = ObjectRecord::new(vec![0x01, 0x07, 0, 0x33]).unwrap();
+        let mut stream = ObjectStream {
+            records: vec![first_duplicate, ordinary.clone(), removed, last_duplicate],
+        };
+        let mut exits = [None; 32];
+        exits[0] = Some(0x1000);
+        exits[2] = Some(0x0123);
+        exits[0x1f] = Some(0xffff);
+        stream
+            .apply_edits(&[ObjectEdit::ReplaceScreenExitTable { exits }])
+            .unwrap();
+
+        assert_eq!(stream.records[0], ordinary);
+        let resolved = stream.records[1..]
+            .iter()
+            .map(|record| record.screen_exit().unwrap())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            resolved
+                .iter()
+                .map(|exit| (exit.screen, exit.destination_and_flags))
+                .collect::<Vec<_>>(),
+            [(0, 0x1400), (2, 0x0523), (0x1f, 0xffff)]
+        );
+        assert!(!stream.records[1].advances_screen());
+        assert!(stream.records[2].advances_screen());
+        assert!(!stream.records[3].advances_screen());
+        assert_eq!(stream.records[1].encoded().len(), 5);
+        assert_eq!(stream.records[2].encoded().len(), 4);
     }
 
     #[test]
