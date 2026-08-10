@@ -305,6 +305,17 @@ impl NativeApplication {
                     &self.app,
                     action,
                     self.joined_graphics_files,
+                    false,
+                ) {
+                    self.effects.error = Some(error);
+                }
+            }
+            UserToolbarNativeAction::ExtractGraphics(action) => {
+                if let Err(error) = self.toolbar_graphics_transfer.start(
+                    &self.app,
+                    action,
+                    self.joined_graphics_files,
+                    true,
                 ) {
                     self.effects.error = Some(error);
                 }
@@ -906,6 +917,7 @@ enum UserToolbarNativeAction {
     Paste,
     ExpandRom(RomExpansionPreset),
     ExportAllLevels,
+    ExtractGraphics(QuickGraphicsExtraction),
     QuickExtractGraphics(QuickGraphicsExtraction),
 }
 
@@ -953,6 +965,12 @@ fn user_toolbar_native_action(name: &str) -> Option<UserToolbarNativeAction> {
         }
         "LM_FILE_EXTRACT_EXGFX_BUTTON" => {
             UserToolbarNativeAction::QuickExtractGraphics(QuickGraphicsExtraction::ExGraphics)
+        }
+        "LM_FILE_EXTRACT_GFX" => {
+            UserToolbarNativeAction::ExtractGraphics(QuickGraphicsExtraction::Standard)
+        }
+        "LM_FILE_EXTRACT_EXGFX" => {
+            UserToolbarNativeAction::ExtractGraphics(QuickGraphicsExtraction::ExGraphics)
         }
         _ => return None,
     })
@@ -1266,6 +1284,14 @@ mod user_toolbar_tests {
                 "LM_FILE_EXTRACT_EXGFX_BUTTON",
                 UserToolbarNativeAction::QuickExtractGraphics(QuickGraphicsExtraction::ExGraphics),
             ),
+            (
+                "LM_FILE_EXTRACT_GFX",
+                UserToolbarNativeAction::ExtractGraphics(QuickGraphicsExtraction::Standard),
+            ),
+            (
+                "LM_FILE_EXTRACT_EXGFX",
+                UserToolbarNativeAction::ExtractGraphics(QuickGraphicsExtraction::ExGraphics),
+            ),
         ] {
             assert_eq!(user_toolbar_native_action(name), Some(action));
         }
@@ -1470,7 +1496,7 @@ mod user_toolbar_tests {
                     || user_toolbar_native_action(entry.name).is_some()
             })
             .collect::<Vec<_>>();
-        assert_eq!(supported.len(), 183);
+        assert_eq!(supported.len(), 185);
         assert!(
             supported
                 .iter()

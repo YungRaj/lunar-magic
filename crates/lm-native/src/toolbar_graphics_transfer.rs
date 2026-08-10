@@ -18,7 +18,21 @@ pub(crate) enum QuickGraphicsExtraction {
 #[derive(Default)]
 pub(crate) struct ToolbarGraphicsTransfer {
     worker: GraphicsBatchWorker,
+    pending_presentation: Option<GraphicsExtractionPresentation>,
+    completion: Option<GraphicsExtractionCompletion>,
     error: Option<String>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct GraphicsExtractionPresentation {
+    action: QuickGraphicsExtraction,
+    target: PathBuf,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct GraphicsExtractionCompletion {
+    title: &'static str,
+    message: String,
 }
 
 impl ToolbarGraphicsTransfer {
@@ -27,6 +41,7 @@ impl ToolbarGraphicsTransfer {
         app: &AppState,
         action: QuickGraphicsExtraction,
         joined_standard: bool,
+        show_completion: bool,
     ) -> Result<(), String> {
         if self.worker.is_running() {
             return Err("a user-toolbar graphics extraction is already running".into());
@@ -45,17 +60,32 @@ impl ToolbarGraphicsTransfer {
             }
         };
         ensure_target_parent(&target)?;
-        match (action, joined_standard) {
-            (QuickGraphicsExtraction::Standard, true) => self.worker.start_joined(source, target),
-            _ => self.worker.start(source, target),
+        let result = match (action, joined_standard) {
+            (QuickGraphicsExtraction::Standard, true) => {
+                self.worker.start_joined(source, target.clone())
+            }
+            _ => self.worker.start(source, target.clone()),
+        };
+        if result.is_ok() && show_completion {
+            self.pending_presentation = Some(GraphicsExtractionPresentation { action, target });
         }
+        result
     }
 
     pub(crate) fn show(&mut self, context: &egui::Context) {
         if let Some(result) = self.worker.show(context) {
-            if let Err(error) = result {
-                self.error = Some(error);
-            }
+            self.complete(result);
+        }
+        if let Some(completion) = self.completion.clone() {
+            egui::Window::new(completion.title)
+                .collapsible(false)
+                .resizable(false)
+                .show(context, |ui| {
+                    ui.label(completion.message);
+                    if ui.button("OK").clicked() {
+                        self.completion = None;
+                    }
+                });
         }
         if let Some(error) = self.error.clone() {
             egui::Window::new("Graphics extraction error")
@@ -67,6 +97,34 @@ impl ToolbarGraphicsTransfer {
                         self.error = None;
                     }
                 });
+        }
+    }
+
+    fn complete(&mut self, result: Result<Option<usize>, String>) {
+        let presentation = self.pending_presentation.take();
+        match result {
+            Ok(Some(count)) => {
+                if let Some(presentation) = presentation {
+                    self.completion = Some(match presentation.action {
+                        QuickGraphicsExtraction::Standard => GraphicsExtractionCompletion {
+                            title: "GFX Extraction Complete!",
+                            message: format!(
+                                "All GFX files have been extracted to:\n{}",
+                                presentation.target.display()
+                            ),
+                        },
+                        QuickGraphicsExtraction::ExGraphics => GraphicsExtractionCompletion {
+                            title: "ExGFX Extraction Complete!",
+                            message: format!(
+                                "{count} ExGFX files have been extracted to:\n{}",
+                                presentation.target.display()
+                            ),
+                        },
+                    });
+                }
+            }
+            Ok(None) => {}
+            Err(error) => self.error = Some(error),
         }
     }
 }
@@ -204,7 +262,7 @@ mod tests {
         app.document_path = Some(root.path().join("game.smc"));
         let mut transfer = ToolbarGraphicsTransfer::default();
         transfer
-            .start(&app, QuickGraphicsExtraction::Standard, false)
+            .start(&app, QuickGraphicsExtraction::Standard, false, false)
             .unwrap();
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
         let completion = loop {
@@ -235,9 +293,95 @@ mod tests {
         let mut transfer = ToolbarGraphicsTransfer::default();
         assert!(
             transfer
-                .start(&app, QuickGraphicsExtraction::ExGraphics, false)
+                .start(&app, QuickGraphicsExtraction::ExGraphics, false, false)
                 .is_err()
         );
         assert!(!root.path().join("ExGraphics").exists());
+    }
+
+    #[test]
+    fn ordinary_standard_extraction_presents_the_authenticated_completion_resource() {
+        let root = tempfile::tempdir().unwrap();
+        let mut app = AppState::default();
+        app.load_rom(crate::test_support::pristine_smw_us_rom_bytes())
+            .unwrap();
+        app.document_path = Some(root.path().join("game.smc"));
+        let mut transfer = ToolbarGraphicsTransfer::default();
+        transfer
+            .start(&app, QuickGraphicsExtraction::Standard, false, true)
+            .unwrap();
+        let result = loop {
+            if let Some(result) = transfer.worker.poll() {
+                break result;
+            }
+            std::thread::yield_now();
+        };
+        transfer.complete(result);
+        assert_eq!(
+            transfer.completion,
+            Some(GraphicsExtractionCompletion {
+                title: "GFX Extraction Complete!",
+                message: format!(
+                    "All GFX files have been extracted to:\n{}",
+                    root.path().join("Graphics").display()
+                ),
+            })
+        );
+    }
+
+    #[test]
+    fn quick_extraction_suppresses_only_success_presentation() {
+        let root = tempfile::tempdir().unwrap();
+        let mut app = AppState::default();
+        app.load_rom(crate::test_support::pristine_smw_us_rom_bytes())
+            .unwrap();
+        app.document_path = Some(root.path().join("game.smc"));
+        let mut transfer = ToolbarGraphicsTransfer::default();
+        transfer
+            .start(&app, QuickGraphicsExtraction::Standard, false, false)
+            .unwrap();
+        let result = loop {
+            if let Some(result) = transfer.worker.poll() {
+                break result;
+            }
+            std::thread::yield_now();
+        };
+        transfer.complete(result);
+        assert_eq!(transfer.completion, None);
+        assert_eq!(transfer.error, None);
+    }
+
+    #[test]
+    fn ordinary_exgraphics_completion_uses_count_and_fixed_directory() {
+        let mut transfer = ToolbarGraphicsTransfer {
+            pending_presentation: Some(GraphicsExtractionPresentation {
+                action: QuickGraphicsExtraction::ExGraphics,
+                target: PathBuf::from("/project/ExGraphics"),
+            }),
+            ..Default::default()
+        };
+        transfer.complete(Ok(Some(17)));
+        assert_eq!(
+            transfer.completion,
+            Some(GraphicsExtractionCompletion {
+                title: "ExGFX Extraction Complete!",
+                message: "17 ExGFX files have been extracted to:\n/project/ExGraphics".into(),
+            })
+        );
+    }
+
+    #[test]
+    fn cancelled_ordinary_extraction_has_no_completion_presentation() {
+        let mut transfer = ToolbarGraphicsTransfer {
+            pending_presentation: Some(GraphicsExtractionPresentation {
+                action: QuickGraphicsExtraction::Standard,
+                target: PathBuf::from("/project/Graphics"),
+            }),
+            ..Default::default()
+        };
+        transfer.complete(Ok(None));
+        assert_eq!(transfer.pending_presentation, None);
+        assert_eq!(transfer.completion, None);
+        assert_eq!(transfer.error, None);
     }
 }

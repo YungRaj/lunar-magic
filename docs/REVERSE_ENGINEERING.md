@@ -2098,17 +2098,22 @@ The top-level transfer call matrix is now recovered as well. `HandleLevelEditorC
 also sets bit 1. `InsertAllGFXFiles` receives the same joined-file bit, with bit 1 suppressing the
 completion dialog, bit 2 suppressing the ordinary open/save wrapper, and bit 3 selecting the
 alternate progress target. `ImportExtendedGraphicsIntoRom` uses the corresponding quiet, wrapper,
-and progress bits but has no joined-file bit. The ordinary menu commands first run their separate
-confirmation resources; quick commands set bit 1 and bypass only the completion presentation, not
-validation or mutation behavior.
+and progress bits but has no joined-file bit. The ordinary menu commands use their separate
+completion resources; quick commands set bit 1 and bypass only that completion presentation, not
+validation or mutation behavior. The concrete handler branches are `$00493953` (ordinary standard),
+`$00493A68` (ordinary ExGFX), `$00493C0E` (quick standard), and `$00493D11` (quick ExGFX). The
+first pair pass flags `joined` and zero respectively; the quick pair OR or pass bit 1 before entering
+the same extraction routines. Successful ordinary standard extraction selects `All GFX files have
+been extracted to:` and `GFX Extraction Complete!`; ordinary ExGFX formats the extracted count and
+selects `ExGFX Extraction Complete!`.
 
-The Rust user-toolbar coordinator now routes the authenticated quick standard-GFX and ExGFX button
-commands without requiring the tile editor's ownership-file chooser. It resolves the current
+The Rust user-toolbar coordinator now routes both authenticated ordinary and quick standard-GFX and
+ExGFX commands without requiring the tile editor's ownership-file chooser. It resolves the current
 revision directly, retains the persisted joined-file bit, uses the fixed ROM-sibling `Graphics`,
 `Graphics/AllGFX.bin`, or `ExGraphics` target, validates the complete source before creating a
 missing target directory, and publishes through the same cancellable all-or-nothing batch worker as
-the installed editor. The ordinary commands remain separate until their confirmation resources are
-bound rather than being falsely treated as quick aliases.
+the installed editor. Ordinary commands present the recovered success title/body after publication;
+quick commands suppress that success window, and cancellation presents neither success nor error.
 
 Both bulk extraction functions use the same recovered `wb` mode string at image address
 `005B2D3C`. `ExtractAllGFXFiles` therefore truncates/replaces every fixed
