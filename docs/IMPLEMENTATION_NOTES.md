@@ -5502,6 +5502,27 @@ complete shared table and both selectors, commits table and any required Layer 1
 revision-checked mutation, repairs checksum, and verifies semantic reopen. Separate native dialogs
 route `LM_LEVEL_BYPASS_FG` and `LM_LEVEL_BYPASS_SP`; pristine ROMs install the expanded-settings
 prerequisite and resume the requested dialog. Headered and headerless transaction tests prove exact
-logical equivalence and one-step Undo. The complete native suite passes 998 tests with 12 explicit
+logical equivalence and one-step Undo. The complete native suite passes 1,000 tests with 12 explicit
 external-fixture ignores; the 512-slot renderer manifest remains byte-identical at SHA-256
 `254a1a050d12785973241910e26d8b7917a5cb5e2a56602a330fc6cbd833c04d`.
+
+## Per-level music bypass (`$2522`)
+
+Port-8089 recovery maps byte-table selector `$AC` to resource `$0400` and dialog procedure
+`HandleMusicBypassDialog` at `$00413BE0`. The original decoder and serializer bind custom music to
+three-byte object-stream command `$26`: byte three is zero when disabled and otherwise stores the
+zero-based track plus one, with `$FE` therefore the largest selectable track. Repeated controls
+overwrite in stream order. Serialization emits one canonical `$26` before custom-time command
+`$28` while preserving its two opaque coordinate nibbles.
+
+Rust models that boundary with `CustomMusicTrack`, a failure-atomic bank-size preflight, duplicate
+collapse, last-record/disabled overwrite behavior, and retained opaque selector. The integrated
+Settings panel exposes the enabled state and hexadecimal track, and `LM_LEVEL_BYPASS_MUSIC` routes
+there directly. Commit repairs the checksum, semantically reopens command `$26`, and one Undo
+restores the exact physical ROM. The preview no longer mistakes `$26` for an auxiliary graphics
+file and suppresses only the canonical trailing `$26`/`$28` settings suffix; every earlier ordinary
+object remains renderable. A complete pristine 512-level scan proves the discriminator has no
+false vanilla matches, while the focused transaction gate proves enabling music changes neither
+rendered cells nor render writes. The full native suite passes 1,000 tests with 12 explicit
+external-fixture ignores, Windows cross-compilation passes, and the 513-line renderer manifest
+retains SHA-256 `254a1a050d12785973241910e26d8b7917a5cb5e2a56602a330fc6cbd833c04d`.

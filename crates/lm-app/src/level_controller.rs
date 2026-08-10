@@ -1,8 +1,9 @@
 use crate::{ControllerSnapshot, EditorMode};
 use lm_level::{
-    CustomTimeError, CustomTimeSettings, HeaderValueError, LegacyHeaderEdit, LevelEditError,
-    MwlLayer2Descriptor, NATIVE_LAYER2_TILEMAP_LEN, NativeLayer2Data, NativeSpriteRecordFields,
-    ObjectEdit, ObjectEditError, ObjectStreamError, SpriteRecord, SpriteToken,
+    CustomMusicError, CustomMusicTrack, CustomTimeError, CustomTimeSettings, HeaderValueError,
+    LegacyHeaderEdit, LevelEditError, MwlLayer2Descriptor, NATIVE_LAYER2_TILEMAP_LEN,
+    NativeLayer2Data, NativeSpriteRecordFields, ObjectEdit, ObjectEditError, ObjectStreamError,
+    SpriteRecord, SpriteToken,
 };
 use lm_project::{
     LevelLayer2IoError, LevelLayer2RomLayout, LevelLoadError, LevelRomLayout, LevelSaveError,
@@ -19,6 +20,7 @@ mod commit;
 pub enum NativeLevelEdit {
     LegacyHeader(LegacyHeaderEdit),
     SetCustomTime(Option<CustomTimeSettings>),
+    SetCustomMusic(Option<CustomMusicTrack>),
     ClearObjects,
     Objects(Vec<ObjectEdit>),
     ClearSprites,
@@ -113,6 +115,10 @@ pub enum LevelControllerError {
     CustomTimeEdit {
         command: usize,
         error: CustomTimeError,
+    },
+    CustomMusicEdit {
+        command: usize,
+        error: CustomMusicError,
     },
     SpriteHeaderEdit {
         command: usize,

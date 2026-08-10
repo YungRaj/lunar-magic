@@ -4,9 +4,10 @@ use lm_app::{
     VanillaEntranceController,
 };
 use lm_level::{
-    CustomTimeError, CustomTimeSettings, Layer1VerticalScrollMode, LegacyHeaderEdit,
-    NativeSpriteRecordFields, ObjectCoordinateNibbles, ObjectEdit, ObjectRecord,
-    SecondaryExitTable, SeparateMidwayEntrance, SpriteLengthTable, SpriteToken,
+    CustomMusicError, CustomMusicTrack, CustomTimeError, CustomTimeSettings,
+    Layer1VerticalScrollMode, LegacyHeaderEdit, NativeSpriteRecordFields, ObjectCoordinateNibbles,
+    ObjectEdit, ObjectRecord, SecondaryExitTable, SeparateMidwayEntrance, SpriteLengthTable,
+    SpriteToken,
 };
 use lm_project::LevelSaveOptions;
 use lm_project::{Project, VanillaMainEntrance};
@@ -105,6 +106,8 @@ struct HeaderForm {
     background_color: u8,
     sprite_tileset: u8,
     default_music_selector: u8,
+    custom_music_enabled: bool,
+    custom_music_track: u8,
     time_limit_selector: u8,
     custom_time_enabled: bool,
     custom_time_value: u16,
@@ -120,6 +123,7 @@ impl HeaderForm {
         let header = controller.level().layer1.header;
         let vertical = lm_profile::smw_us_v1_level_mode(header.level_mode()).vertical;
         let custom_time = controller.level().layer1.objects.custom_time(vertical);
+        let custom_music = controller.level().layer1.objects.custom_music();
         Self {
             background_palette: header.background_palette(),
             last_screen: header.last_screen(),
@@ -127,6 +131,8 @@ impl HeaderForm {
             background_color: header.background_color(),
             sprite_tileset: header.sprite_tileset(),
             default_music_selector: header.default_music_selector(),
+            custom_music_enabled: custom_music.is_some(),
+            custom_music_track: custom_music.map_or(0, CustomMusicTrack::value),
             time_limit_selector: header.time_limit_selector(),
             custom_time_enabled: custom_time.is_some(),
             custom_time_value: custom_time.map_or(300, CustomTimeSettings::value),
@@ -138,11 +144,17 @@ impl HeaderForm {
         }
     }
 
-    fn edits(self) -> Result<Vec<NativeLevelEdit>, CustomTimeError> {
+    fn edits(self) -> Result<Vec<NativeLevelEdit>, HeaderFormError> {
         let custom_time = self
             .custom_time_enabled
             .then(|| CustomTimeSettings::new(self.custom_time_value, self.force_time_reset))
-            .transpose()?;
+            .transpose()
+            .map_err(HeaderFormError::CustomTime)?;
+        let custom_music = self
+            .custom_music_enabled
+            .then(|| CustomMusicTrack::new(self.custom_music_track))
+            .transpose()
+            .map_err(HeaderFormError::CustomMusic)?;
         Ok(vec![
             NativeLevelEdit::LegacyHeader(LegacyHeaderEdit::BackgroundPalette(
                 self.background_palette,
@@ -166,7 +178,23 @@ impl HeaderForm {
                 Layer1VerticalScrollMode::from_raw(self.layer1_vertical_scroll),
             )),
             NativeLevelEdit::SetCustomTime(custom_time),
+            NativeLevelEdit::SetCustomMusic(custom_music),
         ])
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum HeaderFormError {
+    CustomTime(CustomTimeError),
+    CustomMusic(CustomMusicError),
+}
+
+impl std::fmt::Display for HeaderFormError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::CustomTime(error) => error.fmt(formatter),
+            Self::CustomMusic(error) => error.fmt(formatter),
+        }
     }
 }
 
@@ -1243,6 +1271,17 @@ impl VanillaLevelEditor {
                 &mut self.form.default_music_selector,
                 7,
             );
+            ui.label("Custom music bypass");
+            ui.checkbox(&mut self.form.custom_music_enabled, "Enabled");
+            ui.end_row();
+            ui.label("Custom music track (hex)");
+            ui.add_enabled(
+                self.form.custom_music_enabled,
+                egui::DragValue::new(&mut self.form.custom_music_track)
+                    .range(0..=CustomMusicTrack::MAX)
+                    .hexadecimal(2, false, true),
+            );
+            ui.end_row();
             header_row(
                 ui,
                 "Time limit selector",
@@ -2865,7 +2904,8 @@ impl VanillaLevelEditor {
             lm_level::NativeLayer2Data::Objects(data) => Some(&data.objects),
             lm_level::NativeLayer2Data::Tilemap(_) => None,
         });
-        for stream in std::iter::once(&controller.level().layer1.objects).chain(layer2) {
+        let visual_layer1 = visual_level_object_stream(&controller.level().layer1.objects.records);
+        for stream in std::iter::once(&visual_layer1).chain(layer2) {
             if stream.records.is_empty() {
                 continue;
             }
@@ -6643,11 +6683,10 @@ impl VanillaLevelEditor {
                 };
                 CanvasModel {
                     layer1_records: controller.level().layer1.objects.records.clone(),
-                    layer1_placements: controller
-                        .level()
-                        .layer1
-                        .objects
-                        .native_placements_for_orientation(vertical),
+                    layer1_placements: visual_level_object_placements(
+                        &controller.level().layer1.objects,
+                        vertical,
+                    ),
                     layer2_records: layer2_objects
                         .map_or_else(Vec::new, |layer2| layer2.objects.records.clone()),
                     layer2_placements: layer2_objects.map_or_else(Vec::new, |layer2| {
@@ -9331,9 +9370,7 @@ fn rendered_standard_object_canvas_extent(
         base_cell: 0,
         vertical,
     };
-    let stream = lm_level::ObjectStream {
-        records: records.to_vec(),
-    };
+    let stream = visual_level_object_stream(records);
     let report = lm_render::render_mapped_standard_object_stream(
         &stream,
         &definitions,
@@ -11035,6 +11072,53 @@ struct CanvasModel {
     sprite_placements: Vec<lm_level::NativeSpritePlacement>,
 }
 
+fn trailing_level_setting_control_indices(records: &[ObjectRecord]) -> std::ops::Range<usize> {
+    let mut start = records.len();
+    let mut phase = 0_u8;
+    while start > 0 {
+        let command = records[start - 1].command_id();
+        match (phase, command) {
+            (0, 0x28) => start -= 1,
+            (0, 0x26) => {
+                phase = 1;
+                start -= 1;
+            }
+            (1, 0x26) => start -= 1,
+            _ => break,
+        }
+    }
+    start..records.len()
+}
+
+fn visual_level_object_stream(records: &[ObjectRecord]) -> lm_level::ObjectStream {
+    let ignored = trailing_level_setting_control_indices(records);
+    lm_level::ObjectStream {
+        records: records
+            .iter()
+            .enumerate()
+            .map(|(index, record)| {
+                if ignored.contains(&index) {
+                    ObjectRecord::new(vec![0, 0, 0]).expect("canonical nonvisual control")
+                } else {
+                    record.clone()
+                }
+            })
+            .collect(),
+    }
+}
+
+fn visual_level_object_placements(
+    stream: &lm_level::ObjectStream,
+    vertical: bool,
+) -> Vec<lm_level::NativeObjectPlacement> {
+    let ignored = trailing_level_setting_control_indices(&stream.records);
+    stream
+        .native_placements_for_orientation(vertical)
+        .into_iter()
+        .filter(|placement| !ignored.contains(&placement.record_index))
+        .collect()
+}
+
 #[derive(Clone, Copy)]
 struct Map16Summary {
     foreground_files: [usize; 4],
@@ -11575,9 +11659,7 @@ fn draw_ordered_object_tiles(
         false
     } else {
         request.handler_map.is_some_and(|handler_map| {
-            let stream = lm_level::ObjectStream {
-                records: request.records[..record_limit].to_vec(),
-            };
+            let stream = visual_level_object_stream(&request.records[..record_limit]);
             lm_render::render_mapped_standard_object_stream(
                 &stream,
                 &definitions,
@@ -14918,6 +15000,120 @@ mod tests {
                 .start,
             offset
         );
+    }
+
+    #[test]
+    fn music_bypass_form_commits_reopens_and_undoes_as_command_26() {
+        let mut bytes = crate::test_support::pristine_smw_us_rom_bytes();
+        bytes.resize(0x10_0000, 0xff);
+        let checksum = lm_rom::compute_snes_checksum(&bytes, 0x7fdc).unwrap();
+        bytes[0x7fdc..0x7fe0].copy_from_slice(&checksum.encoded());
+        let baseline = bytes.clone();
+        let mut app = AppState::default();
+        app.load_rom(bytes).unwrap();
+        app.dispatch(Command::SelectLevel(0x105)).unwrap();
+        let snapshot = app.controller_snapshot().unwrap();
+        let mut controller = LevelController::decode(
+            &snapshot,
+            lm_profile::smw_us_v1_vanilla_level_layout(),
+            &SpriteLengthTable::standard(),
+        )
+        .unwrap();
+        let original_objects = controller.level().layer1.objects.clone();
+        let mut form = HeaderForm::from_controller(&controller);
+        assert!(!form.custom_music_enabled);
+        form.custom_music_enabled = true;
+        form.custom_music_track = 0x23;
+        controller.apply_edits(&form.edits().unwrap()).unwrap();
+        app.dispatch(prepare_commit(&controller, &snapshot).unwrap())
+            .unwrap();
+
+        let reopened_snapshot = app.controller_snapshot().unwrap();
+        let reopened = LevelController::decode(
+            &reopened_snapshot,
+            lm_profile::smw_us_v1_vanilla_level_layout(),
+            &SpriteLengthTable::standard(),
+        )
+        .unwrap();
+        assert_eq!(
+            reopened
+                .level()
+                .layer1
+                .objects
+                .custom_music()
+                .unwrap()
+                .value(),
+            0x23
+        );
+        let records = &reopened.level().layer1.objects.records;
+        let control = records
+            .iter()
+            .find(|record| record.command_id() == 0x26)
+            .unwrap();
+        assert_eq!(control.encoded(), &[0x40, 0x60, 0x24]);
+        let image = RomImage::from_bytes(snapshot.rom_bytes).unwrap();
+        let family = match lm_profile::smw_us_v1_object_family(
+            reopened.level().layer1.header.object_tileset(),
+        ) {
+            lm_profile::VanillaObjectFamily::Normal => 0,
+            lm_profile::VanillaObjectFamily::Castle => 1,
+            lm_profile::VanillaObjectFamily::Rope => 2,
+            lm_profile::VanillaObjectFamily::Underground => 3,
+            lm_profile::VanillaObjectFamily::GhostHouse => 4,
+        };
+        let handler_map = lm_profile::load_smw_us_v1_standard_object_definition_map(&image)
+            .unwrap()
+            .family(family)
+            .unwrap()
+            .to_owned();
+        let mut definitions = lm_render::StandardObjectDefinitionSet::empty();
+        lm_render::install_lunar_magic_shared_extended_objects(&mut definitions).unwrap();
+        lm_render::install_lunar_magic_shared_standard_objects(&mut definitions).unwrap();
+        let layout = lm_render::NativeLevelMap16Layout {
+            width: 512,
+            height: 27,
+            page_stride: 0x1b0,
+            base_cell: 0,
+            vertical: false,
+        };
+        let original_render = lm_render::render_mapped_standard_object_stream(
+            &original_objects,
+            &definitions,
+            &handler_map,
+            layout,
+            VANILLA_EMPTY_MAP16_TILE,
+        )
+        .unwrap();
+        let bypass_render = lm_render::render_mapped_standard_object_stream(
+            &visual_level_object_stream(&reopened.level().layer1.objects.records),
+            &definitions,
+            &handler_map,
+            layout,
+            VANILLA_EMPTY_MAP16_TILE,
+        )
+        .unwrap();
+        assert_eq!(bypass_render.cache.cells(), original_render.cache.cells());
+        assert_eq!(bypass_render.cache.writes(), original_render.cache.writes());
+        assert_eq!(app.project().unwrap().history.undo_len(), 1);
+        app.dispatch(Command::Undo).unwrap();
+        assert_eq!(app.project().unwrap().save_snapshot(), baseline);
+    }
+
+    #[test]
+    fn pristine_512_level_surface_has_no_false_trailing_settings_controls() {
+        let project = Project::new(
+            RomImage::from_bytes(crate::test_support::pristine_smw_us_rom_bytes()).unwrap(),
+        );
+        let layout = lm_profile::smw_us_v1_vanilla_level_layout();
+        for slot in 0..0x200 {
+            let level = project
+                .load_level_slot(slot, layout, &SpriteLengthTable::standard())
+                .unwrap();
+            assert!(
+                trailing_level_setting_control_indices(&level.layer1.objects.records).is_empty(),
+                "pristine level ${slot:03X} ends in an ambiguous `$26`/`$28` object"
+            );
+        }
     }
 
     #[test]

@@ -1400,6 +1400,7 @@ fn user_toolbar_native_action(name: &str) -> Option<UserToolbarNativeAction> {
         "LM_LEVEL_ENTRANCE"
         | "LM_LEVEL_PROPERTIES"
         | "LM_LEVEL_OTHER"
+        | "LM_LEVEL_BYPASS_MUSIC"
         | "LM_LEVEL_LAYER12_SETTINGS" => UserToolbarNativeAction::OpenLevelToolPanel(
             crate::vanilla_level_editor::LevelToolPanel::Settings,
         ),
@@ -1770,6 +1771,12 @@ mod user_toolbar_tests {
         );
         assert_eq!(
             user_toolbar_native_action("LM_LEVEL_PROPERTIES"),
+            Some(UserToolbarNativeAction::OpenLevelToolPanel(
+                crate::vanilla_level_editor::LevelToolPanel::Settings
+            ))
+        );
+        assert_eq!(
+            user_toolbar_native_action("LM_LEVEL_BYPASS_MUSIC"),
             Some(UserToolbarNativeAction::OpenLevelToolPanel(
                 crate::vanilla_level_editor::LevelToolPanel::Settings
             ))
@@ -2263,7 +2270,7 @@ mod user_toolbar_tests {
                     || user_toolbar_native_action(entry.name).is_some()
             })
             .collect::<Vec<_>>();
-        assert_eq!(supported.len(), 245);
+        assert_eq!(supported.len(), 246);
         assert!(
             supported
                 .iter()
@@ -2280,7 +2287,7 @@ mod user_toolbar_tests {
                     && user_toolbar_native_action(entry.name).is_none()
             })
             .collect::<Vec<_>>();
-        assert_eq!(unsupported.len(), 72);
+        assert_eq!(unsupported.len(), 71);
         if std::env::var_os("LM_DIAGNOSTIC_UNSUPPORTED_TOOLBAR_COMMANDS").is_some() {
             for entry in unsupported {
                 eprintln!(

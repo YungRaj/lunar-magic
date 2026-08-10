@@ -54,6 +54,44 @@ pub struct LegacyGraphicsBypassSelectors {
     pub sprites: Option<u8>,
 }
 
+/// Zero-based custom music track selected by Lunar Magic's music-bypass dialog.
+///
+/// Object-stream command `$26` stores this value plus one, reserving zero for disabled. The
+/// original dialog accepts tracks `$00..=$FE`; `$FF` cannot be represented after the increment.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct CustomMusicTrack(u8);
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum CustomMusicError {
+    TrackOutOfRange(u8),
+    BankLimitExceeded,
+}
+
+impl std::fmt::Display for CustomMusicError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(formatter, "invalid custom music bypass: {self:?}")
+    }
+}
+
+impl std::error::Error for CustomMusicError {}
+
+impl CustomMusicTrack {
+    pub const MAX: u8 = 0xfe;
+
+    pub const fn new(value: u8) -> Result<Self, CustomMusicError> {
+        if value <= Self::MAX {
+            Ok(Self(value))
+        } else {
+            Err(CustomMusicError::TrackOutOfRange(value))
+        }
+    }
+
+    #[must_use]
+    pub const fn value(self) -> u8 {
+        self.0
+    }
+}
+
 /// Lunar Magic's custom level timer stored in object-stream control command `$28`.
 ///
 /// The ordinary five-byte level header can only select a preset timer. This control record
@@ -299,6 +337,60 @@ impl ObjectStream {
             );
         }
         staged.encode_banked()?;
+        *self = staged;
+        Ok(())
+    }
+
+    /// Returns the last enabled command `$26`, matching Lunar Magic's decode overwrite behavior.
+    #[must_use]
+    pub fn custom_music(&self) -> Option<CustomMusicTrack> {
+        self.records
+            .iter()
+            .rev()
+            .find(|record| record.command_id() == 0x26)
+            .and_then(|record| record.encoded[2].checked_sub(1))
+            .and_then(|value| CustomMusicTrack::new(value).ok())
+    }
+
+    /// Replaces all custom-music controls with Lunar Magic's canonical command `$26` form.
+    ///
+    /// When replacing an existing control, its opaque coordinate selector is retained exactly.
+    /// A newly enabled control starts with selector zero. Horizontal and vertical streams use the
+    /// same raw bytes because preserving the two raw nibbles also preserves their orientation-
+    /// dependent semantic value.
+    pub fn set_custom_music(
+        &mut self,
+        track: Option<CustomMusicTrack>,
+    ) -> Result<(), CustomMusicError> {
+        let retained_coordinates = self
+            .records
+            .iter()
+            .rev()
+            .find(|record| record.command_id() == 0x26)
+            .map(|record| (record.encoded[0] & 0x0f, record.encoded[1] & 0x0f))
+            .unwrap_or((0, 0));
+        let mut staged = self.clone();
+        staged.records.retain(|record| record.command_id() != 0x26);
+        if let Some(track) = track {
+            let insertion = staged
+                .records
+                .iter()
+                .position(|record| record.command_id() == 0x28)
+                .unwrap_or(staged.records.len());
+            staged.records.insert(
+                insertion,
+                ObjectRecord {
+                    encoded: vec![
+                        0x40 | retained_coordinates.0,
+                        0x60 | retained_coordinates.1,
+                        track.value().wrapping_add(1),
+                    ],
+                },
+            );
+        }
+        staged
+            .encode_banked()
+            .map_err(|_| CustomMusicError::BankLimitExceeded)?;
         *self = staged;
         Ok(())
     }
@@ -553,5 +645,33 @@ mod tests {
             .set_legacy_graphics_bypass_selectors(false, LegacyGraphicsBypassSelectors::default())
             .unwrap();
         assert_eq!(stream.records, [ordinary, timer]);
+    }
+
+    #[test]
+    fn custom_music_uses_plus_one_collapses_duplicates_and_retains_last_selector() {
+        let mut stream = ObjectStream::parse(&[
+            0x41, 0x62, 3, 0x11, 0x22, 0x33, 0x48, 0x89, 7, 0x4a, 0x6b, 0xff, 0xff,
+        ])
+        .unwrap();
+        assert_eq!(stream.custom_music().unwrap().value(), 0xfe);
+        stream
+            .set_custom_music(Some(CustomMusicTrack::new(0x23).unwrap()))
+            .unwrap();
+        assert_eq!(stream.records.len(), 3);
+        assert_eq!(stream.records[0].encoded(), &[0x11, 0x22, 0x33]);
+        assert_eq!(stream.records[1].encoded(), &[0x4a, 0x6b, 0x24]);
+        assert_eq!(stream.records[2].encoded(), &[0x48, 0x89, 7]);
+        stream.set_custom_music(None).unwrap();
+        assert_eq!(stream.records.len(), 2);
+        assert_eq!(
+            CustomMusicTrack::new(0xff),
+            Err(CustomMusicError::TrackOutOfRange(0xff))
+        );
+    }
+
+    #[test]
+    fn last_disabled_custom_music_control_overrides_an_earlier_enabled_track() {
+        let stream = ObjectStream::parse(&[0x40, 0x60, 0x24, 0x4a, 0x6b, 0, 0xff]).unwrap();
+        assert_eq!(stream.custom_music(), None);
     }
 }

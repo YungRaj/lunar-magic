@@ -133,8 +133,9 @@ pub use native_sprite::{
     SpriteToken,
 };
 pub use object::{
-    CustomTimeError, CustomTimeSettings, LegacyGraphicsBypassSelectors, LevelObjectData,
-    ObjectRecord, ObjectStream, ObjectStreamError, encoded_record_length,
+    CustomMusicError, CustomMusicTrack, CustomTimeError, CustomTimeSettings,
+    LegacyGraphicsBypassSelectors, LevelObjectData, ObjectRecord, ObjectStream, ObjectStreamError,
+    encoded_record_length,
 };
 pub use object_editing::{NativeObjectRecordFields, ObjectEdit, ObjectEditError};
 pub use object_fields::{

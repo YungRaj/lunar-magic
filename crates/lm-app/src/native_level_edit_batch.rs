@@ -41,6 +41,10 @@ pub(crate) fn apply_native_level_edits(
                     .set_custom_time(vertical, *settings)
                     .map_err(|error| LevelControllerError::CustomTimeEdit { command, error })?;
             }
+            NativeLevelEdit::SetCustomMusic(track) => staged_layer1
+                .objects
+                .set_custom_music(*track)
+                .map_err(|error| LevelControllerError::CustomMusicEdit { command, error })?,
             NativeLevelEdit::ClearObjects => staged_layer1.objects.records.clear(),
             NativeLevelEdit::Objects(edits) => staged_layer1
                 .objects

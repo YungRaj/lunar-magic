@@ -389,7 +389,7 @@ fn profiled_auxiliary_graphics_file(
     objects
         .records
         .iter()
-        .filter(|record| matches!(record.command_id(), 0x25 | 0x26))
+        .filter(|record| record.command_id() == 0x25)
         .map(lm_level::ObjectRecord::parameter)
         .last()
         .filter(|file| *file != 0)
@@ -2281,14 +2281,15 @@ mod tests {
     }
 
     #[test]
-    fn auxiliary_cache_file_follows_expanded_header_or_last_legacy_control() {
+    fn auxiliary_cache_file_follows_expanded_header_or_last_legacy_graphics_control() {
         let objects = lm_level::ObjectStream {
             records: vec![
                 lm_level::ObjectRecord::new(vec![0x40, 0x50, 0x21]).unwrap(),
+                // Music bypass `$26` is not a graphics-file selector.
                 lm_level::ObjectRecord::new(vec![0x40, 0x60, 0x43]).unwrap(),
             ],
         };
-        assert_eq!(profiled_auxiliary_graphics_file(None, &objects), Some(0x42));
+        assert_eq!(profiled_auxiliary_graphics_file(None, &objects), Some(0x20));
 
         let mut expanded = lm_level::ExpandedLevelHeader { fields: [0; 16] };
         expanded.fields[0] = 0x8000 | 0x345;
@@ -2299,7 +2300,7 @@ mod tests {
         expanded.fields[0] = 0x0345;
         assert_eq!(
             profiled_auxiliary_graphics_file(Some(expanded), &objects),
-            Some(0x42)
+            Some(0x20)
         );
     }
 
