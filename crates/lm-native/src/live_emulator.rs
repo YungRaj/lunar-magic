@@ -236,6 +236,50 @@ impl LiveEmulator {
         send_session_action(&running.commands, action);
     }
 
+    /// Toggles the recovered manual hard-pause reason through the same state machine as the live
+    /// control window.
+    pub(crate) fn toggle_manual_pause(&mut self) -> Result<(), String> {
+        let running = self
+            .running
+            .as_mut()
+            .ok_or_else(|| "live emulator is not running".to_owned())?;
+        if let Some(action) = running.model.toggle_manual_pause() {
+            if let EmulatorSessionAction::SetPauseMode(mode) = action {
+                running.pause = mode;
+            }
+            send_session_action(&running.commands, action);
+        }
+        if running.pause != EmulatorPauseMode::Running {
+            self.audio.clear();
+        }
+        Ok(())
+    }
+
+    /// Queues one frame through the recovered pause/step action sequence.
+    pub(crate) fn step_frame(&mut self) -> Result<(), String> {
+        let running = self
+            .running
+            .as_mut()
+            .ok_or_else(|| "live emulator is not running".to_owned())?;
+        for action in running.model.step_frame() {
+            if let EmulatorSessionAction::SetPauseMode(mode) = action {
+                running.pause = mode;
+            }
+            send_session_action(&running.commands, action);
+        }
+        self.audio.clear();
+        Ok(())
+    }
+
+    /// Toggles live emulator audio without changing the backend session or video stream.
+    pub(crate) fn toggle_mute(&mut self) -> Result<(), String> {
+        if self.running.is_none() {
+            return Err("live emulator is not running".into());
+        }
+        self.audio.set_muted(!self.audio.muted());
+        Ok(())
+    }
+
     pub(crate) fn show(
         &mut self,
         context: &egui::Context,
@@ -832,6 +876,56 @@ mod tests {
                 EmulatorPauseMode::Running
             ))
         ));
+    }
+
+    #[test]
+    fn toolbar_controls_share_pause_step_mute_and_stop_state_with_the_live_window() {
+        let (commands, command_receiver) = mpsc::channel();
+        let (_event_sender, events) = mpsc::channel();
+        let mut model = EmulatorSessionState::default();
+        let _ = model.start();
+        let mut emulator = LiveEmulator::default();
+        emulator.running = Some(RunningSession {
+            commands,
+            events,
+            model,
+            pause: EmulatorPauseMode::Running,
+            capabilities: None,
+            joypad: 0,
+            input_pause_until: None,
+        });
+
+        emulator.toggle_manual_pause().unwrap();
+        assert!(matches!(
+            command_receiver.recv().unwrap(),
+            WorkerCommand::Protocol(EmulatorBackendCommand::SetPauseMode(
+                EmulatorPauseMode::HardPaused
+            ))
+        ));
+        emulator.step_frame().unwrap();
+        assert!(matches!(
+            command_receiver.recv().unwrap(),
+            WorkerCommand::Protocol(EmulatorBackendCommand::StepFrame)
+        ));
+        assert!(!emulator.audio.muted());
+        emulator.toggle_mute().unwrap();
+        assert!(emulator.audio.muted());
+        emulator.toggle_manual_pause().unwrap();
+        assert!(matches!(
+            command_receiver.recv().unwrap(),
+            WorkerCommand::Protocol(EmulatorBackendCommand::SetPauseMode(
+                EmulatorPauseMode::Running
+            ))
+        ));
+        emulator.stop();
+        assert!(matches!(
+            command_receiver.recv().unwrap(),
+            WorkerCommand::Stop
+        ));
+        assert!(emulator.running.is_none());
+        assert!(emulator.toggle_manual_pause().is_err());
+        assert!(emulator.step_frame().is_err());
+        assert!(emulator.toggle_mute().is_err());
     }
 
     #[test]

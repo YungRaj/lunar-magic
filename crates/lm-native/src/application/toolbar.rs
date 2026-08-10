@@ -387,6 +387,38 @@ impl NativeApplication {
                     self.effects.error = Some(error);
                 }
             }
+            UserToolbarNativeAction::GraphicsCompressionOptions => {
+                self.graphics_migration_dialog.open(&self.app);
+            }
+            UserToolbarNativeAction::EmulatorSettings => {
+                self.external_tool_config_editor
+                    .open(self.app.external_tools());
+            }
+            UserToolbarNativeAction::ExternalEmulatorRun => {
+                let configured = configured_snes_emulator_tool_id(self.app.external_tools());
+                if let Some(id) = configured {
+                    self.dispatch(context, Command::TestRomInEmulator(id));
+                } else {
+                    self.begin_direct_emulator_test();
+                }
+            }
+            UserToolbarNativeAction::LiveEmulatorRun => self.begin_live_emulator_test(),
+            UserToolbarNativeAction::LiveEmulatorStop => self.live_emulator.stop(),
+            UserToolbarNativeAction::LiveEmulatorPause => {
+                if let Err(error) = self.live_emulator.toggle_manual_pause() {
+                    self.effects.error = Some(error);
+                }
+            }
+            UserToolbarNativeAction::LiveEmulatorMute => {
+                if let Err(error) = self.live_emulator.toggle_mute() {
+                    self.effects.error = Some(error);
+                }
+            }
+            UserToolbarNativeAction::LiveEmulatorFrameAdvance => {
+                if let Err(error) = self.live_emulator.step_frame() {
+                    self.effects.error = Some(error);
+                }
+            }
             UserToolbarNativeAction::DeleteLevel => {
                 self.level_deletion_dialog.open(&self.app);
             }
@@ -1128,6 +1160,14 @@ enum UserToolbarNativeAction {
     CreateRestorePoint,
     CreateIps,
     ApplyIps,
+    GraphicsCompressionOptions,
+    EmulatorSettings,
+    ExternalEmulatorRun,
+    LiveEmulatorRun,
+    LiveEmulatorStop,
+    LiveEmulatorPause,
+    LiveEmulatorMute,
+    LiveEmulatorFrameAdvance,
     DeleteLevel,
     PlaceObject,
     PlaceSprite,
@@ -1162,6 +1202,16 @@ fn user_toolbar_native_action(name: &str) -> Option<UserToolbarNativeAction> {
         "LM_FILE_CREATE_RESTORE" => UserToolbarNativeAction::CreateRestorePoint,
         "LM_FILE_CREATE_IPS" => UserToolbarNativeAction::CreateIps,
         "LM_FILE_APPLY_IPS" => UserToolbarNativeAction::ApplyIps,
+        "LM_OPTIONS_COMPRESSION" => UserToolbarNativeAction::GraphicsCompressionOptions,
+        "LM_FILE_EMULATOR_SETTINGS" | "LM_FILE_TILE_EDITOR_SETTINGS" => {
+            UserToolbarNativeAction::EmulatorSettings
+        }
+        "LM_FILE_EMULATOR_RUN" => UserToolbarNativeAction::ExternalEmulatorRun,
+        "LM_FILE_INT_EMULATOR_RUN" => UserToolbarNativeAction::LiveEmulatorRun,
+        "LM_FILE_INT_EMULATOR_UNLOAD" => UserToolbarNativeAction::LiveEmulatorStop,
+        "LM_FILE_INT_EMULATOR_PAUSE" => UserToolbarNativeAction::LiveEmulatorPause,
+        "LM_FILE_INT_EMULATOR_MUTE" => UserToolbarNativeAction::LiveEmulatorMute,
+        "LM_FILE_INT_EMULATOR_FRAME_ADVANCE" => UserToolbarNativeAction::LiveEmulatorFrameAdvance,
         "LM_FILE_DELETE_LEVEL" => UserToolbarNativeAction::DeleteLevel,
         "LM_VIEW_ADD_OBJECT" | "LM_VIEW_OBJECT" | "LM_VIEW_ADD_OBJECT_OLD" => {
             UserToolbarNativeAction::PlaceObject
@@ -1236,6 +1286,17 @@ fn user_toolbar_native_action(name: &str) -> Option<UserToolbarNativeAction> {
         }
         _ => return None,
     })
+}
+
+fn configured_snes_emulator_tool_id(tools: &[lm_app::ExternalTool]) -> Option<String> {
+    tools
+        .iter()
+        .find(|tool| {
+            !tool.id.to_ascii_lowercase().contains("gba")
+                && (tool.uses_argument_placeholder("rom")
+                    || tool.uses_argument_placeholder("rom_8dot3"))
+        })
+        .map(|tool| tool.id.clone())
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -1488,6 +1549,42 @@ mod user_toolbar_tests {
             ),
             ("LM_FILE_CREATE_IPS", UserToolbarNativeAction::CreateIps),
             ("LM_FILE_APPLY_IPS", UserToolbarNativeAction::ApplyIps),
+            (
+                "LM_OPTIONS_COMPRESSION",
+                UserToolbarNativeAction::GraphicsCompressionOptions,
+            ),
+            (
+                "LM_FILE_EMULATOR_SETTINGS",
+                UserToolbarNativeAction::EmulatorSettings,
+            ),
+            (
+                "LM_FILE_TILE_EDITOR_SETTINGS",
+                UserToolbarNativeAction::EmulatorSettings,
+            ),
+            (
+                "LM_FILE_EMULATOR_RUN",
+                UserToolbarNativeAction::ExternalEmulatorRun,
+            ),
+            (
+                "LM_FILE_INT_EMULATOR_RUN",
+                UserToolbarNativeAction::LiveEmulatorRun,
+            ),
+            (
+                "LM_FILE_INT_EMULATOR_UNLOAD",
+                UserToolbarNativeAction::LiveEmulatorStop,
+            ),
+            (
+                "LM_FILE_INT_EMULATOR_PAUSE",
+                UserToolbarNativeAction::LiveEmulatorPause,
+            ),
+            (
+                "LM_FILE_INT_EMULATOR_MUTE",
+                UserToolbarNativeAction::LiveEmulatorMute,
+            ),
+            (
+                "LM_FILE_INT_EMULATOR_FRAME_ADVANCE",
+                UserToolbarNativeAction::LiveEmulatorFrameAdvance,
+            ),
             ("LM_VIEW_ADD_OBJECT", UserToolbarNativeAction::PlaceObject),
             ("LM_VIEW_OBJECT", UserToolbarNativeAction::PlaceObject),
             (
@@ -1768,6 +1865,33 @@ mod user_toolbar_tests {
     }
 
     #[test]
+    fn original_run_emulator_prefers_configured_snes_profile_over_gba_and_unrelated_tools() {
+        let tool = |id: &str, argument: &str| lm_app::ExternalTool {
+            id: id.into(),
+            name: id.into(),
+            executable: "emulator".into(),
+            arguments: vec![argument.into()],
+            working_directory: None,
+            subscriptions: Vec::new(),
+        };
+        let tools = [
+            tool("lunar-magic-gba-emulator", "{rom}"),
+            tool("graphics", "{graphics}"),
+            tool("snes", "{rom_8dot3}"),
+            tool("later", "{rom}"),
+        ];
+        assert_eq!(
+            configured_snes_emulator_tool_id(&tools),
+            Some("snes".into())
+        );
+        assert_eq!(
+            configured_snes_emulator_tool_id(&tools[..2]),
+            None,
+            "GBA and graphics tools cannot receive an SMW test ROM"
+        );
+    }
+
+    #[test]
     fn every_native_internal_route_belongs_to_the_authenticated_original_table() {
         let supported = lm_app::lunar_magic_363_user_toolbar_commands()
             .filter(|entry| {
@@ -1776,7 +1900,7 @@ mod user_toolbar_tests {
                     || user_toolbar_native_action(entry.name).is_some()
             })
             .collect::<Vec<_>>();
-        assert_eq!(supported.len(), 200);
+        assert_eq!(supported.len(), 209);
         assert!(
             supported
                 .iter()

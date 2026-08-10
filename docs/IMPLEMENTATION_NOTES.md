@@ -5376,6 +5376,16 @@ restores the first minimized candidate with `ShowWindow(SW_RESTORE)`, and makes 
 that has not created a window yet remains a harmless no-op. `LM_ALLOW_MULT_INSTANCES` and its
 force-all form continue to bypass this reuse path.
 
+Nine additional authenticated internal-toolbar slots now route through native application state.
+`LM_FILE_EMULATOR_RUN` selects the first configured non-GBA tool that explicitly consumes `{rom}`
+or `{rom_8dot3}` and otherwise uses the same direct chooser as the Tools menu. Emulator and tile
+editor setup both open the failure-atomic external-tool editor, and compression options open the
+existing authenticated migration dialog. The five implemented internal-emulator controls call the
+same `LiveEmulator` methods as its window: Run starts the core chooser, Unload tears down the owned
+worker, Pause toggles the recovered manual hard-pause reason, Mute preserves video/session state,
+and Frame Advance first establishes hard pause then emits exactly one step. Missing sessions report
+an ordinary application error instead of silently pretending the command ran.
+
 External-tool configuration now survives native application restarts and migrates the original
 Windows profiles once when no native or explicit startup configuration exists. Eframe storage owns
 canonical bounded `LMTOOLS1` bytes under a versioned key; decoding and publication are atomic, and

@@ -656,7 +656,7 @@ impl NativeApplication {
         });
     }
 
-    fn begin_direct_emulator_test(&mut self) {
+    pub(super) fn begin_direct_emulator_test(&mut self) {
         let Some(executable) = crate::dialogs::choose_emulator() else {
             return;
         };
@@ -693,7 +693,7 @@ impl NativeApplication {
         }
     }
 
-    fn begin_live_emulator_test(&mut self) {
+    pub(super) fn begin_live_emulator_test(&mut self) {
         let Some(core) = crate::live_emulator::choose_core() else {
             return;
         };
