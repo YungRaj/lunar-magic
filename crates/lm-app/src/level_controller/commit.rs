@@ -184,7 +184,9 @@ impl LevelController {
         project: &mut Project,
         layer2_options: Option<&LevelLayer2SaveOptions>,
     ) -> Result<(), LevelControllerError> {
-        if self.layer2 != self.baseline_layer2 {
+        if self.layer2 != self.baseline_layer2
+            || self.layer2_descriptor != self.baseline_layer2_descriptor
+        {
             let layout = self
                 .layer2_layout
                 .ok_or(LevelControllerError::Layer2Unavailable)?;
@@ -225,7 +227,9 @@ impl LevelController {
                 return Err(LevelControllerError::NonCanonicalLevelEncoding);
             }
         }
-        if self.layer2 != self.baseline_layer2 {
+        if self.layer2 != self.baseline_layer2
+            || self.layer2_descriptor != self.baseline_layer2_descriptor
+        {
             let reopened = project
                 .load_level_layer2_with_descriptor(
                     self.level.number,

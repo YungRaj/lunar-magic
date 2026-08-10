@@ -223,6 +223,17 @@ struct DirectMap16RemapForm {
     script: String,
 }
 
+#[derive(Clone, Copy, Debug)]
+struct BackgroundMap16BankForm {
+    bank: u8,
+}
+
+#[derive(Clone, Debug, Default)]
+struct BackgroundTileRemapForm {
+    script: String,
+    global_offset: i32,
+}
+
 #[derive(Clone, Debug, Default)]
 struct SpriteForm {
     header: u8,
@@ -491,6 +502,8 @@ pub(crate) struct VanillaLevelEditor {
     zoom_popup_open: bool,
     conditional_direct_map16_form: Option<ConditionalDirectMap16Form>,
     direct_map16_remap_form: Option<DirectMap16RemapForm>,
+    background_map16_bank_form: Option<BackgroundMap16BankForm>,
+    background_tile_remap_form: Option<BackgroundTileRemapForm>,
     properties_window_open: bool,
     manual_edit_dialog_open: bool,
     animation_playing: Option<bool>,
@@ -528,6 +541,7 @@ pub(crate) struct VanillaLevelEditor {
     map16_key: Option<(
         u64,
         u16,
+        u8,
         u8,
         u8,
         bool,
@@ -697,6 +711,8 @@ impl VanillaLevelEditor {
         self.show_zoom_popup(ui.ctx());
         self.show_conditional_direct_map16_dialog(ui.ctx());
         self.show_direct_map16_remap_dialog(ui.ctx());
+        self.show_background_map16_bank_dialog(ui.ctx());
+        self.show_background_tile_remap_dialog(ui.ctx());
         self.show_modeless_entity_edit_windows(ui.ctx());
         let Some(controller) = self.controller.as_ref() else {
             ui.colored_label(
@@ -989,7 +1005,10 @@ impl VanillaLevelEditor {
                                         self.layer2_word,
                                     )]);
                                 match result {
-                                    Ok(()) => self.error = None,
+                                    Ok(()) => {
+                                        self.map16_key = None;
+                                        self.error = None;
+                                    }
                                     Err(error) => self.error = Some(error.to_string()),
                                 }
                             }
@@ -2107,9 +2126,28 @@ impl VanillaLevelEditor {
             u16::try_from(controller.level().number).unwrap_or(0)
         });
         let game_runtime = self.game_preview();
+        let background_bank = self
+            .controller
+            .as_ref()
+            .and_then(LevelController::layer2_descriptor)
+            .map_or(0, lm_level::MwlLayer2Descriptor::active_bank);
+        let background_tilemap = self
+            .controller
+            .as_ref()
+            .and_then(LevelController::layer2)
+            .and_then(|layer2| match layer2 {
+                lm_level::NativeLayer2Data::Tilemap(bytes) => Some(
+                    bytes
+                        .chunks_exact(2)
+                        .map(|bytes| u16::from_le_bytes([bytes[0], bytes[1]]))
+                        .collect::<Vec<_>>(),
+                ),
+                lm_level::NativeLayer2Data::Objects(_) => None,
+            });
         let key = (
             snapshot.revision,
             level,
+            background_bank,
             object_tileset,
             sprite_tileset,
             game_runtime,
@@ -2146,7 +2184,7 @@ impl VanillaLevelEditor {
         self.foreground_texture = None;
         self.map16_summary = None;
         self.map16_error = None;
-        match crate::vanilla_map16_preview::render_with_animation_view_state(
+        match crate::vanilla_map16_preview::render_with_animation_view_state_and_background_bank(
             snapshot.rom_bytes.clone(),
             level,
             self.controller
@@ -2159,33 +2197,12 @@ impl VanillaLevelEditor {
                 silver_pow_active: self.silver_pow_active,
                 conditional: self.conditional_view_state,
             },
+            background_bank,
+            background_tilemap,
         ) {
             Ok(preview) => {
-                let background_planes = self
-                    .controller
-                    .as_ref()
-                    .and_then(|controller| controller.layer2())
-                    .and_then(|layer2| match layer2 {
-                        lm_level::NativeLayer2Data::Tilemap(bytes) => Some(
-                            bytes
-                                .chunks_exact(2)
-                                .map(|bytes| u16::from_le_bytes([bytes[0], bytes[1]]))
-                                .collect::<Vec<_>>(),
-                        ),
-                        lm_level::NativeLayer2Data::Objects(_) => None,
-                    })
-                    .map(|tilemap| {
-                        preview
-                            .animated_background_images
-                            .iter()
-                            .map(|image| {
-                                crate::vanilla_map16_preview::compose_native_map16_plane(
-                                    image, &tilemap,
-                                )
-                            })
-                            .collect::<Result<Vec<_>, _>>()
-                    })
-                    .transpose();
+                let background_planes = (!preview.animated_background_plane_images.is_empty())
+                    .then(|| preview.animated_background_plane_images.clone());
                 self.map16_summary = Some(Map16Summary {
                     foreground_files: preview.graphics_files,
                     background_files: preview.background_graphics_files,
@@ -2243,19 +2260,15 @@ impl VanillaLevelEditor {
                     ),
                     preview.animated_background_images,
                 );
-                match background_planes {
-                    Ok(Some(images)) => {
-                        self.animated_background_plane_textures = load_animation_textures(
-                            context,
-                            &format!(
-                                "vanilla-background-plane-{object_tileset:X}-{}",
-                                snapshot.revision
-                            ),
-                            images,
-                        );
-                    }
-                    Ok(None) => {}
-                    Err(error) => self.map16_error = Some(error),
+                if let Some(images) = background_planes {
+                    self.animated_background_plane_textures = load_animation_textures(
+                        context,
+                        &format!(
+                            "vanilla-background-plane-{object_tileset:X}-{}",
+                            snapshot.revision
+                        ),
+                        images,
+                    );
                 }
                 self.sprite_texture = Some(context.load_texture(
                     format!(
@@ -3212,6 +3225,40 @@ impl VanillaLevelEditor {
         self.error = None;
     }
 
+    pub(crate) fn toolbar_change_background_map16_bank(&mut self) {
+        let Some(controller) = self.controller.as_ref() else {
+            self.error = Some("background Map16 bank editing requires an open level".into());
+            return;
+        };
+        let Some(descriptor) = controller.layer2_descriptor() else {
+            self.error = Some(
+                "this background has no installed Lunar Magic descriptor for a persistent Map16 bank"
+                    .into(),
+            );
+            return;
+        };
+        self.background_map16_bank_form = Some(BackgroundMap16BankForm {
+            bank: descriptor.active_bank(),
+        });
+        self.error = None;
+    }
+
+    pub(crate) fn toolbar_remap_background_tiles(&mut self) {
+        let Some(controller) = self.controller.as_ref() else {
+            self.error = Some("background tile remapping requires an open level".into());
+            return;
+        };
+        if !matches!(
+            controller.layer2(),
+            Some(lm_level::NativeLayer2Data::Tilemap(_))
+        ) {
+            self.error = Some("the current level does not use a tilemap background".into());
+            return;
+        }
+        self.background_tile_remap_form = Some(BackgroundTileRemapForm::default());
+        self.error = None;
+    }
+
     pub(crate) fn toolbar_toggle_properties_window(&mut self) {
         self.properties_window_open = !self.properties_window_open;
     }
@@ -4105,6 +4152,133 @@ impl VanillaLevelEditor {
         }
         if open {
             self.direct_map16_remap_form = Some(form);
+        }
+    }
+
+    fn show_background_map16_bank_dialog(&mut self, context: &egui::Context) {
+        let Some(mut form) = self.background_map16_bank_form.take() else {
+            return;
+        };
+        let mut open = true;
+        let mut apply = false;
+        let mut cancel = false;
+        egui::Window::new("Change Background Map16 Bank")
+            .id(egui::Id::new("background-map16-bank-dialog"))
+            .collapsible(false)
+            .resizable(false)
+            .open(&mut open)
+            .show(context, |ui| {
+                ui.label("Select the 4-KiB Map16 bank used by this level's background.");
+                ui.horizontal(|ui| {
+                    ui.label("Bank");
+                    ui.add(
+                        egui::DragValue::new(&mut form.bank)
+                            .range(0..=7)
+                            .hexadecimal(1, false, true),
+                    );
+                    ui.label(format!(
+                        "pages ${:02X}-${:02X}",
+                        0x40 + u16::from(form.bank) * 0x10,
+                        0x4f + u16::from(form.bank) * 0x10
+                    ));
+                });
+                ui.horizontal(|ui| {
+                    apply = ui.button("OK").clicked();
+                    cancel = ui.button("Cancel").clicked();
+                });
+            });
+        if apply {
+            match self
+                .controller
+                .as_mut()
+                .ok_or_else(|| "level controller is unavailable".to_owned())
+                .and_then(|controller| {
+                    controller
+                        .set_layer2_map16_bank(form.bank)
+                        .map_err(|error| error.to_string())
+                }) {
+                Ok(()) => {
+                    self.map16_key = None;
+                    self.error = Some(format!(
+                        "Background Map16 bank changed to ${:X}.",
+                        form.bank
+                    ));
+                    open = false;
+                }
+                Err(error) => self.error = Some(error),
+            }
+        }
+        if cancel {
+            open = false;
+        }
+        if open {
+            self.background_map16_bank_form = Some(form);
+        }
+    }
+
+    fn show_background_tile_remap_dialog(&mut self, context: &egui::Context) {
+        let Some(mut form) = self.background_tile_remap_form.take() else {
+            return;
+        };
+        let mut open = true;
+        let mut apply = false;
+        let mut cancel = false;
+        egui::Window::new("Remap Background Tiles")
+            .id(egui::Id::new("background-tile-remap-dialog"))
+            .collapsible(false)
+            .default_width(500.0)
+            .open(&mut open)
+            .show(context, |ui| {
+                ui.label("Hexadecimal source,destination pairs");
+                ui.add(
+                    egui::TextEdit::multiline(&mut form.script)
+                        .desired_rows(9)
+                        .hint_text("100,25\n100-101,+25\n100-101,M125\nR100-111,M25"),
+                );
+                ui.horizontal(|ui| {
+                    ui.label("Offset to add to every background tile");
+                    ui.add(
+                        egui::DragValue::new(&mut form.global_offset)
+                            .range(-0x7fff..=0x7fff)
+                            .hexadecimal(4, true, true),
+                    );
+                });
+                ui.small(
+                    "Sources always refer to the original tilemap. Ranges, relative +/− values, \
+                     moving M destinations, and rectangular R ranges follow Lunar Magic syntax.",
+                );
+                ui.horizontal(|ui| {
+                    apply = ui.button("Apply").clicked();
+                    cancel = ui.button("Cancel").clicked();
+                });
+            });
+        if apply {
+            let result = self
+                .controller
+                .as_mut()
+                .ok_or_else(|| "level controller is unavailable".to_owned())
+                .and_then(|controller| {
+                    controller
+                        .remap_layer2_tilemap(&form.script, form.global_offset, None)
+                        .map_err(|error| error.to_string())
+                });
+            match result {
+                Ok(changed) => {
+                    self.map16_key = None;
+                    self.error = Some(format!(
+                        "Remapped {changed} background tile{}.",
+                        if changed == 1 { "" } else { "s" }
+                    ));
+                    open = false;
+                }
+                Err(error) => self.error = Some(error),
+            }
+        }
+        if cancel {
+            open = false;
+        }
+        if open {
+            self.background_tile_remap_form = Some(form);
         }
     }
 
@@ -6422,6 +6596,7 @@ impl VanillaLevelEditor {
         match controller.apply_layer2_tilemap_words(&[(index, self.layer2_word)]) {
             Ok(()) => {
                 self.selected_layer2_tile = index;
+                self.map16_key = None;
                 self.error = None;
             }
             Err(error) => self.error = Some(error.to_string()),
@@ -14462,25 +14637,31 @@ fn prepare_commit(
     let layout = lm_profile::smw_us_v1_vanilla_level_layout();
     let layer2_layout =
         lm_profile::smw_us_v1_layer2_layout(&image).map_err(|error| error.to_string())?;
+    let mut protected = vec![
+        ProtectedRange(
+            layout.layer1.offset
+                ..layout.layer1.offset + layout.layer1.entries * layout.layer1.stride,
+        ),
+        ProtectedRange(
+            snapshot.identity.internal_header_offset
+                ..snapshot.identity.internal_header_offset + 0x40,
+        ),
+        ProtectedRange(
+            layer2_layout.pointers.offset
+                ..layer2_layout.pointers.offset
+                    + layer2_layout.pointers.entries * layer2_layout.pointers.stride,
+        ),
+    ];
+    if let Some(descriptors) = layer2_layout.descriptor_table {
+        protected.push(ProtectedRange(
+            descriptors.offset..descriptors.offset + descriptors.entries * descriptors.stride,
+        ));
+    }
     let allocation = AllocationPolicy {
         search: logical_len.min(0x80_000)..logical_len,
         bank_size: Some(0x8000),
         fill_bytes: fill_bytes.clone(),
-        protected: vec![
-            ProtectedRange(
-                layout.layer1.offset
-                    ..layout.layer1.offset + layout.layer1.entries * layout.layer1.stride,
-            ),
-            ProtectedRange(
-                snapshot.identity.internal_header_offset
-                    ..snapshot.identity.internal_header_offset + 0x40,
-            ),
-            ProtectedRange(
-                layer2_layout.pointers.offset
-                    ..layer2_layout.pointers.offset
-                        + layer2_layout.pointers.entries * layer2_layout.pointers.stride,
-            ),
-        ],
+        protected,
     };
     let sprite_bank = pristine_sprite_bank_range(&image, layout)?;
     let level_options = LevelSaveOptions {

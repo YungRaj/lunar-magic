@@ -13,6 +13,7 @@ pub(crate) struct VanillaMap16Preview {
     pub(crate) block_contents_images: Vec<egui::ColorImage>,
     pub(crate) animated_layer2_images: Vec<egui::ColorImage>,
     pub(crate) animated_background_images: Vec<egui::ColorImage>,
+    pub(crate) animated_background_plane_images: Vec<egui::ColorImage>,
     pub(crate) graphics_files: [usize; 4],
     pub(crate) background_graphics_files: [usize; 4],
     pub(crate) sprite_image: egui::ColorImage,
@@ -86,6 +87,62 @@ pub(crate) fn compose_native_map16_plane(
             }
             let source_x = tile % TILES * TILE;
             let source_y = tile / TILES * TILE;
+            let x_flip = word & 0x4000 != 0;
+            let y_flip = word & 0x8000 != 0;
+            for target_y in 0..TILE {
+                let source_pixel_y = if y_flip {
+                    TILE - 1 - target_y
+                } else {
+                    target_y
+                };
+                for target_x in 0..TILE {
+                    let source_pixel_x = if x_flip {
+                        TILE - 1 - target_x
+                    } else {
+                        target_x
+                    };
+                    image.pixels[(y * TILE + target_y) * EXTENT + x * TILE + target_x] = atlas
+                        .pixels
+                        [(source_y + source_pixel_y) * atlas.size[0] + source_x + source_pixel_x];
+                }
+            }
+        }
+    }
+    Ok(image)
+}
+
+pub(crate) fn compose_native_map16_bank_plane(
+    atlas: &egui::ColorImage,
+    tilemap: &[u16],
+) -> Result<egui::ColorImage, String> {
+    const TILE: usize = 16;
+    const COLUMNS: usize = 32;
+    const DEFINITIONS: usize = 0x1000;
+    const EXTENT: usize = TILE * COLUMNS;
+    if atlas.size != [EXTENT, DEFINITIONS / COLUMNS * TILE] {
+        return Err(format!(
+            "background Map16 bank atlas is {}×{} instead of {EXTENT}×{}",
+            atlas.size[0],
+            atlas.size[1],
+            DEFINITIONS / COLUMNS * TILE
+        ));
+    }
+    if tilemap.len() != COLUMNS * COLUMNS {
+        return Err(format!(
+            "native Layer 2 tilemap has {} words instead of {}",
+            tilemap.len(),
+            COLUMNS * COLUMNS
+        ));
+    }
+    let mut image = egui::ColorImage::new([EXTENT, EXTENT], egui::Color32::TRANSPARENT);
+    for y in 0..COLUMNS {
+        for x in 0..COLUMNS {
+            let source_index = lm_level::native_layer2_tilemap_index(x, y)
+                .expect("bounded native Layer 2 coordinate");
+            let word = tilemap[source_index];
+            let definition = usize::from(word & 0x0fff);
+            let source_x = definition % COLUMNS * TILE;
+            let source_y = definition / COLUMNS * TILE;
             let x_flip = word & 0x4000 != 0;
             let y_flip = word & 0x8000 != 0;
             for target_y in 0..TILE {
@@ -573,6 +630,28 @@ pub(crate) fn render_with_animation_view_state(
     special_world_passed: bool,
     animation_view_state: VanillaAnimationViewState,
 ) -> Result<VanillaMap16Preview, String> {
+    render_with_animation_view_state_and_background_bank(
+        rom_bytes,
+        level,
+        header,
+        game_runtime,
+        special_world_passed,
+        animation_view_state,
+        0,
+        None,
+    )
+}
+
+pub(crate) fn render_with_animation_view_state_and_background_bank(
+    rom_bytes: Vec<u8>,
+    level: u16,
+    header: LegacyLevelHeader,
+    game_runtime: bool,
+    special_world_passed: bool,
+    animation_view_state: VanillaAnimationViewState,
+    background_bank: u8,
+    background_tilemap: Option<Vec<u16>>,
+) -> Result<VanillaMap16Preview, String> {
     render_with_editor_palette_phase_and_animation_view_state(
         rom_bytes,
         level,
@@ -581,6 +660,8 @@ pub(crate) fn render_with_animation_view_state(
         special_world_passed,
         requested_vanilla_editor_palette_phase(),
         animation_view_state,
+        background_bank,
+        background_tilemap,
     )
 }
 
@@ -600,6 +681,8 @@ pub(crate) fn render_with_editor_palette_phase(
         special_world_passed,
         editor_palette_phase,
         VanillaAnimationViewState::default(),
+        0,
+        None,
     )
 }
 
@@ -612,10 +695,17 @@ fn render_with_editor_palette_phase_and_animation_view_state(
     special_world_passed: bool,
     editor_palette_phase: usize,
     animation_view_state: VanillaAnimationViewState,
+    background_bank: u8,
+    background_tilemap: Option<Vec<u16>>,
 ) -> Result<VanillaMap16Preview, String> {
     if editor_palette_phase >= 8 {
         return Err(format!(
             "vanilla editor palette phase {editor_palette_phase} is outside 0..8"
+        ));
+    }
+    if background_bank >= 8 {
+        return Err(format!(
+            "background Map16 bank {background_bank} is outside 0..8"
         ));
     }
     let rom = RomImage::from_bytes(rom_bytes).map_err(|error| error.to_string())?;
@@ -634,6 +724,26 @@ fn render_with_editor_palette_phase_and_animation_view_state(
         .map_err(|error| error.to_string())?;
     let background_map16 = lm_profile::load_smw_us_v1_background_map16(&project.rom)
         .map_err(|error| error.to_string())?;
+    let needs_complete_background = background_tilemap.as_deref().is_some_and(|tilemap| {
+        background_bank != 0 || tilemap.iter().any(|word| word & 0x0fff >= 0x200)
+    });
+    let background_bank_map16 = needs_complete_background
+        .then(|| {
+            let complete = lm_profile::load_smw_us_v1_secondary_map16(&project)
+                .map_err(|error| error.to_string())?;
+            let bank_words = complete
+                .definitions
+                .chunks_exact(0x4000)
+                .nth(usize::from(background_bank))
+                .ok_or_else(|| format!("background Map16 bank {background_bank} is unavailable"))?;
+            Ok::<_, String>(
+                bank_words
+                    .iter()
+                    .flat_map(|word| word.to_le_bytes())
+                    .collect::<Vec<_>>(),
+            )
+        })
+        .transpose()?;
     let palette_header = if game_runtime {
         game_palette_header(level, header)
     } else {
@@ -667,6 +777,7 @@ fn render_with_editor_palette_phase_and_animation_view_state(
     let mut block_contents_images = Vec::with_capacity(8);
     let mut animated_layer2_images = Vec::with_capacity(32);
     let mut animated_background_images = Vec::with_capacity(8);
+    let mut animated_background_plane_images = Vec::with_capacity(8);
     for phase in 0..8 {
         let mut foreground_graphics = base_foreground_graphics.clone();
         apply_vanilla_common_animation_frame_with_view_state(
@@ -708,6 +819,23 @@ fn render_with_editor_palette_phase_and_animation_view_state(
             render_map16_definition_atlas(&background_map16, &background_graphics, &palette);
         if lm_profile::smw_us_v1_level_mode(header.level_mode()).background_half_color {
             apply_black_half_color(&mut background_image);
+        }
+        if let Some(tilemap) = background_tilemap.as_deref() {
+            let plane = if let Some(definitions) = background_bank_map16.as_deref() {
+                let mut plane = render_background_map16_bank_plane(
+                    definitions,
+                    &background_graphics,
+                    &palette,
+                    tilemap,
+                )?;
+                if lm_profile::smw_us_v1_level_mode(header.level_mode()).background_half_color {
+                    apply_black_half_color(&mut plane);
+                }
+                plane
+            } else {
+                compose_native_map16_plane(&background_image, tilemap)?
+            };
+            animated_background_plane_images.push(plane);
         }
         animated_background_images.push(background_image);
         animated_foreground_graphics.push(foreground_graphics);
@@ -770,6 +898,7 @@ fn render_with_editor_palette_phase_and_animation_view_state(
         block_contents_images,
         animated_layer2_images,
         animated_background_images,
+        animated_background_plane_images,
         foreground_image,
         foreground_tiles: foreground_graphics,
         layer3_tiles,
@@ -1585,6 +1714,71 @@ fn render_map16_definition_atlas(
         palette,
         VanillaAnimationViewState::default(),
     )
+}
+
+fn render_background_map16_bank_plane(
+    definitions: &[u8],
+    graphics: &[IndexedTile],
+    palette: &Palette,
+    tilemap: &[u16],
+) -> Result<egui::ColorImage, String> {
+    const TILE: usize = 16;
+    const COLUMNS: usize = 32;
+    const EXTENT: usize = COLUMNS * TILE;
+    if definitions.len() != 0x1000 * lm_profile::SMW_US_V1_MAP16_TILE_BYTES {
+        return Err(format!(
+            "background Map16 bank has {} bytes instead of {}",
+            definitions.len(),
+            0x1000 * lm_profile::SMW_US_V1_MAP16_TILE_BYTES
+        ));
+    }
+    if tilemap.len() != COLUMNS * COLUMNS {
+        return Err(format!(
+            "native Layer 2 tilemap has {} words instead of {}",
+            tilemap.len(),
+            COLUMNS * COLUMNS
+        ));
+    }
+    let mut rgba = vec![0; EXTENT * EXTENT * 4];
+    for y in 0..COLUMNS {
+        for x in 0..COLUMNS {
+            let source_index = lm_level::native_layer2_tilemap_index(x, y)
+                .expect("bounded native Layer 2 coordinate");
+            let tilemap_word = tilemap[source_index];
+            let definition = usize::from(tilemap_word & 0x0fff);
+            let tile_x_flip = tilemap_word & 0x4000 != 0;
+            let tile_y_flip = tilemap_word & 0x8000 != 0;
+            for quadrant in 0..4 {
+                let word_offset =
+                    definition * lm_profile::SMW_US_V1_MAP16_TILE_BYTES + quadrant * 2;
+                let word =
+                    u16::from_le_bytes([definitions[word_offset], definitions[word_offset + 1]]);
+                let (mut quadrant_x, mut quadrant_y) = map16_quadrant_offset(quadrant);
+                if tile_x_flip {
+                    quadrant_x = TILE - 8 - quadrant_x;
+                }
+                if tile_y_flip {
+                    quadrant_y = TILE - 8 - quadrant_y;
+                }
+                draw_subtile(
+                    &mut rgba,
+                    EXTENT,
+                    (x * TILE + quadrant_x, y * TILE + quadrant_y),
+                    graphics.get(usize::from(word & 0x03ff)),
+                    palette,
+                    usize::from((word >> 10) & 7),
+                    (
+                        (word & 0x4000 != 0) ^ tile_x_flip,
+                        (word & 0x8000 != 0) ^ tile_y_flip,
+                    ),
+                );
+            }
+        }
+    }
+    Ok(egui::ColorImage::from_rgba_unmultiplied(
+        [EXTENT, EXTENT],
+        &rgba,
+    ))
 }
 
 fn render_map16_definition_atlas_with_view_state(
@@ -2562,6 +2756,50 @@ mod tests {
         assert!(compose_native_map16_plane(&atlas, &[0; 1024]).is_err());
         let atlas = egui::ColorImage::new([512, 256], egui::Color32::TRANSPARENT);
         assert!(compose_native_map16_plane(&atlas, &[0; 1023]).is_err());
+    }
+
+    #[test]
+    fn native_background_bank_plane_renders_all_4096_indexes_and_flips() {
+        let mut atlas = egui::ColorImage::new([512, 2048], egui::Color32::TRANSPARENT);
+        let definition = 0x0fedusize;
+        let source_x = definition % 32 * 16;
+        let source_y = definition / 32 * 16;
+        atlas.pixels[source_y * 512 + source_x] = egui::Color32::RED;
+        atlas.pixels[(source_y + 15) * 512 + source_x + 15] = egui::Color32::BLUE;
+        let mut tilemap = vec![0; 1024];
+        tilemap[0] = definition as u16;
+        tilemap[1] = definition as u16 | 0xc000;
+        let plane = compose_native_map16_bank_plane(&atlas, &tilemap).unwrap();
+        assert_eq!(plane.pixels[0], egui::Color32::RED);
+        assert_eq!(plane.pixels[16], egui::Color32::BLUE);
+    }
+
+    #[test]
+    fn active_background_bank_raster_reads_high_definition_indexes_directly() {
+        let mut definitions = vec![0; 0x1000 * 8];
+        let definition = 0x0fedusize;
+        for quadrant in 0..4 {
+            let offset = definition * 8 + quadrant * 2;
+            definitions[offset..offset + 2].copy_from_slice(&1u16.to_le_bytes());
+        }
+        let blank = IndexedTile::new([0; IndexedTile::PIXEL_COUNT]);
+        let solid = IndexedTile::new([1; IndexedTile::PIXEL_COUNT]);
+        let mut colors = vec![lm_graphics::Bgr555(0); 256];
+        colors[1] = lm_graphics::Bgr555::from_rgb8(lm_graphics::Rgb8 {
+            red: 255,
+            green: 0,
+            blue: 0,
+        });
+        let palette = Palette { colors };
+        let mut tilemap = vec![0; 1024];
+        tilemap[0] = definition as u16;
+        let plane =
+            render_background_map16_bank_plane(&definitions, &[blank, solid], &palette, &tilemap)
+                .unwrap();
+        assert_eq!(plane.size, [512, 512]);
+        assert_eq!(plane.pixels[0], egui::Color32::RED);
+        assert_eq!(plane.pixels[15 * 512 + 15], egui::Color32::RED);
+        assert_eq!(plane.pixels[16], egui::Color32::TRANSPARENT);
     }
 
     #[test]

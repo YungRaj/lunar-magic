@@ -2,8 +2,9 @@ use crate::{ControllerSnapshot, EditorMode};
 use lm_level::{
     CustomMusicError, CustomMusicTrack, CustomTimeError, CustomTimeSettings,
     DirectMap16RemapProgram, HeaderValueError, LegacyHeaderEdit, LevelEditError,
-    MwlLayer2Descriptor, NATIVE_LAYER2_TILEMAP_LEN, NativeLayer2Data, NativeSpriteRecordFields,
-    ObjectEdit, ObjectEditError, ObjectFieldError, ObjectStreamError, SpriteRecord, SpriteToken,
+    MwlLayer2Descriptor, MwlLayer2DescriptorError, NATIVE_LAYER2_TILEMAP_LEN, NativeLayer2Data,
+    NativeLayer2RemapError, NativeLayer2RemapProgram, NativeSpriteRecordFields, ObjectEdit,
+    ObjectEditError, ObjectFieldError, ObjectStreamError, SpriteRecord, SpriteToken,
 };
 use lm_project::{
     LevelLayer2IoError, LevelLayer2RomLayout, LevelLoadError, LevelRomLayout, LevelSaveError,
@@ -146,6 +147,10 @@ pub enum LevelControllerError {
     DirectMap16(ObjectFieldError),
     Layer2TileIndex(usize),
     Layer2TileDuplicate(usize),
+    Layer2DescriptorUnavailable,
+    Layer2Descriptor(MwlLayer2DescriptorError),
+    Layer2Remap(NativeLayer2RemapError),
+    Layer2RemapRequiresInstalledBank(u8),
     NonCanonicalLayer2Encoding,
 }
 
@@ -382,6 +387,11 @@ impl LevelController {
         self.layer2.as_ref()
     }
 
+    #[must_use]
+    pub const fn layer2_descriptor(&self) -> Option<MwlLayer2Descriptor> {
+        self.layer2_descriptor
+    }
+
     /// Returns the reserved source mode that Lunar Magic compatibility normalized to mode `$00`.
     #[must_use]
     pub const fn normalized_reserved_level_mode(&self) -> Option<u8> {
@@ -408,6 +418,7 @@ impl LevelController {
     #[must_use]
     pub fn layer2_is_modified(&self) -> bool {
         self.layer2 != self.baseline_layer2
+            || self.layer2_descriptor != self.baseline_layer2_descriptor
     }
 
     /// Returns the canonical original and currently staged native sprite-stream lengths.
@@ -609,6 +620,81 @@ impl LevelController {
         self.layer2 = Some(staged);
         self.finish_edit(previous);
         Ok(())
+    }
+
+    /// Changes the single Map16 definition bank used by a compressed Layer 2 background.
+    /// Every unrelated descriptor bit is retained, matching Lunar Magic's bank dialog.
+    pub fn set_layer2_map16_bank(&mut self, bank: u8) -> Result<(), LevelControllerError> {
+        if !matches!(self.layer2, Some(NativeLayer2Data::Tilemap(_))) {
+            return Err(if self.layer2.is_none() {
+                LevelControllerError::Layer2Unavailable
+            } else {
+                LevelControllerError::Layer2StorageMismatch {
+                    expected: "tilemap",
+                }
+            });
+        }
+        let previous = self.state();
+        let descriptor = self
+            .layer2_descriptor
+            .ok_or(LevelControllerError::Layer2DescriptorUnavailable)?;
+        self.layer2_descriptor = Some(
+            descriptor
+                .with_active_bank(bank)
+                .map_err(LevelControllerError::Layer2Descriptor)?,
+        );
+        self.finish_edit(previous);
+        Ok(())
+    }
+
+    /// Applies Lunar Magic's complete background-tile remap language as one undoable operation.
+    pub fn remap_layer2_tilemap(
+        &mut self,
+        script: &str,
+        global_offset: i32,
+        selection: Option<&[usize]>,
+    ) -> Result<usize, LevelControllerError> {
+        let previous = self.state();
+        let mut next = previous.clone();
+        let layer2 = next
+            .layer2
+            .as_mut()
+            .ok_or(LevelControllerError::Layer2Unavailable)?;
+        let NativeLayer2Data::Tilemap(bytes) = layer2 else {
+            return Err(LevelControllerError::Layer2StorageMismatch {
+                expected: "tilemap",
+            });
+        };
+        let program =
+            NativeLayer2RemapProgram::parse(script).map_err(LevelControllerError::Layer2Remap)?;
+        let active_bank = next
+            .layer2_descriptor
+            .map_or(0, MwlLayer2Descriptor::active_bank);
+        let result = program
+            .apply(bytes, active_bank, global_offset, selection)
+            .map_err(LevelControllerError::Layer2Remap)?;
+        if result.active_bank != active_bank && next.layer2_descriptor.is_none() {
+            return Err(LevelControllerError::Layer2RemapRequiresInstalledBank(
+                result.active_bank,
+            ));
+        }
+        if let Some(descriptor) = next.layer2_descriptor {
+            next.layer2_descriptor = Some(
+                descriptor
+                    .after_native_remap(result.active_bank)
+                    .map_err(LevelControllerError::Layer2Descriptor)?,
+            );
+        }
+        let changed = result.edits.len();
+        for (index, value) in result.edits {
+            let offset = index * 2;
+            bytes[offset..offset + 2].copy_from_slice(&value.to_le_bytes());
+        }
+        if next != previous {
+            self.restore(next);
+            self.finish_edit(previous);
+        }
+        Ok(changed)
     }
 
     fn state(&self) -> LevelControllerState {

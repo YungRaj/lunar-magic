@@ -5610,3 +5610,21 @@ The original internal-command table gives `LM_OPTIONS_TRANSLUCENT` and
 `LM_VIEW_TRANSLUCENT` the identical `$2415` command ID. Both names now select the same native
 half-opacity editor-overlay state and renderer input. This raises authenticated native command
 coverage to 255 of 317 named table slots, leaving 62 pending.
+
+## Background Map16 bank and tile-remap commands (`$252E/$252F`)
+
+The bundled 3.63 Help establishes that one background selects exactly one of eight 4-KiB Map16
+banks and that a remap may change that bank when a destination crosses a bank boundary. The native
+level editor now routes both authenticated commands to separate original-shaped dialogs. Direct
+bank changes replace only descriptor bits 4-6. Tile remapping reuses the recovered 32,768-entry
+pre-operation translation table and supports the complete documented global-offset, range,
+relative, moving, and rectangle grammar as one failure-atomic history operation.
+
+This exposed and fixed a persistence hole: descriptor-only changes previously made the controller
+dirty but did not enter Layer 2 save or semantic-reopen verification. The commit path now includes
+data or descriptor changes, while pristine layouts still reject an unpersistable cross-bank edit
+before mutation. The built-in renderer now loads the complete installed secondary Map16 namespace,
+selects the staged bank, rasterizes all 4,096 definitions, and invalidates its composed background
+after direct painting, remapping, or bank changes. Focused tests cover descriptor-only save/reopen,
+Undo/Redo, cross-bank remapping, high-index composition, flips, and authenticated routing.
+Authenticated native command coverage is now 257 of 317 named table slots, leaving 60 pending.

@@ -4,8 +4,8 @@ use lm_level::{
     CustomTimeSettings, Layer1VerticalScrollMode, ObjectRecord, SpriteLengthTable, SpriteRecord,
 };
 use lm_project::{
-    LevelLayer2RomLayout, LevelLayer2SaveOptions, LevelLayer2TilemapEncoding, LevelPointerTable,
-    LevelSaveOptions, RatsOwnershipManifest,
+    LevelLayer2DescriptorTable, LevelLayer2RomLayout, LevelLayer2SaveOptions,
+    LevelLayer2TilemapEncoding, LevelPointerTable, LevelSaveOptions, RatsOwnershipManifest,
 };
 use lm_rats::{AllocationPolicy, ProtectedRange};
 
@@ -93,6 +93,17 @@ fn layer2_layout() -> LevelLayer2RomLayout {
     }
 }
 
+fn installed_layer2_layout() -> LevelLayer2RomLayout {
+    LevelLayer2RomLayout {
+        descriptor_table: Some(LevelLayer2DescriptorTable {
+            offset: 0xe00,
+            entries: 0x200,
+            stride: 1,
+        }),
+        ..layer2_layout()
+    }
+}
+
 fn layer2_test_rom() -> Vec<u8> {
     let mut bytes = test_rom();
     bytes.resize(0x1_0000, 0xff);
@@ -104,6 +115,14 @@ fn layer2_test_rom() -> Vec<u8> {
     bytes[pointer..pointer + 3].copy_from_slice(&snes[..3]);
     let encoded = lm_codec::encode_terminated_rle(&vec![0; NATIVE_LAYER2_TILEMAP_LEN]);
     bytes[0x1400..0x1400 + encoded.len()].copy_from_slice(&encoded);
+    let checksum = lm_rom::compute_snes_checksum(&bytes, 0x7fdc).unwrap();
+    bytes[0x7fdc..0x7fe0].copy_from_slice(&checksum.encoded());
+    bytes
+}
+
+fn installed_layer2_test_rom() -> Vec<u8> {
+    let mut bytes = layer2_test_rom();
+    bytes[0xe00 + 0x105] = 0x06;
     let checksum = lm_rom::compute_snes_checksum(&bytes, 0x7fdc).unwrap();
     bytes[0x7fdc..0x7fe0].copy_from_slice(&checksum.encoded());
     bytes
@@ -483,6 +502,66 @@ fn layer2_object_edits_share_history_and_commit_with_the_level() {
         panic!("expected object-backed Layer 2");
     };
     assert_eq!(objects.objects.records[0].encoded(), &[6, 5, 4]);
+}
+
+#[test]
+fn background_bank_and_remap_share_undo_and_persist_descriptor_only_changes() {
+    let mut app = AppState::default();
+    app.load_rom(installed_layer2_test_rom()).unwrap();
+    let mut controller = LevelController::decode_with_layer2(
+        &app.controller_snapshot().unwrap(),
+        layout(),
+        Some(installed_layer2_layout()),
+        &SpriteLengthTable::standard(),
+    )
+    .unwrap();
+    assert_eq!(controller.layer2_descriptor().unwrap().raw(), 0x06);
+
+    controller.set_layer2_map16_bank(3).unwrap();
+    assert_eq!(controller.layer2_descriptor().unwrap().raw(), 0x36);
+    assert!(controller.layer2_is_modified());
+    assert!(controller.undo());
+    assert_eq!(controller.layer2_descriptor().unwrap().raw(), 0x06);
+    assert!(controller.redo());
+
+    let layer2_options = LevelLayer2SaveOptions {
+        allocation: options().layer1_allocation,
+        previous_block: None,
+        reuse_identical: true,
+        erase_fill: 0xff,
+    };
+    let mut descriptor_options = layer2_options;
+    descriptor_options
+        .allocation
+        .protected
+        .push(ProtectedRange(0xe00..0x1000));
+    let prepared = controller
+        .prepare_commit_with_layer2(
+            "Change background Map16 bank",
+            &options(),
+            &descriptor_options,
+            false,
+        )
+        .unwrap();
+    app.dispatch(prepared.into_command()).unwrap();
+    let reopened = LevelController::decode_with_layer2(
+        &app.controller_snapshot().unwrap(),
+        layout(),
+        Some(installed_layer2_layout()),
+        &SpriteLengthTable::standard(),
+    )
+    .unwrap();
+    assert_eq!(reopened.layer2_descriptor().unwrap().raw(), 0x36);
+
+    let changed = controller
+        .remap_layer2_tilemap("B000,C001", 0, Some(&[0]))
+        .unwrap();
+    assert_eq!(changed, 1);
+    assert_eq!(controller.layer2_descriptor().unwrap().raw(), 0x46);
+    let NativeLayer2Data::Tilemap(bytes) = controller.layer2().unwrap() else {
+        panic!("expected tilemap-backed Layer 2");
+    };
+    assert_eq!(&bytes[..2], &[1, 0]);
 }
 
 #[test]

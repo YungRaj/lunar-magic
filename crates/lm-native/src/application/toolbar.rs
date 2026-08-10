@@ -574,6 +574,12 @@ impl NativeApplication {
             UserToolbarNativeAction::RemapDirectMap16 => {
                 self.vanilla_level_editor.toolbar_remap_direct_map16();
             }
+            UserToolbarNativeAction::ChangeBackgroundMap16Bank => self
+                .vanilla_level_editor
+                .toolbar_change_background_map16_bank(),
+            UserToolbarNativeAction::RemapBackgroundTiles => {
+                self.vanilla_level_editor.toolbar_remap_background_tiles();
+            }
             UserToolbarNativeAction::TogglePropertiesWindow => {
                 self.vanilla_level_editor.toolbar_toggle_properties_window()
             }
@@ -1365,6 +1371,8 @@ enum UserToolbarNativeAction {
     OverlapZOrder(crate::vanilla_level_editor::ZOrderTraversal),
     ConditionalDirectMap16,
     RemapDirectMap16,
+    ChangeBackgroundMap16Bank,
+    RemapBackgroundTiles,
     TogglePropertiesWindow,
     OpenManualEditDialog,
     ExpandRom(RomExpansionPreset),
@@ -1470,6 +1478,8 @@ fn user_toolbar_native_action(name: &str) -> Option<UserToolbarNativeAction> {
         ),
         "LM_EDIT_CDM16" => UserToolbarNativeAction::ConditionalDirectMap16,
         "LM_EDIT_REMAP_DM16" => UserToolbarNativeAction::RemapDirectMap16,
+        "LM_LEVEL_BG_MAP16" => UserToolbarNativeAction::ChangeBackgroundMap16Bank,
+        "LM_LEVEL_BG_OFFSET" => UserToolbarNativeAction::RemapBackgroundTiles,
         "LM_EDIT_PROPERTIES" => UserToolbarNativeAction::TogglePropertiesWindow,
         "LM_EDIT_EDIT_MANUAL" => UserToolbarNativeAction::OpenManualEditDialog,
         "LM_FILE_EXPAND_ROM2" => UserToolbarNativeAction::ExpandRom(RomExpansionPreset::LoRom2MiB),
@@ -1980,6 +1990,14 @@ mod user_toolbar_tests {
                 UserToolbarNativeAction::RemapDirectMap16,
             ),
             (
+                "LM_LEVEL_BG_MAP16",
+                UserToolbarNativeAction::ChangeBackgroundMap16Bank,
+            ),
+            (
+                "LM_LEVEL_BG_OFFSET",
+                UserToolbarNativeAction::RemapBackgroundTiles,
+            ),
+            (
                 "LM_EDIT_PROPERTIES",
                 UserToolbarNativeAction::TogglePropertiesWindow,
             ),
@@ -2343,7 +2361,7 @@ mod user_toolbar_tests {
                     || user_toolbar_native_action(entry.name).is_some()
             })
             .collect::<Vec<_>>();
-        assert_eq!(supported.len(), 255);
+        assert_eq!(supported.len(), 257);
         assert!(
             supported
                 .iter()
@@ -2382,7 +2400,7 @@ mod user_toolbar_tests {
                     && user_toolbar_native_action(entry.name).is_none()
             })
             .collect::<Vec<_>>();
-        assert_eq!(unsupported.len(), 62);
+        assert_eq!(unsupported.len(), 60);
         if std::env::var_os("LM_DIAGNOSTIC_UNSUPPORTED_TOOLBAR_COMMANDS").is_some() {
             for entry in unsupported {
                 eprintln!(

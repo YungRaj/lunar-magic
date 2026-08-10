@@ -929,3 +929,13 @@ both `LM_VIEW_TRANSLUCENT` and `LM_OPTIONS_TRANSLUCENT` the same original ID `$2
 name now routes to the already verified level-overlay translucency state rather than being reported
 unsupported. The authenticated partition is now **255 routed / 62 pending**. The aggregate remains
 59/65 because the configuration row is still Partial.
+
+Toolbar coverage update (2026-08-10, background bank/remap): `LM_LEVEL_BG_MAP16` `$252E` now
+opens the original single-bank `$0..$7` editor and preserves every unrelated installed Layer 2
+descriptor bit. `LM_LEVEL_BG_OFFSET` `$252F` now opens the complete background remapper with the
+documented global signed offset plus single/range, relative `+`/`-`, moving `M`, and rectangular
+`R` syntax. Both operations share staged Undo, commit/reopen, and checksum repair. Descriptor-only
+bank edits are no longer omitted from Layer 2 persistence, and the live canvas now composes all
+4,096 indexes from the staged active background bank instead of clipping indexes above `$1FF`.
+The authenticated partition is now **257 routed / 60 pending**. The aggregate remains 59/65
+because the configuration row is still Partial.
