@@ -369,6 +369,7 @@ pub(crate) struct VanillaLevelEditor {
     sprite_catalog_filter: String,
     custom_sprite_catalog_filter: String,
     sprite_catalog_preview_icons: Option<bool>,
+    sprite_catalog_compatible_only: Option<bool>,
     sprite_catalog_vertical_layout: Option<bool>,
     canvas_zoom_percent: Option<u16>,
     canvas_previous_zoom_percent: Option<u16>,
@@ -6135,14 +6136,16 @@ impl VanillaLevelEditor {
         kind: OriginalToolbarImages,
         objects: bool,
     ) {
-        let (mut previews, mut vertical) = if objects {
+        let (mut previews, mut compatible_only, mut vertical) = if objects {
             (
                 self.object_catalog_preview_icons.unwrap_or(true),
+                false,
                 self.object_catalog_vertical_layout.unwrap_or(false),
             )
         } else {
             (
                 self.sprite_catalog_preview_icons.unwrap_or(true),
+                self.sprite_catalog_compatible_only.unwrap_or(false),
                 self.sprite_catalog_vertical_layout.unwrap_or(false),
             )
         };
@@ -6158,6 +6161,19 @@ impl VanillaLevelEditor {
                 .clicked()
             {
                 previews = !previews;
+            }
+            if !objects
+                && images
+                    .original_catalog_button(
+                        ui,
+                        kind,
+                        OriginalCatalogAction::CompatibleGraphicsOnly,
+                        "Hide sprites without the correct SP3/SP4 graphics",
+                        compatible_only,
+                    )
+                    .clicked()
+            {
+                compatible_only = !compatible_only;
             }
             if images
                 .original_catalog_button(
@@ -6177,6 +6193,7 @@ impl VanillaLevelEditor {
             self.object_catalog_vertical_layout = Some(vertical);
         } else {
             self.sprite_catalog_preview_icons = Some(previews);
+            self.sprite_catalog_compatible_only = Some(compatible_only);
             self.sprite_catalog_vertical_layout = Some(vertical);
         }
     }
@@ -6960,7 +6977,12 @@ impl VanillaLevelEditor {
                 ui.label(
                     "Choose a recovered standard-sprite preview, then click its destination tile.",
                 );
-                let ids = sprite_catalog_ids(&self.sprite_catalog_filter);
+                let ids = filter_standard_sprite_catalog_for_graphics(
+                    sprite_catalog_ids(&self.sprite_catalog_filter),
+                    self.sprite_catalog_compatible_only.unwrap_or(false),
+                    self.form.sprite_tileset,
+                    self.map16_summary.map(|summary| summary.sprite_files),
+                );
                 let texture = self.sprite_texture.clone();
                 let animated_texture = self
                     .animated_sprite_textures
@@ -8702,6 +8724,24 @@ fn sprite_catalog_ids(filter: &str) -> Vec<u8> {
     (0..=STANDARD_SPRITE_MAX)
         .filter(|id| filter.is_empty() || format!("{id:02X}").contains(&filter))
         .collect()
+}
+
+fn filter_standard_sprite_catalog_for_graphics(
+    mut ids: Vec<u8>,
+    enabled: bool,
+    graphics_mode: u8,
+    sprite_files: Option<[usize; 4]>,
+) -> Vec<u8> {
+    if enabled && let Some(sprite_files) = sprite_files {
+        ids.retain(|sprite| {
+            crate::catalog_graphics_compatibility::standard_sprite_is_graphics_compatible(
+                *sprite,
+                graphics_mode,
+                sprite_files,
+            )
+        });
+    }
+    ids
 }
 
 fn custom_sprite_catalog_entries<'a>(
@@ -12624,6 +12664,7 @@ mod tests {
         assert!(editor.object_catalog_preview_icons.unwrap_or(true));
         assert!(!editor.object_catalog_vertical_layout.unwrap_or(false));
         assert!(editor.sprite_catalog_preview_icons.unwrap_or(true));
+        assert!(!editor.sprite_catalog_compatible_only.unwrap_or(false));
         assert!(!editor.sprite_catalog_vertical_layout.unwrap_or(false));
 
         editor.object_catalog_preview_icons = Some(false);
@@ -12631,7 +12672,25 @@ mod tests {
         assert!(!editor.object_catalog_preview_icons.unwrap_or(true));
         assert!(editor.object_catalog_vertical_layout.unwrap_or(false));
         assert!(editor.sprite_catalog_preview_icons.unwrap_or(true));
+        assert!(!editor.sprite_catalog_compatible_only.unwrap_or(false));
         assert!(!editor.sprite_catalog_vertical_layout.unwrap_or(false));
+    }
+
+    #[test]
+    fn standard_sprite_graphics_filter_is_gated_and_requires_loaded_assets() {
+        let ids = vec![0x00, 0x0d, 0x1b];
+        assert_eq!(
+            filter_standard_sprite_catalog_for_graphics(ids.clone(), false, 0, Some([0, 1, 2, 3])),
+            ids
+        );
+        assert_eq!(
+            filter_standard_sprite_catalog_for_graphics(ids.clone(), true, 0, None),
+            ids
+        );
+        assert_eq!(
+            filter_standard_sprite_catalog_for_graphics(ids, true, 0, Some([0, 1, 7, 2])),
+            vec![0x00, 0x0d]
+        );
     }
 
     #[test]

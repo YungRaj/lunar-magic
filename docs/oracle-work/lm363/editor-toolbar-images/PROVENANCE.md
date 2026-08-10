@@ -45,6 +45,18 @@ The original uses zero-based cells. Only mappings with matching Rust actions are
 | Add Sprite `.ff8` | 4 | `$2440` | Preview zoom popup | table `$005E40A8`; dialog handler |
 | Add Sprite `.ff8` | 5 | `$0097` | Show preview area | table `$005E40A8`; dialog handler |
 
+The sprite cell-2 predicate is independently recovered from
+`FilterSpritePlacementRecordsByGraphics` at `$00578AD0` and
+`IsSpriteCompatibleWithCurrentGraphics` at `$00578A20`. The latter consults the 4,096-byte
+mode table at `$005E1060` and 8,192-byte eight-alternative SP-slot table at `$005E2068`, compares
+only SP3/SP4 after the mode gate, treats `$FF` as a wildcard, and accepts sprite `$8C` before the
+built-in lookup. Compacting rows containing at least one non-wildcard field yields exactly 178
+`(sprite, mode, SP3, SP4)` alternatives. Custom/external metadata follows the separate
+`MatchExternalSpriteGraphicsConfiguration` path at `$00578940`; the Rust SSC catalog is therefore
+not falsely filtered by the built-in table. The complete source-table SHA-256 digests are
+`82c9902b8141d9a17abcb97355ca7ac06ef6c1c8fa61ae9c99fa31d72c71f4bb` for `$005E1060` and
+`f9d213ceb00f52da05ec17c3d902d9100fab04b01c4617f5feb4fbbce010dd15` for `$005E2068`.
+
 `LoadOverworldToolbarImages` at `$005608E0`, `LoadLevelToolbarButtonIconCaches` at `$004EA760`,
 `LoadPaletteEditorButtonIcons` at `$0056DF40`, `LoadCustomObjectToolbarIcons` at `$0052B7E0`, and
 `LoadLevelBackgroundToolbarIcons` at `$0051BCA0` independently corroborate the filenames and image
@@ -57,11 +69,16 @@ unverified cells to superficially similar actions.
 - `user_toolbar_images::tests::malformed_authenticated_editor_strip_rejects_without_publishing_any_set`
 - `user_toolbar_images::tests::authenticated_editor_action_cells_match_the_decompiled_command_tables`
 - `user_toolbar_images::tests::authenticated_catalog_action_cells_match_the_decompiled_command_tables`
+- `catalog_graphics_compatibility::tests::recovered_table_has_exact_compacted_shape_and_boundaries`
+- `catalog_graphics_compatibility::tests::predicate_matches_wildcards_alternatives_modes_and_the_8c_exception`
+- `vanilla_level_editor::tests::standard_sprite_graphics_filter_is_gated_and_requires_loaded_assets`
 
 The native portable overworld, Map16, and palette editors consume the authenticated cells for their
 Save/Undo/Redo controls after texture initialization. The integrated standard, extended, and custom
 object and sprite catalogs consume cells 1 and 3 for the matching preview-icon and vertical-layout
-toggles; those settings affect the complete corresponding catalog family. Cells 2, 4, and 5 remain
-unrouted until the GFX-compatibility predicate, catalog-preview zoom, and separate preview pane are
-implemented. Nearest-neighbor sampling is retained for user-supplied pixel artwork, with text and
-tooltip fallbacks.
+toggles; those settings affect the complete corresponding catalog family. The standard-sprite
+catalog additionally consumes `.ff8` cell 2 and filters against its exact recovered mode/SP3/SP4
+alternatives while leaving custom SSC collections on their external-metadata path. The object
+BG1/FG3 predicate, cells 4 and 5 preview zoom/pane behavior, and tiled surfaces remain unrouted.
+Nearest-neighbor sampling is retained for user-supplied pixel artwork, with text and tooltip
+fallbacks.

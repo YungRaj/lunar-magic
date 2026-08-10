@@ -4,6 +4,7 @@ mod appearance_editor;
 mod appearance_editor_form;
 mod application;
 mod built_in_runtime_installer;
+mod catalog_graphics_compatibility;
 mod configuration_loader;
 mod copier_header_dialog;
 mod custom_object_editor;

@@ -815,8 +815,11 @@ custom object/sprite catalogs route the proven cell-1 preview-icon toggle and ce
 toggle, retain text-list fallbacks, and avoid preview raster work while icons are hidden.
 `authenticated_catalog_action_cells_match_the_decompiled_command_tables` and
 `object_and_sprite_catalog_presentation_state_is_independent` bind the mapping and independent
-state. The compatibility filter, separate preview pane/zoom, and tiled surfaces remain open, so the
-Configuration/Toolbar row remains `Partial` and the aggregate remains 59/65.
+state. Add Sprite cell 2 now applies the exact recovered 178-alternative mode/SP3/SP4 predicate,
+including wildcards, multiple configurations, and sprite `$8C`'s hardcoded exception, without
+misapplying the built-in table to custom SSC collections. The object BG1/FG3 filter, separate preview
+pane/zoom, and tiled surfaces remain open, so the Configuration/Toolbar row remains `Partial` and
+the aggregate remains 59/65.
 
 The fastest route to a broadly usable editor is:
 
