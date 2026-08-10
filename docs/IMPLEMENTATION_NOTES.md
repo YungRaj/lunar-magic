@@ -2429,6 +2429,18 @@ child without blocking the UI. Stop or frontend teardown terminates and reaps th
 and every denial, launch failure, exit, or stop drops the private directory. This provides safe
 whole-ROM emulator testing but does not claim LMSW's direct selected-level injection, live reload,
 pause/step, or synchronized viewport behavior.
+
+The first backend-independent live-session component now reproduces Lunar Magic 3.63's recovered
+pause aggregation exactly. `EmulatorSessionState` accumulates the level-transition (`$01`), manual
+(`$02`), viewport (`$04`), input (`$08`), main-window (`$20`), and editor-mode (`$40`) hard-pause
+reasons independently. Any hard reason selects backend pause mode 2; focus loss alone selects soft
+mode 1; otherwise the backend runs in mode 0. Updates are inert while stopped and duplicate state
+notifications emit no backend operation. Single-frame stepping first establishes the manual-pause
+bit and applies hard pause, then emits exactly one step; later steps do not redundantly reapply the
+pause mode. Stop clears both hard and soft state before reuse. This pure contract is intentionally
+separate from the existing one-shot external-process launcher so native libretro and optional LMSW
+bridge backends can share the same verified lifecycle semantics. It does not by itself claim ROM,
+level, sprite, video, audio, or input transport.
 The runnable frontend accepts `tools-config FILE`, lists configured identifiers with `tools-status`,
 and resolves typed requests with `tool-run ID` or `tool-event opened|saved|level`. Those preview
 commands print the executable, working directory, and every argument on separate lines. Explicit

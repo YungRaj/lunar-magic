@@ -11,6 +11,7 @@ mod custom_object_controller;
 mod custom_sprite_controller;
 mod document;
 mod dsc_sidecar_controller;
+mod emulator_session;
 mod entity_appearance_document_controller;
 mod exanimation_clipboard;
 mod exanimation_controller;
@@ -144,6 +145,9 @@ pub use custom_sprite_controller::{
 pub use document::PreparedRomOpen;
 pub use dsc_sidecar_controller::{
     DscSidecarController, DscSidecarControllerError, DscSidecarSaveSnapshot,
+};
+pub use emulator_session::{
+    EmulatorPauseMode, EmulatorPauseReason, EmulatorSessionAction, EmulatorSessionState,
 };
 pub use entity_appearance_document_controller::{
     EntityAppearanceDocumentController, EntityAppearanceDocumentControllerError,
