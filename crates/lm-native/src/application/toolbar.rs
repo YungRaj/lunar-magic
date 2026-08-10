@@ -1330,9 +1330,10 @@ fn user_toolbar_native_action(name: &str) -> Option<UserToolbarNativeAction> {
             UserToolbarNativeAction::OpenLevelExAnimation
         }
         "LM_LEVEL_EX20_GLOBAL" => UserToolbarNativeAction::OpenGlobalExAnimation,
-        "LM_LEVEL_LAYER3_BYPASS" | "LM_LEVEL_LAYER3_BYPASS2" => {
-            UserToolbarNativeAction::OpenLayer3Bypass
-        }
+        "LM_LEVEL_SUPER_BYPASS"
+        | "LM_LEVEL_SUPER_BYPASS2"
+        | "LM_LEVEL_LAYER3_BYPASS"
+        | "LM_LEVEL_LAYER3_BYPASS2" => UserToolbarNativeAction::OpenLayer3Bypass,
         "LM_VIEW_ADD_OBJECT" | "LM_VIEW_OBJECT" | "LM_VIEW_ADD_OBJECT_OLD" => {
             UserToolbarNativeAction::PlaceObject
         }
@@ -1762,6 +1763,14 @@ mod user_toolbar_tests {
         );
         assert_eq!(
             user_toolbar_native_action("LM_LEVEL_LAYER3_BYPASS2"),
+            Some(UserToolbarNativeAction::OpenLayer3Bypass)
+        );
+        assert_eq!(
+            user_toolbar_native_action("LM_LEVEL_SUPER_BYPASS"),
+            Some(UserToolbarNativeAction::OpenLayer3Bypass)
+        );
+        assert_eq!(
+            user_toolbar_native_action("LM_LEVEL_SUPER_BYPASS2"),
             Some(UserToolbarNativeAction::OpenLayer3Bypass)
         );
         assert_eq!(
@@ -2195,7 +2204,7 @@ mod user_toolbar_tests {
                     || user_toolbar_native_action(entry.name).is_some()
             })
             .collect::<Vec<_>>();
-        assert_eq!(supported.len(), 241);
+        assert_eq!(supported.len(), 243);
         assert!(
             supported
                 .iter()
@@ -2212,7 +2221,7 @@ mod user_toolbar_tests {
                     && user_toolbar_native_action(entry.name).is_none()
             })
             .collect::<Vec<_>>();
-        assert_eq!(unsupported.len(), 76);
+        assert_eq!(unsupported.len(), 74);
         if std::env::var_os("LM_DIAGNOSTIC_UNSUPPORTED_TOOLBAR_COMMANDS").is_some() {
             for entry in unsupported {
                 eprintln!(

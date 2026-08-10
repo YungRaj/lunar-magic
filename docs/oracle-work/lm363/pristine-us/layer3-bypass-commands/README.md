@@ -6,10 +6,13 @@ The authenticated command table maps `$2533/$2534` to `LM_LEVEL_LAYER3_BYPASS` a
 
 Disassembly resolves the decompiler's hidden `thiscall` selector precisely:
 
-- case `$BD` calls `ManageSuperExGfxConfiguration` (`0048E900`) with selector 2 when
-  `DAT_005E7ADF` is set and selector 3 otherwise (`00496AC6/00496AE4`);
-- case `$BE` calls the same function with selector 4 when set and selector 5 otherwise
-  (`00496B0B/00496B29`).
+- case `$BD` targets `00496AFC`, which calls `ManageSuperExGfxConfiguration` (`0048E900`) with
+  selector 4 when `DAT_005E7ADF` is set and selector 5 otherwise
+  (`00496B0B/00496B29`);
+- case `$BE` targets `00496B23` and calls the same function with selector 5 (`00496B29`).
+
+The switch uses a byte map at `00498960` followed by a pointer table at `004985E0`; reading both is
+required because the decompiler does not print the register-resident selector at each case.
 
 `ManageSuperExGfxConfiguration` opens the ROM, verifies the Super ExGFX/expanded-settings
 prerequisite, installs the prerequisite when absent, loads standard and extended graphics pointer

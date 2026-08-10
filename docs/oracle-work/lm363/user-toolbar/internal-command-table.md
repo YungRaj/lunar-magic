@@ -124,9 +124,9 @@ commands `$2530/$2531/$2532`. All three now open the installed-ROM ExAnimation w
 from the current level without changing the primary editor mode. The level/settings routes start
 on the level domain; the global route starts on the global domain. Repeated routes safely reuse or
 switch a clean matching workspace, while a dirty or different-level workspace is preserved.
-Layer 3 GFX/tilemap bypass commands `$2533/$2534` now reproduce the prerequisite boundary around
+Super GFX Bypass commands `$251E/$251F` and Layer 3 GFX/tilemap bypass commands `$2533/$2534` now reproduce the prerequisite boundary around
 `ManageSuperExGfxConfiguration`: an authenticated installed settings owner opens directly, while a
 pristine ROM enters the complete Layer 3 runtime installer and automatically opens the detected
 current-level settings after the exact revision-bound installation succeeds. Failure cannot open
 the editor, and cancel clears the one-shot continuation.
-The authenticated partition is therefore 241 routed and 76 pending slots.
+The authenticated partition is therefore 243 routed and 74 pending slots.
