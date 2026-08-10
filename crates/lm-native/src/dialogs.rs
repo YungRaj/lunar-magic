@@ -561,6 +561,14 @@ pub(crate) fn choose_level_image_save_path(level: u16) -> Option<PathBuf> {
         .save_file()
 }
 
+pub(crate) fn choose_level_bitmap_save_path(level: u16) -> Option<PathBuf> {
+    rfd::FileDialog::new()
+        .set_title("Export Level Bitmap")
+        .add_filter("Windows bitmap", &["bmp"])
+        .set_file_name(format!("Level {level:03X}.bmp"))
+        .save_file()
+}
+
 pub(crate) fn choose_level_image_batch_template(extension: &str) -> Option<PathBuf> {
     rfd::FileDialog::new()
         .set_title("Export Multiple Level Images")

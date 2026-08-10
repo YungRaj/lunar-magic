@@ -483,6 +483,20 @@ impl NativeApplication {
                 self.rom_mwl_batch_export_dialog
                     .open(&self.app, lm_app::MwlBatchExportMode::All);
             }
+            UserToolbarNativeAction::ExportCurrentLevelBitmap => self
+                .rom_level_assets_editor
+                .toolbar_export_current_level_bitmap(
+                    &self.app,
+                    self.special_world_passed,
+                    self.level_view_visibility,
+                ),
+            UserToolbarNativeAction::ExportLevelBitmapDirectory => self
+                .rom_level_assets_editor
+                .toolbar_export_level_bitmap_directory(
+                    &self.app,
+                    self.special_world_passed,
+                    self.level_view_visibility,
+                ),
             UserToolbarNativeAction::SharedPaletteTransfer(action) => self
                 .rom_shared_palette_editor
                 .open_and_start_transfer(&self.app, action),
@@ -1218,6 +1232,8 @@ enum UserToolbarNativeAction {
     OverlapZOrder(crate::vanilla_level_editor::ZOrderTraversal),
     ExpandRom(RomExpansionPreset),
     ExportAllLevels,
+    ExportCurrentLevelBitmap,
+    ExportLevelBitmapDirectory,
     SharedPaletteTransfer(crate::rom_shared_palette_editor::SharedPaletteTransferAction),
     CurrentLevelPaletteTransfer(crate::current_level_palette_transfer::CurrentLevelPaletteAction),
     ExtractGraphics(QuickGraphicsExtraction),
@@ -1306,6 +1322,8 @@ fn user_toolbar_native_action(name: &str) -> Option<UserToolbarNativeAction> {
             UserToolbarNativeAction::ExpandRom(RomExpansionPreset::Sa1_8MiB)
         }
         "LM_FILE_EXPORT_DIRECTORY" => UserToolbarNativeAction::ExportAllLevels,
+        "LM_FILE_EXPORT_DIRECTORY_BITMAP" => UserToolbarNativeAction::ExportLevelBitmapDirectory,
+        "LM_FILE_EXPORT_BITMAP" => UserToolbarNativeAction::ExportCurrentLevelBitmap,
         "LM_FILE_EXTRACT_PALETTE" => UserToolbarNativeAction::SharedPaletteTransfer(
             crate::rom_shared_palette_editor::SharedPaletteTransferAction::Export,
         ),
@@ -1738,6 +1756,14 @@ mod user_toolbar_tests {
                 UserToolbarNativeAction::ExportAllLevels,
             ),
             (
+                "LM_FILE_EXPORT_DIRECTORY_BITMAP",
+                UserToolbarNativeAction::ExportLevelBitmapDirectory,
+            ),
+            (
+                "LM_FILE_EXPORT_BITMAP",
+                UserToolbarNativeAction::ExportCurrentLevelBitmap,
+            ),
+            (
                 "LM_FILE_EXTRACT_PALETTE",
                 UserToolbarNativeAction::SharedPaletteTransfer(
                     crate::rom_shared_palette_editor::SharedPaletteTransferAction::Export,
@@ -2049,7 +2075,7 @@ mod user_toolbar_tests {
                     || user_toolbar_native_action(entry.name).is_some()
             })
             .collect::<Vec<_>>();
-        assert_eq!(supported.len(), 228);
+        assert_eq!(supported.len(), 230);
         assert!(
             supported
                 .iter()
@@ -2066,7 +2092,7 @@ mod user_toolbar_tests {
                     && user_toolbar_native_action(entry.name).is_none()
             })
             .collect::<Vec<_>>();
-        assert_eq!(unsupported.len(), 89);
+        assert_eq!(unsupported.len(), 87);
         if std::env::var_os("LM_DIAGNOSTIC_UNSUPPORTED_TOOLBAR_COMMANDS").is_some() {
             for entry in unsupported {
                 eprintln!(

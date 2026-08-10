@@ -635,6 +635,61 @@ pub(crate) struct RomLevelAssetsEditor {
 }
 
 impl RomLevelAssetsEditor {
+    pub(crate) fn toolbar_export_current_level_bitmap(
+        &mut self,
+        app: &AppState,
+        special_world_passed: bool,
+        visibility: crate::application::LevelViewVisibility,
+    ) {
+        let result = (|| {
+            let source = direct_image_source(app, special_world_passed, visibility)?;
+            let lm_app::EditorMode::Level(level) = source.snapshot.mode else {
+                return Err("select a level before exporting its bitmap".into());
+            };
+            let Some(destination) = crate::dialogs::choose_level_bitmap_save_path(level) else {
+                return Ok(None);
+            };
+            let canvas = render_batch_level_canvas(&source, level, true)?;
+            publish_level_image(&destination, &canvas)?;
+            Ok(Some(destination))
+        })();
+        match result {
+            Ok(Some(path)) => {
+                self.level_image_status =
+                    Some(format!("Exported level bitmap to {}.", path.display()));
+            }
+            Ok(None) => {}
+            Err(error) => self.error = Some(error),
+        }
+    }
+
+    pub(crate) fn toolbar_export_level_bitmap_directory(
+        &mut self,
+        app: &AppState,
+        special_world_passed: bool,
+        visibility: crate::application::LevelViewVisibility,
+    ) {
+        let result = (|| {
+            if self.image_batch_worker.is_running() {
+                return Err("a level image batch is already running".into());
+            }
+            let source = direct_image_source(app, special_world_passed, visibility)?;
+            let Some(template) = crate::dialogs::choose_level_image_batch_template("bmp") else {
+                return Ok(());
+            };
+            self.level_image_status = None;
+            self.image_batch_worker.start(
+                source,
+                template,
+                image_batch::LevelImageFormat::Bmp,
+                self.image_batch_options,
+            )
+        })();
+        if let Err(error) = result {
+            self.error = Some(error);
+        }
+    }
+
     pub(crate) fn invalidate_graphics_preview(&mut self) {
         self.bypass_preview.invalidate();
         self.bypass_layer2_texture = None;
@@ -1477,6 +1532,30 @@ impl RomLevelAssetsEditor {
         self.bypass_preview.invalidate();
         self.panels.invalidate();
     }
+}
+
+fn direct_image_source(
+    app: &AppState,
+    special_world_passed: bool,
+    visibility: crate::application::LevelViewVisibility,
+) -> Result<BatchImageSource, String> {
+    let profiled = app
+        .profiled_controller_snapshot()
+        .map_err(|error| error.to_string())?;
+    if !matches!(profiled.snapshot.mode, lm_app::EditorMode::Level(_)) {
+        return Err("select a level before exporting level bitmaps".into());
+    }
+    let image = lm_rom::RomImage::from_bytes(profiled.snapshot.rom_bytes.clone())
+        .map_err(|error| error.to_string())?;
+    Ok(BatchImageSource {
+        snapshot: profiled.snapshot,
+        profile: profiled.profile,
+        image,
+        ownership: PaletteOwnership::editable(lm_profile::SMW_US_V1_CUSTOM_PALETTE_COLORS),
+        animation_phase: None,
+        special_world_passed,
+        visibility,
+    })
 }
 
 const fn level_asset_editing_blocked(
@@ -3360,6 +3439,20 @@ mod tests {
     use std::sync::atomic::{AtomicU64, Ordering};
 
     static NEXT_IMAGE_PATH: AtomicU64 = AtomicU64::new(0);
+
+    #[test]
+    fn direct_bitmap_export_source_requires_an_open_profiled_level_without_an_ownership_file() {
+        let app = AppState::default();
+        let error = direct_image_source(
+            &app,
+            false,
+            crate::application::LevelViewVisibility::default(),
+        )
+        .err()
+        .expect("closed application must reject direct bitmap export");
+        assert!(!error.is_empty());
+        assert!(!error.contains("ownership"));
+    }
 
     #[test]
     fn level_import_workers_and_completion_frame_block_staged_edits() {

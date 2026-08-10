@@ -91,4 +91,12 @@ word 256 for every unsupported row-zero entry and RGB defaults to high-bit expan
 (`LM_FILE_IMPORT_PALETTE`) discovers an optional same-name `.palmask`, applies the format-specific
 working-buffer mapping, installs the custom-palette runtime when absent, writes the current slot,
 repairs the checksum, and verifies an exact reopen before crossing the revision-checked mutation
-boundary. The authenticated partition is therefore 228 routed and 89 pending slots.
+boundary.
+
+The bitmap pair now enters the same installed full-level renderer used by the native editor without
+requiring a palette-ownership sidecar. `$23BD` (`LM_FILE_EXPORT_BITMAP`) captures the current
+level with automatic screen extent and publishes an original-format Windows BMP. `$23BC`
+(`LM_FILE_EXPORT_DIRECTORY_BITMAP`) starts the cancellable all-slot directory worker in its
+recovered default state: only expanded-area levels, stored screen extents, uppercase three-digit
+slot suffixes, and failure-atomic group publication. The authenticated partition is therefore 230
+routed and 87 pending slots.
