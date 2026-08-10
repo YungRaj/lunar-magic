@@ -295,6 +295,10 @@ impl NativeApplication {
             UserToolbarNativeAction::ExpandRom(preset) => {
                 self.rom_expansion_dialog.open_preset(&self.app, preset);
             }
+            UserToolbarNativeAction::ExportAllLevels => {
+                self.rom_mwl_batch_export_dialog
+                    .open(&self.app, lm_app::MwlBatchExportMode::All);
+            }
         }
     }
 
@@ -887,6 +891,7 @@ enum UserToolbarNativeAction {
     Cut,
     Paste,
     ExpandRom(RomExpansionPreset),
+    ExportAllLevels,
 }
 
 fn user_toolbar_native_action(name: &str) -> Option<UserToolbarNativeAction> {
@@ -927,6 +932,7 @@ fn user_toolbar_native_action(name: &str) -> Option<UserToolbarNativeAction> {
         "LM_FILE_EXPAND_ROM8_SA1" => {
             UserToolbarNativeAction::ExpandRom(RomExpansionPreset::Sa1_8MiB)
         }
+        "LM_FILE_EXPORT_DIRECTORY" => UserToolbarNativeAction::ExportAllLevels,
         _ => return None,
     })
 }
@@ -1219,6 +1225,10 @@ mod user_toolbar_tests {
                 "LM_FILE_EXPAND_ROM8_SA1",
                 UserToolbarNativeAction::ExpandRom(RomExpansionPreset::Sa1_8MiB),
             ),
+            (
+                "LM_FILE_EXPORT_DIRECTORY",
+                UserToolbarNativeAction::ExportAllLevels,
+            ),
         ] {
             assert_eq!(user_toolbar_native_action(name), Some(action));
         }
@@ -1423,7 +1433,7 @@ mod user_toolbar_tests {
                     || user_toolbar_native_action(entry.name).is_some()
             })
             .collect::<Vec<_>>();
-        assert_eq!(supported.len(), 178);
+        assert_eq!(supported.len(), 179);
         assert!(
             supported
                 .iter()
