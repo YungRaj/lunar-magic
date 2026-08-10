@@ -1,5 +1,6 @@
 use super::{LevelScreenOverlay, LevelViewVisibility, NativeApplication};
 use crate::frontend_ui;
+use crate::rom_expansion_dialog::RomExpansionPreset;
 use eframe::egui;
 use lm_app::{
     Command, LevelNavigationDirection, ShortcutGesture, ShortcutKey, ShortcutModifiers,
@@ -290,6 +291,9 @@ impl NativeApplication {
             }
             UserToolbarNativeAction::Paste => {
                 self.vanilla_level_editor.toolbar_request_paste(context);
+            }
+            UserToolbarNativeAction::ExpandRom(preset) => {
+                self.rom_expansion_dialog.open_preset(&self.app, preset);
             }
         }
     }
@@ -882,6 +886,7 @@ enum UserToolbarNativeAction {
     Copy,
     Cut,
     Paste,
+    ExpandRom(RomExpansionPreset),
 }
 
 fn user_toolbar_native_action(name: &str) -> Option<UserToolbarNativeAction> {
@@ -910,6 +915,18 @@ fn user_toolbar_native_action(name: &str) -> Option<UserToolbarNativeAction> {
         "LM_EDIT_COPY" => UserToolbarNativeAction::Copy,
         "LM_EDIT_CUT" => UserToolbarNativeAction::Cut,
         "LM_EDIT_PASTE" => UserToolbarNativeAction::Paste,
+        "LM_FILE_EXPAND_ROM2" => UserToolbarNativeAction::ExpandRom(RomExpansionPreset::LoRom2MiB),
+        "LM_FILE_EXPAND_ROM3" => UserToolbarNativeAction::ExpandRom(RomExpansionPreset::LoRom3MiB),
+        "LM_FILE_EXPAND_ROM4" => UserToolbarNativeAction::ExpandRom(RomExpansionPreset::LoRom4MiB),
+        "LM_FILE_EXPAND_ROM8" => {
+            UserToolbarNativeAction::ExpandRom(RomExpansionPreset::ExLoRom8MiB)
+        }
+        "LM_FILE_EXPAND_ROM6_SA1" => {
+            UserToolbarNativeAction::ExpandRom(RomExpansionPreset::Sa1_6MiB)
+        }
+        "LM_FILE_EXPAND_ROM8_SA1" => {
+            UserToolbarNativeAction::ExpandRom(RomExpansionPreset::Sa1_8MiB)
+        }
         _ => return None,
     })
 }
@@ -1178,6 +1195,30 @@ mod user_toolbar_tests {
             ("LM_EDIT_COPY", UserToolbarNativeAction::Copy),
             ("LM_EDIT_CUT", UserToolbarNativeAction::Cut),
             ("LM_EDIT_PASTE", UserToolbarNativeAction::Paste),
+            (
+                "LM_FILE_EXPAND_ROM2",
+                UserToolbarNativeAction::ExpandRom(RomExpansionPreset::LoRom2MiB),
+            ),
+            (
+                "LM_FILE_EXPAND_ROM3",
+                UserToolbarNativeAction::ExpandRom(RomExpansionPreset::LoRom3MiB),
+            ),
+            (
+                "LM_FILE_EXPAND_ROM4",
+                UserToolbarNativeAction::ExpandRom(RomExpansionPreset::LoRom4MiB),
+            ),
+            (
+                "LM_FILE_EXPAND_ROM8",
+                UserToolbarNativeAction::ExpandRom(RomExpansionPreset::ExLoRom8MiB),
+            ),
+            (
+                "LM_FILE_EXPAND_ROM6_SA1",
+                UserToolbarNativeAction::ExpandRom(RomExpansionPreset::Sa1_6MiB),
+            ),
+            (
+                "LM_FILE_EXPAND_ROM8_SA1",
+                UserToolbarNativeAction::ExpandRom(RomExpansionPreset::Sa1_8MiB),
+            ),
         ] {
             assert_eq!(user_toolbar_native_action(name), Some(action));
         }
@@ -1382,7 +1423,7 @@ mod user_toolbar_tests {
                     || user_toolbar_native_action(entry.name).is_some()
             })
             .collect::<Vec<_>>();
-        assert_eq!(supported.len(), 172);
+        assert_eq!(supported.len(), 178);
         assert!(
             supported
                 .iter()

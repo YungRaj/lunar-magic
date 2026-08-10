@@ -6,6 +6,16 @@ use lm_rom::{Mapper, RomImage};
 
 const LUNAR_MAGIC_LOROM_TARGETS: [usize; 3] = [0x20_0000, 0x30_0000, 0x40_0000];
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum RomExpansionPreset {
+    LoRom2MiB,
+    LoRom3MiB,
+    LoRom4MiB,
+    ExLoRom8MiB,
+    Sa1_6MiB,
+    Sa1_8MiB,
+}
+
 #[derive(Default)]
 pub(crate) struct RomExpansionDialog {
     open: bool,
@@ -38,6 +48,51 @@ impl RomExpansionDialog {
                 Err(error) => self.error = Some(error.to_string()),
             },
             Err(error) => self.error = Some(error.to_string()),
+        }
+    }
+
+    pub(crate) fn open_preset(&mut self, app: &AppState, preset: RomExpansionPreset) {
+        self.open(app);
+        if !self.open {
+            return;
+        }
+        match preset {
+            RomExpansionPreset::LoRom2MiB => self.select_lorom_target(0x20_0000),
+            RomExpansionPreset::LoRom3MiB => self.select_lorom_target(0x30_0000),
+            RomExpansionPreset::LoRom4MiB => self.select_lorom_target(0x40_0000),
+            RomExpansionPreset::ExLoRom8MiB => {
+                if exlorom_eligible(self.source_mapper, self.current_logical_len) {
+                    self.confirm_exlorom = true;
+                } else {
+                    self.error =
+                        Some("64-Mbit ExLoROM conversion requires a 512 KiB–4 MiB LoROM".into());
+                }
+            }
+            RomExpansionPreset::Sa1_6MiB => self.select_sa1_target(SA1_6_MIB_LEN),
+            RomExpansionPreset::Sa1_8MiB => self.select_sa1_target(SA1_8_MIB_LEN),
+        }
+    }
+
+    fn select_lorom_target(&mut self, target: usize) {
+        if ordinary_expansion_eligible(self.source_mapper, self.current_logical_len, target) {
+            self.target = format!("{target:X}");
+            self.fill = "00".into();
+        } else {
+            self.error = Some(format!(
+                "The {} MiB ordinary expansion target is not available for this ROM",
+                target / 0x10_0000
+            ));
+        }
+    }
+
+    fn select_sa1_target(&mut self, target: usize) {
+        if self.source_mapper == Some(Mapper::Sa1) && target > self.current_logical_len {
+            self.confirm_sa1_target = Some(target);
+        } else {
+            self.error = Some(format!(
+                "The {} MiB expansion target requires a smaller SA-1 ROM",
+                target / 0x10_0000
+            ));
         }
     }
 
@@ -330,5 +385,61 @@ mod tests {
             0x20_0000,
             0x20_0000
         ));
+    }
+
+    #[test]
+    fn authenticated_lorom_presets_select_exact_zero_filled_targets() {
+        let mut app = AppState::default();
+        app.load_rom(crate::test_support::pristine_smw_us_rom_bytes())
+            .unwrap();
+        for (preset, target) in [
+            (RomExpansionPreset::LoRom2MiB, "200000"),
+            (RomExpansionPreset::LoRom3MiB, "300000"),
+            (RomExpansionPreset::LoRom4MiB, "400000"),
+        ] {
+            let mut dialog = RomExpansionDialog::default();
+            dialog.open_preset(&app, preset);
+            assert!(dialog.open);
+            assert_eq!(dialog.target, target);
+            assert_eq!(dialog.fill, "00");
+            assert_eq!(dialog.error, None);
+        }
+    }
+
+    #[test]
+    fn authenticated_exlorom_preset_enters_the_warning_confirmation() {
+        let mut app = AppState::default();
+        app.load_rom(crate::test_support::pristine_smw_us_rom_bytes())
+            .unwrap();
+        let mut dialog = RomExpansionDialog::default();
+        dialog.open_preset(&app, RomExpansionPreset::ExLoRom8MiB);
+        assert!(dialog.open);
+        assert!(dialog.confirm_exlorom);
+        assert_eq!(dialog.error, None);
+    }
+
+    #[test]
+    fn authenticated_sa1_presets_are_mapper_gated_and_enter_confirmation() {
+        for target in [SA1_6_MIB_LEN, SA1_8_MIB_LEN] {
+            let mut eligible = RomExpansionDialog {
+                open: true,
+                source_mapper: Some(Mapper::Sa1),
+                current_logical_len: 0x40_0000,
+                ..RomExpansionDialog::default()
+            };
+            eligible.select_sa1_target(target);
+            assert_eq!(eligible.confirm_sa1_target, Some(target));
+            assert_eq!(eligible.error, None);
+
+            let mut wrong_mapper = RomExpansionDialog {
+                open: true,
+                source_mapper: Some(Mapper::LoRom),
+                current_logical_len: 0x40_0000,
+                ..RomExpansionDialog::default()
+            };
+            wrong_mapper.select_sa1_target(target);
+            assert_eq!(wrong_mapper.confirm_sa1_target, None);
+            assert!(wrong_mapper.error.is_some());
+        }
     }
 }
