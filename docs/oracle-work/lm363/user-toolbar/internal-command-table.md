@@ -33,7 +33,7 @@ ruby -e 'b=File.binread(ARGV[0]); 318.times{|i| p=b.byteslice(0x1e6a70+i*4,4).un
 slots, all 317 named entries in their original order, the terminal sentinel, duplicate-name and
 shared-ID behavior, and successful `usertoolbar.txt` parsing of every named entry. `lm-native`
 rejects invented internal names before dispatch, distinguishes an authenticated but not-yet-routed
-command by its original ID, and currently routes 220 authenticated table entries to native commands,
+command by its original ID, and currently routes 224 authenticated table entries to native commands,
 level-view actions, or the same native workflow used by the corresponding menu. The direct workflow
 set includes Help Contents/About, level analysis, restore-point creation/restoration, IPS
 creation/application, the authenticated Sprite 19 installer, the integrated object/sprite placers
@@ -64,3 +64,16 @@ commands target the matching integrated built-in tool section instead of spawnin
 window: background/Layer 2, sprite data, or level/entrance settings. Each activation restores the
 fixed-width tool column and gives the requested section a fresh persistent collapse identity, so it
 reopens even after the user previously closed it without resetting unrelated sections.
+
+The four entrance-view commands now preserve the original renderer-state model. Ghidra
+`HandleLevelEditorCommand` at `$00496000` shows commands `$23F8`, `$23F9`, and `$23FA` toggling
+`DAT_005e7b0f`, `DAT_005e7b10`, and `DAT_005e7b11` independently before rebuilding the level
+sprites. Command `$2414` toggles its own aggregate byte `DAT_005e7b0e`, copies that value into all
+three renderer bytes, and synchronizes all four external-toolbar checks. Xrefs bind those renderer
+bytes respectively to the primary, secondary, and midway paths in
+`RenderLevelEditorViewportRegion` (`$004530A0`), `DrawSecondaryEntranceLabels` (`$00452D10`), and
+`DrawPrimaryOrMidwayEntranceLabel` (`$00452920`). Rust retains the independent aggregate state,
+draws only screen-exit-referenced secondary slots targeting the current level, preserves the
+vanilla `$100` destination bit derived from slots `$100..$1FF`, and suppresses a separate midway
+node when it overlaps the primary entrance. The authenticated partition is therefore 224 routed
+and 93 pending slots.

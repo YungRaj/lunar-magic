@@ -56,6 +56,33 @@ pub(crate) enum LevelToolPanel {
     Sprites,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum EntranceOverlayToggle {
+    All,
+    Primary,
+    Secondary,
+    Midway,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct EntranceOverlayVisibility {
+    all: bool,
+    primary: bool,
+    secondary: bool,
+    midway: bool,
+}
+
+impl Default for EntranceOverlayVisibility {
+    fn default() -> Self {
+        Self {
+            all: true,
+            primary: true,
+            secondary: true,
+            midway: true,
+        }
+    }
+}
+
 impl LevelToolPanel {
     const fn index(self) -> usize {
         self as usize
@@ -357,11 +384,13 @@ pub(crate) struct VanillaLevelEditor {
     pending_expansion_commit: Option<LevelController>,
     entrance_controller: Option<VanillaEntranceController>,
     secondary_exits: Option<SecondaryExitTable>,
+    secondary_exit_references: Option<Vec<bool>>,
     secondary_exits_revision: Option<u64>,
     secondary_exits_error: Option<String>,
     entrance_form: VanillaMainEntrance,
     midway_form: Option<SeparateMidwayEntrance>,
     midway_install_form: SeparateMidwayEntrance,
+    entrance_overlay_visibility: EntranceOverlayVisibility,
     form: HeaderForm,
     selected_object: usize,
     selected_object_group: Vec<usize>,
@@ -1639,15 +1668,26 @@ impl VanillaLevelEditor {
                         ) {
                             Ok(loaded) => {
                                 self.secondary_exits = Some(loaded.table);
-                                self.secondary_exits_error = None;
+                                match referenced_secondary_exit_slots(project) {
+                                    Ok(references) => {
+                                        self.secondary_exit_references = Some(references);
+                                        self.secondary_exits_error = None;
+                                    }
+                                    Err(error) => {
+                                        self.secondary_exit_references = None;
+                                        self.secondary_exits_error = Some(error);
+                                    }
+                                }
                             }
                             Err(error) => {
                                 self.secondary_exits = None;
+                                self.secondary_exit_references = None;
                                 self.secondary_exits_error = Some(error.to_string());
                             }
                         },
                         Err(error) => {
                             self.secondary_exits = None;
+                            self.secondary_exit_references = None;
                             self.secondary_exits_error = Some(error.clone());
                         }
                     }
@@ -1718,6 +1758,7 @@ impl VanillaLevelEditor {
                 self.controller = None;
                 self.entrance_controller = None;
                 self.secondary_exits = None;
+                self.secondary_exit_references = None;
                 self.secondary_exits_revision = None;
                 self.secondary_exits_error = None;
                 self.midway_form = None;
@@ -1734,6 +1775,7 @@ impl VanillaLevelEditor {
         self.pending_expansion_commit = None;
         self.entrance_controller = None;
         self.secondary_exits = None;
+        self.secondary_exit_references = None;
         self.secondary_exits_revision = None;
         self.secondary_exits_error = None;
         self.midway_form = None;
@@ -2572,6 +2614,34 @@ impl VanillaLevelEditor {
         let generation = &mut self.tool_panel_generations[panel.index()];
         *generation = generation.wrapping_add(1);
         self.requested_tool_panel = Some(panel);
+    }
+
+    /// Mirrors Lunar Magic 3.63's four entrance-view commands. The aggregate command owns an
+    /// independent check state (`DAT_005e7b0e`) and writes all three renderer flags; changing an
+    /// individual flag does not recompute that aggregate state.
+    pub(crate) fn toolbar_toggle_entrance_overlay(&mut self, toggle: EntranceOverlayToggle) {
+        match toggle {
+            EntranceOverlayToggle::All => {
+                let visible = !self.entrance_overlay_visibility.all;
+                self.entrance_overlay_visibility = EntranceOverlayVisibility {
+                    all: visible,
+                    primary: visible,
+                    secondary: visible,
+                    midway: visible,
+                };
+            }
+            EntranceOverlayToggle::Primary => {
+                self.entrance_overlay_visibility.primary =
+                    !self.entrance_overlay_visibility.primary;
+            }
+            EntranceOverlayToggle::Secondary => {
+                self.entrance_overlay_visibility.secondary =
+                    !self.entrance_overlay_visibility.secondary;
+            }
+            EntranceOverlayToggle::Midway => {
+                self.entrance_overlay_visibility.midway = !self.entrance_overlay_visibility.midway;
+            }
+        }
     }
 
     pub(crate) fn toolbar_place_object(&mut self) {
@@ -4097,23 +4167,54 @@ impl VanillaLevelEditor {
             let level = self.controller.as_ref().map_or(0, |controller| {
                 u16::try_from(controller.level().number).unwrap_or(0)
             });
-            draw_primary_entrance_label(
-                &overlay_painter,
-                rect,
-                cell,
-                level,
-                self.entrance_form,
-                vertical,
-                alternate_vertical_layout,
-            );
-            draw_primary_entrance_position_warning(
-                &overlay_painter,
-                rect,
-                cell,
-                self.entrance_form,
-                vertical,
-            );
-            if let Some(texture) = self.entrance_texture.as_ref() {
+            let entrances_overlap = self.entrance_form.level_mode_and_screen & 0x1f
+                == self.entrance_form.screen_and_method >> 4;
+            if self.entrance_overlay_visibility.primary {
+                draw_primary_entrance_label(
+                    &overlay_painter,
+                    rect,
+                    cell,
+                    level,
+                    self.entrance_form,
+                    vertical,
+                    alternate_vertical_layout,
+                    entrances_overlap && self.entrance_overlay_visibility.midway,
+                );
+                draw_primary_entrance_position_warning(
+                    &overlay_painter,
+                    rect,
+                    cell,
+                    self.entrance_form,
+                    vertical,
+                );
+            }
+            if self.entrance_overlay_visibility.secondary {
+                draw_secondary_entrances(
+                    &overlay_painter,
+                    rect,
+                    cell,
+                    level,
+                    self.secondary_exits.as_ref(),
+                    self.secondary_exit_references.as_deref(),
+                    self.entrance_texture.as_ref(),
+                    vertical,
+                    alternate_vertical_layout,
+                );
+            }
+            if self.entrance_overlay_visibility.midway && !entrances_overlap {
+                draw_midway_entrance(
+                    &overlay_painter,
+                    rect,
+                    cell,
+                    self.entrance_texture.as_ref(),
+                    self.entrance_form,
+                    vertical,
+                    alternate_vertical_layout,
+                );
+            }
+            if self.entrance_overlay_visibility.primary
+                && let Some(texture) = self.entrance_texture.as_ref()
+            {
                 draw_primary_entrance_marker(
                     &overlay_painter,
                     rect,
@@ -9789,6 +9890,47 @@ pub(crate) fn secondary_entrance_marker_and_label_pixels(
     )
 }
 
+fn referenced_secondary_exit_slots(project: &Project) -> Result<Vec<bool>, String> {
+    let mut referenced = vec![false; SecondaryExitTable::ENTRY_COUNT];
+    for level_number in 0..0x200 {
+        let level = project
+            .load_level_slot(
+                level_number,
+                lm_profile::smw_us_v1_vanilla_level_layout(),
+                &SpriteLengthTable::standard(),
+            )
+            .map_err(|error| error.to_string())?;
+        for record in &level.layer1.objects.records {
+            let Some(exit) = record.screen_exit() else {
+                continue;
+            };
+            let index = usize::from(
+                exit.destination_and_flags & 0x00ff | (exit.destination_and_flags & 0x0200) >> 1,
+            );
+            referenced[index] = true;
+        }
+    }
+    Ok(referenced)
+}
+
+fn secondary_entrance_destination(index: usize, exit: lm_level::SecondaryExit) -> u16 {
+    if index < 0x200 {
+        exit.destination_level & 0x00ff | u16::try_from(index & 0x100).unwrap_or(0)
+    } else {
+        exit.destination_level
+    }
+}
+
+fn secondary_entrance_is_empty(exit: lm_level::SecondaryExit) -> bool {
+    exit.position_and_method == 0
+        && exit.screen == 0
+        && exit.x == 0
+        && exit.y == 0
+        && exit.destination_flags == 0
+        && exit.x_and_overworld_flags == 0
+        && exit.additional_flags == 0
+}
+
 fn vertical_entrance_marker_pixels(
     entrance: VanillaMainEntrance,
     screen: u16,
@@ -9885,6 +10027,7 @@ fn draw_primary_entrance_label(
     entrance: VanillaMainEntrance,
     vertical: bool,
     alternate_vertical_layout: bool,
+    shared_with_midway: bool,
 ) {
     let (x, y) = if vertical {
         vertical_primary_entrance_label_pixels(entrance, alternate_vertical_layout)
@@ -9895,7 +10038,127 @@ fn draw_primary_entrance_label(
     let position = canvas.min + egui::vec2(f32::from(x) * scale, f32::from(y) * scale);
     let font_size = (cell_size * 0.625).max(7.0);
     let galley = painter.layout_no_wrap(
-        format!("Entrance to level {level:X}"),
+        format!(
+            "{}Entrance to level {level:X}",
+            if shared_with_midway { ">" } else { "" }
+        ),
+        egui::FontId::monospace(font_size),
+        egui::Color32::WHITE,
+    );
+    let background =
+        egui::Rect::from_min_size(position, galley.size()).expand2(egui::vec2(1.0, 0.0));
+    painter.rect_filled(
+        background,
+        0.0,
+        egui::Color32::from_rgba_unmultiplied(0, 116, 44, 220),
+    );
+    painter.galley(position, galley, egui::Color32::WHITE);
+}
+
+#[allow(clippy::too_many_arguments)]
+fn draw_secondary_entrances(
+    painter: &egui::Painter,
+    canvas: egui::Rect,
+    cell_size: f32,
+    level: u16,
+    exits: Option<&SecondaryExitTable>,
+    referenced: Option<&[bool]>,
+    texture: Option<&egui::TextureHandle>,
+    vertical: bool,
+    alternate_vertical_layout: bool,
+) {
+    let (Some(exits), Some(referenced)) = (exits, referenced) else {
+        return;
+    };
+    for (index, exit) in visible_secondary_entrances(level, exits, referenced) {
+        let (marker, label) =
+            secondary_entrance_marker_and_label_pixels(exit, vertical, alternate_vertical_layout);
+        if let Some(texture) = texture {
+            draw_entrance_marker_at(painter, canvas, cell_size, texture, marker);
+        }
+        draw_entrance_label_at(
+            painter,
+            canvas,
+            cell_size,
+            label,
+            format!("Secondary Entrance #{index:03X}"),
+        );
+    }
+}
+
+fn visible_secondary_entrances(
+    level: u16,
+    exits: &SecondaryExitTable,
+    referenced: &[bool],
+) -> Vec<(usize, lm_level::SecondaryExit)> {
+    exits
+        .entries
+        .iter()
+        .copied()
+        .enumerate()
+        .filter(|(index, exit)| {
+            secondary_entrance_destination(*index, *exit) == level
+                && exit.x_and_overworld_flags & 0x80 == 0
+                && referenced.get(*index).copied().unwrap_or(false)
+                && (!matches!(level, 0x000 | 0x100) || !secondary_entrance_is_empty(*exit))
+        })
+        .collect()
+}
+
+fn draw_midway_entrance(
+    painter: &egui::Painter,
+    canvas: egui::Rect,
+    cell_size: f32,
+    texture: Option<&egui::TextureHandle>,
+    entrance: VanillaMainEntrance,
+    vertical: bool,
+    alternate_vertical_layout: bool,
+) {
+    let marker = midway_entrance_marker_pixels(entrance, vertical, alternate_vertical_layout);
+    if let Some(texture) = texture {
+        draw_entrance_marker_at(painter, canvas, cell_size, texture, marker);
+    }
+    draw_entrance_label_at(
+        painter,
+        canvas,
+        cell_size,
+        midway_entrance_label_pixels(entrance, vertical, alternate_vertical_layout),
+        "Midway Entrance".into(),
+    );
+}
+
+fn draw_entrance_marker_at(
+    painter: &egui::Painter,
+    canvas: egui::Rect,
+    cell_size: f32,
+    texture: &egui::TextureHandle,
+    (x, y): (u16, u16),
+) {
+    let scale = cell_size / 16.0;
+    let target = egui::Rect::from_min_size(
+        canvas.min + egui::vec2(f32::from(x) * scale, f32::from(y.saturating_add(2)) * scale),
+        egui::vec2(16.0 * scale, 32.0 * scale),
+    );
+    painter.image(
+        texture.id(),
+        target,
+        egui::Rect::from_min_max(egui::Pos2::ZERO, egui::pos2(1.0, 1.0)),
+        egui::Color32::WHITE,
+    );
+}
+
+fn draw_entrance_label_at(
+    painter: &egui::Painter,
+    canvas: egui::Rect,
+    cell_size: f32,
+    (x, y): (u16, u16),
+    text: String,
+) {
+    let scale = cell_size / 16.0;
+    let position = canvas.min + egui::vec2(f32::from(x) * scale, f32::from(y) * scale);
+    let font_size = (cell_size * 0.625).max(7.0);
+    let galley = painter.layout_no_wrap(
+        text,
         egui::FontId::monospace(font_size),
         egui::Color32::WHITE,
     );
@@ -18099,6 +18362,77 @@ mod tests {
             midway_entrance_label_pixels(entrance, false, false),
             (0xf2, 0x130)
         );
+    }
+
+    #[test]
+    fn entrance_toolbar_flags_match_lunar_magics_independent_and_aggregate_states() {
+        let mut editor = VanillaLevelEditor::default();
+        assert_eq!(
+            editor.entrance_overlay_visibility,
+            EntranceOverlayVisibility {
+                all: true,
+                primary: true,
+                secondary: true,
+                midway: true,
+            }
+        );
+
+        editor.toolbar_toggle_entrance_overlay(EntranceOverlayToggle::Secondary);
+        assert!(editor.entrance_overlay_visibility.all);
+        assert!(editor.entrance_overlay_visibility.primary);
+        assert!(!editor.entrance_overlay_visibility.secondary);
+        assert!(editor.entrance_overlay_visibility.midway);
+
+        editor.toolbar_toggle_entrance_overlay(EntranceOverlayToggle::All);
+        assert_eq!(
+            editor.entrance_overlay_visibility,
+            EntranceOverlayVisibility {
+                all: false,
+                primary: false,
+                secondary: false,
+                midway: false,
+            }
+        );
+        editor.toolbar_toggle_entrance_overlay(EntranceOverlayToggle::Primary);
+        assert!(!editor.entrance_overlay_visibility.all);
+        assert!(editor.entrance_overlay_visibility.primary);
+        assert!(!editor.entrance_overlay_visibility.secondary);
+        assert!(!editor.entrance_overlay_visibility.midway);
+        editor.toolbar_toggle_entrance_overlay(EntranceOverlayToggle::All);
+        assert_eq!(
+            editor.entrance_overlay_visibility,
+            EntranceOverlayVisibility {
+                all: true,
+                primary: true,
+                secondary: true,
+                midway: true,
+            }
+        );
+    }
+
+    #[test]
+    fn live_secondary_entrance_filter_uses_screen_exit_references_and_slot_high_bit() {
+        let image = RomImage::from_bytes(crate::test_support::pristine_smw_us_rom_bytes()).unwrap();
+        let project = Project::new(image);
+        let referenced = referenced_secondary_exit_slots(&project).unwrap();
+        assert_eq!(referenced.len(), SecondaryExitTable::ENTRY_COUNT);
+        assert!(referenced[0x0bf]);
+        assert!(referenced[0x1be]);
+        let exits = project
+            .load_secondary_exit_table_detected(lm_profile::smw_us_v1_secondary_exit_locator())
+            .unwrap()
+            .table;
+        assert_eq!(
+            secondary_entrance_destination(0x1be, exits.entries[0x1be]),
+            0x102
+        );
+        let visible = visible_secondary_entrances(0x102, &exits, &referenced);
+        assert!(visible.iter().any(|(index, _)| *index == 0x1be));
+        assert!(visible.iter().all(|(index, exit)| {
+            referenced[*index]
+                && exit.x_and_overworld_flags & 0x80 == 0
+                && secondary_entrance_destination(*index, *exit) == 0x102
+        }));
     }
 
     #[test]

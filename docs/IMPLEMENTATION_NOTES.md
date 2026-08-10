@@ -632,6 +632,10 @@ interactive frontends cannot bypass confirmation and request correlation through
   integrated tool panels as the native menu. Graphics, ExAnimation, and Layer 3 settings retain the
   active level number; background/Layer 2, sprite-data, properties, other settings, Layer 1/2
   settings, and entrance actions restore the tool column and reopen the matching collapsed section.
+  Entrance-view commands `$23F8/$23F9/$23FA/$2414` now preserve the Ghidra-recovered independent
+  primary/secondary/midway flags and separate aggregate state. The live editor draws referenced
+  secondary targets and the non-overlapping midway node from the same authenticated coordinate
+  helpers used by the full-level raster audit.
   Attached `.osc` metadata adds an active-tileset custom catalog searchable by hexadecimal
   object/parameter pair or description. Its composites resolve ordinary and external Map16
   definitions, while placement constructs the native command-derived 3–8-byte stream shape and

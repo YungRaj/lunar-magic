@@ -609,6 +609,9 @@ impl NativeApplication {
                 self.vanilla_level_editor
                     .toolbar_translucent_overlays_toggle();
             }
+            UserToolbarLocalAction::EntranceOverlay(toggle) => self
+                .vanilla_level_editor
+                .toolbar_toggle_entrance_overlay(toggle),
             UserToolbarLocalAction::ZoomToggle => self.vanilla_level_editor.toolbar_zoom_toggle(),
             UserToolbarLocalAction::ZoomDefault => self.vanilla_level_editor.toolbar_zoom_default(),
             UserToolbarLocalAction::ZoomPlus => self
@@ -943,6 +946,7 @@ fn toggle_user_toolbar_view_state(
         | UserToolbarLocalAction::CurrentTrigger { .. }
         | UserToolbarLocalAction::Background512Height
         | UserToolbarLocalAction::Translucent
+        | UserToolbarLocalAction::EntranceOverlay(_)
         | UserToolbarLocalAction::ZoomDefault
         | UserToolbarLocalAction::ZoomPlus
         | UserToolbarLocalAction::ZoomMinus => {
@@ -1373,6 +1377,7 @@ enum UserToolbarLocalAction {
     CurrentTrigger { family: u8, delta: i8 },
     Background512Height,
     Translucent,
+    EntranceOverlay(crate::vanilla_level_editor::EntranceOverlayToggle),
     ZoomToggle,
     ZoomDefault,
     ZoomPlus,
@@ -1406,6 +1411,18 @@ fn user_toolbar_local_action(name: &str) -> Option<UserToolbarLocalAction> {
         "LM_VIEW_SCREEN_GRID" => UserToolbarLocalAction::ScreenGrid,
         "LM_VIEW_SCREEN_EXITS" => UserToolbarLocalAction::ScreenExits,
         "LM_VIEW_SCREEN_GRID_2" => UserToolbarLocalAction::BoundaryGuide,
+        "LM_VIEW_ALL_ENTRANCES" => UserToolbarLocalAction::EntranceOverlay(
+            crate::vanilla_level_editor::EntranceOverlayToggle::All,
+        ),
+        "LM_VIEW_LEVEL_ENTRANCE" => UserToolbarLocalAction::EntranceOverlay(
+            crate::vanilla_level_editor::EntranceOverlayToggle::Primary,
+        ),
+        "LM_VIEW_LEVEL_ENTRANCE_2" => UserToolbarLocalAction::EntranceOverlay(
+            crate::vanilla_level_editor::EntranceOverlayToggle::Secondary,
+        ),
+        "LM_VIEW_MIDWAY_POINT" => UserToolbarLocalAction::EntranceOverlay(
+            crate::vanilla_level_editor::EntranceOverlayToggle::Midway,
+        ),
         "LM_VIEW_ZOOM" => UserToolbarLocalAction::Zoom,
         "LM_VIEW_ZOOM_FILTER" => UserToolbarLocalAction::ZoomFilter,
         "LM_VIEW_ANIMATION" => UserToolbarLocalAction::Animation,
@@ -1927,6 +1944,29 @@ mod user_toolbar_tests {
             user_toolbar_local_action("LM_VIEW_SCREEN_GRID_2"),
             Some(UserToolbarLocalAction::BoundaryGuide)
         );
+        for (name, toggle) in [
+            (
+                "LM_VIEW_ALL_ENTRANCES",
+                crate::vanilla_level_editor::EntranceOverlayToggle::All,
+            ),
+            (
+                "LM_VIEW_LEVEL_ENTRANCE",
+                crate::vanilla_level_editor::EntranceOverlayToggle::Primary,
+            ),
+            (
+                "LM_VIEW_LEVEL_ENTRANCE_2",
+                crate::vanilla_level_editor::EntranceOverlayToggle::Secondary,
+            ),
+            (
+                "LM_VIEW_MIDWAY_POINT",
+                crate::vanilla_level_editor::EntranceOverlayToggle::Midway,
+            ),
+        ] {
+            assert_eq!(
+                user_toolbar_local_action(name),
+                Some(UserToolbarLocalAction::EntranceOverlay(toggle))
+            );
+        }
     }
 
     #[test]
@@ -1965,7 +2005,7 @@ mod user_toolbar_tests {
                     || user_toolbar_native_action(entry.name).is_some()
             })
             .collect::<Vec<_>>();
-        assert_eq!(supported.len(), 220);
+        assert_eq!(supported.len(), 224);
         assert!(
             supported
                 .iter()
@@ -1982,7 +2022,7 @@ mod user_toolbar_tests {
                     && user_toolbar_native_action(entry.name).is_none()
             })
             .collect::<Vec<_>>();
-        assert_eq!(unsupported.len(), 97);
+        assert_eq!(unsupported.len(), 93);
         if std::env::var_os("LM_DIAGNOSTIC_UNSUPPORTED_TOOLBAR_COMMANDS").is_some() {
             for entry in unsupported {
                 eprintln!(
