@@ -95,12 +95,18 @@ impl Workspace {
 }
 
 pub(super) fn decode(app: &AppState) -> Result<Workspace, String> {
-    let profiled = app
+    let slot = match app.mode {
+        lm_app::EditorMode::ExAnimation(slot) => slot,
+        _ => return Err("select an ExAnimation slot before opening the ROM editor".into()),
+    };
+    decode_slot(app, slot)
+}
+
+pub(super) fn decode_slot(app: &AppState, slot: u16) -> Result<Workspace, String> {
+    let mut profiled = app
         .profiled_controller_snapshot()
         .map_err(|error| error.to_string())?;
-    let lm_app::EditorMode::ExAnimation(slot) = profiled.snapshot.mode else {
-        return Err("select an ExAnimation slot before opening the ROM editor".into());
-    };
+    profiled.snapshot.mode = lm_app::EditorMode::ExAnimation(slot);
     let controller = profiled
         .profile
         .decode_exanimation(&profiled.snapshot)

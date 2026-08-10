@@ -1,4 +1,4 @@
-use super::workspace::decode;
+use super::workspace::{decode, decode_slot};
 use super::{AppState, PendingClose, RomExAnimationEditor, egui};
 
 impl RomExAnimationEditor {
@@ -12,6 +12,56 @@ impl RomExAnimationEditor {
         }
         match decode(app) {
             Ok(workspace) => {
+                self.workspace = Some(workspace);
+                self.selected_record = 0;
+                self.search_start.clear();
+                self.search_end.clear();
+                self.invalidate();
+                self.load();
+            }
+            Err(error) => self.error = Some(error),
+        }
+    }
+
+    pub(crate) fn open_level(&mut self, app: &AppState, level: u16) {
+        self.open_target(app, level, false);
+    }
+
+    pub(crate) fn open_global(&mut self, app: &AppState, level: u16) {
+        self.open_target(app, level, true);
+    }
+
+    fn open_target(&mut self, app: &AppState, level: u16, global: bool) {
+        if let Some(workspace) = self.workspace.as_mut() {
+            if workspace.slot != level {
+                self.error = Some(
+                    "close the current ExAnimation workspace before opening another level".into(),
+                );
+                return;
+            }
+            if workspace.editing_global != global && !workspace.switch_target() {
+                self.error = Some(
+                    "commit or revert the current ExAnimation changes before switching domains"
+                        .into(),
+                );
+                return;
+            }
+            self.selected_record = 0;
+            self.invalidate();
+            self.load();
+            return;
+        }
+        match decode_slot(app, level) {
+            Ok(mut workspace) => {
+                if global && !workspace.switch_target() {
+                    self.error = Some(
+                        workspace
+                            .global_unavailable
+                            .clone()
+                            .unwrap_or_else(|| "global ExAnimation is unavailable".into()),
+                    );
+                    return;
+                }
                 self.workspace = Some(workspace);
                 self.selected_record = 0;
                 self.search_start.clear();

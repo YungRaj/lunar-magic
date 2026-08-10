@@ -119,4 +119,9 @@ object-backed Layer 2 Map16 caches. It follows Acts-Like chains, includes the bu
 set plus loaded `.dsc` exit markers, resolves direct and full-table secondary destinations, skips
 overworld destinations, and reports the exact affected screen numbers for destinations `$000` and
 `$100`.
-The authenticated partition is therefore 236 routed and 81 pending slots.
+Ghidra cases `$BA/$BB/$BC` bind level ExAnimation, global ExAnimation, and ExAnimation settings to
+commands `$2530/$2531/$2532`. All three now open the installed-ROM ExAnimation workspace directly
+from the current level without changing the primary editor mode. The level/settings routes start
+on the level domain; the global route starts on the global domain. Repeated routes safely reuse or
+switch a clean matching workspace, while a dirty or different-level workspace is preserved.
+The authenticated partition is therefore 239 routed and 78 pending slots.
