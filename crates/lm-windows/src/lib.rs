@@ -1,13 +1,56 @@
 //! Narrow safe wrappers around Windows APIs needed by the native frontend.
 
-use std::os::windows::io::AsRawHandle;
+use std::os::windows::{
+    ffi::{OsStrExt, OsStringExt},
+    io::AsRawHandle,
+};
 use windows_sys::Win32::Foundation::GlobalFree;
 use windows_sys::Win32::Globalization::{
     GetThreadPreferredUILanguages, GetUserDefaultUILanguage, LCIDToLocaleName,
 };
 use windows_sys::Win32::Storage::FileSystem::{
-    BY_HANDLE_FILE_INFORMATION, GetFileInformationByHandle,
+    BY_HANDLE_FILE_INFORMATION, GetFileInformationByHandle, GetShortPathNameW,
 };
+
+const MAX_WINDOWS_PATH_UTF16_UNITS: usize = 32_768;
+
+/// Resolves an existing Windows path to its filesystem-provided 8.3 short form.
+///
+/// # Errors
+///
+/// Returns the last Windows error when the path does not exist, the volume has no short-name
+/// mapping, or the API rejects it; oversized results are rejected without an unbounded retry.
+pub fn short_path(path: &std::path::Path) -> std::io::Result<std::path::PathBuf> {
+    let source = path
+        .as_os_str()
+        .encode_wide()
+        .chain(std::iter::once(0))
+        .collect::<Vec<_>>();
+    let mut output = vec![0_u16; MAX_WINDOWS_PATH_UTF16_UNITS];
+    let written = unsafe {
+        // SAFETY: Both pointers reference initialized allocations for the duration of the call;
+        // `source` is NUL-terminated and `output` exposes its complete writable capacity.
+        GetShortPathNameW(
+            source.as_ptr(),
+            output.as_mut_ptr(),
+            u32::try_from(output.len()).expect("Windows path bound fits u32"),
+        )
+    };
+    if written == 0 {
+        return Err(std::io::Error::last_os_error());
+    }
+    let written =
+        usize::try_from(written).map_err(|_| std::io::Error::other("short path overflow"))?;
+    if written >= output.len() {
+        return Err(std::io::Error::other(
+            "short path exceeds the Windows path bound",
+        ));
+    }
+    output.truncate(written);
+    Ok(std::path::PathBuf::from(std::ffi::OsString::from_wide(
+        &output,
+    )))
+}
 use windows_sys::Win32::System::{
     DataExchange::{
         CloseClipboard, EmptyClipboard, GetClipboardData, IsClipboardFormatAvailable,

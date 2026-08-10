@@ -15,6 +15,7 @@ struct ToolDraft {
     project_opened: bool,
     project_saved: bool,
     level_changed: bool,
+    use_short_rom_path: bool,
 }
 
 impl ToolDraft {
@@ -28,6 +29,10 @@ impl ToolDraft {
             project_opened: tool.subscriptions.contains(&ToolEvent::ProjectOpened),
             project_saved: tool.subscriptions.contains(&ToolEvent::ProjectSaved),
             level_changed: tool.subscriptions.contains(&ToolEvent::LevelChanged),
+            use_short_rom_path: tool
+                .arguments
+                .iter()
+                .any(|argument| argument.contains("{rom_8dot3}")),
         }
     }
 
@@ -72,7 +77,17 @@ impl ToolDraft {
             id: self.id.trim().into(),
             name: self.name.trim().into(),
             executable: PathBuf::from(self.executable.trim()),
-            arguments: self.arguments.lines().map(str::to_owned).collect(),
+            arguments: self
+                .arguments
+                .lines()
+                .map(|argument| {
+                    if self.use_short_rom_path {
+                        argument.replace("{rom}", "{rom_8dot3}")
+                    } else {
+                        argument.replace("{rom_8dot3}", "{rom}")
+                    }
+                })
+                .collect(),
             working_directory: (!self.working_directory.trim().is_empty())
                 .then(|| self.working_directory.trim().to_owned()),
             subscriptions,
@@ -167,6 +182,15 @@ impl ExternalToolConfigEditor {
                         ui.label(dialog_control_text(catalog, dialog_id, 0x68, "Arguments"));
                         ui.small("One direct process argument per line; use {rom}, {project_dir}, {level_hex}, or {level_dec}.");
                         ui.add(egui::TextEdit::multiline(&mut draft.arguments).desired_rows(4));
+                        ui.checkbox(
+                            &mut draft.use_short_rom_path,
+                            dialog_control_text(
+                                catalog,
+                                dialog_id,
+                                0x67,
+                                "Use Windows 8.3 short path for ROM",
+                            ),
+                        );
                         field(ui, "Working directory template (optional)", &mut draft.working_directory);
                         ui.separator();
                         ui.label("Run automatically after:");
@@ -322,5 +346,19 @@ mod tests {
         );
         assert_eq!(tool.id, "gba-emulator-3");
         assert_eq!(tool.arguments, ["{rom}"]);
+    }
+
+    #[test]
+    fn short_path_choice_persists_compatibly_inside_argument_templates() {
+        let mut draft = ToolDraft::emulator(0);
+        draft.arguments = "--rom={rom}\n--literal".into();
+        draft.use_short_rom_path = true;
+        let tool = draft.build();
+        assert_eq!(tool.arguments, ["--rom={rom_8dot3}", "--literal"]);
+        let reopened = ToolDraft::from_tool(&tool);
+        assert!(reopened.use_short_rom_path);
+        let mut restored = reopened;
+        restored.use_short_rom_path = false;
+        assert_eq!(restored.build().arguments, ["--rom={rom}", "--literal"]);
     }
 }

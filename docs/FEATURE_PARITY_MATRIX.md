@@ -570,8 +570,15 @@ subscriptions, then publishes the entire draft through the already failure-atomi
 validator. Focused form/inventory tests and existing duplicate-ID/event application tests cover the
 boundary. GBA drafts persist under a stable `gba-` ID namespace and select Setup GBA Emulator
 `$0408` plus its exact title/path/arguments/OK/Cancel inventory after reopen without changing the
-portable schema. Original 8.3-path behavior and broader process notifications remain incomplete,
-so Configuration/External tools and Localization remain `Partial`.
+portable schema. Broader process notifications remain incomplete, so Configuration/External tools
+and Localization remain `Partial`.
+
+The `$0407/$0408` 8.3-ROM-path control `$67` is now functional and schema-compatible through an
+explicit `{rom_8dot3}` argv placeholder. Windows resolves it with a bounded safe-wrapper
+`GetShortPathNameW` call before the existing shell-free launch; non-Windows reports unsupported
+instead of substituting a false path. Toggle round-trip, placeholder discovery/error behavior, and
+Windows cross-compilation pass. Original cross-process notifications and broader lifecycle/registry
+behavior still keep Configuration/External tools `Partial`.
 
 The overworld Palette/ExAnimation row additionally has the exact per-map option representation.
 Four independently inverted feature bits retain their unrelated low nibble, while original

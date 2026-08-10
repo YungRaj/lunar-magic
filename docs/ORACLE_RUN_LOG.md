@@ -1022,3 +1022,9 @@ A second creation action now builds a persisted GBA emulator profile. Its stable
 round-trips through `ExternalTool`, causes the reopened draft to select original dialog `$0408`, and
 uses that dialog's exact title/control inventory. A focused test proves `$0408` selection, default
 `{rom}` argv, stable generated identity, and fallback title without changing `LMTOOLS1` framing.
+
+The `$0407/$0408` control `$67` short-ROM-path option now round-trips as `{rom_8dot3}` inside an
+ordinary argument template. Seven core expansion tests and four editor tests pass. Both
+`lm-windows` and `lm-app` cross-compile for `x86_64-pc-windows-gnu`, binding the safe bounded
+`GetShortPathNameW` route; the portable gate proves non-Windows invocation fails explicitly while
+still recognizing the placeholder for configuration inspection.

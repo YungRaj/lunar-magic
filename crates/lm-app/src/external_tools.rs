@@ -66,6 +66,7 @@ pub enum ExternalToolError {
     NulByte,
     EmptyWorkingDirectory,
     EmulatorRequiresRomArgument,
+    ShortRomPathUnavailable,
 }
 
 impl std::fmt::Display for ExternalToolError {
@@ -265,6 +266,7 @@ fn placeholder(key: &str, context: ToolContext<'_>) -> Result<String, ExternalTo
             .rom
             .map(|path| path.to_string_lossy().into_owned())
             .ok_or(ExternalToolError::MissingValue("rom")),
+        "rom_8dot3" => short_rom_path(context.rom.ok_or(ExternalToolError::MissingValue("rom"))?),
         "project_dir" => context
             .rom
             .and_then(Path::parent)
@@ -284,6 +286,18 @@ fn placeholder(key: &str, context: ToolContext<'_>) -> Result<String, ExternalTo
             .ok_or(ExternalToolError::MissingValue("graphics")),
         unknown => Err(ExternalToolError::UnknownPlaceholder(unknown.into())),
     }
+}
+
+#[cfg(windows)]
+fn short_rom_path(path: &Path) -> Result<String, ExternalToolError> {
+    lm_windows::short_path(path)
+        .map(|path| path.to_string_lossy().into_owned())
+        .map_err(|_| ExternalToolError::ShortRomPathUnavailable)
+}
+
+#[cfg(not(windows))]
+fn short_rom_path(_path: &Path) -> Result<String, ExternalToolError> {
+    Err(ExternalToolError::ShortRomPathUnavailable)
 }
 
 fn template_uses_placeholder(template: &str, expected: &str) -> bool {
@@ -373,6 +387,20 @@ mod tests {
             tool(&["rom}"]).expand(ToolContext::default()),
             Err(ExternalToolError::UnexpectedClosingBrace)
         );
+    }
+
+    #[cfg(not(windows))]
+    #[test]
+    fn windows_short_rom_placeholder_is_explicitly_unavailable_off_windows() {
+        assert_eq!(
+            tool(&["{rom_8dot3}"]).expand(ToolContext {
+                rom: Some(Path::new("/tmp/game.smc")),
+                level: None,
+                graphics: None,
+            }),
+            Err(ExternalToolError::ShortRomPathUnavailable)
+        );
+        assert!(tool(&["{rom_8dot3}"]).uses_argument_placeholder("rom_8dot3"));
     }
 
     #[test]

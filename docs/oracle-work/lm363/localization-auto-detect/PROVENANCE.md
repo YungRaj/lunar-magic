@@ -144,3 +144,8 @@ GBA profiles use a stable `gba-` ID prefix and select Setup GBA Emulator `$0408`
 path `$66`, arguments `$68`, OK, and Cancel captions. The prefix survives existing `LMTOOLS1`
 serialization and reopen without changing that interchange schema; ordinary and SNES tool IDs
 continue selecting `$0407`.
+
+Control `$67` now exposes the original “Use 8.3 DOS File Name for ROM” behavior. The setting is
+stored compatibly by rewriting `{rom}` to `{rom_8dot3}` in the existing argv template. On Windows,
+the placeholder resolves through one bounded `GetShortPathNameW` call in the safe `lm-windows`
+boundary before direct process launch; other platforms return an explicit unsupported-path error.

@@ -5345,3 +5345,11 @@ Emulator family identity is append-free: IDs beginning with canonical `gba-` sel
 dialog `$0408`; every other tool selects the SNES `$0407` form. New GBA drafts use
 `gba-emulator-N`, so kind survives publication, configuration encode/decode, and editor reopen with
 no new persisted field. Users can intentionally change the stable ID and thereby reclassify a tool.
+
+The original 8.3 checkbox is represented by the explicit `{rom_8dot3}` placeholder rather than a
+new configuration flag. Draft toggling reversibly rewrites `{rom}`/`{rom_8dot3}` while preserving
+all other argv text. On Windows, `lm-windows::short_path` passes a NUL-terminated UTF-16 source and
+a fixed 32,768-unit output buffer to `GetShortPathNameW`, rejects zero/oversized results, and returns
+an owned platform path. No shell, lossy tokenization, registry lookup, or unbounded allocation is
+involved. Non-Windows builds keep the configuration readable but reject execution with
+`ShortRomPathUnavailable`.
