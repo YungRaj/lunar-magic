@@ -177,6 +177,22 @@ impl LiveEmulator {
         Ok(())
     }
 
+    pub(crate) fn set_editor_animation_playing(&mut self, playing: bool) {
+        let Some(running) = self.running.as_mut() else {
+            return;
+        };
+        let Some(action) = running
+            .model
+            .set_hard_pause_reason(EmulatorPauseReason::EditorMode, !playing)
+        else {
+            return;
+        };
+        if let EmulatorSessionAction::SetPauseMode(mode) = action {
+            running.pause = mode;
+        }
+        send_session_action(&running.commands, action);
+    }
+
     pub(crate) fn show(
         &mut self,
         context: &egui::Context,
@@ -619,10 +635,12 @@ mod tests {
         let (commands, command_receiver) = mpsc::channel();
         let (_event_sender, events) = mpsc::channel();
         let mut emulator = LiveEmulator::default();
+        let mut model = EmulatorSessionState::default();
+        let _ = model.start();
         emulator.running = Some(RunningSession {
             commands,
             events,
-            model: EmulatorSessionState::default(),
+            model,
             pause: EmulatorPauseMode::Running,
             capabilities: None,
             joypad: 0,
@@ -651,6 +669,21 @@ mod tests {
             WorkerCommand::Protocol(EmulatorBackendCommand::LoadLevel(0x107))
         ));
         assert_eq!(emulator.source_context(), Some((0x107, 8)));
+
+        emulator.set_editor_animation_playing(false);
+        assert!(matches!(
+            command_receiver.recv().unwrap(),
+            WorkerCommand::Protocol(EmulatorBackendCommand::SetPauseMode(
+                EmulatorPauseMode::HardPaused
+            ))
+        ));
+        emulator.set_editor_animation_playing(true);
+        assert!(matches!(
+            command_receiver.recv().unwrap(),
+            WorkerCommand::Protocol(EmulatorBackendCommand::SetPauseMode(
+                EmulatorPauseMode::Running
+            ))
+        ));
     }
 
     #[test]

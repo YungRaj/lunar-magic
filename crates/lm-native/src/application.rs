@@ -693,6 +693,8 @@ impl NativeApplication {
             _ => None,
         };
         if self.live_emulator.retain_for_open_project(live_context) {
+            self.live_emulator
+                .set_editor_animation_playing(self.vanilla_level_editor.animation_playing());
             if let (Some(source), Some(target)) =
                 (self.live_emulator.source_context(), live_context)
             {

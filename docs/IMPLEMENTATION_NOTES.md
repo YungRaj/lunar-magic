@@ -2477,7 +2477,10 @@ pause, while minimizing the main viewport drives hard-pause reason `$20`; manual
 precedence through the shared aggregate. A collapsed live window drives viewport reason `$04`.
 An open egui popup drives input reason `$08`; closure retains the recovered 100-millisecond timer
 grace from `MainFrameWindowProc`/`RenderLmswViewportOverlay` before clearing it. Editor-mode hard
-pause, editor-overlay synchronization, and broader core/platform variants remain incomplete.
+pause reason `$40` follows `HandleLevelEditorCommand` exactly: disabling the shared level-editor
+animation clock sets it and resuming the clock clears it. The frontend now drives every recovered
+pause input into the already-proven aggregate. Editor-overlay synchronization and broader
+core/platform variants remain incomplete.
 The runnable frontend accepts `tools-config FILE`, lists configured identifiers with `tools-status`,
 and resolves typed requests with `tool-run ID` or `tool-event opened|saved|level`. Those preview
 commands print the executable, working directory, and every argument on separate lines. Explicit

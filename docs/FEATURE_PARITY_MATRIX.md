@@ -38,8 +38,8 @@ clean teardown. Portable packages contain `lm-native`, `lm-cli`, and the require
 `lm-libretro` executable. Active editor-level changes use `LoadLevel`, while committed revision
 changes send the exact new in-memory ROM and re-enter the selected level without closing the live
 window; the oracle proves an identical revision reload reproduces level `$105` and its exact frame.
-The row remains `Partial`: LMSW's optimized sprite-stream-only hot reload, audio, complete
-editor-mode pause-reason and canvas-overlay synchronization, and broader
+The row remains `Partial`: LMSW's optimized sprite-stream-only hot reload, audio,
+canvas-overlay synchronization, and broader
 core/runtime/platform variants are still
 missing. This addendum supersedes only the older clauses that list the now-proved backend, native
 control, selected-level, input, and compatible-core runtime boundaries as missing.
@@ -51,6 +51,10 @@ precedence and resumes only when all corresponding states clear;
 Collapsing the live viewport now drives hard-pause reason `$04`. Opening an egui menu/popup drives
 input reason `$08` and retains Lunar Magic's recovered 100-millisecond post-menu grace before
 resuming; `menu_input_pause_retains_the_recovered_hundred_millisecond_grace` covers the boundary.
+Port-8089 recovery of `HandleLevelEditorCommand` resolves editor-mode reason `$40` exactly: it is
+set when the shared editor animation clock is paused and cleared when playback resumes. Rust now
+wires that same `VanillaLevelEditor::animation_playing` state into the aggregate, completing all six
+hard reasons plus focus soft pause in the native session.
 
 Current Map16 bitmap variant evidence additionally covers the 12-byte `BITMAPCOREHEADER`: its
 unsigned dimensions, bottom-up DWORD-padded rows, RGBTRIPLE palettes, indexed 1-/4-/8-bit pixels,

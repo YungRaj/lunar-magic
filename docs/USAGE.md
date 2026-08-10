@@ -111,6 +111,8 @@ output are not implemented yet. Alt-tabbing away soft-pauses the core; minimizin
 pauses it, and restoring focus resumes only when no manual pause remains.
 Collapsing the live window or opening an editor menu also hard-pauses the core; menu closure retains
 the original short input grace before gameplay resumes.
+Pausing the level editor's animation clock also hard-pauses the live core; resuming that clock
+releases the corresponding pause reason without overriding a manual pause.
 
 ## Rendering validation
 

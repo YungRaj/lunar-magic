@@ -3089,7 +3089,7 @@ impl VanillaLevelEditor {
         }
     }
 
-    fn animation_playing(&self) -> bool {
+    pub(crate) fn animation_playing(&self) -> bool {
         self.animation_playing.unwrap_or(true)
     }
 
