@@ -8,6 +8,7 @@ use workspace::{BuiltInRuntime, BuiltInRuntimeWorkspace};
 pub(crate) struct BuiltInRuntimeInstaller {
     workspace: Option<BuiltInRuntimeWorkspace>,
     error: Option<String>,
+    open_expanded_settings_after_commit: bool,
 }
 
 impl BuiltInRuntimeInstaller {
@@ -23,6 +24,7 @@ impl BuiltInRuntimeInstaller {
             Ok(workspace) => {
                 self.workspace = Some(workspace);
                 self.error = None;
+                self.open_expanded_settings_after_commit = false;
             }
             Err(error) => self.error = Some(error),
         }
@@ -32,6 +34,15 @@ impl BuiltInRuntimeInstaller {
         self.open(app);
         if let Some(workspace) = self.workspace.as_mut() {
             workspace.runtime = BuiltInRuntime::Sprite19Fix;
+            self.open_expanded_settings_after_commit = false;
+        }
+    }
+
+    pub(crate) fn open_complete_layer3_for_settings(&mut self, app: &AppState) {
+        self.open(app);
+        if let Some(workspace) = self.workspace.as_mut() {
+            workspace.runtime = BuiltInRuntime::CompleteLayer3;
+            self.open_expanded_settings_after_commit = true;
         }
     }
 
@@ -151,6 +162,7 @@ impl BuiltInRuntimeInstaller {
         });
         if cancel {
             self.workspace = None;
+            self.open_expanded_settings_after_commit = false;
         }
         command
     }
@@ -166,8 +178,9 @@ impl BuiltInRuntimeInstaller {
         }
     }
 
-    pub(crate) fn commit_succeeded(&mut self) {
+    pub(crate) fn commit_succeeded(&mut self) -> bool {
         self.workspace = None;
+        std::mem::take(&mut self.open_expanded_settings_after_commit)
     }
 }
 
@@ -196,6 +209,35 @@ mod tests {
                 rev: app.project_revision()
             }
         );
+    }
+
+    #[test]
+    fn layer3_bypass_route_installs_then_reopens_detected_settings() {
+        let original = crate::test_support::pristine_smw_us_rom_bytes();
+        let mut app = AppState::default();
+        app.load_rom(original.clone()).unwrap();
+        app.dispatch(Command::SelectLevel(0x105)).unwrap();
+        let mut editor = crate::rom_expanded_settings_editor::RomExpandedSettingsEditor::default();
+        assert!(!editor.open_detected(&app).unwrap());
+
+        let mut installer = BuiltInRuntimeInstaller::default();
+        installer.open_complete_layer3_for_settings(&app);
+        assert_eq!(
+            installer.workspace.as_ref().unwrap().runtime,
+            BuiltInRuntime::CompleteLayer3
+        );
+        let command = installer
+            .workspace
+            .as_ref()
+            .unwrap()
+            .prepare(app.project_revision())
+            .unwrap();
+        app.dispatch(command).unwrap();
+        assert!(installer.commit_succeeded());
+        assert!(editor.open_detected(&app).unwrap());
+        assert!(editor.is_open());
+        app.dispatch(Command::Undo).unwrap();
+        assert_eq!(app.project().unwrap().save_snapshot(), original);
     }
 
     #[test]

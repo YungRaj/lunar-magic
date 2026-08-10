@@ -460,6 +460,15 @@ impl NativeApplication {
                     self.rom_exanimation_editor.open_global(&self.app, level);
                 }
             }
+            UserToolbarNativeAction::OpenLayer3Bypass => {
+                match self.rom_expanded_settings_editor.open_detected(&self.app) {
+                    Ok(true) => {}
+                    Ok(false) => self
+                        .built_in_runtime_installer
+                        .open_complete_layer3_for_settings(&self.app),
+                    Err(error) => self.effects.error = Some(error),
+                }
+            }
             UserToolbarNativeAction::PlaceObject => {
                 self.vanilla_level_editor.toolbar_place_object();
             }
@@ -1262,6 +1271,7 @@ enum UserToolbarNativeAction {
     ScanInvalidExits,
     OpenLevelExAnimation,
     OpenGlobalExAnimation,
+    OpenLayer3Bypass,
     PlaceObject,
     PlaceSprite,
     OpenLevelToolPanel(crate::vanilla_level_editor::LevelToolPanel),
@@ -1320,6 +1330,9 @@ fn user_toolbar_native_action(name: &str) -> Option<UserToolbarNativeAction> {
             UserToolbarNativeAction::OpenLevelExAnimation
         }
         "LM_LEVEL_EX20_GLOBAL" => UserToolbarNativeAction::OpenGlobalExAnimation,
+        "LM_LEVEL_LAYER3_BYPASS" | "LM_LEVEL_LAYER3_BYPASS2" => {
+            UserToolbarNativeAction::OpenLayer3Bypass
+        }
         "LM_VIEW_ADD_OBJECT" | "LM_VIEW_OBJECT" | "LM_VIEW_ADD_OBJECT_OLD" => {
             UserToolbarNativeAction::PlaceObject
         }
@@ -1742,6 +1755,14 @@ mod user_toolbar_tests {
         assert_eq!(
             user_toolbar_native_action("LM_LEVEL_EX20_SETTINGS"),
             Some(UserToolbarNativeAction::OpenLevelExAnimation)
+        );
+        assert_eq!(
+            user_toolbar_native_action("LM_LEVEL_LAYER3_BYPASS"),
+            Some(UserToolbarNativeAction::OpenLayer3Bypass)
+        );
+        assert_eq!(
+            user_toolbar_native_action("LM_LEVEL_LAYER3_BYPASS2"),
+            Some(UserToolbarNativeAction::OpenLayer3Bypass)
         );
         assert_eq!(
             user_toolbar_native_action("LM_HELP_ABOUT"),
@@ -2174,7 +2195,7 @@ mod user_toolbar_tests {
                     || user_toolbar_native_action(entry.name).is_some()
             })
             .collect::<Vec<_>>();
-        assert_eq!(supported.len(), 239);
+        assert_eq!(supported.len(), 241);
         assert!(
             supported
                 .iter()
@@ -2191,7 +2212,7 @@ mod user_toolbar_tests {
                     && user_toolbar_native_action(entry.name).is_none()
             })
             .collect::<Vec<_>>();
-        assert_eq!(unsupported.len(), 78);
+        assert_eq!(unsupported.len(), 76);
         if std::env::var_os("LM_DIAGNOSTIC_UNSUPPORTED_TOOLBAR_COMMANDS").is_some() {
             for entry in unsupported {
                 eprintln!(

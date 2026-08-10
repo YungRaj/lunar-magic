@@ -43,6 +43,32 @@ impl RomExpandedSettingsEditor {
         }
     }
 
+    pub(crate) fn open_detected(&mut self, app: &AppState) -> Result<bool, String> {
+        if self.is_open() {
+            return Ok(true);
+        }
+        let snapshot = app
+            .controller_snapshot()
+            .map_err(|error| error.to_string())?;
+        if !matches!(snapshot.mode, lm_app::EditorMode::Level(_)) {
+            return Err("select a level before opening expanded settings".into());
+        }
+        let image = lm_rom::RomImage::from_bytes(snapshot.rom_bytes.clone())
+            .map_err(|error| error.to_string())?;
+        let project = lm_project::Project::new(image);
+        let Some(layout) = lm_profile::smw_us_v1_installed_expanded_settings_layout(&project)
+            .map_err(|error| error.to_string())?
+        else {
+            return Ok(false);
+        };
+        let controller = ExpandedSettingsController::decode(&snapshot, layout)
+            .map_err(|error| error.to_string())?;
+        self.form = ExpandedSettingsForm::load(controller.record());
+        self.controller = Some(controller);
+        self.error = None;
+        Ok(true)
+    }
+
     pub(crate) fn request_close(&mut self, application: bool) -> bool {
         let Some(controller) = &self.controller else {
             return true;

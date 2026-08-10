@@ -188,9 +188,7 @@ impl NativeApplication {
         if let Some(command) = self.current_level_palette_transfer.show(context, &self.app)
             && self.try_dispatch(context, command)
         {
-            self.mark_user_toolbar_save_notification(
-                lm_app::LunarMagicNotificationKind::SaveLevel,
-            );
+            self.mark_user_toolbar_save_notification(lm_app::LunarMagicNotificationKind::SaveLevel);
             self.renderer.invalidate();
         }
         self.level_usage_dialog.show(context);
@@ -254,7 +252,12 @@ impl NativeApplication {
             .show(context, self.app.project_revision())
             && self.try_dispatch(context, command)
         {
-            self.built_in_runtime_installer.commit_succeeded();
+            let open_expanded_settings = self.built_in_runtime_installer.commit_succeeded();
+            if open_expanded_settings
+                && let Err(error) = self.rom_expanded_settings_editor.open_detected(&self.app)
+            {
+                self.effects.error = Some(error);
+            }
             self.renderer.invalidate();
         }
         if let Some(command) = self
