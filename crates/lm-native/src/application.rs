@@ -629,6 +629,7 @@ impl NativeApplication {
                     self.effects.confirmation = None;
                     let effects = match confirmation {
                         Confirmation::DiscardAndOpen => self.app.discard_and_request_open(),
+                        Confirmation::DiscardAndReload => self.app.discard_and_request_reload(),
                         Confirmation::DiscardAndClose { quit_after } => {
                             Ok(self.app.discard_and_close(quit_after))
                         }

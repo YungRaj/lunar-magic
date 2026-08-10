@@ -886,3 +886,9 @@ publishes only valid UTF-8 strings. Three focused tests cover exact decoding, co
 invalid-entry clearing, malformed tables, incomplete compression, invalid UTF-8, and a reduced
 inflate ceiling. At that milestone typed key-index mapping and localized dialog-template conversion
 remained open; the later typed-catalog and 107-entry dispatch-map milestones supersede those gaps.
+
+Toolbar coverage update (2026-08-10): `LM_FILE_RELOAD_ROM` `$23BE` now reloads the existing disk
+path without a chooser, preserves the selected level, and uses Save/Discard/Cancel semantics whose
+failed read or parse cannot replace the current project. This supersedes the 248/69 counts embedded
+in the configuration-row history above: the authenticated partition is now **249 routed / 68
+pending** out of 317 named commands. The aggregate remains 59/65 because this row is still Partial.

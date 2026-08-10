@@ -1261,6 +1261,7 @@ fn user_toolbar_label(target: &UserToolbarTarget) -> &str {
 fn user_toolbar_command(name: &str, current_level: Option<u16>) -> Option<Command> {
     Some(match name {
         "LM_FILE_OPEN_ROM" => Command::Open,
+        "LM_FILE_RELOAD_ROM" => Command::Reload,
         "LM_FILE_SAVE_BUTTON" | "LM_FILE_SAVE_FILE" => Command::Save,
         "LM_FILE_SAVE_FILE_AS" | "LM_FILE_SAVE_LEVEL_TO_ROM_AS" => Command::SaveAs,
         "LM_FILE_PREVIOUS_LEVEL" | "LM_MOUSE_LEVEL_BACK" => {
@@ -1724,6 +1725,10 @@ mod user_toolbar_tests {
         assert_eq!(
             user_toolbar_command("LM_FILE_OPEN_ROM", None),
             Some(Command::Open)
+        );
+        assert_eq!(
+            user_toolbar_command("LM_FILE_RELOAD_ROM", None),
+            Some(Command::Reload)
         );
         assert_eq!(
             user_toolbar_command("LM_VIEW_OVERWORLD", None),
@@ -2289,7 +2294,7 @@ mod user_toolbar_tests {
                     || user_toolbar_native_action(entry.name).is_some()
             })
             .collect::<Vec<_>>();
-        assert_eq!(supported.len(), 248);
+        assert_eq!(supported.len(), 249);
         assert!(
             supported
                 .iter()
@@ -2328,7 +2333,7 @@ mod user_toolbar_tests {
                     && user_toolbar_native_action(entry.name).is_none()
             })
             .collect::<Vec<_>>();
-        assert_eq!(unsupported.len(), 69);
+        assert_eq!(unsupported.len(), 68);
         if std::env::var_os("LM_DIAGNOSTIC_UNSUPPORTED_TOOLBAR_COMMANDS").is_some() {
             for entry in unsupported {
                 eprintln!(

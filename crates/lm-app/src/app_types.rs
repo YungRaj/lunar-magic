@@ -24,6 +24,10 @@ pub enum FrontendEffect {
     ChooseRom {
         request_id: u64,
     },
+    LoadRomAt {
+        request_id: u64,
+        path: PathBuf,
+    },
     ChooseSaveDestination {
         request_id: u64,
         bytes: Vec<u8>,
@@ -39,6 +43,7 @@ pub enum FrontendEffect {
         quit_after: bool,
     },
     ConfirmDiscardAndOpen,
+    ConfirmDiscardAndReload,
     ProjectClosed,
     QuitApplication,
     WriteClipboard(Vec<u8>),

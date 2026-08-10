@@ -20,6 +20,7 @@ use std::ops::Range;
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Command {
     Open,
+    Reload,
     Save,
     SaveAs,
     Close,

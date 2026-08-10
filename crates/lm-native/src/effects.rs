@@ -9,6 +9,7 @@ use std::path::PathBuf;
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum Confirmation {
     DiscardAndOpen,
+    DiscardAndReload,
     DiscardAndClose { quit_after: bool },
 }
 
@@ -48,6 +49,9 @@ impl EffectState {
     fn handle_one(&mut self, app: &mut AppState, context: &egui::Context, effect: FrontendEffect) {
         match effect {
             FrontendEffect::ChooseRom { request_id } => self.choose_rom(app, request_id),
+            FrontendEffect::LoadRomAt { request_id, path } => {
+                self.load_rom_at(app, request_id, path);
+            }
             FrontendEffect::ChooseSaveDestination { request_id, bytes } => {
                 self.choose_save_destination(app, request_id, &bytes);
             }
@@ -68,6 +72,9 @@ impl EffectState {
             }
             FrontendEffect::ConfirmDiscardAndOpen => {
                 self.confirmation = Some(Confirmation::DiscardAndOpen);
+            }
+            FrontendEffect::ConfirmDiscardAndReload => {
+                self.confirmation = Some(Confirmation::DiscardAndReload);
             }
             FrontendEffect::QuitApplication => self.quit_requested = true,
             FrontendEffect::LaunchExternalTool(invocation) => {
@@ -166,6 +173,7 @@ impl EffectState {
                 if let Some(confirmation) = self.save_then.take() {
                     let effects = match confirmation {
                         Confirmation::DiscardAndOpen => app.discard_and_request_open(),
+                        Confirmation::DiscardAndReload => app.discard_and_request_reload(),
                         Confirmation::DiscardAndClose { quit_after } => {
                             Ok(app.discard_and_close(quit_after))
                         }
@@ -212,6 +220,13 @@ impl EffectState {
                 let _ = app.cancel_open(request_id);
                 self.error = Some(error);
             }
+        }
+    }
+
+    fn load_rom_at(&mut self, app: &mut AppState, request_id: u64, path: PathBuf) {
+        if let Err(error) = self.rom_loader.start(request_id, path) {
+            let _ = app.cancel_open(request_id);
+            self.error = Some(error);
         }
     }
 
@@ -466,6 +481,60 @@ mod tests {
                 .unwrap()
                 .contains("invalid prepared ROM")
         );
+    }
+
+    #[test]
+    fn reload_confirmation_and_completion_preserve_level_and_replace_atomically() {
+        let path = path();
+        let original = test_rom();
+        fs::write(&path, &original).unwrap();
+        let mut app = AppState::default();
+        app.load_rom_at(original, Some(path.clone())).unwrap();
+        app.dispatch(Command::SelectLevel(0x12c)).unwrap();
+        app.dispatch(Command::CommitRomWrites {
+            expected_revision: app.project_revision(),
+            description: "dirty before reload".into(),
+            writes: vec![RomWrite {
+                offset: 3,
+                bytes: vec![0x77],
+            }],
+        })
+        .unwrap();
+
+        let context = egui::Context::default();
+        let mut state = EffectState::default();
+        let effects = app.dispatch(Command::Reload).unwrap();
+        state.handle(&mut app, &context, effects);
+        assert_eq!(state.confirmation, Some(Confirmation::DiscardAndReload));
+
+        let effects = app.discard_and_request_reload().unwrap();
+        let request_id = match effects.as_slice() {
+            [
+                FrontendEffect::LoadRomAt {
+                    request_id,
+                    path: requested,
+                },
+            ] => {
+                assert_eq!(requested, &path);
+                *request_id
+            }
+            effects => panic!("unexpected reload effects: {effects:?}"),
+        };
+        assert_eq!(app.project().unwrap().rom.read(3, 1).unwrap(), [0x77]);
+        state.complete_rom_load(
+            &mut app,
+            &context,
+            RomLoadCompletion {
+                request_id,
+                path: path.clone(),
+                result: AppState::prepare_open(test_rom()).map_err(|error| error.to_string()),
+            },
+        );
+
+        assert_eq!(app.mode, lm_app::EditorMode::Level(0x12c));
+        assert_eq!(app.project().unwrap().rom.read(3, 1).unwrap(), [0]);
+        assert!(state.error.is_none());
+        fs::remove_file(path).unwrap();
     }
 
     #[test]

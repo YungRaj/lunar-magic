@@ -81,6 +81,7 @@ pub(crate) struct PendingSave {
 pub enum AppError {
     NoProject,
     NoLevelView,
+    NoDocumentPath,
     NoRevisionProfile,
     ProjectAlreadyOpen,
     Recovery(String),
@@ -854,6 +855,16 @@ impl AppState {
                     self.begin_open()?
                 }
             }
+            Command::Reload => {
+                self.require_no_pending_save()?;
+                self.require_no_pending_open()?;
+                self.project.as_ref().ok_or(AppError::NoProject)?;
+                if self.project.as_ref().is_some_and(Project::is_modified) {
+                    vec![FrontendEffect::ConfirmDiscardAndReload]
+                } else {
+                    self.begin_reload(false)?
+                }
+            }
             Command::Save => {
                 let (request_id, bytes) = self.begin_save()?;
                 vec![match self.document_path.clone() {
@@ -1081,6 +1092,12 @@ impl AppState {
         let mut effects = self.discard_and_close(false);
         effects.extend(self.begin_open()?);
         Ok(effects)
+    }
+
+    /// Completes an explicit discard confirmation and reloads the current ROM from its existing
+    /// path. The dirty project remains installed until a fully parsed replacement is ready.
+    pub fn discard_and_request_reload(&mut self) -> Result<Vec<FrontendEffect>, AppError> {
+        self.begin_reload(true)
     }
 
     fn request_close(&mut self, quit_after: bool) -> Result<Vec<FrontendEffect>, AppError> {

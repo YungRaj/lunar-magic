@@ -5535,3 +5535,21 @@ false vanilla matches, while the focused transaction gate proves enabling music 
 rendered cells nor render writes. The full native suite passes 1,000 tests with 12 explicit
 external-fixture ignores, Windows cross-compilation passes, and the 513-line renderer manifest
 retains SHA-256 `254a1a050d12785973241910e26d8b7917a5cb5e2a56602a330fc6cbd833c04d`.
+
+## Reload ROM lifecycle (`$23BE`)
+
+The authenticated command byte table maps `LM_FILE_RELOAD_ROM` to case `$27`. Its branch at
+`$00498553` first runs `CheckCanProceedAfterCoreSavePrompts` (`$00455F50`), which sequences the
+modified-level, shared-palette, and unsaved-level prompts. On success it calls
+`OpenConfiguredLevelSourcePath` (`$00478C90`) with the current level retained in `EBP`; that path
+reopens the configured source through `OpenLevelSourceByPath` and then reloads the same level.
+
+Rust therefore models Reload separately from Open. It reads the existing document path directly,
+retains the selected level, and never presents a ROM chooser. Clean reloads are revision-bound.
+Dirty reloads require Save, Discard, or Cancel; Save resumes only after persistence succeeds, while
+Discard authorizes replacement without first closing the project. In both cases the current
+project remains installed until the worker has read, parsed, and identity-qualified the complete
+replacement, so I/O failure, malformed input, cancellation, or stale completion cannot destroy the
+editing session. Core and native lifecycle tests cover direct-path selection, dirty confirmation,
+failure atomicity, exact level restoration, and the authenticated route. Native command coverage is
+now 249 of 317 named table slots, leaving 68 pending.

@@ -7,6 +7,8 @@ use std::path::PathBuf;
 pub(crate) struct PendingOpen {
     pub id: u64,
     pub revision: u64,
+    pub restore_mode: Option<EditorMode>,
+    pub allow_modified: bool,
 }
 
 /// Fully parsed supported ROM state awaiting request-bound installation.
@@ -40,8 +42,38 @@ impl AppState {
         self.pending_open = Some(PendingOpen {
             id,
             revision: self.project_revision,
+            restore_mode: None,
+            allow_modified: false,
         });
         Ok(vec![FrontendEffect::ChooseRom { request_id: id }])
+    }
+
+    pub(crate) fn begin_reload(
+        &mut self,
+        allow_modified: bool,
+    ) -> Result<Vec<FrontendEffect>, AppError> {
+        if self.pending_open.is_some() {
+            return Err(AppError::OpenAlreadyPending);
+        }
+        let path = self.document_path.clone().ok_or(AppError::NoDocumentPath)?;
+        let EditorMode::Level(level) = self.mode else {
+            return Err(AppError::NoLevelView);
+        };
+        let id = self.next_open_request;
+        self.next_open_request = self
+            .next_open_request
+            .checked_add(1)
+            .ok_or(AppError::OpenRequestOverflow)?;
+        self.pending_open = Some(PendingOpen {
+            id,
+            revision: self.project_revision,
+            restore_mode: Some(EditorMode::Level(level)),
+            allow_modified,
+        });
+        Ok(vec![FrontendEffect::LoadRomAt {
+            request_id: id,
+            path,
+        }])
     }
 
     /// Installs the ROM selected for a specific asynchronous chooser request.
@@ -78,8 +110,16 @@ impl AppState {
         path: Option<PathBuf>,
     ) -> Result<Vec<FrontendEffect>, AppError> {
         self.validate_open_request(request_id)?;
+        let restore_mode = self.pending_open.and_then(|pending| pending.restore_mode);
         self.pending_open = None;
         self.install_project(prepared.project, path);
+        if let Some(mode) = restore_mode {
+            self.mode = mode;
+            self.level_navigation.reset(match mode {
+                EditorMode::Level(level) => Some(level),
+                _ => None,
+            });
+        }
         Ok(self.external_tool_event_effects(crate::ToolEvent::ProjectOpened))
     }
 
@@ -92,7 +132,7 @@ impl AppState {
             });
         }
         if pending.revision != self.project_revision
-            || self.project.as_ref().is_some_and(Project::is_modified)
+            || (!pending.allow_modified && self.project.as_ref().is_some_and(Project::is_modified))
         {
             self.pending_open = None;
             return Err(AppError::OpenContextChanged);
@@ -201,6 +241,77 @@ mod tests {
             .unwrap();
         assert_eq!(app.project().unwrap().rom.read(1, 1).unwrap(), [8]);
         assert_eq!(app.document_path, Some("prepared.smc".into()));
+    }
+
+    #[test]
+    fn clean_reload_uses_current_path_and_restores_selected_level() {
+        let mut app = AppState::default();
+        app.load_rom_at(test_rom(1), Some("current.smc".into()))
+            .unwrap();
+        app.dispatch(Command::SelectLevel(0x12a)).unwrap();
+        let request = match app.dispatch(Command::Reload).unwrap().as_slice() {
+            [FrontendEffect::LoadRomAt { request_id, path }] => {
+                assert_eq!(path, &PathBuf::from("current.smc"));
+                *request_id
+            }
+            effects => panic!("unexpected reload effects: {effects:?}"),
+        };
+        app.complete_open(request, test_rom(2), Some("current.smc".into()))
+            .unwrap();
+        assert_eq!(app.project().unwrap().rom.read(1, 1).unwrap(), [2]);
+        assert_eq!(app.mode, EditorMode::Level(0x12a));
+    }
+
+    #[test]
+    fn dirty_reload_is_confirmation_bound_and_failure_atomic() {
+        let mut app = AppState::default();
+        app.load_rom_at(test_rom(1), Some("current.smc".into()))
+            .unwrap();
+        app.dispatch(Command::SelectLevel(0x12b)).unwrap();
+        app.dispatch(Command::CommitRomWrites {
+            expected_revision: 0,
+            description: "unsaved edit".into(),
+            writes: vec![lm_project::RomWrite {
+                offset: 2,
+                bytes: vec![9],
+            }],
+        })
+        .unwrap();
+        assert_eq!(
+            app.dispatch(Command::Reload).unwrap(),
+            vec![FrontendEffect::ConfirmDiscardAndReload]
+        );
+        let request = match app.discard_and_request_reload().unwrap().as_slice() {
+            [FrontendEffect::LoadRomAt { request_id, path }] => {
+                assert_eq!(path, &PathBuf::from("current.smc"));
+                *request_id
+            }
+            effects => panic!("unexpected confirmed reload effects: {effects:?}"),
+        };
+        assert_eq!(app.project().unwrap().rom.read(1, 2).unwrap(), [1, 9]);
+        app.cancel_open(request).unwrap();
+        assert_eq!(app.project().unwrap().rom.read(1, 2).unwrap(), [1, 9]);
+        assert_eq!(app.mode, EditorMode::Level(0x12b));
+    }
+
+    #[test]
+    fn reload_requires_a_named_level_document() {
+        let mut unnamed = AppState::default();
+        unnamed.load_rom(test_rom(1)).unwrap();
+        assert!(matches!(
+            unnamed.dispatch(Command::Reload),
+            Err(AppError::NoDocumentPath)
+        ));
+
+        let mut non_level = AppState::default();
+        non_level
+            .load_rom_at(test_rom(1), Some("current.smc".into()))
+            .unwrap();
+        non_level.dispatch(Command::ShowOverworld).unwrap();
+        assert!(matches!(
+            non_level.dispatch(Command::Reload),
+            Err(AppError::NoLevelView)
+        ));
     }
 
     #[test]
