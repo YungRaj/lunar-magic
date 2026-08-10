@@ -872,3 +872,19 @@ Snes9x 2010 table above. It also passed the unprinted in-place edited-Goomba/run
 pause/step protocol, bounded save-RAM restoration, direct level switching, exact whole-ROM reload,
 Stop acknowledgement, and Windows process teardown. The driver invoked Wine as one explicit
 `--backend-runner`; no shell was involved.
+
+### Hosted Linux x86-64 live-backend runtime
+
+Git commit `d126b6ca` ran the isolated Ubuntu job
+[`93425010747`](https://github.com/YungRaj/lunar-magic/actions/runs/31379108573/job/93425010747)
+to completion. Checkout, Rust setup, isolated backend build, strict C11 shared-core build, and the
+complete capability exercise all report `success`. The retained deterministic core source has
+SHA-256 `b0c53578861a42342b30b190661d5fe767eb6c14c63754dec1205ac7772b996a`; its driver has SHA-256
+`003c8ae0ccaf02958f429cd97df28763b0d19777cef822b736845bdf996c1b20`.
+
+The Linux process proves immutable ROM-byte loading, exact 128-KiB WRAM and bounded SRAM discovery,
+opaque nonuniform XRGB8888 conversion, interleaved 32,040-Hz audio, direct `$105`/`$106` state,
+in-place sprite-stream consumption and runtime-table reporting, distinct level frames, deterministic
+whole-ROM reload hashes, pause/step, Stop, unload, and clean process exit. It does not stand in for
+SMW emulation: the real vanilla-ROM behavior remains separately proved on native ARM64 macOS and
+Windows x86-64, while this job closes the previously missing Linux process/ABI axis.

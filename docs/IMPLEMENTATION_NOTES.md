@@ -2522,8 +2522,13 @@ The same source cross-compiles as an optimized x86-64 Windows GNU PE32+ executab
 through Wine 11.13 against the official Windows Snes9x 2010 DLL. `--backend-runner` lets the retained
 oracle prepend exactly one direct runner executable; it never introduces a command shell or
 reparses arguments. The Windows process passes every `$1FF` assertion and exactly reproduces the
-native ARM64 Snes9x 2010 frame/audio hashes. Linux remains the sole declared release runtime without
-an executed live-core oracle.
+native ARM64 Snes9x 2010 frame/audio hashes. The final platform boundary is closed by a separate
+hosted Ubuntu job: it builds `lm-libretro`, compiles a warning-clean deterministic libretro-v1 core, and
+executes a shell-free Python driver through all `$1FF` capabilities. The core supplies exact WRAM,
+SRAM, video, audio, level-transition, and sprite-loader state without containing proprietary game
+data. This evidence is intentionally orthogonal: Linux proves the process/ABI/platform path, while
+the native macOS and Windows vanilla-ROM runs prove actual SMW behavior. Together with all four
+packaged targets, this completes the supported LMSW runtime product.
 The portable-release matrix now builds `lm-libretro` explicitly beside `lm-native` and `lm-cli`
 for Linux x86-64, Windows x86-64, Apple Silicon macOS, and Intel macOS before invoking the strict
 packager. Ordinary CI repeats the complete three-binary build and package operation on Linux,
