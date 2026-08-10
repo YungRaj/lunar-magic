@@ -769,3 +769,8 @@ format and interaction gaps rather than for an unproven blank-reuse decision.
 Whenever a row changes, its evidence must name the relevant Rust tests and, where applicable, the
 Wine fixture and Ghidra address. A passing aggregate test suite is necessary but cannot promote a
 row whose workflow-specific evidence is absent.
+
+The localization auto-detection gate additionally enforces the original 64-preference comparison
+ceiling on every platform. A matching 64th normalized preference is accepted, while a matching
+65th preference is ignored; this prevents unbounded environment-language lists from widening the
+recovered `AutoDetectAndLoadLanguageModule` contract.

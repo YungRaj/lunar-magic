@@ -975,6 +975,8 @@ fn system_locale_preferences() -> Vec<String> {
     environment_locale_preferences()
 }
 
+const MAX_PREFERRED_UI_LANGUAGES: usize = 64;
+
 fn environment_locale_preferences() -> Vec<String> {
     ["LANGUAGE", "LC_ALL", "LC_MESSAGES", "LANG"]
         .into_iter()
@@ -1001,6 +1003,7 @@ fn select_preferred_installed_localization(
     let preferences = preferences
         .into_iter()
         .filter_map(|locale| normalize_locale(&locale))
+        .take(MAX_PREFERRED_UI_LANGUAGES)
         .collect::<Vec<_>>();
     for preference in &preferences {
         if let Some(catalog) = installed
@@ -1209,6 +1212,29 @@ mod preference_tests {
                 &installed,
                 ["C".to_owned(), "POSIX".to_owned()]
             ),
+            None
+        );
+    }
+
+    #[test]
+    fn installed_language_autodetection_obeys_original_sixty_four_preference_bound() {
+        let installed = [InstalledLocalization {
+            locale: "de-DE".into(),
+            path: "de.lmlang".into(),
+        }];
+        let within_bound = (0..63)
+            .map(|index| format!("zz-{index}"))
+            .chain(["de-DE".to_owned()]);
+        assert_eq!(
+            select_preferred_installed_localization(&installed, within_bound),
+            Some("de.lmlang".into())
+        );
+
+        let beyond_bound = (0..64)
+            .map(|index| format!("zz-{index}"))
+            .chain(["de-DE".to_owned()]);
+        assert_eq!(
+            select_preferred_installed_localization(&installed, beyond_bound),
             None
         );
     }

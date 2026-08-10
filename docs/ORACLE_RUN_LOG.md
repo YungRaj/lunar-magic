@@ -888,3 +888,13 @@ in-place sprite-stream consumption and runtime-table reporting, distinct level f
 whole-ROM reload hashes, pause/step, Stop, unload, and clean process exit. It does not stand in for
 SMW emulation: the real vanilla-ROM behavior remains separately proved on native ARM64 macOS and
 Windows x86-64, while this job closes the previously missing Linux process/ABI axis.
+
+## Localization auto-detection preference bound
+
+On 2026-08-10, the retained Lunar Magic 3.63 decompilation fixture for
+`AutoDetectAndLoadLanguageModule` (`004D7360`) was rechecked against the native selector. The
+original compares no more than 64 preferred UI-language tags. Rust now applies that same ceiling
+after normalization on every platform, including colon-delimited non-Windows environment sources.
+`application::preference_tests::installed_language_autodetection_obeys_original_sixty_four_preference_bound`
+proves that an exact match in slot 64 is selected and the same match in slot 65 is ignored; the
+neighboring exact-then-primary test continues to prove the recovered two-pass ordering.

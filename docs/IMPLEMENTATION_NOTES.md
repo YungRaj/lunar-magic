@@ -3521,10 +3521,18 @@ text entry. A successful load replaces the complete catalog atomically and persi
 canonical Unicode bytes; malformed, oversized, truncated, or incomplete catalogs leave the active
 language unchanged. **Use Built-in English** removes the custom catalog explicitly and persists that
 choice. Persisted localization, shortcut, and toolbar hex payloads are preflighted against their
-public canonical maximum sizes before byte-vector allocation. Native title, status, and
-configured-toolbar text consume the catalog today. Complete menu
-and dialog localization, automatic language discovery, original switch behavior, and Wine evidence
-remain open.
+public canonical maximum sizes before byte-vector allocation. Native title, status, configured
+toolbar text, the complete application menu surface, Help, About, Compatibility diagnostics,
+crash recovery, unsaved-change confirmation, global-error acknowledgement, and Undo History
+consume the catalog today. The executable-adjacent `sysLMLanguage` route deterministically scans
+at most 64 bounded canonical `.lmlang` regular files, exposes each valid locale, and skips invalid
+siblings. Automatic selection remains persistently distinct from fixed built-in English and an
+explicit catalog; it compares at most the original 64 entries from the bounded Windows
+preferred-UI-language list (or ordered locale environment values elsewhere), prefers an exact
+normalized locale, then a primary-language match,
+and safely retains English when no catalog matches. The original DLL resource fallback/version
+metadata ABI, complete remaining editor-dialog localization, and retained live Wine evidence remain
+open.
 
 The native frontend now has an opt-in, self-capturing `visual-smoke` build. It waits until the
 workspace has rendered across multiple frames, requests the real Glow viewport through egui, and
