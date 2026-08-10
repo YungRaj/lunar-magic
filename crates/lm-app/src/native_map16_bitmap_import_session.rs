@@ -375,7 +375,7 @@ impl NativeMap16BitmapImportSession {
                 options: &palette_options,
             },
             map16: &map16_saves,
-            checksum_field: lm_profile::SMW_US_V1_CHECKSUM_FIELD,
+            checksum_field: self.snapshot.identity.internal_header_offset + 0x1c,
         };
         prepare_map16_bitmap_rom_commit(&self.snapshot, &save)
             .map_err(|error| NativeMap16BitmapImportSessionError::Commit(error.to_string()))

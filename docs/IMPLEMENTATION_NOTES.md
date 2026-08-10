@@ -1916,7 +1916,11 @@ Magic's ROM-open path loads the complete 64-byte object-tileset assignment table
 ROM-layout descriptor field `+0x94` into the live 16-by-4 workspace. Revision profiles therefore
 carry `graphics.object_tileset_assignments_offset`; allocation and ROM audit protect its entire
 logical span, and bitmap sessions reject an absent declaration. The direct pristine SMW-US route
-continues to use its separately authenticated fixed table.
+continues to use its separately authenticated fixed table. The complete profile-backed import now
+crosses all 48 supported identity, map-mode, copier-header, and starting-checksum forms with real
+palette/GFX/Map16 mutation, checksum repair, semantic reopen, logical header equivalence, and exact
+physical Undo/Redo. Its checksum target comes from the authenticated identity's internal-header
+offset rather than the SMW-US constant.
 
 Complete structured `.map16` loading uses the same asynchronous safety boundary: the editor records
 the application revision only after the bounded loader accepts the request, consumes that token once
