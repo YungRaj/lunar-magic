@@ -116,6 +116,7 @@ mod startup;
 #[cfg(test)]
 mod test_support;
 mod toolbar_editor;
+mod toolbar_graphics_transfer;
 mod user_toolbar_images;
 mod vanilla_graphics_editor;
 mod vanilla_level_editor;

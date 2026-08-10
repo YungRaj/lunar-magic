@@ -1,6 +1,7 @@
 use super::{LevelScreenOverlay, LevelViewVisibility, NativeApplication};
 use crate::frontend_ui;
 use crate::rom_expansion_dialog::RomExpansionPreset;
+use crate::toolbar_graphics_transfer::QuickGraphicsExtraction;
 use eframe::egui;
 use lm_app::{
     Command, LevelNavigationDirection, ShortcutGesture, ShortcutKey, ShortcutModifiers,
@@ -298,6 +299,15 @@ impl NativeApplication {
             UserToolbarNativeAction::ExportAllLevels => {
                 self.rom_mwl_batch_export_dialog
                     .open(&self.app, lm_app::MwlBatchExportMode::All);
+            }
+            UserToolbarNativeAction::QuickExtractGraphics(action) => {
+                if let Err(error) = self.toolbar_graphics_transfer.start(
+                    &self.app,
+                    action,
+                    self.joined_graphics_files,
+                ) {
+                    self.effects.error = Some(error);
+                }
             }
         }
     }
@@ -896,6 +906,7 @@ enum UserToolbarNativeAction {
     Paste,
     ExpandRom(RomExpansionPreset),
     ExportAllLevels,
+    QuickExtractGraphics(QuickGraphicsExtraction),
 }
 
 fn user_toolbar_native_action(name: &str) -> Option<UserToolbarNativeAction> {
@@ -937,6 +948,12 @@ fn user_toolbar_native_action(name: &str) -> Option<UserToolbarNativeAction> {
             UserToolbarNativeAction::ExpandRom(RomExpansionPreset::Sa1_8MiB)
         }
         "LM_FILE_EXPORT_DIRECTORY" => UserToolbarNativeAction::ExportAllLevels,
+        "LM_FILE_EXTRACT_GFX_BUTTON" => {
+            UserToolbarNativeAction::QuickExtractGraphics(QuickGraphicsExtraction::Standard)
+        }
+        "LM_FILE_EXTRACT_EXGFX_BUTTON" => {
+            UserToolbarNativeAction::QuickExtractGraphics(QuickGraphicsExtraction::ExGraphics)
+        }
         _ => return None,
     })
 }
@@ -1241,6 +1258,14 @@ mod user_toolbar_tests {
                 "LM_FILE_EXPORT_DIRECTORY",
                 UserToolbarNativeAction::ExportAllLevels,
             ),
+            (
+                "LM_FILE_EXTRACT_GFX_BUTTON",
+                UserToolbarNativeAction::QuickExtractGraphics(QuickGraphicsExtraction::Standard),
+            ),
+            (
+                "LM_FILE_EXTRACT_EXGFX_BUTTON",
+                UserToolbarNativeAction::QuickExtractGraphics(QuickGraphicsExtraction::ExGraphics),
+            ),
         ] {
             assert_eq!(user_toolbar_native_action(name), Some(action));
         }
@@ -1445,7 +1470,7 @@ mod user_toolbar_tests {
                     || user_toolbar_native_action(entry.name).is_some()
             })
             .collect::<Vec<_>>();
-        assert_eq!(supported.len(), 181);
+        assert_eq!(supported.len(), 183);
         assert!(
             supported
                 .iter()

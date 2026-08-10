@@ -1603,24 +1603,16 @@ impl RomGraphicsEditor {
         let Some(directory) = crate::dialogs::choose_graphics_directory() else {
             return;
         };
-        let (slots, file_numbers, file_layouts, encoding) =
-            match lunar_magic_standard_graphics_sources(&workspace.profile, &workspace.image) {
-                Ok(sources) => sources,
-                Err(error) => {
-                    self.error = Some(error);
-                    return;
-                }
-            };
-        let source = graphics_batch::GraphicsBatchSource {
-            image: workspace.image.clone(),
-            layout: workspace.profile.graphics,
-            slots: slots.clone(),
-            file_numbers,
-            family: "standard",
-            exgraphics_names: false,
-            encoding,
-            raw_4bpp_overrides: Vec::new(),
-            file_layouts,
+        let source = match standard_graphics_batch_source(
+            workspace.image.clone(),
+            workspace.profile.graphics,
+            pristine_special_graphics(&workspace.profile),
+        ) {
+            Ok(source) => source,
+            Err(error) => {
+                self.error = Some(error);
+                return;
+            }
         };
         match self.graphics_batch.start(source, directory) {
             Ok(()) => self.io_status = None,
@@ -1825,31 +1817,17 @@ impl RomGraphicsEditor {
         let Some(workspace) = &self.workspace else {
             return;
         };
-        let slots = match installed_exgraphics_slots(&workspace.image, workspace.profile.graphics) {
-            Ok(slots) if !slots.is_empty() => slots,
-            Ok(_) => {
-                self.error = Some("the installed graphics table contains no ExGFX files".into());
-                return;
-            }
-            Err(error) => {
-                self.error = Some(error);
-                return;
-            }
-        };
         let Some(directory) = crate::dialogs::choose_exgraphics_directory() else {
             return;
         };
-        let source = graphics_batch::GraphicsBatchSource {
-            image: workspace.image.clone(),
-            layout: workspace.profile.graphics,
-            slots: slots.clone(),
-            file_numbers: slots,
-            family: "extended",
-            exgraphics_names: true,
-            encoding: graphics_batch::GraphicsBatchEncoding::Native,
-            raw_4bpp_overrides: Vec::new(),
-            file_layouts: Vec::new(),
-        };
+        let source =
+            match exgraphics_batch_source(workspace.image.clone(), workspace.profile.graphics) {
+                Ok(source) => source,
+                Err(error) => {
+                    self.error = Some(error);
+                    return;
+                }
+            };
         match self.graphics_batch.start(source, directory) {
             Ok(()) => self.io_status = None,
             Err(error) => self.error = Some(error),
@@ -1975,7 +1953,7 @@ fn ensure_external_edit_revision(expected: u64, current: u64) -> Result<(), Stri
     crate::rom_load::ensure_current_revision(expected, current, "external graphics reload")
 }
 
-fn pristine_special_graphics(profile: &RevisionProfile) -> bool {
+pub(crate) fn pristine_special_graphics(profile: &RevisionProfile) -> bool {
     profile.game == lm_rom::SupportedGame::SuperMarioWorld
         && profile.region == lm_rom::Region::NorthAmerica
         && profile.revision == 0
@@ -2034,6 +2012,73 @@ fn lunar_magic_standard_graphics_sources(
         file_layouts,
         graphics_batch::GraphicsBatchEncoding::LunarMagicStandard,
     ))
+}
+
+pub(crate) fn standard_graphics_batch_source(
+    image: lm_rom::RomImage,
+    layout: lm_project::GraphicsRomLayout,
+    smw_us_special: bool,
+) -> Result<graphics_batch::GraphicsBatchSource, String> {
+    let (slots, file_numbers, file_layouts, encoding) = if smw_us_special {
+        let special = lm_profile::smw_us_v1_special_graphics_layouts(&image)
+            .map_err(|error| format!("cannot resolve live GFX32/GFX33: {error}"))?;
+        let mut slots = standard_graphics_slots(layout);
+        let mut file_numbers = slots.clone();
+        let mut file_layouts = slots
+            .iter()
+            .copied()
+            .map(|slot| (slot, layout))
+            .collect::<Vec<_>>();
+        slots.extend([0x32, 0x33]);
+        file_numbers.extend([0x32, 0x33]);
+        file_layouts.extend([(0, special.gfx32), (0, special.gfx33)]);
+        (
+            slots,
+            file_numbers,
+            file_layouts,
+            graphics_batch::GraphicsBatchEncoding::LunarMagicStandard,
+        )
+    } else {
+        let slots = standard_graphics_slots(layout);
+        (
+            slots.clone(),
+            slots,
+            Vec::new(),
+            graphics_batch::GraphicsBatchEncoding::Native,
+        )
+    };
+    Ok(graphics_batch::GraphicsBatchSource {
+        image,
+        layout,
+        slots,
+        file_numbers,
+        family: "standard",
+        exgraphics_names: false,
+        encoding,
+        raw_4bpp_overrides: Vec::new(),
+        file_layouts,
+    })
+}
+
+pub(crate) fn exgraphics_batch_source(
+    image: lm_rom::RomImage,
+    layout: lm_project::GraphicsRomLayout,
+) -> Result<graphics_batch::GraphicsBatchSource, String> {
+    let slots = installed_exgraphics_slots(&image, layout)?;
+    if slots.is_empty() {
+        return Err("the installed graphics table contains no ExGFX files".into());
+    }
+    Ok(graphics_batch::GraphicsBatchSource {
+        image,
+        layout,
+        slots: slots.clone(),
+        file_numbers: slots,
+        family: "extended",
+        exgraphics_names: true,
+        encoding: graphics_batch::GraphicsBatchEncoding::Native,
+        raw_4bpp_overrides: Vec::new(),
+        file_layouts: Vec::new(),
+    })
 }
 
 fn installed_exgraphics_slots(

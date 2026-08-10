@@ -33,7 +33,7 @@ ruby -e 'b=File.binread(ARGV[0]); 318.times{|i| p=b.byteslice(0x1e6a70+i*4,4).un
 slots, all 317 named entries in their original order, the terminal sentinel, duplicate-name and
 shared-ID behavior, and successful `usertoolbar.txt` parsing of every named entry. `lm-native`
 rejects invented internal names before dispatch, distinguishes an authenticated but not-yet-routed
-command by its original ID, and currently routes 181 authenticated table entries to native commands,
+command by its original ID, and currently routes 183 authenticated table entries to native commands,
 level-view actions, or the same native workflow used by the corresponding menu. The direct workflow
 set includes Help Contents/About, level analysis, restore-point creation/restoration, IPS
 creation/application, the authenticated Sprite 19 installer, the integrated object/sprite placers
@@ -44,5 +44,8 @@ commands: ordinary 2/3/4 MiB, warned 8 MiB ExLoROM conversion, and warned SA-1 6
 authenticated `$23A3` `LM_FILE_EXPORT_DIRECTORY` route also opens the same all-level MWL batch
 exporter used by the native Editors menu. `LM_MOUSE_LEVEL_BACK` and `LM_MOUSE_LEVEL_FORWARD` share
 the same bounded navigation-history actions as their authenticated File-command counterparts.
+The authenticated quick `LM_FILE_EXTRACT_GFX_BUTTON` and `LM_FILE_EXTRACT_EXGFX_BUTTON` handlers
+reuse the atomic batch worker without an ownership chooser, target the ROM-sibling `Graphics`
+(`AllGFX.bin` when enabled) and `ExGraphics` paths, and suppress only completion presentation.
 Command enumeration rejects false acceptance, but does not claim that the remaining commands are
 implemented.

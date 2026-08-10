@@ -98,6 +98,7 @@ impl NativeApplication {
     }
 
     pub(super) fn show_project_operations(&mut self, context: &egui::Context) {
+        self.toolbar_graphics_transfer.show(context);
         self.level_usage_dialog.show(context);
         self.ips_create_dialog.show(context);
         self.restore_point_dialog.show(context, &self.app);

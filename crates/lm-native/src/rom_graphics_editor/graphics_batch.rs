@@ -9,22 +9,22 @@ use std::sync::{
 };
 
 #[derive(Clone)]
-pub(super) struct GraphicsBatchSource {
-    pub(super) image: RomImage,
-    pub(super) layout: GraphicsRomLayout,
-    pub(super) slots: Vec<usize>,
-    pub(super) file_numbers: Vec<usize>,
-    pub(super) family: &'static str,
+pub(crate) struct GraphicsBatchSource {
+    pub(crate) image: RomImage,
+    pub(crate) layout: GraphicsRomLayout,
+    pub(crate) slots: Vec<usize>,
+    pub(crate) file_numbers: Vec<usize>,
+    pub(crate) family: &'static str,
     /// Uses Lunar Magic's `ExGFX` namespace even for reserved files `$60` through `$63`.
-    pub(super) exgraphics_names: bool,
-    pub(super) encoding: GraphicsBatchEncoding,
-    pub(super) raw_4bpp_overrides: Vec<(usize, Vec<u8>)>,
+    pub(crate) exgraphics_names: bool,
+    pub(crate) encoding: GraphicsBatchEncoding,
+    pub(crate) raw_4bpp_overrides: Vec<(usize, Vec<u8>)>,
     /// Per-file `(slot, layout)` mappings for non-tabular sources; empty uses `slots` and `layout`.
-    pub(super) file_layouts: Vec<(usize, GraphicsRomLayout)>,
+    pub(crate) file_layouts: Vec<(usize, GraphicsRomLayout)>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(super) enum GraphicsBatchEncoding {
+pub(crate) enum GraphicsBatchEncoding {
     Native,
     Decoded4Bpp,
     LunarMagicStandard,
@@ -77,16 +77,16 @@ impl RunningBatch {
 }
 
 #[derive(Default)]
-pub(super) struct GraphicsBatchWorker {
+pub(crate) struct GraphicsBatchWorker {
     running: Option<RunningBatch>,
 }
 
 impl GraphicsBatchWorker {
-    pub(super) const fn is_running(&self) -> bool {
+    pub(crate) const fn is_running(&self) -> bool {
         self.running.is_some()
     }
 
-    pub(super) fn start(
+    pub(crate) fn start(
         &mut self,
         source: GraphicsBatchSource,
         directory: PathBuf,
@@ -94,7 +94,7 @@ impl GraphicsBatchWorker {
         self.start_target(source, GraphicsExportTarget::Directory(directory))
     }
 
-    pub(super) fn start_joined(
+    pub(crate) fn start_joined(
         &mut self,
         source: GraphicsBatchSource,
         path: PathBuf,
@@ -182,7 +182,7 @@ impl GraphicsBatchWorker {
         Ok(())
     }
 
-    pub(super) fn show(
+    pub(crate) fn show(
         &mut self,
         context: &egui::Context,
     ) -> Option<Result<Option<usize>, String>> {
@@ -213,7 +213,7 @@ impl GraphicsBatchWorker {
         completion
     }
 
-    fn poll(&mut self) -> Option<Result<Option<usize>, String>> {
+    pub(crate) fn poll(&mut self) -> Option<Result<Option<usize>, String>> {
         let running = self.running.as_ref()?;
         match running.result.try_recv() {
             Ok(result) => {

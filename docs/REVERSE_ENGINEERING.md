@@ -2102,6 +2102,14 @@ and progress bits but has no joined-file bit. The ordinary menu commands first r
 confirmation resources; quick commands set bit 1 and bypass only the completion presentation, not
 validation or mutation behavior.
 
+The Rust user-toolbar coordinator now routes the authenticated quick standard-GFX and ExGFX button
+commands without requiring the tile editor's ownership-file chooser. It resolves the current
+revision directly, retains the persisted joined-file bit, uses the fixed ROM-sibling `Graphics`,
+`Graphics/AllGFX.bin`, or `ExGraphics` target, validates the complete source before creating a
+missing target directory, and publishes through the same cancellable all-or-nothing batch worker as
+the installed editor. The ordinary commands remain separate until their confirmation resources are
+bound rather than being falsely treated as quick aliases.
+
 Both bulk extraction functions use the same recovered `wb` mode string at image address
 `005B2D3C`. `ExtractAllGFXFiles` therefore truncates/replaces every fixed
 `Graphics/GFX%02X.bin` output, or `Graphics/AllGFX.bin` in joined mode, on a repeated export;
