@@ -5375,4 +5375,8 @@ enumerates every top-level window owned by that PID and uses `PostMessageW`, int
 no visibility filter. Type 0 uses a retained hidden top-level STATIC caption window so cross-process
 `GetWindowText(wParam)` returns the current ROM path; types 1 and 2 use zero `wParam`. Toolbar
 option selection is external-only and exact, including the documented new-ROM/new-level/close
-force-all directives. The save/delete/Map16/overworld completion routes remain a subsequent step.
+force-all directives. Installed level, secondary-exit/asset, Map16, and overworld commits set three
+coalescing domain bits. Only a successful application ROM persistence acknowledgement consumes
+those bits and publishes save-level 3, save-Map16 4, and save-overworld 5; failures retain dirty
+state without notification, while undoing to clean clears stale bits. Delete-level 6 awaits the
+missing native deletion command.

@@ -146,6 +146,7 @@ pub(crate) struct NativeApplication {
     main_toolbar_images: MainToolbarImageSet,
     user_toolbar_observed_document: Option<std::path::PathBuf>,
     user_toolbar_observed_level: Option<u16>,
+    user_toolbar_pending_save_notifications: u8,
     level_text: String,
     special_world_passed: bool,
     joined_graphics_files: bool,
@@ -707,6 +708,14 @@ impl NativeApplication {
     fn show_global_effects(&mut self, context: &egui::Context) {
         self.effects.show_rom_loader(context, &mut self.app);
         self.effects.show_persistence(context, &mut self.app);
+        if std::mem::take(&mut self.effects.completed_rom_save) {
+            self.publish_user_toolbar_save_notifications();
+        } else if matches!(
+            self.app.capabilities().project,
+            lm_app::ProjectStatus::Closed | lm_app::ProjectStatus::OpenClean
+        ) {
+            self.user_toolbar_pending_save_notifications = 0;
+        }
         self.effects.show_external_tools(context, &mut self.app);
         let live_context = match self.app.mode {
             EditorMode::Level(level) if self.app.project().is_some() => {
@@ -847,33 +856,42 @@ impl eframe::App for NativeApplication {
                 ) && self.vanilla_level_editor.has_sprite_only_changes();
                 let sprite_payload =
                     sprite_only_commit.then(|| self.vanilla_level_editor.lmsw_sprite_payload());
-                if self.try_dispatch(context, command)
-                    && let Some(payload) = sprite_payload
-                {
-                    let reload = payload.and_then(|sprites| {
-                        let snapshot = self
-                            .app
-                            .controller_snapshot()
-                            .map_err(|error| error.to_string())?;
-                        let EditorMode::Level(level) = snapshot.mode else {
-                            return Err("sprite commit left level editing mode".into());
-                        };
-                        if self
-                            .live_emulator
-                            .source_context()
-                            .is_none_or(|(source_level, _)| source_level != level)
-                        {
-                            return Ok(());
+                let level_commit = matches!(
+                    command,
+                    Command::CommitRomWrites { .. } | Command::CommitRomMutation { .. }
+                );
+                if self.try_dispatch(context, command) {
+                    if level_commit {
+                        self.mark_user_toolbar_save_notification(
+                            lm_app::LunarMagicNotificationKind::SaveLevel,
+                        );
+                    }
+                    if let Some(payload) = sprite_payload {
+                        let reload = payload.and_then(|sprites| {
+                            let snapshot = self
+                                .app
+                                .controller_snapshot()
+                                .map_err(|error| error.to_string())?;
+                            let EditorMode::Level(level) = snapshot.mode else {
+                                return Err("sprite commit left level editing mode".into());
+                            };
+                            if self
+                                .live_emulator
+                                .source_context()
+                                .is_none_or(|(source_level, _)| source_level != level)
+                            {
+                                return Ok(());
+                            }
+                            self.live_emulator.reload_sprite_snapshot(
+                                snapshot.revision,
+                                level,
+                                snapshot.rom_bytes,
+                                sprites,
+                            )
+                        });
+                        if let Err(error) = reload {
+                            self.effects.error = Some(error);
                         }
-                        self.live_emulator.reload_sprite_snapshot(
-                            snapshot.revision,
-                            level,
-                            snapshot.rom_bytes,
-                            sprites,
-                        )
-                    });
-                    if let Err(error) = reload {
-                        self.effects.error = Some(error);
                     }
                 }
             } else if vanilla_graphics

@@ -16,6 +16,19 @@ macro_rules! show_rom_editor {
             $self.request_quit($context);
         }
     }};
+    ($self:expr, $context:expr, $editor:ident, $notification:expr) => {{
+        let (quit, command) = $self.$editor.show($context, $self.app.project_revision());
+        if let Some(command) = command {
+            if $self.try_dispatch($context, command) {
+                $self.$editor.commit_succeeded();
+                $self.mark_user_toolbar_save_notification($notification);
+                $self.renderer.invalidate();
+            }
+        }
+        if quit {
+            $self.request_quit($context);
+        }
+    }};
 }
 
 macro_rules! show_project_operation {
@@ -35,9 +48,24 @@ impl NativeApplication {
         show_rom_editor!(self, context, rom_lunar_magic_metadata_editor);
         show_rom_editor!(self, context, rom_shared_palette_editor);
         show_rom_editor!(self, context, rom_boss_sequence_editor);
-        show_rom_editor!(self, context, rom_overworld_message_editor);
-        show_rom_editor!(self, context, rom_overworld_path_link_editor);
-        show_rom_editor!(self, context, rom_overworld_warp_link_editor);
+        show_rom_editor!(
+            self,
+            context,
+            rom_overworld_message_editor,
+            lm_app::LunarMagicNotificationKind::SaveOverworld
+        );
+        show_rom_editor!(
+            self,
+            context,
+            rom_overworld_path_link_editor,
+            lm_app::LunarMagicNotificationKind::SaveOverworld
+        );
+        show_rom_editor!(
+            self,
+            context,
+            rom_overworld_warp_link_editor,
+            lm_app::LunarMagicNotificationKind::SaveOverworld
+        );
         let (quit, command) = self.rom_secondary_exit_editor.show(
             context,
             self.app.project_revision(),
@@ -47,6 +75,7 @@ impl NativeApplication {
             && self.try_dispatch(context, command)
         {
             self.rom_secondary_exit_editor.commit_succeeded();
+            self.mark_user_toolbar_save_notification(lm_app::LunarMagicNotificationKind::SaveLevel);
             self.renderer.invalidate();
         }
         if quit {
@@ -55,13 +84,48 @@ impl NativeApplication {
         show_rom_editor!(self, context, rom_title_recording_editor);
         show_rom_editor!(self, context, rom_title_tilemap_editor);
         show_rom_editor!(self, context, rom_credits_tilemap_editor);
-        show_rom_editor!(self, context, rom_overworld_player_start_editor);
-        show_rom_editor!(self, context, rom_overworld_settings_editor);
-        show_rom_editor!(self, context, rom_overworld_event_number_editor);
-        show_rom_editor!(self, context, rom_overworld_event_reveal_editor);
-        show_rom_editor!(self, context, rom_overworld_event_tilemap_editor);
-        show_rom_editor!(self, context, rom_overworld_level_name_editor);
-        show_rom_editor!(self, context, rom_overworld_special_event_editor);
+        show_rom_editor!(
+            self,
+            context,
+            rom_overworld_player_start_editor,
+            lm_app::LunarMagicNotificationKind::SaveOverworld
+        );
+        show_rom_editor!(
+            self,
+            context,
+            rom_overworld_settings_editor,
+            lm_app::LunarMagicNotificationKind::SaveOverworld
+        );
+        show_rom_editor!(
+            self,
+            context,
+            rom_overworld_event_number_editor,
+            lm_app::LunarMagicNotificationKind::SaveOverworld
+        );
+        show_rom_editor!(
+            self,
+            context,
+            rom_overworld_event_reveal_editor,
+            lm_app::LunarMagicNotificationKind::SaveOverworld
+        );
+        show_rom_editor!(
+            self,
+            context,
+            rom_overworld_event_tilemap_editor,
+            lm_app::LunarMagicNotificationKind::SaveOverworld
+        );
+        show_rom_editor!(
+            self,
+            context,
+            rom_overworld_level_name_editor,
+            lm_app::LunarMagicNotificationKind::SaveOverworld
+        );
+        show_rom_editor!(
+            self,
+            context,
+            rom_overworld_special_event_editor,
+            lm_app::LunarMagicNotificationKind::SaveOverworld
+        );
         let (quit, command) = self.rom_level_assets_editor.show(
             context,
             self.app.project_revision(),
@@ -72,6 +136,7 @@ impl NativeApplication {
             && self.try_dispatch(context, command)
         {
             self.rom_level_assets_editor.commit_succeeded();
+            self.mark_user_toolbar_save_notification(lm_app::LunarMagicNotificationKind::SaveLevel);
             self.renderer.invalidate();
         }
         if quit {
@@ -87,6 +152,7 @@ impl NativeApplication {
             && self.try_dispatch(context, command)
         {
             self.rom_map16_editor.commit_succeeded();
+            self.mark_user_toolbar_save_notification(lm_app::LunarMagicNotificationKind::SaveMap16);
             self.renderer.invalidate();
         }
         if quit {
@@ -109,7 +175,12 @@ impl NativeApplication {
             self.request_quit(context);
         }
         show_rom_editor!(self, context, rom_exanimation_editor);
-        show_rom_editor!(self, context, rom_overworld_editor);
+        show_rom_editor!(
+            self,
+            context,
+            rom_overworld_editor,
+            lm_app::LunarMagicNotificationKind::SaveOverworld
+        );
     }
 
     pub(super) fn show_project_operations(&mut self, context: &egui::Context) {

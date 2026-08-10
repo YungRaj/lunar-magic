@@ -22,6 +22,7 @@ pub(crate) struct EffectState {
     pub(crate) external_tools: crate::external_tool_launcher::ExternalToolLauncher,
     pub(crate) persistence: crate::persistence_worker::PersistenceWorker,
     pub(crate) rom_loader: RomLoader,
+    pub(crate) completed_rom_save: bool,
 }
 
 impl EffectState {
@@ -160,6 +161,7 @@ impl EffectState {
         };
         match result {
             Ok(effects) => {
+                self.completed_rom_save = true;
                 self.handle(app, context, effects);
                 if let Some(confirmation) = self.save_then.take() {
                     let effects = match confirmation {
@@ -496,6 +498,7 @@ mod tests {
         assert!(app.pending_save_request_id().is_none());
         assert!(!app.project().unwrap().is_modified());
         assert_eq!(app.mode, mode);
+        assert!(state.completed_rom_save);
         assert_eq!(fs::read(&path).unwrap()[2], 9);
         fs::remove_file(path).unwrap();
     }
@@ -608,6 +611,7 @@ mod tests {
         assert!(!state.quit_requested);
         assert!(state.save_then.is_none());
         assert!(state.error.is_some());
+        assert!(!state.completed_rom_save);
     }
 
     #[test]

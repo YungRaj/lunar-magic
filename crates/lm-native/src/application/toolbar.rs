@@ -79,14 +79,13 @@ impl NativeApplication {
     }
 
     pub(super) fn handle_user_toolbar_level_change(&mut self) {
-        let current = self.app.current_level();
-        if current == self.user_toolbar_observed_level {
-            return;
-        }
-        self.user_toolbar_observed_level = current;
-        let Some(level) = current else {
+        let Some(level) = self.app.current_level() else {
             return;
         };
+        if self.user_toolbar_observed_level == Some(level) {
+            return;
+        }
+        self.user_toolbar_observed_level = Some(level);
         self.notify_user_toolbar_tools(
             LunarMagicNotification::new(LunarMagicNotificationKind::NewLevel, level)
                 .expect("native level numbers fit the ten-bit notification variable"),
@@ -133,6 +132,51 @@ impl NativeApplication {
                     .notify_tool(&tool_id, notification, rom_path)
             {
                 self.effects.error = Some(error);
+            }
+        }
+    }
+
+    pub(super) fn mark_user_toolbar_save_notification(&mut self, kind: LunarMagicNotificationKind) {
+        let bit = match kind {
+            LunarMagicNotificationKind::SaveLevel => 1,
+            LunarMagicNotificationKind::SaveMap16 => 2,
+            LunarMagicNotificationKind::SaveOverworld => 4,
+            _ => return,
+        };
+        self.user_toolbar_pending_save_notifications |= bit;
+    }
+
+    pub(super) fn publish_user_toolbar_save_notifications(&mut self) {
+        let pending = std::mem::take(&mut self.user_toolbar_pending_save_notifications);
+        let level = self.user_toolbar_observed_level.unwrap_or(0);
+        for (bit, kind, option, variable) in [
+            (
+                1,
+                LunarMagicNotificationKind::SaveLevel,
+                "LM_NOTIFY_ON_SAVE_LEVEL",
+                level,
+            ),
+            (
+                2,
+                LunarMagicNotificationKind::SaveMap16,
+                "LM_NOTIFY_ON_SAVE_MAP16",
+                level,
+            ),
+            (
+                4,
+                LunarMagicNotificationKind::SaveOverworld,
+                "LM_NOTIFY_ON_SAVE_OV",
+                0,
+            ),
+        ] {
+            if pending & bit != 0 {
+                self.notify_user_toolbar_tools(
+                    LunarMagicNotification::new(kind, variable)
+                        .expect("native save notification variables are bounded"),
+                    None,
+                    option,
+                    None,
+                );
             }
         }
     }
@@ -1896,6 +1940,19 @@ mod user_toolbar_tests {
         assert!(
             toolbar_notification_tool_ids(&toolbar, "LM_NOTIFY_ON_SAVE_LEVEL", None).is_empty()
         );
+    }
+
+    #[test]
+    fn successful_save_publication_coalesces_each_dirty_domain_once() {
+        let mut native = NativeApplication::default();
+        native.user_toolbar_observed_level = Some(0x105);
+        native.mark_user_toolbar_save_notification(LunarMagicNotificationKind::SaveLevel);
+        native.mark_user_toolbar_save_notification(LunarMagicNotificationKind::SaveMap16);
+        native.mark_user_toolbar_save_notification(LunarMagicNotificationKind::SaveOverworld);
+        native.mark_user_toolbar_save_notification(LunarMagicNotificationKind::SaveLevel);
+        assert_eq!(native.user_toolbar_pending_save_notifications, 0b111);
+        native.publish_user_toolbar_save_notifications();
+        assert_eq!(native.user_toolbar_pending_save_notifications, 0);
     }
 
     #[test]

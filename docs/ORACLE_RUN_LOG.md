@@ -1049,4 +1049,7 @@ types, `$6942`, and the exact ten-bit limit. Native workers publish real child P
 safe boundary retains the ROM-path caption HWND, enumerates PID-owned top-level windows without a
 visibility check, and posts the packed payload. Exact option-selection tests cover per-button and
 force-all new-ROM/new-level/close routes, and the complete native Windows target cross-compiles.
-Save/delete/Map16/overworld event publication is not yet claimed.
+Save-level, save-Map16, and save-overworld domain marks now publish only after successful physical
+ROM persistence; focused success/failure tests bind acknowledgement and suppression, and a domain
+coalescing test proves each type is consumed once. Delete-level publication remains unclaimed with
+the still-missing native deletion operation.

@@ -75,8 +75,11 @@ stopped filtering out invisible windows.
 
 Rust now models and exhaustively tests the exact wire packing. Directly launched child workers
 publish their PID to the UI owner; Windows synchronously enumerates top-level windows by PID and
-asynchronously calls `PostMessageW` without a visibility predicate. A retained hidden top-level STATIC
-window keeps the active ROM path as its caption and supplies the stable type-0 `wParam`. Native
-ROM-open, level-change, and application-close transitions select only external toolbar buttons and
-honor the three documented force-all globals. Save-level, delete-level, Map16-save, and
-overworld-save completion wiring remains deliberately unclaimed here.
+asynchronously calls `PostMessageW` without a visibility predicate. A retained hidden top-level
+STATIC window keeps the active ROM path as its caption and supplies the stable type-0 `wParam`.
+Native ROM-open, level-change, and application-close transitions select only external toolbar
+buttons and honor the three documented force-all globals. Successful installed level, Map16, and
+overworld commits mark independent pending domains; only exact successful physical ROM-save
+acknowledgement publishes types 3, 4, and 5, coalesced once per domain. Failed/stale saves emit
+nothing, and returning to the clean baseline clears abandoned marks. Type 6 remains unclaimed
+because the native level-deletion operation itself is still missing.
