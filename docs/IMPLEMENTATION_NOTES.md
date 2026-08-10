@@ -3549,6 +3549,14 @@ at most 64 MiB per candidate, skips invalid siblings, and retains checksum-valid
 deterministic display-name/path order. Original modules remain distinct from selectable `.lmlang`
 catalogs until conversion of their dialog/string resources into the typed catalog is complete.
 
+The portable core now decodes the original localized string payload as well. It reads `$0DAC`,
+`$0DAD`, and `$0DAE` through the validated PE resource tree, reproduces the recovered chained
+byte transform, requires a complete raw-DEFLATE stream, caps inflated output at 32 MiB, and applies
+the original minimum of declared count, complete offset/length table extents, and 5,869 entries.
+Every offset/length addition is checked; entries without an in-range trailing NUL are unavailable,
+and valid entries must be UTF-8 before publication. Typed `UiTextKey`-to-original-index mapping and
+localized dialog-template conversion remain before an original DLL can replace the active catalog.
+
 The native frontend now has an opt-in, self-capturing `visual-smoke` build. It waits until the
 workspace has rendered across multiple frames, requests the real Glow viewport through egui, and
 publishes the returned framebuffer through `lm-render`'s bounded PNG encoder. This avoids relying

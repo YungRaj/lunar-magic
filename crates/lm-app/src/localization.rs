@@ -1,5 +1,6 @@
 //! Typed, toolkit-independent user-interface localization.
 
+use flate2::{Decompress, FlushDecompress, Status};
 use std::collections::BTreeMap;
 
 const MAGIC: &[u8; 8] = b"LMLOC001";
@@ -14,6 +15,8 @@ const ORIGINAL_LANGUAGE_MARKER: u32 = 0xc001_babe;
 const ORIGINAL_LANGUAGE_METADATA_MAX_BYTES: usize = 0x410;
 const ORIGINAL_LANGUAGE_TRAILER_BYTES: usize = 0x40;
 const ORIGINAL_LANGUAGE_CHECKSUM_FROM_END: usize = 0x38;
+const ORIGINAL_LANGUAGE_MAX_STRINGS: usize = 0x16ee;
+const ORIGINAL_LANGUAGE_MAX_INFLATED_BYTES: usize = 32 * 1024 * 1024;
 
 /// The four text fields published by an original Lunar Magic language DLL's resource `$DB6`.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -24,12 +27,39 @@ pub struct OriginalLanguageModuleMetadata {
     pub code_page: String,
 }
 
+/// Validated UTF-8 strings decoded from an original language DLL's `$DAC/$DAD/$DAE` resources.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OriginalLanguageStringPool {
+    strings: Vec<Option<String>>,
+}
+
+impl OriginalLanguageStringPool {
+    #[must_use]
+    pub fn len(&self) -> usize {
+        self.strings.len()
+    }
+
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.strings.is_empty()
+    }
+
+    #[must_use]
+    pub fn get(&self, index: usize) -> Option<&str> {
+        self.strings.get(index)?.as_deref()
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum OriginalLanguageModuleError {
     ModuleTooShort(usize),
     InvalidPortableExecutable(&'static str),
     MissingResource(u16),
     ResourceBounds,
+    MalformedStringTables,
+    Inflate(String),
+    InflatedPoolTooLong(usize),
+    InvalidStringUtf8(usize),
     WrongMarker,
     MetadataTooLong(usize),
     InvalidUtf8,
@@ -154,6 +184,126 @@ pub fn decode_original_language_module(
     let marker = resources.resource(0x0db7)?;
     let metadata = resources.resource(0x0db6)?;
     OriginalLanguageModuleMetadata::decode(marker, metadata)
+}
+
+/// Validates an original language DLL and decodes its complete bounded localized string pool.
+///
+/// Resource `$DAC` contains an offset-dependent obfuscated raw-DEFLATE stream. Resource `$DAD`
+/// starts with the declared string count followed by offsets, while `$DAE` contains matching
+/// lengths. The effective count is the recovered minimum of all three table bounds and 5,869.
+///
+/// # Errors
+///
+/// Returns [`OriginalLanguageModuleError`] for module/PE/resource validation failures, malformed
+/// tables, incomplete DEFLATE input, excessive output, or invalid UTF-8 in an otherwise valid
+/// string entry.
+pub fn decode_original_language_module_strings(
+    bytes: &[u8],
+) -> Result<OriginalLanguageStringPool, OriginalLanguageModuleError> {
+    validate_original_language_module_checksum(bytes)?;
+    let resources = PeResources::parse(bytes)?;
+    decode_original_language_string_resources(
+        resources.resource(0x0dac)?,
+        resources.resource(0x0dad)?,
+        resources.resource(0x0dae)?,
+    )
+}
+
+fn decode_original_language_string_resources(
+    encoded_pool: &[u8],
+    offsets: &[u8],
+    lengths: &[u8],
+) -> Result<OriginalLanguageStringPool, OriginalLanguageModuleError> {
+    if offsets.len() < 4 {
+        return Err(OriginalLanguageModuleError::MalformedStringTables);
+    }
+    let declared = usize::try_from(read_u32(offsets, 0)?)
+        .map_err(|_| OriginalLanguageModuleError::MalformedStringTables)?;
+    let count = declared
+        .min((offsets.len() - 4) / 4)
+        .min(lengths.len() / 4)
+        .min(ORIGINAL_LANGUAGE_MAX_STRINGS);
+
+    let mut compressed = encoded_pool.to_vec();
+    for index in 1..compressed.len() {
+        compressed[index] = (compressed[index] ^ 0x92)
+            .wrapping_sub(compressed[index - 1])
+            .wrapping_add(0x34);
+    }
+    let inflated = inflate_original_language_pool(&compressed)?;
+
+    let mut strings = Vec::with_capacity(count);
+    for index in 0..count {
+        let table_offset = index
+            .checked_mul(4)
+            .ok_or(OriginalLanguageModuleError::MalformedStringTables)?;
+        let offset = usize::try_from(read_u32(offsets, 4 + table_offset)?)
+            .map_err(|_| OriginalLanguageModuleError::MalformedStringTables)?;
+        let length = usize::try_from(read_u32(lengths, table_offset)?)
+            .map_err(|_| OriginalLanguageModuleError::MalformedStringTables)?;
+        let Some(end) = offset.checked_add(length) else {
+            strings.push(None);
+            continue;
+        };
+        if end >= inflated.len() || inflated[end] != 0 {
+            strings.push(None);
+            continue;
+        }
+        let string = std::str::from_utf8(&inflated[offset..end])
+            .map_err(|_| OriginalLanguageModuleError::InvalidStringUtf8(index))?;
+        strings.push(Some(string.to_owned()));
+    }
+    Ok(OriginalLanguageStringPool { strings })
+}
+
+fn inflate_original_language_pool(
+    compressed: &[u8],
+) -> Result<Vec<u8>, OriginalLanguageModuleError> {
+    inflate_original_language_pool_with_limit(compressed, ORIGINAL_LANGUAGE_MAX_INFLATED_BYTES)
+}
+
+fn inflate_original_language_pool_with_limit(
+    compressed: &[u8],
+    limit: usize,
+) -> Result<Vec<u8>, OriginalLanguageModuleError> {
+    let mut decoder = Decompress::new(false);
+    let mut inflated = Vec::new();
+    let mut input_offset = 0;
+    loop {
+        let mut output = [0_u8; 8_192];
+        let before_input = decoder.total_in();
+        let before_output = decoder.total_out();
+        let status = decoder
+            .decompress(
+                &compressed[input_offset..],
+                &mut output,
+                FlushDecompress::Finish,
+            )
+            .map_err(|error| OriginalLanguageModuleError::Inflate(error.to_string()))?;
+        let consumed = usize::try_from(decoder.total_in() - before_input)
+            .map_err(|_| OriginalLanguageModuleError::Inflate("input count overflow".into()))?;
+        let produced = usize::try_from(decoder.total_out() - before_output)
+            .map_err(|_| OriginalLanguageModuleError::Inflate("output count overflow".into()))?;
+        input_offset = input_offset
+            .checked_add(consumed)
+            .ok_or_else(|| OriginalLanguageModuleError::Inflate("input offset overflow".into()))?;
+        let next_len = inflated
+            .len()
+            .checked_add(produced)
+            .ok_or(OriginalLanguageModuleError::InflatedPoolTooLong(usize::MAX))?;
+        if next_len > limit {
+            return Err(OriginalLanguageModuleError::InflatedPoolTooLong(next_len));
+        }
+        inflated.extend_from_slice(&output[..produced]);
+        if status == Status::StreamEnd {
+            return Ok(inflated);
+        }
+        if consumed == 0 && produced == 0 {
+            return Err(OriginalLanguageModuleError::Inflate(
+                "incomplete DEFLATE stream".into(),
+            ));
+        }
+    }
 }
 
 const MAX_PE_SECTIONS: usize = 96;
@@ -1289,6 +1439,8 @@ impl<'a> Reader<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use flate2::{Compression, write::DeflateEncoder};
+    use std::io::Write;
 
     fn catalog() -> LocalizationCatalog {
         LocalizationCatalog::new(
@@ -1399,6 +1551,31 @@ mod tests {
         payload[root + 0x180..root + 0x184]
             .copy_from_slice(&ORIGINAL_LANGUAGE_MARKER.to_le_bytes());
         checksummed_original_module(&payload)
+    }
+
+    fn encoded_original_string_pool(decoded: &[u8]) -> Vec<u8> {
+        let mut encoder = DeflateEncoder::new(Vec::new(), Compression::default());
+        encoder.write_all(decoded).unwrap();
+        let compressed = encoder.finish().unwrap();
+        let mut encoded = compressed.clone();
+        for index in 1..encoded.len() {
+            encoded[index] = compressed[index]
+                .wrapping_sub(0x34)
+                .wrapping_add(compressed[index - 1])
+                ^ 0x92;
+        }
+        encoded
+    }
+
+    fn string_table(values: &[u32], include_count: bool) -> Vec<u8> {
+        let mut bytes = Vec::new();
+        if include_count {
+            bytes.extend_from_slice(&u32::try_from(values.len()).unwrap().to_le_bytes());
+        }
+        for value in values {
+            bytes.extend_from_slice(&value.to_le_bytes());
+        }
+        bytes
     }
 
     #[test]
@@ -1522,6 +1699,70 @@ mod tests {
         let resources = PeResources::parse(&module).unwrap();
         assert!(resources.resource(0x0db6).is_ok());
         assert!(resources.resource(0x0db7).is_ok());
+    }
+
+    #[test]
+    fn original_language_string_resources_decode_obfuscation_deflate_and_tables() {
+        let encoded = encoded_original_string_pool(b"hello\0world\0");
+        let offsets = string_table(&[0, 6], true);
+        let lengths = string_table(&[5, 5], false);
+        let pool = decode_original_language_string_resources(&encoded, &offsets, &lengths).unwrap();
+        assert_eq!(pool.len(), 2);
+        assert_eq!(pool.get(0), Some("hello"));
+        assert_eq!(pool.get(1), Some("world"));
+        assert_eq!(pool.get(2), None);
+    }
+
+    #[test]
+    fn original_language_string_resources_bound_count_and_clear_invalid_entries() {
+        let encoded = encoded_original_string_pool(b"\0");
+        let offsets = string_table(&vec![0; ORIGINAL_LANGUAGE_MAX_STRINGS + 1], true);
+        let lengths = string_table(&vec![0; ORIGINAL_LANGUAGE_MAX_STRINGS + 1], false);
+        let pool = decode_original_language_string_resources(&encoded, &offsets, &lengths).unwrap();
+        assert_eq!(pool.len(), ORIGINAL_LANGUAGE_MAX_STRINGS);
+        assert_eq!(pool.get(ORIGINAL_LANGUAGE_MAX_STRINGS - 1), Some(""));
+
+        let encoded = encoded_original_string_pool(b"hello\0world\0");
+        let pool = decode_original_language_string_resources(
+            &encoded,
+            &string_table(&[0, 6], true),
+            &string_table(&[6, 5], false),
+        )
+        .unwrap();
+        assert_eq!(pool.get(0), None);
+        assert_eq!(pool.get(1), Some("world"));
+    }
+
+    #[test]
+    fn original_language_string_resources_reject_bad_tables_deflate_and_utf8() {
+        assert_eq!(
+            decode_original_language_string_resources(&[], &[], &[]),
+            Err(OriginalLanguageModuleError::MalformedStringTables)
+        );
+        assert!(matches!(
+            decode_original_language_string_resources(&[1, 2, 3], &0_u32.to_le_bytes(), &[]),
+            Err(OriginalLanguageModuleError::Inflate(_))
+        ));
+        assert_eq!(
+            decode_original_language_string_resources(
+                &encoded_original_string_pool(&[0xff, 0]),
+                &string_table(&[0], true),
+                &string_table(&[1], false),
+            ),
+            Err(OriginalLanguageModuleError::InvalidStringUtf8(0))
+        );
+
+        let encoded = encoded_original_string_pool(&vec![0; 129]);
+        let mut compressed = encoded.clone();
+        for index in 1..compressed.len() {
+            compressed[index] = (compressed[index] ^ 0x92)
+                .wrapping_sub(compressed[index - 1])
+                .wrapping_add(0x34);
+        }
+        assert!(matches!(
+            inflate_original_language_pool_with_limit(&compressed, 128),
+            Err(OriginalLanguageModuleError::InflatedPoolTooLong(_))
+        ));
     }
 
     #[test]

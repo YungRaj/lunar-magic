@@ -222,7 +222,8 @@ pub use level_usage_scan::{
 pub use lm_project::{MwlOptionalAssetsEdit, MwlOptionalAssetsEditError};
 pub use localization::{
     LocalizationCatalog, LocalizationError, OriginalLanguageModuleError,
-    OriginalLanguageModuleMetadata, UiTextKey, decode_original_language_module,
+    OriginalLanguageModuleMetadata, OriginalLanguageStringPool, UiTextKey,
+    decode_original_language_module, decode_original_language_module_strings,
     validate_original_language_module_checksum,
 };
 pub use map16_bitmap_allocation::{

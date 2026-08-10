@@ -926,3 +926,14 @@ skips invalid/unreadable/oversized modules like the original enumeration skips f
 retains validated filename plus display/version/locale/code-page metadata separately from canonical
 `.lmlang` catalogs. Eight configuration-loader tests pass, including deterministic metadata order
 and exact candidate-count rejection.
+
+## Original language-module string pool
+
+The same 2026-08-10 headless Ghidra session decompiled `LoadLanguageStringResources`
+(`004D6D40`), `LoadSelectedLanguageModule` (`004D7110`), and the raw-DEFLATE streaming helper at
+`004A3C20`. Rust now reads `$DAC/$DAD/$DAE` without loading the DLL, exactly reverses the chained
+byte transform, requires `StreamEnd`, and applies the recovered
+5,869-entry offset/length/NUL validation boundary. Synthetic pools round-trip `hello` and `world`;
+a 5,870-entry declaration truncates exactly; one bad terminator clears only its entry; malformed
+tables, junk compression, invalid UTF-8, and output past a reduced test limit reject. All three
+`original_language_string_resources_*` tests pass.

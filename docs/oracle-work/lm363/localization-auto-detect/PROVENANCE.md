@@ -32,3 +32,12 @@ addition. The final 64 bytes never participate; the stored little-endian dword i
 `$01F4`, ID `$0DB7` to contain at least the little-endian `$C001BABE` marker, then reads bounded
 UTF-8 metadata from ID `$0DB6`, removes an optional BOM, normalizes CRLF delimiters, and retains
 four fields after the module filename: display name, version, locale tag, and code page.
+
+`LoadLanguageStringResources` at `$004D6D40` requires three more type-`$01F4` resources. `$0DAC`
+is copied, then bytes 1 through end are decoded in place as
+`((encoded ^ $92) - previous_decoded) + $34` before raw-DEFLATE expansion. `$0DAD` begins with a
+little-endian declared count followed by 32-bit string offsets; `$0DAE` contains parallel 32-bit
+lengths. The effective count is the minimum of the declaration, both complete table extents, and
+`$16EE` (5,869). Each entry is retained only when offset plus length is in the inflated pool and
+the following byte is NUL. `LoadSelectedLanguageModule` at `$004D7110` requires this string load
+and the whole-file checksum before publishing the module.

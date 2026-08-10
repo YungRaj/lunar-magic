@@ -787,3 +787,12 @@ without treating them as selectable canonical catalogs. Two discovery tests cove
 filtering, invalid and sparse-oversized files, metadata ordering, and the 64-module ceiling.
 Conversion of original localized dialog/string resources into the typed catalog remains open, so
 the Localization row remains `Partial`.
+
+Original DLL string payload decoding is now recovered and portable as well: validated resources
+`$01F4:$0DAC/$0DAD/$0DAE` supply a chained-obfuscated raw-DEFLATE pool plus parallel 32-bit
+offset/length tables. Rust requires a complete stream, bounds inflated output to 32 MiB, caps the
+effective table at the original 5,869 entries, checks every offset/length/NUL boundary, and
+publishes only valid UTF-8 strings. Three focused tests cover exact decoding, count truncation,
+invalid-entry clearing, malformed tables, incomplete compression, invalid UTF-8, and a reduced
+inflate ceiling. Typed key-index mapping and localized dialog-template conversion remain open, so
+the row remains `Partial`.
