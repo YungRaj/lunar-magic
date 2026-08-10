@@ -5101,6 +5101,19 @@ retaining domain order, synchronization/reclamation, semantic reopen, and one Un
 worker gate replaces `ExGFX80` at `$190000` or later and restores the exact prior ROM. That path
 also corrected expanded-ExAnimation authentication to accept the canonical `$FF FF FF` empty
 sentinels in reserved ExGFX slots `$61..$63`, while retaining the required four-byte zero trailer.
-ExGFX `$E00..$FFF` conversion bypass without the 4bpp runtime and the original interactive
-expansion prompt after cursor-space exhaustion remain incomplete; therefore this remains a partial
-command milestone and does not close the configuration gate.
+First-time ExGFX insertion now works directly from the vanilla ROM without first installing the
+irreversible 4bpp runtime. Ghidra recovers the exact selector at `$0047E3C6..$0047E3E3` and the
+matching extractor selector at `$0047F175..$0047F1A0`: `$80..$DFF` discards the odd fourth-plane
+byte from each planar pair when the 4bpp markers are absent, while `$E00..$FFF` always selects zero
+and remains byte-for-byte “as-is” before LZ2 compression. `$004410D0` proves extraction restores
+the packed 3bpp tiles to editable 4bpp shape with zero fourth-plane bytes.
+
+The same transition now installs the recovered 32-byte graphics data block through the long-call
+hook at `$0013F7`, initializes the Ready marker, follows the relocated expanded-settings owner for
+the `$100..$FFF` pointer table, expands to 2 MiB, and preserves the selected allocation cursor.
+`pristine_first_exgfx_preserves_e00_but_round_trips_ordinary_files_as_3bpp` proves semantic
+save/reopen and byte-exact Undo; the installed
+`quick_exgraphics_insertion_supports_pristine_three_bpp_rom_and_exact_undo` gate additionally
+inserts from the fixed `ExGraphics` directory, re-exports both converted `ExGFX80` and unchanged
+`ExGFXE00`, and undoes to vanilla. The original interactive retry/prompt after cursor-space
+exhaustion remains incomplete, so the broader ordinary-command interaction milestone stays partial.

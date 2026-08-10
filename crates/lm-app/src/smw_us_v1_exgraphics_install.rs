@@ -11,8 +11,8 @@ use lm_profile::{
     smw_us_v1_sa1_expanded_settings_installation_plan,
 };
 use lm_project::{
-    GraphicsCompression, GraphicsRomLayout, LevelPointerTable, Project, RatsOwnershipManifest,
-    RomMutation,
+    GraphicsCompression, GraphicsRomLayout, LevelPointerTable, PatchFixup, PatchFixupEncoding,
+    PatchPayload, PatchWrite, Project, RatsOwnershipManifest, RelocatablePatchPlan, RomMutation,
 };
 use lm_rats::{HEADER_LEN, ProtectedRange, parse_at};
 use lm_rom::{Mapper, RomImage, compute_snes_checksum, snes_to_pc};
@@ -20,10 +20,12 @@ use std::collections::BTreeMap;
 
 /// Prepares first-time or subsequent native ExGFX insertion as one application commit.
 ///
-/// A post-4bpp-GFX ROM receives the exact zero-filled expanded-settings prerequisite first. Files
-/// `$60..$63` and `$80..$FFF` then use their independent native allocation passes, but only the
-/// final combined mutation is published. Every inserted pointer is reopened through its RATS block
-/// and its raw bytes are compared before returning.
+/// A pristine or post-GFX ROM receives the exact zero-filled expanded-settings prerequisite first.
+/// Without Lunar Magic's 4bpp runtime, files `$80..$DFF` are packed from editable 4bpp to native
+/// 3bpp before compression; `$E00..$FFF` bypass that conversion exactly like Lunar Magic. Files
+/// `$60..$63` remain raw. The independent native allocation passes publish only one final mutation,
+/// and every inserted pointer is reopened and converted back to its external representation before
+/// returning.
 ///
 /// # Errors
 ///
@@ -92,6 +94,8 @@ fn prepare_smw_us_v1_exgraphics_install_with_mode(
         .map(|identity| identity.mapper)
         .unwrap_or(Mapper::LoRom);
     let mut project = Project::new(image);
+    let stores_compressed_exgraphics_as_3bpp =
+        !has_smw_us_v1_4bpp_graphics_prerequisite(&project.rom);
     let existing_exgraphics_runtime;
     match probe_smw_us_v1_exgraphics_runtime_for_mapper(&project.rom, mapper) {
         Ok(state) => {
@@ -109,11 +113,17 @@ fn prepare_smw_us_v1_exgraphics_install_with_mode(
                     "first-time ExGFX prerequisite installation is not yet available for {mapper:?}"
                 ));
             }
-            if !has_smw_us_v1_4bpp_graphics_prerequisite(&project.rom) {
-                return Err(
-                    "SMW US v1 ExGFX insertion requires regular GFX to be inserted as 4bpp first"
-                        .into(),
-                );
+            if mapper == Mapper::LoRom
+                && project.rom.logical_len() < lm_profile::SMW_US_V1_EXGFX_LOGICAL_LEN
+            {
+                project
+                    .expand_rom(
+                        Mapper::LoRom,
+                        lm_profile::SMW_US_V1_EXGFX_LOGICAL_LEN,
+                        0x00,
+                        0x007fdc,
+                    )
+                    .map_err(|error| error.to_string())?;
             }
             let settings = if mapper == Mapper::Sa1 {
                 smw_us_v1_sa1_expanded_settings_installation_plan()
@@ -135,6 +145,11 @@ fn prepare_smw_us_v1_exgraphics_install_with_mode(
                 project
                     .install_relocatable_patch(&runtime)
                     .map_err(|error| error.to_string())?;
+            } else {
+                install_first_exgraphics_graphics_data_block(
+                    &mut project,
+                    allocation_cursor.unwrap_or(0x80_000),
+                )?;
             }
             probe_smw_us_v1_exgraphics_runtime_for_mapper(&project.rom, mapper)
                 .map_err(|error| error.to_string())?;
@@ -230,10 +245,24 @@ fn prepare_smw_us_v1_exgraphics_install_with_mode(
         synchronize_existing_exgraphics_storage(&mut project, mapper)?;
     }
 
+    let stored_files = files
+        .iter()
+        .map(|(file_number, bytes)| {
+            let bytes =
+                if stores_compressed_exgraphics_as_3bpp && (0x80..0xe00).contains(file_number) {
+                    pack_editable_4bpp_as_native_3bpp(bytes)
+                        .map_err(|error| format!("ExGFX{file_number:02X}: {error}"))?
+                } else {
+                    bytes.clone()
+                };
+            Ok((*file_number, bytes))
+        })
+        .collect::<Result<Vec<_>, String>>()?;
+
     let mut reserved = Vec::new();
     let mut compressed = Vec::new();
     let mut extended = Vec::new();
-    for file in files.iter().cloned() {
+    for file in stored_files.iter().cloned() {
         match smw_us_v1_exgraphics_pointer_for_mapper(file.0, mapper)
             .map_err(|error| error.to_string())?
             .encoding
@@ -271,12 +300,19 @@ fn prepare_smw_us_v1_exgraphics_install_with_mode(
             .map_err(|error| error.to_string())?;
     }
 
-    for (file_number, expected) in files {
+    for ((file_number, expected), (_, stored)) in files.iter().zip(&stored_files) {
         let route = smw_us_v1_exgraphics_pointer_in_rom(&project.rom, *file_number, mapper)
             .map_err(|error| error.to_string())?;
         let actual = reopen_exgraphics_file(&project, route, mapper)
             .map_err(|error| format!("ExGFX{file_number:02X}: {error}"))?;
-        if actual != *expected {
+        let expected =
+            if stores_compressed_exgraphics_as_3bpp && (0x80..0xe00).contains(file_number) {
+                expand_native_3bpp_to_editable_4bpp(stored)
+                    .map_err(|error| format!("ExGFX{file_number:02X}: {error}"))?
+            } else {
+                expected.clone()
+            };
+        if actual != expected {
             return Err(format!(
                 "ExGFX{file_number:02X}: reopened bytes differ after insertion"
             ));
@@ -306,6 +342,97 @@ fn prepare_smw_us_v1_exgraphics_install_with_mode(
         description: "Insert native SMW US ExGFX files".into(),
         mutation,
     })
+}
+
+fn install_first_exgraphics_graphics_data_block(
+    project: &mut Project,
+    allocation_start: usize,
+) -> Result<(), String> {
+    const GRAPHICS_DATA_HOOK_OFFSET: usize = 0x0013f7;
+    const GRAPHICS_DATA_PAYLOAD: [u8; 0x20] = [
+        0xa9, 0x81, 0x2c, 0x12, 0x42, 0x30, 0xfb, 0x70, 0xf9, 0x8d, 0x00, 0x42, 0x6b, 0x4c, 0x4d,
+        0x00, 0x01, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+        0xff, 0xff,
+    ];
+    const READY_EXGFX_EXPANSION_MARKER: [u8; 7] = [0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x1f];
+    if allocation_start >= project.rom.logical_len() {
+        return Err(format!(
+            "ExGFX graphics-data allocation address {allocation_start:#X} is outside the {:#X}-byte ROM",
+            project.rom.logical_len()
+        ));
+    }
+    let mut allocation =
+        lm_rats::AllocationPolicy::lorom(allocation_start..project.rom.logical_len());
+    allocation.fill_bytes = vec![0x00, 0xff];
+    let plan = RelocatablePatchPlan {
+        description: "install first-ExGFX graphics data block".into(),
+        mapper: Mapper::LoRom,
+        allocation,
+        checksum_field: 0x007fdc,
+        expansion_fill: 0x00,
+        payloads: vec![PatchPayload {
+            bytes: GRAPHICS_DATA_PAYLOAD.to_vec(),
+            fixups: Vec::new(),
+        }],
+        writes: vec![PatchWrite {
+            offset: GRAPHICS_DATA_HOOK_OFFSET,
+            expected: vec![0xa9, 0x81, 0x8d, 0x00, 0x42],
+            replacement: vec![0x22, 0, 0, 0, 0x60],
+            fixups: vec![PatchFixup {
+                offset: 1,
+                target_payload: 0,
+                target_addend: 0,
+                encoding: PatchFixupEncoding::Long24,
+            }],
+        }],
+    };
+    project
+        .install_relocatable_patch(&plan)
+        .map_err(|error| error.to_string())?;
+    project
+        .rom
+        .write(
+            lm_profile::SMW_US_V1_EXGFX_EXPANSION_MARKER_OFFSET,
+            &READY_EXGFX_EXPANSION_MARKER,
+        )
+        .map_err(|error| error.to_string())?;
+    project
+        .rom
+        .update_snes_checksum(0x007fdc)
+        .map_err(|error| error.to_string())?;
+    Ok(())
+}
+
+fn pack_editable_4bpp_as_native_3bpp(bytes: &[u8]) -> Result<Vec<u8>, String> {
+    if bytes.len() % 0x20 != 0 {
+        return Err(format!(
+            "3bpp conversion requires complete 0x20-byte editable tiles; got {:#X} bytes",
+            bytes.len()
+        ));
+    }
+    let mut packed = Vec::with_capacity(bytes.len() / 4 * 3);
+    for tile in bytes.chunks_exact(0x20) {
+        packed.extend_from_slice(&tile[..0x10]);
+        packed.extend(tile[0x10..].iter().step_by(2));
+    }
+    Ok(packed)
+}
+
+fn expand_native_3bpp_to_editable_4bpp(bytes: &[u8]) -> Result<Vec<u8>, String> {
+    if bytes.len() % 0x18 != 0 {
+        return Err(format!(
+            "3bpp expansion requires complete 0x18-byte native tiles; got {:#X} bytes",
+            bytes.len()
+        ));
+    }
+    let mut editable = Vec::with_capacity(bytes.len() / 3 * 4);
+    for tile in bytes.chunks_exact(0x18) {
+        editable.extend_from_slice(&tile[..0x10]);
+        for plane_2 in &tile[0x10..] {
+            editable.extend_from_slice(&[*plane_2, 0]);
+        }
+    }
+    Ok(editable)
 }
 
 fn install_exgraphics_checksum_compensation(
@@ -468,7 +595,7 @@ fn reopen_exgraphics_file(
     route: lm_profile::SmwUsV1ExGraphicsPointer,
     mapper: Mapper,
 ) -> Result<Vec<u8>, String> {
-    match route.encoding {
+    let bytes = match route.encoding {
         SmwUsV1ExGraphicsEncoding::Raw2048 => project
             .load_tagged_payload(route.pointer_offset, mapper)
             .map(|loaded| loaded.bytes)
@@ -490,6 +617,14 @@ fn reopen_exgraphics_file(
                 },
             )
             .map_err(|error| error.to_string()),
+    }?;
+    if route.encoding == SmwUsV1ExGraphicsEncoding::Lz2
+        && route.file_number < 0xe00
+        && !has_smw_us_v1_4bpp_graphics_prerequisite(&project.rom)
+    {
+        expand_native_3bpp_to_editable_4bpp(&bytes)
+    } else {
+        Ok(bytes)
     }
 }
 
@@ -574,9 +709,87 @@ mod tests {
         bytes[lm_profile::SMW_US_V1_EXPANDED_GRAPHICS_FORMAT_MARKER_OFFSET
             ..lm_profile::SMW_US_V1_EXPANDED_GRAPHICS_FORMAT_MARKER_OFFSET + 2]
             .copy_from_slice(&lm_profile::SMW_US_V1_VANILLA_GRAPHICS_FORMAT_MARKER);
+        for offset in lm_profile::SMW_US_V1_4BPP_GRAPHICS_MARKER_OFFSETS {
+            bytes[offset] = lm_profile::SMW_US_V1_4BPP_GRAPHICS_MARKER;
+        }
         bytes[0x7fd7] = 0x0a;
         bytes[0x080000..0x080008].copy_from_slice(b"STAR\x1f\0\xe0\xff");
         RomImage::from_bytes(bytes).unwrap()
+    }
+
+    #[test]
+    fn pristine_first_exgfx_preserves_e00_but_round_trips_ordinary_files_as_3bpp() {
+        let source =
+            RomImage::from_bytes(crate::test_support::pristine_smw_us_rom_bytes()).unwrap();
+        let original = source.as_file_bytes().to_vec();
+        let editable = (0..0x1000_usize)
+            .map(|index| index.to_le_bytes()[0].wrapping_mul(37).wrapping_add(11))
+            .collect::<Vec<_>>();
+        let expected_ordinary = expand_native_3bpp_to_editable_4bpp(
+            &pack_editable_4bpp_as_native_3bpp(&editable).unwrap(),
+        )
+        .unwrap();
+        let files = [(0x80, editable.clone()), (0xe00, editable.clone())];
+
+        let prepared = prepare_smw_us_v1_exgraphics_directory_install_at(
+            17,
+            source.clone(),
+            &files,
+            0x10_0000,
+        )
+        .unwrap();
+        assert_eq!(prepared.expected_revision, 17);
+        assert_eq!(source.as_file_bytes(), original);
+
+        let mut installed = Project::open_supported(source).unwrap();
+        installed
+            .apply_mutation(&prepared.description, &prepared.mutation)
+            .unwrap();
+        assert!(!has_smw_us_v1_4bpp_graphics_prerequisite(&installed.rom));
+        assert_eq!(
+            probe_smw_us_v1_exgraphics_runtime(&installed.rom).unwrap(),
+            SmwUsV1ExGraphicsRuntimeState::Expanded
+        );
+        let graphics_data_pointer =
+            lm_rom::SnesPointer24::decode(installed.rom.read(0x0013f8, 3).unwrap())
+                .unwrap()
+                .to_pc(Mapper::LoRom)
+                .unwrap();
+        assert!(graphics_data_pointer >= 0x10_0000);
+        assert_eq!(
+            reopen_exgraphics_file(
+                &installed,
+                smw_us_v1_exgraphics_pointer_in_rom(&installed.rom, 0x80, Mapper::LoRom).unwrap(),
+                Mapper::LoRom,
+            )
+            .unwrap(),
+            expected_ordinary
+        );
+        assert_eq!(
+            reopen_exgraphics_file(
+                &installed,
+                smw_us_v1_exgraphics_pointer_in_rom(&installed.rom, 0xe00, Mapper::LoRom).unwrap(),
+                Mapper::LoRom,
+            )
+            .unwrap(),
+            editable
+        );
+
+        let reopened_image = RomImage::from_bytes(installed.rom.as_file_bytes().to_vec()).unwrap();
+        let reopened = Project::open_supported(reopened_image).unwrap();
+        assert!(!has_smw_us_v1_4bpp_graphics_prerequisite(&reopened.rom));
+        for (file_number, expected) in [(0x80, expected_ordinary), (0xe00, editable)] {
+            let route =
+                smw_us_v1_exgraphics_pointer_in_rom(&reopened.rom, file_number, Mapper::LoRom)
+                    .unwrap();
+            assert_eq!(
+                reopen_exgraphics_file(&reopened, route, Mapper::LoRom).unwrap(),
+                expected
+            );
+        }
+
+        installed.undo().unwrap();
+        assert_eq!(installed.rom.as_file_bytes(), original);
     }
 
     #[test]

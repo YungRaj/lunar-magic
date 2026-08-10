@@ -527,7 +527,7 @@ pub fn smw_us_v1_exgraphics_installation_plan_for_mapper(
                 })
             }
             SmwUsV1ExGraphicsEncoding::Lz2 => {
-                if !matches!(raw.len(), 0x800 | 0xc00 | 0x1000) {
+                if !matches!(raw.len(), 0x600 | 0x800 | 0x900 | 0xc00 | 0x1000) {
                     return Err(SmwUsV1ExGraphicsError::InvalidRawLength {
                         file_number: *file_number,
                         actual: raw.len(),
@@ -590,14 +590,11 @@ pub fn smw_us_v1_exgraphics_installation_plan_for_mapper(
             replacement: vec![0; 0x80 * 3],
             fixups: Vec::new(),
         };
+        let extended_pointer_table =
+            smw_us_v1_exgraphics_pointer_in_rom(rom, 0x100, mapper)?.pointer_offset;
         let mut extended = PatchWrite {
-            offset: mapper_rom_offset(mapper, SMW_US_V1_EXTENDED_EXGFX_POINTER_OFFSET),
-            expected: rom
-                .read(
-                    mapper_rom_offset(mapper, SMW_US_V1_EXTENDED_EXGFX_POINTER_OFFSET),
-                    0xf00 * 3,
-                )?
-                .to_vec(),
+            offset: extended_pointer_table,
+            expected: rom.read(extended_pointer_table, 0xf00 * 3)?.to_vec(),
             replacement: vec![0; 0xf00 * 3],
             fixups: Vec::new(),
         };

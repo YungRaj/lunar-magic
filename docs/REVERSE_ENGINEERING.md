@@ -2127,9 +2127,14 @@ Quick commands `$23D4` and `$23D6` bypass those option dialogs and enter the sam
 commands through the fixed ROM-sibling `Graphics`/`AllGFX.bin` and `ExGraphics` paths, the existing
 conditional format-change warning, the cancellable validator, and one revision-bound atomic ROM
 commit. A vanilla standard insertion followed by ExGFX insertion semantically reopens both installed
-runtimes and two Undo operations restore the byte-exact source. The two ordinary commands remain
-unrouted until their address, expansion, and ASM choices are all represented rather than collapsed
-to the quick defaults.
+runtimes and two Undo operations restore the byte-exact source. Both ordinary commands are now
+routed through their typed address, expansion, and ASM choices. The ExGFX path also supports a
+vanilla first insertion without the 4bpp runtime: `CompressGraphicsByConfiguredFormat` receives
+selector one for `$80..$DFF`, packing 32-byte editable tiles into 24-byte native tiles, but selector
+zero for `$E00..$FFF`; `DecompressGraphicsByConfiguredFormat` performs the inverse only for the
+former range. `AllocateAndInstallGraphicsDataBlock` at `$0045C560` allocates the shared 32-byte DMA
+payload and writes the `$22 <long pointer> $60` hook before the ExGFX tables are populated. Only the
+original cursor-exhaustion retry/prompt interaction remains incomplete.
 
 Both bulk extraction functions use the same recovered `wb` mode string at image address
 `005B2D3C`. `ExtractAllGFXFiles` therefore truncates/replaces every fixed

@@ -2013,9 +2013,14 @@ impl RomGraphicsEditor {
         };
         let (mut source, target) = quick_graphics_import_source(app, action, joined_standard)?;
         let has_4bpp = lm_profile::has_smw_us_v1_4bpp_graphics_prerequisite(&source.image);
-        let supported_first_standard = source.smw_us_v1_standard_install
-            && request.family == GraphicsInsertionFamily::Standard;
-        if !has_4bpp && !supported_first_standard {
+        if request.family == GraphicsInsertionFamily::ExGraphics && request.use_4bpp && !has_4bpp {
+            return Err("insert regular GFX as 4bpp before 4bpp ExGFX insertion".into());
+        }
+        let supported_first_native = match request.family {
+            GraphicsInsertionFamily::Standard => source.smw_us_v1_standard_install,
+            GraphicsInsertionFamily::ExGraphics => source.smw_us_v1_exgraphics,
+        };
+        if !has_4bpp && !supported_first_native {
             let requested_format = if request.use_4bpp { "4bpp" } else { "3bpp" };
             return Err(match request.family {
                 GraphicsInsertionFamily::Standard => {
@@ -2208,9 +2213,7 @@ fn quick_graphics_import_source(
             Ok((source, target))
         }
         QuickGraphicsInsertion::ExGraphics => {
-            let native_exgraphics = smw_us_special
-                && (lm_profile::has_smw_us_v1_4bpp_graphics_prerequisite(&image)
-                    || lm_profile::probe_smw_us_v1_exgraphics_runtime(&image).is_ok());
+            let native_exgraphics = smw_us_special;
             let directory = parent.join("ExGraphics");
             let slots = graphics_import::enumerate_exgraphics_files(
                 &directory,
@@ -2259,10 +2262,8 @@ fn supports_exgraphics(profile: &RevisionProfile) -> bool {
     (EXGFX_FIRST + 1..=EXGFX_LIMIT).contains(&profile.graphics.pointers.entries)
 }
 
-fn supports_native_exgraphics(profile: &RevisionProfile, image: &lm_rom::RomImage) -> bool {
+fn supports_native_exgraphics(profile: &RevisionProfile, _image: &lm_rom::RomImage) -> bool {
     pristine_special_graphics(profile)
-        && (lm_profile::has_smw_us_v1_4bpp_graphics_prerequisite(image)
-            || lm_profile::probe_smw_us_v1_exgraphics_runtime(image).is_ok())
 }
 
 fn standard_graphics_slots(layout: lm_project::GraphicsRomLayout) -> Vec<usize> {
@@ -2358,6 +2359,9 @@ pub(crate) fn exgraphics_batch_source(
     image: lm_rom::RomImage,
     layout: lm_project::GraphicsRomLayout,
 ) -> Result<graphics_batch::GraphicsBatchSource, String> {
+    if lm_profile::probe_smw_us_v1_exgraphics_runtime_for_mapper(&image, layout.mapper).is_ok() {
+        return native_smw_us_v1_exgraphics_batch_source(image, layout);
+    }
     let slots = installed_exgraphics_slots(&image, layout)?;
     if slots.is_empty() {
         return Err("the installed graphics table contains no ExGFX files".into());
@@ -2373,6 +2377,90 @@ pub(crate) fn exgraphics_batch_source(
         raw_4bpp_overrides: Vec::new(),
         file_layouts: Vec::new(),
     })
+}
+
+fn native_smw_us_v1_exgraphics_batch_source(
+    image: lm_rom::RomImage,
+    layout: lm_project::GraphicsRomLayout,
+) -> Result<graphics_batch::GraphicsBatchSource, String> {
+    let project = lm_project::Project::new(image.clone());
+    let packed_3bpp = !lm_profile::has_smw_us_v1_4bpp_graphics_prerequisite(&image);
+    let mut slots = Vec::new();
+    let mut files = Vec::new();
+    for file_number in (0x60_usize..=0x63).chain(0x80..=0xfff) {
+        let route = lm_profile::smw_us_v1_exgraphics_pointer_in_rom(
+            &image,
+            u16::try_from(file_number).expect("the native ExGFX range fits u16"),
+            layout.mapper,
+        )
+        .map_err(|error| format!("ExGFX{file_number:02X}: {error}"))?;
+        let pointer = image
+            .read(route.pointer_offset, 3)
+            .map_err(|error| format!("ExGFX{file_number:02X}: {error}"))?;
+        if pointer == [0, 0, 0] || pointer == [0xff, 0xff, 0xff] {
+            continue;
+        }
+        let mut bytes = match route.encoding {
+            lm_profile::SmwUsV1ExGraphicsEncoding::Raw2048 => project
+                .load_tagged_payload(route.pointer_offset, layout.mapper)
+                .map(|loaded| loaded.bytes)
+                .map_err(|error| format!("ExGFX{file_number:02X}: {error}"))?,
+            lm_profile::SmwUsV1ExGraphicsEncoding::Lz2 => project
+                .load_decompressed_graphics_file(
+                    0,
+                    lm_project::GraphicsRomLayout {
+                        mapper: layout.mapper,
+                        pointers: lm_project::LevelPointerTable {
+                            offset: route.pointer_offset,
+                            entries: 1,
+                            stride: 3,
+                        },
+                        split_pointer_planes: None,
+                        compression: layout.compression,
+                        maximum_compressed_len: layout.maximum_compressed_len,
+                        maximum_decompressed_len: layout.maximum_decompressed_len,
+                    },
+                )
+                .map_err(|error| format!("ExGFX{file_number:02X}: {error}"))?,
+        };
+        if packed_3bpp && (0x80..0xe00).contains(&file_number) {
+            bytes = expand_native_exgraphics_3bpp(&bytes)
+                .map_err(|error| format!("ExGFX{file_number:02X}: {error}"))?;
+        }
+        slots.push(file_number);
+        files.push((file_number, bytes));
+    }
+    if slots.is_empty() {
+        return Err("the installed graphics table contains no ExGFX files".into());
+    }
+    Ok(graphics_batch::GraphicsBatchSource {
+        image,
+        layout,
+        slots: slots.clone(),
+        file_numbers: slots,
+        family: "extended",
+        exgraphics_names: true,
+        encoding: graphics_batch::GraphicsBatchEncoding::Native,
+        raw_4bpp_overrides: files,
+        file_layouts: Vec::new(),
+    })
+}
+
+fn expand_native_exgraphics_3bpp(bytes: &[u8]) -> Result<Vec<u8>, String> {
+    if bytes.len() % 0x18 != 0 {
+        return Err(format!(
+            "packed 3bpp data has {:#X} bytes instead of complete 0x18-byte tiles",
+            bytes.len()
+        ));
+    }
+    let mut editable = Vec::with_capacity(bytes.len() / 3 * 4);
+    for tile in bytes.chunks_exact(0x18) {
+        editable.extend_from_slice(&tile[..0x10]);
+        for plane_2 in &tile[0x10..] {
+            editable.extend_from_slice(&[*plane_2, 0]);
+        }
+    }
+    Ok(editable)
 }
 
 fn installed_exgraphics_slots(
@@ -2441,20 +2529,96 @@ mod tests {
     }
 
     #[test]
-    fn quick_exgraphics_insertion_rejects_pristine_rom_before_starting_work() {
+    fn quick_exgraphics_insertion_supports_pristine_three_bpp_rom_and_exact_undo() {
         let root = tempfile::tempdir().unwrap();
         std::fs::create_dir(root.path().join("ExGraphics")).unwrap();
+        let editable = (0..0x1000_usize)
+            .map(|index| index.to_le_bytes()[0].wrapping_mul(37).wrapping_add(11))
+            .collect::<Vec<_>>();
+        std::fs::write(root.path().join("ExGraphics/ExGFX80.bin"), &editable).unwrap();
+        std::fs::write(root.path().join("ExGraphics/ExGFXE00.bin"), &editable).unwrap();
+        let original = crate::test_support::pristine_smw_us_rom_bytes();
         let mut app = lm_app::AppState::default();
-        app.load_rom(crate::test_support::pristine_smw_us_rom_bytes())
-            .unwrap();
+        app.load_rom(original.clone()).unwrap();
         app.document_path = Some(root.path().join("game.smc"));
         let mut editor = RomGraphicsEditor::default();
+        editor
+            .start_quick_import(&app, QuickGraphicsInsertion::ExGraphics, false)
+            .unwrap();
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(120);
+        let commit = loop {
+            if let Some(result) = editor.graphics_import.poll() {
+                break result
+                    .unwrap()
+                    .expect("pristine ExGFX insertion prepares a commit");
+            }
+            assert!(std::time::Instant::now() < deadline);
+            std::thread::yield_now();
+        };
+        app.dispatch(commit.into_command()).unwrap();
+        let installed = RomImage::from_bytes(app.controller_snapshot().unwrap().rom_bytes).unwrap();
+        assert_eq!(installed.logical_len(), 0x20_0000);
+        assert!(!lm_profile::has_smw_us_v1_4bpp_graphics_prerequisite(
+            &installed
+        ));
+        assert!(lm_profile::probe_smw_us_v1_exgraphics_runtime(&installed).is_ok());
+        for file_number in [0x80, 0xe00] {
+            let route = lm_profile::smw_us_v1_exgraphics_pointer_in_rom(
+                &installed,
+                file_number,
+                Mapper::LoRom,
+            )
+            .unwrap();
+            assert_ne!(installed.read(route.pointer_offset, 3).unwrap(), [0xff; 3]);
+        }
+        let export_directory = root.path().join("ExportedExGraphics");
+        std::fs::create_dir(&export_directory).unwrap();
+        let source = super::exgraphics_batch_source(
+            installed.clone(),
+            lm_profile::smw_us_v1_vanilla_graphics_layout(),
+        )
+        .unwrap();
+        let mut export = super::graphics_batch::GraphicsBatchWorker::default();
+        export.start(source, export_directory.clone()).unwrap();
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(120);
+        loop {
+            if let Some(result) = export.poll() {
+                assert_eq!(result.unwrap(), Some(2));
+                break;
+            }
+            assert!(std::time::Instant::now() < deadline);
+            std::thread::yield_now();
+        }
+        let ordinary = std::fs::read(export_directory.join("ExGFX80.bin")).unwrap();
+        assert_eq!(ordinary.len(), 0x1000);
+        for (tile, source_tile) in ordinary.chunks_exact(0x20).zip(editable.chunks_exact(0x20)) {
+            assert_eq!(&tile[..0x10], &source_tile[..0x10]);
+            for row in 0..8 {
+                assert_eq!(tile[0x10 + row * 2], source_tile[0x10 + row * 2]);
+                assert_eq!(tile[0x11 + row * 2], 0);
+            }
+        }
+        assert_eq!(
+            std::fs::read(export_directory.join("ExGFXE00.bin")).unwrap(),
+            editable
+        );
+        app.dispatch(lm_app::Command::Undo).unwrap();
+        assert_eq!(app.controller_snapshot().unwrap().rom_bytes, original);
         assert!(
             editor
-                .start_quick_import(&app, QuickGraphicsInsertion::ExGraphics, false)
-                .is_err()
+                .start_ordinary_graphics_import(
+                    &app,
+                    GraphicsInsertionRequest {
+                        family: GraphicsInsertionFamily::ExGraphics,
+                        logical_pc_address: 0x10_0000,
+                        expand_rom: true,
+                        use_4bpp: true,
+                    },
+                    false,
+                )
+                .unwrap_err()
+                .contains("insert regular GFX as 4bpp")
         );
-        assert!(!editor.graphics_import.is_running());
     }
 
     #[test]
@@ -2893,13 +3057,13 @@ mod tests {
     }
 
     #[test]
-    fn native_first_exgfx_insert_requires_authenticated_four_bpp_prerequisite() {
+    fn native_first_exgfx_insert_supports_pristine_three_bpp_and_installed_four_bpp_roms() {
         let mut profile = lm_profile::test_support::profile();
         profile.mapper = lm_rom::Mapper::LoRom;
         profile.graphics = lm_profile::smw_us_v1_vanilla_graphics_layout();
         let mut bytes = vec![0xff; 0x8000];
         let pristine = RomImage::from_bytes(bytes.clone()).unwrap();
-        assert!(!supports_native_exgraphics(&profile, &pristine));
+        assert!(supports_native_exgraphics(&profile, &pristine));
         for offset in lm_profile::SMW_US_V1_4BPP_GRAPHICS_MARKER_OFFSETS {
             bytes[offset] = lm_profile::SMW_US_V1_4BPP_GRAPHICS_MARKER;
         }
