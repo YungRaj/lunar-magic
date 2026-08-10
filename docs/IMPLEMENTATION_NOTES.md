@@ -3539,9 +3539,13 @@ than trusting or executing a candidate module. It reproduces all three offset-se
 transforms from `ValidateLanguageModuleChecksum` at `$004D7010`, wrapping 32-bit accumulation, the
 excluded 64-byte trailer, and the stored dword at `file_size - $38`. It also decodes the
 `$01F4:$0DB7` marker and bounded `$01F4:$0DB6` BOM/CRLF metadata into display name, version, locale,
-and code-page fields. Short modules, checksum mismatches, wrong markers, oversized metadata,
-invalid UTF-8, and incomplete fields reject. Portable PE resource extraction and conversion of the
-original dialog/string resources into the typed catalog remain before DLLs can be selected live.
+and code-page fields. Its non-executing PE reader accepts PE32 and PE32+, bounds section counts,
+headers, resource-directory entry counts, relative offsets, RVA-to-file mappings, raw section
+extents, language leaves, data entries, and payload slices before exposing either resource. Short
+modules, checksum mismatches, malformed/truncated images, missing resources, wrong markers,
+oversized metadata, invalid UTF-8, and incomplete fields reject. Native installed-DLL discovery and
+conversion of the original dialog/string resources into the typed catalog remain before DLLs can
+be selected live.
 
 The native frontend now has an opt-in, self-capturing `visual-smoke` build. It waits until the
 workspace has rendered across multiple frames, requests the real Glow viewport through egui, and

@@ -776,8 +776,10 @@ ceiling on every platform. A matching 64th normalized preference is accepted, wh
 recovered `AutoDetectAndLoadLanguageModule` contract.
 
 The original-language-DLL compatibility boundary now has a portable, non-executing validator for
-the fully recovered `$004D7010` checksum transform and decoder for the `$01F4:$0DB7` magic plus
-bounded `$01F4:$0DB6` display/version/locale/code-page metadata. Three focused tests bind exact
-transform arithmetic, trailer placement, BOM/CRLF handling, and malformed inputs. PE resource
-extraction and conversion of original localized dialog/string resources into the typed catalog
-remain open, so the Localization row remains `Partial`.
+the fully recovered `$004D7010` checksum transform and a bounded PE32/PE32+ resource reader for the
+`$01F4:$0DB7` magic plus `$01F4:$0DB6` display/version/locale/code-page metadata. Six focused tests
+bind exact transform arithmetic, trailer placement, BOM/CRLF handling, both PE optional-header
+forms, integer resource traversal, missing/out-of-bounds resources, and every truncated prefix
+through the final required payload byte. Native installed-DLL discovery and conversion of original
+localized dialog/string resources into the typed catalog remain open, so the Localization row
+remains `Partial`.

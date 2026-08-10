@@ -27,6 +27,9 @@ pub struct OriginalLanguageModuleMetadata {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum OriginalLanguageModuleError {
     ModuleTooShort(usize),
+    InvalidPortableExecutable(&'static str),
+    MissingResource(u16),
+    ResourceBounds,
     WrongMarker,
     MetadataTooLong(usize),
     InvalidUtf8,
@@ -132,6 +135,297 @@ pub fn validate_original_language_module_checksum(
         return Err(OriginalLanguageModuleError::ChecksumMismatch { stored, computed });
     }
     Ok(())
+}
+
+/// Validates and decodes an original Lunar Magic language DLL without loading or executing it.
+///
+/// The PE reader accepts both PE32 and PE32+ images, follows only integer resource-directory IDs,
+/// and extracts resource type `$01F4`, IDs `$0DB7` and `$0DB6` through bounded section mappings.
+///
+/// # Errors
+///
+/// Returns [`OriginalLanguageModuleError`] for a checksum failure, malformed PE headers or
+/// resource directories, missing resources, or invalid language metadata.
+pub fn decode_original_language_module(
+    bytes: &[u8],
+) -> Result<OriginalLanguageModuleMetadata, OriginalLanguageModuleError> {
+    validate_original_language_module_checksum(bytes)?;
+    let resources = PeResources::parse(bytes)?;
+    let marker = resources.resource(0x0db7)?;
+    let metadata = resources.resource(0x0db6)?;
+    OriginalLanguageModuleMetadata::decode(marker, metadata)
+}
+
+const MAX_PE_SECTIONS: usize = 96;
+const MAX_RESOURCE_DIRECTORY_ENTRIES: usize = 4_096;
+const PE_RESOURCE_TYPE: u16 = 0x01f4;
+
+struct PeResources<'a> {
+    bytes: &'a [u8],
+    root: usize,
+    size: usize,
+    sections: usize,
+    section_count: usize,
+    size_of_headers: usize,
+}
+
+impl<'a> PeResources<'a> {
+    fn parse(bytes: &'a [u8]) -> Result<Self, OriginalLanguageModuleError> {
+        if bytes.get(..2) != Some(b"MZ") {
+            return Err(OriginalLanguageModuleError::InvalidPortableExecutable(
+                "missing DOS signature",
+            ));
+        }
+        let pe = usize::try_from(read_u32(bytes, 0x3c)?).map_err(|_| {
+            OriginalLanguageModuleError::InvalidPortableExecutable("PE offset overflow")
+        })?;
+        if bytes.get(
+            pe..pe
+                .checked_add(4)
+                .ok_or(OriginalLanguageModuleError::InvalidPortableExecutable(
+                    "PE offset overflow",
+                ))?,
+        ) != Some(b"PE\0\0")
+        {
+            return Err(OriginalLanguageModuleError::InvalidPortableExecutable(
+                "missing PE signature",
+            ));
+        }
+        let section_count = usize::from(read_u16(bytes, pe + 6)?);
+        if section_count == 0 || section_count > MAX_PE_SECTIONS {
+            return Err(OriginalLanguageModuleError::InvalidPortableExecutable(
+                "invalid section count",
+            ));
+        }
+        let optional_size = usize::from(read_u16(bytes, pe + 20)?);
+        let optional =
+            pe.checked_add(24)
+                .ok_or(OriginalLanguageModuleError::InvalidPortableExecutable(
+                    "optional-header overflow",
+                ))?;
+        let optional_end = optional.checked_add(optional_size).ok_or(
+            OriginalLanguageModuleError::InvalidPortableExecutable("optional-header overflow"),
+        )?;
+        if optional_end > bytes.len() {
+            return Err(OriginalLanguageModuleError::InvalidPortableExecutable(
+                "truncated optional header",
+            ));
+        }
+        let directory_base = match read_u16(bytes, optional)? {
+            0x010b => optional + 96,
+            0x020b => optional + 112,
+            _ => {
+                return Err(OriginalLanguageModuleError::InvalidPortableExecutable(
+                    "unknown optional-header magic",
+                ));
+            }
+        };
+        if read_u32(bytes, directory_base - 4)? < 3 {
+            return Err(OriginalLanguageModuleError::InvalidPortableExecutable(
+                "resource data directory is not declared",
+            ));
+        }
+        let resource_directory = directory_base.checked_add(16).ok_or(
+            OriginalLanguageModuleError::InvalidPortableExecutable("data-directory overflow"),
+        )?;
+        if resource_directory
+            .checked_add(8)
+            .is_none_or(|end| end > optional_end)
+        {
+            return Err(OriginalLanguageModuleError::InvalidPortableExecutable(
+                "missing resource data directory",
+            ));
+        }
+        let resource_rva = read_u32(bytes, resource_directory)?;
+        let size = usize::try_from(read_u32(bytes, resource_directory + 4)?)
+            .map_err(|_| OriginalLanguageModuleError::ResourceBounds)?;
+        if resource_rva == 0 || size < 16 {
+            return Err(OriginalLanguageModuleError::InvalidPortableExecutable(
+                "empty resource data directory",
+            ));
+        }
+        let sections = optional_end;
+        let section_bytes = section_count
+            .checked_mul(40)
+            .and_then(|length| sections.checked_add(length))
+            .ok_or(OriginalLanguageModuleError::ResourceBounds)?;
+        if section_bytes > bytes.len() {
+            return Err(OriginalLanguageModuleError::InvalidPortableExecutable(
+                "truncated section table",
+            ));
+        }
+        let size_of_headers = usize::try_from(read_u32(bytes, optional + 60)?)
+            .map_err(|_| OriginalLanguageModuleError::ResourceBounds)?;
+        let mut image = Self {
+            bytes,
+            root: 0,
+            size,
+            sections,
+            section_count,
+            size_of_headers,
+        };
+        image.root = image.map_rva(resource_rva, 16)?;
+        image.relative_range(0, 16)?;
+        Ok(image)
+    }
+
+    fn resource(&self, id: u16) -> Result<&'a [u8], OriginalLanguageModuleError> {
+        let type_directory = self.find_id(0, PE_RESOURCE_TYPE, true)?;
+        let language_directory = self.find_id(type_directory, id, true)?;
+        let data_entry = self.first_data_entry(language_directory)?;
+        let entry = self.relative_range(data_entry, 16)?;
+        let data_rva = read_u32(entry, 0)?;
+        let size = usize::try_from(read_u32(entry, 4)?)
+            .map_err(|_| OriginalLanguageModuleError::ResourceBounds)?;
+        let offset = self.map_rva(data_rva, size)?;
+        self.bytes
+            .get(offset..offset + size)
+            .ok_or(OriginalLanguageModuleError::ResourceBounds)
+    }
+
+    fn find_id(
+        &self,
+        directory: usize,
+        id: u16,
+        require_directory: bool,
+    ) -> Result<usize, OriginalLanguageModuleError> {
+        let header = self.relative_range(directory, 16)?;
+        let named = usize::from(read_u16(header, 12)?);
+        let ids = usize::from(read_u16(header, 14)?);
+        let count = named
+            .checked_add(ids)
+            .ok_or(OriginalLanguageModuleError::ResourceBounds)?;
+        if count > MAX_RESOURCE_DIRECTORY_ENTRIES {
+            return Err(OriginalLanguageModuleError::ResourceBounds);
+        }
+        let entries = directory
+            .checked_add(16)
+            .ok_or(OriginalLanguageModuleError::ResourceBounds)?;
+        let table = self.relative_range(
+            entries,
+            count
+                .checked_mul(8)
+                .ok_or(OriginalLanguageModuleError::ResourceBounds)?,
+        )?;
+        for entry in table.chunks_exact(8).skip(named) {
+            let name = read_u32(entry, 0)?;
+            if name & 0x8000_0000 == 0 && name == u32::from(id) {
+                let target = read_u32(entry, 4)?;
+                if (target & 0x8000_0000 != 0) != require_directory {
+                    return Err(OriginalLanguageModuleError::ResourceBounds);
+                }
+                return usize::try_from(target & 0x7fff_ffff)
+                    .map_err(|_| OriginalLanguageModuleError::ResourceBounds);
+            }
+        }
+        Err(OriginalLanguageModuleError::MissingResource(id))
+    }
+
+    fn first_data_entry(&self, directory: usize) -> Result<usize, OriginalLanguageModuleError> {
+        let header = self.relative_range(directory, 16)?;
+        let count = usize::from(read_u16(header, 12)?)
+            .checked_add(usize::from(read_u16(header, 14)?))
+            .ok_or(OriginalLanguageModuleError::ResourceBounds)?;
+        if count == 0 || count > MAX_RESOURCE_DIRECTORY_ENTRIES {
+            return Err(OriginalLanguageModuleError::ResourceBounds);
+        }
+        let entry = self.relative_range(
+            directory
+                .checked_add(16)
+                .ok_or(OriginalLanguageModuleError::ResourceBounds)?,
+            8,
+        )?;
+        let target = read_u32(entry, 4)?;
+        if target & 0x8000_0000 != 0 {
+            return Err(OriginalLanguageModuleError::ResourceBounds);
+        }
+        usize::try_from(target).map_err(|_| OriginalLanguageModuleError::ResourceBounds)
+    }
+
+    fn relative_range(
+        &self,
+        offset: usize,
+        length: usize,
+    ) -> Result<&'a [u8], OriginalLanguageModuleError> {
+        let relative_end = offset
+            .checked_add(length)
+            .ok_or(OriginalLanguageModuleError::ResourceBounds)?;
+        if relative_end > self.size {
+            return Err(OriginalLanguageModuleError::ResourceBounds);
+        }
+        let start = self
+            .root
+            .checked_add(offset)
+            .ok_or(OriginalLanguageModuleError::ResourceBounds)?;
+        self.bytes
+            .get(start..start + length)
+            .ok_or(OriginalLanguageModuleError::ResourceBounds)
+    }
+
+    fn map_rva(&self, rva: u32, length: usize) -> Result<usize, OriginalLanguageModuleError> {
+        let rva = usize::try_from(rva).map_err(|_| OriginalLanguageModuleError::ResourceBounds)?;
+        if rva < self.size_of_headers {
+            return (rva
+                .checked_add(length)
+                .is_some_and(|end| end <= self.bytes.len()))
+            .then_some(rva)
+            .ok_or(OriginalLanguageModuleError::ResourceBounds);
+        }
+        for index in 0..self.section_count {
+            let section = self.sections + index * 40;
+            let virtual_size = usize::try_from(read_u32(self.bytes, section + 8)?)
+                .map_err(|_| OriginalLanguageModuleError::ResourceBounds)?;
+            let virtual_address = usize::try_from(read_u32(self.bytes, section + 12)?)
+                .map_err(|_| OriginalLanguageModuleError::ResourceBounds)?;
+            let raw_size = usize::try_from(read_u32(self.bytes, section + 16)?)
+                .map_err(|_| OriginalLanguageModuleError::ResourceBounds)?;
+            let raw = usize::try_from(read_u32(self.bytes, section + 20)?)
+                .map_err(|_| OriginalLanguageModuleError::ResourceBounds)?;
+            let span = virtual_size.max(raw_size);
+            let Some(delta) = rva.checked_sub(virtual_address) else {
+                continue;
+            };
+            if delta >= span || delta.checked_add(length).is_none_or(|end| end > raw_size) {
+                continue;
+            }
+            let offset = raw
+                .checked_add(delta)
+                .ok_or(OriginalLanguageModuleError::ResourceBounds)?;
+            if offset
+                .checked_add(length)
+                .is_some_and(|end| end <= self.bytes.len())
+            {
+                return Ok(offset);
+            }
+        }
+        Err(OriginalLanguageModuleError::ResourceBounds)
+    }
+}
+
+fn read_u16(bytes: &[u8], offset: usize) -> Result<u16, OriginalLanguageModuleError> {
+    let end = offset
+        .checked_add(2)
+        .ok_or(OriginalLanguageModuleError::ResourceBounds)?;
+    Ok(u16::from_le_bytes(
+        bytes
+            .get(offset..end)
+            .ok_or(OriginalLanguageModuleError::ResourceBounds)?
+            .try_into()
+            .expect("bounded two-byte slice"),
+    ))
+}
+
+fn read_u32(bytes: &[u8], offset: usize) -> Result<u32, OriginalLanguageModuleError> {
+    let end = offset
+        .checked_add(4)
+        .ok_or(OriginalLanguageModuleError::ResourceBounds)?;
+    Ok(u32::from_le_bytes(
+        bytes
+            .get(offset..end)
+            .ok_or(OriginalLanguageModuleError::ResourceBounds)?
+            .try_into()
+            .expect("bounded four-byte slice"),
+    ))
 }
 
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -1007,30 +1301,104 @@ mod tests {
     fn checksummed_original_module(payload: &[u8]) -> Vec<u8> {
         let mut bytes = payload.to_vec();
         bytes.resize(payload.len() + ORIGINAL_LANGUAGE_TRAILER_BYTES, 0);
-        let checksum = payload
-            .iter()
-            .copied()
-            .enumerate()
-            .fold(0_u32, |sum, (offset, byte)| {
-                let transformed = if offset & 2 == 0 {
-                    if offset & 1 == 0 {
-                        u32::from(byte.rotate_left(2) ^ 0x46)
+        sign_original_module(&mut bytes);
+        bytes
+    }
+
+    fn sign_original_module(bytes: &mut [u8]) {
+        let payload_end = bytes.len() - ORIGINAL_LANGUAGE_TRAILER_BYTES;
+        let checksum =
+            bytes[..payload_end]
+                .iter()
+                .copied()
+                .enumerate()
+                .fold(0_u32, |sum, (offset, byte)| {
+                    let transformed = if offset & 2 == 0 {
+                        if offset & 1 == 0 {
+                            u32::from(byte.rotate_left(2) ^ 0x46)
+                        } else {
+                            0_u32.wrapping_sub(u32::from(byte.rotate_left(4) ^ 0x77))
+                        }
                     } else {
-                        0_u32.wrapping_sub(u32::from(byte.rotate_left(4) ^ 0x77))
-                    }
-                } else {
-                    u32::from(
-                        byte.wrapping_mul(0x80)
-                            .wrapping_add(byte >> 1)
-                            .wrapping_sub(0x17)
-                            ^ 0x71,
-                    )
-                };
-                sum.wrapping_add(transformed)
-            });
+                        u32::from(
+                            byte.wrapping_mul(0x80)
+                                .wrapping_add(byte >> 1)
+                                .wrapping_sub(0x17)
+                                ^ 0x71,
+                        )
+                    };
+                    sum.wrapping_add(transformed)
+                });
         let checksum_offset = bytes.len() - ORIGINAL_LANGUAGE_CHECKSUM_FROM_END;
         bytes[checksum_offset..checksum_offset + 4].copy_from_slice(&checksum.to_le_bytes());
-        bytes
+    }
+
+    fn write_u16(bytes: &mut [u8], offset: usize, value: u16) {
+        bytes[offset..offset + 2].copy_from_slice(&value.to_le_bytes());
+    }
+
+    fn write_u32(bytes: &mut [u8], offset: usize, value: u32) {
+        bytes[offset..offset + 4].copy_from_slice(&value.to_le_bytes());
+    }
+
+    fn original_language_pe(metadata: &[u8], pe32_plus: bool) -> Vec<u8> {
+        let mut payload = vec![0_u8; 0x600];
+        payload[..2].copy_from_slice(b"MZ");
+        write_u32(&mut payload, 0x3c, 0x80);
+        payload[0x80..0x84].copy_from_slice(b"PE\0\0");
+        write_u16(&mut payload, 0x84, if pe32_plus { 0x8664 } else { 0x014c });
+        write_u16(&mut payload, 0x86, 1);
+        let optional = 0x98;
+        let optional_size = if pe32_plus { 0xf0 } else { 0xe0 };
+        write_u16(&mut payload, 0x94, optional_size);
+        write_u16(
+            &mut payload,
+            optional,
+            if pe32_plus { 0x020b } else { 0x010b },
+        );
+        write_u32(&mut payload, optional + 60, 0x200);
+        let directory_base = optional + if pe32_plus { 112 } else { 96 };
+        write_u32(
+            &mut payload,
+            optional + if pe32_plus { 108 } else { 92 },
+            16,
+        );
+        write_u32(&mut payload, directory_base + 16, 0x1000);
+        write_u32(&mut payload, directory_base + 20, 0x200);
+        let section = optional + usize::from(optional_size);
+        payload[section..section + 8].copy_from_slice(b".rsrc\0\0\0");
+        write_u32(&mut payload, section + 8, 0x200);
+        write_u32(&mut payload, section + 12, 0x1000);
+        write_u32(&mut payload, section + 16, 0x400);
+        write_u32(&mut payload, section + 20, 0x200);
+
+        let root = 0x200;
+        write_u16(&mut payload, root + 14, 1);
+        write_u32(&mut payload, root + 16, u32::from(PE_RESOURCE_TYPE));
+        write_u32(&mut payload, root + 20, 0x8000_0020);
+        write_u16(&mut payload, root + 0x20 + 14, 2);
+        write_u32(&mut payload, root + 0x30, 0x0db6);
+        write_u32(&mut payload, root + 0x34, 0x8000_0048);
+        write_u32(&mut payload, root + 0x38, 0x0db7);
+        write_u32(&mut payload, root + 0x3c, 0x8000_0060);
+        write_u16(&mut payload, root + 0x48 + 14, 1);
+        write_u32(&mut payload, root + 0x58, 0x0409);
+        write_u32(&mut payload, root + 0x5c, 0x80);
+        write_u16(&mut payload, root + 0x60 + 14, 1);
+        write_u32(&mut payload, root + 0x70, 0x0409);
+        write_u32(&mut payload, root + 0x74, 0x90);
+        write_u32(&mut payload, root + 0x80, 0x1100);
+        write_u32(
+            &mut payload,
+            root + 0x84,
+            u32::try_from(metadata.len()).unwrap(),
+        );
+        write_u32(&mut payload, root + 0x90, 0x1180);
+        write_u32(&mut payload, root + 0x94, 4);
+        payload[root + 0x100..root + 0x100 + metadata.len()].copy_from_slice(metadata);
+        payload[root + 0x180..root + 0x184]
+            .copy_from_slice(&ORIGINAL_LANGUAGE_MARKER.to_le_bytes());
+        checksummed_original_module(&payload)
     }
 
     #[test]
@@ -1099,6 +1467,61 @@ mod tests {
             OriginalLanguageModuleMetadata::decode(&marker, b"a\nb\nc"),
             Err(OriginalLanguageModuleError::MissingMetadataFields)
         );
+    }
+
+    #[test]
+    fn original_language_dll_extracts_integer_resources_from_pe32_and_pe32_plus() {
+        let metadata = b"Deutsch - Test\n3.63\nde-DE\n1252\n";
+        let expected = OriginalLanguageModuleMetadata {
+            display_name: "Deutsch - Test".into(),
+            version: "3.63".into(),
+            locale: "de-DE".into(),
+            code_page: "1252".into(),
+        };
+        assert_eq!(
+            decode_original_language_module(&original_language_pe(metadata, false)).unwrap(),
+            expected
+        );
+        assert_eq!(
+            decode_original_language_module(&original_language_pe(metadata, true)).unwrap(),
+            expected
+        );
+    }
+
+    #[test]
+    fn original_language_dll_rejects_missing_and_out_of_bounds_resources() {
+        let metadata = b"English - Test\n3.63\nen\n1252\n";
+        let mut missing = original_language_pe(metadata, false);
+        write_u32(&mut missing, 0x200 + 0x38, 0x0db8);
+        sign_original_module(&mut missing);
+        assert_eq!(
+            decode_original_language_module(&missing),
+            Err(OriginalLanguageModuleError::MissingResource(0x0db7))
+        );
+
+        let mut out_of_bounds = original_language_pe(metadata, false);
+        write_u32(&mut out_of_bounds, 0x200 + 0x90, 0xffff_f000);
+        sign_original_module(&mut out_of_bounds);
+        assert_eq!(
+            decode_original_language_module(&out_of_bounds),
+            Err(OriginalLanguageModuleError::ResourceBounds)
+        );
+    }
+
+    #[test]
+    fn original_language_pe_reader_rejects_every_truncated_prefix_without_panicking() {
+        let module = original_language_pe(b"English\n3.63\nen\n1252\n", false);
+        for end in 0..0x384 {
+            let result = PeResources::parse(&module[..end]).and_then(|resources| {
+                resources.resource(0x0db6)?;
+                resources.resource(0x0db7)?;
+                Ok(())
+            });
+            assert!(result.is_err(), "prefix {end}");
+        }
+        let resources = PeResources::parse(&module).unwrap();
+        assert!(resources.resource(0x0db6).is_ok());
+        assert!(resources.resource(0x0db7).is_ok());
     }
 
     #[test]

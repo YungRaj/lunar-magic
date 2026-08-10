@@ -913,3 +913,9 @@ payload prefix followed by zeroes produces the independently calculated checksum
 single participating-byte mutation is rejected. The metadata gate separately covers the original
 marker, optional UTF-8 BOM, CRLF normalization, four recovered fields, and every bounded rejection.
 All three `localization::tests::original_language_*` tests pass.
+
+The follow-up portable extractor parses both PE32 and PE32+ without invoking the platform loader or
+executing module initialization. Synthetic images retain the exact three-level integer resource
+tree (type, resource ID, language), section-relative RVA mapping, and separately placed marker and
+metadata payloads. Missing `$DB7`, an unmappable data RVA, and every truncated prefix through the
+last required marker byte reject without a panic. All six `original_language_*` tests pass.
