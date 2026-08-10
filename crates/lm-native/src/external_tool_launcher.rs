@@ -132,17 +132,35 @@ impl ExternalToolLauncher {
         invocation: ToolInvocation,
         options: LaunchOptions,
     ) -> Result<(), String> {
-        if !options.allow_multiple_instances
-            && (self
+        if !options.allow_multiple_instances {
+            if self
                 .pending
                 .iter()
                 .any(|pending| pending.invocation.tool_id == invocation.tool_id)
-                || self
-                    .running
-                    .iter()
-                    .any(|running| running.tool_id == invocation.tool_id))
-        {
-            return Ok(());
+            {
+                return Ok(());
+            }
+            self.refresh_process_ids();
+            if let Some(process_id) = self
+                .running
+                .iter()
+                .rev()
+                .find(|running| running.tool_id == invocation.tool_id)
+                .map(|running| running.process_id)
+            {
+                #[cfg(windows)]
+                if let Some(process_id) = process_id {
+                    lm_windows::focus_process_window(process_id).map_err(|error| {
+                        format!(
+                            "could not focus existing external tool {:?}: {error}",
+                            invocation.tool_id
+                        )
+                    })?;
+                }
+                #[cfg(not(windows))]
+                let _ = process_id;
+                return Ok(());
+            }
         }
         self.enqueue_pending(PendingTool {
             invocation,
@@ -408,6 +426,8 @@ mod tests {
                 process_id: None,
             }],
             next_instance_id: 1,
+            #[cfg(windows)]
+            notification_path_window: None,
         };
         assert!(matches!(launcher.poll(), Some(Err(error)) if error.contains("emu")));
         assert!(launcher.running.is_empty());
@@ -554,6 +574,31 @@ mod tests {
                 open_other: false,
             }
         );
+    }
+
+    #[test]
+    fn default_policy_reuses_a_running_tool_without_enqueuing_another_request() {
+        let (result_sender, result) = mpsc::channel();
+        let (cancel, _cancellation) = mpsc::channel();
+        let (_started_sender, started) = mpsc::channel();
+        let mut launcher = ExternalToolLauncher {
+            pending: VecDeque::new(),
+            running: vec![RunningTool {
+                instance_id: 7,
+                tool_id: "tool-1".into(),
+                result,
+                cancel,
+                started,
+                process_id: None,
+            }],
+            next_instance_id: 8,
+            #[cfg(windows)]
+            notification_path_window: None,
+        };
+        launcher.enqueue(invocation(1)).unwrap();
+        assert!(launcher.pending.is_empty());
+        assert_eq!(launcher.running.len(), 1);
+        drop(result_sender);
     }
 
     #[test]

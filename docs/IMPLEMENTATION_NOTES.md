@@ -5368,6 +5368,14 @@ macOS spawns `/usr/bin/open` and preserves optional application arguments after 
 systems spawn `xdg-open` only for an argument-free target. These opener processes are dropped
 immediately and the associated application is never entered into owned-child close/cancel state.
 
+The default single-instance policy now also retains Lunar Magic's second-click behavior. The
+authenticated 3.63 CHM says another click switches focus to the already open program. Native
+workers publish their child PID; Windows enumerates visible top-level windows owned by that PID,
+restores the first minimized candidate with `ShowWindow(SW_RESTORE)`, and makes the best-effort
+`SetForegroundWindow` request instead of enqueuing another permission prompt or process. A child
+that has not created a window yet remains a harmless no-op. `LM_ALLOW_MULT_INSTANCES` and its
+force-all form continue to bypass this reuse path.
+
 Lunar Magic notification payloads are a typed core value rather than scattered Win32 literals:
 message `$BECA`, confirmation `$6942`, six-bit kinds 0 through 6, and a checked ten-bit variable.
 The cancellable process worker publishes the OS PID after successful spawn. The Windows boundary

@@ -1069,3 +1069,11 @@ zero the four displaced payload regions; Lunar Magic additionally writes two unr
 `STAR FD 01 02 FE` zero reservations for its allocator bookkeeping. Application tests prove one
 revision, stale-command rejection, complete-byte Undo, confirmation gating, and the exact type-6
 subscription option.
+
+The extracted authenticated 3.63 CHM `info_LM_options_button.htm` closes the default duplicate-tool
+gesture: without `LM_ALLOW_MULT_INSTANCES`, clicking the same button again switches focus to the
+already open program. The original executable imports `EnumWindows`, `GetWindowThreadProcessId`,
+`IsIconic`, `ShowWindow`, and `SetForegroundWindow`, matching the process-owned top-level-window
+boundary. Rust now refreshes the tracked child PID, finds the first visible owned window, restores
+it when minimized, and requests foreground activation without creating a second process. Focused
+launcher tests retain pending/running de-duplication and the Windows target cross-compiles.

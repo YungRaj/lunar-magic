@@ -91,3 +91,13 @@ entrance, and installed Lfix3 field behind a localized confirmation, routes auth
 command `LM_FILE_DELETE_LEVEL`, and publishes type 6 with the deleted level number only after a
 successful physical ROM persistence. The live command-line oracle binds all modeled target records; its two
 unreferenced zero-reservation tags remain documented allocator bookkeeping.
+
+## Existing-instance focus evidence
+
+The authenticated CHM button-option page states that the default one-process-per-button behavior
+switches window focus to the already open program when its toolbar button is clicked again. The
+same executable imports `EnumWindows`, `GetWindowThreadProcessId`, `IsIconic`, `ShowWindow`, and
+`SetForegroundWindow`. Rust retains each directly launched child PID, enumerates its visible
+top-level windows, restores the first minimized candidate, and requests foreground activation.
+Pending duplicates and running children that have not created a window remain no-ops; the two
+documented allow-multiple options continue to launch independent instances.

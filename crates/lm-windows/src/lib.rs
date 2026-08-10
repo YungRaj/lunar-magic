@@ -13,8 +13,8 @@ use windows_sys::Win32::Storage::FileSystem::{
 };
 use windows_sys::Win32::UI::Shell::ShellExecuteW;
 use windows_sys::Win32::UI::WindowsAndMessaging::{
-    CreateWindowExW, DestroyWindow, EnumWindows, GetWindowThreadProcessId, PostMessageW,
-    SetWindowTextW,
+    CreateWindowExW, DestroyWindow, EnumWindows, GetWindowThreadProcessId, IsIconic,
+    IsWindowVisible, PostMessageW, SW_RESTORE, SetForegroundWindow, SetWindowTextW, ShowWindow,
 };
 
 const MAX_WINDOWS_PATH_UTF16_UNITS: usize = 32_768;
@@ -218,6 +218,53 @@ pub fn post_message_to_process_windows(
         Err(std::io::Error::last_os_error())
     } else {
         Ok(context.posted)
+    }
+}
+
+/// Restores and activates the first visible top-level window owned by `process_id`.
+///
+/// Lunar Magic uses this boundary when a user-toolbar button is configured for its default
+/// single-instance policy and the button's process is already running. A process can temporarily
+/// have no eligible window while starting; that is reported as `Ok(false)` rather than an error.
+pub fn focus_process_window(process_id: u32) -> std::io::Result<bool> {
+    struct Context {
+        process_id: u32,
+        found: bool,
+    }
+
+    unsafe extern "system" fn callback(
+        window: windows_sys::Win32::Foundation::HWND,
+        raw: isize,
+    ) -> i32 {
+        let context = unsafe { &mut *(raw as *mut Context) };
+        let mut owner = 0_u32;
+        unsafe { GetWindowThreadProcessId(window, &mut owner) };
+        if owner != context.process_id || unsafe { IsWindowVisible(window) } == 0 {
+            return 1;
+        }
+        if unsafe { IsIconic(window) } != 0 {
+            unsafe { ShowWindow(window, SW_RESTORE) };
+        }
+        // Windows may reject foreground activation under its user-input policy. Finding and
+        // attempting the eligible process window still completes Lunar Magic's best-effort action.
+        let _activated = unsafe { SetForegroundWindow(window) };
+        context.found = true;
+        0
+    }
+
+    let mut context = Context {
+        process_id,
+        found: false,
+    };
+    let succeeded = unsafe {
+        // SAFETY: `context` remains live and exclusively borrowed throughout synchronous
+        // enumeration. Returning FALSE intentionally stops once the first eligible window is found.
+        EnumWindows(Some(callback), (&mut context as *mut Context) as isize)
+    };
+    if succeeded == 0 && !context.found {
+        Err(std::io::Error::last_os_error())
+    } else {
+        Ok(context.found)
     }
 }
 
