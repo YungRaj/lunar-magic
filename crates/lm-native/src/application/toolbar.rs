@@ -4,6 +4,7 @@ use eframe::egui;
 use lm_app::{
     Command, LevelNavigationDirection, ShortcutGesture, ShortcutKey, ShortcutModifiers,
     ToolInvocation, ToolbarActivation, UserToolbarButton, UserToolbarTarget,
+    user_toolbar_internal_command,
 };
 
 impl NativeApplication {
@@ -154,6 +155,12 @@ impl NativeApplication {
         match &button.target {
             UserToolbarTarget::Spacer => {}
             UserToolbarTarget::Internal(name) => {
+                let Some(original_command) = user_toolbar_internal_command(name) else {
+                    self.effects.error = Some(format!(
+                        "User toolbar command {name:?} is not part of Lunar Magic 3.63's internal command table"
+                    ));
+                    return;
+                };
                 if let Some(action) = user_toolbar_local_action(name) {
                     self.apply_user_toolbar_local_action(action);
                     return;
@@ -162,7 +169,8 @@ impl NativeApplication {
                     Some(command) => self.dispatch(context, command),
                     None => {
                         self.effects.error = Some(format!(
-                            "User toolbar command {name:?} is not supported by this editor yet"
+                            "Lunar Magic 3.63 user toolbar command {name:?} (ID ${:04X}) is recognized but not supported by this editor yet",
+                            original_command.command_id
                         ))
                     }
                 }
@@ -751,10 +759,11 @@ fn user_toolbar_command(name: &str, current_level: Option<u16>) -> Option<Comman
         "LM_FILE_PREVIOUS_LEVEL" => Command::NavigateLevel(LevelNavigationDirection::Back),
         "LM_FILE_NEXT_LEVEL" => Command::NavigateLevel(LevelNavigationDirection::Forward),
         "LM_FILE_EXIT" => Command::Quit,
+        "LM_FILE_CLOSE_ROM" => Command::Close,
         "LM_EDIT_UNDO" => Command::Undo,
         "LM_EDIT_REDO" => Command::Redo,
         "LM_VIEW_OVERWORLD" => Command::ShowOverworld,
-        "LM_VIEW_16x16" => Command::ShowMap16,
+        "LM_VIEW_16x16" | "LM_VIEW_16x16_OLD" => Command::ShowMap16,
         "LM_VIEW_8x8" => Command::ShowGraphics(0),
         "LM_VIEW_PALETTES" => Command::ShowPalette(0),
         "LM_KEY_EXANIM_SLOTS" => Command::ShowExAnimation(current_level.unwrap_or(0)),
@@ -981,6 +990,14 @@ mod user_toolbar_tests {
         assert_eq!(user_toolbar_command("LM_VIEW_LAYER_3_EDITOR", None), None);
         assert_eq!(user_toolbar_command("LM_UNKNOWN", None), None);
         assert_eq!(
+            user_toolbar_command("LM_FILE_CLOSE_ROM", None),
+            Some(Command::Close)
+        );
+        assert_eq!(
+            user_toolbar_command("LM_VIEW_16x16_OLD", None),
+            Some(Command::ShowMap16)
+        );
+        assert_eq!(
             user_toolbar_local_action("LM_VIEW_LAYER_1"),
             Some(UserToolbarLocalAction::Layer1)
         );
@@ -1156,6 +1173,22 @@ mod user_toolbar_tests {
         assert_eq!(
             user_toolbar_local_action("LM_VIEW_SCREEN_GRID_2"),
             Some(UserToolbarLocalAction::BoundaryGuide)
+        );
+    }
+
+    #[test]
+    fn every_native_internal_route_belongs_to_the_authenticated_original_table() {
+        let supported = lm_app::lunar_magic_363_user_toolbar_commands()
+            .filter(|entry| {
+                user_toolbar_command(entry.name, Some(0x105)).is_some()
+                    || user_toolbar_local_action(entry.name).is_some()
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(supported.len(), 145);
+        assert!(
+            supported
+                .iter()
+                .all(|entry| { lm_app::user_toolbar_internal_command(entry.name).is_some() })
         );
     }
 

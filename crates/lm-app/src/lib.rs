@@ -115,6 +115,7 @@ mod tool_config;
 mod tool_state;
 mod toolbar;
 mod user_toolbar;
+mod user_toolbar_internal_command;
 mod vanilla_entrance_controller;
 mod viewport_rendering;
 
@@ -344,6 +345,11 @@ pub use toolbar::{ToolbarAction, ToolbarActivation, ToolbarConfig, ToolbarError,
 pub use user_toolbar::{
     UserToolbar, UserToolbarButton, UserToolbarError, UserToolbarGlobalOption, UserToolbarImage,
     UserToolbarImageBase, UserToolbarImageMode, UserToolbarTarget,
+};
+pub use user_toolbar_internal_command::{
+    LUNAR_MAGIC_363_USER_TOOLBAR_NAMED_COMMANDS, LUNAR_MAGIC_363_USER_TOOLBAR_TABLE_SLOTS,
+    UserToolbarInternalCommand, lunar_magic_363_user_toolbar_commands,
+    user_toolbar_internal_command,
 };
 pub use vanilla_entrance_controller::{
     VanillaEntranceController, VanillaEntranceControllerError, VanillaEntranceEdit,
