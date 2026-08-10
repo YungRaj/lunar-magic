@@ -20,3 +20,15 @@ back through `BuildFallbackPreferredUiLanguageList` at `004DB640`.
 accumulates the recovered position-dependent transform, reads the stored 32-bit checksum at
 `file_size - $38`, and unloads the module on mismatch. These details retain the original DLL ABI
 for later compatible resource loading; the Rust catalog remains a bounded clean-room format.
+
+The complete transform was recovered headlessly from the labeled project on 2026-08-10. For byte
+offsets whose bit 1 is clear, even offsets contribute `rol8(byte, 2) ^ $46`, while odd offsets
+contribute the wrapping negation of `rol8(byte, 4) ^ $77`. Offsets whose bit 1 is set contribute
+`u8(byte * -$80 + (byte >> 1) - $17) ^ $71`. Contributions accumulate with wrapping 32-bit
+addition. The final 64 bytes never participate; the stored little-endian dword is at
+`file_size - $38`.
+
+`EnumerateAvailableLanguageModules` was also re-decompiled in full. It requires resource type
+`$01F4`, ID `$0DB7` to contain at least the little-endian `$C001BABE` marker, then reads bounded
+UTF-8 metadata from ID `$0DB6`, removes an optional BOM, normalizes CRLF delimiters, and retains
+four fields after the module filename: display name, version, locale tag, and code page.

@@ -898,3 +898,18 @@ after normalization on every platform, including colon-delimited non-Windows env
 `application::preference_tests::installed_language_autodetection_obeys_original_sixty_four_preference_bound`
 proves that an exact match in slot 64 is selected and the same match in slot 65 is ignored; the
 neighboring exact-then-primary test continues to prove the recovered two-pass ordering.
+
+## Original language-module checksum and metadata ABI
+
+On 2026-08-10, Ghidra 12.1.2 headlessly reopened the labeled Lunar Magic 3.63 project and
+decompiled `ValidateLanguageModuleChecksum` (`004D7010`),
+`EnumerateAvailableLanguageModules` (`004D7940`), and
+`AppendEnumeratedLanguageMetadata` (`004D77D0`). The resulting contract is retained in the
+localization provenance fixture without redistributing an executable or language DLL.
+
+Rust now applies the exact offset-selected rotations/XORs, wrapping negation, third arithmetic
+transform, 32-bit accumulation, 64-byte trailer exclusion, and checksum dword location. A four-byte
+payload prefix followed by zeroes produces the independently calculated checksum 4,020, then a
+single participating-byte mutation is rejected. The metadata gate separately covers the original
+marker, optional UTF-8 BOM, CRLF normalization, four recovered fields, and every bounded rejection.
+All three `localization::tests::original_language_*` tests pass.

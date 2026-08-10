@@ -10,6 +10,129 @@ const PREVIOUS_COMPLETE_KEY_COUNT: usize = 184;
 const EARLIER_COMPLETE_KEY_COUNT: usize = 183;
 const MAX_ENCODED_BYTES: usize =
     MAGIC.len() + 2 + MAX_LOCALE_BYTES + 2 + UiTextKey::ALL.len() * (1 + 2 + MAX_TEXT_BYTES);
+const ORIGINAL_LANGUAGE_MARKER: u32 = 0xc001_babe;
+const ORIGINAL_LANGUAGE_METADATA_MAX_BYTES: usize = 0x410;
+const ORIGINAL_LANGUAGE_TRAILER_BYTES: usize = 0x40;
+const ORIGINAL_LANGUAGE_CHECKSUM_FROM_END: usize = 0x38;
+
+/// The four text fields published by an original Lunar Magic language DLL's resource `$DB6`.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OriginalLanguageModuleMetadata {
+    pub display_name: String,
+    pub version: String,
+    pub locale: String,
+    pub code_page: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum OriginalLanguageModuleError {
+    ModuleTooShort(usize),
+    WrongMarker,
+    MetadataTooLong(usize),
+    InvalidUtf8,
+    MissingMetadataFields,
+    ChecksumMismatch { stored: u32, computed: u32 },
+}
+
+impl std::fmt::Display for OriginalLanguageModuleError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(formatter, "original language module error: {self:?}")
+    }
+}
+
+impl std::error::Error for OriginalLanguageModuleError {}
+
+impl OriginalLanguageModuleMetadata {
+    /// Decodes the original resource-type `$01F4`, IDs `$0DB7` and `$0DB6` metadata contract.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`OriginalLanguageModuleError`] when the marker is absent, the metadata exceeds
+    /// Lunar Magic's recovered bound, the text is not UTF-8, or fewer than four fields exist.
+    pub fn decode(marker: &[u8], metadata: &[u8]) -> Result<Self, OriginalLanguageModuleError> {
+        if marker.get(..4) != Some(&ORIGINAL_LANGUAGE_MARKER.to_le_bytes()) {
+            return Err(OriginalLanguageModuleError::WrongMarker);
+        }
+        if metadata.len() > ORIGINAL_LANGUAGE_METADATA_MAX_BYTES {
+            return Err(OriginalLanguageModuleError::MetadataTooLong(metadata.len()));
+        }
+        let metadata = metadata.strip_prefix(b"\xef\xbb\xbf").unwrap_or(metadata);
+        let text =
+            std::str::from_utf8(metadata).map_err(|_| OriginalLanguageModuleError::InvalidUtf8)?;
+        let mut fields = text.split('\n').map(|field| {
+            field
+                .strip_suffix('\r')
+                .unwrap_or(field)
+                .split('\0')
+                .next()
+                .unwrap_or_default()
+                .to_owned()
+        });
+        Ok(Self {
+            display_name: fields
+                .next()
+                .ok_or(OriginalLanguageModuleError::MissingMetadataFields)?,
+            version: fields
+                .next()
+                .ok_or(OriginalLanguageModuleError::MissingMetadataFields)?,
+            locale: fields
+                .next()
+                .ok_or(OriginalLanguageModuleError::MissingMetadataFields)?,
+            code_page: fields
+                .next()
+                .ok_or(OriginalLanguageModuleError::MissingMetadataFields)?,
+        })
+    }
+}
+
+/// Validates the encoded checksum used by original Lunar Magic language DLLs.
+///
+/// Only bytes before the final 64-byte trailer participate. The stored little-endian checksum is
+/// 56 bytes from the end, exactly matching `ValidateLanguageModuleChecksum` at `$004D7010`.
+///
+/// # Errors
+///
+/// Returns [`OriginalLanguageModuleError`] for a short file or checksum mismatch.
+pub fn validate_original_language_module_checksum(
+    bytes: &[u8],
+) -> Result<(), OriginalLanguageModuleError> {
+    if bytes.len() < ORIGINAL_LANGUAGE_TRAILER_BYTES {
+        return Err(OriginalLanguageModuleError::ModuleTooShort(bytes.len()));
+    }
+    let payload_end = bytes.len() - ORIGINAL_LANGUAGE_TRAILER_BYTES;
+    let checksum_offset = bytes.len() - ORIGINAL_LANGUAGE_CHECKSUM_FROM_END;
+    let stored = u32::from_le_bytes(
+        bytes[checksum_offset..checksum_offset + 4]
+            .try_into()
+            .expect("the validated trailer contains four checksum bytes"),
+    );
+    let computed =
+        bytes[..payload_end]
+            .iter()
+            .copied()
+            .enumerate()
+            .fold(0_u32, |sum, (offset, byte)| {
+                let transformed = if offset & 2 == 0 {
+                    if offset & 1 == 0 {
+                        u32::from(byte.rotate_left(2) ^ 0x46)
+                    } else {
+                        0_u32.wrapping_sub(u32::from(byte.rotate_left(4) ^ 0x77))
+                    }
+                } else {
+                    u32::from(
+                        byte.wrapping_mul(0x80)
+                            .wrapping_add(byte >> 1)
+                            .wrapping_sub(0x17)
+                            ^ 0x71,
+                    )
+                };
+                sum.wrapping_add(transformed)
+            });
+    if stored != computed {
+        return Err(OriginalLanguageModuleError::ChecksumMismatch { stored, computed });
+    }
+    Ok(())
+}
 
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 #[repr(u8)]
@@ -879,6 +1002,103 @@ mod tests {
             UiTextKey::ALL.map(|key| (key, format!("texte-{key:?}"))),
         )
         .unwrap()
+    }
+
+    fn checksummed_original_module(payload: &[u8]) -> Vec<u8> {
+        let mut bytes = payload.to_vec();
+        bytes.resize(payload.len() + ORIGINAL_LANGUAGE_TRAILER_BYTES, 0);
+        let checksum = payload
+            .iter()
+            .copied()
+            .enumerate()
+            .fold(0_u32, |sum, (offset, byte)| {
+                let transformed = if offset & 2 == 0 {
+                    if offset & 1 == 0 {
+                        u32::from(byte.rotate_left(2) ^ 0x46)
+                    } else {
+                        0_u32.wrapping_sub(u32::from(byte.rotate_left(4) ^ 0x77))
+                    }
+                } else {
+                    u32::from(
+                        byte.wrapping_mul(0x80)
+                            .wrapping_add(byte >> 1)
+                            .wrapping_sub(0x17)
+                            ^ 0x71,
+                    )
+                };
+                sum.wrapping_add(transformed)
+            });
+        let checksum_offset = bytes.len() - ORIGINAL_LANGUAGE_CHECKSUM_FROM_END;
+        bytes[checksum_offset..checksum_offset + 4].copy_from_slice(&checksum.to_le_bytes());
+        bytes
+    }
+
+    #[test]
+    fn original_language_checksum_matches_recovered_three_branch_transform() {
+        let mut payload = vec![0; 64];
+        payload[..4].copy_from_slice(&[0x01, 0x12, 0x34, 0x56]);
+        let mut module = checksummed_original_module(&payload);
+        let stored_offset = module.len() - ORIGINAL_LANGUAGE_CHECKSUM_FROM_END;
+        assert_eq!(
+            u32::from_le_bytes(module[stored_offset..stored_offset + 4].try_into().unwrap()),
+            4_020
+        );
+        assert_eq!(validate_original_language_module_checksum(&module), Ok(()));
+
+        module[0] ^= 1;
+        assert!(matches!(
+            validate_original_language_module_checksum(&module),
+            Err(OriginalLanguageModuleError::ChecksumMismatch { .. })
+        ));
+        assert_eq!(
+            validate_original_language_module_checksum(&module[..63]),
+            Err(OriginalLanguageModuleError::ModuleTooShort(63))
+        );
+    }
+
+    #[test]
+    fn original_language_metadata_decodes_bom_crlf_and_four_fields() {
+        let marker = ORIGINAL_LANGUAGE_MARKER.to_le_bytes();
+        let decoded = OriginalLanguageModuleMetadata::decode(
+            &marker,
+            b"\xef\xbb\xbfFran\xc3\xa7ais - Test\r\n3.63\r\nfr-CA\r\n1252\r\nignored",
+        )
+        .unwrap();
+        assert_eq!(
+            decoded,
+            OriginalLanguageModuleMetadata {
+                display_name: "Français - Test".into(),
+                version: "3.63".into(),
+                locale: "fr-CA".into(),
+                code_page: "1252".into(),
+            }
+        );
+    }
+
+    #[test]
+    fn original_language_metadata_rejects_marker_bounds_utf8_and_missing_fields() {
+        let marker = ORIGINAL_LANGUAGE_MARKER.to_le_bytes();
+        assert_eq!(
+            OriginalLanguageModuleMetadata::decode(&[0; 4], b"a\nb\nc\nd\n"),
+            Err(OriginalLanguageModuleError::WrongMarker)
+        );
+        assert_eq!(
+            OriginalLanguageModuleMetadata::decode(
+                &marker,
+                &vec![b'x'; ORIGINAL_LANGUAGE_METADATA_MAX_BYTES + 1]
+            ),
+            Err(OriginalLanguageModuleError::MetadataTooLong(
+                ORIGINAL_LANGUAGE_METADATA_MAX_BYTES + 1
+            ))
+        );
+        assert_eq!(
+            OriginalLanguageModuleMetadata::decode(&marker, &[0xff]),
+            Err(OriginalLanguageModuleError::InvalidUtf8)
+        );
+        assert_eq!(
+            OriginalLanguageModuleMetadata::decode(&marker, b"a\nb\nc"),
+            Err(OriginalLanguageModuleError::MissingMetadataFields)
+        );
     }
 
     #[test]

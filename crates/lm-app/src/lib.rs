@@ -220,7 +220,10 @@ pub use level_usage_scan::{
     scan_smw_us_v1_level_usage,
 };
 pub use lm_project::{MwlOptionalAssetsEdit, MwlOptionalAssetsEditError};
-pub use localization::{LocalizationCatalog, LocalizationError, UiTextKey};
+pub use localization::{
+    LocalizationCatalog, LocalizationError, OriginalLanguageModuleError,
+    OriginalLanguageModuleMetadata, UiTextKey, validate_original_language_module_checksum,
+};
 pub use map16_bitmap_allocation::{
     LUNAR_MAGIC_BLANK_MAP16_WORD, Map16BitmapAllocation, Map16BitmapAllocationError,
     Map16BitmapAllocationMode, Map16BitmapAllocationOptions, allocate_bitmap_map16_tiles,

@@ -774,3 +774,10 @@ The localization auto-detection gate additionally enforces the original 64-prefe
 ceiling on every platform. A matching 64th normalized preference is accepted, while a matching
 65th preference is ignored; this prevents unbounded environment-language lists from widening the
 recovered `AutoDetectAndLoadLanguageModule` contract.
+
+The original-language-DLL compatibility boundary now has a portable, non-executing validator for
+the fully recovered `$004D7010` checksum transform and decoder for the `$01F4:$0DB7` magic plus
+bounded `$01F4:$0DB6` display/version/locale/code-page metadata. Three focused tests bind exact
+transform arithmetic, trailer placement, BOM/CRLF handling, and malformed inputs. PE resource
+extraction and conversion of original localized dialog/string resources into the typed catalog
+remain open, so the Localization row remains `Partial`.
