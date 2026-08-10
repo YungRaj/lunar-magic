@@ -535,6 +535,14 @@ tests bind table extent, first/last extraction, fallback, marker validation, and
 bounds. Applying template control text to the native Rust dialogs and retaining a live language-DLL
 gesture remain incomplete, so the row remains `Partial` and the aggregate stays 58/65.
 
+Both standard and extended Win32 dialog templates now decode portably with bounded UTF-16,
+ordinal, alignment, font, control-ID, and creation-data handling. Synthetic rejection tests cover
+every truncated prefix, and a local-only gate parses all 107 resources from both original 3.63
+architectures. The converted catalog consumes five procedure-bound actions from dialogs `$042B`
+and `$03F8` (common OK/Cancel plus three About buttons), while absent/malformed templates retain
+English independently. The remaining control inventory still lacks native-form bindings, so this
+does not promote the row or aggregate.
+
 The overworld Palette/ExAnimation row additionally has the exact per-map option representation.
 Four independently inverted feature bits retain their unrelated low nibble, while original
 lightning is decoded from its separate high-bit-first seven-map disable mask. The preview gates

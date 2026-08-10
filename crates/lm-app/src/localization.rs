@@ -3,6 +3,12 @@
 use flate2::{Decompress, FlushDecompress, Status};
 use std::collections::BTreeMap;
 
+#[cfg(test)]
+use crate::original_language_dialog::OriginalLanguageDialogControl;
+use crate::original_language_dialog::{
+    OriginalLanguageDialogTemplate, OriginalLanguageDialogTemplateError,
+    decode_original_language_dialog_template,
+};
 use crate::original_language_dialog_map::ORIGINAL_LANGUAGE_DIALOG_RESOURCE_IDS;
 use crate::original_language_validation::{
     RANGE_STRING_LENGTH_CEILINGS, SINGLE_STRING_LENGTH_CEILINGS,
@@ -50,6 +56,17 @@ impl<'a> OriginalLanguageDialogResource<'a> {
     #[must_use]
     pub const fn bytes(&self) -> &'a [u8] {
         self.bytes
+    }
+
+    /// Decodes this resource's standard or extended Win32 template framing.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`OriginalLanguageDialogTemplateError`] when the resource is malformed.
+    pub fn decode(
+        &self,
+    ) -> Result<OriginalLanguageDialogTemplate, OriginalLanguageDialogTemplateError> {
+        decode_original_language_dialog_template(self.bytes)
     }
 }
 
@@ -307,10 +324,56 @@ pub fn decode_original_language_module_catalog(
         resources.resource(0x0dad)?,
         resources.resource(0x0dae)?,
     )?;
-    let catalog = strings
+    let mut catalog = strings
         .to_catalog(metadata.locale.clone())
         .map_err(OriginalLanguageModuleError::InvalidCatalog)?;
+    let dialogs =
+        ORIGINAL_LANGUAGE_DIALOG_RESOURCE_IDS
+            .iter()
+            .filter_map(|&(original_id, localized_id)| {
+                let bytes = resources.resource_of_type(5, localized_id).ok()?;
+                let template = decode_original_language_dialog_template(bytes).ok()?;
+                Some((original_id, template))
+            });
+    apply_original_dialog_catalog_overrides(&mut catalog, dialogs);
+    catalog
+        .validate()
+        .map_err(OriginalLanguageModuleError::InvalidCatalog)?;
     Ok((metadata, catalog))
+}
+
+fn apply_original_dialog_catalog_overrides(
+    catalog: &mut LocalizationCatalog,
+    dialogs: impl IntoIterator<Item = (u16, OriginalLanguageDialogTemplate)>,
+) {
+    for (dialog_id, template) in dialogs {
+        let mappings: &[(u32, UiTextKey)] = match dialog_id {
+            // LanguageSelectionDialogProc: the original localizes this chooser through its own
+            // mapped template, making it the stable source for application-wide common actions.
+            0x042b => &[(1, UiTextKey::CommonOk), (2, UiTextKey::CommonCancel)],
+            // AboutDialogProc exposes these three semantic buttons directly.
+            0x03f8 => &[
+                (1, UiTextKey::AboutOk),
+                (0x66, UiTextKey::AboutThirdPartyEnhancements),
+                (0x67, UiTextKey::AboutLegalNotice),
+            ],
+            _ => continue,
+        };
+        for &(control_id, key) in mappings {
+            let Some(text) = template
+                .controls
+                .iter()
+                .find(|control| control.id == control_id)
+                .and_then(|control| control.text.as_deref())
+            else {
+                continue;
+            };
+            let text = normalize_original_ui_text(key, text);
+            if !text.is_empty() {
+                catalog.entries.insert(key, text);
+            }
+        }
+    }
 }
 
 fn original_string_index(key: UiTextKey) -> Option<usize> {
@@ -1905,6 +1968,17 @@ mod tests {
         checksummed_original_module(&payload)
     }
 
+    fn original_language_dialog_template(title: &str) -> Vec<u8> {
+        let mut bytes = vec![0; 18];
+        bytes.extend_from_slice(&0_u16.to_le_bytes()); // no menu
+        bytes.extend_from_slice(&0_u16.to_le_bytes()); // default dialog class
+        for unit in title.encode_utf16() {
+            bytes.extend_from_slice(&unit.to_le_bytes());
+        }
+        bytes.extend_from_slice(&0_u16.to_le_bytes());
+        bytes
+    }
+
     fn encoded_original_string_pool(decoded: &[u8]) -> Vec<u8> {
         let mut encoder = DeflateEncoder::new(Vec::new(), Compression::default());
         encoder.write_all(decoded).unwrap();
@@ -2174,6 +2248,75 @@ mod tests {
     }
 
     #[test]
+    fn original_dialog_templates_override_only_evidence_backed_typed_actions() {
+        let mut catalog = OriginalLanguageStringPool {
+            strings: Vec::new(),
+        }
+        .to_catalog("fr-FR")
+        .unwrap();
+        apply_original_dialog_catalog_overrides(
+            &mut catalog,
+            [
+                (
+                    0x042b,
+                    OriginalLanguageDialogTemplate {
+                        extended: true,
+                        title: Some("Langue".into()),
+                        controls: vec![
+                            OriginalLanguageDialogControl {
+                                id: 1,
+                                class_ordinal: Some(0x80),
+                                text: Some("&Valider".into()),
+                            },
+                            OriginalLanguageDialogControl {
+                                id: 2,
+                                class_ordinal: Some(0x80),
+                                text: Some("A&nnuler".into()),
+                            },
+                        ],
+                    },
+                ),
+                (
+                    0x03f8,
+                    OriginalLanguageDialogTemplate {
+                        extended: false,
+                        title: Some("À propos".into()),
+                        controls: vec![
+                            OriginalLanguageDialogControl {
+                                id: 1,
+                                class_ordinal: Some(0x80),
+                                text: Some("&Fermer".into()),
+                            },
+                            OriginalLanguageDialogControl {
+                                id: 0x66,
+                                class_ordinal: Some(0x80),
+                                text: Some("Extensions &tierces".into()),
+                            },
+                            OriginalLanguageDialogControl {
+                                id: 0x67,
+                                class_ordinal: Some(0x80),
+                                text: Some("Avis &juridique".into()),
+                            },
+                        ],
+                    },
+                ),
+            ],
+        );
+        assert_eq!(catalog.text(UiTextKey::CommonOk), "Valider");
+        assert_eq!(catalog.text(UiTextKey::CommonCancel), "Annuler");
+        assert_eq!(catalog.text(UiTextKey::AboutOk), "Fermer");
+        assert_eq!(
+            catalog.text(UiTextKey::AboutThirdPartyEnhancements),
+            "Extensions tierces"
+        );
+        assert_eq!(catalog.text(UiTextKey::AboutLegalNotice), "Avis juridique");
+        assert_eq!(
+            catalog.text(UiTextKey::AboutWindowTitleFormat),
+            UiTextKey::AboutWindowTitleFormat.english()
+        );
+    }
+
+    #[test]
     fn original_language_module_catalog_decodes_all_five_resources_end_to_end() {
         let count = 0x011a;
         let mut decoded = Vec::new();
@@ -2232,20 +2375,28 @@ mod tests {
 
     #[test]
     fn original_language_dialogs_decode_type_five_resources_and_omit_missing_mappings() {
-        let first = b"first Win32 dialog template";
-        let last = b"last Win32 dialog template";
+        let first = original_language_dialog_template("First dialog");
+        let last = original_language_dialog_template("Last dialog");
         let module = original_language_dialog_pe(
             b"Deutsch - Test\n3.63\nde-DE\n1252\n",
-            &[(0x07d0, first), (0x08bf, last)],
+            &[(0x07d0, &first), (0x08bf, &last)],
         );
         let dialogs = decode_original_language_module_dialogs(&module).unwrap();
         assert_eq!(dialogs.len(), 2);
         assert_eq!(dialogs[0].original_id, 0x03e8);
         assert_eq!(dialogs[0].localized_id, 0x07d0);
         assert_eq!(dialogs[0].bytes(), first);
+        assert_eq!(
+            dialogs[0].decode().unwrap().title.as_deref(),
+            Some("First dialog")
+        );
         assert_eq!(dialogs[1].original_id, 0x04d7);
         assert_eq!(dialogs[1].localized_id, 0x08bf);
         assert_eq!(dialogs[1].bytes(), last);
+        assert_eq!(
+            dialogs[1].decode().unwrap().title.as_deref(),
+            Some("Last dialog")
+        );
     }
 
     #[test]
@@ -2273,6 +2424,31 @@ mod tests {
             decode_original_language_module_dialogs(&out_of_bounds),
             Err(OriginalLanguageModuleError::ResourceBounds)
         );
+    }
+
+    #[test]
+    #[ignore = "requires a locally supplied Lunar Magic 3.63 executable"]
+    fn every_original_363_dialog_resource_decodes_with_the_portable_template_parser() {
+        let path = std::env::var_os("LM_ORIGINAL_EXE")
+            .expect("LM_ORIGINAL_EXE must name the locally supplied 3.63 executable");
+        let bytes = std::fs::read(path).unwrap();
+        let resources = PeResources::parse(&bytes).unwrap();
+        for &(original_id, _) in ORIGINAL_LANGUAGE_DIALOG_RESOURCE_IDS {
+            let bytes = resources.resource_of_type(5, original_id).unwrap();
+            let template = decode_original_language_dialog_template(bytes)
+                .unwrap_or_else(|error| panic!("dialog {original_id:#06x}: {error}"));
+            if std::env::var_os("LM_PRINT_ORIGINAL_DIALOG_TEXT").is_some() {
+                eprintln!("{original_id:#06x}\tdialog\t{:?}", template.title);
+                for control in template.controls {
+                    if control.text.is_some() {
+                        eprintln!(
+                            "{original_id:#06x}\t{:#010x}\t{:?}",
+                            control.id, control.text
+                        );
+                    }
+                }
+            }
+        }
     }
 
     #[test]

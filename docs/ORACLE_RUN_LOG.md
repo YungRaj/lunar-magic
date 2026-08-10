@@ -980,3 +980,14 @@ original `$01F4` resource tree and a separate type-5 tree. Three focused tests p
 107-entry boundary, first/last payload extraction, omission of absent resources, wrong-marker
 rejection, and malformed-RVA rejection. This establishes the original fallback ABI but does not
 claim native control localization or a live third-party language-DLL gate.
+
+The follow-up portable decoder implements both standard and extended Win32 template framing. Three
+synthetic tests cover UTF-16 titles/captions, standard 16-bit and extended 32-bit IDs, ordinal and
+named classes, ordinal non-text titles, both font tails, alignment, creation data, every truncated
+prefix, invalid UTF-16/version, and non-padding trailers. The local-only executable gate passed all
+107 resources independently for `lm363/Lunar Magic.exe` and `lm363/x64/Lunar Magic.exe`.
+
+Decoded Language dialog `$042B` controls 1/2 and About dialog `$03F8` controls 1/`$66`/`$67` are
+now semantically bound to five typed Rust actions. A focused catalog test proves mnemonic removal,
+Unicode retention, exact key selection, and English retention for unbound keys. This advances real
+native catalog output but deliberately does not infer meanings for the remaining decoded controls.

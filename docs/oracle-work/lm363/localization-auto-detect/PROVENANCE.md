@@ -94,3 +94,20 @@ flag. Rust now validates the complete module marker/metadata contract and expose
 for every present mapped type-5 resource while omitting missing mappings, preserving that exact
 per-dialog fallback boundary without loading or executing the DLL. Parsing and applying those
 Win32 templates to native Rust dialog controls remains separate unfinished work.
+
+The portable parser now implements both Microsoft-documented binary layouts rather than treating
+those payloads as strings: standard `DLGTEMPLATE`/`DLGITEMTEMPLATE` and extended
+[`DLGTEMPLATEEX`](https://learn.microsoft.com/en-us/windows/win32/dlgbox/dlgtemplateex)/
+[`DLGITEMTEMPLATEEX`](https://learn.microsoft.com/en-us/windows/win32/dlgbox/dlgitemtemplateex).
+It consumes style-dependent font fields, `sz_Or_Ord` menu/class/title values, DWORD-aligned control
+records, 16-bit standard or 32-bit extended control IDs, UTF-16 captions, and bounded creation data.
+Only literal dialog/control text is published; resource ordinals are never misrepresented as text.
+Every truncation, invalid UTF-16, invalid extended version, and non-padding trailer rejects.
+
+The ignored local-executable gate parses every one of the 107 mapped type-5 resources from both the
+32-bit and 64-bit Lunar Magic 3.63 executables without redistributing their contents. Two direct
+procedure/resource bindings are currently converted into typed Rust catalog actions: language
+dialog `$042B` IDs 1/2 provide the common OK/Cancel labels, and About dialog `$03F8` IDs 1/`$66`/
+`$67` provide its OK, Third Party Enhancements, and Legal Notice labels. Missing or malformed
+individual templates retain the typed English fallback. The rest of the decoded control inventory
+still needs semantic binding to the corresponding native editor forms.

@@ -3575,6 +3575,17 @@ the module. Synthetic two-type PE tests cover the first and last mappings, exact
 missing mappings, wrong marker, and invalid RVA. Native control-text application and retained
 live-module/Wine evidence remain open, so Configuration/Localization stays `Partial`.
 
+The dialog payload is no longer opaque. A platform-neutral bounded decoder supports standard and
+extended Win32 templates, including style-dependent font tails, ordinal-or-Unicode values,
+DWORD-aligned item records, both control-ID widths, and arbitrary bounded creation data. It
+publishes literal Unicode captions only. Synthetic standard/extended fixtures cover Unicode outside
+the BMP, named and ordinal classes, ordinal titles, creation bytes, and rejection of every truncated
+prefix, invalid extended versions, invalid UTF-16, and trailing data. A local-only ignored gate then
+parses all 107 original resources from both Lunar Magic 3.63 architectures. The converted DLL
+catalog now uses the recovered Language dialog's OK/Cancel and About dialog's three semantic button
+IDs, with mnemonic normalization and independent English fallback. Remaining control-to-native-form
+bindings and a retained localized DLL gesture keep the row `Partial`.
+
 The native frontend now has an opt-in, self-capturing `visual-smoke` build. It waits until the
 workspace has rendered across multiple frames, requests the real Glow viewport through egui, and
 publishes the returned framebuffer through `lm-render`'s bounded PNG encoder. This avoids relying

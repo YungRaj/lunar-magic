@@ -60,6 +60,7 @@ mod native_map16_bitmap_workspace;
 mod native_map16_sidecar_controller;
 mod native_overworld_appearance_controller;
 mod navigation_state;
+mod original_language_dialog;
 mod original_language_dialog_map;
 mod original_language_validation;
 mod osc_sidecar_controller;
@@ -300,6 +301,10 @@ pub use native_overworld_appearance_controller::{
     NativeOverworldAppearanceController, NativeOverworldAppearanceControllerError,
     NativeOverworldAppearanceEdit, NativeOverworldAppearanceEditError,
     NativeOverworldAppearanceSaveSnapshot, NativeOverworldAppearanceValue,
+};
+pub use original_language_dialog::{
+    OriginalLanguageDialogControl, OriginalLanguageDialogTemplate,
+    OriginalLanguageDialogTemplateError, decode_original_language_dialog_template,
 };
 pub use osc_sidecar_controller::{
     OscSidecarController, OscSidecarControllerError, OscSidecarSaveSnapshot,
