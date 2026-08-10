@@ -13,6 +13,15 @@ def framed(payload):
     return MAGIC + struct.pack("<I", len(payload)) + payload
 
 
+def describe_event(event):
+    if event[:1] == b"\xFF" and len(event) >= 5:
+        length = struct.unpack("<I", event[1:5])[0]
+        message = event[5 : 5 + length]
+        if len(message) == length:
+            return f"backend error: {message.decode('utf-8', errors='replace')}"
+    return f"event {event.hex()}"
+
+
 class Backend:
     def __init__(self, executable, core):
         self.process = subprocess.Popen(
@@ -193,8 +202,9 @@ def main():
             + rom
             + struct.pack("<I", 0)
         )
-        if backend.exchange(initialize) != b"\x82\x01":
-            raise RuntimeError("backend rejected initialization")
+        initialized = backend.exchange(initialize)
+        if initialized != b"\x82\x01":
+            raise RuntimeError(f"backend rejected initialization: {describe_event(initialized)}")
         initial = await_level(backend, args.initial_level, 5000)
         hot_reload_sprites(backend, 2, rom, args.initial_level)
         _, _, _, hot_state, _, _ = runtime_frame(backend.exchange(b"\x05"))

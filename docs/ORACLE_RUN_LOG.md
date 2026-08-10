@@ -820,3 +820,18 @@ and `$1938` every frame and requires the edited Goomba to become active without 
 switch reaches a distinct `$106` frame. Port-8089 Ghidra
 independently proves Lunar Magic 3.63 resolves `LMSW_LoadLevel` and calls it with
 `g_dwCurrentLevelNumber` after ROM load and again when the current editor level finishes loading.
+
+### Independent Snes9x 2010 core variant
+
+The same driver passed without relaxation against the official libretro ARM64 buildbot artifact
+`snes9x2010_libretro.dylib` dated 2026-08-08, SHA-256
+`93159322d61d5721432e1c16c0e9164bc0c0123714d399c6527b50fb1b21d137`. The ROM and video hashes,
+transition frame counts, modes, translevel, camera, and geometry exactly match the primary Snes9x
+run. The independent core produced 533 stereo frames per observation at 32,040 Hz; the exact audio
+hashes were `0532fab7d29d9828a8e0c0d8dd7f6c8e9b460ee7063bbb99f5af13e8d8975fe9` for initial/reloaded
+`$105` and `f30ca6804844b2896629fd5f5ab13f15e8c9b86dd77b2e234deb066e0a2674f3` for `$106`.
+
+The current official ARM64 bsnes buildbot core was also probed. It accepts the private full-path
+ROM but does not publish SMW WRAM through libretro memory ID 2, even after a bootstrap frame. Rust
+therefore rejects initialization with the exact diagnostic `libretro core does not expose exact
+128 KiB system RAM after bootstrap`; it does not claim capabilities it cannot implement.

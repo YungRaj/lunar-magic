@@ -8,6 +8,7 @@ rust-version.workspace = true
 [dependencies]
 libloading = "0.8"
 lm-app = { path = "../lm-app" }
+tempfile = "3"
 
 [lints.rust]
 unsafe_op_in_unsafe_fn = "deny"

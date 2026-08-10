@@ -72,6 +72,14 @@ the same complete runtime build and invokes the strict deterministic packager, w
 absent or incorrectly suffixed backend. This proves portable-package presence across the declared
 targets; it does not substitute for the remaining additional-core runtime oracles.
 
+An independent official buildbot Snes9x 2010 core now passes the same complete `$1FF` runtime
+oracle against the identical vanilla ROM: selected `$105` injection, in-place edited-sprite
+consumption, `$106` switching, exact reload reproduction, RGBA, stereo audio, and live WRAM sprite
+tables. Full-path cores are no longer rejected categorically: their exact immutable ROM revision is
+held in a private lifetime-bound `.smc` snapshot. A core must expose exact 128-KiB SMW WRAM after
+at most one bootstrap frame or initialization rejects before claiming live-level support. Broader
+emulator-family and non-macOS runtime executions remain unverified, so the row stays `Partial`.
+
 The native live window now also applies the recovered focus-only soft pause and main-window `$20`
 hard pause from egui's OS focus/minimize state. The same aggregate model preserves manual-hard-pause
 precedence and resumes only when all corresponding states clear;

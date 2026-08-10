@@ -6,7 +6,7 @@ use lm_app::{
     EmulatorViewport, MAX_EMULATOR_AUDIO_FRAMES, MAX_EMULATOR_AUDIO_RATE,
     MAX_EMULATOR_FRAME_HEIGHT, MAX_EMULATOR_FRAME_WIDTH, MIN_EMULATOR_AUDIO_RATE,
 };
-use std::ffi::{c_char, c_void};
+use std::ffi::{CString, c_char, c_void};
 use std::io::{self, Read, Write};
 use std::path::Path;
 use std::sync::atomic::{AtomicU16, Ordering};
@@ -290,6 +290,8 @@ struct Backend {
     api: CoreApi,
     initialized: bool,
     loaded: bool,
+    rom_loading: RomLoading,
+    fullpath_rom: Option<FullPathRom>,
     rom: Vec<u8>,
     latest_rom: Option<Vec<u8>>,
     sprite_sram_backup: Option<Vec<u8>>,
@@ -302,6 +304,36 @@ struct Backend {
     previous_mode: u8,
     mode_age: u32,
     sample_rate: u32,
+}
+
+struct FullPathRom {
+    _file: tempfile::NamedTempFile,
+    path: CString,
+}
+
+#[derive(Clone, Copy)]
+enum RomLoading {
+    Memory,
+    FullPath,
+}
+
+fn stage_fullpath_rom(rom: &[u8]) -> Result<FullPathRom, String> {
+    let mut file = tempfile::Builder::new()
+        .prefix("lm-libretro-")
+        .suffix(".smc")
+        .tempfile()
+        .map_err(|error| format!("could not create private full-path ROM snapshot: {error}"))?;
+    file.write_all(rom)
+        .and_then(|()| file.flush())
+        .and_then(|()| file.as_file().sync_all())
+        .map_err(|error| format!("could not write private full-path ROM snapshot: {error}"))?;
+    let path = file
+        .path()
+        .to_str()
+        .ok_or_else(|| "private full-path ROM snapshot path is not UTF-8".to_string())?;
+    let path = CString::new(path)
+        .map_err(|_| "private full-path ROM snapshot path contains NUL".to_string())?;
+    Ok(FullPathRom { _file: file, path })
 }
 
 impl Backend {
@@ -326,18 +358,16 @@ impl Backend {
         };
         // SAFETY: `info` is writable and has the exact libretro v1 layout.
         unsafe { (api.get_system_info)(&raw mut info) };
-        if info.need_fullpath {
-            // SAFETY: Core was initialized above and must be deinitialized before returning.
-            unsafe { (api.deinit)() };
-            return Err(
-                "libretro core requires full-path ROM loading; in-memory loading is required"
-                    .into(),
-            );
-        }
         Ok(Self {
             api,
             initialized: true,
             loaded: false,
+            rom_loading: if info.need_fullpath {
+                RomLoading::FullPath
+            } else {
+                RomLoading::Memory
+            },
+            fullpath_rom: None,
             rom: Vec::new(),
             latest_rom: None,
             sprite_sram_backup: None,
@@ -360,18 +390,28 @@ impl Backend {
             unsafe { (self.api.unload_game)() };
             self.loaded = false;
         }
+        self.fullpath_rom = None;
         self.rom = rom;
         self.latest_rom = None;
         self.sprite_overlays.clear();
         self.pending_sprite_overlay = None;
+        if matches!(self.rom_loading, RomLoading::FullPath) {
+            self.fullpath_rom = Some(stage_fullpath_rom(&self.rom)?);
+        }
+        let (path, data, size) = if let Some(staged) = &self.fullpath_rom {
+            (staged.path.as_ptr(), std::ptr::null(), 0)
+        } else {
+            (std::ptr::null(), self.rom.as_ptr().cast(), self.rom.len())
+        };
         let game = RetroGameInfo {
-            path: std::ptr::null(),
-            data: self.rom.as_ptr().cast(),
-            size: self.rom.len(),
+            path,
+            data,
+            size,
             meta: std::ptr::null(),
         };
         // SAFETY: `game` and the owned ROM backing remain valid throughout the loaded session.
         if !unsafe { (self.api.load_game)(&raw const game) } {
+            self.fullpath_rom = None;
             self.rom.clear();
             return Err("libretro core rejected the ROM image".into());
         }
@@ -397,14 +437,34 @@ impl Backend {
             // SAFETY: `retro_load_game` succeeded above, so this balances that load before
             // rejecting malformed timing metadata.
             unsafe { (self.api.unload_game)() };
+            self.fullpath_rom = None;
             self.rom.clear();
             return Err(format!(
                 "libretro core reported invalid audio sample rate {}",
                 av.timing.sample_rate
             ));
         }
+        if runtime_state(&self.api).is_none() {
+            // A few cores publish memory only after their first emulation call. Permit exactly one
+            // bootstrap frame, then require the WRAM contract needed by every advertised level,
+            // sprite, and runtime-state capability.
+            unsafe { (self.api.run)() };
+            if runtime_state(&self.api).is_none() {
+                // SAFETY: `retro_load_game` succeeded above, so this balances the load before
+                // rejecting a core that cannot implement this backend's advertised capabilities.
+                unsafe { (self.api.unload_game)() };
+                self.fullpath_rom = None;
+                self.rom.clear();
+                return Err(
+                    "libretro core does not expose exact 128 KiB system RAM after bootstrap".into(),
+                );
+            }
+        }
         self.loaded = true;
-        self.sample_rate = av.timing.sample_rate.round() as u32;
+        // The finite, positive 8..384-kHz check above makes this conversion exact and bounded.
+        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+        let sample_rate = av.timing.sample_rate.round() as u32;
+        self.sample_rate = sample_rate;
         self.reached_overworld = false;
         self.previous_mode = 0xff;
         self.mode_age = 0;
@@ -415,7 +475,7 @@ impl Backend {
         &mut self,
         level: u16,
         rom: Vec<u8>,
-        sprites: Vec<u8>,
+        sprites: &[u8],
     ) -> Result<EmulatorBackendEvent, String> {
         if !self.loaded {
             return Err("no ROM is loaded".into());
@@ -443,7 +503,7 @@ impl Backend {
             self.sprite_sram_backup = Some(sram.to_vec());
         }
         sram[0] = header;
-        sram[1..1 + sprites.len()].copy_from_slice(&sprites);
+        sram[1..=sprites.len()].copy_from_slice(sprites);
         let wram = system_ram_mut(&mut self.api).ok_or_else(|| {
             "libretro core stopped exposing exact 128 KiB system RAM after sprite reload"
                 .to_string()
@@ -452,7 +512,7 @@ impl Backend {
         self.latest_rom = Some(rom);
         let mut full_stream = Vec::with_capacity(sprites.len() + 1);
         full_stream.push(header);
-        full_stream.extend_from_slice(&sprites);
+        full_stream.extend_from_slice(sprites);
         self.sprite_overlays
             .retain(|(overlay_level, _)| *overlay_level != level);
         self.sprite_overlays.push((level, full_stream));
@@ -539,7 +599,7 @@ impl Backend {
         }
         if self.loaded {
             let wram = system_ram_mut(&mut self.api).ok_or_else(|| {
-                "libretro core does not expose exact 128 KiB system RAM".to_string()
+                "libretro core stopped exposing exact 128 KiB system RAM".to_string()
             })?;
             if wram[0x0100] == 0x0e || (self.reached_overworld && wram[0x0100] == 0x14) {
                 inject_selected_level(wram, level);
@@ -610,6 +670,7 @@ impl Backend {
                     unsafe { (self.api.unload_game)() };
                     self.loaded = false;
                 }
+                self.fullpath_rom = None;
                 self.rom.clear();
                 Ok(EmulatorBackendEvent::Active(false))
             }
@@ -623,7 +684,7 @@ impl Backend {
                 rom,
                 sprites,
                 ..
-            } => self.hot_reload_sprite_snapshot(level, rom, sprites),
+            } => self.hot_reload_sprite_snapshot(level, rom, &sprites),
             EmulatorBackendCommand::QueryRuntimeSprites => runtime_sprites(&self.api)
                 .ok_or_else(|| "libretro core does not expose SMW runtime sprite tables".into()),
             EmulatorBackendCommand::ReloadSprites(_) | EmulatorBackendCommand::SetFlags(_) => {
@@ -702,7 +763,7 @@ fn save_ram_mut(api: &mut CoreApi) -> Option<&mut [u8]> {
             (api.get_memory_size)(RETRO_MEMORY_SAVE_RAM),
         )
     };
-    if pointer.is_null() || size < 2 || size > 0x80_000 {
+    if pointer.is_null() || !(2..=0x80_000).contains(&size) {
         return None;
     }
     // SAFETY: The core supplied a non-null bounded save-RAM region for this loaded game.
@@ -743,6 +804,7 @@ impl Drop for Backend {
             if self.loaded {
                 (self.api.unload_game)();
             }
+            self.fullpath_rom = None;
             JOYPAD.store(0, Ordering::Relaxed);
             AUTOMATION_JOYPAD.store(0, Ordering::Relaxed);
             if self.initialized {
@@ -927,11 +989,25 @@ mod tests {
 
     #[test]
     fn missing_core_is_reported_without_starting_a_session() {
-        let error = match Backend::new(Path::new("definitely-missing-libretro-core")) {
-            Ok(_) => panic!("missing core unexpectedly loaded"),
-            Err(error) => error,
+        let Err(error) = Backend::new(Path::new("definitely-missing-libretro-core")) else {
+            panic!("missing core unexpectedly loaded");
         };
         assert!(error.contains("could not load libretro core"));
+    }
+
+    #[test]
+    fn fullpath_rom_snapshot_is_exact_private_and_removed_on_drop() {
+        let bytes = b"immutable editor revision";
+        let staged = stage_fullpath_rom(bytes).unwrap();
+        let path = std::path::PathBuf::from(staged.path.to_str().unwrap());
+        assert_eq!(std::fs::read(&path).unwrap(), bytes);
+        assert_eq!(
+            path.extension().and_then(std::ffi::OsStr::to_str),
+            Some("smc")
+        );
+        assert_eq!(staged.path.to_bytes(), path.to_str().unwrap().as_bytes());
+        drop(staged);
+        assert!(!path.exists());
     }
 
     #[test]

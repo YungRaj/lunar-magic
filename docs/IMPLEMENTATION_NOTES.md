@@ -2453,9 +2453,13 @@ bounded RGBA frames, and bounded UTF-8 diagnostics. ROMs are limited to 32 MiB, 
 1 MiB, diagnostics to 4 KiB, and frames to 512×478 RGBA; empty ROMs, invalid pause values,
 zero/oversized geometry, inconsistent raster lengths, bad UTF-8, unknown tags, every truncation,
 and trailing bytes reject before backend state changes. The codec is consumed by the separately
-unsafe-isolated `lm-libretro` process. That backend resolves the libretro-v1 ABI, rejects
-full-path-only cores so ROM bytes remain the editor's immutable snapshot, balances game/core
-teardown, and advertises ROM load, RGBA frame, pause, step, and viewport capabilities. Its
+unsafe-isolated `lm-libretro` process. That backend resolves the libretro-v1 ABI and loads ordinary
+cores directly from the editor-owned immutable bytes. For a core requiring a path, it writes those
+same bytes to a private `.smc` snapshot, retains the path and file for the loaded-game lifetime,
+and removes it after unload, failure, stop, or process teardown. It permits one bootstrap frame for
+deferred memory publication, then rejects any core that still lacks exact 128-KiB SMW system RAM
+instead of falsely advertising selected-level/runtime capabilities. It balances game/core
+teardown and advertises ROM load, RGBA frame, pause, step, and viewport capabilities. Its
 callbacks bound geometry, pitch, and allocation before copying and convert XRGB8888, RGB565, or
 XRGB1555 frames to RGBA. The capability set now also includes joypad input and selected-level load.
 The backend observes exact 128-KiB system RAM and reports game mode, Lunar Magic's two-byte
