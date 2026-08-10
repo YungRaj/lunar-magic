@@ -1686,7 +1686,7 @@ fn user_toolbar_local_action(name: &str) -> Option<UserToolbarLocalAction> {
             delta: -1,
         },
         "LM_VIEW_512HEIGHT_BG" => UserToolbarLocalAction::Background512Height,
-        "LM_VIEW_TRANSLUCENT" => UserToolbarLocalAction::Translucent,
+        "LM_VIEW_TRANSLUCENT" | "LM_OPTIONS_TRANSLUCENT" => UserToolbarLocalAction::Translucent,
         "LM_VIEW_ZOOM_TOGGLE" => UserToolbarLocalAction::ZoomToggle,
         "LM_VIEW_ZOOM_DEFAULT" => UserToolbarLocalAction::ZoomDefault,
         "LM_VIEW_ZOOM_PLUS" => UserToolbarLocalAction::ZoomPlus,
@@ -2239,6 +2239,10 @@ mod user_toolbar_tests {
             Some(UserToolbarLocalAction::Translucent)
         );
         assert_eq!(
+            user_toolbar_local_action("LM_OPTIONS_TRANSLUCENT"),
+            Some(UserToolbarLocalAction::Translucent)
+        );
+        assert_eq!(
             user_toolbar_local_action("LM_VIEW_ZOOM_TOGGLE"),
             Some(UserToolbarLocalAction::ZoomToggle)
         );
@@ -2339,7 +2343,7 @@ mod user_toolbar_tests {
                     || user_toolbar_native_action(entry.name).is_some()
             })
             .collect::<Vec<_>>();
-        assert_eq!(supported.len(), 254);
+        assert_eq!(supported.len(), 255);
         assert!(
             supported
                 .iter()
@@ -2378,7 +2382,7 @@ mod user_toolbar_tests {
                     && user_toolbar_native_action(entry.name).is_none()
             })
             .collect::<Vec<_>>();
-        assert_eq!(unsupported.len(), 63);
+        assert_eq!(unsupported.len(), 62);
         if std::env::var_os("LM_DIAGNOSTIC_UNSUPPORTED_TOOLBAR_COMMANDS").is_some() {
             for entry in unsupported {
                 eprintln!(

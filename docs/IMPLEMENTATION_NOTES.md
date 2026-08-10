@@ -5605,3 +5605,8 @@ width before publication, requires exactly one selected entity, and uses the sam
 sprite replacement and Undo history as the integrated editor. Independent visibility/reuse tests,
 render-without-selection coverage, and authenticated route-partition tests bind the native path.
 Authenticated native command coverage is now 254 of 317 named table slots, leaving 63 pending.
+
+The original internal-command table gives `LM_OPTIONS_TRANSLUCENT` and
+`LM_VIEW_TRANSLUCENT` the identical `$2415` command ID. Both names now select the same native
+half-opacity editor-overlay state and renderer input. This raises authenticated native command
+coverage to 255 of 317 named table slots, leaving 62 pending.

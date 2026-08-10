@@ -923,3 +923,9 @@ Ghidra's outer-window visibility state plus level-dispatch `EditObjectAtSelectio
 `EditSpriteAtSelectionOrCell` establish the distinct toggle-versus-open lifecycles. This supersedes
 the 252/65 count above: the authenticated partition is now **254 routed / 63 pending**. The
 aggregate remains 59/65 because the configuration row is still Partial.
+
+Toolbar coverage update (2026-08-10, translucent alias): the authenticated command table assigns
+both `LM_VIEW_TRANSLUCENT` and `LM_OPTIONS_TRANSLUCENT` the same original ID `$2415`. The Options
+name now routes to the already verified level-overlay translucency state rather than being reported
+unsupported. The authenticated partition is now **255 routed / 62 pending**. The aggregate remains
+59/65 because the configuration row is still Partial.
