@@ -2476,6 +2476,96 @@ impl VanillaLevelEditor {
         self.error = None;
     }
 
+    pub(crate) fn toolbar_copy_selection(&mut self) -> Result<String, String> {
+        let selection = self
+            .canvas_entity_selection
+            .ok_or_else(|| "Copy requires an object or sprite canvas selection".to_owned())?;
+        let controller = self
+            .controller
+            .as_ref()
+            .ok_or_else(|| "level controller is unavailable".to_owned())?;
+        match selection {
+            CanvasEntitySelection::Layer1Object => {
+                let indexes = selected_indexes(&self.selected_object_group, self.selected_object);
+                let records = indexes
+                    .into_iter()
+                    .map(|index| {
+                        controller
+                            .level()
+                            .layer1
+                            .objects
+                            .records
+                            .get(index)
+                            .cloned()
+                            .ok_or_else(|| {
+                                format!("selected Layer 1 object {index} is unavailable")
+                            })
+                    })
+                    .collect::<Result<Vec<_>, _>>()?;
+                crate::native_clipboard::encode_level_objects(&records)
+            }
+            CanvasEntitySelection::Layer2Object => {
+                let lm_level::NativeLayer2Data::Objects(layer2) = controller
+                    .layer2()
+                    .ok_or_else(|| "the current level has no Layer 2 data".to_owned())?
+                else {
+                    return Err("the current level does not use object-backed Layer 2".into());
+                };
+                let indexes = selected_indexes(
+                    &self.selected_layer2_object_group,
+                    self.selected_layer2_object,
+                );
+                let records = indexes
+                    .into_iter()
+                    .map(|index| {
+                        layer2.objects.records.get(index).cloned().ok_or_else(|| {
+                            format!("selected Layer 2 object {index} is unavailable")
+                        })
+                    })
+                    .collect::<Result<Vec<_>, _>>()?;
+                crate::native_clipboard::encode_level_objects(&records)
+            }
+            CanvasEntitySelection::Sprite => {
+                let indexes = selected_indexes(&self.selected_sprite_group, self.selected_sprite);
+                let records = indexes
+                    .into_iter()
+                    .map(|index| match controller.level().sprites.tokens.get(index) {
+                        Some(SpriteToken::Record(record)) => Ok(record.clone()),
+                        Some(SpriteToken::Screen(_) | SpriteToken::Control(_)) => Err(format!(
+                            "selected sprite token {index} is not a sprite record"
+                        )),
+                        None => Err(format!("selected sprite token {index} is unavailable")),
+                    })
+                    .collect::<Result<Vec<_>, _>>()?;
+                crate::native_clipboard::encode_level_sprites(&records)
+            }
+        }
+    }
+
+    pub(crate) fn toolbar_cut_selection(&mut self) -> Result<String, String> {
+        let text = self.toolbar_copy_selection()?;
+        self.toolbar_delete_selection();
+        if let Some(error) = self.error.clone() {
+            return Err(error);
+        }
+        Ok(text)
+    }
+
+    pub(crate) fn toolbar_request_paste(&mut self, context: &egui::Context) {
+        self.paste_target = match self.canvas_entity_selection {
+            Some(CanvasEntitySelection::Layer1Object) => Some(EntityPasteTarget::Object),
+            Some(CanvasEntitySelection::Layer2Object) => Some(EntityPasteTarget::Layer2Object),
+            Some(CanvasEntitySelection::Sprite) => Some(EntityPasteTarget::Sprite),
+            None => {
+                self.error =
+                    Some("Paste requires an active object or sprite editing domain".into());
+                return;
+            }
+        };
+        self.error = None;
+        context.send_viewport_cmd(egui::ViewportCommand::RequestPaste);
+    }
+
     pub(crate) fn toolbar_zoom_filter_toggle(&mut self) {
         self.zoom_filter = Some(!self.zoom_filter());
         self.invalidate_graphics_preview();
@@ -6437,19 +6527,34 @@ impl VanillaLevelEditor {
 
     fn paste_object(&mut self, text: &str, record_count: usize) {
         let index = object_insertion_index(self.selected_object, record_count);
-        let edit = match pasted_object_edit(text, index) {
-            Ok(edit) => edit,
+        let records = match crate::native_clipboard::decode_level_objects(text) {
+            Ok(records) if !records.is_empty() => records,
+            Ok(_) => {
+                self.error = Some("level-object paste requires at least one object".into());
+                return;
+            }
             Err(error) => {
                 self.error = Some(error);
                 return;
             }
         };
+        let inserted = index..index + records.len();
+        let edits = records
+            .into_iter()
+            .enumerate()
+            .map(|(offset, record)| ObjectEdit::Insert {
+                index: index + offset,
+                record,
+            })
+            .collect();
         let Some(controller) = self.controller.as_mut() else {
             return;
         };
-        match controller.apply_edits(&[edit]) {
+        match controller.apply_edits(&[NativeLevelEdit::Objects(edits)]) {
             Ok(()) => {
                 self.selected_object = index;
+                self.selected_object_group = inserted.collect();
+                self.canvas_entity_selection = Some(CanvasEntitySelection::Layer1Object);
                 self.reload_object_form();
                 self.error = None;
             }
@@ -6459,19 +6564,34 @@ impl VanillaLevelEditor {
 
     fn paste_layer2_object(&mut self, text: &str, record_count: usize) {
         let index = object_insertion_index(self.selected_layer2_object, record_count);
-        let record = match crate::native_clipboard::decode_level_object(text) {
-            Ok(record) => record,
+        let records = match crate::native_clipboard::decode_level_objects(text) {
+            Ok(records) if !records.is_empty() => records,
+            Ok(_) => {
+                self.error = Some("Layer 2 object paste requires at least one object".into());
+                return;
+            }
             Err(error) => {
                 self.error = Some(error);
                 return;
             }
         };
+        let inserted = index..index + records.len();
+        let edits = records
+            .into_iter()
+            .enumerate()
+            .map(|(offset, record)| ObjectEdit::Insert {
+                index: index + offset,
+                record,
+            })
+            .collect::<Vec<_>>();
         let Some(controller) = self.controller.as_mut() else {
             return;
         };
-        match controller.apply_layer2_object_edits(&[ObjectEdit::Insert { index, record }]) {
+        match controller.apply_layer2_object_edits(&edits) {
             Ok(()) => {
                 self.selected_layer2_object = index;
+                self.selected_layer2_object_group = inserted.collect();
+                self.canvas_entity_selection = Some(CanvasEntitySelection::Layer2Object);
                 if let Some(lm_level::NativeLayer2Data::Objects(layer2)) = controller.layer2()
                     && let Some(record) = layer2.objects.records.get(index)
                 {
@@ -6486,38 +6606,60 @@ impl VanillaLevelEditor {
 
     fn paste_sprite(&mut self, text: &str, token_count: usize) {
         let index = sprite_insertion_index(self.selected_sprite, token_count);
-        let edit = match pasted_sprite_edit(text, index) {
-            Ok(edit) => edit,
+        let records = match crate::native_clipboard::decode_level_sprites(text) {
+            Ok(records) if !records.is_empty() => records,
+            Ok(_) => {
+                self.error = Some("level-sprite paste requires at least one sprite".into());
+                return;
+            }
             Err(error) => {
                 self.error = Some(error);
                 return;
             }
         };
+        let last_inserted = index + records.len() - 1;
+        let mut edits = records
+            .into_iter()
+            .enumerate()
+            .map(|(offset, record)| NativeLevelEdit::InsertSprite {
+                index: index + offset,
+                token: SpriteToken::Record(record),
+            })
+            .collect::<Vec<_>>();
         let Some(controller) = self.controller.as_mut() else {
             return;
         };
         let selected = if controller.level().sprites.expanded {
-            index
+            last_inserted
         } else {
-            let NativeLevelEdit::InsertSprite { token, .. } = &edit else {
-                unreachable!("pasted sprite edit is always an insertion");
-            };
             let mut predicted = controller.level().sprites.clone();
-            if let Err(error) = predicted.insert(index, token.clone()) {
-                self.error = Some(error.to_string());
-                return;
+            for edit in &edits {
+                let NativeLevelEdit::InsertSprite { index, token } = edit else {
+                    unreachable!("pasted sprite edits are insertions");
+                };
+                if let Err(error) = predicted.insert(*index, token.clone()) {
+                    self.error = Some(error.to_string());
+                    return;
+                }
             }
-            match predicted.sort_legacy_records_by_screen(index) {
+            let selected = match predicted.sort_legacy_records_by_screen(last_inserted) {
                 Ok(selected) => selected,
                 Err(error) => {
                     self.error = Some(error.to_string());
                     return;
                 }
-            }
+            };
+            edits.push(NativeLevelEdit::SortLegacySpritesByScreen {
+                selected: last_inserted,
+            });
+            selected
         };
-        match controller.apply_edits(&[edit]) {
+        match controller.apply_edits(&edits) {
             Ok(()) => {
                 self.selected_sprite = selected;
+                self.selected_sprite_group.clear();
+                self.selected_sprite_group.push(selected);
+                self.canvas_entity_selection = Some(CanvasEntitySelection::Sprite);
                 self.sprite_form = SpriteForm::from_token(
                     controller.level().sprites.header,
                     controller.level().sprites.tokens.get(selected),
@@ -6697,6 +6839,17 @@ const fn sprite_insertion_index(selected: usize, token_count: usize) -> usize {
     } else {
         token_count
     }
+}
+
+fn selected_indexes(group: &[usize], fallback: usize) -> Vec<usize> {
+    let mut indexes = if group.is_empty() {
+        vec![fallback]
+    } else {
+        group.to_vec()
+    };
+    indexes.sort_unstable();
+    indexes.dedup();
+    indexes
 }
 
 fn object_insertion_index(selected: usize, record_count: usize) -> usize {
@@ -18399,6 +18552,125 @@ mod tests {
         );
         assert!(pasted_object_edit(&sprite_text, 0).is_err());
         assert!(pasted_sprite_edit(&object_text, 0).is_err());
+    }
+
+    #[test]
+    fn toolbar_group_copy_paste_and_cut_share_one_typed_atomic_object_path() {
+        let mut app = AppState::default();
+        app.load_rom(crate::test_support::pristine_smw_us_rom_bytes())
+            .unwrap();
+        app.dispatch(Command::SelectLevel(0x105)).unwrap();
+        let snapshot = app.controller_snapshot().unwrap();
+        let mut editor = VanillaLevelEditor::default();
+        editor.load(
+            &snapshot,
+            EditorKey {
+                revision: snapshot.revision,
+                level: 0x105,
+                sprite_lengths_signature: ssc_sprite_lengths_signature(None),
+            },
+            None,
+        );
+        let placements = editor
+            .controller
+            .as_ref()
+            .unwrap()
+            .level()
+            .layer1
+            .objects
+            .native_placements();
+        let selected = vec![placements[0].record_index, placements[1].record_index];
+        editor.canvas_entity_selection = Some(CanvasEntitySelection::Layer1Object);
+        editor.selected_object = selected[1];
+        editor.selected_object_group = selected.clone();
+        let text = editor.toolbar_copy_selection().unwrap();
+        let copied = crate::native_clipboard::decode_level_objects(&text).unwrap();
+        assert_eq!(copied.len(), 2);
+
+        let before = editor
+            .controller
+            .as_ref()
+            .unwrap()
+            .level()
+            .layer1
+            .objects
+            .records
+            .len();
+        editor.paste_object(&text, before);
+        assert_eq!(editor.selected_object_group.len(), 2);
+        assert_eq!(
+            editor
+                .controller
+                .as_ref()
+                .unwrap()
+                .level()
+                .layer1
+                .objects
+                .records
+                .len(),
+            before + 2
+        );
+        let cut = editor.toolbar_cut_selection().unwrap();
+        assert_eq!(
+            crate::native_clipboard::decode_level_objects(&cut).unwrap(),
+            copied
+        );
+        assert_eq!(
+            editor
+                .controller
+                .as_ref()
+                .unwrap()
+                .level()
+                .layer1
+                .objects
+                .records
+                .len(),
+            before
+        );
+        assert!(editor.toolbar_copy_selection().is_err());
+
+        editor.toolbar_edit_sprites();
+        let sprite_indexes = editor
+            .controller
+            .as_ref()
+            .unwrap()
+            .level()
+            .sprites
+            .native_placements()
+            .into_iter()
+            .take(2)
+            .map(|placement| placement.token_index)
+            .collect::<Vec<_>>();
+        assert_eq!(sprite_indexes.len(), 2);
+        editor.selected_sprite = sprite_indexes[0];
+        editor.selected_sprite_group = sprite_indexes;
+        let sprites = editor.toolbar_copy_selection().unwrap();
+        assert_eq!(
+            crate::native_clipboard::decode_level_sprites(&sprites)
+                .unwrap()
+                .len(),
+            2
+        );
+        let token_count = editor
+            .controller
+            .as_ref()
+            .unwrap()
+            .level()
+            .sprites
+            .tokens
+            .len();
+        editor.paste_sprite(&sprites, token_count);
+        assert_eq!(
+            editor
+                .controller
+                .as_ref()
+                .unwrap()
+                .level()
+                .sprites
+                .tokens
+                .len(),
+            token_count + 2
+        );
     }
 
     #[test]

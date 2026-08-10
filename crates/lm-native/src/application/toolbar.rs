@@ -162,7 +162,7 @@ impl NativeApplication {
                     return;
                 };
                 if let Some(action) = user_toolbar_native_action(name) {
-                    self.apply_user_toolbar_native_action(action);
+                    self.apply_user_toolbar_native_action(context, action);
                     return;
                 }
                 if let Some(action) = user_toolbar_local_action(name) {
@@ -211,7 +211,11 @@ impl NativeApplication {
         }
     }
 
-    fn apply_user_toolbar_native_action(&mut self, action: UserToolbarNativeAction) {
+    fn apply_user_toolbar_native_action(
+        &mut self,
+        context: &egui::Context,
+        action: UserToolbarNativeAction,
+    ) {
         match action {
             UserToolbarNativeAction::HelpContents => self.help_dialog.open(),
             UserToolbarNativeAction::HelpAbout => self.about_dialog.open(),
@@ -271,6 +275,21 @@ impl NativeApplication {
             }
             UserToolbarNativeAction::EditSprites => {
                 self.vanilla_level_editor.toolbar_edit_sprites();
+            }
+            UserToolbarNativeAction::Copy => {
+                match self.vanilla_level_editor.toolbar_copy_selection() {
+                    Ok(text) => context.copy_text(text),
+                    Err(error) => self.effects.error = Some(error),
+                }
+            }
+            UserToolbarNativeAction::Cut => {
+                match self.vanilla_level_editor.toolbar_cut_selection() {
+                    Ok(text) => context.copy_text(text),
+                    Err(error) => self.effects.error = Some(error),
+                }
+            }
+            UserToolbarNativeAction::Paste => {
+                self.vanilla_level_editor.toolbar_request_paste(context);
             }
         }
     }
@@ -860,6 +879,9 @@ enum UserToolbarNativeAction {
     EditLayer1,
     EditLayer2,
     EditSprites,
+    Copy,
+    Cut,
+    Paste,
 }
 
 fn user_toolbar_native_action(name: &str) -> Option<UserToolbarNativeAction> {
@@ -885,6 +907,9 @@ fn user_toolbar_native_action(name: &str) -> Option<UserToolbarNativeAction> {
         "LM_EDIT_EDIT_LAYER_1" => UserToolbarNativeAction::EditLayer1,
         "LM_EDIT_EDIT_LAYER_2" => UserToolbarNativeAction::EditLayer2,
         "LM_EDIT_SPRITES" => UserToolbarNativeAction::EditSprites,
+        "LM_EDIT_COPY" => UserToolbarNativeAction::Copy,
+        "LM_EDIT_CUT" => UserToolbarNativeAction::Cut,
+        "LM_EDIT_PASTE" => UserToolbarNativeAction::Paste,
         _ => return None,
     })
 }
@@ -1150,6 +1175,9 @@ mod user_toolbar_tests {
             ("LM_EDIT_EDIT_LAYER_1", UserToolbarNativeAction::EditLayer1),
             ("LM_EDIT_EDIT_LAYER_2", UserToolbarNativeAction::EditLayer2),
             ("LM_EDIT_SPRITES", UserToolbarNativeAction::EditSprites),
+            ("LM_EDIT_COPY", UserToolbarNativeAction::Copy),
+            ("LM_EDIT_CUT", UserToolbarNativeAction::Cut),
+            ("LM_EDIT_PASTE", UserToolbarNativeAction::Paste),
         ] {
             assert_eq!(user_toolbar_native_action(name), Some(action));
         }
@@ -1354,7 +1382,7 @@ mod user_toolbar_tests {
                     || user_toolbar_native_action(entry.name).is_some()
             })
             .collect::<Vec<_>>();
-        assert_eq!(supported.len(), 169);
+        assert_eq!(supported.len(), 172);
         assert!(
             supported
                 .iter()

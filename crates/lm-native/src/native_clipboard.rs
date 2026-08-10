@@ -405,19 +405,25 @@ fn decode_hex(prefix: &str, text: &str, maximum_bytes: usize) -> Result<Vec<u8>,
 }
 
 pub(crate) fn encode_level_object(object: &ObjectRecord) -> Result<String, String> {
-    encode(&ClipboardPayload::from_level_objects(std::slice::from_ref(
-        object,
-    )))
+    encode_level_objects(std::slice::from_ref(object))
+}
+
+pub(crate) fn encode_level_objects(objects: &[ObjectRecord]) -> Result<String, String> {
+    encode(&ClipboardPayload::from_level_objects(objects))
 }
 
 pub(crate) fn decode_level_object(text: &str) -> Result<ObjectRecord, String> {
-    let objects = decode(text)?
-        .to_level_objects()
-        .map_err(|error| error.to_string())?;
+    let objects = decode_level_objects(text)?;
     let [object] = objects.as_slice() else {
         return Err("level-object paste requires exactly one object".into());
     };
     Ok(object.clone())
+}
+
+pub(crate) fn decode_level_objects(text: &str) -> Result<Vec<ObjectRecord>, String> {
+    decode(text)?
+        .to_level_objects()
+        .map_err(|error| error.to_string())
 }
 
 pub(crate) fn encode_level_sprite(sprite: &SpriteRecord) -> Result<String, String> {
@@ -868,6 +874,10 @@ mod tests {
         );
         let two = ClipboardPayload::from_level_objects(&[object.clone(), object]);
         assert!(decode_level_object(&encode(&two).unwrap()).is_err());
+        assert_eq!(
+            decode_level_objects(&encode(&two).unwrap()).unwrap().len(),
+            2
+        );
     }
 
     #[test]
@@ -881,6 +891,10 @@ mod tests {
         );
         let two = ClipboardPayload::from_level_sprites(&[sprite.clone(), sprite]);
         assert!(decode_level_sprite(&encode(&two).unwrap()).is_err());
+        assert_eq!(
+            decode_level_sprites(&encode(&two).unwrap()).unwrap().len(),
+            2
+        );
     }
 
     #[test]
