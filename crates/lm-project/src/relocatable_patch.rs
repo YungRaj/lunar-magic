@@ -5,7 +5,7 @@ use crate::{
     payload::staging::{commit_staged, commit_staged_with_kind},
 };
 use lm_rats::{AllocationError, AllocationPolicy, FreeSpaceAllocator, ProtectedRange, RatsBlock};
-use lm_rom::{Mapper, RomError, RomImage, compute_snes_checksum, pc_to_snes};
+use lm_rom::{MAPPER_BANK_LEN, Mapper, RomError, RomImage, compute_snes_checksum, pc_to_snes};
 use std::fmt;
 use std::ops::Range;
 
@@ -209,6 +209,57 @@ impl Project {
         let (staged, result) = stage_relocatable_patch(&original, plan)?;
         commit_staged(self, plan.description.clone(), &original, &staged)?;
         Ok(result)
+    }
+
+    /// Installs a relocatable patch using Lunar Magic's allocate/expand/retry behavior.
+    ///
+    /// The plan's search end is the first attempted ROM extent. If allocation cannot fit, a
+    /// private staging image is grown by one mapper bank and the complete transaction is retried,
+    /// up to `maximum_logical_len`. Only the successful attempt is committed, so failed searches,
+    /// intermediate expansions, and all late validation failures leave bytes and history intact.
+    ///
+    /// # Errors
+    ///
+    /// Returns the ordinary relocatable-patch error. An invalid or unreachable maximum is
+    /// reported as a ROM expansion error before the project changes.
+    pub fn install_relocatable_patch_with_expansion_retry(
+        &mut self,
+        plan: &RelocatablePatchPlan,
+        maximum_logical_len: usize,
+    ) -> Result<RelocatablePatchResult, RelocatablePatchError> {
+        if maximum_logical_len < plan.allocation.search.end {
+            return Err(RomError::CannotShrink {
+                current: plan.allocation.search.end,
+                requested: maximum_logical_len,
+            }
+            .into());
+        }
+        if !lm_rom::mapper_supports_image_len(plan.mapper, maximum_logical_len) {
+            return Err(RomError::InvalidExpansionSize(maximum_logical_len).into());
+        }
+
+        let original = self.rom.logical_bytes().to_vec();
+        let mut attempt = plan.clone();
+        loop {
+            match stage_relocatable_patch(&original, &attempt) {
+                Ok((staged, result)) => {
+                    commit_staged(self, plan.description.clone(), &original, &staged)?;
+                    return Ok(result);
+                }
+                Err(RelocatablePatchError::Allocation(AllocationError::NoSpace { .. }))
+                    if attempt.allocation.search.end < maximum_logical_len =>
+                {
+                    attempt.allocation.search.end = attempt
+                        .allocation
+                        .search
+                        .end
+                        .checked_add(MAPPER_BANK_LEN)
+                        .unwrap_or(maximum_logical_len)
+                        .min(maximum_logical_len);
+                }
+                Err(error) => return Err(error),
+            }
+        }
     }
 
     /// Installs a relocatable plan while retaining a semantic history marker for undo/redo.

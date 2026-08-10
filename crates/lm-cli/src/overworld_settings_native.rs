@@ -5,9 +5,10 @@ use crate::{
 use lm_level::ExpandedOverworldSettings;
 use lm_oracle::observe_overworld_layer3_settings;
 use lm_profile::{
-    SMW_US_V1_CHECKSUM_FIELD, SMW_US_V1_OVERWORLD_SETTINGS_FIRST_SLOT,
-    load_smw_us_v1_overworld_layer3_settings, load_smw_us_v1_overworld_settings,
-    smw_us_v1_expanded_settings_installation_plan_with_overworld_settings,
+    SMW_US_V1_CHECKSUM_FIELD, SMW_US_V1_EXPANDED_SETTINGS_MAXIMUM_LOROM_LEN,
+    SMW_US_V1_OVERWORLD_SETTINGS_FIRST_SLOT, load_smw_us_v1_overworld_layer3_settings,
+    load_smw_us_v1_overworld_settings,
+    smw_us_v1_expanded_settings_installation_plan_for_rom_with_overworld_settings,
     smw_us_v1_installed_expanded_settings_layout,
 };
 use lm_project::Project;
@@ -81,10 +82,13 @@ fn import(
             SMW_US_V1_CHECKSUM_FIELD,
         )?;
     } else {
-        project.install_relocatable_patch(
-            &smw_us_v1_expanded_settings_installation_plan_with_overworld_settings(Some(
-                &settings,
-            ))?,
+        let plan = smw_us_v1_expanded_settings_installation_plan_for_rom_with_overworld_settings(
+            &project.rom,
+            Some(&settings),
+        )?;
+        project.install_relocatable_patch_with_expansion_retry(
+            &plan,
+            SMW_US_V1_EXPANDED_SETTINGS_MAXIMUM_LOROM_LEN,
         )?;
     }
     if load_or_default(&project)? != settings {

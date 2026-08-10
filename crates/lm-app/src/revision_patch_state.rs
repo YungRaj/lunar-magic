@@ -178,8 +178,11 @@ impl AppState {
         {
             return Err(AppError::ExpandedSettingsIdentityMismatch);
         }
-        let plan = lm_profile::smw_us_v1_expanded_settings_installation_plan()?;
-        project.install_relocatable_patch(&plan)?;
+        let plan = lm_profile::smw_us_v1_expanded_settings_installation_plan_for_rom(&project.rom)?;
+        project.install_relocatable_patch_with_expansion_retry(
+            &plan,
+            lm_profile::SMW_US_V1_EXPANDED_SETTINGS_MAXIMUM_LOROM_LEN,
+        )?;
         self.advance_project_revision()?;
         let description = "Install SMW US expanded level settings".to_owned();
         self.status.clone_from(&description);
@@ -1384,6 +1387,43 @@ mod tests {
         assert_eq!(app.project().unwrap().history.undo_len(), 2);
         app.dispatch(Command::Undo).unwrap();
         assert_eq!(app.project().unwrap().save_snapshot(), settings_snapshot);
+        app.dispatch(Command::Undo).unwrap();
+        assert_eq!(app.project().unwrap().save_snapshot(), original);
+    }
+
+    #[test]
+    fn application_installs_settings_into_preexpanded_headered_rom_and_undoes_exactly() {
+        let pristine = crate::test_support::pristine_smw_us_rom_bytes();
+        let pristine = RomImage::from_bytes(pristine).unwrap();
+        let mut file = (0..lm_rom::COPIER_HEADER_LEN)
+            .map(|index| (index as u8).wrapping_mul(19))
+            .collect::<Vec<_>>();
+        file.extend_from_slice(pristine.logical_bytes());
+        let mut image = RomImage::from_bytes(file).unwrap();
+        image.expand(Mapper::LoRom, 0x20_0000, 0x11).unwrap();
+        image.write(0x18_0000, &vec![0xff; 0x8000]).unwrap();
+        image
+            .update_snes_checksum(lm_profile::SMW_US_V1_CHECKSUM_FIELD)
+            .unwrap();
+        let original = image.as_file_bytes().to_vec();
+
+        let mut app = AppState::default();
+        app.load_rom(original.clone()).unwrap();
+        let effects = app.dispatch(Command::InstallSettings { rev: 0 }).unwrap();
+
+        assert_eq!(effects.len(), 1);
+        assert_eq!(app.controller_snapshot().unwrap().revision, 1);
+        assert_eq!(app.project().unwrap().history.undo_len(), 1);
+        let layout =
+            lm_profile::smw_us_v1_installed_expanded_settings_layout(app.project().unwrap())
+                .unwrap()
+                .unwrap();
+        assert_eq!(layout.table_offset, 0x18_2d08);
+        assert_eq!(app.project().unwrap().rom.logical_len(), 0x20_0000);
+        assert_eq!(
+            app.project().unwrap().rom.copier_header_bytes(),
+            Some(&original[..lm_rom::COPIER_HEADER_LEN])
+        );
         app.dispatch(Command::Undo).unwrap();
         assert_eq!(app.project().unwrap().save_snapshot(), original);
     }

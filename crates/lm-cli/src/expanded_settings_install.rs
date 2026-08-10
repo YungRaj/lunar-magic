@@ -1,7 +1,8 @@
 use crate::{atomic_output::write_new, oracle_input::read_rom};
 use lm_profile::{
-    SMW_US_V1_EXPANDED_SETTINGS_PREFIX_LEN, SMW_US_V1_EXPANDED_SETTINGS_RECORD_COUNT,
-    smw_us_v1_expanded_settings_installation_plan,
+    SMW_US_V1_EXPANDED_SETTINGS_MAXIMUM_LOROM_LEN, SMW_US_V1_EXPANDED_SETTINGS_PREFIX_LEN,
+    SMW_US_V1_EXPANDED_SETTINGS_RECORD_COUNT,
+    smw_us_v1_expanded_settings_installation_plan_for_rom,
 };
 use lm_project::{ExpandedLevelSettingsLayout, Project};
 use lm_rom::{Mapper, Region, RomImage, SupportedGame};
@@ -26,8 +27,11 @@ pub(crate) fn execute(
     {
         return Err("expanded-settings installer requires SMW US revision 0 LoROM".into());
     }
-    let plan = smw_us_v1_expanded_settings_installation_plan()?;
-    let result = project.install_relocatable_patch(&plan)?;
+    let plan = smw_us_v1_expanded_settings_installation_plan_for_rom(&project.rom)?;
+    let result = project.install_relocatable_patch_with_expansion_retry(
+        &plan,
+        SMW_US_V1_EXPANDED_SETTINGS_MAXIMUM_LOROM_LEN,
+    )?;
     let block = result
         .blocks
         .first()

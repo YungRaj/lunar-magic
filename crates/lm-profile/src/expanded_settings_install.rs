@@ -12,11 +12,12 @@ use crate::{
 use lm_level::ExpandedOverworldSettings;
 use lm_project::{PatchFixup, PatchFixupEncoding, PatchPayload, RelocatablePatchPlan};
 use lm_rats::{AllocationPolicy, HeaderError, RatsBlock, parse_at};
-use lm_rom::{Mapper, RomError, pc_to_snes, snes_to_pc};
+use lm_rom::{Mapper, RomError, RomImage, pc_to_snes, snes_to_pc};
 use sha2::{Digest, Sha256};
 
 pub const SMW_US_V1_EXPANDED_SETTINGS_ALLOCATION_SEARCH_START: usize = 0x08_7ff8;
 pub const SMW_US_V1_EXPANDED_SETTINGS_ALLOCATION_SEARCH_END: usize = 0x10_0000;
+pub const SMW_US_V1_EXPANDED_SETTINGS_MAXIMUM_LOROM_LEN: usize = 0x40_0000;
 pub const SMW_US_V1_GFX_EXPANDED_SETTINGS_ALLOCATION_START: usize = 0x08_0028;
 pub const SMW_US_V1_GFX_EXPANDED_SETTINGS_ALLOCATION_END: usize = 0x08_6e30;
 pub const SMW_US_V1_CHECKSUM_FIELD: usize = 0x00_7fdc;
@@ -187,6 +188,41 @@ impl From<ExpandedSettingsRuntimeBundleError> for ExpandedSettingsInstallPlanErr
 pub fn smw_us_v1_expanded_settings_installation_plan()
 -> Result<RelocatablePatchPlan, ExpandedSettingsInstallPlanError> {
     smw_us_v1_expanded_settings_installation_plan_with_overworld_settings(None)
+}
+
+/// Builds the ordinary installation plan against all space already present in a LoROM image.
+///
+/// Pristine SMW retains the authenticated one-MiB first expansion target. A pre-expanded source
+/// instead searches through its complete current extent, matching Lunar Magic's top-level
+/// allocator before its expansion retry path is entered.
+///
+/// # Errors
+///
+/// Propagates the same generated-runtime validation as the default constructor.
+pub fn smw_us_v1_expanded_settings_installation_plan_for_rom(
+    rom: &RomImage,
+) -> Result<RelocatablePatchPlan, ExpandedSettingsInstallPlanError> {
+    smw_us_v1_expanded_settings_installation_plan_for_rom_with_overworld_settings(rom, None)
+}
+
+/// Builds the current-ROM-aware installation plan with optional exact overworld records.
+///
+/// # Errors
+///
+/// Propagates the same generated-runtime validation as the default constructor.
+pub fn smw_us_v1_expanded_settings_installation_plan_for_rom_with_overworld_settings(
+    rom: &RomImage,
+    overworld: Option<&ExpandedOverworldSettings>,
+) -> Result<RelocatablePatchPlan, ExpandedSettingsInstallPlanError> {
+    let search_end = rom
+        .logical_len()
+        .max(SMW_US_V1_EXPANDED_SETTINGS_ALLOCATION_SEARCH_END)
+        .min(SMW_US_V1_EXPANDED_SETTINGS_MAXIMUM_LOROM_LEN);
+    smw_us_v1_expanded_settings_installation_plan_for_range(
+        overworld,
+        SMW_US_V1_EXPANDED_SETTINGS_ALLOCATION_SEARCH_START..search_end,
+        0xff,
+    )
 }
 
 /// Builds the current expanded-settings prerequisite against Lunar Magic's authenticated SA-1
@@ -1158,6 +1194,92 @@ mod tests {
                 .unwrap()
                 .is_some()
         );
+    }
+
+    #[test]
+    fn preexpanded_headered_and_headerless_roms_use_existing_late_space_and_undo_exactly() {
+        let (_, pristine) = fixtures();
+        for headered in [false, true] {
+            let mut file = if headered {
+                let mut bytes = (0..lm_rom::COPIER_HEADER_LEN)
+                    .map(|index| (index as u8).wrapping_mul(37))
+                    .collect::<Vec<_>>();
+                bytes.extend_from_slice(pristine.logical_bytes());
+                bytes
+            } else {
+                pristine.logical_bytes().to_vec()
+            };
+            let mut image = RomImage::from_bytes(std::mem::take(&mut file)).unwrap();
+            image.expand(Mapper::LoRom, 0x20_0000, 0x11).unwrap();
+            image.write(0x18_0000, &vec![0xff; 0x8000]).unwrap();
+            let original_file = image.as_file_bytes().to_vec();
+            let original_header = image.copier_header_bytes().map(<[u8]>::to_vec);
+            let mut project = Project::new(image);
+
+            let plan = smw_us_v1_expanded_settings_installation_plan_for_rom(&project.rom).unwrap();
+            assert_eq!(plan.allocation.search.end, 0x20_0000);
+            let result = project
+                .install_relocatable_patch_with_expansion_retry(
+                    &plan,
+                    SMW_US_V1_EXPANDED_SETTINGS_MAXIMUM_LOROM_LEN,
+                )
+                .unwrap();
+
+            assert_eq!(result.blocks[0].header_offset, 0x18_0000);
+            assert_eq!(project.rom.logical_len(), 0x20_0000);
+            assert_eq!(
+                project.rom.copier_header_bytes().map(<[u8]>::to_vec),
+                original_header
+            );
+            assert!(
+                crate::smw_us_v1_installed_expanded_settings_layout(&project)
+                    .unwrap()
+                    .is_some()
+            );
+            assert!(
+                SnesChecksum::decode(project.rom.logical_bytes(), SMW_US_V1_CHECKSUM_FIELD)
+                    .unwrap()
+                    .is_complementary()
+            );
+            assert_eq!(project.history.undo_len(), 1);
+            assert!(project.undo().unwrap());
+            assert_eq!(project.rom.as_file_bytes(), original_file);
+        }
+    }
+
+    #[test]
+    fn exhausted_preexpanded_rom_grows_one_bank_reopens_and_undoes_atomically() {
+        let (_, mut image) = fixtures();
+        image.expand(Mapper::LoRom, 0x10_0000, 0x11).unwrap();
+        image
+            .write(
+                SMW_US_V1_EXPANDED_SETTINGS_ALLOCATION_SEARCH_START,
+                &vec![0x11; 0x10_0000 - SMW_US_V1_EXPANDED_SETTINGS_ALLOCATION_SEARCH_START],
+            )
+            .unwrap();
+        let original = image.as_file_bytes().to_vec();
+        let mut project = Project::new(image);
+        let plan = smw_us_v1_expanded_settings_installation_plan_for_rom(&project.rom).unwrap();
+
+        let result = project
+            .install_relocatable_patch_with_expansion_retry(&plan, 0x10_8000)
+            .unwrap();
+
+        assert_eq!(result.blocks[0].header_offset, 0x10_0000);
+        assert_eq!(project.rom.logical_len(), 0x10_8000);
+        assert!(
+            crate::smw_us_v1_installed_expanded_settings_layout(&project)
+                .unwrap()
+                .is_some()
+        );
+        assert!(
+            SnesChecksum::decode(project.rom.logical_bytes(), SMW_US_V1_CHECKSUM_FIELD)
+                .unwrap()
+                .is_complementary()
+        );
+        assert_eq!(project.history.undo_len(), 1);
+        assert!(project.undo().unwrap());
+        assert_eq!(project.rom.as_file_bytes(), original);
     }
 
     fn generation_102_fixture() -> Vec<u8> {

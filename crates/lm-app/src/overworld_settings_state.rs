@@ -2,9 +2,9 @@ use crate::{AppError, AppState, FrontendEffect};
 use lm_level::{ExpandedLevelSettingsRecord, ExpandedOverworldSettings};
 use lm_overworld::OverworldLayer3SettingsTable;
 use lm_profile::{
-    SMW_US_V1_CHECKSUM_FIELD, SMW_US_V1_OVERWORLD_SETTINGS_FIRST_SLOT,
-    load_smw_us_v1_overworld_settings,
-    smw_us_v1_expanded_settings_installation_plan_with_overworld_settings,
+    SMW_US_V1_CHECKSUM_FIELD, SMW_US_V1_EXPANDED_SETTINGS_MAXIMUM_LOROM_LEN,
+    SMW_US_V1_OVERWORLD_SETTINGS_FIRST_SLOT, load_smw_us_v1_overworld_settings,
+    smw_us_v1_expanded_settings_installation_plan_for_rom_with_overworld_settings,
     smw_us_v1_installed_expanded_settings_layout,
 };
 use lm_rom::{Mapper, Region, SupportedGame};
@@ -56,10 +56,14 @@ impl AppState {
                 SMW_US_V1_CHECKSUM_FIELD,
             )?;
         } else {
-            project.install_relocatable_patch(
-                &smw_us_v1_expanded_settings_installation_plan_with_overworld_settings(Some(
-                    settings,
-                ))?,
+            let plan =
+                smw_us_v1_expanded_settings_installation_plan_for_rom_with_overworld_settings(
+                    &project.rom,
+                    Some(settings),
+                )?;
+            project.install_relocatable_patch_with_expansion_retry(
+                &plan,
+                SMW_US_V1_EXPANDED_SETTINGS_MAXIMUM_LOROM_LEN,
             )?;
         }
         let reopened = load_smw_us_v1_overworld_settings(project)

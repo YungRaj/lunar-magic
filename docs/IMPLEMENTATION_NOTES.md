@@ -5117,3 +5117,19 @@ save/reopen and byte-exact Undo; the installed
 inserts from the fixed `ExGraphics` directory, re-exports both converted `ExGFX80` and unchanged
 `ExGFXE00`, and undoes to vanilla. The original interactive retry/prompt after cursor-space
 exhaustion remains incomplete, so the broader ordinary-command interaction milestone stays partial.
+
+## Expanded-settings allocation on pre-expanded ROMs
+
+The original expanded-settings prerequisite does not limit its `$6E00` owner to the first MiB.
+Ghidra's `AllocateRomSpaceWithExpansion` at `$004A8810`, called by the installer at `$00460C3A`,
+searches the current mapper extent and invokes `RequestRomExpansionForAllocation` only after a
+failed search. Rust now exposes the corresponding failure-atomic patch transaction: the initial
+plan uses all current LoROM space (while retaining pristine SMW's authenticated one-MiB target),
+then retries on a private staging image one 32-KiB mapper bank at a time through 4 MiB. Only the
+successful attempt enters project history.
+
+The application, CLI expanded-settings installer, and native-overworld-settings import route all
+use the ROM-aware plan. Headered and headerless 2-MiB sources place the owner in available late
+space without growing; an exhausted 1-MiB source grows by exactly one bank. Every route repairs the
+checksum, resolves the installed table from its relocated runtime operand, preserves the copier
+header, and restores the exact physical input with one Undo.
