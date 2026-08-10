@@ -328,8 +328,10 @@ pub use smw_us_v1_exgraphics_install::{
     prepare_smw_us_v1_exgraphics_directory_install, prepare_smw_us_v1_exgraphics_install,
 };
 pub use smw_us_v1_standard_graphics_install::{
+    prepare_smw_us_v1_joined_standard_graphics_3bpp_install_at,
     prepare_smw_us_v1_joined_standard_graphics_install,
     prepare_smw_us_v1_joined_standard_graphics_install_at,
+    prepare_smw_us_v1_standard_graphics_3bpp_install_at,
     prepare_smw_us_v1_standard_graphics_install, prepare_smw_us_v1_standard_graphics_install_at,
 };
 pub use snapshot::{ControllerSnapshot, ProfiledControllerSnapshot};

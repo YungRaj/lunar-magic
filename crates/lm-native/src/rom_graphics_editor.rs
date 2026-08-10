@@ -2013,12 +2013,9 @@ impl RomGraphicsEditor {
         };
         let (mut source, target) = quick_graphics_import_source(app, action, joined_standard)?;
         let has_4bpp = lm_profile::has_smw_us_v1_4bpp_graphics_prerequisite(&source.image);
-        let supported_first_4bpp = source.smw_us_v1_standard_install
-            && matches!(
-                (request.family, request.use_4bpp),
-                (GraphicsInsertionFamily::Standard, true)
-            );
-        if !has_4bpp && !supported_first_4bpp {
+        let supported_first_standard = source.smw_us_v1_standard_install
+            && request.family == GraphicsInsertionFamily::Standard;
+        if !has_4bpp && !supported_first_standard {
             let requested_format = if request.use_4bpp { "4bpp" } else { "3bpp" };
             return Err(match request.family {
                 GraphicsInsertionFamily::Standard => {
@@ -2045,6 +2042,7 @@ impl RomGraphicsEditor {
         source.ordinary_options = Some(graphics_import::OrdinaryGraphicsImportOptions {
             logical_pc_address: request.logical_pc_address,
             expansion_target,
+            use_4bpp: request.use_4bpp,
         });
         source.description = match request.family {
             GraphicsInsertionFamily::Standard => {
@@ -2505,6 +2503,141 @@ mod tests {
             assert!(std::time::Instant::now() < deadline);
             std::thread::yield_now();
         }
+
+        let mut three_bpp_app = lm_app::AppState::default();
+        three_bpp_app.load_rom(original.clone()).unwrap();
+        three_bpp_app.document_path = Some(root.path().join("ordinary-3bpp.smc"));
+        let mut three_bpp_editor = RomGraphicsEditor::default();
+        three_bpp_editor
+            .start_ordinary_graphics_import(
+                &three_bpp_app,
+                GraphicsInsertionRequest {
+                    family: GraphicsInsertionFamily::Standard,
+                    logical_pc_address: 0x40000,
+                    expand_rom: false,
+                    use_4bpp: false,
+                },
+                false,
+            )
+            .unwrap();
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(120);
+        let three_bpp_commit = loop {
+            if let Some(result) = three_bpp_editor.graphics_import.poll() {
+                break result
+                    .unwrap()
+                    .expect("ordinary 3bpp insertion prepares a commit");
+            }
+            assert!(std::time::Instant::now() < deadline);
+            std::thread::yield_now();
+        };
+        three_bpp_app
+            .dispatch(three_bpp_commit.into_command())
+            .unwrap();
+        let three_bpp_image =
+            RomImage::from_bytes(three_bpp_app.controller_snapshot().unwrap().rom_bytes).unwrap();
+        assert_eq!(three_bpp_image.logical_len(), 0x80000);
+        assert!(!lm_profile::has_smw_us_v1_4bpp_graphics_prerequisite(
+            &three_bpp_image
+        ));
+        let three_bpp_project = lm_project::Project::new(three_bpp_image.clone());
+        let three_bpp_layout = lm_profile::smw_us_v1_vanilla_graphics_layout();
+        let first_pointer = three_bpp_layout
+            .read_pointer(&three_bpp_project, 0)
+            .unwrap()
+            .to_pc(lm_rom::Mapper::LoRom)
+            .unwrap();
+        assert!(first_pointer >= 0x40000);
+        let reexport_directory = root.path().join("ThreeBppReexport");
+        std::fs::create_dir(&reexport_directory).unwrap();
+        let source =
+            super::standard_graphics_batch_source(three_bpp_image, three_bpp_layout, true).unwrap();
+        let mut reexport = super::graphics_batch::GraphicsBatchWorker::default();
+        reexport.start(source, reexport_directory.clone()).unwrap();
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(120);
+        loop {
+            if let Some(result) = reexport.poll() {
+                assert_eq!(result.unwrap(), Some(0x34));
+                break;
+            }
+            assert!(std::time::Instant::now() < deadline);
+            std::thread::yield_now();
+        }
+        for number in 0..0x34 {
+            let name = format!("GFX{number:02X}.bin");
+            assert_eq!(
+                std::fs::read(reexport_directory.join(&name)).unwrap(),
+                std::fs::read(root.path().join("Graphics").join(&name)).unwrap(),
+                "{name}"
+            );
+        }
+        three_bpp_app.dispatch(lm_app::Command::Undo).unwrap();
+        assert_eq!(
+            three_bpp_app.controller_snapshot().unwrap().rom_bytes,
+            original
+        );
+
+        let mut joined = Vec::new();
+        for number in 0..0x34 {
+            joined.extend(
+                std::fs::read(
+                    root.path()
+                        .join("Graphics")
+                        .join(format!("GFX{number:02X}.bin")),
+                )
+                .unwrap(),
+            );
+        }
+        std::fs::write(root.path().join("Graphics").join("AllGFX.bin"), joined).unwrap();
+        let mut joined_three_bpp_app = lm_app::AppState::default();
+        joined_three_bpp_app.load_rom(original.clone()).unwrap();
+        joined_three_bpp_app.document_path = Some(root.path().join("joined-3bpp.smc"));
+        let mut joined_three_bpp_editor = RomGraphicsEditor::default();
+        joined_three_bpp_editor
+            .start_ordinary_graphics_import(
+                &joined_three_bpp_app,
+                GraphicsInsertionRequest {
+                    family: GraphicsInsertionFamily::Standard,
+                    logical_pc_address: 0x40000,
+                    expand_rom: true,
+                    use_4bpp: false,
+                },
+                true,
+            )
+            .unwrap();
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(120);
+        let joined_three_bpp_commit = loop {
+            if let Some(result) = joined_three_bpp_editor.graphics_import.poll() {
+                break result
+                    .unwrap()
+                    .expect("joined ordinary 3bpp insertion prepares a commit");
+            }
+            assert!(std::time::Instant::now() < deadline);
+            std::thread::yield_now();
+        };
+        joined_three_bpp_app
+            .dispatch(joined_three_bpp_commit.into_command())
+            .unwrap();
+        let joined_three_bpp_image = RomImage::from_bytes(
+            joined_three_bpp_app
+                .controller_snapshot()
+                .unwrap()
+                .rom_bytes,
+        )
+        .unwrap();
+        assert_eq!(joined_three_bpp_image.logical_len(), 0x100000);
+        assert!(!lm_profile::has_smw_us_v1_4bpp_graphics_prerequisite(
+            &joined_three_bpp_image
+        ));
+        joined_three_bpp_app
+            .dispatch(lm_app::Command::Undo)
+            .unwrap();
+        assert_eq!(
+            joined_three_bpp_app
+                .controller_snapshot()
+                .unwrap()
+                .rom_bytes,
+            original
+        );
 
         let mut ordinary_first_app = lm_app::AppState::default();
         ordinary_first_app.load_rom(original.clone()).unwrap();

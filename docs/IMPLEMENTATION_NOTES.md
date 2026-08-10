@@ -5090,7 +5090,12 @@ exact extents, expands and installs the recovered runtime, inserts GFX33/GFX32 f
 LoROM bank at or after the requested cursor, inserts the remaining 50 files, reopens all 52, and
 undoes to the byte-exact vanilla ROM. The quick route retains its established allocation order.
 `quick_standard_insertion_commits_reopens_and_undoes_from_fixed_directory` crosses that behavior
-through the installed modal worker from a pristine ROM. First-time ordinary 3bpp insertion,
-address-aware ordinary ExGFX allocation, and ExGFX `$E00..$FFF` conversion bypass remain
-deliberately rejected rather than being collapsed to quick-import defaults; therefore this is a
-partial command milestone and does not close the configuration gate.
+through the installed modal worker from a pristine ROM. First-time ordinary 3bpp insertion derives
+each native depth from the authenticated vanilla stream, discards only the editable fourth plane
+for actual 3bpp files, preserves already-native files byte-for-byte, and never installs the 4bpp
+runtime. Separate-file insertion at the default cursor remains 512 KiB; joined insertion with the
+expansion option becomes 1 MiB. Both reopen every native file, while re-extraction reproduces all
+52 editable input files exactly and one Undo restores vanilla. Address-aware ordinary ExGFX
+allocation, ExGFX `$E00..$FFF` conversion bypass, and the original interactive expansion prompt
+after cursor-space exhaustion remain incomplete; therefore this remains a partial command
+milestone and does not close the configuration gate.

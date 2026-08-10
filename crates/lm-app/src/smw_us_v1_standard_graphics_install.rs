@@ -269,26 +269,118 @@ pub fn prepare_smw_us_v1_standard_graphics_install_at(
     )
 }
 
+/// Performs Lunar Magic's ordinary first-time 3bpp insertion at the selected logical PC cursor.
+/// The editable extracted files retain Lunar Magic's 4bpp shape; files authenticated as native
+/// 3bpp are converted by discarding only their fourth plane before compression.
+///
+/// # Errors
+///
+/// Returns an error for a non-pristine SMW-US LoROM, malformed input, incompatible authenticated
+/// native file shape, invalid cursor, expansion/allocation failure, or semantic reopen mismatch.
+pub fn prepare_smw_us_v1_standard_graphics_3bpp_install_at(
+    expected_revision: u64,
+    image: RomImage,
+    files: &[Vec<u8>],
+    logical_pc_address: usize,
+    expand_rom: bool,
+) -> Result<PreparedRomCommit, String> {
+    validate_editable_files(files)?;
+    let mapper = lm_rom::detect_identity(&image)
+        .map(|identity| identity.mapper)
+        .unwrap_or(Mapper::LoRom);
+    if mapper != Mapper::LoRom || image.logical_len() != 0x80_000 {
+        return Err(format!(
+            "first-time 3bpp standard-GFX insertion requires a 512 KiB pristine LoROM, got {mapper:?} with {:#X} bytes",
+            image.logical_len()
+        ));
+    }
+    authenticate_pristine_patches(&image)?;
+    if logical_pc_address >= TARGET_LOGICAL_LEN {
+        return Err(format!(
+            "standard GFX allocation address {logical_pc_address:#X} must be below {TARGET_LOGICAL_LEN:#X}"
+        ));
+    }
+    let native_files = editable_files_to_authenticated_native_3bpp(&image, files)?;
+    let reclaimed = authenticated_vanilla_graphics_extents(&image, mapper)?;
+    let before = image.logical_bytes().to_vec();
+    let mut project = Project::new(image);
+    if expand_rom {
+        project
+            .expand_rom(Mapper::LoRom, TARGET_LOGICAL_LEN, 0x00, CHECKSUM_FIELD)
+            .map_err(|error| error.to_string())?;
+    }
+    if logical_pc_address >= project.rom.logical_len() {
+        return Err(format!(
+            "standard GFX allocation address {logical_pc_address:#X} is outside the {:#X}-byte ROM",
+            project.rom.logical_len()
+        ));
+    }
+    for extent in &reclaimed {
+        project
+            .rom
+            .write(extent.start, &vec![0xff; extent.end - extent.start])
+            .map_err(|error| error.to_string())?;
+    }
+    let mut allocation =
+        lm_rats::AllocationPolicy::lorom(logical_pc_address..project.rom.logical_len());
+    allocation.fill_bytes = vec![0x00, 0xff];
+    let mut options = GraphicsSaveOptions {
+        allocation,
+        previous_block: None,
+        reuse_identical: true,
+        erase_fill: 0xff,
+    };
+    let ordinary = lm_profile::smw_us_v1_vanilla_graphics_layout();
+    protect_layout(&mut options, ordinary)?;
+    let special = crate::graphics_batch_import::prepare_smw_us_v1_special_graphics_import_resized(
+        0,
+        project.rom.clone(),
+        CHECKSUM_FIELD,
+        &[native_files[0x33].clone(), native_files[0x32].clone()],
+        &options,
+    )?;
+    project
+        .apply_mutation(&special.description, &special.mutation)
+        .map_err(|error| error.to_string())?;
+    project
+        .save_decompressed_graphics_slots_with_checksum(
+            &(0..0x32).collect::<Vec<_>>(),
+            &native_files[..0x32],
+            ordinary,
+            CHECKSUM_FIELD,
+            &options,
+        )
+        .map_err(|error| error.to_string())?;
+    if project.rom.logical_len() == TARGET_LOGICAL_LEN {
+        project
+            .rom
+            .write(ROM_SIZE_FIELD, &[0x0a])
+            .map_err(|error| error.to_string())?;
+    }
+    project
+        .rom
+        .update_snes_checksum(CHECKSUM_FIELD)
+        .map_err(|error| error.to_string())?;
+    verify_native_reopen(&project.rom, &native_files)?;
+    if lm_profile::has_smw_us_v1_4bpp_graphics_prerequisite(&project.rom) {
+        return Err("3bpp insertion unexpectedly installed the irreversible 4bpp runtime".into());
+    }
+    let mutation = RomMutation::between(mapper, &before, project.rom.logical_bytes())
+        .map_err(|error| error.to_string())?;
+    Ok(PreparedRomCommit {
+        expected_revision,
+        description: "Insert 3bpp standard GFX".into(),
+        mutation,
+    })
+}
+
 fn prepare_smw_us_v1_standard_graphics_install_inner(
     expected_revision: u64,
     image: RomImage,
     files: &[Vec<u8>],
     allocation_cursor: Option<usize>,
 ) -> Result<PreparedRomCommit, String> {
-    if files.len() != FILE_SIZES.len() {
-        return Err(format!(
-            "standard GFX installation requires 52 files, got {}",
-            files.len()
-        ));
-    }
-    for (number, (bytes, expected)) in files.iter().zip(FILE_SIZES).enumerate() {
-        if bytes.len() != expected {
-            return Err(format!(
-                "GFX{number:02X}: expected {expected} bytes, got {}",
-                bytes.len()
-            ));
-        }
-    }
+    validate_editable_files(files)?;
     let mapper = lm_rom::detect_identity(&image)
         .map(|identity| identity.mapper)
         .unwrap_or(Mapper::LoRom);
@@ -432,6 +524,24 @@ fn prepare_smw_us_v1_standard_graphics_install_inner(
     })
 }
 
+fn validate_editable_files(files: &[Vec<u8>]) -> Result<(), String> {
+    if files.len() != FILE_SIZES.len() {
+        return Err(format!(
+            "standard GFX installation requires 52 files, got {}",
+            files.len()
+        ));
+    }
+    for (number, (bytes, expected)) in files.iter().zip(FILE_SIZES).enumerate() {
+        if bytes.len() != expected {
+            return Err(format!(
+                "GFX{number:02X}: expected {expected} bytes, got {}",
+                bytes.len()
+            ));
+        }
+    }
+    Ok(())
+}
+
 fn authenticated_vanilla_graphics_extents(
     image: &RomImage,
     mapper: Mapper,
@@ -503,6 +613,52 @@ fn authenticated_vanilla_graphics_extents(
     Ok(merged)
 }
 
+fn editable_files_to_authenticated_native_3bpp(
+    image: &RomImage,
+    files: &[Vec<u8>],
+) -> Result<Vec<Vec<u8>>, String> {
+    let project = Project::new(image.clone());
+    let ordinary = lm_profile::smw_us_v1_vanilla_graphics_layout();
+    let special = lm_profile::smw_us_v1_special_graphics_layouts(image)
+        .map_err(|error| format!("special graphics startup layout: {error}"))?;
+    files
+        .iter()
+        .enumerate()
+        .map(|(number, editable)| {
+            let (slot, layout) = match number {
+                0x00..=0x31 => (number, ordinary),
+                0x32 => (0, special.gfx32),
+                0x33 => (0, special.gfx33),
+                _ => unreachable!("the editable file set is validated at 52 entries"),
+            };
+            let native_len = project
+                .load_decompressed_graphics_file(slot, layout)
+                .map_err(|error| format!("GFX{number:02X}: authenticate native shape: {error}"))?
+                .len();
+            if native_len == editable.len() {
+                return Ok(editable.clone());
+            }
+            let expected_native = editable
+                .len()
+                .checked_div(4)
+                .and_then(|tiles| tiles.checked_mul(3))
+                .filter(|length| editable.len() % 32 == 0 && *length == native_len)
+                .ok_or_else(|| {
+                    format!(
+                        "GFX{number:02X}: authenticated native size {native_len:#X} is incompatible with editable size {:#X}",
+                        editable.len()
+                    )
+                })?;
+            let mut native = Vec::with_capacity(expected_native);
+            for tile in editable.chunks_exact(32) {
+                native.extend_from_slice(&tile[..16]);
+                native.extend((0..8).map(|row| tile[16 + row * 2]));
+            }
+            Ok(native)
+        })
+        .collect()
+}
+
 /// Splits Lunar Magic's canonical joined 52-file image and prepares the same first installation.
 pub fn prepare_smw_us_v1_joined_standard_graphics_install(
     expected_revision: u64,
@@ -563,6 +719,45 @@ pub fn prepare_smw_us_v1_joined_standard_graphics_install_at(
         image,
         &files,
         logical_pc_address,
+    )
+}
+
+/// Splits `AllGFX.bin` and performs ordinary first-time 3bpp insertion.
+///
+/// # Errors
+///
+/// Returns an error for an inexact joined image or any underlying authentication, conversion,
+/// expansion, allocation, or reopen failure.
+pub fn prepare_smw_us_v1_joined_standard_graphics_3bpp_install_at(
+    expected_revision: u64,
+    image: RomImage,
+    joined: &[u8],
+    logical_pc_address: usize,
+    expand_rom: bool,
+) -> Result<PreparedRomCommit, String> {
+    let expected = FILE_SIZES.iter().sum::<usize>();
+    if joined.len() != expected {
+        return Err(format!(
+            "AllGFX.bin requires {expected} bytes for 52 files, got {}",
+            joined.len()
+        ));
+    }
+    let mut cursor = 0usize;
+    let files = FILE_SIZES
+        .into_iter()
+        .map(|len| {
+            let end = cursor + len;
+            let file = joined[cursor..end].to_vec();
+            cursor = end;
+            file
+        })
+        .collect::<Vec<_>>();
+    prepare_smw_us_v1_standard_graphics_3bpp_install_at(
+        expected_revision,
+        image,
+        &files,
+        logical_pc_address,
+        expand_rom,
     )
 }
 
@@ -816,6 +1011,28 @@ fn verify_reopen(image: &RomImage, files: &[Vec<u8>]) -> Result<(), String> {
             .map_err(|error| format!("GFX{number:02X}: {error}"))?;
         if actual != files[number] {
             return Err(format!("GFX{number:02X}: semantic reopen mismatch"));
+        }
+    }
+    Ok(())
+}
+
+fn verify_native_reopen(image: &RomImage, files: &[Vec<u8>]) -> Result<(), String> {
+    let project = Project::new(image.clone());
+    let ordinary = lm_profile::smw_us_v1_vanilla_graphics_layout();
+    let special = lm_profile::smw_us_v1_special_graphics_layouts(image)
+        .map_err(|error| format!("special graphics startup layout: {error}"))?;
+    for (number, expected) in files.iter().enumerate() {
+        let (slot, layout) = match number {
+            0x00..=0x31 => (number, ordinary),
+            0x32 => (0, special.gfx32),
+            0x33 => (0, special.gfx33),
+            _ => unreachable!("the verified native set has 52 files"),
+        };
+        let actual = project
+            .load_decompressed_graphics_file(slot, layout)
+            .map_err(|error| format!("GFX{number:02X}: {error}"))?;
+        if &actual != expected {
+            return Err(format!("GFX{number:02X}: native semantic reopen mismatch"));
         }
     }
     Ok(())

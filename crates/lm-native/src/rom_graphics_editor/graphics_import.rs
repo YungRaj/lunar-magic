@@ -32,6 +32,7 @@ pub(super) struct GraphicsImportSource {
 pub(super) struct OrdinaryGraphicsImportOptions {
     pub(super) logical_pc_address: usize,
     pub(super) expansion_target: Option<usize>,
+    pub(super) use_4bpp: bool,
 }
 
 struct RunningImport {
@@ -224,13 +225,24 @@ fn prepare_import(
             }
             if source.smw_us_v1_standard_install {
                 if let Some(ordinary) = source.ordinary_options {
-                    lm_app::prepare_smw_us_v1_standard_graphics_install_at(
-                        source.expected_revision,
-                        source.image,
-                        &files,
-                        ordinary.logical_pc_address,
-                    )
-                    .map(Some)
+                    if ordinary.use_4bpp {
+                        lm_app::prepare_smw_us_v1_standard_graphics_install_at(
+                            source.expected_revision,
+                            source.image,
+                            &files,
+                            ordinary.logical_pc_address,
+                        )
+                        .map(Some)
+                    } else {
+                        lm_app::prepare_smw_us_v1_standard_graphics_3bpp_install_at(
+                            source.expected_revision,
+                            source.image,
+                            &files,
+                            ordinary.logical_pc_address,
+                            ordinary.expansion_target.is_some(),
+                        )
+                        .map(Some)
+                    }
                 } else {
                     lm_app::prepare_smw_us_v1_standard_graphics_install(
                         source.expected_revision,
@@ -304,13 +316,24 @@ fn prepare_import(
             }
             if source.smw_us_v1_standard_install {
                 if let Some(ordinary) = source.ordinary_options {
-                    lm_app::prepare_smw_us_v1_joined_standard_graphics_install_at(
-                        source.expected_revision,
-                        source.image,
-                        &joined,
-                        ordinary.logical_pc_address,
-                    )
-                    .map(Some)
+                    if ordinary.use_4bpp {
+                        lm_app::prepare_smw_us_v1_joined_standard_graphics_install_at(
+                            source.expected_revision,
+                            source.image,
+                            &joined,
+                            ordinary.logical_pc_address,
+                        )
+                        .map(Some)
+                    } else {
+                        lm_app::prepare_smw_us_v1_joined_standard_graphics_3bpp_install_at(
+                            source.expected_revision,
+                            source.image,
+                            &joined,
+                            ordinary.logical_pc_address,
+                            ordinary.expansion_target.is_some(),
+                        )
+                        .map(Some)
+                    }
                 } else {
                     lm_app::prepare_smw_us_v1_joined_standard_graphics_install(
                         source.expected_revision,
@@ -525,6 +548,7 @@ mod tests {
             OrdinaryGraphicsImportOptions {
                 logical_pc_address: 0x9000,
                 expansion_target: Some(0x10000),
+                use_4bpp: true,
             },
         )
         .unwrap();
@@ -539,6 +563,7 @@ mod tests {
             OrdinaryGraphicsImportOptions {
                 logical_pc_address: 0x10000,
                 expansion_target: None,
+                use_4bpp: true,
             },
         )
         .unwrap_err();
