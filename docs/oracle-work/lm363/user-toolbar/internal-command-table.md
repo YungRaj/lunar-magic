@@ -83,5 +83,12 @@ The shared-palette command pair is also direct rather than a generic editor alia
 shared/custom-palette workspace and immediately start its exact `.smwpal` chooser. The transfer
 retains Lunar Magic's `$7E2` legacy and `$810` expanded layouts, refuses stale revisions or a
 concurrent transfer, and applies imported data through the existing staged checksum/Undo commit
-boundary. The authenticated partition is therefore 226 routed and 91 pending slots; the distinct
-current-level `$239F/$23A0` pair remains pending until it has a direct vanilla-ROM workflow.
+boundary. The distinct current-level pair is now direct as well. `$239F`
+(`LM_FILE_EXPORT_PALETTE`) composes an untouched vanilla level into Lunar Magic's exact 257-word
+working buffer, or reads a nonempty installed custom slot, then publishes raw, TPL v2, or RGB24.
+The three pristine level `$105` exports match the retained original hashes; TPL/RGB substitute
+word 256 for every unsupported row-zero entry and RGB defaults to high-bit expansion. `$23A0`
+(`LM_FILE_IMPORT_PALETTE`) discovers an optional same-name `.palmask`, applies the format-specific
+working-buffer mapping, installs the custom-palette runtime when absent, writes the current slot,
+repairs the checksum, and verifies an exact reopen before crossing the revision-checked mutation
+boundary. The authenticated partition is therefore 228 routed and 89 pending slots.

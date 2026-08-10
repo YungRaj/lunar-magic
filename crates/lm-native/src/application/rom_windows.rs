@@ -185,6 +185,14 @@ impl NativeApplication {
 
     pub(super) fn show_project_operations(&mut self, context: &egui::Context) {
         self.toolbar_graphics_transfer.show(context);
+        if let Some(command) = self.current_level_palette_transfer.show(context, &self.app)
+            && self.try_dispatch(context, command)
+        {
+            self.mark_user_toolbar_save_notification(
+                lm_app::LunarMagicNotificationKind::SaveLevel,
+            );
+            self.renderer.invalidate();
+        }
         self.level_usage_dialog.show(context);
         self.ips_create_dialog.show(context);
         self.restore_point_dialog.show(context, &self.app);

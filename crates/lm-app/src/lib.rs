@@ -7,6 +7,7 @@ mod compatibility_report;
 mod complete_level_document_controller;
 mod copier_header_state;
 mod credits_tilemap_state;
+mod current_level_palette_transfer;
 mod custom_object_controller;
 mod custom_sprite_controller;
 mod document;
@@ -333,6 +334,10 @@ pub use palette_document_controller::{
 };
 pub use palette_ownership_file::{PaletteOwnershipFile, PaletteOwnershipFileError};
 pub use prepared_commit::PreparedRomCommit;
+pub use current_level_palette_transfer::{
+    CurrentLevelPaletteTransferError, load_current_level_native_palette,
+    prepare_current_level_palette_import,
+};
 pub use profile_controller::{ProfileControllerError, RevisionProfileControllers};
 pub use recent_documents::{RecentDocuments, RecentDocumentsError};
 pub use recovery::RecoverySnapshot;

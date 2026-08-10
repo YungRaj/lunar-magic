@@ -486,6 +486,9 @@ impl NativeApplication {
             UserToolbarNativeAction::SharedPaletteTransfer(action) => self
                 .rom_shared_palette_editor
                 .open_and_start_transfer(&self.app, action),
+            UserToolbarNativeAction::CurrentLevelPaletteTransfer(action) => {
+                self.current_level_palette_transfer.start(&self.app, action);
+            }
             UserToolbarNativeAction::QuickExtractGraphics(action) => {
                 if let Err(error) = self.toolbar_graphics_transfer.start(
                     &self.app,
@@ -1216,6 +1219,7 @@ enum UserToolbarNativeAction {
     ExpandRom(RomExpansionPreset),
     ExportAllLevels,
     SharedPaletteTransfer(crate::rom_shared_palette_editor::SharedPaletteTransferAction),
+    CurrentLevelPaletteTransfer(crate::current_level_palette_transfer::CurrentLevelPaletteAction),
     ExtractGraphics(QuickGraphicsExtraction),
     QuickExtractGraphics(QuickGraphicsExtraction),
     QuickInsertGraphics(QuickGraphicsInsertion),
@@ -1307,6 +1311,12 @@ fn user_toolbar_native_action(name: &str) -> Option<UserToolbarNativeAction> {
         ),
         "LM_FILE_INSERT_PALETTE" => UserToolbarNativeAction::SharedPaletteTransfer(
             crate::rom_shared_palette_editor::SharedPaletteTransferAction::Import,
+        ),
+        "LM_FILE_EXPORT_PALETTE" => UserToolbarNativeAction::CurrentLevelPaletteTransfer(
+            crate::current_level_palette_transfer::CurrentLevelPaletteAction::Export,
+        ),
+        "LM_FILE_IMPORT_PALETTE" => UserToolbarNativeAction::CurrentLevelPaletteTransfer(
+            crate::current_level_palette_transfer::CurrentLevelPaletteAction::Import,
         ),
         "LM_FILE_EXTRACT_GFX_BUTTON" => {
             UserToolbarNativeAction::QuickExtractGraphics(QuickGraphicsExtraction::Standard)
@@ -1740,6 +1750,18 @@ mod user_toolbar_tests {
                 ),
             ),
             (
+                "LM_FILE_EXPORT_PALETTE",
+                UserToolbarNativeAction::CurrentLevelPaletteTransfer(
+                    crate::current_level_palette_transfer::CurrentLevelPaletteAction::Export,
+                ),
+            ),
+            (
+                "LM_FILE_IMPORT_PALETTE",
+                UserToolbarNativeAction::CurrentLevelPaletteTransfer(
+                    crate::current_level_palette_transfer::CurrentLevelPaletteAction::Import,
+                ),
+            ),
+            (
                 "LM_FILE_EXTRACT_GFX_BUTTON",
                 UserToolbarNativeAction::QuickExtractGraphics(QuickGraphicsExtraction::Standard),
             ),
@@ -2027,7 +2049,7 @@ mod user_toolbar_tests {
                     || user_toolbar_native_action(entry.name).is_some()
             })
             .collect::<Vec<_>>();
-        assert_eq!(supported.len(), 226);
+        assert_eq!(supported.len(), 228);
         assert!(
             supported
                 .iter()
@@ -2044,7 +2066,7 @@ mod user_toolbar_tests {
                     && user_toolbar_native_action(entry.name).is_none()
             })
             .collect::<Vec<_>>();
-        assert_eq!(unsupported.len(), 91);
+        assert_eq!(unsupported.len(), 89);
         if std::env::var_os("LM_DIAGNOSTIC_UNSUPPORTED_TOOLBAR_COMMANDS").is_some() {
             for entry in unsupported {
                 eprintln!(
