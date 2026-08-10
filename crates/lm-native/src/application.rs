@@ -143,6 +143,8 @@ pub(crate) struct NativeApplication {
     toolbar_editor: ToolbarEditor,
     toolbar_graphics_transfer: ToolbarGraphicsTransfer,
     undo_history_settings: undo_history_settings::UndoHistorySettings,
+    animation_rate_dialog: crate::animation_rate::AnimationRateDialog,
+    animation_rate: crate::animation_rate::AnimationRate,
     external_tool_config_editor: crate::external_tool_config_editor::ExternalToolConfigEditor,
     user_toolbar: Option<UserToolbar>,
     user_toolbar_images: UserToolbarImageSet,
@@ -243,6 +245,7 @@ impl NativeApplication {
     const UNDO_HISTORY_STORAGE_KEY: &'static str = "lunar_magic_rust.undo_history.v1";
     const JOINED_GRAPHICS_STORAGE_KEY: &'static str = "lunar_magic_rust.joined_graphics.v1";
     const EXTERNAL_TOOLS_STORAGE_KEY: &'static str = "lunar_magic_rust.external_tools.v1";
+    const ANIMATION_RATE_STORAGE_KEY: &'static str = "lunar_magic_rust.animation_rate.v1";
 
     pub(crate) fn from_startup(
         initialized: Result<crate::startup::InitializedNative, String>,
@@ -516,6 +519,15 @@ impl NativeApplication {
             });
             if let Err(error) = result {
                 self.effects.error = Some(format!("cannot load undo-history preference: {error}"));
+            }
+        }
+        if let Some(encoded) = storage.get_string(Self::ANIMATION_RATE_STORAGE_KEY) {
+            match crate::animation_rate::decode_preference(&encoded) {
+                Ok(rate) => self.animation_rate = rate,
+                Err(error) => {
+                    self.effects.error =
+                        Some(format!("cannot load animation-rate preference: {error}"));
+                }
             }
         }
         if let Some(encoded) = storage.get_string(Self::JOINED_GRAPHICS_STORAGE_KEY) {
@@ -862,6 +874,10 @@ impl eframe::App for NativeApplication {
             Self::JOINED_GRAPHICS_STORAGE_KEY,
             encode_joined_graphics_preference(self.joined_graphics_files),
         );
+        storage.set_string(
+            Self::ANIMATION_RATE_STORAGE_KEY,
+            crate::animation_rate::encode_preference(self.animation_rate),
+        );
         match encode_external_tools_preference(self.app.external_tools()) {
             Ok(encoded) => storage.set_string(Self::EXTERNAL_TOOLS_STORAGE_KEY, encoded),
             Err(error) => {
@@ -907,6 +923,7 @@ impl eframe::App for NativeApplication {
                     self.native_map16_sidecar_editor.value(),
                     live_frame,
                     &self.main_toolbar_images,
+                    self.animation_rate,
                 )
             {
                 let sprite_only_commit = matches!(
@@ -1013,6 +1030,15 @@ impl eframe::App for NativeApplication {
                 }
                 Err(error) => self.effects.error = Some(error.to_string()),
             }
+        }
+        if let Some(rate) = self.animation_rate_dialog.show(context) {
+            self.animation_rate = rate;
+            self.renderer.invalidate();
+            self.vanilla_level_editor.invalidate_graphics_preview();
+            self.app.status = format!(
+                "Animation rate set to {} fps",
+                1.0 / rate.interval_seconds()
+            );
         }
         self.show_editor_windows(context);
         self.show_global_effects(context);
@@ -1482,6 +1508,22 @@ mod preference_tests {
         let mut reopened = NativeApplication::default();
         reopened.load_persistent_preferences(Some(&storage));
         assert_eq!(reopened.app.external_tools(), tools);
+    }
+
+    #[test]
+    fn native_save_and_reopen_persist_the_original_main_animation_rate() {
+        for rate in crate::animation_rate::AnimationRate::ALL {
+            let mut source = NativeApplication {
+                animation_rate: rate,
+                ..NativeApplication::default()
+            };
+            let mut storage = MemoryStorage::default();
+            eframe::App::save(&mut source, &mut storage);
+
+            let mut reopened = NativeApplication::default();
+            reopened.load_persistent_preferences(Some(&storage));
+            assert_eq!(reopened.animation_rate, rate);
+        }
     }
 
     #[test]

@@ -1043,6 +1043,7 @@ pub enum UiTextKey {
     DeleteLevelWindowTitle,
     DeleteLevelQuestion,
     CommonDelete,
+    ToolsAnimationRate,
 }
 
 impl UiTextKey {
@@ -1101,6 +1102,7 @@ impl UiTextKey {
             Self::ToolsKeyboardShortcuts => "Keyboard Shortcuts…",
             Self::ToolsCustomizeToolbar => "Customize Toolbar…",
             Self::ToolsUndoHistory => "Undo History…",
+            Self::ToolsAnimationRate => "Animation Rate",
             Self::ToolsLanguageFormat => "Language ({locale})",
             Self::ToolsInstallLanguage => "Install Language Catalog…",
             Self::ToolsUseBuiltInEnglish => "Use Built-in English",
@@ -1282,7 +1284,7 @@ impl UiTextKey {
         }
     }
 
-    pub const ALL: [Self; 194] = [
+    pub const ALL: [Self; 195] = [
         Self::AppTitle,
         Self::FileOpen,
         Self::FileSave,
@@ -1477,6 +1479,7 @@ impl UiTextKey {
         Self::DeleteLevelWindowTitle,
         Self::DeleteLevelQuestion,
         Self::CommonDelete,
+        Self::ToolsAnimationRate,
     ];
 
     fn from_byte(value: u8) -> Option<Self> {

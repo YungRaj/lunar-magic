@@ -1,5 +1,6 @@
 mod about_dialog;
 mod animation_modes;
+mod animation_rate;
 mod appearance_editor;
 mod appearance_editor_form;
 mod application;

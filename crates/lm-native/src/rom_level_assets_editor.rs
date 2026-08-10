@@ -554,9 +554,10 @@ fn installed_preview_phases(
     options: InstalledAnimationOptions,
     has_selection: bool,
     seconds: f64,
+    animation_rate: crate::animation_rate::AnimationRate,
 ) -> InstalledPreviewPhases {
-    let refresh =
-        (options.active() || has_selection).then(|| installed_preview_animation_tick(seconds));
+    let refresh = (options.active() || has_selection)
+        .then(|| installed_preview_animation_tick(seconds, animation_rate));
     InstalledPreviewPhases {
         refresh,
         assets: options.active().then_some(refresh.unwrap_or(0)),
@@ -701,6 +702,7 @@ impl RomLevelAssetsEditor {
         project_revision: u64,
         special_world_passed: bool,
         visibility: crate::application::LevelViewVisibility,
+        animation_rate: crate::animation_rate::AnimationRate,
     ) -> (bool, Option<Command>) {
         self.poll_palette_file_io(context, project_revision);
         if let Some(result) = self.mwl_batch_worker.show(context) {
@@ -772,6 +774,7 @@ impl RomLevelAssetsEditor {
                         special_world_passed,
                         visibility,
                         command.is_some(),
+                        animation_rate,
                     ) {
                         command = Some(ui_command);
                     }
@@ -792,6 +795,7 @@ impl RomLevelAssetsEditor {
         special_world_passed: bool,
         visibility: crate::application::LevelViewVisibility,
         rom_command_pending: bool,
+        animation_rate: crate::animation_rate::AnimationRate,
     ) -> Option<Command> {
         let stale = self.workspace.as_ref()?.controller.revision() != project_revision;
         let palette_busy =
@@ -1072,6 +1076,7 @@ impl RomLevelAssetsEditor {
             animation_options,
             self.bypass_selection.is_some(),
             ui.input(|input| input.time),
+            animation_rate,
         );
         if self.bypass_preview.take_refresh(phases.refresh) {
             let result = self
@@ -1119,8 +1124,7 @@ impl RomLevelAssetsEditor {
             && (animation_options.active() || self.bypass_selection.is_some())
             && !self.bypass_preview.failed
         {
-            ui.ctx()
-                .request_repaint_after(std::time::Duration::from_millis(60));
+            ui.ctx().request_repaint_after(animation_rate.interval());
         }
         if let Some(validation) = &self.bypass_validation {
             ui.label(validation);
@@ -1336,6 +1340,7 @@ impl RomLevelAssetsEditor {
         ui.separator();
         let image_animation_phase = Some(installed_preview_animation_phase(
             ui.input(|input| input.time),
+            animation_rate,
         ));
         let modified = self
             .workspace
@@ -2395,7 +2400,10 @@ fn animation_options_from_features(
     }
 }
 
-fn installed_preview_animation_phase(seconds: f64) -> usize {
+fn installed_preview_animation_phase(
+    seconds: f64,
+    animation_rate: crate::animation_rate::AnimationRate,
+) -> usize {
     if let Ok(phase) = std::env::var("LM_NATIVE_ANIMATION_PHASE")
         && let Ok(phase) = phase.parse::<usize>()
         && phase < 8
@@ -2406,11 +2414,14 @@ fn installed_preview_animation_phase(seconds: f64) -> usize {
         return 0;
     }
     #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
-    let ticks = (seconds / 0.06).floor() as u64;
+    let ticks = (seconds / animation_rate.interval_seconds()).floor() as u64;
     usize::try_from(ticks & 7).expect("three-bit animation phase")
 }
 
-fn installed_preview_animation_tick(seconds: f64) -> usize {
+fn installed_preview_animation_tick(
+    seconds: f64,
+    animation_rate: crate::animation_rate::AnimationRate,
+) -> usize {
     if let Ok(tick) = std::env::var("LM_NATIVE_ANIMATION_PHASE")
         && let Ok(tick) = tick.parse::<usize>()
     {
@@ -2420,7 +2431,7 @@ fn installed_preview_animation_tick(seconds: f64) -> usize {
         return 0;
     }
     #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
-    let ticks = (seconds / 0.06).floor() as u64;
+    let ticks = (seconds / animation_rate.interval_seconds()).floor() as u64;
     usize::try_from(ticks).unwrap_or(usize::MAX)
 }
 
@@ -4101,16 +4112,34 @@ mod tests {
 
     #[test]
     fn installed_animation_clock_is_bounded_and_deterministic() {
-        assert_eq!(installed_preview_animation_phase(f64::NAN), 0);
-        assert_eq!(installed_preview_animation_phase(-1.0), 0);
-        assert_eq!(installed_preview_animation_phase(0.0), 0);
-        assert_eq!(installed_preview_animation_phase(0.059), 0);
-        assert_eq!(installed_preview_animation_phase(0.06), 1);
-        assert_eq!(installed_preview_animation_phase(0.42), 7);
-        assert_eq!(installed_preview_animation_phase(0.48), 0);
-        assert_eq!(installed_preview_animation_tick(f64::NAN), 0);
-        assert_eq!(installed_preview_animation_tick(-1.0), 0);
-        assert_eq!(installed_preview_animation_tick(0.48), 8);
+        use crate::animation_rate::AnimationRate;
+        assert_eq!(
+            installed_preview_animation_phase(f64::NAN, AnimationRate::Fps15),
+            0
+        );
+        assert_eq!(
+            installed_preview_animation_phase(-1.0, AnimationRate::Fps15),
+            0
+        );
+        assert_eq!(
+            installed_preview_animation_phase(0.0, AnimationRate::Fps15),
+            0
+        );
+        for (rate, callbacks) in [
+            (AnimationRate::Fps7_5, 8),
+            (AnimationRate::Fps15, 16),
+            (AnimationRate::Fps30, 32),
+            (AnimationRate::Fps60, 64),
+        ] {
+            let interval = rate.interval_seconds();
+            assert_eq!(installed_preview_animation_tick(interval * 0.99, rate), 0);
+            assert_eq!(installed_preview_animation_tick(interval, rate), 1);
+            assert_eq!(installed_preview_animation_tick(0.960, rate), callbacks);
+            assert_eq!(
+                installed_preview_animation_phase(0.960, rate),
+                callbacks & 7
+            );
+        }
     }
 
     #[test]
@@ -4255,7 +4284,12 @@ mod tests {
             custom: true,
         };
         assert_eq!(
-            installed_preview_phases(custom_only, false, 0.12),
+            installed_preview_phases(
+                custom_only,
+                false,
+                0.12,
+                crate::animation_rate::AnimationRate::Fps15,
+            ),
             InstalledPreviewPhases {
                 refresh: Some(2),
                 assets: Some(2),
@@ -4272,7 +4306,12 @@ mod tests {
             custom: false,
         };
         assert_eq!(
-            installed_preview_phases(disabled, false, 0.12),
+            installed_preview_phases(
+                disabled,
+                false,
+                0.12,
+                crate::animation_rate::AnimationRate::Fps15,
+            ),
             InstalledPreviewPhases {
                 refresh: None,
                 assets: None,
@@ -4280,7 +4319,12 @@ mod tests {
             }
         );
         assert_eq!(
-            installed_preview_phases(disabled, true, 0.12),
+            installed_preview_phases(
+                disabled,
+                true,
+                0.12,
+                crate::animation_rate::AnimationRate::Fps15,
+            ),
             InstalledPreviewPhases {
                 refresh: Some(2),
                 assets: None,
@@ -4294,7 +4338,12 @@ mod tests {
             custom: false,
         };
         assert_eq!(
-            installed_preview_phases(tiles_only, false, 0.12),
+            installed_preview_phases(
+                tiles_only,
+                false,
+                0.12,
+                crate::animation_rate::AnimationRate::Fps15,
+            ),
             InstalledPreviewPhases {
                 refresh: Some(2),
                 assets: Some(2),
@@ -4302,7 +4351,12 @@ mod tests {
             }
         );
         assert_eq!(
-            installed_preview_phases(tiles_only, true, 0.12),
+            installed_preview_phases(
+                tiles_only,
+                true,
+                0.12,
+                crate::animation_rate::AnimationRate::Fps15,
+            ),
             InstalledPreviewPhases {
                 refresh: Some(2),
                 assets: Some(2),

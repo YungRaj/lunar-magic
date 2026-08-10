@@ -397,6 +397,9 @@ impl NativeApplication {
             UserToolbarNativeAction::RestoreOptions => {
                 self.restore_point_dialog.open_automatic_policy();
             }
+            UserToolbarNativeAction::AnimationRate => {
+                self.animation_rate_dialog.open(self.animation_rate);
+            }
             UserToolbarNativeAction::EmulatorSettings => {
                 self.external_tool_config_editor
                     .open(self.app.external_tools());
@@ -1335,6 +1338,7 @@ enum UserToolbarNativeAction {
     GraphicsCompressionOptions,
     GeneralOptions,
     RestoreOptions,
+    AnimationRate,
     EmulatorSettings,
     ExternalEmulatorRun,
     LiveEmulatorRun,
@@ -1401,6 +1405,7 @@ fn user_toolbar_native_action(name: &str) -> Option<UserToolbarNativeAction> {
         "LM_OPTIONS_COMPRESSION" => UserToolbarNativeAction::GraphicsCompressionOptions,
         "LM_OPTIONS_GENERAL" => UserToolbarNativeAction::GeneralOptions,
         "LM_OPTIONS_RESTORE" => UserToolbarNativeAction::RestoreOptions,
+        "LM_OPTIONS_ANIM_RATE" => UserToolbarNativeAction::AnimationRate,
         "LM_FILE_EMULATOR_SETTINGS" | "LM_FILE_TILE_EDITOR_SETTINGS" => {
             UserToolbarNativeAction::EmulatorSettings
         }
@@ -1843,6 +1848,10 @@ mod user_toolbar_tests {
         assert_eq!(
             user_toolbar_native_action("LM_OPTIONS_RESTORE"),
             Some(UserToolbarNativeAction::RestoreOptions)
+        );
+        assert_eq!(
+            user_toolbar_native_action("LM_OPTIONS_ANIM_RATE"),
+            Some(UserToolbarNativeAction::AnimationRate)
         );
         assert_eq!(
             user_toolbar_native_action("LM_LEVEL_ENTRANCE2"),
@@ -2361,7 +2370,7 @@ mod user_toolbar_tests {
                     || user_toolbar_native_action(entry.name).is_some()
             })
             .collect::<Vec<_>>();
-        assert_eq!(supported.len(), 257);
+        assert_eq!(supported.len(), 258);
         assert!(
             supported
                 .iter()
@@ -2392,6 +2401,17 @@ mod user_toolbar_tests {
     }
 
     #[test]
+    fn animation_rate_toolbar_route_opens_the_native_rate_workspace() {
+        let mut native = NativeApplication::default();
+        assert!(!native.animation_rate_dialog.is_open());
+        native.apply_user_toolbar_native_action(
+            &egui::Context::default(),
+            UserToolbarNativeAction::AnimationRate,
+        );
+        assert!(native.animation_rate_dialog.is_open());
+    }
+
+    #[test]
     fn diagnostic_authenticated_internal_routes_partition_the_complete_original_table() {
         let unsupported = lm_app::lunar_magic_363_user_toolbar_commands()
             .filter(|entry| {
@@ -2400,7 +2420,7 @@ mod user_toolbar_tests {
                     && user_toolbar_native_action(entry.name).is_none()
             })
             .collect::<Vec<_>>();
-        assert_eq!(unsupported.len(), 60);
+        assert_eq!(unsupported.len(), 59);
         if std::env::var_os("LM_DIAGNOSTIC_UNSUPPORTED_TOOLBAR_COMMANDS").is_some() {
             for entry in unsupported {
                 eprintln!(

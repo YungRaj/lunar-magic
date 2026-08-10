@@ -5628,3 +5628,24 @@ selects the staged bank, rasterizes all 4,096 definitions, and invalidates its c
 after direct painting, remapping, or bank changes. Focused tests cover descriptor-only save/reopen,
 Undo/Redo, cross-bank remapping, high-index composition, flips, and authenticated routing.
 Authenticated native command coverage is now 257 of 317 named table slots, leaving 60 pending.
+
+## Main-editor animation-rate option (`$24CB`)
+
+The Lunar Magic 3.63 Help and executable strings distinguish the main-editor animation rate from
+the overworld editor's separately persisted rate. The main selector has four exact choices—Low
+(7.5 fps), Normal (15 fps), Medium (30 fps), and High (60 fps)—with Normal as the modern default.
+Rust now models that independent setting, persists all four values through a bounded versioned
+codec, exposes the original checked submenu in Tools, and routes authenticated toolbar command
+`LM_OPTIONS_ANIM_RATE` to the same choice set.
+
+The selected 120/60/30/15-millisecond cadence drives both the pristine/vanilla level canvas and
+the installed level-assets preview. Wall-clock animation state is quantized before the level
+renderer consumes it, preventing unrelated UI repaints from exposing intermediate frames. The
+installed preview uses the selected cadence as its ExAnimation scheduler divisor, yielding exact
+8/16/32/64 callback counts over 0.96 seconds and retaining independent asset-versus-selection
+clock gating. Focused cadence, codec, persistence, routing, and localization tests pass, as does
+the Windows cross-build. The full native gate passes 1,012 tests with 12 explicit external-fixture
+ignores, and its all-512-level renderer traversal passes. The regenerated 513-line renderer
+manifest remains byte-identical at SHA-256
+`254a1a050d12785973241910e26d8b7917a5cb5e2a56602a330fc6cbd833c04d`. Authenticated native
+command coverage is now 258 of 317 named table slots, leaving 59 pending.

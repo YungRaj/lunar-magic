@@ -653,6 +653,7 @@ impl VanillaLevelEditor {
         custom_map16: Option<&lm_app::NativeMap16SidecarDocument>,
         live_frame: Option<(egui::TextureId, [usize; 2])>,
         toolbar_images: &MainToolbarImageSet,
+        animation_rate: crate::animation_rate::AnimationRate,
     ) -> Option<Command> {
         let snapshot = app.controller_snapshot().ok()?;
         let EditorMode::Level(level) = snapshot.mode else {
@@ -853,6 +854,7 @@ impl VanillaLevelEditor {
                         custom_map16,
                         live_frame,
                         toolbar_images,
+                        animation_rate,
                     );
                 },
             );
@@ -2384,6 +2386,7 @@ impl VanillaLevelEditor {
         custom_map16: Option<&lm_app::NativeMap16SidecarDocument>,
         live_frame: Option<(egui::TextureId, [usize; 2])>,
         toolbar_images: &MainToolbarImageSet,
+        animation_rate: crate::animation_rate::AnimationRate,
     ) {
         let CanvasModel {
             layer1_records: records,
@@ -2402,11 +2405,11 @@ impl VanillaLevelEditor {
         let object_tileset = self.controller.as_ref().map_or(0, |controller| {
             controller.level().layer1.header.object_tileset()
         });
-        let animation_seconds = self.animation_seconds(ui.input(|input| input.time));
+        let animation_seconds =
+            animation_rate.quantize_seconds(self.animation_seconds(ui.input(|input| input.time)));
         let map16_animation_phase = map16_animation_phase(animation_seconds);
         let animation_phase = sprite_animation_phase(animation_seconds);
-        ui.ctx()
-            .request_repaint_after(std::time::Duration::from_millis(60));
+        ui.ctx().request_repaint_after(animation_rate.interval());
         ensure_remapped_placement_textures(
             ui.ctx(),
             &mut self.external_sprite_textures,

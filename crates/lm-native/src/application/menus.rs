@@ -437,6 +437,19 @@ impl NativeApplication {
                 self.undo_history_settings
                     .open(self.app.undo_snapshot_limit());
             }
+            ui.menu_button(self.menu_text(UiTextKey::ToolsAnimationRate), |ui| {
+                for rate in crate::animation_rate::AnimationRate::ALL {
+                    if ui
+                        .selectable_label(self.animation_rate == rate, rate.label())
+                        .clicked()
+                    {
+                        self.animation_rate = rate;
+                        self.renderer.invalidate();
+                        self.vanilla_level_editor.invalidate_graphics_preview();
+                        ui.close_menu();
+                    }
+                }
+            });
             let locale = self.app.localization().map_or_else(
                 || self.menu_text(UiTextKey::ToolsBuiltInEnglish),
                 |catalog| catalog.locale().into(),

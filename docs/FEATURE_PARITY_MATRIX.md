@@ -939,3 +939,18 @@ bank edits are no longer omitted from Layer 2 persistence, and the live canvas n
 4,096 indexes from the staged active background bank instead of clipping indexes above `$1FF`.
 The authenticated partition is now **257 routed / 60 pending**. The aggregate remains 59/65
 because the configuration row is still Partial.
+
+Toolbar coverage update (2026-08-10, main animation rate): `LM_OPTIONS_ANIM_RATE` `$24CB` now
+opens the native main-editor rate selector. The normal Tools menu exposes the same four checked
+choices using the original labels: Low (7.5 fps), Normal (15 fps), Medium (30 fps), and High
+(60 fps). Normal remains the default. The setting persists independently from the separately
+recovered overworld rate and drives the vanilla level canvas plus the installed level-assets
+preview at exact 120/60/30/15-millisecond cadences. Animation state is quantized to the selected
+cadence, and the installed ExAnimation scheduler advances 8/16/32/64 callbacks per 0.96 seconds,
+so the faster choices expose faster records rather than changing only repaint frequency. Focused
+codec, persistence, command-lifecycle, callback, and localization tests pass; the Windows cross
+build passes; the complete native suite passes 1,012 tests with 12 explicit external-fixture
+ignores; and the 513-line renderer manifest retains SHA-256
+`254a1a050d12785973241910e26d8b7917a5cb5e2a56602a330fc6cbd833c04d`. The authenticated
+partition is now **258 routed / 59 pending**. The aggregate remains 59/65 because the
+configuration row is still Partial.

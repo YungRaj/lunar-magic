@@ -133,6 +133,7 @@ impl NativeApplication {
             self.app.project_revision(),
             self.special_world_passed,
             self.level_view_visibility,
+            self.animation_rate,
         );
         if let Some(command) = command
             && self.try_dispatch(context, command)
