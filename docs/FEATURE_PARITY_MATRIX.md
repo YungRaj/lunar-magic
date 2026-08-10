@@ -969,3 +969,20 @@ renderer manifest retains SHA-256
 `254a1a050d12785973241910e26d8b7917a5cb5e2a56602a330fc6cbd833c04d`. The authenticated
 partition is now **259 routed / 58 pending**. The aggregate remains 59/65 because the
 configuration row is still Partial.
+
+Toolbar coverage update (2026-08-10, Open Level From Address):
+`LM_FILE_OPEN_LEVEL_ADDRESS` `$238F` now opens the native equivalent of original dialog resource
+`1001`, with its authenticated title, PC-address label, edit control `$7F`, OK/Cancel controls,
+and original-language overrides. It accepts unprefixed hexadecimal and loads Layer 1 from that
+exact logical PC offset without following the level pointer table. The displayed ordinary level
+number is unchanged; sprites, entrances, Layer 2, Layer 3, and background are omitted from the
+temporary editor view; Save changes only Layer 1 in that ordinary slot; and the source bytes at
+the raw address and destination sprite stream remain byte-identical. The pristine-ROM gate opens
+the CHM-listed unreferenced stream at `$30263`, while range, bank-termination, resource,
+closed-ROM, command-partition, save/reopen, and source-preservation tests cover the failure and
+lifecycle boundaries. The Windows cross-build passes; the complete native suite passes 1,021
+tests with 12 explicit external-fixture ignores; all 512 pristine levels materialize; and the
+513-line renderer manifest retains SHA-256
+`254a1a050d12785973241910e26d8b7917a5cb5e2a56602a330fc6cbd833c04d`. The authenticated
+partition is now **260 routed / 57 pending**. The aggregate remains 59/65 because the
+configuration row is still Partial.

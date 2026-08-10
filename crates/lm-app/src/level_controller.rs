@@ -152,6 +152,10 @@ pub enum LevelControllerError {
     Layer2Remap(NativeLayer2RemapError),
     Layer2RemapRequiresInstalledBank(u8),
     NonCanonicalLayer2Encoding,
+    RawLayer1AddressOutOfRange {
+        address: usize,
+        logical_len: usize,
+    },
 }
 
 impl fmt::Display for LevelControllerError {
@@ -208,6 +212,51 @@ impl LevelController {
         sprite_lengths: &lm_level::SpriteLengthTable,
     ) -> Result<Self, LevelControllerError> {
         Self::decode_with_layer2(snapshot, layout, None, sprite_lengths)
+    }
+
+    /// Decodes Layer 1 from an exact logical PC address while retaining the displayed ordinary
+    /// level slot as the eventual save destination.
+    ///
+    /// Lunar Magic's resource `$03E9` workflow deliberately does not follow a level pointer and
+    /// does not load sprites, entrances, or a background. The unchanged destination-slot sprite
+    /// stream remains bound internally so a later ordinary save changes Layer 1 only.
+    ///
+    /// # Errors
+    ///
+    /// Returns a typed range or object-stream error when the address is outside the logical ROM
+    /// or the bank-bounded bytes at that address are not one complete native Layer 1 stream.
+    pub fn decode_layer1_from_pc_address(
+        snapshot: &ControllerSnapshot,
+        layout: LevelRomLayout,
+        sprite_lengths: &lm_level::SpriteLengthTable,
+        address: usize,
+    ) -> Result<Self, LevelControllerError> {
+        let mut controller = Self::decode(snapshot, layout, sprite_lengths)?;
+        let image =
+            RomImage::from_bytes(snapshot.rom_bytes.clone()).map_err(LevelControllerError::Rom)?;
+        let logical = image.logical_bytes();
+        if address >= logical.len() {
+            return Err(LevelControllerError::RawLayer1AddressOutOfRange {
+                address,
+                logical_len: logical.len(),
+            });
+        }
+        let bank_end = address
+            .checked_div(0x8000)
+            .and_then(|bank| bank.checked_add(1))
+            .and_then(|bank| bank.checked_mul(0x8000))
+            .unwrap_or(logical.len())
+            .min(logical.len());
+        controller.level.layer1 = lm_level::LevelObjectData::parse(&logical[address..bank_end])
+            .map_err(LevelControllerError::InvalidObjectEncoding)?;
+        let source_level_mode = controller.level.layer1.header.level_mode();
+        controller.normalized_reserved_level_mode = controller
+            .level
+            .layer1
+            .header
+            .canonicalize_lunar_magic_level_mode()
+            .then_some(source_level_mode);
+        Ok(controller)
     }
 
     /// Decodes the selected native level and, when supplied, its Layer 2 stream into one staged

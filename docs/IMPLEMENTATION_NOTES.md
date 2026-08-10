@@ -5667,3 +5667,29 @@ external-fixture ignores, including the all-512-level materialization traversal;
 513-line renderer manifest remains byte-identical at SHA-256
 `254a1a050d12785973241910e26d8b7917a5cb5e2a56602a330fc6cbd833c04d`. Authenticated native
 command coverage is now 259 of 317 named table slots, leaving 58 pending.
+
+## Open Level From Address (`$238F`)
+
+Executable dialog resource `1001` authenticates the 170×44 form, exact title, PC-address label,
+edit control `$7F`, and standard OK/Cancel controls. The bundled 3.63 Help defines the unusual
+lifecycle: parse one Layer 1 stream at an exact PC offset without following the main level table;
+do not load sprites, entrances, or background; retain the last ordinary level number; and, on
+Save, insert the staged Layer 1 into that ordinary slot without updating the raw source pointer.
+The retained evidence and hashes are recorded in
+`docs/oracle-work/lm363/open-level-address/PROVENANCE.md`.
+
+Rust now uses a bank-bounded raw Layer 1 decoder that retains the ordinary slot's sprite stream
+only as an unchanged semantic-save witness. The native editor binds the temporary controller to
+the current revision and level, hides every non-Layer-1 domain, disables their editing panels, and
+returns to an ordinary complete level load after the save revision. Empty, prefixed, nonhex,
+trailing, out-of-ROM, truncated, and unterminated inputs cannot replace the editor state. A
+pristine-ROM integration gate opens the Help-listed `$30263` stream; model tests prove Save/reopen
+changes the destination Layer 1 alone while preserving both the destination sprites and raw source
+bytes.
+
+Focused parser, resource-localization, routing, pristine-ROM, range, save/reopen, and byte
+preservation gates pass. The Windows cross-build passes. The complete native gate passes 1,021
+tests with 12 explicit external-fixture ignores, including all-512-level materialization; the
+regenerated 513-line renderer manifest remains byte-identical at SHA-256
+`254a1a050d12785973241910e26d8b7917a5cb5e2a56602a330fc6cbd833c04d`. Authenticated native
+command coverage is now 260 of 317 named table slots, leaving 57 pending.

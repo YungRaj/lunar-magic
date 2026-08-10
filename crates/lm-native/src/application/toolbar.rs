@@ -362,6 +362,11 @@ impl NativeApplication {
                     self.open_level_number_dialog.open(Some(level));
                 }
             }
+            UserToolbarNativeAction::OpenLevelAddress => {
+                if crate::vanilla_level_editor::VanillaLevelEditor::handles(&self.app) {
+                    self.open_level_address_dialog.open();
+                }
+            }
             UserToolbarNativeAction::Sprite19Fix => {
                 self.built_in_runtime_installer.open_sprite19_fix(&self.app);
             }
@@ -1335,6 +1340,7 @@ enum UserToolbarNativeAction {
     HelpContents,
     HelpAbout,
     OpenLevelNumber,
+    OpenLevelAddress,
     Sprite19Fix,
     AnalyzeLevels,
     RestoreRom,
@@ -1403,6 +1409,7 @@ fn user_toolbar_native_action(name: &str) -> Option<UserToolbarNativeAction> {
         "LM_HELP_CONTENTS" => UserToolbarNativeAction::HelpContents,
         "LM_HELP_ABOUT" => UserToolbarNativeAction::HelpAbout,
         "LM_FILE_OPEN_LEVEL" => UserToolbarNativeAction::OpenLevelNumber,
+        "LM_FILE_OPEN_LEVEL_ADDRESS" => UserToolbarNativeAction::OpenLevelAddress,
         "LM_KEY_SPRITE19_FIX" => UserToolbarNativeAction::Sprite19Fix,
         "LM_FILE_ANALYZE_LEVELS" => UserToolbarNativeAction::AnalyzeLevels,
         "LM_FILE_RESTORE" => UserToolbarNativeAction::RestoreRom,
@@ -2381,7 +2388,7 @@ mod user_toolbar_tests {
                     || user_toolbar_native_action(entry.name).is_some()
             })
             .collect::<Vec<_>>();
-        assert_eq!(supported.len(), 259);
+        assert_eq!(supported.len(), 260);
         assert!(
             supported
                 .iter()
@@ -2444,6 +2451,23 @@ mod user_toolbar_tests {
     }
 
     #[test]
+    fn open_level_address_toolbar_route_requires_the_builtin_level_editor() {
+        let mut native = NativeApplication::default();
+        let context = egui::Context::default();
+        native
+            .apply_user_toolbar_native_action(&context, UserToolbarNativeAction::OpenLevelAddress);
+        assert!(!native.open_level_address_dialog.is_open());
+
+        native
+            .app
+            .load_rom(crate::test_support::pristine_smw_us_rom_bytes())
+            .unwrap();
+        native
+            .apply_user_toolbar_native_action(&context, UserToolbarNativeAction::OpenLevelAddress);
+        assert!(native.open_level_address_dialog.is_open());
+    }
+
+    #[test]
     fn diagnostic_authenticated_internal_routes_partition_the_complete_original_table() {
         let unsupported = lm_app::lunar_magic_363_user_toolbar_commands()
             .filter(|entry| {
@@ -2452,7 +2476,7 @@ mod user_toolbar_tests {
                     && user_toolbar_native_action(entry.name).is_none()
             })
             .collect::<Vec<_>>();
-        assert_eq!(unsupported.len(), 58);
+        assert_eq!(unsupported.len(), 57);
         if std::env::var_os("LM_DIAGNOSTIC_UNSUPPORTED_TOOLBAR_COMMANDS").is_some() {
             for entry in unsupported {
                 eprintln!(

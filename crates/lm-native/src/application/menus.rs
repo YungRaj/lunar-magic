@@ -113,6 +113,16 @@ impl NativeApplication {
             }
             if ui
                 .add_enabled(
+                    enabled && crate::vanilla_level_editor::VanillaLevelEditor::handles(&self.app),
+                    egui::Button::new(self.menu_text(UiTextKey::FileOpenLevelAddress)),
+                )
+                .clicked()
+            {
+                ui.close_menu();
+                self.open_level_address_dialog.open();
+            }
+            if ui
+                .add_enabled(
                     self.app.current_level_deletion_available()
                         && !self.level_deletion_dialog.is_open(),
                     egui::Button::new(self.menu_text(UiTextKey::FileDeleteLevel)),

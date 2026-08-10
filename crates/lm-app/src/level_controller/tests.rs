@@ -243,6 +243,81 @@ fn decoded_edit_allocates_through_app_and_reloads_natively() {
 }
 
 #[test]
+fn raw_pc_address_load_stages_only_layer1_into_the_current_ordinary_slot() {
+    let mut rom = test_rom();
+    let raw_address = 0x1400;
+    rom[raw_address..raw_address + 9].copy_from_slice(&[6, 5, 4, 3, 2, 0x0a, 0x0b, 0x0c, 0xff]);
+    let original_raw_stream = rom[raw_address..raw_address + 9].to_vec();
+    let original_sprite_stream = rom[0x1300..0x1305].to_vec();
+    let mut app = AppState::default();
+    app.load_rom(rom).unwrap();
+    let snapshot = app.controller_snapshot().unwrap();
+    let controller = LevelController::decode_layer1_from_pc_address(
+        &snapshot,
+        layout(),
+        &SpriteLengthTable::standard(),
+        raw_address,
+    )
+    .unwrap();
+
+    assert_eq!(controller.level().number, 0x105);
+    assert_eq!(controller.level().layer1.header.encoded(), [6, 5, 4, 3, 2]);
+    assert_eq!(
+        controller.level().layer1.objects.records[0].encoded(),
+        [0x0a, 0x0b, 0x0c]
+    );
+    assert!(controller.layer1_is_modified());
+    assert!(!controller.sprites_are_modified());
+    assert!(controller.layer2().is_none());
+
+    let prepared = controller
+        .prepare_commit("Save raw Layer 1 to level 105", &options())
+        .unwrap();
+    app.dispatch(prepared.into_command()).unwrap();
+    let reopened = LevelController::decode(
+        &app.controller_snapshot().unwrap(),
+        layout(),
+        &SpriteLengthTable::standard(),
+    )
+    .unwrap();
+    assert_eq!(reopened.level().layer1, controller.level().layer1);
+    assert_eq!(reopened.level().sprites, controller.level().sprites);
+    let saved = app.controller_snapshot().unwrap().rom_bytes;
+    assert_eq!(&saved[0x1300..0x1305], original_sprite_stream.as_slice());
+    assert_eq!(
+        &saved[raw_address..raw_address + 9],
+        original_raw_stream.as_slice()
+    );
+}
+
+#[test]
+fn raw_pc_address_load_rejects_out_of_rom_and_unterminated_bank_data() {
+    let mut app = AppState::default();
+    app.load_rom(test_rom()).unwrap();
+    let snapshot = app.controller_snapshot().unwrap();
+    assert!(matches!(
+        LevelController::decode_layer1_from_pc_address(
+            &snapshot,
+            layout(),
+            &SpriteLengthTable::standard(),
+            0x8000,
+        ),
+        Err(LevelControllerError::RawLayer1AddressOutOfRange { .. })
+    ));
+    assert!(matches!(
+        LevelController::decode_layer1_from_pc_address(
+            &snapshot,
+            layout(),
+            &SpriteLengthTable::standard(),
+            0x7ffb,
+        ),
+        Err(LevelControllerError::InvalidObjectEncoding(
+            ObjectStreamError::MissingTerminator
+        ))
+    ));
+}
+
+#[test]
 fn reserved_level_mode_is_staged_as_lunar_magics_mode_zero_and_undoes() {
     let mut source = test_rom();
     source[0x1201] = 0xb2;

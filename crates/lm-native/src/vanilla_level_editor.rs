@@ -454,6 +454,7 @@ struct InvalidExitScanResult {
 pub(crate) struct VanillaLevelEditor {
     key: Option<EditorKey>,
     controller: Option<LevelController>,
+    raw_layer1_pc_address: Option<usize>,
     pending_expansion_commit: Option<LevelController>,
     entrance_controller: Option<VanillaEntranceController>,
     secondary_exits: Option<SecondaryExitTable>,
@@ -624,6 +625,68 @@ impl VanillaLevelEditor {
         self.map16_key = None;
     }
 
+    /// Replaces the staged Layer 1 view from an exact logical PC address without changing the
+    /// displayed level number. Other level domains remain hidden and unmodified until the next
+    /// ordinary load, matching Lunar Magic's raw-address recovery workflow.
+    pub(crate) fn open_layer1_from_pc_address(
+        &mut self,
+        app: &AppState,
+        address: usize,
+        custom_sprites: Option<&lm_level::SscResolvedTable>,
+    ) -> Result<(), String> {
+        let snapshot = app
+            .controller_snapshot()
+            .map_err(|error| error.to_string())?;
+        let EditorMode::Level(level) = snapshot.mode else {
+            return Err("opening a level address requires the level editor".into());
+        };
+        let sprite_lengths = sprite_lengths_from_ssc(custom_sprites)?;
+        let layout = editor_level_layout(&snapshot, level)?;
+        let controller = LevelController::decode_layer1_from_pc_address(
+            &snapshot,
+            layout,
+            &sprite_lengths,
+            address,
+        )
+        .map_err(|error| error.to_string())?;
+        self.clear_z_order_bounds();
+        self.key = Some(EditorKey {
+            revision: snapshot.revision,
+            level,
+            sprite_lengths_signature: ssc_sprite_lengths_signature(custom_sprites),
+        });
+        self.controller = Some(controller);
+        self.raw_layer1_pc_address = Some(address);
+        self.entrance_controller = None;
+        self.midway_form = None;
+        self.secondary_exits = None;
+        self.secondary_exit_references = None;
+        self.shared_vanilla_background = false;
+        self.selected_object = 0;
+        self.selected_object_group.clear();
+        self.selected_layer2_object_group.clear();
+        self.selected_sprite_group.clear();
+        self.canvas_entity_selection = None;
+        self.map16_key = None;
+        self.background_map16_texture = None;
+        self.animated_background_map16_textures.clear();
+        self.animated_background_plane_textures.clear();
+        if let Some(controller) = self.controller.as_ref() {
+            self.form = HeaderForm::from_controller(controller);
+            self.object_form = controller
+                .level()
+                .layer1
+                .objects
+                .records
+                .first()
+                .map_or_else(ObjectForm::default, ObjectForm::from_record);
+            self.object_placement_template =
+                controller.level().layer1.objects.records.first().cloned();
+        }
+        self.error = None;
+        Ok(())
+    }
+
     pub(crate) fn foreground_texture(&self) -> Option<&egui::TextureHandle> {
         self.foreground_texture.as_ref()
     }
@@ -697,6 +760,14 @@ impl VanillaLevelEditor {
         self.show_layer2_mode_reset_confirmation(ui.ctx());
 
         ui.heading(format!("Level {level:03X} — built-in SMW editor"));
+        if let Some(address) = self.raw_layer1_pc_address {
+            ui.colored_label(
+                egui::Color32::YELLOW,
+                format!(
+                    "Layer 1 loaded from PC address ${address:X}. Sprites, entrances, Layer 2, and background are intentionally not loaded; Save writes Layer 1 to level ${level:03X}."
+                ),
+            );
+        }
         if self.outline_texture.is_none() {
             match crate::level_outline::atlas_image() {
                 Ok(image) => {
@@ -733,7 +804,11 @@ impl VanillaLevelEditor {
         }
         ui.separator();
         let object_count = controller.level().layer1.objects.records.len();
-        let sprite_count = controller.level().sprites.tokens.len();
+        let sprite_count = if self.raw_layer1_pc_address.is_some() {
+            0
+        } else {
+            controller.level().sprites.tokens.len()
+        };
         let object_tileset = controller.level().layer1.header.object_tileset();
         let object_family = lm_profile::smw_us_v1_object_family(object_tileset);
         self.ensure_map16_assets(ui.ctx(), &snapshot, object_tileset, special_world_passed);
@@ -757,6 +832,16 @@ impl VanillaLevelEditor {
         let workspace_size = ui.available_size();
         let tool_width = workspace_tool_width(workspace_size.x);
         let requested_tool_panel = self.requested_tool_panel.take();
+        let visibility = if self.raw_layer1_pc_address.is_some() {
+            crate::application::LevelViewVisibility {
+                layer2: false,
+                layer3: false,
+                sprites: false,
+                ..visibility
+            }
+        } else {
+            visibility
+        };
         let mut pending_command = None;
         ui.horizontal_top(|ui| {
             if self.tools_panel_visible() {
@@ -788,24 +873,30 @@ impl VanillaLevelEditor {
                             .default_open(requested_tool_panel == Some(LevelToolPanel::Settings))
                             .show(ui, |ui| {
                                 self.show_header_editor(ui, object_count, sprite_count);
-                                if pending_command.is_none() {
+                                if self.raw_layer1_pc_address.is_none() && pending_command.is_none()
+                                {
                                     pending_command = self.show_entrance_editor(ui, level);
                                 }
                             });
-                        egui::CollapsingHeader::new("Screen exits")
-                            .id_salt((
-                                "vanilla-screen-exit-table",
-                                self.tool_panel_generations[LevelToolPanel::ScreenExits.index()],
-                            ))
-                            .default_open(requested_tool_panel == Some(LevelToolPanel::ScreenExits))
-                            .show(ui, |ui| self.show_screen_exit_table_editor(ui));
-                        self.show_layer2_editor(
-                            ui,
-                            custom_objects,
-                            custom_map16,
-                            toolbar_images,
-                            requested_tool_panel == Some(LevelToolPanel::Layer2),
-                        );
+                        if self.raw_layer1_pc_address.is_none() {
+                            egui::CollapsingHeader::new("Screen exits")
+                                .id_salt((
+                                    "vanilla-screen-exit-table",
+                                    self.tool_panel_generations
+                                        [LevelToolPanel::ScreenExits.index()],
+                                ))
+                                .default_open(
+                                    requested_tool_panel == Some(LevelToolPanel::ScreenExits),
+                                )
+                                .show(ui, |ui| self.show_screen_exit_table_editor(ui));
+                            self.show_layer2_editor(
+                                ui,
+                                custom_objects,
+                                custom_map16,
+                                toolbar_images,
+                                requested_tool_panel == Some(LevelToolPanel::Layer2),
+                            );
+                        }
                         egui::CollapsingHeader::new("Layer 1 objects")
                             .id_salt("vanilla-layer1-tools")
                             .default_open(true)
@@ -818,22 +909,24 @@ impl VanillaLevelEditor {
                                     toolbar_images,
                                 );
                             });
-                        egui::CollapsingHeader::new("Enemies and sprites")
-                            .id_salt((
-                                "vanilla-sprite-tools",
-                                self.tool_panel_generations[LevelToolPanel::Sprites.index()],
-                            ))
-                            .default_open(requested_tool_panel == Some(LevelToolPanel::Sprites))
-                            .show(ui, |ui| {
-                                self.sprite_list(ui);
-                                self.sprite_editor(
-                                    ui,
-                                    custom_sprites,
-                                    external_assets,
-                                    custom_map16,
-                                    toolbar_images,
-                                );
-                            });
+                        if self.raw_layer1_pc_address.is_none() {
+                            egui::CollapsingHeader::new("Enemies and sprites")
+                                .id_salt((
+                                    "vanilla-sprite-tools",
+                                    self.tool_panel_generations[LevelToolPanel::Sprites.index()],
+                                ))
+                                .default_open(requested_tool_panel == Some(LevelToolPanel::Sprites))
+                                .show(ui, |ui| {
+                                    self.sprite_list(ui);
+                                    self.sprite_editor(
+                                        ui,
+                                        custom_sprites,
+                                        external_assets,
+                                        custom_map16,
+                                        toolbar_images,
+                                    );
+                                });
+                        }
                         self.show_map16_preview(ui, object_tileset);
                         if pending_command.is_none() {
                             pending_command = self.show_commit_controls(ui, &snapshot);
@@ -1784,6 +1877,7 @@ impl VanillaLevelEditor {
         key: EditorKey,
         custom_sprites: Option<&lm_level::SscResolvedTable>,
     ) {
+        self.raw_layer1_pc_address = None;
         self.clear_z_order_bounds();
         self.screen_exit_table_form = None;
         self.screen_exit_table_selected = None;
@@ -1984,6 +2078,7 @@ impl VanillaLevelEditor {
         self.clear_z_order_bounds();
         self.key = None;
         self.controller = None;
+        self.raw_layer1_pc_address = None;
         self.pending_expansion_commit = None;
         self.screen_exit_table_form = None;
         self.screen_exit_table_selected = None;
@@ -5233,68 +5328,70 @@ impl VanillaLevelEditor {
                     self.game_preview_camera_origin(major_tiles, minor_tiles, vertical),
                 );
             }
-            let alternate_vertical_layout =
-                lm_profile::smw_us_v1_level_mode(level_mode).alternate_layer_layout;
-            let level = self.controller.as_ref().map_or(0, |controller| {
-                u16::try_from(controller.level().number).unwrap_or(0)
-            });
-            let entrances_overlap = self.entrance_form.level_mode_and_screen & 0x1f
-                == self.entrance_form.screen_and_method >> 4;
-            if self.entrance_overlay_visibility.primary {
-                draw_primary_entrance_label(
-                    &overlay_painter,
-                    rect,
-                    cell,
-                    level,
-                    self.entrance_form,
-                    vertical,
-                    alternate_vertical_layout,
-                    entrances_overlap && self.entrance_overlay_visibility.midway,
-                );
-                draw_primary_entrance_position_warning(
-                    &overlay_painter,
-                    rect,
-                    cell,
-                    self.entrance_form,
-                    vertical,
-                );
-            }
-            if self.entrance_overlay_visibility.secondary {
-                draw_secondary_entrances(
-                    &overlay_painter,
-                    rect,
-                    cell,
-                    level,
-                    self.secondary_exits.as_ref(),
-                    self.secondary_exit_references.as_deref(),
-                    self.entrance_texture.as_ref(),
-                    vertical,
-                    alternate_vertical_layout,
-                );
-            }
-            if self.entrance_overlay_visibility.midway && !entrances_overlap {
-                draw_midway_entrance(
-                    &overlay_painter,
-                    rect,
-                    cell,
-                    self.entrance_texture.as_ref(),
-                    self.entrance_form,
-                    vertical,
-                    alternate_vertical_layout,
-                );
-            }
-            if self.entrance_overlay_visibility.primary
-                && let Some(texture) = self.entrance_texture.as_ref()
-            {
-                draw_primary_entrance_marker(
-                    &overlay_painter,
-                    rect,
-                    cell,
-                    texture,
-                    self.entrance_form,
-                    vertical,
-                    alternate_vertical_layout,
-                );
+            if self.raw_layer1_pc_address.is_none() {
+                let alternate_vertical_layout =
+                    lm_profile::smw_us_v1_level_mode(level_mode).alternate_layer_layout;
+                let level = self.controller.as_ref().map_or(0, |controller| {
+                    u16::try_from(controller.level().number).unwrap_or(0)
+                });
+                let entrances_overlap = self.entrance_form.level_mode_and_screen & 0x1f
+                    == self.entrance_form.screen_and_method >> 4;
+                if self.entrance_overlay_visibility.primary {
+                    draw_primary_entrance_label(
+                        &overlay_painter,
+                        rect,
+                        cell,
+                        level,
+                        self.entrance_form,
+                        vertical,
+                        alternate_vertical_layout,
+                        entrances_overlap && self.entrance_overlay_visibility.midway,
+                    );
+                    draw_primary_entrance_position_warning(
+                        &overlay_painter,
+                        rect,
+                        cell,
+                        self.entrance_form,
+                        vertical,
+                    );
+                }
+                if self.entrance_overlay_visibility.secondary {
+                    draw_secondary_entrances(
+                        &overlay_painter,
+                        rect,
+                        cell,
+                        level,
+                        self.secondary_exits.as_ref(),
+                        self.secondary_exit_references.as_deref(),
+                        self.entrance_texture.as_ref(),
+                        vertical,
+                        alternate_vertical_layout,
+                    );
+                }
+                if self.entrance_overlay_visibility.midway && !entrances_overlap {
+                    draw_midway_entrance(
+                        &overlay_painter,
+                        rect,
+                        cell,
+                        self.entrance_texture.as_ref(),
+                        self.entrance_form,
+                        vertical,
+                        alternate_vertical_layout,
+                    );
+                }
+                if self.entrance_overlay_visibility.primary
+                    && let Some(texture) = self.entrance_texture.as_ref()
+                {
+                    draw_primary_entrance_marker(
+                        &overlay_painter,
+                        rect,
+                        cell,
+                        texture,
+                        self.entrance_form,
+                        vertical,
+                        alternate_vertical_layout,
+                    );
+                }
             }
         }
         self.handle_canvas_interaction(
@@ -14729,6 +14826,33 @@ fn pristine_sprite_bank_range(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn authenticated_unreferenced_vanilla_address_opens_as_layer1_only() {
+        let mut app = AppState::default();
+        app.load_rom(crate::test_support::pristine_smw_us_rom_bytes())
+            .unwrap();
+        let mut editor = VanillaLevelEditor::default();
+        editor
+            .open_layer1_from_pc_address(&app, 0x30263, None)
+            .unwrap();
+
+        assert_eq!(editor.raw_layer1_pc_address, Some(0x30263));
+        assert_eq!(editor.key.unwrap().level, 0x105);
+        assert_eq!(
+            editor.key.unwrap().revision,
+            app.controller_snapshot().unwrap().revision
+        );
+        let controller = editor.controller.as_ref().unwrap();
+        assert_eq!(controller.level().number, 0x105);
+        assert!(controller.layer1_is_modified());
+        assert!(!controller.level().layer1.objects.records.is_empty());
+        assert!(!controller.sprites_are_modified());
+        assert!(controller.layer2().is_none());
+        assert!(editor.entrance_controller.is_none());
+        assert!(editor.secondary_exits.is_none());
+        assert!(!editor.shared_vanilla_background);
+    }
 
     #[test]
     fn object_and_sprite_catalog_presentation_state_is_independent() {

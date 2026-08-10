@@ -144,6 +144,7 @@ pub(crate) struct NativeApplication {
     toolbar_graphics_transfer: ToolbarGraphicsTransfer,
     undo_history_settings: undo_history_settings::UndoHistorySettings,
     open_level_number_dialog: crate::open_level_number_dialog::OpenLevelNumberDialog,
+    open_level_address_dialog: crate::open_level_address_dialog::OpenLevelAddressDialog,
     animation_rate_dialog: crate::animation_rate::AnimationRateDialog,
     animation_rate: crate::animation_rate::AnimationRate,
     external_tool_config_editor: crate::external_tool_config_editor::ExternalToolConfigEditor,
@@ -1005,6 +1006,21 @@ impl eframe::App for NativeApplication {
             .show(context, self.app.localization())
         {
             self.dispatch(context, Command::SelectLevel(level));
+        }
+        if let Some(address) = self
+            .open_level_address_dialog
+            .show(context, self.app.localization())
+        {
+            match self.vanilla_level_editor.open_layer1_from_pc_address(
+                &self.app,
+                address,
+                self.ssc_sidecar_editor.resolved(),
+            ) {
+                Ok(()) => {
+                    self.app.status = format!("Opened Layer 1 from PC address ${address:X}");
+                }
+                Err(error) => self.effects.error = Some(error),
+            }
         }
         if let Some(shortcuts) = self.shortcut_editor.show(context) {
             match self.app.set_shortcuts(shortcuts) {
