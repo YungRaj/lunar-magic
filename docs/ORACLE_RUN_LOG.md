@@ -1052,7 +1052,7 @@ force-all new-ROM/new-level/close routes, and the complete native Windows target
 Save-level, save-Map16, and save-overworld domain marks now publish only after successful physical
 ROM persistence; focused success/failure tests bind acknowledgement and suppression, and a domain
 coalescing test proves each type is consumed once. Delete-level publication remains unclaimed with
-the still-missing native deletion operation.
+the then-missing native deletion operation.
 
 The authenticated 3.63 CHM defines single-level deletion as replacing an expanded-area level with
 the original-area “test” level. A live documented command-line run against the retained modified
@@ -1061,3 +1061,11 @@ Layer 1 pointer from `10:8008` to `06:8000` and the sprite pointer from `1C:9ED5
 reclaiming displaced tagged storage and repairing the ROM checksum. The new project-layer primitive
 binds the safe core of that behavior with focused redirect, shared-reference, reclamation, checksum,
 and byte-exact undo tests. Aggregate per-level assets and the UI/type-6 route remain open.
+
+The follow-up aggregate oracle executes the same authenticated command under Wine and compares the
+Rust mutation against Lunar Magic for Layer 1, sprites, Layer 2, palette, ExAnimation, descriptor,
+expanded-settings, entrance, and Lfix3 target records. Every modeled record matches. Both tools
+zero the four displaced payload regions; Lunar Magic additionally writes two unreferenced
+`STAR FD 01 02 FE` zero reservations for its allocator bookkeeping. Application tests prove one
+revision, stale-command rejection, complete-byte Undo, confirmation gating, and the exact type-6
+subscription option.

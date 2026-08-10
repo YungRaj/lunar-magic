@@ -124,6 +124,7 @@ pub enum AppError {
     Transaction(TransactionError),
     GraphicsMigration(GraphicsIoError),
     LevelAccessRestriction(lm_project::LevelAccessRestrictionError),
+    LevelDeletion(String),
     ExLoRomConversion(lm_project::ExLoRomConversionError),
     Sa1Expansion(lm_project::Sa1ExpansionError),
     Sa1ExpansionRequiresFixedTarget,
@@ -913,6 +914,7 @@ impl AppState {
             }
             Command::InstallRevisionProfile(profile) => self.install_revision_profile(*profile)?,
             Command::ClearRevisionProfile => self.clear_revision_profile()?,
+            Command::DeleteCurrentLevel { rev } => self.delete_current_level(rev)?,
             Command::CommitRomWrites {
                 expected_revision,
                 description,

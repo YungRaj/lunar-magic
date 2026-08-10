@@ -5378,13 +5378,22 @@ option selection is external-only and exact, including the documented new-ROM/ne
 force-all directives. Installed level, secondary-exit/asset, Map16, and overworld commits set three
 coalescing domain bits. Only a successful application ROM persistence acknowledgement consumes
 those bits and publishes save-level 3, save-Map16 4, and save-overworld 5; failures retain dirty
-state without notification, while undoing to clean clears stale bits. Delete-level 6 awaits the
-missing native deletion command.
+state without notification, while undoing to clean clears stale bits.
 
 The first native deletion layer now exists in `lm-project`: it requires the selected Layer 1
 pointer to be in the expanded ROM area, redirects Layer 1 and sprite streams to caller-authenticated
 original-area test pointers, reference-counts both complete pointer tables before reclaiming any
 displaced tagged stream, repairs the checksum, and publishes the redirect plus erasures as one
-undoable transaction. Shared tagged streams remain intact. The aggregate level assets, native menu
-and confirmation surface, and type-6 notification are intentionally not claimed until they are
-wired and verified together.
+undoable transaction. Shared tagged streams remain intact.
+
+The aggregate deletion route now closes that wiring for Layer 1, sprites, Layer 2, palette,
+ExAnimation, the Layer 2 descriptor, expanded settings, vanilla entrance planes, and installed
+Lfix3 fields. It authenticates the original-area replacement slot, performs one application
+revision and one Undo step, exposes a localized confirmation-gated File command, routes the
+authenticated `LM_FILE_DELETE_LEVEL` toolbar command, and publishes notification type 6 only after
+successful physical ROM persistence. Failed or cancelled saves retain the pending notification;
+returning to a clean baseline without persistence clears it. The live `-DeleteLevels -LevelList 0`
+oracle matches all modeled pointers and
+direct records; Lunar Magic's two zero-filled `$1FE` reservation tags are retained as an explicit
+allocator-bookkeeping difference rather than being misrepresented as live level data. This route
+raises authenticated native user-toolbar coverage to 200 table slots.

@@ -22,6 +22,7 @@ use crate::{
     ips_patch_dialog::IpsPatchDialog,
     layer3_editor::Layer3Editor,
     level_access_restriction_dialog::LevelAccessRestrictionDialog,
+    level_deletion_dialog::LevelDeletionDialog,
     level_editor::LevelEditor,
     level_usage_dialog::LevelUsageDialog,
     map16_editor::Map16Editor,
@@ -147,6 +148,7 @@ pub(crate) struct NativeApplication {
     user_toolbar_observed_document: Option<std::path::PathBuf>,
     user_toolbar_observed_level: Option<u16>,
     user_toolbar_pending_save_notifications: u8,
+    user_toolbar_pending_deleted_levels: Vec<u16>,
     level_text: String,
     special_world_passed: bool,
     joined_graphics_files: bool,
@@ -160,6 +162,7 @@ pub(crate) struct NativeApplication {
     exanimation_editor: ExAnimationEditor,
     level_editor: LevelEditor,
     level_access_restriction_dialog: LevelAccessRestrictionDialog,
+    level_deletion_dialog: LevelDeletionDialog,
     level_usage_dialog: LevelUsageDialog,
     live_emulator: crate::live_emulator::LiveEmulator,
     overworld_editor: OverworldEditor,
@@ -710,11 +713,13 @@ impl NativeApplication {
         self.effects.show_persistence(context, &mut self.app);
         if std::mem::take(&mut self.effects.completed_rom_save) {
             self.publish_user_toolbar_save_notifications();
+            self.publish_user_toolbar_level_deleted_notifications();
         } else if matches!(
             self.app.capabilities().project,
             lm_app::ProjectStatus::Closed | lm_app::ProjectStatus::OpenClean
         ) {
             self.user_toolbar_pending_save_notifications = 0;
+            self.user_toolbar_pending_deleted_levels.clear();
         }
         self.effects.show_external_tools(context, &mut self.app);
         let live_context = match self.app.mode {
@@ -911,6 +916,14 @@ impl eframe::App for NativeApplication {
             }
         });
         self.show_confirmation(context);
+        if let Some((level, command)) = self.level_deletion_dialog.show(context, &self.app)
+            && self.try_dispatch(context, command)
+        {
+            self.renderer.invalidate();
+            self.vanilla_level_editor.invalidate_graphics_preview();
+            self.mark_user_toolbar_level_deleted(level);
+            self.dispatch(context, Command::Save);
+        }
         self.about_dialog.show(context, self.app.localization());
         self.diagnostics_dialog
             .show(context, self.app.localization());

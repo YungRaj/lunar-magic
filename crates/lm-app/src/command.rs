@@ -44,6 +44,11 @@ pub enum Command {
     InstallRevisionProfile(Box<RevisionProfile>),
     /// Removes the active revision metadata and invalidates decoded controller state.
     ClearRevisionProfile,
+    /// Deletes the selected expanded-area level and redirects all native assets to the original
+    /// test-level source as one revision-bound mutation.
+    DeleteCurrentLevel {
+        rev: u64,
+    },
     /// Commits serializer-produced ROM writes as one project history entry.
     CommitRomWrites {
         expected_revision: u64,

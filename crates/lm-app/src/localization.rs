@@ -1039,6 +1039,10 @@ pub enum UiTextKey {
     LiveEmulatorResume,
     LiveEmulatorStep,
     LiveEmulatorStop,
+    FileDeleteLevel,
+    DeleteLevelWindowTitle,
+    DeleteLevelQuestion,
+    CommonDelete,
 }
 
 impl UiTextKey {
@@ -1269,10 +1273,16 @@ impl UiTextKey {
                 "0 or 1 disables Undo. Lunar Magic 3.63 defaults to 33 and allows at most 51."
             }
             Self::CommonApply => "Apply",
+            Self::FileDeleteLevel => "Delete Level from ROM…",
+            Self::DeleteLevelWindowTitle => "Delete Level from ROM",
+            Self::DeleteLevelQuestion => {
+                "Delete level {level} from the expanded ROM area and replace it with the original test level?"
+            }
+            Self::CommonDelete => "Delete",
         }
     }
 
-    pub const ALL: [Self; 190] = [
+    pub const ALL: [Self; 194] = [
         Self::AppTitle,
         Self::FileOpen,
         Self::FileSave,
@@ -1463,6 +1473,10 @@ impl UiTextKey {
         Self::LiveEmulatorResume,
         Self::LiveEmulatorStep,
         Self::LiveEmulatorStop,
+        Self::FileDeleteLevel,
+        Self::DeleteLevelWindowTitle,
+        Self::DeleteLevelQuestion,
+        Self::CommonDelete,
     ];
 
     fn from_byte(value: u8) -> Option<Self> {

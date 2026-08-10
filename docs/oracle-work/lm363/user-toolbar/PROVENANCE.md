@@ -81,11 +81,13 @@ Native ROM-open, level-change, and application-close transitions select only ext
 buttons and honor the three documented force-all globals. Successful installed level, Map16, and
 overworld commits mark independent pending domains; only exact successful physical ROM-save
 acknowledgement publishes types 3, 4, and 5, coalesced once per domain. Failed/stale saves emit
-nothing, and returning to the clean baseline clears abandoned marks. Type 6 remains unclaimed
-because the native level-deletion operation itself is still missing.
+nothing, and returning to the clean baseline clears abandoned marks.
 
 Follow-up CHM and live command-line recovery establishes the deletion prerequisite: Lunar Magic
 redirects an expanded-area level to its original-area test streams and reclaims displaced storage.
 Rust now has an atomic, reference-aware project primitive for the Layer 1/sprite portion, including
-checksum repair and undo. Type 6 remains unclaimed until the remaining per-level domains and native
-confirmation/menu route use that primitive successfully.
+checksum repair and undo. The aggregate application route now includes every modeled native asset,
+entrance, and installed Lfix3 field behind a localized confirmation, routes authenticated internal
+command `LM_FILE_DELETE_LEVEL`, and publishes type 6 with the deleted level number only after a
+successful physical ROM persistence. The live command-line oracle binds all modeled target records; its two
+unreferenced zero-reservation tags remain documented allocator bookkeeping.

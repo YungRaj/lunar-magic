@@ -181,6 +181,24 @@ impl NativeApplication {
         }
     }
 
+    pub(super) fn mark_user_toolbar_level_deleted(&mut self, level: u16) {
+        if !self.user_toolbar_pending_deleted_levels.contains(&level) {
+            self.user_toolbar_pending_deleted_levels.push(level);
+        }
+    }
+
+    pub(super) fn publish_user_toolbar_level_deleted_notifications(&mut self) {
+        for level in std::mem::take(&mut self.user_toolbar_pending_deleted_levels) {
+            self.notify_user_toolbar_tools(
+                LunarMagicNotification::new(LunarMagicNotificationKind::DeleteLevel, level)
+                    .expect("native level numbers fit the ten-bit notification variable"),
+                None,
+                "LM_NOTIFY_ON_DELETE_LEVEL",
+                None,
+            );
+        }
+    }
+
     pub(super) fn toolbar(&mut self, context: &egui::Context, ui: &mut egui::Ui) {
         if self.app.toolbar().is_some() {
             if let Some(activation) = frontend_ui::show_toolbar(ui, &self.app) {
@@ -368,6 +386,9 @@ impl NativeApplication {
                 if let Err(error) = self.ips_patch_dialog.choose_and_start(&self.app) {
                     self.effects.error = Some(error);
                 }
+            }
+            UserToolbarNativeAction::DeleteLevel => {
+                self.level_deletion_dialog.open(&self.app);
             }
             UserToolbarNativeAction::PlaceObject => {
                 self.vanilla_level_editor.toolbar_place_object();
@@ -1107,6 +1128,7 @@ enum UserToolbarNativeAction {
     CreateRestorePoint,
     CreateIps,
     ApplyIps,
+    DeleteLevel,
     PlaceObject,
     PlaceSprite,
     SelectAll,
@@ -1140,6 +1162,7 @@ fn user_toolbar_native_action(name: &str) -> Option<UserToolbarNativeAction> {
         "LM_FILE_CREATE_RESTORE" => UserToolbarNativeAction::CreateRestorePoint,
         "LM_FILE_CREATE_IPS" => UserToolbarNativeAction::CreateIps,
         "LM_FILE_APPLY_IPS" => UserToolbarNativeAction::ApplyIps,
+        "LM_FILE_DELETE_LEVEL" => UserToolbarNativeAction::DeleteLevel,
         "LM_VIEW_ADD_OBJECT" | "LM_VIEW_OBJECT" | "LM_VIEW_ADD_OBJECT_OLD" => {
             UserToolbarNativeAction::PlaceObject
         }
@@ -1753,7 +1776,7 @@ mod user_toolbar_tests {
                     || user_toolbar_native_action(entry.name).is_some()
             })
             .collect::<Vec<_>>();
-        assert_eq!(supported.len(), 199);
+        assert_eq!(supported.len(), 200);
         assert!(
             supported
                 .iter()
@@ -1918,7 +1941,7 @@ mod user_toolbar_tests {
     #[test]
     fn notification_selection_is_external_only_exact_and_honors_documented_force_all() {
         let toolbar = lm_app::UserToolbar::parse(
-            "LM_NOTIFY_ON_NEW_LEVEL_FORCE_ALL\n***START***\n\"one\"\nLM_DEFAULT\nLM_NOTIFY_ON_NEW_ROM\n***START***\nLM_FILE_SAVE\nLM_DEFAULT\nLM_NOTIFY_ON_NEW_ROM\n***START***\n\"two\"\n***END***",
+            "LM_NOTIFY_ON_NEW_LEVEL_FORCE_ALL\n***START***\n\"one\"\nLM_DEFAULT\nLM_NOTIFY_ON_NEW_ROM,LM_NOTIFY_ON_DELETE_LEVEL\n***START***\nLM_FILE_SAVE\nLM_DEFAULT\nLM_NOTIFY_ON_NEW_ROM,LM_NOTIFY_ON_DELETE_LEVEL\n***START***\n\"two\"\n***END***",
         )
         .unwrap();
         assert_eq!(
@@ -1940,6 +1963,10 @@ mod user_toolbar_tests {
         assert!(
             toolbar_notification_tool_ids(&toolbar, "LM_NOTIFY_ON_SAVE_LEVEL", None).is_empty()
         );
+        assert_eq!(
+            toolbar_notification_tool_ids(&toolbar, "LM_NOTIFY_ON_DELETE_LEVEL", None),
+            ["usertoolbar-0"]
+        );
     }
 
     #[test]
@@ -1953,6 +1980,17 @@ mod user_toolbar_tests {
         assert_eq!(native.user_toolbar_pending_save_notifications, 0b111);
         native.publish_user_toolbar_save_notifications();
         assert_eq!(native.user_toolbar_pending_save_notifications, 0);
+    }
+
+    #[test]
+    fn successful_save_publication_coalesces_each_deleted_level_once() {
+        let mut native = NativeApplication::default();
+        native.mark_user_toolbar_level_deleted(0x105);
+        native.mark_user_toolbar_level_deleted(0x106);
+        native.mark_user_toolbar_level_deleted(0x105);
+        assert_eq!(native.user_toolbar_pending_deleted_levels, [0x105, 0x106]);
+        native.publish_user_toolbar_level_deleted_notifications();
+        assert!(native.user_toolbar_pending_deleted_levels.is_empty());
     }
 
     #[test]

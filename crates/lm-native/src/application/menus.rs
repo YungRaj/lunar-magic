@@ -101,6 +101,17 @@ impl NativeApplication {
                 });
             });
             let enabled = !matches!(status, ProjectStatus::Closed);
+            if ui
+                .add_enabled(
+                    self.app.current_level_deletion_available()
+                        && !self.level_deletion_dialog.is_open(),
+                    egui::Button::new(self.menu_text(UiTextKey::FileDeleteLevel)),
+                )
+                .clicked()
+            {
+                ui.close_menu();
+                self.level_deletion_dialog.open(&self.app);
+            }
             for (label, command) in [
                 (self.menu_text(UiTextKey::FileSave), Command::Save),
                 (self.menu_text(UiTextKey::FileSaveAs), Command::SaveAs),

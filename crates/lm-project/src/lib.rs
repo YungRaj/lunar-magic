@@ -126,7 +126,7 @@ pub use level_access_restriction::{
     ExLoRomRestrictionBulkSaveLayout, LevelAccessRestrictionError, LevelAccessRestrictionKeys,
     LevelAccessRestrictionLayout, LevelAccessRestrictionPrerequisitePatch,
 };
-pub use level_delete::{DeleteLevelStreamsError, DeletedLevelStreams};
+pub use level_delete::{DeleteLevelStreamsError, DeletedLevelStreams, DeletedNativeLevelAssets};
 pub use level_io::{
     LevelLoadError, LevelPointerTable, LevelRomLayout, LoadedLevelSlot, SpritePointerTable,
 };
