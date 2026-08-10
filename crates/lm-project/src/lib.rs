@@ -15,6 +15,7 @@ mod installed_layout;
 mod legacy_exanimation_io;
 mod legacy_mwl;
 mod level_access_restriction;
+mod level_delete;
 mod level_io;
 mod level_layer2_io;
 mod level_save;
@@ -125,6 +126,7 @@ pub use level_access_restriction::{
     ExLoRomRestrictionBulkSaveLayout, LevelAccessRestrictionError, LevelAccessRestrictionKeys,
     LevelAccessRestrictionLayout, LevelAccessRestrictionPrerequisitePatch,
 };
+pub use level_delete::{DeleteLevelStreamsError, DeletedLevelStreams};
 pub use level_io::{
     LevelLoadError, LevelPointerTable, LevelRomLayout, LoadedLevelSlot, SpritePointerTable,
 };

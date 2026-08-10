@@ -1053,3 +1053,11 @@ Save-level, save-Map16, and save-overworld domain marks now publish only after s
 ROM persistence; focused success/failure tests bind acknowledgement and suppression, and a domain
 coalescing test proves each type is consumed once. Delete-level publication remains unclaimed with
 the still-missing native deletion operation.
+
+The authenticated 3.63 CHM defines single-level deletion as replacing an expanded-area level with
+the original-area “test” level. A live documented command-line run against the retained modified
+level-000 fixture (`-DeleteLevels ... -LevelList 0`) reported `Deleted 1 level.` and changed the
+Layer 1 pointer from `10:8008` to `06:8000` and the sprite pointer from `1C:9ED5` to `1C:E76D`, while
+reclaiming displaced tagged storage and repairing the ROM checksum. The new project-layer primitive
+binds the safe core of that behavior with focused redirect, shared-reference, reclamation, checksum,
+and byte-exact undo tests. Aggregate per-level assets and the UI/type-6 route remain open.

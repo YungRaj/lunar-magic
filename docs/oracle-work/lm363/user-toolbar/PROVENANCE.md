@@ -83,3 +83,9 @@ overworld commits mark independent pending domains; only exact successful physic
 acknowledgement publishes types 3, 4, and 5, coalesced once per domain. Failed/stale saves emit
 nothing, and returning to the clean baseline clears abandoned marks. Type 6 remains unclaimed
 because the native level-deletion operation itself is still missing.
+
+Follow-up CHM and live command-line recovery establishes the deletion prerequisite: Lunar Magic
+redirects an expanded-area level to its original-area test streams and reclaims displaced storage.
+Rust now has an atomic, reference-aware project primitive for the Layer 1/sprite portion, including
+checksum repair and undo. Type 6 remains unclaimed until the remaining per-level domains and native
+confirmation/menu route use that primitive successfully.

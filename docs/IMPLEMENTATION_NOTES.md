@@ -5380,3 +5380,11 @@ coalescing domain bits. Only a successful application ROM persistence acknowledg
 those bits and publishes save-level 3, save-Map16 4, and save-overworld 5; failures retain dirty
 state without notification, while undoing to clean clears stale bits. Delete-level 6 awaits the
 missing native deletion command.
+
+The first native deletion layer now exists in `lm-project`: it requires the selected Layer 1
+pointer to be in the expanded ROM area, redirects Layer 1 and sprite streams to caller-authenticated
+original-area test pointers, reference-counts both complete pointer tables before reclaiming any
+displaced tagged stream, repairs the checksum, and publishes the redirect plus erasures as one
+undoable transaction. Shared tagged streams remain intact. The aggregate level assets, native menu
+and confirmation surface, and type-6 notification are intentionally not claimed until they are
+wired and verified together.
