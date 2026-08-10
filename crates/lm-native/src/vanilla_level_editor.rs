@@ -494,6 +494,7 @@ pub(crate) struct VanillaLevelEditor {
     screen_exit_table_form: Option<[Option<u16>; 32]>,
     screen_exit_table_selected: Option<u8>,
     canvas_geometry: Option<LevelCanvasGeometry>,
+    last_canvas_native_position: Option<(i32, i32)>,
     screen_exit_follow_prompt: Option<u16>,
     screen_exit_follow_after_save: Option<PendingScreenExitFollowSave>,
     invalid_exit_scan_result: Option<InvalidExitScanResult>,
@@ -1747,6 +1748,7 @@ impl VanillaLevelEditor {
         self.screen_exit_table_form = None;
         self.screen_exit_table_selected = None;
         self.canvas_geometry = None;
+        self.last_canvas_native_position = None;
         self.screen_exit_follow_prompt = None;
         self.invalid_exit_scan_result = None;
         self.pending_layer2_mode_reset = None;
@@ -1946,6 +1948,7 @@ impl VanillaLevelEditor {
         self.screen_exit_table_form = None;
         self.screen_exit_table_selected = None;
         self.canvas_geometry = None;
+        self.last_canvas_native_position = None;
         self.screen_exit_follow_prompt = None;
         self.screen_exit_follow_after_save = None;
         self.invalid_exit_scan_result = None;
@@ -2538,6 +2541,12 @@ impl VanillaLevelEditor {
                 minor_tiles,
                 vertical,
             });
+            if response.hovered()
+                && let Some(position) = response.interact_pointer_pos()
+            {
+                self.last_canvas_native_position =
+                    object_native_position_at_canvas(position, paint_rect, cell, vertical);
+            }
             if is_boss_battle_level_mode(level_mode) {
                 paint_boss_battle_diagnostic(&painter, rect);
             } else {
@@ -3102,6 +3111,44 @@ impl VanillaLevelEditor {
 
     pub(crate) fn toolbar_select_all(&mut self) {
         self.apply_canvas_entity_shortcut(CanvasEntityShortcut::SelectAll);
+    }
+
+    pub(crate) fn toolbar_insert_at_pointer(&mut self, context: &egui::Context) {
+        if let (Some(geometry), Some(position)) =
+            (self.canvas_geometry, context.pointer_hover_pos())
+            && let Some(native) = object_native_position_at_canvas(
+                position,
+                geometry.rect,
+                geometry.cell,
+                geometry.vertical,
+            )
+        {
+            self.last_canvas_native_position = Some(native);
+        }
+        let Some((major, minor)) = self.last_canvas_native_position else {
+            self.error = Some("Insert requires a pointer position on the level canvas".into());
+            return;
+        };
+        let Some(geometry) = self.canvas_geometry else {
+            self.error = Some("Insert requires a rendered level canvas".into());
+            return;
+        };
+        let (column, row) = if geometry.vertical {
+            (minor, major)
+        } else {
+            (major, minor)
+        };
+        let position = geometry.rect.min
+            + egui::vec2(
+                (column as f32 + 0.5) * geometry.cell,
+                (row as f32 + 0.5) * geometry.cell,
+            );
+        self.apply_canvas_insert_shortcut(
+            position,
+            geometry.rect,
+            geometry.cell,
+            geometry.vertical,
+        );
     }
 
     pub(crate) fn toolbar_delete_selection(&mut self) {
@@ -14383,6 +14430,158 @@ mod tests {
     }
 
     #[test]
+    fn authenticated_insert_route_reuses_last_native_canvas_cell_for_objects_and_sprites() {
+        let mut app = AppState::default();
+        app.load_rom(crate::test_support::pristine_smw_us_rom_bytes())
+            .unwrap();
+        app.dispatch(Command::SelectLevel(0x105)).unwrap();
+        let snapshot = app.controller_snapshot().unwrap();
+        let mut editor = VanillaLevelEditor::default();
+        editor.load(
+            &snapshot,
+            EditorKey {
+                revision: snapshot.revision,
+                level: 0x105,
+                sprite_lengths_signature: ssc_sprite_lengths_signature(None),
+            },
+            None,
+        );
+        editor.canvas_geometry = Some(LevelCanvasGeometry {
+            rect: egui::Rect::from_min_size(egui::pos2(40.0, 60.0), egui::vec2(8192.0, 432.0)),
+            cell: 16.0,
+            major_tiles: 512,
+            minor_tiles: 27,
+            vertical: false,
+        });
+
+        let object = editor
+            .controller
+            .as_ref()
+            .unwrap()
+            .level()
+            .layer1
+            .objects
+            .records[1]
+            .clone();
+        editor.object_form = ObjectForm::from_record(&object);
+        editor.object_placement_template = Some(object);
+        editor.canvas_entity_selection = Some(CanvasEntitySelection::Layer1Object);
+        editor.last_canvas_native_position = Some((20, 5));
+        let objects_before = editor
+            .controller
+            .as_ref()
+            .unwrap()
+            .level()
+            .layer1
+            .objects
+            .native_placements()
+            .len();
+        editor.toolbar_insert_at_pointer(&egui::Context::default());
+        let object_placements = editor
+            .controller
+            .as_ref()
+            .unwrap()
+            .level()
+            .layer1
+            .objects
+            .native_placements();
+        assert_eq!(object_placements.len(), objects_before + 1);
+        assert!(object_placements.iter().any(|placement| {
+            placement.record_index == editor.selected_object
+                && placement.major == 20
+                && placement.minor == 5
+        }));
+        assert!(editor.controller.as_mut().unwrap().undo());
+
+        let sprite_index = editor
+            .controller
+            .as_ref()
+            .unwrap()
+            .level()
+            .sprites
+            .tokens
+            .iter()
+            .position(|token| matches!(token, SpriteToken::Record(_)))
+            .unwrap();
+        let sprite =
+            editor.controller.as_ref().unwrap().level().sprites.tokens[sprite_index].clone();
+        let header = editor.controller.as_ref().unwrap().level().sprites.header;
+        editor.sprite_form = SpriteForm::from_token(header, Some(&sprite));
+        editor.canvas_entity_selection = Some(CanvasEntitySelection::Sprite);
+        editor.last_canvas_native_position = Some((22, 6));
+        let sprites_before = editor
+            .controller
+            .as_ref()
+            .unwrap()
+            .level()
+            .sprites
+            .tokens
+            .len();
+        editor.toolbar_insert_at_pointer(&egui::Context::default());
+        let sprite_placements = editor
+            .controller
+            .as_ref()
+            .unwrap()
+            .level()
+            .sprites
+            .native_placements();
+        assert_eq!(
+            editor
+                .controller
+                .as_ref()
+                .unwrap()
+                .level()
+                .sprites
+                .tokens
+                .len(),
+            sprites_before + 1
+        );
+        assert!(sprite_placements.iter().any(|placement| {
+            placement.token_index == editor.selected_sprite
+                && placement.major == 22
+                && placement.minor == 6
+        }));
+
+        app.dispatch(prepare_commit(editor.controller.as_ref().unwrap(), &snapshot).unwrap())
+            .unwrap();
+        let reopened = app
+            .project()
+            .unwrap()
+            .load_level_slot(
+                0x105,
+                lm_profile::smw_us_v1_vanilla_level_layout(),
+                &SpriteLengthTable::standard(),
+            )
+            .unwrap();
+        assert!(
+            reopened
+                .sprites
+                .native_placements()
+                .iter()
+                .any(|placement| { placement.major == 22 && placement.minor == 6 })
+        );
+        app.dispatch(Command::Undo).unwrap();
+        let restored = app
+            .project()
+            .unwrap()
+            .load_level_slot(
+                0x105,
+                lm_profile::smw_us_v1_vanilla_level_layout(),
+                &SpriteLengthTable::standard(),
+            )
+            .unwrap();
+        assert_eq!(restored.sprites.tokens.len(), sprites_before);
+
+        editor.last_canvas_native_position = None;
+        editor.error = None;
+        editor.toolbar_insert_at_pointer(&egui::Context::default());
+        assert_eq!(
+            editor.error.as_deref(),
+            Some("Insert requires a pointer position on the level canvas")
+        );
+    }
+
+    #[test]
     fn authenticated_level_editor_commands_reopen_the_matching_integrated_tool_panel() {
         let mut editor = VanillaLevelEditor {
             tools_panel_visible: Some(false),
@@ -16300,6 +16499,38 @@ mod tests {
         assert_eq!(editor.canvas_entity_selection, None);
         editor.layer2_object_form = ObjectForm::from_record(&template);
         editor.layer2_object_placement_template = Some(template.clone());
+        let toolbar_insert_baseline = match editor.controller.as_ref().unwrap().layer2().unwrap() {
+            lm_level::NativeLayer2Data::Objects(objects) => {
+                objects.objects.native_placements().len()
+            }
+            lm_level::NativeLayer2Data::Tilemap(_) => unreachable!(),
+        };
+        let vertical = editor.controller.as_ref().is_some_and(|controller| {
+            lm_profile::smw_us_v1_level_mode(controller.level().layer1.header.level_mode()).vertical
+        });
+        editor.canvas_geometry = Some(LevelCanvasGeometry {
+            rect: egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(6144.0, 384.0)),
+            cell: ROM_LEVEL_CANVAS_CELL,
+            major_tiles: 384,
+            minor_tiles: 27,
+            vertical,
+        });
+        editor.last_canvas_native_position = Some((17, 4));
+        editor.canvas_entity_selection = Some(CanvasEntitySelection::Layer2Object);
+        editor.toolbar_insert_at_pointer(&egui::Context::default());
+        let toolbar_inserted = match editor.controller.as_ref().unwrap().layer2().unwrap() {
+            lm_level::NativeLayer2Data::Objects(objects) => objects.objects.native_placements(),
+            lm_level::NativeLayer2Data::Tilemap(_) => unreachable!(),
+        };
+        assert_eq!(toolbar_inserted.len(), toolbar_insert_baseline + 1);
+        assert!(toolbar_inserted.iter().any(|placement| {
+            placement.record_index == editor.selected_layer2_object
+                && placement.major == 17
+                && placement.minor == 4
+        }));
+        assert!(editor.controller.as_mut().unwrap().undo());
+        editor.layer2_object_form = ObjectForm::from_record(&template);
+        editor.layer2_object_placement_template = Some(template.clone());
         let before_button_insert = match editor.controller.as_ref().unwrap().layer2().unwrap() {
             lm_level::NativeLayer2Data::Objects(objects) => objects.objects.records.len(),
             lm_level::NativeLayer2Data::Tilemap(_) => unreachable!(),
@@ -16320,9 +16551,6 @@ mod tests {
             lm_level::NativeLayer2Data::Tilemap(_) => unreachable!(),
         };
         let canvas = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(6144.0, 384.0));
-        let vertical = editor.controller.as_ref().is_some_and(|controller| {
-            lm_profile::smw_us_v1_level_mode(controller.level().layer1.header.level_mode()).vertical
-        });
         editor.canvas_entity_selection = Some(CanvasEntitySelection::Layer2Object);
         let duplicate_position =
             egui::pos2(ROM_LEVEL_CANVAS_CELL * 2.5, ROM_LEVEL_CANVAS_CELL * 3.5);

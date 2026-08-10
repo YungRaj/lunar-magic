@@ -5553,3 +5553,20 @@ replacement, so I/O failure, malformed input, cancellation, or stale completion 
 editing session. Core and native lifecycle tests cover direct-path selection, dirty confirmation,
 failure atomicity, exact level restoration, and the authenticated route. Native command coverage is
 now 249 of 317 named table slots, leaving 68 pending.
+
+## Pointer-aware Insert command (`$245A`)
+
+The authenticated command inventory binds `LM_EDIT_INSERT` to `$245A`. Rust already implemented
+the editor's Insert-key behavior through one domain-sensitive canvas transaction: the selected
+Layer 1 object, object-backed Layer 2 object, or sprite template is placed at the pointer and then
+normalized by the native stream serializer. The command route now calls that exact path.
+
+Because activating a visible toolbar button moves the OS pointer away from the canvas, the editor
+retains the last valid canvas location as native `(major, minor)` coordinates. It deliberately does
+not retain a screen pixel: each activation rematerializes the cell center through the latest canvas
+geometry, preserving the destination across resize, zoom, scroll, orientation, and fullscreen
+changes. Loading or closing a level clears that retained coordinate. A missing coordinate produces
+the same explicit Insert diagnostic as the keyboard path. Tests cover Layer 1, object-backed Layer
+2, sprites, horizontal coordinate recovery, canonical control-stream changes, missing context,
+commit/reopen, controller Undo, and application Undo. Authenticated native command coverage is now
+250 of 317 named table slots, leaving 67 pending.

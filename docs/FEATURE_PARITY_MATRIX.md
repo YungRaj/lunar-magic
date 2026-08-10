@@ -892,3 +892,12 @@ path without a chooser, preserves the selected level, and uses Save/Discard/Canc
 failed read or parse cannot replace the current project. This supersedes the 248/69 counts embedded
 in the configuration-row history above: the authenticated partition is now **249 routed / 68
 pending** out of 317 named commands. The aggregate remains 59/65 because this row is still Partial.
+
+Toolbar coverage update (2026-08-10, Insert): authenticated `LM_EDIT_INSERT` `$245A` now invokes
+the same canonical insertion transaction as the canvas Insert key. The editor retains the last
+valid native canvas cell rather than a window pixel, so activation remains exact after moving to a
+toolbar button and after canvas resize, zoom, scrolling, or fullscreen changes. Layer 1 objects,
+object-backed Layer 2, and sprites all insert at that cell; missing pointer context reports the same
+explicit boundary, and commit/reopen plus application Undo are covered. This supersedes the 249/68
+count above: the authenticated partition is now **250 routed / 67 pending**. The aggregate remains
+59/65 because the configuration row is still Partial.

@@ -523,6 +523,9 @@ impl NativeApplication {
             UserToolbarNativeAction::SelectAll => {
                 self.vanilla_level_editor.toolbar_select_all();
             }
+            UserToolbarNativeAction::Insert => {
+                self.vanilla_level_editor.toolbar_insert_at_pointer(context);
+            }
             UserToolbarNativeAction::DeleteSelection => {
                 self.vanilla_level_editor.toolbar_delete_selection();
             }
@@ -1335,6 +1338,7 @@ enum UserToolbarNativeAction {
     PlaceSprite,
     OpenLevelToolPanel(crate::vanilla_level_editor::LevelToolPanel),
     SelectAll,
+    Insert,
     DeleteSelection,
     DeleteAll,
     Escape,
@@ -1420,6 +1424,7 @@ fn user_toolbar_native_action(name: &str) -> Option<UserToolbarNativeAction> {
             crate::vanilla_level_editor::LevelToolPanel::ScreenExits,
         ),
         "LM_EDIT_SELECT_ALL" => UserToolbarNativeAction::SelectAll,
+        "LM_EDIT_INSERT" => UserToolbarNativeAction::Insert,
         "LM_EDIT_DELETE" => UserToolbarNativeAction::DeleteSelection,
         "LM_EDIT_DELETE_ALL" => UserToolbarNativeAction::DeleteAll,
         "LM_EDIT_ESCAPE" => UserToolbarNativeAction::Escape,
@@ -1729,6 +1734,10 @@ mod user_toolbar_tests {
         assert_eq!(
             user_toolbar_command("LM_FILE_RELOAD_ROM", None),
             Some(Command::Reload)
+        );
+        assert_eq!(
+            user_toolbar_native_action("LM_EDIT_INSERT"),
+            Some(UserToolbarNativeAction::Insert)
         );
         assert_eq!(
             user_toolbar_command("LM_VIEW_OVERWORLD", None),
@@ -2294,7 +2303,7 @@ mod user_toolbar_tests {
                     || user_toolbar_native_action(entry.name).is_some()
             })
             .collect::<Vec<_>>();
-        assert_eq!(supported.len(), 249);
+        assert_eq!(supported.len(), 250);
         assert!(
             supported
                 .iter()
@@ -2333,7 +2342,7 @@ mod user_toolbar_tests {
                     && user_toolbar_native_action(entry.name).is_none()
             })
             .collect::<Vec<_>>();
-        assert_eq!(unsupported.len(), 68);
+        assert_eq!(unsupported.len(), 67);
         if std::env::var_os("LM_DIAGNOSTIC_UNSUPPORTED_TOOLBAR_COMMANDS").is_some() {
             for entry in unsupported {
                 eprintln!(
