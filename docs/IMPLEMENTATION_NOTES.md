@@ -2507,6 +2507,13 @@ grace from `MainFrameWindowProc`/`RenderLmswViewportOverlay` before clearing it.
 pause reason `$40` follows `HandleLevelEditorCommand` exactly: disabling the shared level-editor
 animation clock sets it and resuming the clock clears it. The frontend now drives every recovered
 pause input into the already-proven aggregate. Broader core/platform variants remain incomplete.
+The portable-release matrix now builds `lm-libretro` explicitly beside `lm-native` and `lm-cli`
+for Linux x86-64, Windows x86-64, Apple Silicon macOS, and Intel macOS before invoking the strict
+packager. Ordinary CI repeats the complete three-binary build and package operation on Linux,
+Windows, and Apple Silicon macOS, so a missing or incorrectly suffixed live backend fails before a
+release tag. The deterministic bundle manifest continues to hash all three executables. This closes
+the previously unverified release-workflow wiring but is not runtime evidence for additional
+libretro cores.
 The runnable frontend accepts `tools-config FILE`, lists configured identifiers with `tools-status`,
 and resolves typed requests with `tool-run ID` or `tool-event opened|saved|level`. Those preview
 commands print the executable, working directory, and every argument on separate lines. Explicit

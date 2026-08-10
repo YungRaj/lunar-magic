@@ -38,8 +38,10 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
-      - name: Build editor binaries
-        run: cargo build --locked --release --target ${{ matrix.target }} -p lm-native -p lm-cli
+      - name: Build portable runtime binaries
+        run: >-
+          cargo build --locked --release --target ${{ matrix.target }}
+          -p lm-native -p lm-cli -p lm-libretro
       - name: Test the portable packager
         run: cargo test --locked -p lm-package
       - name: Create deterministic bundle

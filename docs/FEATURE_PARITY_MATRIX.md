@@ -66,6 +66,12 @@ missing. This addendum
 supersedes only the older clauses that list the now-proved backend, native control, selected-level,
 input, audio, and compatible-core runtime boundaries as missing.
 
+The release matrix now explicitly compiles the sibling `lm-libretro` executable for Linux x86-64,
+Windows x86-64, Apple Silicon macOS, and Intel macOS. The ordinary three-OS CI matrix also performs
+the same complete runtime build and invokes the strict deterministic packager, which rejects an
+absent or incorrectly suffixed backend. This proves portable-package presence across the declared
+targets; it does not substitute for the remaining additional-core runtime oracles.
+
 The native live window now also applies the recovered focus-only soft pause and main-window `$20`
 hard pause from egui's OS focus/minimize state. The same aggregate model preserves manual-hard-pause
 precedence and resumes only when all corresponding states clear;

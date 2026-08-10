@@ -32,10 +32,13 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os:
-          - ubuntu-latest
-          - windows-latest
-          - macos-15
+        include:
+          - os: ubuntu-latest
+            package_target: x86_64-unknown-linux-gnu
+          - os: windows-latest
+            package_target: x86_64-pc-windows-msvc
+          - os: macos-15
+            package_target: aarch64-apple-darwin
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -45,6 +48,15 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - name: Compile complete test suite
         run: cargo test --workspace --all-targets --no-run
+      - name: Build every portable runtime binary
+        run: cargo build --locked -p lm-native -p lm-cli -p lm-libretro
+      - name: Verify portable bundle contains the live backend
+        run: >-
+          cargo run --locked -p lm-package --
+          --bin-dir target/debug
+          --output-dir target/portable-ci
+          --target ${{ matrix.package_target }}
+          --version ci
       - name: Compile Snes9x gameplay driver
         if: runner.os != 'Windows'
         shell: bash
