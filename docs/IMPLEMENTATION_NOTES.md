@@ -2472,8 +2472,10 @@ revision sends `ReloadRom` with the exact current in-memory physical ROM followe
 clears the stale texture, and reuses the same worker/window. This makes every committed ROM domain,
 including edited sprites, visible without a manual restart while preserving the immutable revision
 boundary. Portable packaging includes the sibling backend. LMSW's optimized sprite-stream-only hot
-reload, audio, complete pause-reason and editor-overlay synchronization, and broader core/platform
-variants remain incomplete.
+reload and audio remain incomplete. Native OS focus loss now drives the original focus-only soft
+pause, while minimizing the main viewport drives hard-pause reason `$20`; manual hard pause retains
+precedence through the shared aggregate. Viewport/input/editor-mode hard-pause reasons,
+editor-overlay synchronization, and broader core/platform variants remain incomplete.
 The runnable frontend accepts `tools-config FILE`, lists configured identifiers with `tools-status`,
 and resolves typed requests with `tool-run ID` or `tool-event opened|saved|level`. Those preview
 commands print the executable, working directory, and every argument on separate lines. Explicit

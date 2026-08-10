@@ -107,7 +107,8 @@ and the arrow keys. Switching the editor level updates the running core directly
 edit reloads the exact new in-memory ROM revision and re-enters the selected level in the same live
 window, so object, block, sprite, palette, graphics, and other committed ROM changes are testable
 without manually restarting the session. LMSW's optimized sprite-stream-only hot reload and audio
-output are not implemented yet.
+output are not implemented yet. Alt-tabbing away soft-pauses the core; minimizing the editor hard-
+pauses it, and restoring focus resumes only when no manual pause remains.
 
 ## Rendering validation
 

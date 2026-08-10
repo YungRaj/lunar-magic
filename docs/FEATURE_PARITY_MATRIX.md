@@ -39,9 +39,15 @@ clean teardown. Portable packages contain `lm-native`, `lm-cli`, and the require
 changes send the exact new in-memory ROM and re-enter the selected level without closing the live
 window; the oracle proves an identical revision reload reproduces level `$105` and its exact frame.
 The row remains `Partial`: LMSW's optimized sprite-stream-only hot reload, audio, complete
-pause-reason/viewport overlay synchronization, and broader core/runtime/platform variants are still
+viewport/input/editor-mode pause-reason and canvas-overlay synchronization, and broader
+core/runtime/platform variants are still
 missing. This addendum supersedes only the older clauses that list the now-proved backend, native
 control, selected-level, input, and compatible-core runtime boundaries as missing.
+
+The native live window now also applies the recovered focus-only soft pause and main-window `$20`
+hard pause from egui's OS focus/minimize state. The same aggregate model preserves manual-hard-pause
+precedence and resumes only when all corresponding states clear;
+`viewport_focus_and_minimize_map_to_original_pause_inputs` binds the frontend observation.
 
 Current Map16 bitmap variant evidence additionally covers the 12-byte `BITMAPCOREHEADER`: its
 unsigned dimensions, bottom-up DWORD-padded rows, RGBTRIPLE palettes, indexed 1-/4-/8-bit pixels,

@@ -5,7 +5,7 @@ use lm_app::{
     EMULATOR_JOYPAD_A, EMULATOR_JOYPAD_B, EMULATOR_JOYPAD_DOWN, EMULATOR_JOYPAD_LEFT,
     EMULATOR_JOYPAD_RIGHT, EMULATOR_JOYPAD_SELECT, EMULATOR_JOYPAD_START, EMULATOR_JOYPAD_UP,
     EMULATOR_JOYPAD_X, EMULATOR_JOYPAD_Y, EmulatorBackendCommand, EmulatorBackendEvent,
-    EmulatorPauseMode, EmulatorSessionAction, EmulatorSessionState, UiTextKey,
+    EmulatorPauseMode, EmulatorPauseReason, EmulatorSessionAction, EmulatorSessionState, UiTextKey,
 };
 use std::io::{Read, Write};
 use std::path::PathBuf;
@@ -182,6 +182,21 @@ impl LiveEmulator {
     ) -> Option<String> {
         self.poll(context);
         let running = self.running.as_mut()?;
+        let (focused, minimized) = context.input(viewport_pause_state);
+        for pause_action in [
+            running.model.set_focus_soft_paused(!focused),
+            running
+                .model
+                .set_hard_pause_reason(EmulatorPauseReason::MainWindow, minimized),
+        ]
+        .into_iter()
+        .flatten()
+        {
+            if let EmulatorSessionAction::SetPauseMode(mode) = pause_action {
+                running.pause = mode;
+            }
+            send_session_action(&running.commands, pause_action);
+        }
         let mut stop = false;
         let mut action = None;
         egui::Window::new(text(UiTextKey::LiveEmulatorWindowTitle))
@@ -358,6 +373,13 @@ fn joypad_from_input(input: &egui::InputState) -> u16 {
         }
     }
     buttons
+}
+
+fn viewport_pause_state(input: &egui::InputState) -> (bool, bool) {
+    (
+        input.viewport().focused.unwrap_or(true),
+        input.viewport().minimized.unwrap_or(false),
+    )
 }
 
 impl Drop for LiveEmulator {
@@ -612,5 +634,17 @@ mod tests {
             buttons,
             EMULATOR_JOYPAD_B | EMULATOR_JOYPAD_A | EMULATOR_JOYPAD_RIGHT
         );
+    }
+
+    #[test]
+    fn viewport_focus_and_minimize_map_to_original_pause_inputs() {
+        let mut input = egui::RawInput::default();
+        let viewport = input.viewports.get_mut(&egui::ViewportId::ROOT).unwrap();
+        viewport.focused = Some(false);
+        viewport.minimized = Some(true);
+        let context = egui::Context::default();
+        context.begin_pass(input);
+        assert_eq!(context.input(viewport_pause_state), (false, true));
+        let _ = context.end_pass();
     }
 }
