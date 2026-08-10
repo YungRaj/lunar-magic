@@ -33,7 +33,7 @@ ruby -e 'b=File.binread(ARGV[0]); 318.times{|i| p=b.byteslice(0x1e6a70+i*4,4).un
 slots, all 317 named entries in their original order, the terminal sentinel, duplicate-name and
 shared-ID behavior, and successful `usertoolbar.txt` parsing of every named entry. `lm-native`
 rejects invented internal names before dispatch, distinguishes an authenticated but not-yet-routed
-command by its original ID, and currently routes 224 authenticated table entries to native commands,
+command by its original ID, and currently routes 226 authenticated table entries to native commands,
 level-view actions, or the same native workflow used by the corresponding menu. The direct workflow
 set includes Help Contents/About, level analysis, restore-point creation/restoration, IPS
 creation/application, the authenticated Sprite 19 installer, the integrated object/sprite placers
@@ -75,5 +75,13 @@ bytes respectively to the primary, secondary, and midway paths in
 `DrawPrimaryOrMidwayEntranceLabel` (`$00452920`). Rust retains the independent aggregate state,
 draws only screen-exit-referenced secondary slots targeting the current level, preserves the
 vanilla `$100` destination bit derived from slots `$100..$1FF`, and suppresses a separate midway
-node when it overlaps the primary entrance. The authenticated partition is therefore 224 routed
-and 93 pending slots.
+node when it overlaps the primary entrance.
+
+The shared-palette command pair is also direct rather than a generic editor alias. Command `$239D`
+(`LM_FILE_EXTRACT_PALETTE`) invokes the recovered `ExportSharedPaletteFile` path, while `$239E`
+(`LM_FILE_INSERT_PALETTE`) invokes `ImportSharedPaletteFile`. Both now open or reuse the native
+shared/custom-palette workspace and immediately start its exact `.smwpal` chooser. The transfer
+retains Lunar Magic's `$7E2` legacy and `$810` expanded layouts, refuses stale revisions or a
+concurrent transfer, and applies imported data through the existing staged checksum/Undo commit
+boundary. The authenticated partition is therefore 226 routed and 91 pending slots; the distinct
+current-level `$239F/$23A0` pair remains pending until it has a direct vanilla-ROM workflow.

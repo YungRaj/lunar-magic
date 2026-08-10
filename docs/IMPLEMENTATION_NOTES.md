@@ -636,6 +636,9 @@ interactive frontends cannot bypass confirmation and request correlation through
   primary/secondary/midway flags and separate aggregate state. The live editor draws referenced
   secondary targets and the non-overlapping midway node from the same authenticated coordinate
   helpers used by the full-level raster audit.
+  Shared-palette toolbar commands `$239D/$239E` directly start exact `.smwpal` export/import from
+  the native shared/custom workspace. They reuse staged colors, reject a stale ROM revision or
+  overlapping file job, and preserve the recovered `$7E2` legacy and `$810` expanded artifacts.
   Attached `.osc` metadata adds an active-tileset custom catalog searchable by hexadecimal
   object/parameter pair or description. Its composites resolve ordinary and external Map16
   definitions, while placement constructs the native command-derived 3–8-byte stream shape and

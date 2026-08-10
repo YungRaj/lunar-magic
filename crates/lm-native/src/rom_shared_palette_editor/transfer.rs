@@ -4,6 +4,19 @@ use eframe::egui;
 use lm_graphics::SmwPaletteFile;
 
 impl RomSharedPaletteEditor {
+    pub(super) fn start_complete_import(&mut self) {
+        let Some(path) = dialogs::choose_shared_palette_document() else {
+            return;
+        };
+        if let Err(error) = self.transfer_loader.start(vec![BoundedRead::new(
+            path,
+            SmwPaletteFile::MAX_FILE_LEN as u64,
+            "native shared palette",
+        )]) {
+            self.error = Some(error);
+        }
+    }
+
     pub(super) fn poll_transfer_file_io(&mut self, context: &egui::Context, revision: u64) {
         if let Some(result) = self.transfer_loader.show(context) {
             let result = result.and_then(|loaded| {
@@ -51,14 +64,8 @@ impl RomSharedPaletteEditor {
                     egui::Button::new("Import complete .smwpal…"),
                 )
                 .clicked()
-                && let Some(path) = dialogs::choose_shared_palette_document()
-                && let Err(error) = self.transfer_loader.start(vec![BoundedRead::new(
-                    path,
-                    SmwPaletteFile::MAX_FILE_LEN as u64,
-                    "native shared palette",
-                )])
             {
-                self.error = Some(error);
+                self.start_complete_import();
             }
             if ui
                 .add_enabled(
@@ -73,7 +80,7 @@ impl RomSharedPaletteEditor {
         ui.small("Complete transfer preserves exact legacy or expanded native byte ordering.");
     }
 
-    fn start_complete_export(&mut self, revision: u64) {
+    pub(super) fn start_complete_export(&mut self, revision: u64) {
         let Some(workspace) = self.workspace.as_ref() else {
             self.error = Some("shared-palette workspace is closed".into());
             return;

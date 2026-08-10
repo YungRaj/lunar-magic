@@ -14,6 +14,12 @@ mod workspace;
 use form::ColorForm;
 use workspace::Workspace;
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum SharedPaletteTransferAction {
+    Export,
+    Import,
+}
+
 const COLORS_PER_PAGE: usize = 256;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -87,6 +93,34 @@ impl RomSharedPaletteEditor {
                 self.error = None;
             }
             Err(error) => self.error = Some(error),
+        }
+    }
+
+    pub(crate) fn open_and_start_transfer(
+        &mut self,
+        app: &AppState,
+        action: SharedPaletteTransferAction,
+    ) {
+        self.open(app);
+        let Some(workspace) = self.workspace.as_ref() else {
+            return;
+        };
+        if workspace.revision != app.project_revision() {
+            self.error = Some(
+                "the ROM changed after the shared palette was opened; reopen it before transfer"
+                    .into(),
+            );
+            return;
+        }
+        if self.transfer_loader.is_running() || self.transfer_persistence.is_running() {
+            self.error = Some("wait for the active shared-palette file transfer to finish".into());
+            return;
+        }
+        match action {
+            SharedPaletteTransferAction::Export => {
+                self.start_complete_export(app.project_revision())
+            }
+            SharedPaletteTransferAction::Import => self.start_complete_import(),
         }
     }
 
