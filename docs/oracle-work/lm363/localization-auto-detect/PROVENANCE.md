@@ -111,3 +111,16 @@ dialog `$042B` IDs 1/2 provide the common OK/Cancel labels, and About dialog `$0
 `$67` provide its OK, Third Party Enhancements, and Legal Notice labels. Missing or malformed
 individual templates retain the typed English fallback. The rest of the decoded control inventory
 still needs semantic binding to the corresponding native editor forms.
+
+Converted catalogs now also retain the complete literal dialog inventory instead of discarding
+unbound controls. The optional append-only `LMDLG001` section stores at most 4,096 bounded records
+under `(original dialog ID, template item index, control ID)`, so repeated Win32 control IDs remain
+distinct and old `LMLOC001` files without the section retain their exact byte encoding. Dialog
+titles use a canonical sentinel key; malformed keys, duplicate records, invalid UTF-8, NULs,
+oversized strings, truncation, foreign extension magic, and trailing bytes reject atomically.
+
+The first complete native consumer is Modify Secondary Entrances dialog `$03F1`. Its native title,
+Clear Slot (`$66`), Clear All Slots (`$65`), Destination Level Number (`$6C`), Screen Number of
+Entrance (`$DB`), X (`$67`), and Y (`$69`) captions resolve from the converted original template
+and fall back independently to the built-in English labels. The remaining native forms and a
+retained live language-DLL Wine gesture are still required before Localization can pass.

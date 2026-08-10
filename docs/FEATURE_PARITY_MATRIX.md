@@ -543,6 +543,17 @@ and `$03F8` (common OK/Cancel plus three About buttons), while absent/malformed 
 English independently. The remaining control inventory still lacks native-form bindings, so this
 does not promote the row or aggregate.
 
+Converted catalogs now preserve the complete safely decoded literal dialog inventory in a bounded,
+optional `LMDLG001` extension keyed by dialog ID, exact item position, and 32-bit control ID.
+Historical catalogs without the extension remain byte-identical, duplicate control IDs survive by
+position, and malformed/truncated extensions reject atomically. Native Modify Secondary Entrances
+dialog `$03F1` is the first complete consumer: its title plus Clear Slot, Clear All Slots,
+Destination Level Number, Screen Number of Entrance, X, and Y captions use their exact original
+resource/control identities with independent English fallback. The combined PE-to-catalog gate,
+26 focused localization tests, and the native binding test cover persistence and consumption. Other
+native forms and a retained live language-DLL Wine gesture remain incomplete, so Localization and
+the aggregate remain `Partial` and 58/65.
+
 The overworld Palette/ExAnimation row additionally has the exact per-map option representation.
 Four independently inverted feature bits retain their unrelated low nibble, while original
 lightning is decoded from its separate high-bit-first seven-map disable mask. The preview gates

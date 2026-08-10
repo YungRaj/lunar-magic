@@ -38,7 +38,20 @@ impl NativeApplication {
         show_rom_editor!(self, context, rom_overworld_message_editor);
         show_rom_editor!(self, context, rom_overworld_path_link_editor);
         show_rom_editor!(self, context, rom_overworld_warp_link_editor);
-        show_rom_editor!(self, context, rom_secondary_exit_editor);
+        let (quit, command) = self.rom_secondary_exit_editor.show(
+            context,
+            self.app.project_revision(),
+            self.app.localization(),
+        );
+        if let Some(command) = command
+            && self.try_dispatch(context, command)
+        {
+            self.rom_secondary_exit_editor.commit_succeeded();
+            self.renderer.invalidate();
+        }
+        if quit {
+            self.request_quit(context);
+        }
         show_rom_editor!(self, context, rom_title_recording_editor);
         show_rom_editor!(self, context, rom_title_tilemap_editor);
         show_rom_editor!(self, context, rom_credits_tilemap_editor);

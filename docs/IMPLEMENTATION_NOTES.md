@@ -5300,3 +5300,20 @@ use the ROM-aware plan. Headered and headerless 2-MiB sources place the owner in
 space without growing; an exhausted 1-MiB source grows by exactly one bank. Every route repairs the
 checksum, resolves the installed table from its relocated runtime operand, preserves the copier
 header, and restores the exact physical input with one Undo.
+
+## Persisted original-dialog localization inventory
+
+`LocalizationCatalog` keeps its original `LMLOC001` typed-key stream byte-compatible and appends
+`LMDLG001` only when converted original dialog text exists. Each bounded record contains the
+original dialog ID, exact template item position, original 32-bit control ID, and literal UTF-8
+caption. Position is part of the identity because Win32 templates can repeat control IDs. A
+canonical `(item = u16::MAX, control = u32::MAX)` record represents the dialog title. The decoder
+accepts historical catalogs with no extension and otherwise requires one fully consumed,
+duplicate-free extension of at most 4,096 entries.
+
+Original DLL conversion inserts all safely decoded titles and literal control captions before its
+smaller typed-key compatibility overrides. The native secondary-exit editor is the first form to
+query this inventory: original dialog `$03F1` supplies the window title and exact `$66`, `$65`,
+`$6C`, `$DB`, `$67`, and `$69` captions, while every absent caption retains its native English
+fallback. This establishes the reusable binding path without falsely treating untranslated
+native forms as complete Localization parity.

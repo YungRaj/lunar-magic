@@ -991,3 +991,12 @@ Decoded Language dialog `$042B` controls 1/2 and About dialog `$03F8` controls 1
 now semantically bound to five typed Rust actions. A focused catalog test proves mnemonic removal,
 Unicode retention, exact key selection, and English retention for unbound keys. This advances real
 native catalog output but deliberately does not infer meanings for the remaining decoded controls.
+
+The next retained-catalog gate preserves every decoded literal title/control under an optional
+`LMDLG001` extension keyed by original dialog ID, exact template item position, and control ID.
+Legacy catalogs re-encode byte-identically; repeated IDs survive round-trip; and exhaustive
+truncation plus bad-magic/count/key/duplicate tests reject without partial publication. The
+all-five-resource synthetic PE gate now verifies this inventory through the public one-call module
+conversion path. Native Modify Secondary Entrances (`$03F1`) consumes its exact title and six
+procedure-bound field/action captions with per-control English fallback. The focused localization
+suite passed 26 tests (one local-executable gate ignored), and the native binding test passed.

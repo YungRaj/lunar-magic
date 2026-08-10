@@ -15,13 +15,21 @@ use crate::original_language_validation::{
 };
 
 const MAGIC: &[u8; 8] = b"LMLOC001";
+const DIALOG_TEXT_MAGIC: &[u8; 8] = b"LMDLG001";
 const MAX_LOCALE_BYTES: usize = 64;
 const MAX_TEXT_BYTES: usize = 4096;
+const MAX_DIALOG_TEXT_ENTRIES: usize = 4096;
 const LEGACY_CHROME_KEY_COUNT: usize = 19;
 const PREVIOUS_COMPLETE_KEY_COUNT: usize = 184;
 const EARLIER_COMPLETE_KEY_COUNT: usize = 183;
-const MAX_ENCODED_BYTES: usize =
-    MAGIC.len() + 2 + MAX_LOCALE_BYTES + 2 + UiTextKey::ALL.len() * (1 + 2 + MAX_TEXT_BYTES);
+const MAX_ENCODED_BYTES: usize = MAGIC.len()
+    + 2
+    + MAX_LOCALE_BYTES
+    + 2
+    + UiTextKey::ALL.len() * (1 + 2 + MAX_TEXT_BYTES)
+    + DIALOG_TEXT_MAGIC.len()
+    + 2
+    + MAX_DIALOG_TEXT_ENTRIES * (2 + 2 + 4 + 2 + MAX_TEXT_BYTES);
 const ORIGINAL_LANGUAGE_MARKER: u32 = 0xc001_babe;
 const ORIGINAL_LANGUAGE_METADATA_MAX_BYTES: usize = 0x410;
 const ORIGINAL_LANGUAGE_TRAILER_BYTES: usize = 0x40;
@@ -327,14 +335,17 @@ pub fn decode_original_language_module_catalog(
     let mut catalog = strings
         .to_catalog(metadata.locale.clone())
         .map_err(OriginalLanguageModuleError::InvalidCatalog)?;
-    let dialogs =
-        ORIGINAL_LANGUAGE_DIALOG_RESOURCE_IDS
-            .iter()
-            .filter_map(|&(original_id, localized_id)| {
-                let bytes = resources.resource_of_type(5, localized_id).ok()?;
-                let template = decode_original_language_dialog_template(bytes).ok()?;
-                Some((original_id, template))
-            });
+    let dialogs: Vec<_> = ORIGINAL_LANGUAGE_DIALOG_RESOURCE_IDS
+        .iter()
+        .filter_map(|&(original_id, localized_id)| {
+            let bytes = resources.resource_of_type(5, localized_id).ok()?;
+            let template = decode_original_language_dialog_template(bytes).ok()?;
+            Some((original_id, template))
+        })
+        .collect();
+    for (dialog_id, template) in &dialogs {
+        catalog.insert_original_dialog_template(*dialog_id, template);
+    }
     apply_original_dialog_catalog_overrides(&mut catalog, dialogs);
     catalog
         .validate()
@@ -414,6 +425,14 @@ fn original_string_index(key: UiTextKey) -> Option<usize> {
 }
 
 fn normalize_original_ui_text(key: UiTextKey, text: &str) -> String {
+    let mut normalized = normalize_original_dialog_text(text);
+    if key == UiTextKey::HelpAbout {
+        normalized = normalized.replace("%s", "Lunar Magic Rust");
+    }
+    normalized
+}
+
+fn normalize_original_dialog_text(text: &str) -> String {
     let text = text.split('\t').next().unwrap_or(text).trim();
     let mut normalized = String::with_capacity(text.len());
     let mut characters = text.chars().peekable();
@@ -430,9 +449,6 @@ fn normalize_original_ui_text(key: UiTextKey, text: &str) -> String {
     if normalized.ends_with("...") {
         normalized.truncate(normalized.len() - 3);
         normalized.push('…');
-    }
-    if key == UiTextKey::HelpAbout {
-        normalized = normalized.replace("%s", "Lunar Magic Rust");
     }
     normalized
 }
@@ -1458,6 +1474,20 @@ impl UiTextKey {
 pub struct LocalizationCatalog {
     pub locale: String,
     entries: BTreeMap<UiTextKey, String>,
+    dialog_entries: BTreeMap<OriginalDialogTextKey, String>,
+}
+
+const DIALOG_TITLE_ITEM_INDEX: u16 = u16::MAX;
+const DIALOG_TITLE_CONTROL_ID: u32 = u32::MAX;
+
+/// Stable identity for one literal item in an original Win32 dialog template.
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub struct OriginalDialogTextKey {
+    pub dialog_id: u16,
+    /// Zero-based item position, or `u16::MAX` for the dialog title.
+    pub item_index: u16,
+    /// Win32 control ID, or `u32::MAX` for the dialog title.
+    pub control_id: u32,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -1467,12 +1497,24 @@ pub enum LocalizationError {
     TrailingBytes,
     InvalidUtf8,
     InvalidLocale,
-    TextTooLong { key: UiTextKey, bytes: usize },
+    TextTooLong {
+        key: UiTextKey,
+        bytes: usize,
+    },
     InvalidText(UiTextKey),
     WrongEntryCount(usize),
     UnknownKey(u8),
     DuplicateKey(UiTextKey),
     MissingKey(UiTextKey),
+    TooManyDialogTexts(usize),
+    DuplicateDialogText(OriginalDialogTextKey),
+    DialogTextTooLong {
+        key: OriginalDialogTextKey,
+        bytes: usize,
+    },
+    InvalidDialogText(OriginalDialogTextKey),
+    InvalidDialogTextKey(OriginalDialogTextKey),
+    WrongDialogTextMagic,
     Overflow,
 }
 
@@ -1507,6 +1549,7 @@ impl LocalizationCatalog {
         let mut catalog = Self {
             locale: locale.into(),
             entries: BTreeMap::new(),
+            dialog_entries: BTreeMap::new(),
         };
         for (key, value) in entries {
             if catalog.entries.insert(key, value).is_some() {
@@ -1515,6 +1558,25 @@ impl LocalizationCatalog {
         }
         catalog.validate()?;
         Ok(catalog)
+    }
+
+    /// Adds an optional, lossless original-dialog text inventory to a complete typed catalog.
+    /// Repeated Win32 control IDs remain distinct through their template item positions.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`LocalizationError`] for duplicate/noncanonical keys or invalid aggregate text.
+    pub fn with_original_dialog_texts(
+        mut self,
+        entries: impl IntoIterator<Item = (OriginalDialogTextKey, String)>,
+    ) -> Result<Self, LocalizationError> {
+        for (key, value) in entries {
+            if self.dialog_entries.insert(key, value).is_some() {
+                return Err(LocalizationError::DuplicateDialogText(key));
+            }
+        }
+        self.validate()?;
+        Ok(self)
     }
 
     #[must_use]
@@ -1528,6 +1590,89 @@ impl LocalizationCatalog {
         self.entries
             .get(&key)
             .expect("validated catalogs contain every key")
+    }
+
+    /// Returns the localized title for one original dialog resource when present.
+    #[must_use]
+    pub fn original_dialog_title(&self, dialog_id: u16) -> Option<&str> {
+        self.dialog_entries
+            .get(&OriginalDialogTextKey {
+                dialog_id,
+                item_index: DIALOG_TITLE_ITEM_INDEX,
+                control_id: DIALOG_TITLE_CONTROL_ID,
+            })
+            .map(String::as_str)
+    }
+
+    /// Returns the first literal caption with the requested original dialog/control ID.
+    /// Exact item lookup remains available for templates that repeat a control ID.
+    #[must_use]
+    pub fn original_dialog_control_text(&self, dialog_id: u16, control_id: u32) -> Option<&str> {
+        self.dialog_entries
+            .iter()
+            .find(|(key, _)| {
+                key.dialog_id == dialog_id
+                    && key.item_index != DIALOG_TITLE_ITEM_INDEX
+                    && key.control_id == control_id
+            })
+            .map(|(_, text)| text.as_str())
+    }
+
+    /// Returns a literal caption by its exact zero-based template item position.
+    #[must_use]
+    pub fn original_dialog_item_text(&self, dialog_id: u16, item_index: u16) -> Option<&str> {
+        self.dialog_entries
+            .iter()
+            .find(|(key, _)| key.dialog_id == dialog_id && key.item_index == item_index)
+            .map(|(_, text)| text.as_str())
+    }
+
+    #[must_use]
+    pub fn original_dialog_text_count(&self) -> usize {
+        self.dialog_entries.len()
+    }
+
+    fn insert_original_dialog_template(
+        &mut self,
+        dialog_id: u16,
+        template: &OriginalLanguageDialogTemplate,
+    ) {
+        if let Some(title) = template.title.as_deref() {
+            self.insert_original_dialog_text(
+                OriginalDialogTextKey {
+                    dialog_id,
+                    item_index: DIALOG_TITLE_ITEM_INDEX,
+                    control_id: DIALOG_TITLE_CONTROL_ID,
+                },
+                title,
+            );
+        }
+        for (item_index, control) in template.controls.iter().enumerate() {
+            let Some(text) = control.text.as_deref() else {
+                continue;
+            };
+            let Ok(item_index) = u16::try_from(item_index) else {
+                break;
+            };
+            self.insert_original_dialog_text(
+                OriginalDialogTextKey {
+                    dialog_id,
+                    item_index,
+                    control_id: control.id,
+                },
+                text,
+            );
+        }
+    }
+
+    fn insert_original_dialog_text(&mut self, key: OriginalDialogTextKey, text: &str) {
+        if self.dialog_entries.len() >= MAX_DIALOG_TEXT_ENTRIES {
+            return;
+        }
+        let text = normalize_original_dialog_text(text);
+        if !text.is_empty() && text.len() <= MAX_TEXT_BYTES && !text.contains('\0') {
+            self.dialog_entries.insert(key, text);
+        }
     }
 
     /// Validates locale syntax, resource limits, and completeness.
@@ -1563,6 +1708,27 @@ impl LocalizationCatalog {
         if self.entries.len() != UiTextKey::ALL.len() {
             return Err(LocalizationError::WrongEntryCount(self.entries.len()));
         }
+        if self.dialog_entries.len() > MAX_DIALOG_TEXT_ENTRIES {
+            return Err(LocalizationError::TooManyDialogTexts(
+                self.dialog_entries.len(),
+            ));
+        }
+        for (key, value) in &self.dialog_entries {
+            if key.item_index == DIALOG_TITLE_ITEM_INDEX
+                && key.control_id != DIALOG_TITLE_CONTROL_ID
+            {
+                return Err(LocalizationError::InvalidDialogTextKey(*key));
+            }
+            if value.len() > MAX_TEXT_BYTES {
+                return Err(LocalizationError::DialogTextTooLong {
+                    key: *key,
+                    bytes: value.len(),
+                });
+            }
+            if value.is_empty() || value.contains('\0') {
+                return Err(LocalizationError::InvalidDialogText(*key));
+            }
+        }
         Ok(())
     }
 
@@ -1580,6 +1746,21 @@ impl LocalizationCatalog {
         for key in UiTextKey::ALL {
             output.push(key as u8);
             write_string(&mut output, self.text(key), MAX_TEXT_BYTES)?;
+        }
+        if !self.dialog_entries.is_empty() {
+            output.extend_from_slice(DIALOG_TEXT_MAGIC);
+            let count = u16::try_from(self.dialog_entries.len())
+                .map_err(|_| LocalizationError::Overflow)?;
+            output.extend_from_slice(&count.to_le_bytes());
+            for (key, text) in &self.dialog_entries {
+                output.extend_from_slice(&key.dialog_id.to_le_bytes());
+                output.extend_from_slice(&key.item_index.to_le_bytes());
+                output.extend_from_slice(&key.control_id.to_le_bytes());
+                write_string(&mut output, text, MAX_TEXT_BYTES)?;
+            }
+        }
+        if output.len() > Self::MAX_ENCODED_LEN {
+            return Err(LocalizationError::Overflow);
         }
         Ok(output)
     }
@@ -1613,9 +1794,6 @@ impl LocalizationCatalog {
                 return Err(LocalizationError::DuplicateKey(key));
             }
         }
-        if !reader.is_empty() {
-            return Err(LocalizationError::TrailingBytes);
-        }
         if count != UiTextKey::ALL.len() {
             for key in UiTextKey::ALL[..count].iter().copied() {
                 if !entries.contains_key(&key) {
@@ -1626,7 +1804,40 @@ impl LocalizationCatalog {
                 entries.insert(key, key.english().into());
             }
         }
-        Self::new(locale, entries)
+        let mut dialog_entries = BTreeMap::new();
+        if !reader.is_empty() {
+            if reader.remaining() < DIALOG_TEXT_MAGIC.len() + 2 {
+                return Err(LocalizationError::TrailingBytes);
+            }
+            if reader.take(DIALOG_TEXT_MAGIC.len())? != DIALOG_TEXT_MAGIC {
+                return Err(LocalizationError::WrongDialogTextMagic);
+            }
+            let count = usize::from(reader.u16()?);
+            if count > MAX_DIALOG_TEXT_ENTRIES {
+                return Err(LocalizationError::TooManyDialogTexts(count));
+            }
+            for _ in 0..count {
+                let key = OriginalDialogTextKey {
+                    dialog_id: reader.u16()?,
+                    item_index: reader.u16()?,
+                    control_id: reader.u32()?,
+                };
+                let value = reader.string(MAX_TEXT_BYTES)?;
+                if dialog_entries.insert(key, value).is_some() {
+                    return Err(LocalizationError::DuplicateDialogText(key));
+                }
+            }
+            if !reader.is_empty() {
+                return Err(LocalizationError::TrailingBytes);
+            }
+        }
+        let catalog = Self {
+            locale,
+            entries,
+            dialog_entries,
+        };
+        catalog.validate()?;
+        Ok(catalog)
     }
 }
 
@@ -1673,6 +1884,12 @@ impl<'a> Reader<'a> {
         ))
     }
 
+    fn u32(&mut self) -> Result<u32, LocalizationError> {
+        Ok(u32::from_le_bytes(
+            self.take(4)?.try_into().expect("length checked"),
+        ))
+    }
+
     fn string(&mut self, limit: usize) -> Result<String, LocalizationError> {
         let len = usize::from(self.u16()?);
         if len > limit {
@@ -1685,6 +1902,10 @@ impl<'a> Reader<'a> {
 
     const fn is_empty(&self) -> bool {
         self.offset == self.bytes.len()
+    }
+
+    const fn remaining(&self) -> usize {
+        self.bytes.len() - self.offset
     }
 }
 
@@ -2254,54 +2475,55 @@ mod tests {
         }
         .to_catalog("fr-FR")
         .unwrap();
-        apply_original_dialog_catalog_overrides(
-            &mut catalog,
-            [
-                (
-                    0x042b,
-                    OriginalLanguageDialogTemplate {
-                        extended: true,
-                        title: Some("Langue".into()),
-                        controls: vec![
-                            OriginalLanguageDialogControl {
-                                id: 1,
-                                class_ordinal: Some(0x80),
-                                text: Some("&Valider".into()),
-                            },
-                            OriginalLanguageDialogControl {
-                                id: 2,
-                                class_ordinal: Some(0x80),
-                                text: Some("A&nnuler".into()),
-                            },
-                        ],
-                    },
-                ),
-                (
-                    0x03f8,
-                    OriginalLanguageDialogTemplate {
-                        extended: false,
-                        title: Some("À propos".into()),
-                        controls: vec![
-                            OriginalLanguageDialogControl {
-                                id: 1,
-                                class_ordinal: Some(0x80),
-                                text: Some("&Fermer".into()),
-                            },
-                            OriginalLanguageDialogControl {
-                                id: 0x66,
-                                class_ordinal: Some(0x80),
-                                text: Some("Extensions &tierces".into()),
-                            },
-                            OriginalLanguageDialogControl {
-                                id: 0x67,
-                                class_ordinal: Some(0x80),
-                                text: Some("Avis &juridique".into()),
-                            },
-                        ],
-                    },
-                ),
-            ],
-        );
+        let dialogs = vec![
+            (
+                0x042b,
+                OriginalLanguageDialogTemplate {
+                    extended: true,
+                    title: Some("Langue".into()),
+                    controls: vec![
+                        OriginalLanguageDialogControl {
+                            id: 1,
+                            class_ordinal: Some(0x80),
+                            text: Some("&Valider".into()),
+                        },
+                        OriginalLanguageDialogControl {
+                            id: 2,
+                            class_ordinal: Some(0x80),
+                            text: Some("A&nnuler".into()),
+                        },
+                    ],
+                },
+            ),
+            (
+                0x03f8,
+                OriginalLanguageDialogTemplate {
+                    extended: false,
+                    title: Some("À propos".into()),
+                    controls: vec![
+                        OriginalLanguageDialogControl {
+                            id: 1,
+                            class_ordinal: Some(0x80),
+                            text: Some("&Fermer".into()),
+                        },
+                        OriginalLanguageDialogControl {
+                            id: 0x66,
+                            class_ordinal: Some(0x80),
+                            text: Some("Extensions &tierces".into()),
+                        },
+                        OriginalLanguageDialogControl {
+                            id: 0x67,
+                            class_ordinal: Some(0x80),
+                            text: Some("Avis &juridique".into()),
+                        },
+                    ],
+                },
+            ),
+        ];
+        for (dialog_id, template) in &dialogs {
+            catalog.insert_original_dialog_template(*dialog_id, template);
+        }
+        apply_original_dialog_catalog_overrides(&mut catalog, dialogs);
         assert_eq!(catalog.text(UiTextKey::CommonOk), "Valider");
         assert_eq!(catalog.text(UiTextKey::CommonCancel), "Annuler");
         assert_eq!(catalog.text(UiTextKey::AboutOk), "Fermer");
@@ -2314,6 +2536,13 @@ mod tests {
             catalog.text(UiTextKey::AboutWindowTitleFormat),
             UiTextKey::AboutWindowTitleFormat.english()
         );
+        assert_eq!(catalog.original_dialog_title(0x042b), Some("Langue"));
+        assert_eq!(
+            catalog.original_dialog_control_text(0x03f8, 0x66),
+            Some("Extensions tierces")
+        );
+        let reopened = LocalizationCatalog::decode(&catalog.encode().unwrap()).unwrap();
+        assert_eq!(reopened, catalog);
     }
 
     #[test]
@@ -2548,14 +2777,128 @@ mod tests {
 
     #[test]
     fn published_encoded_limit_accepts_the_largest_valid_catalog() {
-        let catalog = LocalizationCatalog::new(
+        let mut catalog = LocalizationCatalog::new(
             "l".repeat(MAX_LOCALE_BYTES),
             UiTextKey::ALL.map(|key| (key, "x".repeat(MAX_TEXT_BYTES))),
         )
         .unwrap();
+        for index in 0..MAX_DIALOG_TEXT_ENTRIES {
+            catalog.dialog_entries.insert(
+                OriginalDialogTextKey {
+                    dialog_id: 1,
+                    item_index: u16::try_from(index).unwrap(),
+                    control_id: u32::try_from(index).unwrap(),
+                },
+                "d".repeat(MAX_TEXT_BYTES),
+            );
+        }
         let bytes = catalog.encode().unwrap();
         assert_eq!(bytes.len(), LocalizationCatalog::MAX_ENCODED_LEN);
         assert_eq!(LocalizationCatalog::decode(&bytes).unwrap(), catalog);
+    }
+
+    #[test]
+    fn dialog_text_extension_round_trips_duplicate_control_ids_by_item_position() {
+        let mut catalog = catalog();
+        for (item_index, text) in [(3, "Premier"), (7, "Deuxième")] {
+            catalog.dialog_entries.insert(
+                OriginalDialogTextKey {
+                    dialog_id: 0x03f0,
+                    item_index,
+                    control_id: u32::MAX,
+                },
+                text.into(),
+            );
+        }
+        catalog.dialog_entries.insert(
+            OriginalDialogTextKey {
+                dialog_id: 0x03f0,
+                item_index: DIALOG_TITLE_ITEM_INDEX,
+                control_id: DIALOG_TITLE_CONTROL_ID,
+            },
+            "Entrées".into(),
+        );
+        let decoded = LocalizationCatalog::decode(&catalog.encode().unwrap()).unwrap();
+        assert_eq!(decoded, catalog);
+        assert_eq!(decoded.original_dialog_title(0x03f0), Some("Entrées"));
+        assert_eq!(
+            decoded.original_dialog_control_text(0x03f0, u32::MAX),
+            Some("Premier")
+        );
+        assert_eq!(
+            decoded.original_dialog_item_text(0x03f0, 7),
+            Some("Deuxième")
+        );
+    }
+
+    #[test]
+    fn dialog_text_extension_rejects_every_truncation_bad_magic_count_duplicate_and_title_key() {
+        let keys = [
+            OriginalDialogTextKey {
+                dialog_id: 0x03f0,
+                item_index: 1,
+                control_id: 1,
+            },
+            OriginalDialogTextKey {
+                dialog_id: 0x03f0,
+                item_index: 2,
+                control_id: 2,
+            },
+        ];
+        let extended_catalog = catalog()
+            .with_original_dialog_texts([(keys[0], "A".into()), (keys[1], "B".into())])
+            .unwrap();
+        let bytes = extended_catalog.encode().unwrap();
+        let extension = bytes
+            .windows(DIALOG_TEXT_MAGIC.len())
+            .position(|window| window == DIALOG_TEXT_MAGIC)
+            .unwrap();
+        for end in extension + 1..bytes.len() {
+            assert!(
+                LocalizationCatalog::decode(&bytes[..end]).is_err(),
+                "end {end}"
+            );
+        }
+
+        let mut wrong_magic = bytes.clone();
+        wrong_magic[extension] ^= 1;
+        assert_eq!(
+            LocalizationCatalog::decode(&wrong_magic),
+            Err(LocalizationError::WrongDialogTextMagic)
+        );
+
+        let mut too_many = bytes.clone();
+        too_many[extension + 8..extension + 10].copy_from_slice(
+            &u16::try_from(MAX_DIALOG_TEXT_ENTRIES + 1)
+                .unwrap()
+                .to_le_bytes(),
+        );
+        assert_eq!(
+            LocalizationCatalog::decode(&too_many),
+            Err(LocalizationError::TooManyDialogTexts(
+                MAX_DIALOG_TEXT_ENTRIES + 1
+            ))
+        );
+
+        let mut duplicate = bytes;
+        let first_key = extension + 10;
+        let second_key = first_key + 8 + 2 + 1;
+        let key_bytes: [u8; 8] = duplicate[first_key..first_key + 8].try_into().unwrap();
+        duplicate[second_key..second_key + 8].copy_from_slice(&key_bytes);
+        assert_eq!(
+            LocalizationCatalog::decode(&duplicate),
+            Err(LocalizationError::DuplicateDialogText(keys[0]))
+        );
+
+        let invalid_title = OriginalDialogTextKey {
+            dialog_id: 1,
+            item_index: DIALOG_TITLE_ITEM_INDEX,
+            control_id: 7,
+        };
+        assert_eq!(
+            catalog().with_original_dialog_texts([(invalid_title, "bad".into())]),
+            Err(LocalizationError::InvalidDialogTextKey(invalid_title))
+        );
     }
 
     #[test]

@@ -1,6 +1,6 @@
 use crate::level_editor_forms::{SecondaryExitForm, parse_hex_u16};
 use eframe::egui;
-use lm_app::{AppState, Command};
+use lm_app::{AppState, Command, LocalizationCatalog};
 use lm_level::{SecondaryExit, SecondaryExitTable};
 use lm_profile::smw_us_v1_secondary_exit_locator;
 
@@ -79,14 +79,15 @@ impl RomSecondaryExitEditor {
         &mut self,
         context: &egui::Context,
         project_revision: u64,
+        catalog: Option<&LocalizationCatalog>,
     ) -> (bool, Option<Command>) {
         let mut command = None;
         if self.workspace.is_some() {
             self.load_selected();
-            egui::Window::new("ROM Secondary Exit Table")
+            egui::Window::new(dialog_title(catalog))
                 .default_size([520.0, 570.0])
                 .show(context, |ui| {
-                    command = self.contents(ui, project_revision);
+                    command = self.contents(ui, project_revision, catalog);
                 });
         }
         let approved = self.close_confirmation(context);
@@ -95,7 +96,12 @@ impl RomSecondaryExitEditor {
         (approved, command)
     }
 
-    fn contents(&mut self, ui: &mut egui::Ui, project_revision: u64) -> Option<Command> {
+    fn contents(
+        &mut self,
+        ui: &mut egui::Ui,
+        project_revision: u64,
+        catalog: Option<&LocalizationCatalog>,
+    ) -> Option<Command> {
         let workspace = self.workspace.as_ref()?;
         let stale = workspace.revision != project_revision;
         let modified = workspace.table != workspace.original;
@@ -115,7 +121,7 @@ impl RomSecondaryExitEditor {
                 self.load_selected();
             }
         });
-        secondary_fields(ui, &mut self.form);
+        secondary_fields(ui, &mut self.form, catalog);
         let mut command = None;
         ui.horizontal(|ui| {
             if ui
@@ -127,14 +133,20 @@ impl RomSecondaryExitEditor {
                 }
             }
             if ui
-                .add_enabled(!stale, egui::Button::new("Clear entry"))
+                .add_enabled(
+                    !stale,
+                    egui::Button::new(dialog_control_text(catalog, 0x66, "Clear entry")),
+                )
                 .clicked()
                 && let Err(error) = self.clear_selected()
             {
                 self.error = Some(error);
             }
             if ui
-                .add_enabled(!stale, egui::Button::new("Clear all…"))
+                .add_enabled(
+                    !stale,
+                    egui::Button::new(dialog_control_text(catalog, 0x65, "Clear all…")),
+                )
                 .clicked()
             {
                 self.pending_clear_all = true;
@@ -313,16 +325,44 @@ impl RomSecondaryExitEditor {
     }
 }
 
-fn secondary_fields(ui: &mut egui::Ui, form: &mut SecondaryExitForm) {
+const ORIGINAL_DIALOG_ID: u16 = 0x03f1;
+
+fn dialog_title(catalog: Option<&LocalizationCatalog>) -> &str {
+    catalog
+        .and_then(|catalog| catalog.original_dialog_title(ORIGINAL_DIALOG_ID))
+        .unwrap_or("ROM Secondary Exit Table")
+}
+
+fn dialog_control_text<'a>(
+    catalog: Option<&'a LocalizationCatalog>,
+    control_id: u32,
+    fallback: &'a str,
+) -> &'a str {
+    catalog
+        .and_then(|catalog| catalog.original_dialog_control_text(ORIGINAL_DIALOG_ID, control_id))
+        .unwrap_or(fallback)
+}
+
+fn secondary_fields(
+    ui: &mut egui::Ui,
+    form: &mut SecondaryExitForm,
+    catalog: Option<&LocalizationCatalog>,
+) {
     egui::Grid::new("rom-secondary-exit-fields")
         .striped(true)
         .show(ui, |ui| {
             for (label, value) in [
-                ("Destination", &mut form.destination),
+                (
+                    dialog_control_text(catalog, 0x6c, "Destination"),
+                    &mut form.destination,
+                ),
                 ("Position/method", &mut form.position),
-                ("Screen", &mut form.screen),
-                ("X", &mut form.x),
-                ("Y", &mut form.y),
+                (
+                    dialog_control_text(catalog, 0xdb, "Screen"),
+                    &mut form.screen,
+                ),
+                (dialog_control_text(catalog, 0x67, "X"), &mut form.x),
+                (dialog_control_text(catalog, 0x69, "Y"), &mut form.y),
                 ("Destination flags", &mut form.destination_flags),
                 ("X/overworld flags", &mut form.x_flags),
                 ("Additional flags", &mut form.additional),
@@ -337,6 +377,7 @@ fn secondary_fields(ui: &mut egui::Ui, form: &mut SecondaryExitForm) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use lm_app::{OriginalDialogTextKey, UiTextKey};
     use lm_rom::RomImage;
     use std::path::PathBuf;
 
@@ -448,6 +489,58 @@ mod tests {
         assert!(editor.clear_all(1).is_err());
         assert!(editor.pending_clear_all);
         assert_eq!(editor.workspace.as_ref().unwrap().table, before_stale);
+    }
+
+    #[test]
+    fn original_dialog_inventory_localizes_exact_secondary_exit_controls_with_fallbacks() {
+        let catalog = LocalizationCatalog::new(
+            "fr-FR",
+            UiTextKey::ALL.map(|key| (key, key.english().into())),
+        )
+        .unwrap()
+        .with_original_dialog_texts([
+            (
+                OriginalDialogTextKey {
+                    dialog_id: ORIGINAL_DIALOG_ID,
+                    item_index: u16::MAX,
+                    control_id: u32::MAX,
+                },
+                "Modifier les entrées secondaires".into(),
+            ),
+            (
+                OriginalDialogTextKey {
+                    dialog_id: ORIGINAL_DIALOG_ID,
+                    item_index: 4,
+                    control_id: 0x66,
+                },
+                "Effacer l’emplacement".into(),
+            ),
+            (
+                OriginalDialogTextKey {
+                    dialog_id: ORIGINAL_DIALOG_ID,
+                    item_index: 5,
+                    control_id: 0x65,
+                },
+                "Tout effacer".into(),
+            ),
+        ])
+        .unwrap();
+        assert_eq!(
+            dialog_title(Some(&catalog)),
+            "Modifier les entrées secondaires"
+        );
+        assert_eq!(
+            dialog_control_text(Some(&catalog), 0x66, "Clear entry"),
+            "Effacer l’emplacement"
+        );
+        assert_eq!(
+            dialog_control_text(Some(&catalog), 0x65, "Clear all…"),
+            "Tout effacer"
+        );
+        assert_eq!(
+            dialog_control_text(Some(&catalog), 0x6c, "Destination"),
+            "Destination"
+        );
     }
 
     fn opened_editor() -> RomSecondaryExitEditor {
