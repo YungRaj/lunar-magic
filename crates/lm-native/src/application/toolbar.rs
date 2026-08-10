@@ -251,6 +251,27 @@ impl NativeApplication {
             UserToolbarNativeAction::PlaceSprite => {
                 self.vanilla_level_editor.toolbar_place_sprite();
             }
+            UserToolbarNativeAction::SelectAll => {
+                self.vanilla_level_editor.toolbar_select_all();
+            }
+            UserToolbarNativeAction::DeleteSelection => {
+                self.vanilla_level_editor.toolbar_delete_selection();
+            }
+            UserToolbarNativeAction::DeleteAll => {
+                self.vanilla_level_editor.toolbar_delete_all();
+            }
+            UserToolbarNativeAction::Escape => {
+                self.vanilla_level_editor.toolbar_escape();
+            }
+            UserToolbarNativeAction::EditLayer1 => {
+                self.vanilla_level_editor.toolbar_edit_layer1();
+            }
+            UserToolbarNativeAction::EditLayer2 => {
+                self.vanilla_level_editor.toolbar_edit_layer2();
+            }
+            UserToolbarNativeAction::EditSprites => {
+                self.vanilla_level_editor.toolbar_edit_sprites();
+            }
         }
     }
 
@@ -832,6 +853,13 @@ enum UserToolbarNativeAction {
     ApplyIps,
     PlaceObject,
     PlaceSprite,
+    SelectAll,
+    DeleteSelection,
+    DeleteAll,
+    Escape,
+    EditLayer1,
+    EditLayer2,
+    EditSprites,
 }
 
 fn user_toolbar_native_action(name: &str) -> Option<UserToolbarNativeAction> {
@@ -850,6 +878,13 @@ fn user_toolbar_native_action(name: &str) -> Option<UserToolbarNativeAction> {
         "LM_VIEW_ADD_SPRITE" | "LM_VIEW_SPRITE" | "LM_VIEW_ADD_SPRITE_OLD" => {
             UserToolbarNativeAction::PlaceSprite
         }
+        "LM_EDIT_SELECT_ALL" => UserToolbarNativeAction::SelectAll,
+        "LM_EDIT_DELETE" => UserToolbarNativeAction::DeleteSelection,
+        "LM_EDIT_DELETE_ALL" => UserToolbarNativeAction::DeleteAll,
+        "LM_EDIT_ESCAPE" => UserToolbarNativeAction::Escape,
+        "LM_EDIT_EDIT_LAYER_1" => UserToolbarNativeAction::EditLayer1,
+        "LM_EDIT_EDIT_LAYER_2" => UserToolbarNativeAction::EditLayer2,
+        "LM_EDIT_SPRITES" => UserToolbarNativeAction::EditSprites,
         _ => return None,
     })
 }
@@ -1108,6 +1143,13 @@ mod user_toolbar_tests {
                 "LM_VIEW_ADD_SPRITE_OLD",
                 UserToolbarNativeAction::PlaceSprite,
             ),
+            ("LM_EDIT_SELECT_ALL", UserToolbarNativeAction::SelectAll),
+            ("LM_EDIT_DELETE", UserToolbarNativeAction::DeleteSelection),
+            ("LM_EDIT_DELETE_ALL", UserToolbarNativeAction::DeleteAll),
+            ("LM_EDIT_ESCAPE", UserToolbarNativeAction::Escape),
+            ("LM_EDIT_EDIT_LAYER_1", UserToolbarNativeAction::EditLayer1),
+            ("LM_EDIT_EDIT_LAYER_2", UserToolbarNativeAction::EditLayer2),
+            ("LM_EDIT_SPRITES", UserToolbarNativeAction::EditSprites),
         ] {
             assert_eq!(user_toolbar_native_action(name), Some(action));
         }
@@ -1312,7 +1354,7 @@ mod user_toolbar_tests {
                     || user_toolbar_native_action(entry.name).is_some()
             })
             .collect::<Vec<_>>();
-        assert_eq!(supported.len(), 161);
+        assert_eq!(supported.len(), 169);
         assert!(
             supported
                 .iter()

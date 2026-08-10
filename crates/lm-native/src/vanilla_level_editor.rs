@@ -2343,6 +2343,139 @@ impl VanillaLevelEditor {
         self.error = None;
     }
 
+    pub(crate) fn toolbar_select_all(&mut self) {
+        self.apply_canvas_entity_shortcut(CanvasEntityShortcut::SelectAll);
+    }
+
+    pub(crate) fn toolbar_delete_selection(&mut self) {
+        self.apply_canvas_entity_shortcut(CanvasEntityShortcut::Remove);
+    }
+
+    pub(crate) fn toolbar_delete_all(&mut self) {
+        self.toolbar_select_all();
+        self.toolbar_delete_selection();
+    }
+
+    pub(crate) fn toolbar_escape(&mut self) {
+        self.placement_mode = None;
+        self.canvas_entity_selection = None;
+        self.selected_object_group.clear();
+        self.selected_layer2_object_group.clear();
+        self.selected_sprite_group.clear();
+        self.dragging_object = None;
+        self.dragging_layer2_object = None;
+        self.dragging_sprite = None;
+        self.resizing_object = None;
+        self.resizing_layer2_object = None;
+        self.object_group_drag = None;
+        self.secondary_duplicate_drag = false;
+        self.error = None;
+    }
+
+    pub(crate) fn toolbar_edit_layer1(&mut self) {
+        self.tools_panel_visible = Some(true);
+        self.placement_mode = None;
+        let selected = self.controller.as_ref().and_then(|controller| {
+            controller
+                .level()
+                .layer1
+                .objects
+                .native_placements()
+                .into_iter()
+                .map(|placement| placement.record_index)
+                .find(|index| *index == self.selected_object)
+                .or_else(|| {
+                    controller
+                        .level()
+                        .layer1
+                        .objects
+                        .native_placements()
+                        .first()
+                        .map(|placement| placement.record_index)
+                })
+        });
+        self.selected_object_group.clear();
+        if let Some(selected) = selected {
+            self.selected_object = selected;
+            self.selected_object_group.push(selected);
+            self.canvas_entity_selection = Some(CanvasEntitySelection::Layer1Object);
+            self.reload_object_form();
+        } else {
+            self.canvas_entity_selection = None;
+        }
+        self.error = None;
+    }
+
+    pub(crate) fn toolbar_edit_layer2(&mut self) {
+        self.tools_panel_visible = Some(true);
+        self.placement_mode = None;
+        let selected = self.controller.as_ref().and_then(|controller| {
+            let lm_level::NativeLayer2Data::Objects(layer2) = controller.layer2()? else {
+                return None;
+            };
+            layer2
+                .objects
+                .native_placements()
+                .into_iter()
+                .map(|placement| placement.record_index)
+                .find(|index| *index == self.selected_layer2_object)
+                .or_else(|| {
+                    layer2
+                        .objects
+                        .native_placements()
+                        .first()
+                        .map(|placement| placement.record_index)
+                })
+        });
+        self.selected_layer2_object_group.clear();
+        if let Some(selected) = selected {
+            self.selected_layer2_object = selected;
+            self.selected_layer2_object_group.push(selected);
+            self.canvas_entity_selection = Some(CanvasEntitySelection::Layer2Object);
+            self.reload_layer2_object_form();
+        } else {
+            self.canvas_entity_selection = None;
+        }
+        self.error = None;
+    }
+
+    pub(crate) fn toolbar_edit_sprites(&mut self) {
+        self.tools_panel_visible = Some(true);
+        self.placement_mode = None;
+        let selected = self.controller.as_ref().and_then(|controller| {
+            controller
+                .level()
+                .sprites
+                .native_placements()
+                .into_iter()
+                .map(|placement| placement.token_index)
+                .find(|index| *index == self.selected_sprite)
+                .or_else(|| {
+                    controller
+                        .level()
+                        .sprites
+                        .native_placements()
+                        .first()
+                        .map(|placement| placement.token_index)
+                })
+        });
+        self.selected_sprite_group.clear();
+        if let Some(selected) = selected {
+            self.selected_sprite = selected;
+            self.selected_sprite_group.push(selected);
+            self.canvas_entity_selection = Some(CanvasEntitySelection::Sprite);
+            if let Some(controller) = self.controller.as_ref() {
+                self.sprite_form = SpriteForm::from_token(
+                    controller.level().sprites.header,
+                    controller.level().sprites.tokens.get(selected),
+                );
+            }
+        } else {
+            self.canvas_entity_selection = None;
+        }
+        self.error = None;
+    }
+
     pub(crate) fn toolbar_zoom_filter_toggle(&mut self) {
         self.zoom_filter = Some(!self.zoom_filter());
         self.invalidate_graphics_preview();
@@ -11545,6 +11678,15 @@ mod tests {
         assert_eq!(editor.tools_panel_visible, Some(true));
         assert_eq!(editor.placement_mode, Some(CanvasPlacementMode::Sprite));
         assert_eq!(editor.error, None);
+
+        editor.canvas_entity_selection = Some(CanvasEntitySelection::Sprite);
+        editor.selected_sprite_group = vec![1, 2];
+        editor.dragging_sprite = Some(1);
+        editor.toolbar_escape();
+        assert_eq!(editor.placement_mode, None);
+        assert_eq!(editor.canvas_entity_selection, None);
+        assert!(editor.selected_sprite_group.is_empty());
+        assert_eq!(editor.dragging_sprite, None);
     }
 
     #[test]
@@ -17143,8 +17285,12 @@ mod tests {
             .map(|placement| placement.record_index)
             .collect::<Vec<_>>();
         assert!(expected.len() > 1);
-        editor.canvas_entity_selection = Some(CanvasEntitySelection::Layer1Object);
-        editor.apply_canvas_entity_shortcut(CanvasEntityShortcut::SelectAll);
+        editor.toolbar_edit_layer1();
+        assert_eq!(
+            editor.canvas_entity_selection,
+            Some(CanvasEntitySelection::Layer1Object)
+        );
+        editor.toolbar_select_all();
         assert_eq!(editor.selected_object_group, expected);
         assert!(
             editor
@@ -17153,7 +17299,7 @@ mod tests {
                 .all(|index| original.records[*index].is_positioned_object())
         );
 
-        editor.apply_canvas_entity_shortcut(CanvasEntityShortcut::Remove);
+        editor.toolbar_delete_selection();
         assert!(editor.error.is_none(), "{:?}", editor.error);
         let remaining = &editor
             .controller
@@ -17169,6 +17315,15 @@ mod tests {
                 .all(|record| !record.is_positioned_object())
         );
         assert!(editor.selected_object_group.is_empty());
+        assert_eq!(editor.canvas_entity_selection, None);
+
+        editor.toolbar_edit_sprites();
+        assert_eq!(
+            editor.canvas_entity_selection,
+            Some(CanvasEntitySelection::Sprite)
+        );
+        assert_eq!(editor.selected_sprite_group, vec![editor.selected_sprite]);
+        editor.toolbar_edit_layer2();
         assert_eq!(editor.canvas_entity_selection, None);
     }
 
