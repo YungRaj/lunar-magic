@@ -92,8 +92,11 @@ def await_level(backend, level, limit):
             mode, sublevel, translevel, camera_x, camera_y = state
             if mode != 0x14 or sublevel != level:
                 continue
-            if width != 256 or height != 224 or len(set(rgba)) < 8:
-                raise RuntimeError("selected level did not publish a bounded nonuniform frame")
+            if width not in (256, 512) or height != 224 or len(set(rgba)) < 8:
+                raise RuntimeError(
+                    "selected level did not publish a bounded nonuniform frame: "
+                    f"{width}x{height}, {len(set(rgba))} channel values"
+                )
             if any(rgba[index] != 0xFF for index in range(3, len(rgba), 4)):
                 raise RuntimeError("selected-level frame has invalid alpha")
             if sample_rate is None or not audio or len(set(audio)) < 4:

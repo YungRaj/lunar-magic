@@ -77,8 +77,16 @@ oracle against the identical vanilla ROM: selected `$105` injection, in-place ed
 consumption, `$106` switching, exact reload reproduction, RGBA, stereo audio, and live WRAM sprite
 tables. Full-path cores are no longer rejected categorically: their exact immutable ROM revision is
 held in a private lifetime-bound `.smc` snapshot. A core must expose exact 128-KiB SMW WRAM after
-at most one bootstrap frame or initialization rejects before claiming live-level support. Broader
-emulator-family and non-macOS runtime executions remain unverified, so the row stays `Partial`.
+at most one bootstrap frame or initialization rejects before claiming live-level support. The
+remaining platform-runtime boundary is described after the independent bsnes result below.
+
+The independent bsnes 2014 Accuracy core now closes the emulator-family variant: the unchanged
+oracle passes selected-level injection, in-place sprite replacement, runtime sprite-table queries,
+level switching, deterministic whole-ROM reload, video, and audio. Its valid 512×224 doubled-width
+output is accepted alongside Snes9x's 256×224 geometry while preserving exact per-core reload hashes
+and distinct-level hashes. Rust also consumes libretro's bounded standard memory-map descriptors as
+a fallback for cores that do not implement memory ID 2, accepting only a mutable exact `$7E:0000`
+128-KiB WRAM mapping. Non-macOS runtime execution remains unverified, so the row stays `Partial`.
 
 The native live window now also applies the recovered focus-only soft pause and main-window `$20`
 hard pause from egui's OS focus/minimize state. The same aggregate model preserves manual-hard-pause

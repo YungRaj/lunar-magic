@@ -23,6 +23,7 @@ const RETRO_ENVIRONMENT_SET_SUPPORT_NO_GAME: u32 = 18;
 const RETRO_ENVIRONMENT_SET_MEMORY_MAPS: u32 = 36;
 const RETRO_ENVIRONMENT_SET_GEOMETRY: u32 = 37;
 const RETRO_ENVIRONMENT_GET_AUDIO_VIDEO_ENABLE: u32 = 47;
+const RETRO_MEMDESC_CONST: u64 = 1 << 0;
 const CAP_ROM_LOAD: u32 = 1 << 0;
 const CAP_FRAME: u32 = 1 << 1;
 const CAP_PAUSE: u32 = 1 << 2;
@@ -79,6 +80,33 @@ struct RetroSystemTiming {
 struct RetroSystemAvInfo {
     geometry: RetroGameGeometry,
     timing: RetroSystemTiming,
+}
+
+#[repr(C)]
+struct RetroMemoryDescriptor {
+    flags: u64,
+    ptr: *mut c_void,
+    offset: usize,
+    start: usize,
+    select: usize,
+    disconnect: usize,
+    len: usize,
+    addrspace: *const c_char,
+}
+
+#[repr(C)]
+struct RetroMemoryMap {
+    descriptors: *const RetroMemoryDescriptor,
+    num_descriptors: u32,
+}
+
+#[derive(Clone, Copy, Default)]
+struct MemoryDescriptor {
+    flags: u64,
+    ptr: usize,
+    offset: usize,
+    start: usize,
+    len: usize,
 }
 
 type EnvironmentFn = unsafe extern "C" fn(u32, *mut c_void) -> bool;
@@ -181,6 +209,37 @@ static VIDEO: OnceLock<Mutex<VideoState>> = OnceLock::new();
 static AUDIO: OnceLock<Mutex<AudioState>> = OnceLock::new();
 static JOYPAD: AtomicU16 = AtomicU16::new(0);
 static AUTOMATION_JOYPAD: AtomicU16 = AtomicU16::new(0);
+static MEMORY_MAP: OnceLock<Mutex<Vec<MemoryDescriptor>>> = OnceLock::new();
+
+fn clear_memory_map() {
+    if let Ok(mut descriptors) = MEMORY_MAP.get_or_init(Default::default).lock() {
+        descriptors.clear();
+    }
+}
+
+fn memory_map_summary() -> String {
+    let Ok(descriptors) = MEMORY_MAP.get_or_init(Default::default).lock() else {
+        return "poisoned".into();
+    };
+    if descriptors.is_empty() {
+        return "none".into();
+    }
+    descriptors
+        .iter()
+        .take(16)
+        .map(|descriptor| {
+            format!(
+                "{:X}+{:X}/len={:X}/off={:X}/flags={:X}",
+                descriptor.start,
+                descriptor.ptr,
+                descriptor.len,
+                descriptor.offset,
+                descriptor.flags
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(",")
+}
 
 unsafe extern "C" fn environment(command: u32, data: *mut c_void) -> bool {
     match command {
@@ -208,10 +267,42 @@ unsafe extern "C" fn environment(command: u32, data: *mut c_void) -> bool {
             unsafe { *data.cast::<i32>() = 3 };
             true
         }
+        RETRO_ENVIRONMENT_SET_MEMORY_MAPS => {
+            if data.is_null() {
+                return false;
+            }
+            // SAFETY: This command supplies one readable map and descriptor array for the duration
+            // of the callback. Host pointers are copied as integers and used only during the
+            // core's documented session-lifetime guarantee.
+            let map = unsafe { &*data.cast::<RetroMemoryMap>() };
+            let Ok(count) = usize::try_from(map.num_descriptors) else {
+                return false;
+            };
+            if count > 256 || (count != 0 && map.descriptors.is_null()) {
+                return false;
+            }
+            let descriptors = if count == 0 {
+                &[]
+            } else {
+                // SAFETY: Non-nullness and the conservative descriptor-count bound were checked.
+                unsafe { std::slice::from_raw_parts(map.descriptors, count) }
+            };
+            let Ok(mut retained) = MEMORY_MAP.get_or_init(Default::default).lock() else {
+                return false;
+            };
+            retained.clear();
+            retained.extend(descriptors.iter().map(|descriptor| MemoryDescriptor {
+                flags: descriptor.flags,
+                ptr: descriptor.ptr as usize,
+                offset: descriptor.offset,
+                start: descriptor.start,
+                len: descriptor.len,
+            }));
+            true
+        }
         RETRO_ENVIRONMENT_SET_INPUT_DESCRIPTORS
         | RETRO_ENVIRONMENT_SET_VARIABLES
         | RETRO_ENVIRONMENT_SET_SUPPORT_NO_GAME
-        | RETRO_ENVIRONMENT_SET_MEMORY_MAPS
         | RETRO_ENVIRONMENT_SET_GEOMETRY => true,
         _ => false,
     }
@@ -390,6 +481,7 @@ impl Backend {
             unsafe { (self.api.unload_game)() };
             self.loaded = false;
         }
+        clear_memory_map();
         self.fullpath_rom = None;
         self.rom = rom;
         self.latest_rom = None;
@@ -411,6 +503,7 @@ impl Backend {
         };
         // SAFETY: `game` and the owned ROM backing remain valid throughout the loaded session.
         if !unsafe { (self.api.load_game)(&raw const game) } {
+            clear_memory_map();
             self.fullpath_rom = None;
             self.rom.clear();
             return Err("libretro core rejected the ROM image".into());
@@ -437,6 +530,7 @@ impl Backend {
             // SAFETY: `retro_load_game` succeeded above, so this balances that load before
             // rejecting malformed timing metadata.
             unsafe { (self.api.unload_game)() };
+            clear_memory_map();
             self.fullpath_rom = None;
             self.rom.clear();
             return Err(format!(
@@ -450,14 +544,16 @@ impl Backend {
             // sprite, and runtime-state capability.
             unsafe { (self.api.run)() };
             if runtime_state(&self.api).is_none() {
+                let memory_maps = memory_map_summary();
                 // SAFETY: `retro_load_game` succeeded above, so this balances the load before
                 // rejecting a core that cannot implement this backend's advertised capabilities.
                 unsafe { (self.api.unload_game)() };
+                clear_memory_map();
                 self.fullpath_rom = None;
                 self.rom.clear();
-                return Err(
-                    "libretro core does not expose exact 128 KiB system RAM after bootstrap".into(),
-                );
+                return Err(format!(
+                    "libretro core does not expose exact 128 KiB system RAM after bootstrap; memory maps: {memory_maps}"
+                ));
             }
         }
         self.loaded = true;
@@ -670,6 +766,7 @@ impl Backend {
                     unsafe { (self.api.unload_game)() };
                     self.loaded = false;
                 }
+                clear_memory_map();
                 self.fullpath_rom = None;
                 self.rom.clear();
                 Ok(EmulatorBackendEvent::Active(false))
@@ -695,7 +792,7 @@ impl Backend {
     }
 }
 
-fn runtime_state(api: &CoreApi) -> Option<EmulatorRuntimeState> {
+fn system_ram_parts(api: &CoreApi) -> Option<(*mut u8, usize)> {
     // SAFETY: libretro exposes memory id 2 while a game is loaded. This backend calls the core
     // and observes its memory on one thread, and retains no pointer beyond this function.
     let (pointer, size) = unsafe {
@@ -704,11 +801,29 @@ fn runtime_state(api: &CoreApi) -> Option<EmulatorRuntimeState> {
             (api.get_memory_size)(RETRO_MEMORY_SYSTEM_RAM),
         )
     };
-    if pointer.is_null() || size != SMW_WRAM_BYTES {
-        return None;
+    if !pointer.is_null() && size == SMW_WRAM_BYTES {
+        return Some((pointer.cast(), size));
     }
+    mapped_system_ram_parts()
+}
+
+fn mapped_system_ram_parts() -> Option<(*mut u8, usize)> {
+    let descriptors = MEMORY_MAP.get_or_init(Default::default).lock().ok()?;
+    let descriptor = descriptors.iter().find(|descriptor| {
+        descriptor.ptr != 0
+            && descriptor.flags & RETRO_MEMDESC_CONST == 0
+            && descriptor.start == 0x7e_0000
+            && descriptor.len == SMW_WRAM_BYTES
+            && descriptor.offset <= 0x80_000
+    })?;
+    let pointer = descriptor.ptr.checked_add(descriptor.offset)? as *mut u8;
+    Some((pointer, descriptor.len))
+}
+
+fn runtime_state(api: &CoreApi) -> Option<EmulatorRuntimeState> {
+    let (pointer, size) = system_ram_parts(api)?;
     // SAFETY: The core reported exactly the bounded SMW WRAM size above.
-    let wram = unsafe { std::slice::from_raw_parts(pointer.cast::<u8>(), size) };
+    let wram = unsafe { std::slice::from_raw_parts(pointer, size) };
     Some(EmulatorRuntimeState {
         game_mode: wram[0x0100],
         sublevel: u16::from_le_bytes([wram[0x010b], wram[0x010c]]),
@@ -719,18 +834,9 @@ fn runtime_state(api: &CoreApi) -> Option<EmulatorRuntimeState> {
 }
 
 fn runtime_sprites(api: &CoreApi) -> Option<EmulatorBackendEvent> {
-    // SAFETY: Read-only inspection is serialized with core execution on the backend thread.
-    let (pointer, size) = unsafe {
-        (
-            (api.get_memory_data)(RETRO_MEMORY_SYSTEM_RAM),
-            (api.get_memory_size)(RETRO_MEMORY_SYSTEM_RAM),
-        )
-    };
-    if pointer.is_null() || size != SMW_WRAM_BYTES {
-        return None;
-    }
+    let (pointer, size) = system_ram_parts(api)?;
     // SAFETY: The core reported the exact bounded WRAM extent above.
-    let wram = unsafe { std::slice::from_raw_parts(pointer.cast::<u8>(), size) };
+    let wram = unsafe { std::slice::from_raw_parts(pointer, size) };
     Some(EmulatorBackendEvent::RuntimeSprites {
         status: wram[0x14c8..0x14d4].try_into().unwrap(),
         numbers: wram[0x009e..0x00aa].try_into().unwrap(),
@@ -741,18 +847,10 @@ fn runtime_sprites(api: &CoreApi) -> Option<EmulatorBackendEvent> {
 fn system_ram_mut(api: &mut CoreApi) -> Option<&mut [u8]> {
     // SAFETY: All backend commands and core calls run serially on the backend thread. The returned
     // borrow is bounded to the caller and never overlaps a `retro_run` invocation.
-    let (pointer, size) = unsafe {
-        (
-            (api.get_memory_data)(RETRO_MEMORY_SYSTEM_RAM),
-            (api.get_memory_size)(RETRO_MEMORY_SYSTEM_RAM),
-        )
-    };
-    if pointer.is_null() || size != SMW_WRAM_BYTES {
-        return None;
-    }
+    let (pointer, size) = system_ram_parts(api)?;
     // SAFETY: The core reported exactly the bounded SMW WRAM size and the caller has exclusive
     // access to `Backend` while this mutable slice exists.
-    Some(unsafe { std::slice::from_raw_parts_mut(pointer.cast::<u8>(), size) })
+    Some(unsafe { std::slice::from_raw_parts_mut(pointer, size) })
 }
 
 fn save_ram_mut(api: &mut CoreApi) -> Option<&mut [u8]> {
@@ -804,6 +902,7 @@ impl Drop for Backend {
             if self.loaded {
                 (self.api.unload_game)();
             }
+            clear_memory_map();
             self.fullpath_rom = None;
             JOYPAD.store(0, Ordering::Relaxed);
             AUTOMATION_JOYPAD.store(0, Ordering::Relaxed);
@@ -1008,6 +1107,36 @@ mod tests {
         assert_eq!(staged.path.to_bytes(), path.to_str().unwrap().as_bytes());
         drop(staged);
         assert!(!path.exists());
+    }
+
+    #[test]
+    fn standard_memory_map_resolves_only_exact_mutable_snes_wram() {
+        let mut wram = vec![0_u8; SMW_WRAM_BYTES + 16];
+        let base = wram.as_mut_ptr() as usize;
+        let mut descriptors = MEMORY_MAP.get_or_init(Default::default).lock().unwrap();
+        descriptors.clear();
+        descriptors.extend([
+            MemoryDescriptor {
+                flags: RETRO_MEMDESC_CONST,
+                ptr: base,
+                offset: 0,
+                start: 0x7e_0000,
+                len: SMW_WRAM_BYTES,
+            },
+            MemoryDescriptor {
+                flags: 0,
+                ptr: base,
+                offset: 16,
+                start: 0x7e_0000,
+                len: SMW_WRAM_BYTES,
+            },
+        ]);
+        drop(descriptors);
+        let (pointer, len) = mapped_system_ram_parts().unwrap();
+        assert_eq!(pointer, unsafe { wram.as_mut_ptr().add(16) });
+        assert_eq!(len, SMW_WRAM_BYTES);
+        clear_memory_map();
+        assert!(mapped_system_ram_parts().is_none());
     }
 
     #[test]

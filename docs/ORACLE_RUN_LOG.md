@@ -834,4 +834,24 @@ hashes were `0532fab7d29d9828a8e0c0d8dd7f6c8e9b460ee7063bbb99f5af13e8d8975fe9` f
 The current official ARM64 bsnes buildbot core was also probed. It accepts the private full-path
 ROM but does not publish SMW WRAM through libretro memory ID 2, even after a bootstrap frame. Rust
 therefore rejects initialization with the exact diagnostic `libretro core does not expose exact
-128 KiB system RAM after bootstrap`; it does not claim capabilities it cannot implement.
+128 KiB system RAM after bootstrap; memory maps: none`; it does not claim capabilities it cannot
+implement.
+
+### Independent bsnes emulator-family variant
+
+The complete driver also passes against the official ARM64 buildbot
+`bsnes2014_accuracy_libretro.dylib` dated 2026-08-08, SHA-256
+`591896a857d0cda925a15032856a5026150a5cf5e93a633223f31fb52f2cf9bf`. Unlike Snes9x, this core
+publishes valid doubled-width 512×224 frames and 32,041-Hz audio. Exact results are:
+
+```text
+result  level  frame  mode  translevel  camera  size     frame_sha256                                                     audio
+initial 105    1769   14    28          0,192   512x224  7ac5d5144ab0f15eb1ca294ca9e687fa87f0a30a3cd216f4a32cafa78eb2d601  32041Hz/536f/6f8de3ec1762e08b8a06475178d88a57fb55d6b0d42810027b6c08d2aa293eff
+switch  106    158    14    28          0,192   512x224  36d3b9ec7bbc637a25e81f4f5fb8776ba8288e9432ec14d5c7e7ff25953dc1c5  32041Hz/543f/6cf8153d6c17135ab1416f3a7a46d20fa10ba1dd240a125b4364a2fa016033af
+reload  105    1769   14    28          0,192   512x224  7ac5d5144ab0f15eb1ca294ca9e687fa87f0a30a3cd216f4a32cafa78eb2d601  32041Hz/536f/6f8de3ec1762e08b8a06475178d88a57fb55d6b0d42810027b6c08d2aa293eff
+```
+
+The gate retains every semantic assertion used for Snes9x, including actual edited-Goomba
+instantiation without leaving mode `$14`, bounded save-RAM restoration, runtime table queries,
+distinct `$106`, and exact `$105` whole-ROM reload reproduction. Supporting both native SNES widths
+does not weaken those state or hash requirements.

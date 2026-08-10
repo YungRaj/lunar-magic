@@ -2510,7 +2510,14 @@ An open egui popup drives input reason `$08`; closure retains the recovered 100-
 grace from `MainFrameWindowProc`/`RenderLmswViewportOverlay` before clearing it. Editor-mode hard
 pause reason `$40` follows `HandleLevelEditorCommand` exactly: disabling the shared level-editor
 animation clock sets it and resuming the clock clears it. The frontend now drives every recovered
-pause input into the already-proven aggregate. Broader core/platform variants remain incomplete.
+pause input into the already-proven aggregate. Broader platform runtime variants remain incomplete.
+System RAM first uses libretro memory ID 2. As a standards-compliant fallback, the environment
+callback copies at most 256 memory-map descriptors and selects only a non-constant exact
+`$7E:0000`/128-KiB mapping with a bounded offset; all pointers remain process-isolated and are
+discarded at unload. The official ARM64 bsnes 2014 Accuracy core passes the complete live oracle
+with legitimate 512×224 doubled-width output, 32,041-Hz audio, direct levels, sprite hot reload,
+runtime sprite tables, switching, and exact reload reproduction. Current Snes9x and Snes9x 2010
+retain their prior exact 256×224 hashes. Non-macOS runtime execution remains incomplete.
 The portable-release matrix now builds `lm-libretro` explicitly beside `lm-native` and `lm-cli`
 for Linux x86-64, Windows x86-64, Apple Silicon macOS, and Intel macOS before invoking the strict
 packager. Ordinary CI repeats the complete three-binary build and package operation on Linux,
