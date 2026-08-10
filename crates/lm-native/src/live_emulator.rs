@@ -11,7 +11,7 @@ use std::io::{Read, Write};
 use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
 use std::sync::mpsc::{self, Receiver, Sender, TryRecvError};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 const MAX_PROTOCOL_RECORD: usize = 40 * 1024 * 1024;
 
@@ -27,6 +27,7 @@ struct RunningSession {
     pause: EmulatorPauseMode,
     capabilities: Option<u32>,
     joypad: u16,
+    input_pause_until: Option<Instant>,
 }
 
 #[derive(Default)]
@@ -93,6 +94,7 @@ impl LiveEmulator {
             pause: EmulatorPauseMode::Running,
             capabilities: None,
             joypad: 0,
+            input_pause_until: None,
         });
         self.source_level = Some(level);
         self.source_revision = Some(revision);
@@ -183,11 +185,21 @@ impl LiveEmulator {
         self.poll(context);
         let running = self.running.as_mut()?;
         let (focused, minimized) = context.input(viewport_pause_state);
+        let now = Instant::now();
+        let (deadline, input_paused) = updated_input_pause(
+            running.input_pause_until,
+            context.memory(|memory| memory.any_popup_open()),
+            now,
+        );
+        running.input_pause_until = deadline;
         for pause_action in [
             running.model.set_focus_soft_paused(!focused),
             running
                 .model
                 .set_hard_pause_reason(EmulatorPauseReason::MainWindow, minimized),
+            running
+                .model
+                .set_hard_pause_reason(EmulatorPauseReason::Input, input_paused),
         ]
         .into_iter()
         .flatten()
@@ -199,7 +211,7 @@ impl LiveEmulator {
         }
         let mut stop = false;
         let mut action = None;
-        egui::Window::new(text(UiTextKey::LiveEmulatorWindowTitle))
+        let window_response = egui::Window::new(text(UiTextKey::LiveEmulatorWindowTitle))
             .default_width(560.0)
             .resizable(true)
             .show(context, |ui| {
@@ -237,6 +249,18 @@ impl LiveEmulator {
                     stop = ui.button(text(UiTextKey::LiveEmulatorStop)).clicked();
                 });
             });
+        let viewport_paused = window_response
+            .as_ref()
+            .is_some_and(|response| response.inner.is_none());
+        if let Some(pause_action) = running
+            .model
+            .set_hard_pause_reason(EmulatorPauseReason::Viewport, viewport_paused)
+        {
+            if let EmulatorSessionAction::SetPauseMode(mode) = pause_action {
+                running.pause = mode;
+            }
+            send_session_action(&running.commands, pause_action);
+        }
         if let Some(session_action) = action {
             if let EmulatorSessionAction::SetPauseMode(mode) = session_action {
                 running.pause = mode;
@@ -380,6 +404,19 @@ fn viewport_pause_state(input: &egui::InputState) -> (bool, bool) {
         input.viewport().focused.unwrap_or(true),
         input.viewport().minimized.unwrap_or(false),
     )
+}
+
+fn updated_input_pause(
+    current_deadline: Option<Instant>,
+    popup_open: bool,
+    now: Instant,
+) -> (Option<Instant>, bool) {
+    let deadline = if popup_open {
+        now.checked_add(Duration::from_millis(100))
+    } else {
+        current_deadline.filter(|deadline| *deadline > now)
+    };
+    (deadline, deadline.is_some())
 }
 
 impl Drop for LiveEmulator {
@@ -565,6 +602,7 @@ mod tests {
             pause: EmulatorPauseMode::Running,
             capabilities: None,
             joypad: 0,
+            input_pause_until: None,
         });
         emulator.source_level = Some(0x105);
         emulator.source_revision = Some(7);
@@ -588,6 +626,7 @@ mod tests {
             pause: EmulatorPauseMode::Running,
             capabilities: None,
             joypad: 0,
+            input_pause_until: None,
         });
         emulator.source_level = Some(0x105);
         emulator.source_revision = Some(7);
@@ -646,5 +685,19 @@ mod tests {
         context.begin_pass(input);
         assert_eq!(context.input(viewport_pause_state), (false, true));
         let _ = context.end_pass();
+    }
+
+    #[test]
+    fn menu_input_pause_retains_the_recovered_hundred_millisecond_grace() {
+        let now = Instant::now();
+        let (deadline, paused) = updated_input_pause(None, true, now);
+        assert!(paused);
+        let deadline = deadline.unwrap();
+        assert_eq!(deadline.duration_since(now), Duration::from_millis(100));
+        assert!(updated_input_pause(Some(deadline), false, now + Duration::from_millis(99)).1);
+        assert_eq!(
+            updated_input_pause(Some(deadline), false, now + Duration::from_millis(100)),
+            (None, false)
+        );
     }
 }

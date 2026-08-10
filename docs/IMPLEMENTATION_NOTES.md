@@ -2474,8 +2474,10 @@ including edited sprites, visible without a manual restart while preserving the 
 boundary. Portable packaging includes the sibling backend. LMSW's optimized sprite-stream-only hot
 reload and audio remain incomplete. Native OS focus loss now drives the original focus-only soft
 pause, while minimizing the main viewport drives hard-pause reason `$20`; manual hard pause retains
-precedence through the shared aggregate. Viewport/input/editor-mode hard-pause reasons,
-editor-overlay synchronization, and broader core/platform variants remain incomplete.
+precedence through the shared aggregate. A collapsed live window drives viewport reason `$04`.
+An open egui popup drives input reason `$08`; closure retains the recovered 100-millisecond timer
+grace from `MainFrameWindowProc`/`RenderLmswViewportOverlay` before clearing it. Editor-mode hard
+pause, editor-overlay synchronization, and broader core/platform variants remain incomplete.
 The runnable frontend accepts `tools-config FILE`, lists configured identifiers with `tools-status`,
 and resolves typed requests with `tool-run ID` or `tool-event opened|saved|level`. Those preview
 commands print the executable, working directory, and every argument on separate lines. Explicit

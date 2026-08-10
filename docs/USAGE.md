@@ -109,6 +109,8 @@ window, so object, block, sprite, palette, graphics, and other committed ROM cha
 without manually restarting the session. LMSW's optimized sprite-stream-only hot reload and audio
 output are not implemented yet. Alt-tabbing away soft-pauses the core; minimizing the editor hard-
 pauses it, and restoring focus resumes only when no manual pause remains.
+Collapsing the live window or opening an editor menu also hard-pauses the core; menu closure retains
+the original short input grace before gameplay resumes.
 
 ## Rendering validation
 
