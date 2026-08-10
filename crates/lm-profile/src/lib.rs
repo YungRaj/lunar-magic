@@ -277,7 +277,9 @@ pub use layer3_scroll::{
 pub use layer3_scroll_code::{
     Layer3ScrollHelperLibrary, Layer3ScrollHelperTarget, smw_us_v1_layer3_scroll_helper_library,
 };
-pub use level_access_restriction::smw_us_v1_level_access_restriction_layout;
+pub use level_access_restriction::{
+    smw_us_v1_exlorom_level_access_restriction_layout, smw_us_v1_level_access_restriction_layout,
+};
 pub use lfix3_install::{
     SMW_US_V1_LFIX3_SEARCH_END, SMW_US_V1_LFIX3_SEARCH_START, SmwUsV1Lfix3DetectError,
     SmwUsV1Lfix3Generation, SmwUsV1Lfix3Generation1MigrationBuildError,

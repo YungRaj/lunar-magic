@@ -15,14 +15,14 @@ impl AppState {
             });
         }
         self.ensure_project_revision_capacity()?;
-        self.project
-            .as_mut()
-            .ok_or(AppError::NoProject)?
-            .restrict_level_access(
-                title,
-                keys,
-                lm_profile::smw_us_v1_level_access_restriction_layout(),
-            )?;
+        let project = self.project.as_mut().ok_or(AppError::NoProject)?;
+        let layout = match project.identity.as_ref().map(|identity| identity.mapper) {
+            Some(lm_rom::Mapper::ExLoRom) => {
+                lm_profile::smw_us_v1_exlorom_level_access_restriction_layout()
+            }
+            _ => lm_profile::smw_us_v1_level_access_restriction_layout(),
+        };
+        project.restrict_level_access(title, keys, layout)?;
         self.advance_project_revision()?;
         let description = "Restrict level access".to_owned();
         self.status =

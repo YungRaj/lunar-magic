@@ -1,6 +1,7 @@
 //! Lunar Magic's permanent level-access restriction transaction.
 
 use crate::{CopierHeaderEdit, Edit, EditBatch, EditKind, Project, TransactionError};
+use lm_rats::{AllocationError, AllocationPolicy, FreeSpaceAllocator, parse_at};
 use lm_rom::{
     COPIER_HEADER_LEN, Mapper, RomError, SnesChecksum, compute_snes_checksum, pc_to_snes,
 };
@@ -32,9 +33,26 @@ pub struct LevelAccessRestrictionLayout {
     pub metadata_compensation_len: usize,
     pub metadata_compensation_byte: usize,
     pub restriction_marker: usize,
+    pub restriction_marker_mirror: Option<usize>,
     pub title: usize,
+    pub title_mirror: Option<usize>,
     pub version: usize,
+    pub version_mirror: Option<usize>,
     pub checksum_field: usize,
+    pub exlorom_bulk_save: Option<ExLoRomRestrictionBulkSaveLayout>,
+}
+
+/// Descriptor-backed allocation migration performed while Lunar Magic bulk-resaves ExLoROM.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ExLoRomRestrictionBulkSaveLayout {
+    pub protected_owner: usize,
+    pub auxiliary_owner: usize,
+    pub allocation_start: usize,
+    pub allocation_end: usize,
+    pub protected_pointer: usize,
+    pub auxiliary_pointer_low: usize,
+    pub auxiliary_pointer_bank: usize,
+    pub allocation_cursor: usize,
 }
 
 /// Randomized material embedded by one restriction run.
@@ -57,6 +75,7 @@ pub enum LevelAccessRestrictionError {
     NonAsciiTitle,
     InvalidLayout,
     NoChecksumCompensation,
+    Allocation(AllocationError),
     Rom(RomError),
     Transaction(TransactionError),
 }
@@ -78,6 +97,12 @@ impl From<RomError> for LevelAccessRestrictionError {
 impl From<TransactionError> for LevelAccessRestrictionError {
     fn from(value: TransactionError) -> Self {
         Self::Transaction(value)
+    }
+}
+
+impl From<AllocationError> for LevelAccessRestrictionError {
+    fn from(value: AllocationError) -> Self {
+        Self::Allocation(value)
     }
 }
 
@@ -103,11 +128,21 @@ impl Project {
         let mut staged = original.clone();
 
         let per_save_mask = u16::from(keys.per_save_low) | u16::from(keys.per_save_high) << 8;
-        for offset in layout.protected_pointer_words {
-            xor_word(&mut staged, offset, per_save_mask)?;
+        if let Some(migration) = layout.exlorom_bulk_save {
+            migrate_exlorom_bulk_save_owners(&mut staged, migration, per_save_mask)?;
+        } else {
+            for offset in layout.protected_pointer_words {
+                xor_word(&mut staged, offset, per_save_mask)?;
+            }
         }
 
         let mut per_save = PER_SAVE_TEMPLATE;
+        if layout.mapper == Mapper::ExLoRom {
+            // The original derives this bank byte from descriptor entry $31 after mapper
+            // conversion. The 64-Mbit SMW-US descriptor resolves it to bank $81.
+            per_save[3] = 0x81;
+            per_save[14] = 0x81;
+        }
         per_save[7] = keys.per_save_low;
         per_save[18] = keys.per_save_high;
         copy(&mut staged, layout.per_save_code, &per_save)?;
@@ -145,10 +180,19 @@ impl Project {
         }
 
         copy(&mut staged, layout.restriction_marker, b"B")?;
+        if let Some(offset) = layout.restriction_marker_mirror {
+            copy(&mut staged, offset, b"B")?;
+        }
         let mut padded_title = [b' '; 21];
         padded_title[..title.len()].copy_from_slice(title.as_bytes());
         copy(&mut staged, layout.title, &padded_title)?;
+        if let Some(offset) = layout.title_mirror {
+            copy(&mut staged, offset, &padded_title)?;
+        }
         copy(&mut staged, layout.version, &[5])?;
+        if let Some(offset) = layout.version_mirror {
+            copy(&mut staged, offset, &[5])?;
+        }
 
         copy(
             &mut staged,
@@ -165,6 +209,61 @@ impl Project {
         commit_complete_restriction(self, layout.mapper, &original, &staged, replacement_header)?;
         Ok(true)
     }
+}
+
+fn migrate_exlorom_bulk_save_owners(
+    staged: &mut [u8],
+    layout: ExLoRomRestrictionBulkSaveLayout,
+    per_save_mask: u16,
+) -> Result<(), LevelAccessRestrictionError> {
+    let protected = parse_at(staged, layout.protected_owner)
+        .map_err(|_| LevelAccessRestrictionError::InvalidLayout)?;
+    let auxiliary = parse_at(staged, layout.auxiliary_owner)
+        .map_err(|_| LevelAccessRestrictionError::InvalidLayout)?;
+    if protected.payload.len() != 0x21 || auxiliary.payload.len() != 5 {
+        return Err(LevelAccessRestrictionError::InvalidLayout);
+    }
+
+    let mut protected_payload = staged[protected.payload.clone()].to_vec();
+    for relative in [5usize, 8, 11, 14, 17, 20, 23, 26, 29] {
+        xor_word(&mut protected_payload, relative, per_save_mask)?;
+    }
+    let auxiliary_payload = staged[auxiliary.payload.clone()].to_vec();
+    let policy = AllocationPolicy::lorom(layout.allocation_start..layout.allocation_end);
+    let (new_protected, new_auxiliary) = {
+        let mut allocator = FreeSpaceAllocator::new(staged, policy);
+        let new_protected = allocator.allocate(&protected_payload)?;
+        let new_auxiliary = allocator.allocate(&auxiliary_payload)?;
+        (new_protected, new_auxiliary)
+    };
+
+    staged[protected.full_range()].fill(0);
+    staged[auxiliary.full_range()].fill(0);
+    let protected_pointer = pc_to_snes(Mapper::ExLoRom, new_protected.payload.start)?;
+    copy(
+        staged,
+        layout.protected_pointer,
+        &protected_pointer.to_le_bytes()[..3],
+    )?;
+    let auxiliary_pointer = pc_to_snes(Mapper::ExLoRom, new_auxiliary.payload.start)?;
+    copy(
+        staged,
+        layout.auxiliary_pointer_low,
+        &auxiliary_pointer.to_le_bytes()[..2],
+    )?;
+    copy(
+        staged,
+        layout.auxiliary_pointer_bank,
+        &[auxiliary_pointer.to_le_bytes()[2]],
+    )?;
+    let physical_cursor = u32::try_from(new_auxiliary.full_range().end + COPIER_HEADER_LEN)
+        .map_err(|_| LevelAccessRestrictionError::InvalidLayout)?;
+    copy(
+        staged,
+        layout.allocation_cursor,
+        &physical_cursor.to_le_bytes()[..3],
+    )?;
+    Ok(())
 }
 
 fn validate(
@@ -224,6 +323,62 @@ fn install_checksum_compensation(
             .get_mut(layout.metadata_compensation_byte)
             .ok_or(LevelAccessRestrictionError::InvalidLayout)? = value;
         if compute_snes_checksum(staged, layout.checksum_field)? == stored {
+            return Ok(());
+        }
+    }
+    let auxiliary_offset = layout
+        .metadata_compensation_byte
+        .checked_sub(1)
+        .filter(|offset| *offset >= layout.metadata_compensation_fill)
+        .ok_or(LevelAccessRestrictionError::NoChecksumCompensation)?;
+    staged[auxiliary_offset] = 0;
+    staged[layout.metadata_compensation_byte] = 0;
+    let base = compute_snes_checksum(staged, layout.checksum_field)?.checksum;
+    staged[auxiliary_offset] = 1;
+    let auxiliary_weight = compute_snes_checksum(staged, layout.checksum_field)?
+        .checksum
+        .wrapping_sub(base);
+    staged[auxiliary_offset] = 0;
+    staged[layout.metadata_compensation_byte] = 1;
+    let primary_weight = compute_snes_checksum(staged, layout.checksum_field)?
+        .checksum
+        .wrapping_sub(base);
+    staged[layout.metadata_compensation_byte] = 0;
+    for auxiliary in 0..=u8::MAX {
+        for primary in 0..=u8::MAX {
+            if base
+                .wrapping_add(auxiliary_weight.wrapping_mul(u16::from(auxiliary)))
+                .wrapping_add(primary_weight.wrapping_mul(u16::from(primary)))
+                == stored.checksum
+            {
+                staged[auxiliary_offset] = auxiliary;
+                staged[layout.metadata_compensation_byte] = primary;
+                return Ok(());
+            }
+        }
+    }
+    let compensation_end = layout
+        .metadata_compensation_byte
+        .checked_add(1)
+        .ok_or(LevelAccessRestrictionError::NoChecksumCompensation)?;
+    staged[layout.metadata_compensation_fill..compensation_end].fill(0);
+    let base = compute_snes_checksum(staged, layout.checksum_field)?.checksum;
+    staged[layout.metadata_compensation_fill] = 1;
+    let common_weight = compute_snes_checksum(staged, layout.checksum_field)?
+        .checksum
+        .wrapping_sub(base);
+    staged[layout.metadata_compensation_fill] = 0;
+    let byte_count = compensation_end - layout.metadata_compensation_fill;
+    for total in 0..=byte_count * usize::from(u8::MAX) {
+        if base.wrapping_add(common_weight.wrapping_mul(u16::try_from(total).unwrap_or(u16::MAX)))
+            == stored.checksum
+        {
+            let mut remaining = total;
+            for byte in &mut staged[layout.metadata_compensation_fill..compensation_end] {
+                let value = remaining.min(usize::from(u8::MAX));
+                *byte = u8::try_from(value).unwrap_or(u8::MAX);
+                remaining -= value;
+            }
             return Ok(());
         }
     }

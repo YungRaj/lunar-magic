@@ -122,7 +122,8 @@ pub use legacy_exanimation_io::{
 };
 pub use legacy_mwl::{LegacyMwlBundle, LegacyMwlBundleError};
 pub use level_access_restriction::{
-    LevelAccessRestrictionError, LevelAccessRestrictionKeys, LevelAccessRestrictionLayout,
+    ExLoRomRestrictionBulkSaveLayout, LevelAccessRestrictionError, LevelAccessRestrictionKeys,
+    LevelAccessRestrictionLayout,
 };
 pub use level_io::{
     LevelLoadError, LevelPointerTable, LevelRomLayout, LoadedLevelSlot, SpritePointerTable,

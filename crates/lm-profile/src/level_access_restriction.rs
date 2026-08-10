@@ -1,6 +1,6 @@
 //! SMW-US revision-0 layout for Lunar Magic's permanent level-access restriction.
 
-use lm_project::LevelAccessRestrictionLayout;
+use lm_project::{ExLoRomRestrictionBulkSaveLayout, LevelAccessRestrictionLayout};
 use lm_rom::Mapper;
 
 /// Returns the headerless locations recovered from Lunar Magic 3.63's active `LoROM` descriptor.
@@ -32,9 +32,51 @@ pub const fn smw_us_v1_level_access_restriction_layout() -> LevelAccessRestricti
         metadata_compensation_len: 0x19,
         metadata_compensation_byte: 0x0007_f01e,
         restriction_marker: 0x0000_7fbf,
+        restriction_marker_mirror: None,
         title: 0x0000_7fc0,
+        title_mirror: None,
         version: 0x0000_7fdb,
+        version_mirror: None,
         checksum_field: crate::SMW_US_V1_CHECKSUM_FIELD,
+        exlorom_bulk_save: None,
+    }
+}
+
+/// Returns the exact descriptor-routed layout used after the 64-Mbit ExLoROM conversion.
+#[must_use]
+pub const fn smw_us_v1_exlorom_level_access_restriction_layout() -> LevelAccessRestrictionLayout {
+    LevelAccessRestrictionLayout {
+        mapper: Mapper::ExLoRom,
+        per_save_hook: 0x0042_8605,
+        per_save_code: 0x0046_f100,
+        per_save_completion_marker: 0x0041_bb1f,
+        bulk_save_hook: 0x0040_38de,
+        bulk_save_code: 0x0046_f1a0,
+        graphics_pointer_low: 0x0040_3992,
+        graphics_pointer_high: 0x0040_39c4,
+        graphics_pointer_entries: 0x32,
+        graphics_integrity_words: [0x0040_388b, 0x0040_38d8],
+        protected_pointer_words: [0; 9],
+        metadata_compensation_fill: 0x0047_f015,
+        metadata_compensation_len: 0x19,
+        metadata_compensation_byte: 0x0047_f02e,
+        restriction_marker: 0x0000_7fbf,
+        restriction_marker_mirror: Some(0x0040_7fbf),
+        title: 0x0000_7fc0,
+        title_mirror: Some(0x0040_7fc0),
+        version: 0x0000_7fdb,
+        version_mirror: Some(0x0040_7fdb),
+        checksum_field: 0x0040_7fdc,
+        exlorom_bulk_save: Some(ExLoRomRestrictionBulkSaveLayout {
+            protected_owner: 0x0048_0000,
+            auxiliary_owner: 0x0048_0541,
+            allocation_start: 0x0020_0000,
+            allocation_end: 0x0040_0000,
+            protected_pointer: 0x0042_e000,
+            auxiliary_pointer_low: 0x0042_ec00,
+            auxiliary_pointer_bank: 0x0047_7100,
+            allocation_cursor: 0x0047_fffc,
+        }),
     }
 }
 
@@ -170,6 +212,116 @@ mod tests {
             "unexpected restriction error: {error:?}"
         );
         assert_eq!(project.save_snapshot(), converted);
+        assert_eq!(project.history.undo_len(), history_before);
+    }
+
+    #[test]
+    fn exlorom_restriction_matches_authenticated_bulk_save_and_undoes_exactly() {
+        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let before = fs::read(root.join("oracle-work/lm363/restrict-exlorom/before.smc")).unwrap();
+        let expected = fs::read(root.join("oracle-work/lm363/restrict-exlorom/after.smc")).unwrap();
+        let mut project =
+            Project::open_supported(RomImage::from_bytes(before.clone()).unwrap()).unwrap();
+
+        project
+            .restrict_level_access(
+                "Codex Parity Test",
+                LevelAccessRestrictionKeys {
+                    per_save_low: 0x32,
+                    per_save_high: 0x5d,
+                    graphics: 0x0b32,
+                },
+                smw_us_v1_exlorom_level_access_restriction_layout(),
+            )
+            .unwrap();
+
+        assert_eq!(project.save_snapshot(), expected);
+        project.undo().unwrap();
+        assert_eq!(project.save_snapshot(), before);
+        project.redo().unwrap();
+        assert_eq!(project.save_snapshot(), expected);
+    }
+
+    #[test]
+    fn exlorom_restriction_is_logically_identical_without_a_copier_header() {
+        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let before = fs::read(root.join("oracle-work/lm363/restrict-exlorom/before.smc")).unwrap();
+        let expected = fs::read(root.join("oracle-work/lm363/restrict-exlorom/after.smc")).unwrap();
+        let logical_before = before[lm_rom::COPIER_HEADER_LEN..].to_vec();
+        let logical_expected = expected[lm_rom::COPIER_HEADER_LEN..].to_vec();
+        let mut project =
+            Project::open_supported(RomImage::from_bytes(logical_before.clone()).unwrap()).unwrap();
+
+        project
+            .restrict_level_access(
+                "Codex Parity Test",
+                LevelAccessRestrictionKeys {
+                    per_save_low: 0x32,
+                    per_save_high: 0x5d,
+                    graphics: 0x0b32,
+                },
+                smw_us_v1_exlorom_level_access_restriction_layout(),
+            )
+            .unwrap();
+
+        assert_eq!(project.save_snapshot(), logical_expected);
+        assert!(project.rom.copier_header_bytes().is_none());
+        project.undo().unwrap();
+        assert_eq!(project.save_snapshot(), logical_before);
+        assert!(project.rom.copier_header_bytes().is_none());
+    }
+
+    #[test]
+    fn exlorom_bulk_save_relocates_around_occupied_space_and_undoes_atomically() {
+        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let source = fs::read(root.join("oracle-work/lm363/restrict-exlorom/before.smc")).unwrap();
+        let mut project = Project::open_supported(RomImage::from_bytes(source).unwrap()).unwrap();
+        project.rom.write(0x20_0000, &[0x7f]).unwrap();
+        let checksum =
+            lm_rom::compute_snes_checksum(project.rom.logical_bytes(), 0x40_7fdc).unwrap();
+        project.rom.write(0x40_7fdc, &checksum.encoded()).unwrap();
+        let before = project.save_snapshot();
+
+        project
+            .restrict_level_access(
+                "Relocated protection",
+                LevelAccessRestrictionKeys {
+                    per_save_low: 0x32,
+                    per_save_high: 0x5d,
+                    graphics: 0x0b32,
+                },
+                smw_us_v1_exlorom_level_access_restriction_layout(),
+            )
+            .unwrap();
+
+        assert_eq!(project.rom.read(0x20_0000, 5).unwrap(), b"\x7fSTAR");
+        assert_eq!(
+            lm_rom::compute_snes_checksum(project.rom.logical_bytes(), 0x40_7fdc).unwrap(),
+            lm_rom::SnesChecksum::decode(project.rom.logical_bytes(), 0x40_7fdc).unwrap()
+        );
+        project.undo().unwrap();
+        assert_eq!(project.save_snapshot(), before);
+    }
+
+    #[test]
+    fn corrupt_exlorom_bulk_save_owner_is_rejected_without_partial_mutation() {
+        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let source = fs::read(root.join("oracle-work/lm363/restrict-exlorom/before.smc")).unwrap();
+        let mut project = Project::open_supported(RomImage::from_bytes(source).unwrap()).unwrap();
+        project.rom.write(0x48_0000, b"BROK").unwrap();
+        let before = project.save_snapshot();
+        let history_before = project.history.undo_len();
+
+        let error = project
+            .restrict_level_access(
+                "Must remain atomic",
+                KEYS,
+                smw_us_v1_exlorom_level_access_restriction_layout(),
+            )
+            .unwrap_err();
+
+        assert!(matches!(error, LevelAccessRestrictionError::InvalidLayout));
+        assert_eq!(project.save_snapshot(), before);
         assert_eq!(project.history.undo_len(), history_before);
     }
 
