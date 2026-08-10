@@ -663,6 +663,33 @@ impl VanillaLevelEditor {
         pending_command
     }
 
+    /// Reports the exact built-in editor commit shape used by Lunar Magic's optimized LMSW path.
+    pub(crate) fn has_sprite_only_changes(&self) -> bool {
+        self.controller.as_ref().is_some_and(|controller| {
+            controller.sprites_are_modified()
+                && !controller.layer1_is_modified()
+                && !controller.layer2_is_modified()
+        })
+    }
+
+    /// Serializes the staged sprite stream exactly as LMSW receives it: the one-byte level sprite
+    /// header is omitted, while legacy/expanded framing and terminators remain intact.
+    pub(crate) fn lmsw_sprite_payload(&self) -> Result<Vec<u8>, String> {
+        let controller = self
+            .controller
+            .as_ref()
+            .ok_or_else(|| "the built-in level editor is not loaded".to_string())?;
+        let encoded = controller
+            .level()
+            .sprites
+            .encode_for_table(controller.sprite_lengths())
+            .map_err(|error| error.to_string())?;
+        encoded
+            .get(1..)
+            .map(<[u8]>::to_vec)
+            .ok_or_else(|| "serialized sprite stream omitted its header".to_string())
+    }
+
     fn tools_panel_visible(&self) -> bool {
         self.tools_panel_visible.unwrap_or(true)
     }
@@ -19226,6 +19253,16 @@ mod tests {
             ),
             (4, 69, 7)
         );
+        assert!(editor.has_sprite_only_changes());
+        let expected_lmsw = editor
+            .controller
+            .as_ref()
+            .unwrap()
+            .level()
+            .sprites
+            .encode_for_table(&SpriteLengthTable::standard())
+            .unwrap();
+        assert_eq!(editor.lmsw_sprite_payload().unwrap(), expected_lmsw[1..]);
 
         let options = LevelSaveOptions {
             layer1_allocation: AllocationPolicy {

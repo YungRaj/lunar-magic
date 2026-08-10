@@ -801,16 +801,22 @@ python3 tools/lm-libretro-smw-oracle.py \
   --rom /path/to/vanilla/smwOrig.smc
 
 result  level  frame  mode  translevel  camera  size     frame_sha256                                                     audio
-initial 105    1769   14    28          0,192   256x224  5bdb35bb32c3d52815d0dc961ce1a27d9890a9972c30c45648377701bb5aa597  32040Hz/533f/f59408c23262e1f0fe5e15de29355da4e92bf04c8437cbbe57b33bd06cdf8bc0
-switch  106    110    14    25          0,192   256x224  3cfb24c3958eb8e0c0c8d8ea373d69be18b236f0d695a86829e0109a0607d963  32040Hz/533f/afeeea8d123675391afc5fe19035893bd6f5f28b3cdf9a02e15d377e7ded4eda
-reload  105    1769   14    28          0,192   256x224  5bdb35bb32c3d52815d0dc961ce1a27d9890a9972c30c45648377701bb5aa597  32040Hz/533f/f59408c23262e1f0fe5e15de29355da4e92bf04c8437cbbe57b33bd06cdf8bc0
+initial 105    1769   14    28          0,192   256x224  d557c220ec3a788e589c4ad9cdf74ef400ab6a2af629f5b9f3ea16d7221f3dc3  32040Hz/534f/9e52af87f6ba41aa481861a96c72d5616ff0ab4e4dc3eef3725e27f46e715412
+switch  106    158    14    28          0,192   256x224  be89bf643a51acd6770a4ab012423ed94c7a4e4f3fa8c419ef252a707733e512  32040Hz/533f/510f929fcbaa35d62ac3c724ca3f3acd00ab6a6ee2e3ee1f8e536befc55ffafc
+reload  105    1769   14    28          0,192   256x224  d557c220ec3a788e589c4ad9cdf74ef400ab6a2af629f5b9f3ea16d7221f3dc3  32040Hz/534f/9e52af87f6ba41aa481861a96c72d5616ff0ab4e4dc3eef3725e27f46e715412
 ```
 
-The run required capability mask `$FF`, automatically traversed vanilla game modes `$00..$0E`,
+The current run requires capability mask `$1FF`, automatically traverses vanilla game modes
+`$00..$0E`,
 entered selected sublevel `$105` through `$0F..$14`, switched the active core to `$106` through a
 second `$0F..$14` transition, required distinct nonuniform 256×224 opaque RGBA frames, acknowledged
 hard pause, required bounded nonuniform interleaved stereo at the declared 32,040-Hz core rate,
 reloaded ROM revision 2 in the same process, reproduced level `$105` and its exact frame and audio,
-produced exactly one requested paused frame, stopped, and exited zero. Port-8089 Ghidra
+produces exactly one requested paused frame, stops, and exits zero. Before switching levels it now
+performs two deterministic `$105` runs: one with the exact original headerless stream and one with
+real record IDs/placement changed, while holding identical joypad input. It queries `$14C8`, `$009E`,
+and `$1938` every frame and requires the edited Goomba to become active without leaving mode
+`$14`/sublevel `$105`, then proves the save-RAM mirror remains bounded/restorable and a direct
+switch reaches a distinct `$106` frame. Port-8089 Ghidra
 independently proves Lunar Magic 3.63 resolves `LMSW_LoadLevel` and calls it with
 `g_dwCurrentLevelNumber` after ROM load and again when the current editor level finishes loading.

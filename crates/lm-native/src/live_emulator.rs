@@ -186,6 +186,40 @@ impl LiveEmulator {
         Ok(())
     }
 
+    pub(crate) fn reload_sprite_snapshot(
+        &mut self,
+        revision: u64,
+        level: u16,
+        rom: Vec<u8>,
+        sprites: Vec<u8>,
+    ) -> Result<(), String> {
+        let running = self
+            .running
+            .as_ref()
+            .ok_or_else(|| "live emulator is not running".to_string())?;
+        if self.source_level != Some(level) {
+            return Err(format!(
+                "sprite hot reload targets level {level:03X}, but the live core is on level {:03X}",
+                self.source_level.unwrap_or_default()
+            ));
+        }
+        running
+            .commands
+            .send(WorkerCommand::Protocol(
+                EmulatorBackendCommand::ReloadSpriteSnapshot {
+                    revision,
+                    level,
+                    rom,
+                    sprites,
+                },
+            ))
+            .map_err(|_| "live emulator worker disconnected".to_string())?;
+        self.source_revision = Some(revision);
+        self.audio.clear();
+        self.status = format!("Reloading edited sprites in level {level:03X}");
+        Ok(())
+    }
+
     pub(crate) fn set_editor_animation_playing(&mut self, playing: bool) {
         let Some(running) = self.running.as_mut() else {
             return;
@@ -410,9 +444,15 @@ impl LiveEmulator {
                         }
                     }
                     EmulatorBackendEvent::Error(error) => {
+                        // A command error makes optimistic source synchronization untrustworthy.
+                        // Force the next application frame through the full snapshot fallback.
+                        self.source_revision =
+                            Some(self.source_revision.unwrap_or_default().wrapping_sub(1));
                         self.status = format!("Live emulator error: {error}");
                     }
-                    EmulatorBackendEvent::Acknowledged | EmulatorBackendEvent::Viewport(_) => {}
+                    EmulatorBackendEvent::Acknowledged
+                    | EmulatorBackendEvent::Viewport(_)
+                    | EmulatorBackendEvent::RuntimeSprites { .. } => {}
                 },
                 Ok(Err(error)) => {
                     self.status = error;
@@ -763,6 +803,20 @@ mod tests {
             WorkerCommand::Protocol(EmulatorBackendCommand::LoadLevel(0x107))
         ));
         assert_eq!(emulator.source_context(), Some((0x107, 8)));
+
+        emulator
+            .reload_sprite_snapshot(9, 0x107, vec![4, 5, 6], vec![0xff])
+            .unwrap();
+        assert!(matches!(
+            command_receiver.recv().unwrap(),
+            WorkerCommand::Protocol(EmulatorBackendCommand::ReloadSpriteSnapshot {
+                revision: 9,
+                level: 0x107,
+                rom,
+                sprites,
+            }) if rom == vec![4, 5, 6] && sprites == vec![0xff]
+        ));
+        assert_eq!(emulator.source_context(), Some((0x107, 9)));
 
         emulator.set_editor_animation_playing(false);
         assert!(matches!(

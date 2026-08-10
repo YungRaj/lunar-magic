@@ -2488,7 +2488,17 @@ signed, unsigned, and floating device formats, and clears latency state on mute,
 stop, or teardown. The official Snes9x oracle proves 533 nonuniform stereo frames at 32,040 Hz per
 captured video frame, distinct `$105`/`$106` hashes, and exact `$105` audio reproduction after ROM
 reload; the opt-in hardware gate proves native stream creation, resampling, mute, and teardown.
-LMSW's optimized sprite-stream-only hot reload remains incomplete. Native OS focus loss
+LMSW's optimized sprite-only edit boundary is now implemented from the recovered
+`SerializeSpriteDataForInternalEmulator`/`ReloadLmswSpriteData`/
+`RefreshLmswSpritesAfterEdit` chain. The built-in editor proves that only sprites changed, emits the
+canonical stream after its one-byte header, and leaves mixed Layer 1/2 commits on the full snapshot
+path. The backend uses a bounded, fully restored save-RAM mirror as a portable libretro-visible
+buffer, redirects `$CE..$D0`, clears the twelve regular status slots and 128 record load flags, and
+keeps the active core in game mode `$14`. Its newer ROM snapshot is deferred until a later level
+transition, avoiding any disguised unload/reload during the edit. The official Snes9x mutation
+oracle proves the edited record becomes a live Goomba in `$009E` with nonzero `$14C8/$1938` state,
+without leaving mode `$14`, and that a subsequent direct switch reaches a distinct level frame.
+Native OS focus loss
 now drives the original focus-only soft pause, while minimizing the main viewport drives hard-pause
 reason `$20`; manual hard pause retains
 precedence through the shared aggregate. A collapsed live window drives viewport reason `$04`.

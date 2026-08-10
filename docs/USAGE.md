@@ -110,8 +110,13 @@ without manually restarting the session. With **Game pixels** and the SNES viewp
 live frame is drawn directly in the level canvas and refits whenever the canvas or window changes
 size; canvas selection and placement hit testing remains active. **Selection over game** defaults
 on and draws only the currently selected object/sprite artwork and outlines over the live frame;
-turn it off to view the unobstructed emulator image. LMSW's optimized sprite-stream-only hot reload
-is not implemented yet. The **Audio** toggle mutes/unmutes the core without stopping emulation.
+turn it off to view the unobstructed emulator image. A built-in-editor commit that changes only
+sprites now follows LMSW's optimized path: the exact serialized stream after its one-byte header is
+mirrored into bounded live-session memory, old regular sprites/load flags are invalidated, and the
+running core consumes the edit without rebooting or leaving the level. The mirror restores every
+original save-RAM byte before stop, a level switch, or a later full-revision reload; streams larger
+than the core's available mirror report an error and fall back to the ordinary full snapshot sync.
+The **Audio** toggle mutes/unmutes the core without stopping emulation.
 Audio uses the core's declared rate and is resampled to the current output device; pause, mute,
 reload, stop, and project close discard queued sound so stale audio cannot play later. Alt-tabbing
 away soft-pauses the core; minimizing the editor hard-pauses it, and restoring focus resumes only

@@ -51,8 +51,18 @@ queue, linearly resamples the core's actual rate to the device rate, exposes mut
 audio on pause, mute, reload, stop, and teardown. The retained official-Snes9x oracle requires
 nonuniform 32,040-Hz audio at `$105` and `$106`; identical ROM reload reproduces the exact `$105`
 audio hash, while the native hardware-output smoke gate opens and closes the actual output device.
-The row remains `Partial`: LMSW's optimized sprite-stream-only hot reload and broader
-core/runtime/platform variants are still missing. This addendum
+Sprite-only built-in-editor commits now reproduce `RefreshLmswSpritesAfterEdit`: Rust classifies the
+commit only when sprites changed and Layer 1/2 did not, serializes the native stream after its
+one-byte header, and sends it with the accumulated ROM revision. The isolated backend mirrors that
+stream into temporary save RAM, redirects SMW's native loader, clears `$14C8..$14D3` and
+`$1938..$19B7`, and preserves the running level/core. Every displaced save byte is restored before
+stop or transition, and the accumulated ROM snapshot is installed before a later level switch.
+The official-Snes9x oracle changes real sprite records, queries the core's exact `$14C8`, `$009E`,
+and `$1938` tables, and requires SMW to instantiate the edited Goomba without a `$14`
+mode/sublevel transition. It then proves direct switching still reaches a distinct level frame; the
+complete accumulated ROM remains ready for the next ordinary revision reload. The row remains
+`Partial` only because broader core/runtime/platform variants are still
+missing. This addendum
 supersedes only the older clauses that list the now-proved backend, native control, selected-level,
 input, audio, and compatible-core runtime boundaries as missing.
 

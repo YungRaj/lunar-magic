@@ -14,6 +14,7 @@ use std::sync::{Mutex, OnceLock};
 
 const RETRO_API_VERSION: u32 = 1;
 const RETRO_MEMORY_SYSTEM_RAM: u32 = 2;
+const RETRO_MEMORY_SAVE_RAM: u32 = 0;
 const SMW_WRAM_BYTES: usize = 128 * 1024;
 const RETRO_ENVIRONMENT_SET_PIXEL_FORMAT: u32 = 10;
 const RETRO_ENVIRONMENT_SET_INPUT_DESCRIPTORS: u32 = 11;
@@ -30,6 +31,7 @@ const CAP_VIEWPORT: u32 = 1 << 4;
 const CAP_INPUT: u32 = 1 << 5;
 const CAP_LEVEL_LOAD: u32 = 1 << 6;
 const CAP_AUDIO: u32 = 1 << 7;
+const CAP_SPRITE_SNAPSHOT: u32 = 1 << 8;
 const CAPABILITIES: u32 = CAP_ROM_LOAD
     | CAP_FRAME
     | CAP_PAUSE
@@ -37,7 +39,8 @@ const CAPABILITIES: u32 = CAP_ROM_LOAD
     | CAP_VIEWPORT
     | CAP_INPUT
     | CAP_LEVEL_LOAD
-    | CAP_AUDIO;
+    | CAP_AUDIO
+    | CAP_SPRITE_SNAPSHOT;
 const MAX_PROTOCOL_RECORD: usize = 40 * 1024 * 1024;
 
 #[repr(C)]
@@ -288,6 +291,10 @@ struct Backend {
     initialized: bool,
     loaded: bool,
     rom: Vec<u8>,
+    latest_rom: Option<Vec<u8>>,
+    sprite_sram_backup: Option<Vec<u8>>,
+    sprite_overlays: Vec<(u16, Vec<u8>)>,
+    pending_sprite_overlay: Option<u16>,
     pause: EmulatorPauseMode,
     viewport: Option<EmulatorViewport>,
     requested_level: Option<u16>,
@@ -332,6 +339,10 @@ impl Backend {
             initialized: true,
             loaded: false,
             rom: Vec::new(),
+            latest_rom: None,
+            sprite_sram_backup: None,
+            sprite_overlays: Vec::new(),
+            pending_sprite_overlay: None,
             pause: EmulatorPauseMode::Running,
             viewport: None,
             requested_level: None,
@@ -343,12 +354,16 @@ impl Backend {
     }
 
     fn load_rom(&mut self, rom: Vec<u8>) -> Result<(), String> {
+        self.restore_sprite_sram();
         if self.loaded {
             // SAFETY: `loaded` records one successful matching `retro_load_game` call.
             unsafe { (self.api.unload_game)() };
             self.loaded = false;
         }
         self.rom = rom;
+        self.latest_rom = None;
+        self.sprite_overlays.clear();
+        self.pending_sprite_overlay = None;
         let game = RetroGameInfo {
             path: std::ptr::null(),
             data: self.rom.as_ptr().cast(),
@@ -394,6 +409,69 @@ impl Backend {
         self.previous_mode = 0xff;
         self.mode_age = 0;
         Ok(())
+    }
+
+    fn hot_reload_sprite_snapshot(
+        &mut self,
+        level: u16,
+        rom: Vec<u8>,
+        sprites: Vec<u8>,
+    ) -> Result<EmulatorBackendEvent, String> {
+        if !self.loaded {
+            return Err("no ROM is loaded".into());
+        }
+        if sprites.is_empty() {
+            return Err("sprite reload stream is empty".into());
+        }
+        let header = {
+            let wram = system_ram_mut(&mut self.api).ok_or_else(|| {
+                "libretro core stopped exposing exact 128 KiB system RAM after sprite reload"
+                    .to_string()
+            })?;
+            (wram[0x1692] & 0x3f) | (wram[0x190e] & 0xc0)
+        };
+        let sram = save_ram_mut(&mut self.api)
+            .ok_or_else(|| "libretro core does not expose writable save RAM".to_string())?;
+        if sprites.len() >= sram.len() {
+            return Err(format!(
+                "headerless LMSW sprite stream is {} bytes; core save-RAM mirror holds at most {}",
+                sprites.len(),
+                sram.len().saturating_sub(1)
+            ));
+        }
+        if self.sprite_sram_backup.is_none() {
+            self.sprite_sram_backup = Some(sram.to_vec());
+        }
+        sram[0] = header;
+        sram[1..1 + sprites.len()].copy_from_slice(&sprites);
+        let wram = system_ram_mut(&mut self.api).ok_or_else(|| {
+            "libretro core stopped exposing exact 128 KiB system RAM after sprite reload"
+                .to_string()
+        })?;
+        redirect_lmsw_sprite_stream(wram);
+        self.latest_rom = Some(rom);
+        let mut full_stream = Vec::with_capacity(sprites.len() + 1);
+        full_stream.push(header);
+        full_stream.extend_from_slice(&sprites);
+        self.sprite_overlays
+            .retain(|(overlay_level, _)| *overlay_level != level);
+        self.sprite_overlays.push((level, full_stream));
+        self.pending_sprite_overlay = None;
+        self.reached_overworld = true;
+        self.previous_mode = 0xff;
+        self.mode_age = 0;
+        Ok(EmulatorBackendEvent::Acknowledged)
+    }
+
+    fn restore_sprite_sram(&mut self) {
+        let Some(backup) = self.sprite_sram_backup.take() else {
+            return;
+        };
+        if let Some(sram) = save_ram_mut(&mut self.api)
+            && sram.len() == backup.len()
+        {
+            sram.copy_from_slice(&backup);
+        }
     }
 
     fn run_frame(&mut self) -> Result<EmulatorBackendEvent, String> {
@@ -442,7 +520,23 @@ impl Backend {
                 "level {level:03X} exceeds the supported 000..1FF range"
             ));
         }
+        self.restore_sprite_sram();
         self.requested_level = Some(level);
+        let overlay = self
+            .sprite_overlays
+            .iter()
+            .find_map(|(overlay_level, stream)| (*overlay_level == level).then(|| stream.clone()));
+        self.pending_sprite_overlay = None;
+        if let Some(stream) = overlay {
+            let sram = save_ram_mut(&mut self.api)
+                .ok_or_else(|| "libretro core does not expose writable save RAM".to_string())?;
+            if stream.len() > sram.len() {
+                return Err("stored LMSW sprite stream no longer fits core save RAM".into());
+            }
+            self.sprite_sram_backup = Some(sram.to_vec());
+            sram[..stream.len()].copy_from_slice(&stream);
+            self.pending_sprite_overlay = Some(level);
+        }
         if self.loaded {
             let wram = system_ram_mut(&mut self.api).ok_or_else(|| {
                 "libretro core does not expose exact 128 KiB system RAM".to_string()
@@ -464,6 +558,12 @@ impl Backend {
         } else {
             self.previous_mode = mode;
             self.mode_age = 0;
+        }
+        if mode == 0x14
+            && self.pending_sprite_overlay == Some(u16::from_le_bytes([wram[0x010b], wram[0x010c]]))
+        {
+            redirect_lmsw_sprite_stream(wram);
+            self.pending_sprite_overlay = None;
         }
         if mode == 0x0e {
             self.reached_overworld = true;
@@ -504,6 +604,7 @@ impl Backend {
                 Ok(EmulatorBackendEvent::Viewport(viewport))
             }
             EmulatorBackendCommand::Stop => {
+                self.restore_sprite_sram();
                 if self.loaded {
                     // SAFETY: `loaded` records one successful matching load.
                     unsafe { (self.api.unload_game)() };
@@ -517,6 +618,14 @@ impl Backend {
                 Ok(EmulatorBackendEvent::Acknowledged)
             }
             EmulatorBackendCommand::LoadLevel(level) => self.request_level(level),
+            EmulatorBackendCommand::ReloadSpriteSnapshot {
+                level,
+                rom,
+                sprites,
+                ..
+            } => self.hot_reload_sprite_snapshot(level, rom, sprites),
+            EmulatorBackendCommand::QueryRuntimeSprites => runtime_sprites(&self.api)
+                .ok_or_else(|| "libretro core does not expose SMW runtime sprite tables".into()),
             EmulatorBackendCommand::ReloadSprites(_) | EmulatorBackendCommand::SetFlags(_) => {
                 Err("backend does not advertise this capability".into())
             }
@@ -548,6 +657,26 @@ fn runtime_state(api: &CoreApi) -> Option<EmulatorRuntimeState> {
     })
 }
 
+fn runtime_sprites(api: &CoreApi) -> Option<EmulatorBackendEvent> {
+    // SAFETY: Read-only inspection is serialized with core execution on the backend thread.
+    let (pointer, size) = unsafe {
+        (
+            (api.get_memory_data)(RETRO_MEMORY_SYSTEM_RAM),
+            (api.get_memory_size)(RETRO_MEMORY_SYSTEM_RAM),
+        )
+    };
+    if pointer.is_null() || size != SMW_WRAM_BYTES {
+        return None;
+    }
+    // SAFETY: The core reported the exact bounded WRAM extent above.
+    let wram = unsafe { std::slice::from_raw_parts(pointer.cast::<u8>(), size) };
+    Some(EmulatorBackendEvent::RuntimeSprites {
+        status: wram[0x14c8..0x14d4].try_into().unwrap(),
+        numbers: wram[0x009e..0x00aa].try_into().unwrap(),
+        load_status: wram[0x1938..0x19b8].try_into().unwrap(),
+    })
+}
+
 fn system_ram_mut(api: &mut CoreApi) -> Option<&mut [u8]> {
     // SAFETY: All backend commands and core calls run serially on the backend thread. The returned
     // borrow is bounded to the caller and never overlaps a `retro_run` invocation.
@@ -565,6 +694,21 @@ fn system_ram_mut(api: &mut CoreApi) -> Option<&mut [u8]> {
     Some(unsafe { std::slice::from_raw_parts_mut(pointer.cast::<u8>(), size) })
 }
 
+fn save_ram_mut(api: &mut CoreApi) -> Option<&mut [u8]> {
+    // SAFETY: Backend/core access is serialized on one thread and no pointer survives this borrow.
+    let (pointer, size) = unsafe {
+        (
+            (api.get_memory_data)(RETRO_MEMORY_SAVE_RAM),
+            (api.get_memory_size)(RETRO_MEMORY_SAVE_RAM),
+        )
+    };
+    if pointer.is_null() || size < 2 || size > 0x80_000 {
+        return None;
+    }
+    // SAFETY: The core supplied a non-null bounded save-RAM region for this loaded game.
+    Some(unsafe { std::slice::from_raw_parts_mut(pointer.cast::<u8>(), size) })
+}
+
 fn inject_selected_level(wram: &mut [u8], level: u16) {
     let [low, high] = level.to_le_bytes();
     wram[0x0109] = 0;
@@ -573,8 +717,27 @@ fn inject_selected_level(wram: &mut [u8], level: u16) {
     wram[0x0100] = 0x0f;
 }
 
+fn invalidate_smw_sprite_loader(wram: &mut [u8]) {
+    // `$14C8..$14D3` are the twelve regular-sprite status slots. `$1938..$19B7` is SMW's
+    // per-level record load-status table. Clearing both matches LMSW's visible reload contract:
+    // old instances disappear and SMW's own loader may instantiate the edited stream again.
+    wram[0x14c8..0x14d4].fill(0);
+    wram[0x1938..0x19b8].fill(0);
+}
+
+fn redirect_lmsw_sprite_stream(wram: &mut [u8]) {
+    // The stream mirror starts at LoROM save-RAM address `$70:0000`. The backend restores every
+    // byte before a full ROM/level transition, so the live-only overlay never persists as a save.
+    wram[0x00ce..=0x00d0].copy_from_slice(&[0x00, 0x00, 0x70]);
+    // Direction index 1 makes `LoadSprFromLevel` scan the current screen boundary on its next
+    // even frame instead of waiting for a future camera-direction transition.
+    wram[0x0055] = 1;
+    invalidate_smw_sprite_loader(wram);
+}
+
 impl Drop for Backend {
     fn drop(&mut self) {
+        self.restore_sprite_sram();
         // SAFETY: The booleans retain the balanced libretro lifecycle calls.
         unsafe {
             if self.loaded {
@@ -793,6 +956,26 @@ mod tests {
             if !matches!(offset, 0x0100 | 0x0109 | 0x010b | 0x010c) {
                 assert_eq!(old, new, "unexpected WRAM change at ${offset:04X}");
             }
+        }
+    }
+
+    #[test]
+    fn sprite_reload_redirects_to_sram_and_invalidates_loader_state() {
+        let mut wram = vec![0xa5; SMW_WRAM_BYTES];
+        redirect_lmsw_sprite_stream(&mut wram);
+        assert_eq!(&wram[0x00ce..=0x00d0], &[0x00, 0x00, 0x70]);
+        for (offset, value) in wram.into_iter().enumerate() {
+            let expected =
+                if (0x14c8..0x14d4).contains(&offset) || (0x1938..0x19b8).contains(&offset) {
+                    0
+                } else if (0x00ce..=0x00d0).contains(&offset) {
+                    [0x00, 0x00, 0x70][offset - 0x00ce]
+                } else if offset == 0x0055 {
+                    1
+                } else {
+                    0xa5
+                };
+            assert_eq!(value, expected, "unexpected WRAM value at ${offset:04X}");
         }
     }
 

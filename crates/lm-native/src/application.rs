@@ -819,7 +819,41 @@ impl eframe::App for NativeApplication {
                     live_frame,
                 )
             {
-                self.dispatch(context, command);
+                let sprite_only_commit = matches!(
+                    command,
+                    Command::CommitRomWrites { .. } | Command::CommitRomMutation { .. }
+                ) && self.vanilla_level_editor.has_sprite_only_changes();
+                let sprite_payload =
+                    sprite_only_commit.then(|| self.vanilla_level_editor.lmsw_sprite_payload());
+                if self.try_dispatch(context, command)
+                    && let Some(payload) = sprite_payload
+                {
+                    let reload = payload.and_then(|sprites| {
+                        let snapshot = self
+                            .app
+                            .controller_snapshot()
+                            .map_err(|error| error.to_string())?;
+                        let EditorMode::Level(level) = snapshot.mode else {
+                            return Err("sprite commit left level editing mode".into());
+                        };
+                        if self
+                            .live_emulator
+                            .source_context()
+                            .is_none_or(|(source_level, _)| source_level != level)
+                        {
+                            return Ok(());
+                        }
+                        self.live_emulator.reload_sprite_snapshot(
+                            snapshot.revision,
+                            level,
+                            snapshot.rom_bytes,
+                            sprites,
+                        )
+                    });
+                    if let Err(error) = reload {
+                        self.effects.error = Some(error);
+                    }
+                }
             } else if vanilla_graphics
                 && let Some(command) = self.vanilla_graphics_editor.show(
                     ui,

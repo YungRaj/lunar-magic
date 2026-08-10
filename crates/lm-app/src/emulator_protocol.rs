@@ -59,11 +59,20 @@ pub enum EmulatorBackendCommand {
     },
     LoadLevel(u16),
     ReloadSprites(Vec<u8>),
+    /// Publishes the latest ROM backing while replacing the active stream in-place; the backend
+    /// may defer installing that backing until a later transition so the running core is preserved.
+    ReloadSpriteSnapshot {
+        revision: u64,
+        level: u16,
+        rom: Vec<u8>,
+        sprites: Vec<u8>,
+    },
     SetPauseMode(EmulatorPauseMode),
     StepFrame,
     SetFlags(u8),
     SetViewport(EmulatorViewport),
     SetJoypad(u16),
+    QueryRuntimeSprites,
     Stop,
 }
 
@@ -94,6 +103,11 @@ pub enum EmulatorBackendEvent {
         sample_rate: u32,
         /// Interleaved signed 16-bit stereo samples (left, right).
         audio: Vec<i16>,
+    },
+    RuntimeSprites {
+        status: [u8; 12],
+        numbers: [u8; 12],
+        load_status: [u8; 128],
     },
     Error(String),
 }
@@ -160,6 +174,20 @@ impl EmulatorBackendCommand {
                 payload.push(3);
                 put_bytes(&mut payload, sprites)?;
             }
+            Self::ReloadSpriteSnapshot {
+                revision,
+                level,
+                rom,
+                sprites,
+            } => {
+                validate_rom(rom)?;
+                validate_sprites(sprites)?;
+                payload.push(10);
+                payload.extend_from_slice(&revision.to_le_bytes());
+                payload.extend_from_slice(&level.to_le_bytes());
+                put_bytes(&mut payload, rom)?;
+                put_bytes(&mut payload, sprites)?;
+            }
             Self::SetPauseMode(mode) => payload.extend_from_slice(&[4, *mode as u8]),
             Self::StepFrame => payload.push(5),
             Self::SetFlags(flags) => payload.extend_from_slice(&[6, *flags]),
@@ -174,6 +202,7 @@ impl EmulatorBackendCommand {
                 payload.push(9);
                 payload.extend_from_slice(&buttons.to_le_bytes());
             }
+            Self::QueryRuntimeSprites => payload.push(11),
         }
         frame(&payload)
     }
@@ -215,6 +244,13 @@ impl EmulatorBackendCommand {
                 validate_joypad(buttons)?;
                 Self::SetJoypad(buttons)
             }
+            10 => Self::ReloadSpriteSnapshot {
+                revision: input.u64()?,
+                level: input.u16()?,
+                rom: input.bytes(MAX_EMULATOR_ROM_BYTES, true)?,
+                sprites: input.bytes(MAX_EMULATOR_SPRITE_BYTES, false)?,
+            },
+            11 => Self::QueryRuntimeSprites,
             tag => return Err(EmulatorProtocolError::UnknownTag(tag)),
         };
         input.finish()?;
@@ -286,6 +322,16 @@ impl EmulatorBackendEvent {
                 payload.extend_from_slice(&state.camera_y.to_le_bytes());
                 payload.extend_from_slice(&sample_rate.to_le_bytes());
                 put_i16s(&mut payload, audio)?;
+            }
+            Self::RuntimeSprites {
+                status,
+                numbers,
+                load_status,
+            } => {
+                payload.push(0x87);
+                payload.extend_from_slice(status);
+                payload.extend_from_slice(numbers);
+                payload.extend_from_slice(load_status);
             }
             Self::Error(message) => {
                 if message.len() > MAX_ERROR_BYTES {
@@ -369,6 +415,11 @@ impl EmulatorBackendEvent {
                     audio,
                 }
             }
+            0x87 => Self::RuntimeSprites {
+                status: input.take(12)?.try_into().unwrap(),
+                numbers: input.take(12)?.try_into().unwrap(),
+                load_status: input.take(128)?.try_into().unwrap(),
+            },
             0xff => {
                 let message = input.bytes(MAX_ERROR_BYTES, false)?;
                 Self::Error(
@@ -611,6 +662,12 @@ mod tests {
             },
             EmulatorBackendCommand::LoadLevel(0x105),
             EmulatorBackendCommand::ReloadSprites(vec![7, 8]),
+            EmulatorBackendCommand::ReloadSpriteSnapshot {
+                revision: 10,
+                level: 0x105,
+                rom: vec![9],
+                sprites: vec![7, 8],
+            },
             EmulatorBackendCommand::SetPauseMode(EmulatorPauseMode::Running),
             EmulatorBackendCommand::SetPauseMode(EmulatorPauseMode::SoftPaused),
             EmulatorBackendCommand::SetPauseMode(EmulatorPauseMode::HardPaused),
@@ -624,6 +681,7 @@ mod tests {
             }),
             EmulatorBackendCommand::Stop,
             EmulatorBackendCommand::SetJoypad(EMULATOR_JOYPAD_B | EMULATOR_JOYPAD_RIGHT),
+            EmulatorBackendCommand::QueryRuntimeSprites,
         ]
     }
 
@@ -691,6 +749,11 @@ mod tests {
                 audio: vec![i16::MIN, i16::MAX, -1, 1],
             },
             EmulatorBackendEvent::Error("backend failed".into()),
+            EmulatorBackendEvent::RuntimeSprites {
+                status: [8; 12],
+                numbers: [0x0f; 12],
+                load_status: [1; 128],
+            },
         ];
         for event in events {
             let encoded = event.encode().unwrap();
@@ -713,6 +776,16 @@ mod tests {
         );
         assert!(matches!(
             EmulatorBackendCommand::ReloadSprites(vec![0; MAX_EMULATOR_SPRITE_BYTES + 1]).encode(),
+            Err(EmulatorProtocolError::SpriteDataTooLarge(_))
+        ));
+        assert!(matches!(
+            EmulatorBackendCommand::ReloadSpriteSnapshot {
+                revision: 0,
+                level: 0,
+                rom: vec![1],
+                sprites: vec![0; MAX_EMULATOR_SPRITE_BYTES + 1],
+            }
+            .encode(),
             Err(EmulatorProtocolError::SpriteDataTooLarge(_))
         ));
         assert_eq!(
