@@ -131,6 +131,23 @@ impl AppState {
         self.recovery_snapshot_with_current_rom(staged.save_snapshot(), level)
     }
 
+    /// Persists the staged overworld names, player starts, and seven-map settings into one
+    /// isolated project. The ordering lets relocatable pristine installers share one ROM image.
+    pub fn recovery_snapshot_with_overworld_configuration(
+        &self,
+        names: &lm_overworld::NativeOverworldLevelNameTable,
+        starts: &lm_overworld::NativeOverworldPlayerStarts,
+        settings: &lm_level::ExpandedOverworldSettings,
+        level: Option<u16>,
+    ) -> Result<Option<RecoverySnapshot>, AppError> {
+        let project = self.project.as_ref().ok_or(AppError::NoProject)?;
+        let mut staged = project.clone();
+        crate::save_native_overworld_level_names_to_project(&mut staged, names)?;
+        crate::save_native_overworld_player_starts_to_project(&mut staged, starts)?;
+        crate::save_native_overworld_settings_to_project(&mut staged, settings)?;
+        self.recovery_snapshot_with_current_rom(staged.save_snapshot(), level)
+    }
+
     /// Restores a recovery record as an unnamed, dirty project.
     ///
     /// The original path is deliberately not restored. The first explicit save therefore uses
@@ -306,5 +323,63 @@ mod tests {
             tilemaps
         );
         assert_eq!(reveals.entries.len(), 113);
+    }
+
+    #[test]
+    fn simultaneous_pristine_overworld_configuration_installs_and_recovers_every_domain() {
+        use lm_profile::{
+            load_smw_us_v1_overworld_settings, smw_us_v1_overworld_level_name_locator,
+            smw_us_v1_overworld_level_name_runtime, smw_us_v1_overworld_player_start_layout,
+        };
+
+        let mut app = AppState::default();
+        app.load_rom(crate::test_support::pristine_smw_us_rom_bytes())
+            .unwrap();
+        let project = app.project().unwrap();
+        let mut names = project
+            .load_overworld_level_names_detected(
+                smw_us_v1_overworld_level_name_locator(),
+                smw_us_v1_overworld_level_name_runtime(),
+            )
+            .unwrap()
+            .table;
+        names.names[0].tiles[0] ^= 0x3f;
+        let mut starts = project
+            .load_overworld_player_starts(smw_us_v1_overworld_player_start_layout())
+            .unwrap();
+        starts.starts[0].x ^= 0x20;
+        let mut settings = load_smw_us_v1_overworld_settings(project).unwrap().settings;
+        settings.records[6].set_word(11, 0x4567).unwrap();
+
+        let recovery = app
+            .recovery_snapshot_with_overworld_configuration(&names, &starts, &settings, Some(0x105))
+            .unwrap()
+            .unwrap();
+        assert_eq!(app.capabilities().project, crate::ProjectStatus::OpenClean);
+        assert_eq!(app.project().unwrap().history.undo_len(), 0);
+        let mut reopened = AppState::default();
+        reopened.load_recovery(recovery).unwrap();
+        assert_eq!(reopened.current_level(), Some(0x105));
+        let project = reopened.project().unwrap();
+        assert_eq!(
+            project
+                .load_overworld_level_names_detected(
+                    smw_us_v1_overworld_level_name_locator(),
+                    smw_us_v1_overworld_level_name_runtime(),
+                )
+                .unwrap()
+                .table,
+            names
+        );
+        assert_eq!(
+            project
+                .load_overworld_player_starts(smw_us_v1_overworld_player_start_layout())
+                .unwrap(),
+            starts
+        );
+        assert_eq!(
+            load_smw_us_v1_overworld_settings(project).unwrap().settings,
+            settings
+        );
     }
 }

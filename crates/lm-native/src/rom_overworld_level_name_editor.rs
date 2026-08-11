@@ -28,6 +28,20 @@ pub(crate) struct RomOverworldLevelNameEditor {
 }
 
 impl RomOverworldLevelNameEditor {
+    pub(crate) fn staged_recovery_table<'a>(
+        &'a self,
+        app: &AppState,
+    ) -> Result<Option<&'a NativeOverworldLevelNameTable>, String> {
+        let workspace = self
+            .workspace
+            .as_ref()
+            .ok_or_else(|| "level-name workspace is closed".to_owned())?;
+        if workspace.revision != app.project_revision() {
+            return Err("stale level-name workspace cannot be recovered".into());
+        }
+        Ok((workspace.current != workspace.original).then_some(&workspace.current))
+    }
+
     pub(crate) fn staged_recovery_generation(&self, app: &AppState) -> Option<u64> {
         let workspace = self.workspace.as_ref()?;
         if workspace.current == workspace.original {

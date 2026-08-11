@@ -476,6 +476,10 @@ typed, allocation-aware persistence on one isolated project.
 `simultaneous_pristine_event_family_installs_and_recovers_every_domain` proves full event-number
 installation, ordinary reveal growth, special-event installation, and both compressed tilemap
 streams coexist and reopen exactly while live state remains clean.
+The coordinator also composes simultaneous staged level-name, player-start, and seven-map settings
+workspaces through their production persistence routes on one isolated allocation image.
+`simultaneous_pristine_overworld_configuration_installs_and_recovers_every_domain` proves both
+pristine installers and the fixed start block coexist, reopen exactly, and leave live state clean.
 
 ## Workflow ledger
 

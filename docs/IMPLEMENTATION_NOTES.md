@@ -6624,3 +6624,16 @@ The retained real Lunar Magic 3.63 fixture test stages independent attribution, 
 feature-record edits, recovers and reloads all three exactly, and proves the live project was not
 mutated. All four metadata editor/workspace tests, the application install/Undo test, and all 237
 renderer tests pass.
+
+## Crash recovery composes staged overworld configuration editors
+
+The recovery coordinator now recognizes simultaneous level-name, player-start, and seven-map
+overworld-settings workspaces. It validates each workspace revision and runs their ordinary typed
+persistence routes sequentially on one isolated project, allowing both pristine relocatable
+installers to allocate against the same evolving ROM while the fixed player-start block is retained.
+Other unsupported simultaneous combinations continue to fail visibly.
+
+`simultaneous_pristine_overworld_configuration_installs_and_recovers_every_domain` changes all
+three domains on a pristine ROM, reopens them exactly from one recovery record, retains level
+`$105`, and proves the live project remains clean and history-free. The focused semantic test,
+native application compile gate, and all 237 renderer tests pass.

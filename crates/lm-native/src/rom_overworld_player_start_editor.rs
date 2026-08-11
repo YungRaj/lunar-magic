@@ -66,6 +66,20 @@ pub(crate) struct RomOverworldPlayerStartEditor {
 }
 
 impl RomOverworldPlayerStartEditor {
+    pub(crate) fn staged_recovery_starts<'a>(
+        &'a self,
+        app: &AppState,
+    ) -> Result<Option<&'a NativeOverworldPlayerStarts>, String> {
+        let workspace = self
+            .workspace
+            .as_ref()
+            .ok_or_else(|| "player-start workspace is closed".to_owned())?;
+        if workspace.revision != app.project_revision() {
+            return Err("stale player-start workspace cannot be recovered".into());
+        }
+        Ok((workspace.current != workspace.original).then_some(&workspace.current))
+    }
+
     pub(crate) fn staged_recovery_generation(&self, app: &AppState) -> Option<u64> {
         let workspace = self.workspace.as_ref()?;
         if workspace.current == workspace.original {

@@ -1950,6 +1950,33 @@ impl eframe::App for NativeApplication {
                         )
                         .map_err(|error| error.to_string());
                 }
+                if staged_editors == 3
+                    && level_name_recovery_revision.is_some()
+                    && player_start_recovery_revision.is_some()
+                    && overworld_settings_recovery_revision.is_some()
+                {
+                    let names = self
+                        .rom_overworld_level_name_editor
+                        .staged_recovery_table(&self.app)?
+                        .ok_or("staged level-name recovery table disappeared")?;
+                    let starts = self
+                        .rom_overworld_player_start_editor
+                        .staged_recovery_starts(&self.app)?
+                        .ok_or("staged player-start recovery table disappeared")?;
+                    let settings = self
+                        .rom_overworld_settings_editor
+                        .staged_recovery_settings(&self.app)?
+                        .ok_or("staged overworld-settings recovery table disappeared")?;
+                    return self
+                        .app
+                        .recovery_snapshot_with_overworld_configuration(
+                            names,
+                            starts,
+                            settings,
+                            self.app.current_level(),
+                        )
+                        .map_err(|error| error.to_string());
+                }
                 if staged_editors > 1 {
                     return Err(
                         "cannot compose simultaneous staged level, level-assets, expanded settings, legacy graphics bypass, title recording, shared palette, overworld/boss messages, secondary exits, overworld level names/player starts/settings/special events/event numbers/event reveals/event tilemaps/metadata/path/warp links, graphics, ExAnimation, title/credits tilemap, palette, Map16, or overworld recovery yet".into(),
