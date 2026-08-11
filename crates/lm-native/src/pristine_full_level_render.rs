@@ -1454,6 +1454,33 @@ mod tests {
     }
 
     #[test]
+    fn pristine_level_105_full_render_is_not_a_backdrop_only_raster() {
+        let rendered = render(
+            crate::test_support::pristine_smw_us_rom_bytes(),
+            0x105,
+            NATIVE_EXPORT_MAP16_PHASE,
+            0,
+        )
+        .unwrap()
+        .unwrap();
+        let backdrop = rendered.canvas.get(0, 0).unwrap();
+        let painted_pixels = rendered
+            .canvas
+            .pixels()
+            .iter()
+            .filter(|pixel| **pixel != backdrop)
+            .count();
+
+        // A dimensions-only gate allowed a backdrop-filled full-level image to look valid.
+        // This representative vanilla level contains foreground, background, sprites, and
+        // entrance overlays throughout its twenty screens.
+        assert!(
+            painted_pixels > 500_000,
+            "only {painted_pixels} pixels were painted"
+        );
+    }
+
+    #[test]
     fn diagnostic_export_pristine_full_render_corpus_when_requested() {
         use std::fmt::Write as _;
 
