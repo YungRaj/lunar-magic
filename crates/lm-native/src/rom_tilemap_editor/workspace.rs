@@ -1,9 +1,5 @@
 use lm_app::{AppState, Command};
 use lm_overworld::{CreditsTilemap, ExpandedLayerTilemap};
-use lm_profile::{
-    SMW_US_V1_CHECKSUM_FIELD, smw_us_v1_credits_allocation_policy,
-    smw_us_v1_title_tilemap_allocation_policy,
-};
 use lm_profile::{smw_us_v1_credits_tilemap_locator, smw_us_v1_title_tilemap_locator};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -113,13 +109,44 @@ impl TilemapWorkspace {
         })
     }
 
+    pub(super) fn staged_title<'a>(
+        &'a self,
+        app: &AppState,
+    ) -> Result<Option<&'a ExpandedLayerTilemap>, String> {
+        self.validate_recovery_revision(app)?;
+        match &self.current {
+            TilemapData::Title(tilemap) if self.is_dirty() => Ok(Some(tilemap)),
+            TilemapData::Title(_) => Ok(None),
+            TilemapData::Credits(_) => {
+                Err("credits workspace cannot supply a title tilemap".into())
+            }
+        }
+    }
+
+    pub(super) fn staged_credits<'a>(
+        &'a self,
+        app: &AppState,
+    ) -> Result<Option<&'a CreditsTilemap>, String> {
+        self.validate_recovery_revision(app)?;
+        match &self.current {
+            TilemapData::Credits(tilemap) if self.is_dirty() => Ok(Some(tilemap)),
+            TilemapData::Credits(_) => Ok(None),
+            TilemapData::Title(_) => Err("title workspace cannot supply a credits tilemap".into()),
+        }
+    }
+
+    fn validate_recovery_revision(&self, app: &AppState) -> Result<(), String> {
+        if self.revision != app.project_revision() {
+            return Err("stale tilemap workspace cannot be recovered".into());
+        }
+        Ok(())
+    }
+
     pub(super) fn staged_recovery_snapshot(
         &self,
         app: &AppState,
     ) -> Result<Option<lm_app::RecoverySnapshot>, String> {
-        if self.revision != app.project_revision() {
-            return Err("stale tilemap workspace cannot be recovered".into());
-        }
+        self.validate_recovery_revision(app)?;
         if !self.is_dirty() {
             return Ok(app.recovery_snapshot());
         }
@@ -128,24 +155,14 @@ impl TilemapWorkspace {
             .ok_or_else(|| "open a supported ROM first".to_owned())?
             .clone();
         match &self.current {
-            TilemapData::Title(tilemap) => staged
-                .save_title_tilemap_detected(
-                    tilemap,
-                    smw_us_v1_title_tilemap_locator(),
-                    &smw_us_v1_title_tilemap_allocation_policy(staged.rom.logical_len()),
-                    SMW_US_V1_CHECKSUM_FIELD,
-                    0xff,
-                )
-                .map_err(|error| error.to_string())?,
-            TilemapData::Credits(tilemap) => staged
-                .save_credits_tilemap_detected(
-                    tilemap,
-                    &smw_us_v1_credits_tilemap_locator(),
-                    &smw_us_v1_credits_allocation_policy(staged.rom.logical_len()),
-                    SMW_US_V1_CHECKSUM_FIELD,
-                    0xff,
-                )
-                .map_err(|error| error.to_string())?,
+            TilemapData::Title(tilemap) => {
+                lm_app::save_native_title_tilemap_to_project(&mut staged, tilemap)
+                    .map_err(|error| error.to_string())?;
+            }
+            TilemapData::Credits(tilemap) => {
+                lm_app::save_native_credits_tilemap_to_project(&mut staged, tilemap)
+                    .map_err(|error| error.to_string())?;
+            }
         };
         app.recovery_snapshot_with_current_rom(staged.save_snapshot(), app.current_level())
             .map_err(|error| error.to_string())

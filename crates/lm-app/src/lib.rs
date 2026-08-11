@@ -144,6 +144,7 @@ pub use complete_level_document_controller::{
     CompleteLevelDocumentController, CompleteLevelDocumentControllerError,
     CompleteLevelDocumentEdit, CompleteLevelDocumentEditError, CompleteLevelDocumentSaveSnapshot,
 };
+pub use credits_tilemap_state::save_native_credits_tilemap_to_project;
 pub use custom_object_controller::{
     CustomObjectControllerError, CustomObjectLibraryController, CustomObjectLibraryEdit,
     CustomObjectSaveSnapshot,
@@ -402,6 +403,7 @@ pub use ssc_sidecar_controller::{
     SscSidecarController, SscSidecarControllerError, SscSidecarSaveSnapshot,
 };
 pub use state::{AppError, AppState, UndoHistoryLimitError};
+pub use title_tilemap_state::save_native_title_tilemap_to_project;
 pub use tool_config::{ToolConfig, ToolConfigError};
 pub use toolbar::{ToolbarAction, ToolbarActivation, ToolbarConfig, ToolbarError, ToolbarItem};
 pub use user_toolbar::{

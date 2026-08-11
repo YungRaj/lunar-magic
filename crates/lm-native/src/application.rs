@@ -1998,6 +1998,27 @@ impl eframe::App for NativeApplication {
                         )
                         .map_err(|error| error.to_string());
                 }
+                if staged_editors == 2
+                    && title_tilemap_recovery_revision.is_some()
+                    && credits_tilemap_recovery_revision.is_some()
+                {
+                    let title = self
+                        .rom_title_tilemap_editor
+                        .staged_recovery_tilemap(&self.app)?
+                        .ok_or("staged title tilemap disappeared")?;
+                    let credits = self
+                        .rom_credits_tilemap_editor
+                        .staged_recovery_tilemap(&self.app)?
+                        .ok_or("staged credits tilemap disappeared")?;
+                    return self
+                        .app
+                        .recovery_snapshot_with_global_tilemaps(
+                            title,
+                            credits,
+                            self.app.current_level(),
+                        )
+                        .map_err(|error| error.to_string());
+                }
                 if staged_editors > 1 {
                     return Err(
                         "cannot compose simultaneous staged level, level-assets, expanded settings, legacy graphics bypass, title recording, shared palette, overworld/boss messages, secondary exits, overworld level names/player starts/settings/special events/event numbers/event reveals/event tilemaps/metadata/path/warp links, graphics, ExAnimation, title/credits tilemap, palette, Map16, or overworld recovery yet".into(),

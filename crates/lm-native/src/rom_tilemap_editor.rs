@@ -286,6 +286,32 @@ macro_rules! tilemap_editor_wrapper {
 tilemap_editor_wrapper!(RomTitleTilemapEditor, TilemapKind::Title);
 tilemap_editor_wrapper!(RomCreditsTilemapEditor, TilemapKind::Credits);
 
+impl RomTitleTilemapEditor {
+    pub(crate) fn staged_recovery_tilemap<'a>(
+        &'a self,
+        app: &AppState,
+    ) -> Result<Option<&'a lm_overworld::ExpandedLayerTilemap>, String> {
+        self.0
+            .workspace
+            .as_ref()
+            .ok_or_else(|| "title tilemap workspace is closed".to_owned())?
+            .staged_title(app)
+    }
+}
+
+impl RomCreditsTilemapEditor {
+    pub(crate) fn staged_recovery_tilemap<'a>(
+        &'a self,
+        app: &AppState,
+    ) -> Result<Option<&'a lm_overworld::CreditsTilemap>, String> {
+        self.0
+            .workspace
+            .as_ref()
+            .ok_or_else(|| "credits tilemap workspace is closed".to_owned())?
+            .staged_credits(app)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -4,6 +4,7 @@ use lm_profile::{
     SMW_US_V1_CHECKSUM_FIELD, smw_us_v1_title_tilemap_allocation_policy,
     smw_us_v1_title_tilemap_locator,
 };
+use lm_project::Project;
 use lm_rom::{Mapper, Region, SupportedGame};
 
 impl AppState {
@@ -21,26 +22,9 @@ impl AppState {
         self.require_no_pending_save()?;
         self.ensure_project_revision_capacity()?;
         let project = self.project.as_mut().ok_or(AppError::NoProject)?;
-        let identity = project.identity.as_ref().ok_or(AppError::NoProject)?;
-        if identity.game != SupportedGame::SuperMarioWorld
-            || identity.region != Region::NorthAmerica
-            || identity.revision != 0
-            || identity.mapper != Mapper::LoRom
-        {
-            return Err(AppError::TitleTilemapIdentityMismatch);
-        }
-        let locator = smw_us_v1_title_tilemap_locator();
-        if project.load_title_tilemap_detected(locator)?.tilemap == *tilemap {
+        if !save_native_title_tilemap_to_project(project, tilemap)? {
             return Ok(Vec::new());
         }
-        let allocation = smw_us_v1_title_tilemap_allocation_policy(project.rom.logical_len());
-        project.save_title_tilemap_detected(
-            tilemap,
-            locator,
-            &allocation,
-            SMW_US_V1_CHECKSUM_FIELD,
-            0xff,
-        )?;
         self.advance_project_revision()?;
         let description = "Replace native SMW title-screen tilemap".to_owned();
         self.status.clone_from(&description);
@@ -50,6 +34,36 @@ impl AppState {
             revision: self.project_revision,
         }])
     }
+}
+
+pub fn save_native_title_tilemap_to_project(
+    project: &mut Project,
+    tilemap: &ExpandedLayerTilemap,
+) -> Result<bool, AppError> {
+    let identity = project.identity.as_ref().ok_or(AppError::NoProject)?;
+    if identity.game != SupportedGame::SuperMarioWorld
+        || identity.region != Region::NorthAmerica
+        || identity.revision != 0
+        || identity.mapper != Mapper::LoRom
+    {
+        return Err(AppError::TitleTilemapIdentityMismatch);
+    }
+    let locator = smw_us_v1_title_tilemap_locator();
+    if project.load_title_tilemap_detected(locator)?.tilemap == *tilemap {
+        return Ok(false);
+    }
+    let allocation = smw_us_v1_title_tilemap_allocation_policy(project.rom.logical_len());
+    project.save_title_tilemap_detected(
+        tilemap,
+        locator,
+        &allocation,
+        SMW_US_V1_CHECKSUM_FIELD,
+        0xff,
+    )?;
+    if project.load_title_tilemap_detected(locator)?.tilemap != *tilemap {
+        return Err(AppError::TitleTilemapReopenMismatch);
+    }
+    Ok(true)
 }
 
 #[cfg(test)]

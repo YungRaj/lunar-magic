@@ -484,6 +484,9 @@ Ordinary overworld messages and boss-sequence messages now also share exported p
 persistence functions and compose as one staged family. `simultaneous_pristine_message_family_`
 `installs_and_recovers_both_tables` proves pristine installation, exact dual-table reopen, retained
 level context, and a clean history-free live project.
+Title-screen and credits tilemaps likewise share production persistence and compose on one isolated
+allocation image. `simultaneous_pristine_global_tilemaps_install_and_recover_exactly` proves both
+expanded-storage installs, exact complete-map reopen, retained level context, and clean live state.
 
 ## Workflow ledger
 

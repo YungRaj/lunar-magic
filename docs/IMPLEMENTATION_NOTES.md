@@ -6650,3 +6650,16 @@ snapshot. Workspace revisions and message encodings are validated before composi
 pristine ROM, reopens them exactly from one recovery record, retains level `$105`, and proves the
 live project remains clean and history-free. Both ordinary command/Undo tests, native compilation,
 and all 237 renderer tests pass.
+
+## Crash recovery composes staged title and credits tilemaps
+
+Title-screen and credits tilemap persistence now share exported, identity-checked application
+functions with ordinary commands and require exact semantic reopen after every changed write. The
+recovery coordinator validates both workspace revisions and applies the two complete tilemaps
+sequentially to one isolated ROM, allowing their pristine expanded-storage installers to allocate
+without collision.
+
+`simultaneous_pristine_global_tilemaps_install_and_recover_exactly` changes both title planes and
+the credits map, installs both runtimes from a pristine ROM, reopens all words exactly, retains
+level `$105`, and leaves the live project clean and history-free. Both ordinary Undo tests, native
+compilation, and all 237 renderer tests pass.

@@ -163,6 +163,20 @@ impl AppState {
         self.recovery_snapshot_with_current_rom(staged.save_snapshot(), level)
     }
 
+    /// Persists both complete staged title/credits tilemaps sequentially into one isolated ROM.
+    pub fn recovery_snapshot_with_global_tilemaps(
+        &self,
+        title: &lm_overworld::ExpandedLayerTilemap,
+        credits: &lm_overworld::CreditsTilemap,
+        level: Option<u16>,
+    ) -> Result<Option<RecoverySnapshot>, AppError> {
+        let project = self.project.as_ref().ok_or(AppError::NoProject)?;
+        let mut staged = project.clone();
+        crate::save_native_title_tilemap_to_project(&mut staged, title)?;
+        crate::save_native_credits_tilemap_to_project(&mut staged, credits)?;
+        self.recovery_snapshot_with_current_rom(staged.save_snapshot(), level)
+    }
+
     /// Restores a recovery record as an unnamed, dirty project.
     ///
     /// The original path is deliberately not restored. The first explicit save therefore uses
@@ -442,6 +456,54 @@ mod tests {
                 .unwrap()
                 .table,
             boss_sequence
+        );
+    }
+
+    #[test]
+    fn simultaneous_pristine_global_tilemaps_install_and_recover_exactly() {
+        use lm_profile::{smw_us_v1_credits_tilemap_locator, smw_us_v1_title_tilemap_locator};
+
+        let mut app = AppState::default();
+        app.load_rom(crate::test_support::pristine_smw_us_rom_bytes())
+            .unwrap();
+        let project = app.project().unwrap();
+        let mut title = project
+            .load_title_tilemap_detected(smw_us_v1_title_tilemap_locator())
+            .unwrap()
+            .tilemap;
+        title.primary_bytes_mut()[0] ^= 0x01;
+        title.secondary_bytes_mut()[0] ^= 0x80;
+        let credits_locator = smw_us_v1_credits_tilemap_locator();
+        let mut credits = project
+            .load_credits_tilemap_detected(&credits_locator)
+            .unwrap()
+            .tilemap;
+        let last = credits.words().len() - 1;
+        credits.words_mut()[last] ^= 0x0001;
+
+        let recovery = app
+            .recovery_snapshot_with_global_tilemaps(&title, &credits, Some(0x105))
+            .unwrap()
+            .unwrap();
+        assert_eq!(app.capabilities().project, crate::ProjectStatus::OpenClean);
+        assert_eq!(app.project().unwrap().history.undo_len(), 0);
+        let mut reopened = AppState::default();
+        reopened.load_recovery(recovery).unwrap();
+        assert_eq!(reopened.current_level(), Some(0x105));
+        let project = reopened.project().unwrap();
+        assert_eq!(
+            project
+                .load_title_tilemap_detected(smw_us_v1_title_tilemap_locator())
+                .unwrap()
+                .tilemap,
+            title
+        );
+        assert_eq!(
+            project
+                .load_credits_tilemap_detected(&credits_locator)
+                .unwrap()
+                .tilemap,
+            credits
         );
     }
 }
