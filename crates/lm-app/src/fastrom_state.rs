@@ -6,6 +6,55 @@ use lm_rats::AllocationPolicy;
 use lm_rom::{Mapper, Region, SupportedGame};
 
 impl AppState {
+    pub(crate) fn set_sa1_ram_remap(
+        &mut self,
+        expected_revision: u64,
+        enabled: bool,
+    ) -> Result<Vec<FrontendEffect>, AppError> {
+        if expected_revision != self.project_revision {
+            return Err(AppError::StaleProjectRevision {
+                expected: expected_revision,
+                actual: self.project_revision,
+            });
+        }
+        self.require_no_pending_save()?;
+        self.ensure_project_revision_capacity()?;
+        let project = self.project.as_mut().ok_or(AppError::NoProject)?;
+        let identity = project.identity.as_ref().ok_or(AppError::NoProject)?;
+        if identity.game != SupportedGame::SuperMarioWorld
+            || identity.region != Region::NorthAmerica
+            || identity.revision != 0
+            || identity.mapper == Mapper::ExLoRom
+        {
+            return Err(AppError::LunarMagicMetadataIdentityMismatch);
+        }
+        let layout = smw_us_v1_lunar_magic_metadata_layout();
+        let metadata = project
+            .load_lunar_magic_rom_metadata(layout)?
+            .ok_or(AppError::LunarMagicMetadataIdentityMismatch)?;
+        if metadata.sa1_ram_remap() == enabled {
+            return Ok(Vec::new());
+        }
+        project.save_lunar_magic_rom_metadata(
+            &metadata.with_sa1_ram_remap(enabled),
+            layout,
+            SMW_US_V1_CHECKSUM_FIELD,
+        )?;
+        self.advance_project_revision()?;
+        let description = if enabled {
+            "Enable SA-1 RAM remap"
+        } else {
+            "Disable SA-1 RAM remap"
+        }
+        .to_owned();
+        self.status.clone_from(&description);
+        Ok(vec![FrontendEffect::ProjectChanged {
+            description,
+            mode: self.mode,
+            revision: self.project_revision,
+        }])
+    }
+
     pub(crate) fn set_use_fastrom_addressing(
         &mut self,
         expected_revision: u64,
@@ -223,6 +272,61 @@ mod tests {
             lm_profile::detect_smw_us_v1_fastrom_patch(app.project().unwrap().rom.logical_bytes()),
             Ok(lm_profile::SmwUsV1FastRomPatchState::Absent)
         );
+        app.dispatch(Command::Undo).unwrap();
+        assert_eq!(app.project().unwrap().save_snapshot(), original);
+    }
+
+    #[test]
+    fn sa1_ram_remap_is_rom_scoped_revision_checked_and_exactly_undoable() {
+        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let original =
+            fs::read(root.join("oracle-work/lm363/pristine-us/level-save-000/after.smc")).unwrap();
+        let mut app = AppState::default();
+        app.load_rom(original.clone()).unwrap();
+        assert!(!metadata(&app).sa1_ram_remap());
+        assert!(
+            app.dispatch(Command::SetSa1RamRemap {
+                rev: 1,
+                enabled: true,
+            })
+            .is_err()
+        );
+
+        app.dispatch(Command::SetSa1RamRemap {
+            rev: 0,
+            enabled: true,
+        })
+        .unwrap();
+        assert!(metadata(&app).sa1_ram_remap());
+        let reopened = lm_project::Project::open_supported(
+            lm_rom::RomImage::from_bytes(app.project().unwrap().save_snapshot()).unwrap(),
+        )
+        .unwrap();
+        assert!(
+            reopened
+                .load_lunar_magic_rom_metadata(smw_us_v1_lunar_magic_metadata_layout())
+                .unwrap()
+                .unwrap()
+                .sa1_ram_remap()
+        );
+        assert!(
+            app.dispatch(Command::SetSa1RamRemap {
+                rev: 1,
+                enabled: true,
+            })
+            .unwrap()
+            .is_empty()
+        );
+        assert_eq!(app.controller_snapshot().unwrap().revision, 1);
+
+        app.dispatch(Command::SetSa1RamRemap {
+            rev: 1,
+            enabled: false,
+        })
+        .unwrap();
+        assert!(!metadata(&app).sa1_ram_remap());
+        app.dispatch(Command::Undo).unwrap();
+        assert!(metadata(&app).sa1_ram_remap());
         app.dispatch(Command::Undo).unwrap();
         assert_eq!(app.project().unwrap().save_snapshot(), original);
     }

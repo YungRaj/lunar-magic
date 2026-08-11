@@ -31,6 +31,7 @@ impl LunarMagicRomMetadata {
     const USE_FASTROM_INDEX: usize = 6;
     const FASTROM_EVER_ENABLED_INDEX: usize = 7;
     const FASTROM_PATCH_INDEX: usize = 8;
+    const SA1_RAM_REMAP_BIT: u32 = 1 << 17;
 
     /// Constructs an exact metadata snapshot while validating its stable framing.
     ///
@@ -82,6 +83,26 @@ impl LunarMagicRomMetadata {
     #[must_use]
     pub fn feature_bits(&self) -> u32 {
         u32::from_le_bytes(self.feature_record[..4].try_into().unwrap_or_default())
+    }
+
+    /// Whether mapper-aware inserted ASM relocations use the SA-1 Pack IRAM/WRAM remap.
+    #[must_use]
+    pub fn sa1_ram_remap(&self) -> bool {
+        self.feature_bits() & Self::SA1_RAM_REMAP_BIT != 0
+    }
+
+    /// Returns an exact metadata copy with packed feature bit 17 updated.
+    #[must_use]
+    pub fn with_sa1_ram_remap(&self, enabled: bool) -> Self {
+        let mut updated = self.clone();
+        let mut bits = updated.feature_bits();
+        if enabled {
+            bits |= Self::SA1_RAM_REMAP_BIT;
+        } else {
+            bits &= !Self::SA1_RAM_REMAP_BIT;
+        }
+        updated.feature_record[..4].copy_from_slice(&bits.to_le_bytes());
+        updated
     }
 
     #[must_use]
@@ -193,5 +214,28 @@ mod tests {
         let patched = disabled.with_fastrom_speed_patch_applied();
         assert!(patched.fastrom_speed_patch_applied());
         assert_eq!(patched.feature_record()[6..9], [0, b'B', b'B']);
+    }
+
+    #[test]
+    fn sa1_ram_remap_toggles_only_packed_feature_bit_seventeen() {
+        let mut attribution = [b' '; LunarMagicRomMetadata::ATTRIBUTION_LEN];
+        attribution[..LunarMagicRomMetadata::SIGNATURE.len()]
+            .copy_from_slice(LunarMagicRomMetadata::SIGNATURE);
+        let mut feature = [0x5a; LunarMagicRomMetadata::FEATURE_LEN];
+        feature[LunarMagicRomMetadata::FEATURE_LEN - 1] &= 0x0f;
+        let metadata = LunarMagicRomMetadata::from_parts(&attribution, 7, &feature).unwrap();
+        let enabled = metadata.with_sa1_ram_remap(true);
+        assert!(enabled.sa1_ram_remap());
+        assert_eq!(enabled.feature_bits(), metadata.feature_bits() | 1 << 17);
+        assert_eq!(
+            &enabled.feature_record()[4..],
+            &metadata.feature_record()[4..]
+        );
+        let disabled = enabled.with_sa1_ram_remap(false);
+        assert!(!disabled.sa1_ram_remap());
+        assert_eq!(
+            disabled.feature_bits(),
+            metadata.feature_bits() & !(1 << 17)
+        );
     }
 }

@@ -1444,3 +1444,14 @@ the lower interval and retains the normal fallback. Rust now persists and routes
 propagates it into application allocation state, and uses it when placing the FastROM runtime.
 The two focused native tests, three FastROM application tests, and exhaustive route-partition test
 pass. Authenticated command coverage is 316/317; only `$24D6` remains pending.
+
+## SA-1 RAM-remap option (2026-08-11)
+
+Ghidra command case `$9F` and the open/save metadata paths bind `$24D6` to packed ROM feature bit
+17. The handler is loaded-ROM scoped, rejects ExLoROM and its compatibility lock, updates the
+checked state, and marks the ROM modified. Shared inserted-ASM relocation helpers prove enabled
+SA-1 behavior: original IRAM words below `$2000` gain `$6000`, and original `$7E/$7F` WRAM bank
+operands are remapped through the SA-1 relocation context. Rust now exposes the same lossless
+metadata bit, revision-checks and checksum-repairs the command, makes duplicate state a no-op,
+supports exact Undo, and routes the authenticated toolbar name. Focused metadata, application,
+and exhaustive partition tests pass. Command coverage is 317/317 with no pending original names.

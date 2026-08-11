@@ -734,6 +734,29 @@ impl NativeApplication {
                     );
                 }
             }
+            UserToolbarNativeAction::Sa1RamRemap => {
+                let enabled = self
+                    .app
+                    .project()
+                    .and_then(|project| {
+                        project
+                            .load_lunar_magic_rom_metadata(
+                                lm_profile::smw_us_v1_lunar_magic_metadata_layout(),
+                            )
+                            .ok()
+                            .flatten()
+                    })
+                    .is_some_and(|metadata| metadata.sa1_ram_remap());
+                if let Ok(snapshot) = self.app.controller_snapshot() {
+                    self.dispatch(
+                        context,
+                        Command::SetSa1RamRemap {
+                            rev: snapshot.revision,
+                            enabled: !enabled,
+                        },
+                    );
+                }
+            }
             UserToolbarNativeAction::GraphicsCompressionOptions => {
                 self.graphics_migration_dialog.open(&self.app);
             }
@@ -2061,6 +2084,7 @@ enum UserToolbarNativeAction {
     UseFastRomAddressing,
     ApplyFastRomPatch,
     PrioritizeAllocationsPast2Mb,
+    Sa1RamRemap,
     InstallVramPatch,
     VramPatchOptions,
     GraphicsCompressionOptions,
@@ -2194,6 +2218,7 @@ fn user_toolbar_native_action(name: &str) -> Option<UserToolbarNativeAction> {
         "LM_OPTIONS_USE_FASTROM" => UserToolbarNativeAction::UseFastRomAddressing,
         "LM_OPTIONS_PATCH_FASTROM" => UserToolbarNativeAction::ApplyFastRomPatch,
         "LM_OPTIONS_PAST_2MB" => UserToolbarNativeAction::PrioritizeAllocationsPast2Mb,
+        "LM_OPTIONS_SA1_RAM_REMAP" => UserToolbarNativeAction::Sa1RamRemap,
         "LM_OPTIONS_INSTALL_VRAM" => UserToolbarNativeAction::InstallVramPatch,
         "LM_OPTIONS_VRAM" => UserToolbarNativeAction::VramPatchOptions,
         "LM_OPTIONS_COMPRESSION" => UserToolbarNativeAction::GraphicsCompressionOptions,
@@ -3259,7 +3284,7 @@ mod user_toolbar_tests {
                     || user_toolbar_native_action(entry.name).is_some()
             })
             .collect::<Vec<_>>();
-        assert_eq!(supported.len(), 316);
+        assert_eq!(supported.len(), 317);
         assert!(
             supported
                 .iter()
@@ -3276,6 +3301,10 @@ mod user_toolbar_tests {
         assert_eq!(
             user_toolbar_native_action("LM_OPTIONS_PAST_2MB"),
             Some(UserToolbarNativeAction::PrioritizeAllocationsPast2Mb)
+        );
+        assert_eq!(
+            user_toolbar_native_action("LM_OPTIONS_SA1_RAM_REMAP"),
+            Some(UserToolbarNativeAction::Sa1RamRemap)
         );
     }
 

@@ -1072,6 +1072,7 @@ impl AppState {
                 self.set_use_fastrom_addressing(rev, enabled)?
             }
             Command::ApplyFastRomPatch { rev } => self.apply_fastrom_patch(rev)?,
+            Command::SetSa1RamRemap { rev, enabled } => self.set_sa1_ram_remap(rev, enabled)?,
             Command::ReplaceNativeSecondaryExits { rev, table } => {
                 self.replace_native_secondary_exits(rev, &table)?
             }

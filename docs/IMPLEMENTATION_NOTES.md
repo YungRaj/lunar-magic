@@ -6183,3 +6183,14 @@ choice, exposes it through the authenticated toolbar route, propagates it into `
 uses it for relocatable FastROM runtime placement. Focused toggle, persistence, route-partition,
 and FastROM tests pass. Authenticated native command coverage is now 316 of 317 named slots; only
 the ROM-scoped SA-1 RAM-remap option remains pending.
+
+## SA-1 RAM remap (`$24D6`)
+
+The last named original toolbar command is now routed. Ghidra case `$9F` binds it to the ROM's
+packed feature bit 17, with loaded-level, ExLoROM, and installed-compatibility guards. The shared
+relocation helpers prove that enabled SA-1 insertion adds `$6000` to authenticated IRAM operands
+below `$2000` and remaps original `$7E/$7F` WRAM bank operands; the option is therefore persisted
+ROM state rather than a frontend-only preference. Rust's metadata model toggles only that bit,
+the application transaction is stale-safe, idempotent, checksum-repaired, reopenable, and exactly
+undoable, and the native route selects current ROM state before dispatch. Focused tests pass and
+the authenticated native command inventory is now 317 of 317 named slots with none pending.

@@ -1317,8 +1317,13 @@ allocation-order preference. Ghidra binds it to registry `Options` bit 18 and pr
 allocator consumers try physical `$200200` and above before lower free space in already-expanded
 ordinary ROMs; Rust persists the option, propagates it into application allocation state, and
 applies it to the FastROM runtime transaction. Toggle, persistence, routing, and FastROM regression
-tests pass. The authenticated partition is now **316 routed / 1 pending**; SA-1 RAM remap remains.
-The aggregate remains
+tests pass. `LM_OPTIONS_SA1_RAM_REMAP` `$24D6` now completes the command inventory as a
+revision-checked ROM metadata transaction. Ghidra proves case `$9F`, packed feature bit 17, the
+loaded-ROM and ExLoROM guards, and the shared SA-1 relocation consumers that move IRAM words from
+`$0000..$1FFF` to `$6000..$7FFF` while remapping `$7E/$7F` WRAM bank operands. Rust preserves all
+other metadata bytes, repairs checksum, treats duplicate state as a no-op, reopens the semantic
+bit, and undoes to byte-identical ROM data. The authenticated partition is now **317 routed / 0
+pending**. The aggregate remains
 59/65 because the configuration row is still Partial.
 
 Toolbar coverage update (2026-08-11, current per-ROM VRAM patch options): authenticated

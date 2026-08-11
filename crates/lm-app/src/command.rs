@@ -215,6 +215,11 @@ pub enum Command {
     ApplyFastRomPatch {
         rev: u64,
     },
+    /// Selects the SA-1 Pack IRAM/WRAM relocation convention for this ROM.
+    SetSa1RamRemap {
+        rev: u64,
+        enabled: bool,
+    },
     /// Replaces Lunar Magic's complete native expanded secondary-exit table.
     ReplaceNativeSecondaryExits {
         rev: u64,

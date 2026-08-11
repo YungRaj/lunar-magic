@@ -5173,3 +5173,18 @@ The only non-UI consumers are `AllocateMappedRomSpaceWithGrowth` `$004A84D0` and
 `$200200` physical bytes, enabled mode tries free space beginning at physical `$200200` before
 the lower search interval, then retains the ordinary fallback and growth paths. It is therefore
 an allocation-order preference, not permission to expand beyond 2 MiB.
+
+## SA-1 RAM remap option
+
+`LM_OPTIONS_SA1_RAM_REMAP` `$24D6` selects command case `$9F`. The handler requires a loaded
+level, rejects ExLoROM and its installed compatibility lock, toggles the checked command state,
+and marks the ROM modified. Its state byte `$00E27901` is loaded from and saved to packed feature
+bit 17 by `ValidateAndInitializeOpenedRom` and `WriteLunarMagicRomMetadata`.
+
+The consumers establish the name's exact effect. On SA-1, `PatchRelocatedIramWordAddress`
+accepts only original values below `$2000` and writes value plus `$6000`; its byte-address sibling
+uses the same remap. `PatchRelocatedWorkRamBankByte` accepts only original `$7E/$7F` WRAM banks
+and writes the SA-1 relocation bank selected by the insertion context. ExLoROM takes its separate
+relocation path before consulting this bit. Expanded level headers, ExAnimation, VRAM, Layer 3,
+Map16, secondary exits, graphics compression, overworld features, and inserted-ASM relocation all
+share these helpers, so the persisted bit is ROM-scoped and affects future runtime installations.
