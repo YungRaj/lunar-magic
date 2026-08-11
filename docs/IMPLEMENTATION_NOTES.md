@@ -3513,9 +3513,13 @@ half-blended overlays for `$06F-$072`. Those overlays were recovered directly fr
 `RenderMap16TileToPixelBuffer`. `LM_VIEW_LINE_ON` (`$2402`) controls the visible On/Off trigger-map
 selection used by animation groups 11 and 12. `LM_VIEW_CDM16` (`$2409`) defaults on and adds `$100`
 to the source bank of Direct Map16 `$27/$29` records whose output-width and source-control high
-bits both mark the conditional form. The native canvas routes these
-states through both Layer 1 and object-backed Layer 2 artwork, and includes them in its atlas cache
-key; serialized object bytes remain untouched.
+bits both mark the conditional form. The native canvas routes these states through source-aware
+Layer 1 and object-backed Layer 2 painting; serialized object bytes remain untouched. The shared
+Map16 atlases themselves remain raw. Baking conditional substitutions into those atlases caused
+ordinary background cells with overlapping numeric IDs to be remapped, producing 60,571 wrong
+pixels in complete vanilla Level `$105`. The raw-atlas correction is byte-identical to all 488
+previously verified Rust corpus PNGs and zero-pixel-different from Lunar Magic's full Level `$105`
+oracle; a deterministic raster-hash regression test now guards that boundary.
 `LM_VIEW_512HEIGHT_BG` (`$2407`) now switches the background's vertical source period from the
 original 27 Map16 rows (432 pixels) to the complete 32 rows (512 pixels). The game-camera preview
 uses the same period for both the precomposed background plane and its Map16 fallback, while the

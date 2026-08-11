@@ -797,18 +797,19 @@ fn render_with_editor_palette_phase_and_animation_view_state(
         )?;
         for screen_variant in 0..4 {
             let screen_map16 = map16_definitions_for_phase(&map16.bytes, screen_variant);
-            animated_images.push(render_map16_definition_atlas_with_view_state(
+            animated_images.push(render_map16_definition_atlas(
                 &screen_map16,
                 &foreground_graphics,
                 &palette,
-                animation_view_state,
             ));
-            animated_layer2_images.push(render_layer2_map16_definition_atlas_with_view_state(
+            // Conditional-object visibility is applied per source object by the editor
+            // compositor. Baking it into either shared atlas remaps ordinary Map16 cells that
+            // merely share those numeric IDs, corrupting foregrounds and backgrounds alike.
+            animated_layer2_images.push(render_layer2_map16_definition_atlas(
                 &screen_map16,
                 &foreground_graphics,
                 &palette,
                 tileset,
-                animation_view_state,
             ));
         }
         block_contents_images.push(render_default_m16_overlay_atlas(
@@ -1708,12 +1709,10 @@ fn render_map16_definition_atlas(
     graphics: &[IndexedTile],
     palette: &Palette,
 ) -> egui::ColorImage {
-    render_map16_definition_atlas_with_view_state(
-        definitions,
-        graphics,
-        palette,
-        VanillaAnimationViewState::default(),
-    )
+    let mut raw = VanillaAnimationViewState::default();
+    raw.conditional.invisible_pow_objects = false;
+    raw.conditional.other_invisible_objects = false;
+    render_map16_definition_atlas_with_view_state(definitions, graphics, palette, raw)
 }
 
 fn render_background_map16_bank_plane(
@@ -1805,12 +1804,15 @@ fn render_layer2_map16_definition_atlas(
     // Ghidra RenderLevelEditorViewportRegion @ 00453c0f sets DAT_00600256 for
     // object-backed Layer 2 when the active object tileset is 3. The Map16
     // renderer then adds four palette rows to subtiles using rows 0..3.
+    let mut raw_layer2 = VanillaAnimationViewState::default();
+    raw_layer2.conditional.invisible_pow_objects = false;
+    raw_layer2.conditional.other_invisible_objects = false;
     render_layer2_map16_definition_atlas_with_view_state(
         definitions,
         graphics,
         palette,
         tileset,
-        VanillaAnimationViewState::default(),
+        raw_layer2,
     )
 }
 

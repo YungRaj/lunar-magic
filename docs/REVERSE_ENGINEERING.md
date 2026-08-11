@@ -4507,9 +4507,12 @@ corresponding display mapping. `$06F-$072` instead select four 16×16 half-blend
 histogram now authenticated by Rust tests. Finally, `PlaceRectangularLevelObjectTiles` at
 `00421E10` proves that a `$27/$29` Direct Map16 record selects source tile `+$100` while `$2409`
 is active only when both its output-width high bit and source-control high bit are set. Rust keeps
-these as presentation state, applies them to the shared atlas,
-animation selector, and per-object painter path, and never rewrites the authored record merely to
-change the view.
+these as presentation state, applies them to the animation selector and per-object painter path,
+and never rewrites the authored record merely to change the view. Conditional substitutions must
+not be baked into the shared Map16 atlases: Layer 2/background cells can reuse the same numeric
+Map16 IDs without representing conditional Layer 1 objects. A retained complete Level `$105`
+export caught that failure as 60,571 wrong pixels; raw shared atlases plus source-aware object
+painting restore a zero-pixel-difference result across the complete 5120×432 oracle image.
 
 `LM_VIEW_512HEIGHT_BG` maps to `$2407`; dispatcher case `$55` toggles persisted byte `005E7B0D`
 and redraws without rebuilding level data. `RenderLevelEditorViewportRegion` at `004530A0` uses

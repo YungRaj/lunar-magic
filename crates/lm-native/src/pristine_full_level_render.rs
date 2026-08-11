@@ -1271,6 +1271,23 @@ mod tests {
     use super::*;
 
     #[test]
+    fn pristine_level_105_remains_pixel_exact_with_the_lunar_magic_oracle() {
+        let rendered = render(
+            crate::test_support::pristine_smw_us_rom_bytes(),
+            0x105,
+            NATIVE_EXPORT_MAP16_PHASE,
+            0,
+        )
+        .unwrap()
+        .expect("pristine level 105 is renderable");
+        let png = lm_render::encode_png(&rendered.canvas).unwrap();
+        assert_eq!(
+            lm_oracle::sha256_hex(&png),
+            "42478d82ad450c2995f44e96a8b346090ee0bbffc8e31ff6f1593cc3c81e33fc"
+        );
+    }
+
+    #[test]
     fn horizontal_sprite_parts_wrap_into_the_following_screen_column() {
         assert_eq!(wrap_horizontal_sprite_part(1763, 433, 432), (2019, 1));
         assert_eq!(wrap_horizontal_sprite_part(512, -1, 432), (256, 431));
