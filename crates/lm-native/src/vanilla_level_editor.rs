@@ -557,6 +557,7 @@ pub(crate) struct VanillaLevelEditor {
     scan_exits_on_save: Option<bool>,
     count_sprites_on_save: Option<bool>,
     auto_set_screens: Option<bool>,
+    allow_fragmentation: Option<bool>,
     deferred_rom_option_save: bool,
     paste_target: Option<EntityPasteTarget>,
     pending_layer2_mode_reset: Option<HeaderForm>,
@@ -1085,6 +1086,14 @@ impl VanillaLevelEditor {
 
     pub(crate) fn set_auto_set_screens(&mut self, enabled: bool) {
         self.auto_set_screens = Some(enabled);
+    }
+
+    pub(crate) fn set_allow_fragmentation(&mut self, enabled: bool) {
+        self.allow_fragmentation = Some(enabled);
+    }
+
+    fn allow_fragmentation(&self) -> bool {
+        self.allow_fragmentation.unwrap_or(true)
     }
 
     pub(crate) fn initialize_draw_selection_over_live(&mut self, enabled: bool) {
@@ -4042,10 +4051,12 @@ impl VanillaLevelEditor {
         major_delta: i32,
         minor_delta: i32,
     ) {
+        let allow_fragmentation = self.allow_fragmentation();
         let edit = ObjectEdit::RelocateOrdinaryGroup {
             selected: selected.clone(),
             major_delta,
             minor_delta,
+            allow_fragmentation,
         };
         let controller = self
             .controller
@@ -4054,7 +4065,12 @@ impl VanillaLevelEditor {
         let moved = match domain {
             CanvasEntitySelection::Layer1Object => {
                 let mut predicted = controller.level().layer1.objects.clone();
-                predicted.relocate_ordinary_object_group(&selected, major_delta, minor_delta)
+                predicted.relocate_ordinary_object_group_with_fragmentation(
+                    &selected,
+                    major_delta,
+                    minor_delta,
+                    allow_fragmentation,
+                )
             }
             CanvasEntitySelection::Layer2Object => {
                 let Some(lm_level::NativeLayer2Data::Objects(layer2)) = controller.layer2() else {
@@ -4063,7 +4079,12 @@ impl VanillaLevelEditor {
                     return;
                 };
                 let mut predicted = layer2.objects.clone();
-                predicted.relocate_ordinary_object_group(&selected, major_delta, minor_delta)
+                predicted.relocate_ordinary_object_group_with_fragmentation(
+                    &selected,
+                    major_delta,
+                    minor_delta,
+                    allow_fragmentation,
+                )
             }
             CanvasEntitySelection::Sprite => unreachable!("sprite nudge has a dedicated edit"),
         };
@@ -4110,6 +4131,7 @@ impl VanillaLevelEditor {
             self.error = Some("Z-order adjustment requires an object or sprite selection".into());
             return;
         };
+        let allow_fragmentation = self.allow_fragmentation();
         let Some(controller) = self.controller.as_mut() else {
             self.error = Some("level controller is unavailable".into());
             return;
@@ -4118,7 +4140,11 @@ impl VanillaLevelEditor {
             CanvasEntitySelection::Layer1Object => {
                 let selected = selected_indexes(&self.selected_object_group, self.selected_object);
                 let mut predicted = controller.level().layer1.objects.clone();
-                let moved = predicted.adjust_ordinary_object_z_order(&selected, increase);
+                let moved = predicted.adjust_ordinary_object_z_order_with_fragmentation(
+                    &selected,
+                    increase,
+                    allow_fragmentation,
+                );
                 let moved = match moved {
                     Ok(moved) => moved,
                     Err(error) => {
@@ -4127,7 +4153,11 @@ impl VanillaLevelEditor {
                     }
                 };
                 match controller.apply_edits(&[NativeLevelEdit::Objects(vec![
-                    ObjectEdit::AdjustOrdinaryZOrder { selected, increase },
+                    ObjectEdit::AdjustOrdinaryZOrder {
+                        selected,
+                        increase,
+                        allow_fragmentation,
+                    },
                 ])]) {
                     Ok(()) => {
                         self.selected_object_group = moved;
@@ -4149,7 +4179,11 @@ impl VanillaLevelEditor {
                     return;
                 };
                 let mut predicted = layer2.objects.clone();
-                let moved = match predicted.adjust_ordinary_object_z_order(&selected, increase) {
+                let moved = match predicted.adjust_ordinary_object_z_order_with_fragmentation(
+                    &selected,
+                    increase,
+                    allow_fragmentation,
+                ) {
                     Ok(moved) => moved,
                     Err(error) => {
                         self.error = Some(error.to_string());
@@ -4159,6 +4193,7 @@ impl VanillaLevelEditor {
                 match controller.apply_layer2_object_edits(&[ObjectEdit::AdjustOrdinaryZOrder {
                     selected,
                     increase,
+                    allow_fragmentation,
                 }]) {
                     Ok(()) => {
                         self.selected_layer2_object_group = moved;
@@ -4205,6 +4240,7 @@ impl VanillaLevelEditor {
             self.error = Some("Z-order adjustment requires an object or sprite selection".into());
             return;
         };
+        let allow_fragmentation = self.allow_fragmentation();
         let Some(controller) = self.controller.as_mut() else {
             self.error = Some("level controller is unavailable".into());
             return;
@@ -4235,8 +4271,12 @@ impl VanillaLevelEditor {
                     }
                     CanvasEntitySelection::Sprite => unreachable!(),
                 };
-                let order = stream
-                    .native_placements()
+                let placements = stream.native_placements();
+                let screen_by_record = placements
+                    .iter()
+                    .map(|placement| (placement.record_index, placement.screen))
+                    .collect::<HashMap<_, _>>();
+                let order = placements
                     .into_iter()
                     .map(|placement| placement.record_index)
                     .collect::<Vec<_>>();
@@ -4245,7 +4285,10 @@ impl VanillaLevelEditor {
                     &selected,
                     bounds,
                     traversal,
-                    |_, _| true,
+                    |left, right| {
+                        allow_fragmentation
+                            || screen_by_record.get(left) == screen_by_record.get(right)
+                    },
                 ) {
                     Ok(reordered) => reordered,
                     Err(error) => {
@@ -4258,7 +4301,11 @@ impl VanillaLevelEditor {
                     return;
                 }
                 let mut predicted = stream.clone();
-                let moved = match predicted.reorder_ordinary_objects(&reordered, &selected) {
+                let moved = match predicted.reorder_ordinary_objects_with_fragmentation(
+                    &reordered,
+                    &selected,
+                    allow_fragmentation,
+                ) {
                     Ok(moved) => moved,
                     Err(error) => {
                         self.error = Some(error.to_string());
@@ -4268,6 +4315,7 @@ impl VanillaLevelEditor {
                 let edit = ObjectEdit::ReorderOrdinaryZOrder {
                     order: reordered,
                     selected,
+                    allow_fragmentation,
                 };
                 let result = match domain {
                     CanvasEntitySelection::Layer1Object => {
@@ -6814,6 +6862,7 @@ impl VanillaLevelEditor {
             CanvasEntitySelection::Layer2Object => self.selected_layer2_object_group.clone(),
             CanvasEntitySelection::Sprite => self.selected_sprite_group.clone(),
         };
+        let allow_fragmentation = self.allow_fragmentation();
         let Some(controller) = self.controller.as_mut() else {
             return;
         };
@@ -6894,18 +6943,23 @@ impl VanillaLevelEditor {
             return;
         };
         let mut predicted = stream.clone();
-        let moved =
-            match predicted.relocate_ordinary_object_group(&selected, major_delta, minor_delta) {
-                Ok(moved) => moved,
-                Err(error) => {
-                    self.error = Some(error.to_string());
-                    return;
-                }
-            };
+        let moved = match predicted.relocate_ordinary_object_group_with_fragmentation(
+            &selected,
+            major_delta,
+            minor_delta,
+            allow_fragmentation,
+        ) {
+            Ok(moved) => moved,
+            Err(error) => {
+                self.error = Some(error.to_string());
+                return;
+            }
+        };
         let edit = ObjectEdit::RelocateOrdinaryGroup {
             selected,
             major_delta,
             minor_delta,
+            allow_fragmentation,
         };
         let result = match drag.domain {
             CanvasEntitySelection::Layer1Object => {

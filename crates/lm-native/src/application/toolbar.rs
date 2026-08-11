@@ -465,6 +465,17 @@ impl NativeApplication {
                 }
                 .into();
             }
+            UserToolbarNativeAction::AllowFragmentation => {
+                let enabled = !self.allow_fragmentation.unwrap_or(true);
+                self.allow_fragmentation = Some(enabled);
+                self.vanilla_level_editor.set_allow_fragmentation(enabled);
+                self.app.status = if enabled {
+                    "Enabled fragmented object screen positions"
+                } else {
+                    "Disabled fragmented object screen positions"
+                }
+                .into();
+            }
             UserToolbarNativeAction::VramPatchOptions => {
                 self.vram_patch_options_dialog.open(&self.app);
             }
@@ -1687,6 +1698,7 @@ enum UserToolbarNativeAction {
     GfxBypassListDialogs,
     JoinedGraphicsFiles,
     AutoSetScreens,
+    AllowFragmentation,
     VramPatchOptions,
     GraphicsCompressionOptions,
     GeneralOptions,
@@ -1792,6 +1804,7 @@ fn user_toolbar_native_action(name: &str) -> Option<UserToolbarNativeAction> {
         "LM_OPTIONS_INSTALL_VRAM" => UserToolbarNativeAction::GfxBypassListDialogs,
         "LM_OPTIONS_ATTACH_FILES" => UserToolbarNativeAction::JoinedGraphicsFiles,
         "LM_OPTIONS_AUTO_SCREENS" => UserToolbarNativeAction::AutoSetScreens,
+        "LM_OPTIONS_ALLOW_FRAGMENT" => UserToolbarNativeAction::AllowFragmentation,
         "LM_OPTIONS_VRAM" => UserToolbarNativeAction::VramPatchOptions,
         "LM_OPTIONS_COMPRESSION" => UserToolbarNativeAction::GraphicsCompressionOptions,
         "LM_OPTIONS_GENERAL" => UserToolbarNativeAction::GeneralOptions,
@@ -2838,7 +2851,7 @@ mod user_toolbar_tests {
                     || user_toolbar_native_action(entry.name).is_some()
             })
             .collect::<Vec<_>>();
-        assert_eq!(supported.len(), 289);
+        assert_eq!(supported.len(), 290);
         assert!(
             supported
                 .iter()
@@ -3190,6 +3203,34 @@ mod user_toolbar_tests {
     }
 
     #[test]
+    fn allow_fragmentation_command_toggles_the_original_default_on_option() {
+        let mut native = NativeApplication::default();
+        assert_eq!(native.allow_fragmentation, None);
+        assert_eq!(
+            user_toolbar_native_action("LM_OPTIONS_ALLOW_FRAGMENT"),
+            Some(UserToolbarNativeAction::AllowFragmentation)
+        );
+        native.apply_user_toolbar_native_action(
+            &egui::Context::default(),
+            UserToolbarNativeAction::AllowFragmentation,
+        );
+        assert_eq!(native.allow_fragmentation, Some(false));
+        assert_eq!(
+            native.app.status,
+            "Disabled fragmented object screen positions"
+        );
+        native.apply_user_toolbar_native_action(
+            &egui::Context::default(),
+            UserToolbarNativeAction::AllowFragmentation,
+        );
+        assert_eq!(native.allow_fragmentation, Some(true));
+        assert_eq!(
+            native.app.status,
+            "Enabled fragmented object screen positions"
+        );
+    }
+
+    #[test]
     fn recent_menu_route_opens_at_the_pointer_and_escape_dismisses_it() {
         let mut native = NativeApplication::default();
         let context = egui::Context::default();
@@ -3372,7 +3413,7 @@ mod user_toolbar_tests {
                     && user_toolbar_native_action(entry.name).is_none()
             })
             .collect::<Vec<_>>();
-        assert_eq!(unsupported.len(), 28);
+        assert_eq!(unsupported.len(), 27);
         if std::env::var_os("LM_DIAGNOSTIC_UNSUPPORTED_TOOLBAR_COMMANDS").is_some() {
             for entry in unsupported {
                 eprintln!(

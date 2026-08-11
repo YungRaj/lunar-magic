@@ -1192,6 +1192,19 @@ auto-versus-manual save/reopen, and complete command-partition tests pass. The a
 partition is now **289 routed / 28 pending**. The aggregate remains 59/65 because the configuration
 row is still Partial.
 
+Toolbar coverage update (2026-08-11, object-stream fragmentation):
+`LM_OPTIONS_ALLOW_FRAGMENT` `$24BA` now reproduces central dispatcher case `$85`, the persisted
+`Options` bit 1, and default-on byte `$005E76EB`. Ghidra xrefs bind that byte to the two selected
+object reinsertion paths and the creation-order head/tail paths—not to ROM free-space allocation.
+Enabled drag and z-order operations preserve creation order across different screen-position
+anchors by regenerating backward/forward screen fragments. Disabled group movement coalesces by
+screen, one-step z-order cannot cross a different screen anchor, and complete overlap-aware
+permutations reject cross-screen inversions while retaining within-screen reordering. The policy
+applies to Layer 1 and object-backed Layer 2, persists through native save/reopen, and does not
+affect sprites. Focused model, route, preference, commit/reopen, and command-partition gates pass.
+The authenticated partition is now **290 routed / 27 pending**. The aggregate remains 59/65 because
+the configuration row is still Partial.
+
 Toolbar coverage update (2026-08-10, Open Level Number): `LM_FILE_OPEN_LEVEL` `$238E` now opens
 the native equivalent of original dialog resource `1000`. It uses the authenticated title,
 `Level Number (0-1FF)` label, OK/Cancel controls, and original-language resource overrides; seeds

@@ -5866,6 +5866,19 @@ the interactive Undo stack. Raw-address Layer 1 saves deliberately bypass the ru
 not represent an ordinary level-header workflow. Authenticated native command coverage is now 289
 of 317 named slots, leaving 28 pending.
 
+## Allow Fragmentation (`$24BA`)
+
+The command table maps `LM_OPTIONS_ALLOW_FRAGMENT` to dispatcher case `$85`, toggling persisted
+default-on byte `$005E76EB` (`Options` bit 1). The name refers to level object-list screen-position
+fragments. With the option enabled, Layer 1 and object-backed Layer 2 group drags retain creation
+order even when the moved objects cross screen anchors; the native encoder regenerates the required
+forward/backward screen jumps. Z-order steps and overlap-aware permutations may likewise cross
+screen anchors. With it disabled, moved groups are stably coalesced by screen, z-order steps stop at
+a different screen, and complete permutations reject cross-screen inversions while still allowing
+within-screen ordering. The setting is a persisted editor preference, defaults on when absent, and
+does not alter sprite ordering or ROM allocator behavior. Authenticated native command coverage is
+now 290 of 317 named slots, leaving 27 pending.
+
 ## Deprecated Select FG/BG commands (`$2473/$2474`)
 
 Both authenticated central dispatch bytes are `$DF`, while the Lunar Magic 3.63 command switch

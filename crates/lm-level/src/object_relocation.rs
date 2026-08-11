@@ -16,6 +16,7 @@ pub enum ObjectRelocationError {
     DuplicateOrderIndex(usize),
     NotOrdinaryObject(usize),
     UnsupportedControl(usize),
+    FragmentationDisabled,
     TargetScreenOutOfRange(u16),
     TargetPositionOutOfRange {
         index: usize,
@@ -349,6 +350,23 @@ impl ObjectStream {
         major_delta: i32,
         minor_delta: i32,
     ) -> Result<Vec<usize>, ObjectRelocationError> {
+        self.relocate_ordinary_object_group_with_fragmentation(
+            selected,
+            major_delta,
+            minor_delta,
+            false,
+        )
+    }
+
+    /// Translates a positioned selection while optionally preserving its creation order across
+    /// screen-position boundaries. Lunar Magic calls those backward/forward screen fragments.
+    pub fn relocate_ordinary_object_group_with_fragmentation(
+        &mut self,
+        selected: &[usize],
+        major_delta: i32,
+        minor_delta: i32,
+        allow_fragmentation: bool,
+    ) -> Result<Vec<usize>, ObjectRelocationError> {
         if selected.is_empty() {
             return Err(ObjectRelocationError::EmptySelection);
         }
@@ -402,7 +420,9 @@ impl ObjectStream {
                 .set_perpendicular_high_coordinate(minor >= 16)
                 .map_err(ObjectRelocationError::Field)?;
         }
-        positioned.sort_by_key(|object| object.screen);
+        if !allow_fragmentation {
+            positioned.sort_by_key(|object| object.screen);
+        }
         let (mut records, selected_indexes) = encode_positioned_object_group(positioned, selected)?;
         records.extend(trailing_controls);
         self.records = records;
@@ -417,6 +437,15 @@ impl ObjectStream {
         &mut self,
         selected: &[usize],
         increase: bool,
+    ) -> Result<Vec<usize>, ObjectRelocationError> {
+        self.adjust_ordinary_object_z_order_with_fragmentation(selected, increase, true)
+    }
+
+    pub fn adjust_ordinary_object_z_order_with_fragmentation(
+        &mut self,
+        selected: &[usize],
+        increase: bool,
+        allow_fragmentation: bool,
     ) -> Result<Vec<usize>, ObjectRelocationError> {
         if selected.is_empty() {
             return Err(ObjectRelocationError::EmptySelection);
@@ -444,7 +473,7 @@ impl ObjectStream {
             &mut positioned,
             |object| selected_set.contains(&object.original_index),
             increase,
-            |_, _| true,
+            |left, right| allow_fragmentation || left.screen == right.screen,
         );
         let (mut records, selected_indexes) = encode_positioned_object_group(positioned, selected)?;
         records.extend(trailing_controls);
@@ -459,12 +488,42 @@ impl ObjectStream {
         order: &[usize],
         selected: &[usize],
     ) -> Result<Vec<usize>, ObjectRelocationError> {
+        self.reorder_ordinary_objects_with_fragmentation(order, selected, true)
+    }
+
+    pub fn reorder_ordinary_objects_with_fragmentation(
+        &mut self,
+        order: &[usize],
+        selected: &[usize],
+        allow_fragmentation: bool,
+    ) -> Result<Vec<usize>, ObjectRelocationError> {
         let (positioned, trailing_controls) = decode_positioned_objects(self)?;
         if order.len() != positioned.len() {
             return Err(ObjectRelocationError::OrderLength {
                 expected: positioned.len(),
                 actual: order.len(),
             });
+        }
+        let original_screens = positioned
+            .iter()
+            .map(|object| (object.original_index, object.screen))
+            .collect::<std::collections::BTreeMap<_, _>>();
+        if !allow_fragmentation {
+            for left in 0..order.len() {
+                for right in left + 1..order.len() {
+                    let left_identity = order[left];
+                    let right_identity = order[right];
+                    let (Some(left_screen), Some(right_screen)) = (
+                        original_screens.get(&left_identity),
+                        original_screens.get(&right_identity),
+                    ) else {
+                        continue;
+                    };
+                    if left_screen != right_screen && left_identity > right_identity {
+                        return Err(ObjectRelocationError::FragmentationDisabled);
+                    }
+                }
+            }
         }
         let mut by_identity = positioned
             .into_iter()
@@ -910,6 +969,63 @@ mod tests {
                 .map(ObjectRecord::parameter)
                 .collect::<Vec<_>>(),
             [0x10, 0x20, 0x30, 0x40]
+        );
+    }
+
+    #[test]
+    fn fragmentation_policy_controls_cross_screen_drag_and_z_order() {
+        let source = ObjectStream {
+            records: vec![object(false, 1, 1, 0x10), object(true, 2, 2, 0x20)],
+        };
+
+        let mut fragmented_drag = source.clone();
+        fragmented_drag
+            .relocate_ordinary_object_group_with_fragmentation(&[0], 32, 0, true)
+            .unwrap();
+        assert_eq!(
+            fragmented_drag
+                .native_placements()
+                .into_iter()
+                .map(|placement| placement.screen)
+                .collect::<Vec<_>>(),
+            [2, 1]
+        );
+
+        let mut coalesced_drag = source.clone();
+        coalesced_drag
+            .relocate_ordinary_object_group_with_fragmentation(&[0], 32, 0, false)
+            .unwrap();
+        assert_eq!(
+            coalesced_drag
+                .native_placements()
+                .into_iter()
+                .map(|placement| placement.screen)
+                .collect::<Vec<_>>(),
+            [1, 2]
+        );
+
+        let mut enabled_z = source.clone();
+        enabled_z
+            .adjust_ordinary_object_z_order_with_fragmentation(&[0], true, true)
+            .unwrap();
+        assert_eq!(
+            enabled_z
+                .native_placements()
+                .into_iter()
+                .map(|placement| placement.screen)
+                .collect::<Vec<_>>(),
+            [1, 0]
+        );
+
+        let mut disabled_z = source.clone();
+        let selected = disabled_z
+            .adjust_ordinary_object_z_order_with_fragmentation(&[0], true, false)
+            .unwrap();
+        assert_eq!(selected, [0]);
+        assert_eq!(disabled_z, source);
+        assert_eq!(
+            disabled_z.reorder_ordinary_objects_with_fragmentation(&[1, 0], &[0], false),
+            Err(ObjectRelocationError::FragmentationDisabled)
         );
     }
 

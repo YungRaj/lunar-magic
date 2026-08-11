@@ -104,15 +104,18 @@ pub enum ObjectEdit {
         selected: Vec<usize>,
         major_delta: i32,
         minor_delta: i32,
+        allow_fragmentation: bool,
     },
     /// Moves a positioned selection by one creation/Z-order step without changing coordinates.
     AdjustOrdinaryZOrder {
         selected: Vec<usize>,
         increase: bool,
+        allow_fragmentation: bool,
     },
     ReorderOrdinaryZOrder {
         order: Vec<usize>,
         selected: Vec<usize>,
+        allow_fragmentation: bool,
     },
 }
 
@@ -294,16 +297,38 @@ impl ObjectStream {
                     selected,
                     major_delta,
                     minor_delta,
+                    allow_fragmentation,
                 } => staged
-                    .relocate_ordinary_object_group(selected, *major_delta, *minor_delta)
+                    .relocate_ordinary_object_group_with_fragmentation(
+                        selected,
+                        *major_delta,
+                        *minor_delta,
+                        *allow_fragmentation,
+                    )
                     .map(drop)
                     .map_err(LevelEditError::ObjectRelocation),
-                ObjectEdit::AdjustOrdinaryZOrder { selected, increase } => staged
-                    .adjust_ordinary_object_z_order(selected, *increase)
+                ObjectEdit::AdjustOrdinaryZOrder {
+                    selected,
+                    increase,
+                    allow_fragmentation,
+                } => staged
+                    .adjust_ordinary_object_z_order_with_fragmentation(
+                        selected,
+                        *increase,
+                        *allow_fragmentation,
+                    )
                     .map(drop)
                     .map_err(LevelEditError::ObjectRelocation),
-                ObjectEdit::ReorderOrdinaryZOrder { order, selected } => staged
-                    .reorder_ordinary_objects(order, selected)
+                ObjectEdit::ReorderOrdinaryZOrder {
+                    order,
+                    selected,
+                    allow_fragmentation,
+                } => staged
+                    .reorder_ordinary_objects_with_fragmentation(
+                        order,
+                        selected,
+                        *allow_fragmentation,
+                    )
                     .map(drop)
                     .map_err(LevelEditError::ObjectRelocation),
             };
