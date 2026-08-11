@@ -65,6 +65,25 @@ impl AppState {
         }))
     }
 
+    /// Composes an optional staged ROM mutation and staged native overworld route links on one
+    /// isolated project before validating the recovery image.
+    pub fn recovery_snapshot_with_overworld_path_links(
+        &self,
+        mutation: Option<&lm_project::RomMutation>,
+        links: &lm_overworld::OverworldPathLinkTable,
+        level: Option<u16>,
+    ) -> Result<Option<RecoverySnapshot>, AppError> {
+        let project = self.project.as_ref().ok_or(AppError::NoProject)?;
+        let mut staged = project.clone();
+        if let Some(mutation) = mutation {
+            staged
+                .apply_mutation("Stage overworld terrain for crash recovery", mutation)
+                .map_err(|error| AppError::Recovery(error.to_string()))?;
+        }
+        crate::overworld_path_link_state::replace_native_path_links_in_project(&mut staged, links)?;
+        self.recovery_snapshot_with_current_rom(staged.save_snapshot(), level)
+    }
+
     /// Restores a recovery record as an unnamed, dirty project.
     ///
     /// The original path is deliberately not restored. The first explicit save therefore uses

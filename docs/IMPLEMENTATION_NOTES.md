@@ -6307,10 +6307,11 @@ The installed overworld editor now contributes its full staged generation: compl
 controller revision, native custom-sprite revision, and the exact seven animation-option bytes, or
 the profile-free playable Layer 2 revision. A full profiled workspace reuses its combined atomic
 commit planner, covering terrain, records, paths, events, endpoints, messages, sprites, palette,
-ExAnimation options, and native sprite storage. The profile-free path recovers a staged playable
-main-map Layer 2 mutation. Its independently persisted route-link companion is rejected when dirty
-instead of publishing only the terrain half. A retained Lunar Magic overworld-transfer fixture
-proves recovery/reopen of a changed terrain tile, a byte-identical clean live project, and explicit
-route-link rejection.
+ExAnimation options, and native sprite storage. The profile-free path recovers staged playable
+main-map Layer 2 terrain and native route links independently or together. Combined recovery first
+applies the prepared terrain mutation, then runs the same fixed/current-patch route persistence and
+semantic reopen check against that staged project. A retained Lunar Magic overworld-transfer
+fixture proves terrain-only, routes-only, and combined recovery/reopen while the live project stays
+byte-identical and history-free.
 The complete native gate passes 1,166 active tests with 11 explicit fixture/device ignores,
 including all 512 pristine-level materializations; all 237 renderer tests pass.

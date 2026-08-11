@@ -359,12 +359,24 @@ impl RomOverworldEditor {
             .main_layer2_workspace
             .as_ref()
             .ok_or("overworld workspace is closed")?;
+        let terrain_mutation = if workspace.controller.is_modified() {
+            let command = self.prepare_main_layer2_commit()?;
+            Some(overworld_mutation_from_command(app, command)?)
+        } else {
+            None
+        };
         if workspace.paths != workspace.original_paths {
-            return Err(
-                "cannot compose staged overworld route links into crash recovery yet".into(),
-            );
+            return app
+                .recovery_snapshot_with_overworld_path_links(
+                    terrain_mutation.as_ref(),
+                    &workspace.paths,
+                    None,
+                )
+                .map_err(|error| error.to_string());
         }
-        recovery_snapshot_from_overworld_command(app, self.prepare_main_layer2_commit()?, None)
+        let mutation = terrain_mutation.ok_or("overworld workspace has no staged changes")?;
+        app.recovery_snapshot_with_mutation(&mutation, None)
+            .map_err(|error| error.to_string())
     }
 
     pub(crate) fn request_save_prompt_transition(&mut self, command: Command) -> bool {
@@ -873,6 +885,15 @@ fn recovery_snapshot_from_overworld_command(
     command: Command,
     level: Option<u16>,
 ) -> Result<Option<lm_app::RecoverySnapshot>, String> {
+    let mutation = overworld_mutation_from_command(app, command)?;
+    app.recovery_snapshot_with_mutation(&mutation, level)
+        .map_err(|error| error.to_string())
+}
+
+fn overworld_mutation_from_command(
+    app: &AppState,
+    command: Command,
+) -> Result<lm_project::RomMutation, String> {
     let Command::CommitRomMutation {
         expected_revision,
         mutation,
@@ -884,8 +905,7 @@ fn recovery_snapshot_from_overworld_command(
     if expected_revision != app.project_revision() {
         return Err("overworld recovery mutation was prepared from a stale revision".into());
     }
-    app.recovery_snapshot_with_mutation(&mutation, level)
-        .map_err(|error| error.to_string())
+    Ok(mutation)
 }
 
 impl MainPathLinkForm {

@@ -1104,11 +1104,66 @@ mod tests {
             main_layer2_workspace: Some(routes),
             ..super::RomOverworldEditor::default()
         };
-        assert!(
-            route_editor
-                .staged_recovery_snapshot(&app)
-                .unwrap_err()
-                .contains("route links")
+        let route_recovery = route_editor
+            .staged_recovery_snapshot(&app)
+            .unwrap()
+            .unwrap();
+        let mut route_reopened = lm_app::AppState::default();
+        route_reopened.load_recovery(route_recovery).unwrap();
+        let route_table =
+            route_reopened
+                .project()
+                .unwrap()
+                .load_overworld_path_links_detected(
+                    lm_profile::smw_us_v1_overworld_path_patch_locator(),
+                )
+                .unwrap()
+                .table;
+        assert_eq!(
+            route_table,
+            route_editor.main_layer2_workspace.as_ref().unwrap().paths
+        );
+
+        let mut combined =
+            decode_main_layer2_workspace(app.controller_snapshot().unwrap()).unwrap();
+        combined.paths.links[0].target.x_tile ^= 1;
+        combined
+            .controller
+            .apply_edits(&[lm_app::OverworldControllerEdit::SetLayerTile {
+                layer: lm_app::OverworldLayerId::Layer2,
+                x: 12,
+                y: 9,
+                tile: replacement,
+            }])
+            .unwrap();
+        let combined_editor = super::RomOverworldEditor {
+            main_layer2_workspace: Some(combined),
+            search_start: "E0000".into(),
+            search_end: "F0000".into(),
+            ..super::RomOverworldEditor::default()
+        };
+        let combined_recovery = combined_editor
+            .staged_recovery_snapshot(&app)
+            .unwrap()
+            .unwrap();
+        let mut combined_reopened = lm_app::AppState::default();
+        combined_reopened.load_recovery(combined_recovery).unwrap();
+        let combined_project = combined_reopened.project().unwrap();
+        let combined_terrain =
+            lm_profile::load_smw_us_v1_main_overworld_layer2(combined_project).unwrap();
+        assert_eq!(combined_terrain.layer.tile(12, 9).unwrap(), replacement);
+        assert_eq!(
+            combined_project
+                .load_overworld_path_links_detected(
+                    lm_profile::smw_us_v1_overworld_path_patch_locator(),
+                )
+                .unwrap()
+                .table,
+            combined_editor
+                .main_layer2_workspace
+                .as_ref()
+                .unwrap()
+                .paths
         );
     }
 
