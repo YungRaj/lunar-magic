@@ -79,7 +79,9 @@ mod vanilla_level_map16;
 mod vanilla_level_mode;
 mod vanilla_level_palette;
 
-pub use fastrom_patch::{FastRomPatchError, apply_smw_us_v1_fastrom_jsl_pass};
+pub use fastrom_patch::{
+    FastRomPatchError, apply_smw_us_v1_fastrom_jsl_pass, apply_smw_us_v1_fastrom_pointer_passes,
+};
 mod vanilla_object_family;
 mod vanilla_smw;
 mod vanilla_standard_object_map;

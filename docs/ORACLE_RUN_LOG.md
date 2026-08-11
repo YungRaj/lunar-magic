@@ -1384,3 +1384,14 @@ explains exactly 909 of its 1,804 patch-save differences. The complete lm-profil
 tests with 20 explicit fixture ignores plus all 10 integration tests. The command remains pending
 until the remaining pointer-table passes, speed hook, marker, checksum, and atomic application
 boundary are composed.
+
+## FastROM packed-pointer conversion passes (2026-08-11)
+
+Rust now implements the remaining two table-driven loops from `$0049082A..$00490C08`, including
+all twenty packed-table descriptors and all twenty-four authenticated bank-load sources. On
+pristine SMW US they change exactly 747 and 24 entries respectively and are idempotent. Together
+with the JSL pass, the algorithms explain 1,682 of the live patch oracle's 1,804 changed bytes.
+The remaining 122 bytes have been isolated to the dynamically allocated two-entry trampoline,
+internal FastROM map-mode byte, two original hooks, small RATS-owned speed routine, feature marker,
+and an 85-byte Lunar Magic ownership/free-space record. Focused tests pass 3/3; the command stays
+pending until those allocations are planned and committed atomically.

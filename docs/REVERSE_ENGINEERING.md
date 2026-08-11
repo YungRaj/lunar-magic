@@ -5149,3 +5149,10 @@ therefore clears only index 6.
 requires opcode `$22`, a target word in `$8000..$FFFF`, and a target bank below `$10`, then sets
 the bank's high bit. The same transaction installs the speed-enable hook and marks feature index
 8, explaining why unchecking the option cannot reverse it.
+
+Two subsequent loops account for the other original-game pointer families. At
+`$0049082A..$00490A1A`, twenty `(base,count)` descriptors at `$005E9CE0/$005E9D38` cover 761
+packed 24-bit pointers; the guarded conversion changes a bank below `$10` only when its word is
+in `$8000..$FFFF`. At `$00490A20..$00490C08`, twenty-four source addresses at `$005E9D88`
+identify exact `A9 bank 48 AB` (`LDA #bank / PHA / PLB`) sequences and set the immediate bank's
+high bit. Pristine SMW has 747 qualifying packed pointers and all 24 bank-load sequences.

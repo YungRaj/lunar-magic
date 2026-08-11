@@ -107,6 +107,35 @@ const ERSANIO_JSL_SOURCES: &[u32] = &[
     0x8dcd96, 0x8dcf58, 0x8dd076, 0x8dd996, 0x8ddaf6, 0x8ddd8f, 0x8de896,
 ];
 
+const PACKED_POINTER_TABLES: &[(u32, usize)] = &[
+    (0x84857d, 0x0d),
+    (0x858823, 0x20),
+    (0x85888c, 0x20),
+    (0x8588f5, 0x20),
+    (0x85895e, 0x20),
+    (0x85daff, 0x03),
+    (0x8ca1de, 0x05),
+    (0x8da10f, 0x100),
+    (0x8da41e, 0x0f),
+    (0x8da455, 0x3f),
+    (0x8dab50, 0x0a),
+    (0x8dc19a, 0x3f),
+    (0x8dc34a, 0x02),
+    (0x8dcd9a, 0x3f),
+    (0x8dcf5c, 0x06),
+    (0x8dd07a, 0x02),
+    (0x8dd99a, 0x3f),
+    (0x8ddafa, 0x04),
+    (0x8ddd93, 0x02),
+    (0x8de89a, 0x3f),
+];
+
+const BANK_LOAD_SOURCES: &[u32] = &[
+    0x80c586, 0x80f155, 0x80f1ed, 0x80f23f, 0x80f9bf, 0x81883e, 0x818849, 0x818854, 0x81885f,
+    0x818870, 0x81887b, 0x818886, 0x818adb, 0x8199f9, 0x819fcb, 0x81ae3e, 0x81d7b1, 0x81d8c9,
+    0x81e844, 0x82b7bc, 0x82e489, 0x838227, 0x8485c1, 0x8ca75b,
+];
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum FastRomPatchError {
     Address { address: u32, source: RomError },
@@ -142,6 +171,53 @@ pub fn apply_smw_us_v1_fastrom_jsl_pass(bytes: &mut [u8]) -> Result<usize, FastR
     Ok(changed)
 }
 
+/// Converts the two additional original-game pointer families recovered from `$0049082A` through
+/// `$00490C08`: twenty packed 24-bit tables and twenty-four `LDA #bank / PHA / PLB` sites.
+pub fn apply_smw_us_v1_fastrom_pointer_passes(
+    bytes: &mut [u8],
+) -> Result<usize, FastRomPatchError> {
+    let mut changed = 0;
+    for &(address, count) in PACKED_POINTER_TABLES {
+        let offset = resolve(address)?;
+        let end = offset
+            .checked_add(
+                count
+                    .checked_mul(3)
+                    .ok_or(FastRomPatchError::Truncated { address, offset })?,
+            )
+            .ok_or(FastRomPatchError::Truncated { address, offset })?;
+        let table = bytes
+            .get_mut(offset..end)
+            .ok_or(FastRomPatchError::Truncated { address, offset })?;
+        for pointer in table.chunks_exact_mut(3) {
+            if pointer[1] & 0x80 != 0 && pointer[2] < 0x10 {
+                pointer[2] |= 0x80;
+                changed += 1;
+            }
+        }
+    }
+    for &address in BANK_LOAD_SOURCES {
+        let offset = resolve(address)?;
+        let instruction = bytes
+            .get_mut(offset..offset + 4)
+            .ok_or(FastRomPatchError::Truncated { address, offset })?;
+        if instruction[0] == 0xa9
+            && instruction[1] < 0x10
+            && instruction[2] == 0x48
+            && instruction[3] == 0xab
+        {
+            instruction[1] |= 0x80;
+            changed += 1;
+        }
+    }
+    Ok(changed)
+}
+
+fn resolve(address: u32) -> Result<usize, FastRomPatchError> {
+    snes_to_pc(Mapper::LoRom, address)
+        .map_err(|source| FastRomPatchError::Address { address, source })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -168,5 +244,14 @@ mod tests {
             })
         );
         assert_eq!(bytes[first + 3], 0x8c);
+    }
+
+    #[test]
+    fn pristine_pointer_families_match_recovered_counts_and_are_idempotent() {
+        let image =
+            lm_rom::RomImage::from_bytes(crate::test_support::pristine_smw_us_rom_bytes()).unwrap();
+        let mut bytes = image.logical_bytes().to_vec();
+        assert_eq!(apply_smw_us_v1_fastrom_pointer_passes(&mut bytes), Ok(771));
+        assert_eq!(apply_smw_us_v1_fastrom_pointer_passes(&mut bytes), Ok(0));
     }
 }
