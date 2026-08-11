@@ -554,6 +554,13 @@ impl NativeApplication {
             {
                 self.set_show_add_editor_ids(show_ids);
             }
+            let mut remember_window_size = self.remember_window_size.unwrap_or(true);
+            if ui
+                .checkbox(&mut remember_window_size, "Remember Window Size")
+                .changed()
+            {
+                self.set_remember_window_size(remember_window_size);
+            }
             let locale = self.app.localization().map_or_else(
                 || self.menu_text(UiTextKey::ToolsBuiltInEnglish),
                 |catalog| catalog.locale().into(),

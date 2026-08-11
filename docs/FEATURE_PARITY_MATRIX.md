@@ -1085,6 +1085,19 @@ coordinate, editability, and command-partition tests pass. The authenticated par
 **282 routed / 35 pending**. The aggregate remains 59/65 because the configuration row is still
 Partial.
 
+Toolbar coverage update (2026-08-10, Remember Window Size): authenticated
+`LM_OPTIONS_WINDOW_SIZE` `$24C1` now reproduces central dispatch case `$8B` and the CHM-defined
+close/relaunch behavior. The initialized byte at `$005E7ADA` proves the default-on state and the
+recovered registry serializer proves both its `Options` bit 6 and conditional geometry writes.
+Rust uses the native shell's live resizable/full-screen viewport and persisted geometry record;
+when disabled, the app-save callback invalidates eframe's just-written `window` value in the same
+close transaction, so the next launch uses the documented 1100x720 default while retaining the
+720x480 minimum. Re-enabling preserves subsequent captured geometry. The Tools checkbox and the
+authenticated internal-toolbar route share one persisted toggle. Focused default, route,
+persistence, geometry-retention/invalidation, malformed-value, and command-partition tests pass.
+The authenticated partition is now **283 routed / 34 pending**. The aggregate remains 59/65
+because the configuration row is still Partial.
+
 Toolbar coverage update (2026-08-10, Open Level Number): `LM_FILE_OPEN_LEVEL` `$238E` now opens
 the native equivalent of original dialog resource `1000`. It uses the authenticated title,
 `Level Number (0-1FF)` label, OK/Cancel controls, and original-language resource overrides; seeds

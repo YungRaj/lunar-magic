@@ -203,6 +203,7 @@ pub(crate) struct NativeApplication {
     auto_deselect_on_editor_select: bool,
     show_add_editor_ids: Option<bool>,
     background_cursor_highlight: Option<bool>,
+    remember_window_size: Option<bool>,
     overworld_editor: OverworldEditor,
     path_editor: PathEditor,
     metadata_editor: MetadataEditor,
@@ -286,6 +287,8 @@ impl NativeApplication {
     const SHOW_ADD_EDITOR_IDS_STORAGE_KEY: &'static str = "lunar_magic_rust.show_add_editor_ids.v1";
     const BACKGROUND_CURSOR_STORAGE_KEY: &'static str =
         "lunar_magic_rust.background_cursor_highlight.v1";
+    const REMEMBER_WINDOW_SIZE_STORAGE_KEY: &'static str =
+        "lunar_magic_rust.remember_window_size.v1";
 
     pub(crate) fn from_startup(
         initialized: Result<crate::startup::InitializedNative, String>,
@@ -605,6 +608,15 @@ impl NativeApplication {
                 Err(error) => {
                     self.effects.error =
                         Some(format!("cannot load background-cursor preference: {error}"));
+                }
+            }
+        }
+        if let Some(encoded) = storage.get_string(Self::REMEMBER_WINDOW_SIZE_STORAGE_KEY) {
+            match decode_remember_window_size_preference(&encoded) {
+                Ok(enabled) => self.remember_window_size = Some(enabled),
+                Err(error) => {
+                    self.effects.error =
+                        Some(format!("cannot load window-size preference: {error}"));
                 }
             }
         }
@@ -980,6 +992,15 @@ impl eframe::App for NativeApplication {
             Self::BACKGROUND_CURSOR_STORAGE_KEY,
             encode_background_cursor_preference(self.background_cursor_highlight.unwrap_or(true)),
         );
+        storage.set_string(
+            Self::REMEMBER_WINDOW_SIZE_STORAGE_KEY,
+            encode_remember_window_size_preference(self.remember_window_size.unwrap_or(true)),
+        );
+        if !self.remember_window_size.unwrap_or(true) {
+            // eframe stores native window geometry under this key immediately before App::save.
+            // An invalid value makes its next-start decoder fall back to NativeOptions' default.
+            storage.set_string("window", String::new());
+        }
         match encode_external_tools_preference(self.app.external_tools()) {
             Ok(encoded) => storage.set_string(Self::EXTERNAL_TOOLS_STORAGE_KEY, encoded),
             Err(error) => {
@@ -1264,6 +1285,18 @@ fn decode_background_cursor_preference(value: &str) -> Result<bool, String> {
         "highlighted" => Ok(true),
         "plain" => Ok(false),
         _ => Err("unknown background-cursor preference version".into()),
+    }
+}
+
+fn encode_remember_window_size_preference(enabled: bool) -> String {
+    if enabled { "remember" } else { "default" }.to_owned()
+}
+
+fn decode_remember_window_size_preference(value: &str) -> Result<bool, String> {
+    match value {
+        "remember" => Ok(true),
+        "default" => Ok(false),
+        _ => Err("unknown window-size preference version".into()),
     }
 }
 
@@ -1817,6 +1850,28 @@ mod preference_tests {
             assert_eq!(reopened.background_cursor_highlight, Some(expected));
         }
         assert!(decode_background_cursor_preference("enabled").is_err());
+    }
+
+    #[test]
+    fn remember_window_size_preserves_or_invalidates_eframes_geometry_record() {
+        for expected in [false, true] {
+            let mut source = NativeApplication {
+                remember_window_size: Some(expected),
+                ..NativeApplication::default()
+            };
+            let mut storage = MemoryStorage::default();
+            storage.set_string("window", "captured-geometry".into());
+            eframe::App::save(&mut source, &mut storage);
+
+            assert_eq!(
+                storage.get_string("window").as_deref(),
+                Some(if expected { "captured-geometry" } else { "" })
+            );
+            let mut reopened = NativeApplication::default();
+            reopened.load_persistent_preferences(Some(&storage));
+            assert_eq!(reopened.remember_window_size, Some(expected));
+        }
+        assert!(decode_remember_window_size_preference("enabled").is_err());
     }
 
     #[test]

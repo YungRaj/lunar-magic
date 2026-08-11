@@ -433,6 +433,9 @@ impl NativeApplication {
                     !self.background_cursor_highlight.unwrap_or(true),
                 );
             }
+            UserToolbarNativeAction::RememberWindowSize => {
+                self.set_remember_window_size(!self.remember_window_size.unwrap_or(true));
+            }
             UserToolbarNativeAction::GraphicsCompressionOptions => {
                 self.graphics_migration_dialog.open(&self.app);
             }
@@ -1089,6 +1092,16 @@ impl NativeApplication {
         .into();
     }
 
+    pub(super) fn set_remember_window_size(&mut self, enabled: bool) {
+        self.remember_window_size = Some(enabled);
+        self.app.status = if enabled {
+            "Window size will be restored on the next launch"
+        } else {
+            "Default window size will be used on the next launch"
+        }
+        .into();
+    }
+
     fn activate_user_toolbar_recent_path(
         &mut self,
         context: &egui::Context,
@@ -1600,6 +1613,7 @@ enum UserToolbarNativeAction {
     AutoDeselectOnEditorSelect,
     ShowAddEditorIds,
     BackgroundCursorHighlight,
+    RememberWindowSize,
     GraphicsCompressionOptions,
     GeneralOptions,
     RestoreOptions,
@@ -1698,6 +1712,7 @@ fn user_toolbar_native_action(name: &str) -> Option<UserToolbarNativeAction> {
         "LM_OPTIONS_AUTO_DESELECT" => UserToolbarNativeAction::AutoDeselectOnEditorSelect,
         "LM_OPTIONS_SPRITE_OBJECT_ID" => UserToolbarNativeAction::ShowAddEditorIds,
         "LM_OPTIONS_BG_CURSOR" => UserToolbarNativeAction::BackgroundCursorHighlight,
+        "LM_OPTIONS_WINDOW_SIZE" => UserToolbarNativeAction::RememberWindowSize,
         "LM_OPTIONS_COMPRESSION" => UserToolbarNativeAction::GraphicsCompressionOptions,
         "LM_OPTIONS_GENERAL" => UserToolbarNativeAction::GeneralOptions,
         "LM_OPTIONS_RESTORE" => UserToolbarNativeAction::RestoreOptions,
@@ -2740,7 +2755,7 @@ mod user_toolbar_tests {
                     || user_toolbar_native_action(entry.name).is_some()
             })
             .collect::<Vec<_>>();
-        assert_eq!(supported.len(), 282);
+        assert_eq!(supported.len(), 283);
         assert!(
             supported
                 .iter()
@@ -2933,6 +2948,34 @@ mod user_toolbar_tests {
     }
 
     #[test]
+    fn remember_window_size_command_toggles_the_original_default_on_preference() {
+        let mut native = NativeApplication::default();
+        assert_eq!(native.remember_window_size, None);
+        assert_eq!(
+            user_toolbar_native_action("LM_OPTIONS_WINDOW_SIZE"),
+            Some(UserToolbarNativeAction::RememberWindowSize)
+        );
+        native.apply_user_toolbar_native_action(
+            &egui::Context::default(),
+            UserToolbarNativeAction::RememberWindowSize,
+        );
+        assert_eq!(native.remember_window_size, Some(false));
+        assert_eq!(
+            native.app.status,
+            "Default window size will be used on the next launch"
+        );
+        native.apply_user_toolbar_native_action(
+            &egui::Context::default(),
+            UserToolbarNativeAction::RememberWindowSize,
+        );
+        assert_eq!(native.remember_window_size, Some(true));
+        assert_eq!(
+            native.app.status,
+            "Window size will be restored on the next launch"
+        );
+    }
+
+    #[test]
     fn recent_menu_route_opens_at_the_pointer_and_escape_dismisses_it() {
         let mut native = NativeApplication::default();
         let context = egui::Context::default();
@@ -3115,7 +3158,7 @@ mod user_toolbar_tests {
                     && user_toolbar_native_action(entry.name).is_none()
             })
             .collect::<Vec<_>>();
-        assert_eq!(unsupported.len(), 35);
+        assert_eq!(unsupported.len(), 34);
         if std::env::var_os("LM_DIAGNOSTIC_UNSUPPORTED_TOOLBAR_COMMANDS").is_some() {
             for entry in unsupported {
                 eprintln!(
