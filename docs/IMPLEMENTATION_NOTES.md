@@ -6236,3 +6236,12 @@ the Lunar Magic-created ExAnimation installation fixture, proving its object str
 stream produce nonblank preview placements without diagnostics. The complete native suite passes
 1,160 active tests with 11 explicit external-fixture/device ignores, including the 512-level
 materialization audit.
+
+## Retained ExAnimation runtime template promoted to a default gate
+
+The retained Lunar Magic 3.63 ExAnimation installation is available at
+`oracle-work/lm363/pristine-us/exanimation-install-positive/after.smc`, so the exact relocated-core
+comparison no longer remains ignored. The gate reads every mapping byte, SNES pointer, IRAM word,
+and local-word base from the installed `$C30` core, reconstructs the runtime from the generated
+template, and requires byte equality with the complete installed core. The full `lm-profile` run
+passes 345 active library tests with 19 external-fixture ignores plus all 10 ROM integration tests.

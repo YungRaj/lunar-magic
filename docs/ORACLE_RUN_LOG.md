@@ -1493,3 +1493,11 @@ The retained pristine `sysLMRestore/smwOrig.smc` and Lunar Magic-created
 nonblank object/sprite placement tests are no longer ignored. Both focused tests pass. The complete
 native suite then passes 1,160 active tests with 11 explicit external-fixture/device ignores; its
 all-512-level built-in render-asset materialization audit also passes.
+
+## Retained ExAnimation core relocation gate activated (2026-08-11)
+
+`exanimation-install-positive/after.smc` supplies the exact Lunar Magic 3.63 installed `$C30`
+runtime core. `complete_relocated_template_matches_retained_lunar_magic_runtime` now runs by
+default, derives every mapping byte, SNES pointer, IRAM word, and local-word relocation from that
+core, and reconstructs it byte-for-byte from the generated Rust template. `lm-profile` passes 345
+active library tests with 19 explicit external-fixture ignores and all 10 ROM integration tests.

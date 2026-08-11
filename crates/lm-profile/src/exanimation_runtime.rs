@@ -451,7 +451,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires retained Lunar Magic 3.63 ExAnimation installation ROM"]
     fn complete_relocated_template_matches_retained_lunar_magic_runtime() {
         let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("../../oracle-work/lm363/pristine-us/exanimation-install-positive/after.smc");
