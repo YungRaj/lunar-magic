@@ -314,6 +314,59 @@ pub(crate) struct RomOverworldEditor {
 }
 
 impl RomOverworldEditor {
+    pub(crate) fn staged_recovery_generation(&self, app: &AppState) -> Option<u64> {
+        if let Some(workspace) = self.workspace.as_ref()
+            && (workspace.controller.is_modified()
+                || workspace.native_sprites.is_modified()
+                || workspace.assets.animation_options != workspace.baseline_animation_options)
+        {
+            let (features, lightning) = overworld_editor_render::encode_overworld_animation_options(
+                workspace.assets.animation_options,
+                workspace.assets.animation_lightning_unused_low_bit,
+            );
+            let option_generation = features
+                .into_iter()
+                .fold(u64::from(lightning), |value, byte| {
+                    value.rotate_left(7) ^ u64::from(byte)
+                });
+            return Some(
+                app.project_revision().wrapping_mul(0x8ebc_6af0_9c88_c6e3)
+                    ^ workspace.controller.revision().rotate_left(13)
+                    ^ workspace.native_sprites.revision().rotate_left(37)
+                    ^ option_generation
+                    ^ 0x4f56_4552_574f_524c,
+            );
+        }
+        let workspace = self.main_layer2_workspace.as_ref()?;
+        (workspace.controller.is_modified() || workspace.paths != workspace.original_paths).then(
+            || {
+                app.project_revision().wrapping_mul(0x5899_65cc_7537_4cc3)
+                    ^ workspace.controller.revision().rotate_left(19)
+                    ^ 0x4f57_4c32_0000_0000
+            },
+        )
+    }
+
+    pub(crate) fn staged_recovery_snapshot(
+        &self,
+        app: &AppState,
+    ) -> Result<Option<lm_app::RecoverySnapshot>, String> {
+        if let Some(workspace) = self.workspace.as_ref() {
+            let command = self.prepare_commit()?;
+            return recovery_snapshot_from_overworld_command(app, command, Some(workspace.slot));
+        }
+        let workspace = self
+            .main_layer2_workspace
+            .as_ref()
+            .ok_or("overworld workspace is closed")?;
+        if workspace.paths != workspace.original_paths {
+            return Err(
+                "cannot compose staged overworld route links into crash recovery yet".into(),
+            );
+        }
+        recovery_snapshot_from_overworld_command(app, self.prepare_main_layer2_commit()?, None)
+    }
+
     pub(crate) fn request_save_prompt_transition(&mut self, command: Command) -> bool {
         if self.authorized_editor_transition.as_ref() == Some(&command) {
             self.authorized_editor_transition = None;
@@ -813,6 +866,26 @@ impl RomOverworldEditor {
         self.show_error(context);
         (approved, command)
     }
+}
+
+fn recovery_snapshot_from_overworld_command(
+    app: &AppState,
+    command: Command,
+    level: Option<u16>,
+) -> Result<Option<lm_app::RecoverySnapshot>, String> {
+    let Command::CommitRomMutation {
+        expected_revision,
+        mutation,
+        ..
+    } = command
+    else {
+        return Err("overworld recovery expected one prepared ROM mutation".into());
+    };
+    if expected_revision != app.project_revision() {
+        return Err("overworld recovery mutation was prepared from a stale revision".into());
+    }
+    app.recovery_snapshot_with_mutation(&mutation, level)
+        .map_err(|error| error.to_string())
 }
 
 impl MainPathLinkForm {

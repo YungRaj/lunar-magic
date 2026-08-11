@@ -1751,12 +1751,16 @@ impl eframe::App for NativeApplication {
         let level_assets_recovery_revision = self
             .rom_level_assets_editor
             .staged_recovery_generation(&self.app);
+        let overworld_recovery_revision = self
+            .rom_overworld_editor
+            .staged_recovery_generation(&self.app);
         let level_recovery_revision = self.vanilla_level_editor.recovery_generation(&self.app);
         let recovery_revision = [
             level_recovery_revision,
             palette_recovery_revision,
             map16_recovery_revision,
             level_assets_recovery_revision,
+            overworld_recovery_revision,
         ]
         .into_iter()
         .flatten()
@@ -1769,9 +1773,11 @@ impl eframe::App for NativeApplication {
                         + usize::from(map16_recovery_revision.is_some());
                 let staged_editors =
                     staged_editors + usize::from(level_assets_recovery_revision.is_some());
+                let staged_editors =
+                    staged_editors + usize::from(overworld_recovery_revision.is_some());
                 if staged_editors > 1 {
                     return Err(
-                        "cannot compose simultaneous staged level, level-assets, palette, or Map16 recovery yet".into(),
+                        "cannot compose simultaneous staged level, level-assets, palette, Map16, or overworld recovery yet".into(),
                     );
                 }
                 if palette_recovery_revision.is_some() {
@@ -1780,6 +1786,9 @@ impl eframe::App for NativeApplication {
                     self.rom_map16_editor.staged_recovery_snapshot(&self.app)
                 } else if level_assets_recovery_revision.is_some() {
                     self.rom_level_assets_editor
+                        .staged_recovery_snapshot(&self.app)
+                } else if overworld_recovery_revision.is_some() {
+                    self.rom_overworld_editor
                         .staged_recovery_snapshot(&self.app)
                 } else {
                     self.vanilla_level_editor

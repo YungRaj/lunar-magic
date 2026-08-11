@@ -1058,6 +1058,61 @@ mod tests {
     }
 
     #[test]
+    fn staged_playable_overworld_terrain_is_recovered_without_live_commit() {
+        let fixture = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../..")
+            .join("oracle-work/lm363/pristine-us/overworld-transfer-positive/after.smc");
+        let original = fs::read(fixture).unwrap();
+        let mut app = lm_app::AppState::default();
+        app.load_rom(original.clone()).unwrap();
+        app.dispatch(lm_app::Command::ShowOverworld).unwrap();
+        let mut workspace =
+            decode_main_layer2_workspace(app.controller_snapshot().unwrap()).unwrap();
+        let original_tile = workspace.controller.layer().tile(12, 9).unwrap();
+        let replacement = original_tile ^ 1;
+        workspace
+            .controller
+            .apply_edits(&[lm_app::OverworldControllerEdit::SetLayerTile {
+                layer: lm_app::OverworldLayerId::Layer2,
+                x: 12,
+                y: 9,
+                tile: replacement,
+            }])
+            .unwrap();
+        let editor = super::RomOverworldEditor {
+            main_layer2_workspace: Some(workspace),
+            search_start: "E0000".into(),
+            search_end: "F0000".into(),
+            ..super::RomOverworldEditor::default()
+        };
+
+        assert!(editor.staged_recovery_generation(&app).is_some());
+        let recovery = editor.staged_recovery_snapshot(&app).unwrap().unwrap();
+        assert_eq!(app.capabilities().project, lm_app::ProjectStatus::OpenClean);
+        assert_eq!(app.project().unwrap().history.undo_len(), 0);
+        assert_eq!(app.project().unwrap().save_snapshot(), original);
+
+        let mut reopened = lm_app::AppState::default();
+        reopened.load_recovery(recovery).unwrap();
+        let terrain =
+            lm_profile::load_smw_us_v1_main_overworld_layer2(reopened.project().unwrap()).unwrap();
+        assert_eq!(terrain.layer.tile(12, 9).unwrap(), replacement);
+
+        let mut routes = decode_main_layer2_workspace(app.controller_snapshot().unwrap()).unwrap();
+        routes.paths.links[0].destination.x ^= 1;
+        let route_editor = super::RomOverworldEditor {
+            main_layer2_workspace: Some(routes),
+            ..super::RomOverworldEditor::default()
+        };
+        assert!(
+            route_editor
+                .staged_recovery_snapshot(&app)
+                .unwrap_err()
+                .contains("route links")
+        );
+    }
+
+    #[test]
     fn staged_overworld_transition_prompt_saves_discards_or_cancels_route_edits() {
         fn staged_editor() -> (lm_app::AppState, super::RomOverworldEditor) {
             let fixture = Path::new(env!("CARGO_MANIFEST_DIR"))
