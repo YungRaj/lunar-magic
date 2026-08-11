@@ -96,6 +96,11 @@ impl GraphicsInsertionDialog {
         }
     }
 
+    #[cfg(test)]
+    pub(crate) const fn uses_4bpp(&self) -> bool {
+        self.use_4bpp
+    }
+
     fn request(&self) -> Result<GraphicsInsertionRequest, String> {
         let text = self
             .physical_pc_address

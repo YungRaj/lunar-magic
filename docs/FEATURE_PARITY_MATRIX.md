@@ -1014,6 +1014,15 @@ route, and no-mutation tests pass. The authenticated partition is now **310 rout
 The remaining commands are the seven authenticated ROM-patch options. The aggregate remains 59/65
 because the configuration row is still Partial.
 
+Toolbar coverage update (2026-08-11, 4bpp graphics-insertion default): authenticated
+`LM_OPTIONS_4BPP_PATCH` `$24D8` now toggles Lunar Magic's default-on, session-only insertion
+choice. The real ordinary GFX/ExGFX insertion dialog consumes it; an already installed and
+authenticated 4bpp runtime remains forced on because the patch is irreversible. Ghidra selector
+`$A1`, the unreferenced registry boundary, retained 3.63 help, route/default/status tests, and a
+pristine dialog consumer test provide the evidence. The authenticated partition is now
+**311 routed / 6 pending**. The aggregate remains 59/65 because the configuration row is still
+Partial.
+
 Toolbar coverage update (2026-08-10, selection editors): `LM_EDIT_PROPERTIES` `$2468` now toggles
 an independent modeless properties window, while `LM_EDIT_EDIT_MANUAL` `$2469` opens (and repeated
 activation reuses) the manual editor dialog. Both follow the live Layer 1, object-backed Layer 2,

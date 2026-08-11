@@ -132,6 +132,7 @@ pub(crate) struct RomGraphicsEditor {
     external_tool_id: Option<String>,
     internal_cache_unlocked: bool,
     convert_berry_gfx_tile: Option<bool>,
+    install_4bpp_on_insert: Option<bool>,
 }
 
 impl RomGraphicsEditor {
@@ -147,6 +148,17 @@ impl RomGraphicsEditor {
 
     pub(crate) fn set_convert_berry_gfx_tile(&mut self, enabled: bool) {
         self.convert_berry_gfx_tile = Some(enabled);
+    }
+
+    pub(crate) fn toggle_install_4bpp_on_insert(&mut self) -> bool {
+        let enabled = !self.install_4bpp_on_insert.unwrap_or(true);
+        self.install_4bpp_on_insert = Some(enabled);
+        enabled
+    }
+
+    #[cfg(test)]
+    pub(crate) fn install_4bpp_on_insert(&self) -> bool {
+        self.install_4bpp_on_insert.unwrap_or(true)
     }
 
     pub(crate) fn open_ordinary_import(
@@ -175,7 +187,10 @@ impl RomGraphicsEditor {
             lm_rom::CopierHeader::Absent => 0,
             lm_rom::CopierHeader::Present => lm_rom::COPIER_HEADER_LEN,
         };
-        let use_4bpp = lm_profile::has_smw_us_v1_4bpp_graphics_prerequisite(&image);
+        // Lunar Magic's Options-menu toggle is the session default for both insertion dialogs.
+        // Once the irreversible runtime is present, clearing the option cannot uninstall it.
+        let use_4bpp = lm_profile::has_smw_us_v1_4bpp_graphics_prerequisite(&image)
+            || self.install_4bpp_on_insert.unwrap_or(true);
         self.ordinary_insertion_dialog = Some(GraphicsInsertionDialog::new(
             family,
             copier_prefix_len,
@@ -2921,7 +2936,32 @@ mod tests {
         editor
             .open_ordinary_import(&app, GraphicsInsertionFamily::Standard)
             .unwrap();
-        assert!(editor.ordinary_insertion_dialog.is_some());
+        assert!(
+            editor
+                .ordinary_insertion_dialog
+                .as_ref()
+                .unwrap()
+                .uses_4bpp()
+        );
+    }
+
+    #[test]
+    fn ordinary_insertion_dialog_honors_the_session_4bpp_default() {
+        let mut app = lm_app::AppState::default();
+        app.load_rom(crate::test_support::pristine_smw_us_rom_bytes())
+            .unwrap();
+        let mut editor = RomGraphicsEditor::default();
+        assert!(!editor.toggle_install_4bpp_on_insert());
+        editor
+            .open_ordinary_import(&app, GraphicsInsertionFamily::Standard)
+            .unwrap();
+        assert!(
+            !editor
+                .ordinary_insertion_dialog
+                .as_ref()
+                .unwrap()
+                .uses_4bpp()
+        );
     }
 
     #[test]

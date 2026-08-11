@@ -1292,3 +1292,14 @@ command partition is now 310/317 with exactly the seven ROM-patch option command
 The final gates pass 632 active `lm-app` tests, 1,147 active native tests, 235 renderer tests, the
 complete 512-level traversal, and the i686 Windows cross-build. The fresh 513-line manifest retains
 SHA-256 `254a1a050d12785973241910e26d8b7917a5cb5e2a56602a330fc6cbd833c04d`.
+
+## 4bpp insertion-default option recovery (2026-08-11)
+
+Command `$24D8` maps to handler selector `$A1`, which toggles default-one session byte
+`$005E7BA3` and updates its menu check. Registry synchronization has no reference to that byte.
+The retained 3.63 help binds it to the ordinary GFX/ExGFX insertion dialog's 4bpp-patch checkbox
+and states that an installed patch is irreversible. Rust now carries that session default into
+the actual dialog; an authenticated installed runtime still forces 4bpp on. Focused command and
+consumer tests pass, moving the authenticated partition to 311/317 with six pending commands. The
+complete native gate passes 1,149 tests with 13 explicit fixture ignores; renderer 235/235, the
+all-512 traversal, byte-identical 513-line manifest, and i686 cross-build remain green.

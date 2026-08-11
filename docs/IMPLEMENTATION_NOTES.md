@@ -5520,6 +5520,27 @@ logical equivalence and one-step Undo. The complete native suite passes 1,000 te
 external-fixture ignores; the 512-slot renderer manifest remains byte-identical at SHA-256
 `254a1a050d12785973241910e26d8b7917a5cb5e2a56602a330fc6cbd833c04d`.
 
+## Graphics-insertion 4bpp patch default (`$24D8`)
+
+The authenticated command table maps `LM_OPTIONS_4BPP_PATCH` to selector `$A1`. The original
+handler toggles default-on, session-only byte `$005E7BA3`; it has no registry serialization
+reference. Lunar Magic's retained help identifies the consumer precisely: the value initializes
+the **Modify the ROM with ASM to use 4bpp tiles instead of 3bpp tiles** choice for both ordinary
+GFX and ExGFX insertion. Once the irreversible runtime is already installed, clearing the option
+cannot uninstall it.
+
+Rust now routes the command to the real ROM-graphics insertion workspace. Pristine insertion
+dialogs inherit the session toggle, while an authenticated installed 4bpp runtime forces the
+choice on regardless of a later disabled default. Focused route, default-on, two-way toggle,
+status, and insertion-dialog consumer tests pass. Authenticated native command coverage is now
+311 of 317 named slots, leaving six ROM-patch options pending.
+
+The complete native gate passes 1,149 tests with 13 explicit external-fixture ignores, the
+renderer remains green at 235/235 tests, all 512 pristine levels materialize, and the regenerated
+513-line semantic manifest remains byte-identical at SHA-256
+`254a1a050d12785973241910e26d8b7917a5cb5e2a56602a330fc6cbd833c04d`, and the i686 Windows
+cross-build passes.
+
 ## Per-level music bypass (`$2522`)
 
 Port-8089 recovery maps byte-table selector `$AC` to resource `$0400` and dialog procedure

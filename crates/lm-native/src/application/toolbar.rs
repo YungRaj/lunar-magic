@@ -556,6 +556,15 @@ impl NativeApplication {
                 }
                 .into();
             }
+            UserToolbarNativeAction::Install4bppOnGraphicsInsertion => {
+                let enabled = self.rom_graphics_editor.toggle_install_4bpp_on_insert();
+                self.app.status = if enabled {
+                    "Enabled 4bpp patch on GFX/ExGFX insertion"
+                } else {
+                    "Disabled 4bpp patch on GFX/ExGFX insertion"
+                }
+                .into();
+            }
             UserToolbarNativeAction::TruncateLevel => {
                 if self
                     .app
@@ -1952,6 +1961,7 @@ enum UserToolbarNativeAction {
     CheckObjectPlacementOnSave,
     WarnIpsSiblingOnSave,
     ConvertBerryGfxTile,
+    Install4bppOnGraphicsInsertion,
     GraphicsGridColor,
     AppendCustomCollection,
     TwoBppViewMode,
@@ -2076,6 +2086,7 @@ fn user_toolbar_native_action(name: &str) -> Option<UserToolbarNativeAction> {
         "LM_OPTIONS_WARN_OBJECT" => UserToolbarNativeAction::CheckObjectPlacementOnSave,
         "LM_OPTIONS_WARN_IPS" => UserToolbarNativeAction::WarnIpsSiblingOnSave,
         "LM_OPTIONS_CONVERT_BERRY" => UserToolbarNativeAction::ConvertBerryGfxTile,
+        "LM_OPTIONS_4BPP_PATCH" => UserToolbarNativeAction::Install4bppOnGraphicsInsertion,
         "LM_KEY_GRID_COLOR" => UserToolbarNativeAction::GraphicsGridColor,
         "LM_KEY_ADD_CSPRITE" | "LM_KEY_ADD_CUSTOM" => {
             UserToolbarNativeAction::AppendCustomCollection
@@ -3162,7 +3173,7 @@ mod user_toolbar_tests {
                     || user_toolbar_native_action(entry.name).is_some()
             })
             .collect::<Vec<_>>();
-        assert_eq!(supported.len(), 310);
+        assert_eq!(supported.len(), 311);
         assert!(
             supported
                 .iter()
@@ -3884,6 +3895,34 @@ mod user_toolbar_tests {
     }
 
     #[test]
+    fn four_bpp_patch_command_toggles_the_original_default_on_session_option() {
+        let mut native = NativeApplication::default();
+        assert!(native.rom_graphics_editor.install_4bpp_on_insert());
+        assert_eq!(
+            user_toolbar_native_action("LM_OPTIONS_4BPP_PATCH"),
+            Some(UserToolbarNativeAction::Install4bppOnGraphicsInsertion)
+        );
+        native.apply_user_toolbar_native_action(
+            &egui::Context::default(),
+            UserToolbarNativeAction::Install4bppOnGraphicsInsertion,
+        );
+        assert!(!native.rom_graphics_editor.install_4bpp_on_insert());
+        assert_eq!(
+            native.app.status,
+            "Disabled 4bpp patch on GFX/ExGFX insertion"
+        );
+        native.apply_user_toolbar_native_action(
+            &egui::Context::default(),
+            UserToolbarNativeAction::Install4bppOnGraphicsInsertion,
+        );
+        assert!(native.rom_graphics_editor.install_4bpp_on_insert());
+        assert_eq!(
+            native.app.status,
+            "Enabled 4bpp patch on GFX/ExGFX insertion"
+        );
+    }
+
+    #[test]
     fn allow_fragmentation_command_toggles_the_original_default_on_option() {
         let mut native = NativeApplication::default();
         assert_eq!(native.allow_fragmentation, None);
@@ -4205,7 +4244,7 @@ mod user_toolbar_tests {
                     && user_toolbar_native_action(entry.name).is_none()
             })
             .collect::<Vec<_>>();
-        assert_eq!(unsupported.len(), 7);
+        assert_eq!(unsupported.len(), 6);
         if std::env::var_os("LM_DIAGNOSTIC_UNSUPPORTED_TOOLBAR_COMMANDS").is_some() {
             for entry in unsupported {
                 eprintln!(
