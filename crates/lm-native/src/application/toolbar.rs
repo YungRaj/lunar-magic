@@ -687,6 +687,14 @@ impl NativeApplication {
                     self.effects.error = Some(error);
                 }
             }
+            UserToolbarNativeAction::InsertAllGraphics => {
+                if let Err(error) = self
+                    .rom_graphics_editor
+                    .start_insert_all_graphics(&self.app, self.joined_graphics_files)
+                {
+                    self.effects.error = Some(error);
+                }
+            }
             UserToolbarNativeAction::OrdinaryInsertGraphics(family) => {
                 if let Err(error) = self
                     .rom_graphics_editor
@@ -1419,8 +1427,13 @@ enum UserToolbarNativeAction {
     Copy,
     Cut,
     Paste,
-    Nudge { x: i32, y: i32 },
-    ZOrderStep { increase: bool },
+    Nudge {
+        x: i32,
+        y: i32,
+    },
+    ZOrderStep {
+        increase: bool,
+    },
     OverlapZOrder(crate::vanilla_level_editor::ZOrderTraversal),
     ConditionalDirectMap16,
     RemapDirectMap16,
@@ -1441,6 +1454,7 @@ enum UserToolbarNativeAction {
     ExtractGraphics(QuickGraphicsExtraction),
     QuickExtractGraphics(QuickGraphicsExtraction),
     QuickInsertGraphics(QuickGraphicsInsertion),
+    InsertAllGraphics,
     OrdinaryInsertGraphics(GraphicsInsertionFamily),
 }
 
@@ -1592,6 +1606,7 @@ fn user_toolbar_native_action(name: &str) -> Option<UserToolbarNativeAction> {
         "LM_FILE_INSERT_EXGFX_BUTTON" => {
             UserToolbarNativeAction::QuickInsertGraphics(QuickGraphicsInsertion::ExGraphics)
         }
+        "LM_FILE_INSERT_ALL_GRAPHICS" => UserToolbarNativeAction::InsertAllGraphics,
         "LM_FILE_INSERT_GFX" => {
             UserToolbarNativeAction::OrdinaryInsertGraphics(GraphicsInsertionFamily::Standard)
         }
@@ -2189,6 +2204,10 @@ mod user_toolbar_tests {
                 UserToolbarNativeAction::QuickInsertGraphics(QuickGraphicsInsertion::ExGraphics),
             ),
             (
+                "LM_FILE_INSERT_ALL_GRAPHICS",
+                UserToolbarNativeAction::InsertAllGraphics,
+            ),
+            (
                 "LM_FILE_INSERT_GFX",
                 UserToolbarNativeAction::OrdinaryInsertGraphics(GraphicsInsertionFamily::Standard),
             ),
@@ -2468,7 +2487,7 @@ mod user_toolbar_tests {
                     || user_toolbar_native_action(entry.name).is_some()
             })
             .collect::<Vec<_>>();
-        assert_eq!(supported.len(), 267);
+        assert_eq!(supported.len(), 268);
         assert!(
             supported
                 .iter()
@@ -2591,7 +2610,7 @@ mod user_toolbar_tests {
                     && user_toolbar_native_action(entry.name).is_none()
             })
             .collect::<Vec<_>>();
-        assert_eq!(unsupported.len(), 50);
+        assert_eq!(unsupported.len(), 49);
         if std::env::var_os("LM_DIAGNOSTIC_UNSUPPORTED_TOOLBAR_COMMANDS").is_some() {
             for entry in unsupported {
                 eprintln!(

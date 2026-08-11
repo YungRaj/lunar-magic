@@ -982,6 +982,18 @@ preserves the stored checksum through the recovered compensation run, reopens, a
 The authenticated partition is now **267 routed / 50 pending**. The aggregate remains 59/65 because
 the configuration row is still Partial.
 
+Toolbar coverage update (2026-08-10, Insert All Graphics): authenticated
+`LM_FILE_INSERT_ALL_GRAPHICS` `$23D7` now routes the original combined GFX + ExGFX operation rather
+than dispatching two independently committed quick actions. Ghidra case `$3B` and wrapper
+`$0047FC30` prove standard insertion with `joined | flags | 6`, followed by ExGFX insertion and one
+shared finalization. Rust validates both fixed sibling sources, stages both phases, and publishes one
+cancellable revision-bound mutation only after both succeed. Synthetic late-failure coverage proves
+no partial standard commit, while the retained live `-ImportAllGraphics` gate requires matching
+identity/checksum/length and byte-identical Lunar Magic re-export of all 52 standard files plus
+`ExGFX80`; save/reopen and byte-exact Undo/Redo also pass. The authenticated partition is now
+**268 routed / 49 pending**. The aggregate remains 59/65 because the configuration row is still
+Partial.
+
 Toolbar coverage update (2026-08-10, Open Level Number): `LM_FILE_OPEN_LEVEL` `$238E` now opens
 the native equivalent of original dialog resource `1000`. It uses the authenticated title,
 `Level Number (0-1FF)` label, OK/Cancel controls, and original-language resource overrides; seeds

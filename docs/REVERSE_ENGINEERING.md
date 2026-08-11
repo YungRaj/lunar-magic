@@ -2153,6 +2153,17 @@ former range. `AllocateAndInstallGraphicsDataBlock` at `$0045C560` allocates the
 payload and writes the `$22 <long pointer> $60` hook before the ExGFX tables are populated. Only the
 original cursor-exhaustion retry/prompt interaction remains incomplete.
 
+The combined command is distinct rather than an alias for those two independently published quick
+actions. Authenticated command `$23D7` maps to switch case `$3B` and calls `$0047FC30`. That wrapper
+sets `Insert all GFX and ExGFX to ROM.`, enters one shared operation, calls standard insertion with
+`joined | flags | 6`, then calls ExGFX insertion, and performs shared finalization only if both
+succeed. Rust now reads and validates both fixed sibling sources in one cancellable worker, stages
+standard insertion only in memory, applies ExGFX against that staged image, and publishes one
+revision-bound mutation after both succeed. A late malformed ExGFX file therefore cannot expose a
+partial standard-GFX commit. The retained `-ImportAllGraphics` Wine gate requires matching identity,
+checksum, physical length, and byte-identical Lunar Magic re-export of all 52 GFX files plus
+`ExGFX80` from the original and Rust results; allocation placement is deliberately not equated.
+
 Both bulk extraction functions use the same recovered `wb` mode string at image address
 `005B2D3C`. `ExtractAllGFXFiles` therefore truncates/replaces every fixed
 `Graphics/GFX%02X.bin` output, or `Graphics/AllGFX.bin` in joined mode, on a repeated export;

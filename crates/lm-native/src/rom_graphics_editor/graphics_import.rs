@@ -48,12 +48,19 @@ struct RunningImport {
 enum GraphicsImportTarget {
     Directory(PathBuf),
     JoinedFile(PathBuf),
+    Combined {
+        standard: Box<GraphicsImportTarget>,
+        extended: Box<GraphicsImportTarget>,
+    },
 }
 
 impl GraphicsImportTarget {
-    fn path(&self) -> &Path {
+    fn description(&self) -> String {
         match self {
-            Self::Directory(path) | Self::JoinedFile(path) => path,
+            Self::Directory(path) | Self::JoinedFile(path) => path.display().to_string(),
+            Self::Combined { standard, extended } => {
+                format!("{} and {}", standard.description(), extended.description())
+            }
         }
     }
 }
@@ -90,6 +97,98 @@ impl GraphicsImportWorker {
         self.start_target(source, GraphicsImportTarget::JoinedFile(path))
     }
 
+    pub(super) fn start_combined(
+        &mut self,
+        standard_source: GraphicsImportSource,
+        standard_directory: PathBuf,
+        extended_source: GraphicsImportSource,
+        extended_directory: PathBuf,
+    ) -> Result<(), String> {
+        self.start_combined_targets(
+            standard_source,
+            GraphicsImportTarget::Directory(standard_directory),
+            extended_source,
+            GraphicsImportTarget::Directory(extended_directory),
+        )
+    }
+
+    pub(super) fn start_combined_joined(
+        &mut self,
+        standard_source: GraphicsImportSource,
+        standard_path: PathBuf,
+        extended_source: GraphicsImportSource,
+        extended_directory: PathBuf,
+    ) -> Result<(), String> {
+        self.start_combined_targets(
+            standard_source,
+            GraphicsImportTarget::JoinedFile(standard_path),
+            extended_source,
+            GraphicsImportTarget::Directory(extended_directory),
+        )
+    }
+
+    fn start_combined_targets(
+        &mut self,
+        standard_source: GraphicsImportSource,
+        standard_target: GraphicsImportTarget,
+        extended_source: GraphicsImportSource,
+        extended_target: GraphicsImportTarget,
+    ) -> Result<(), String> {
+        if self.running.is_some() {
+            return Err("a graphics insertion is already running".into());
+        }
+        validate_source(&standard_source)?;
+        validate_source(&extended_source)?;
+        if standard_source.expected_revision != extended_source.expected_revision
+            || standard_source.image.logical_bytes() != extended_source.image.logical_bytes()
+        {
+            return Err(
+                "combined GFX and ExGFX insertion sources do not share one ROM revision".into(),
+            );
+        }
+        let total = standard_source
+            .file_numbers
+            .len()
+            .checked_add(extended_source.file_numbers.len())
+            .ok_or("combined graphics count overflow")?;
+        let completed = Arc::new(AtomicUsize::new(0));
+        let cancelled = Arc::new(AtomicBool::new(false));
+        let worker_completed = Arc::clone(&completed);
+        let worker_cancelled = Arc::clone(&cancelled);
+        let worker_standard_target = standard_target.clone();
+        let worker_extended_target = extended_target.clone();
+        let target = GraphicsImportTarget::Combined {
+            standard: Box::new(standard_target),
+            extended: Box::new(extended_target),
+        };
+        let (sender, result) = mpsc::channel();
+        std::thread::Builder::new()
+            .name("lm-combined-gfx-import".into())
+            .spawn(move || {
+                let result = prepare_combined_import(
+                    standard_source,
+                    &worker_standard_target,
+                    extended_source,
+                    &worker_extended_target,
+                    &worker_completed,
+                    &worker_cancelled,
+                );
+                let _send_result = sender.send(result);
+            })
+            .map_err(|error| {
+                format!("could not create combined graphics import worker: {error}")
+            })?;
+        self.running = Some(RunningImport {
+            family: "standard + extended",
+            target,
+            total,
+            completed,
+            cancelled,
+            result,
+        });
+        Ok(())
+    }
+
     fn start_target(
         &mut self,
         source: GraphicsImportSource,
@@ -98,14 +197,9 @@ impl GraphicsImportWorker {
         if self.running.is_some() {
             return Err("a graphics insertion is already running".into());
         }
+        validate_source(&source)?;
         let family = source.family;
         let total = source.file_numbers.len();
-        if total != source.slots.len() {
-            return Err("graphics slot and filename mappings have different lengths".into());
-        }
-        if total == 0 || total > 0x1000 {
-            return Err(format!("unsupported {} GFX count {total}", source.family));
-        }
         let completed = Arc::new(AtomicUsize::new(0));
         let cancelled = Arc::new(AtomicBool::new(false));
         let worker_completed = Arc::clone(&completed);
@@ -143,7 +237,7 @@ impl GraphicsImportWorker {
                 .collapsible(false)
                 .resizable(false)
                 .show(context, |ui| {
-                    ui.label(format!("Reading {}", running.target.path().display()));
+                    ui.label(format!("Reading {}", running.target.description()));
                     ui.add(
                         egui::ProgressBar::new(completed as f32 / running.total as f32)
                             .text(format!("{completed} / {}", running.total)),
@@ -178,6 +272,62 @@ impl GraphicsImportWorker {
             }
         }
     }
+}
+
+fn validate_source(source: &GraphicsImportSource) -> Result<(), String> {
+    let total = source.file_numbers.len();
+    if total != source.slots.len() {
+        return Err("graphics slot and filename mappings have different lengths".into());
+    }
+    if total == 0 || total > 0x1000 {
+        return Err(format!("unsupported {} GFX count {total}", source.family));
+    }
+    Ok(())
+}
+
+fn prepare_combined_import(
+    standard_source: GraphicsImportSource,
+    standard_target: &GraphicsImportTarget,
+    mut extended_source: GraphicsImportSource,
+    extended_target: &GraphicsImportTarget,
+    completed: &AtomicUsize,
+    cancelled: &AtomicBool,
+) -> Result<Option<PreparedRomCommit>, String> {
+    let expected_revision = standard_source.expected_revision;
+    let original_image = standard_source.image.clone();
+    let Some(standard) = prepare_import(standard_source, standard_target, completed, cancelled)?
+    else {
+        return Ok(None);
+    };
+    if cancelled.load(Ordering::Relaxed) {
+        return Ok(None);
+    }
+    let mut staged = lm_project::Project::new(original_image.clone());
+    staged
+        .apply_mutation(standard.description.clone(), &standard.mutation)
+        .map_err(|error| format!("could not stage standard GFX insertion: {error}"))?;
+    extended_source.image = staged.rom.clone();
+    let Some(extended) = prepare_import(extended_source, extended_target, completed, cancelled)?
+    else {
+        return Ok(None);
+    };
+    if cancelled.load(Ordering::Relaxed) {
+        return Ok(None);
+    }
+    staged
+        .apply_mutation(extended.description, &extended.mutation)
+        .map_err(|error| format!("could not stage ExGFX insertion: {error}"))?;
+    let mutation = lm_project::RomMutation::between(
+        standard.mutation.mapper,
+        original_image.logical_bytes(),
+        staged.rom.logical_bytes(),
+    )
+    .map_err(|error| error.to_string())?;
+    Ok(Some(PreparedRomCommit {
+        expected_revision,
+        description: "Insert all GFX and ExGFX to ROM".into(),
+        mutation,
+    }))
 }
 
 fn prepare_import(
@@ -364,6 +514,9 @@ fn prepare_import(
                 .map(Some)
             }
         }
+        GraphicsImportTarget::Combined { .. } => {
+            return Err("nested combined graphics target is invalid".into());
+        }
     }?;
     let Some(prepared) = result else {
         return Ok(None);
@@ -493,10 +646,14 @@ pub(super) fn enumerate_exgraphics_files(
 #[cfg(test)]
 mod tests {
     use super::{
-        GraphicsImportTarget, OrdinaryGraphicsImportOptions, RunningImport, apply_ordinary_options,
+        GraphicsImportSource, GraphicsImportTarget, GraphicsImportWorker,
+        OrdinaryGraphicsImportOptions, RunningImport, apply_ordinary_options,
         combine_expansion_commit, enumerate_exgraphics_files,
     };
-    use lm_project::GraphicsSaveOptions;
+    use lm_graphics::{GraphicsFile4bpp, IndexedTile};
+    use lm_project::{
+        GraphicsCompression, GraphicsRomLayout, GraphicsSaveOptions, LevelPointerTable, Project,
+    };
     use lm_rats::AllocationPolicy;
     use lm_rom::{Mapper, RomImage};
     use std::sync::{
@@ -505,6 +662,72 @@ mod tests {
         mpsc,
     };
     use std::{fs, path::PathBuf};
+
+    fn combined_layout() -> GraphicsRomLayout {
+        GraphicsRomLayout {
+            mapper: Mapper::LoRom,
+            pointers: LevelPointerTable {
+                offset: 0x200,
+                entries: 4,
+                stride: 3,
+            },
+            split_pointer_planes: None,
+            compression: GraphicsCompression::Lz2,
+            maximum_compressed_len: 0x8000,
+            maximum_decompressed_len: 0x10000,
+        }
+    }
+
+    fn combined_options() -> GraphicsSaveOptions {
+        GraphicsSaveOptions {
+            allocation: AllocationPolicy::lorom(0x1000..0x7000),
+            previous_block: None,
+            reuse_identical: true,
+            erase_fill: 0xff,
+        }
+    }
+
+    fn combined_source_image() -> RomImage {
+        let mut project = Project::new(RomImage::from_bytes(vec![0xff; 0x8000]).unwrap());
+        let files = (0_u8..4)
+            .map(|value| GraphicsFile4bpp {
+                tiles: vec![IndexedTile::new([value; 64])],
+            })
+            .collect::<Vec<_>>();
+        project
+            .save_graphics_files_with_checksum(
+                &files,
+                combined_layout(),
+                0x7fdc,
+                &combined_options(),
+            )
+            .unwrap();
+        project.rom
+    }
+
+    fn generic_source(
+        image: RomImage,
+        slots: Vec<usize>,
+        family: &'static str,
+        exgraphics_names: bool,
+    ) -> GraphicsImportSource {
+        GraphicsImportSource {
+            expected_revision: 9,
+            image,
+            layout: combined_layout(),
+            checksum_field: 0x7fdc,
+            options: combined_options(),
+            file_numbers: slots.clone(),
+            slots,
+            family,
+            description: "combined graphics test",
+            smw_us_v1_special: false,
+            smw_us_v1_standard_install: false,
+            smw_us_v1_exgraphics: false,
+            exgraphics_names,
+            ordinary_options: None,
+        }
+    }
 
     #[test]
     fn cancellation_request_is_shared_with_the_import_worker() {
@@ -520,6 +743,99 @@ mod tests {
         };
         running.request_cancel();
         assert!(cancelled.load(Ordering::Relaxed));
+    }
+
+    #[test]
+    fn combined_worker_publishes_standard_and_extended_files_as_one_mutation() {
+        let root = tempfile::tempdir().unwrap();
+        let standard_dir = root.path().join("Graphics");
+        let extended_dir = root.path().join("ExGraphics");
+        fs::create_dir(&standard_dir).unwrap();
+        fs::create_dir(&extended_dir).unwrap();
+        fs::write(standard_dir.join("GFX00.bin"), [0x10; 32]).unwrap();
+        fs::write(standard_dir.join("GFX01.bin"), [0x11; 32]).unwrap();
+        fs::write(extended_dir.join("ExGFX02.bin"), [0x22; 32]).unwrap();
+        fs::write(extended_dir.join("ExGFX03.bin"), [0x23; 32]).unwrap();
+        let before = combined_source_image();
+        let mut worker = GraphicsImportWorker::default();
+        worker
+            .start_combined(
+                generic_source(before.clone(), vec![0, 1], "standard", false),
+                standard_dir,
+                generic_source(before.clone(), vec![2, 3], "extended", true),
+                extended_dir,
+            )
+            .unwrap();
+        let prepared = loop {
+            if let Some(result) = worker.poll() {
+                break result.unwrap().unwrap();
+            }
+            std::thread::yield_now();
+        };
+        assert_eq!(prepared.expected_revision, 9);
+        assert_eq!(prepared.description, "Insert all GFX and ExGFX to ROM");
+        let mut project = Project::new(before);
+        project
+            .apply_mutation(prepared.description, &prepared.mutation)
+            .unwrap();
+        for (slot, value) in [(0, 0x10), (1, 0x11), (2, 0x22), (3, 0x23)] {
+            assert_eq!(
+                project
+                    .load_decompressed_graphics_file(slot, combined_layout())
+                    .unwrap(),
+                vec![value; 32]
+            );
+        }
+    }
+
+    #[test]
+    fn late_extended_failure_publishes_no_partial_standard_commit() {
+        let root = tempfile::tempdir().unwrap();
+        let standard_dir = root.path().join("Graphics");
+        let extended_dir = root.path().join("ExGraphics");
+        fs::create_dir(&standard_dir).unwrap();
+        fs::create_dir(&extended_dir).unwrap();
+        fs::write(standard_dir.join("GFX00.bin"), [0x10; 32]).unwrap();
+        fs::write(extended_dir.join("ExGFX02.bin"), [0x22; 31]).unwrap();
+        let before = combined_source_image();
+        let mut worker = GraphicsImportWorker::default();
+        worker
+            .start_combined(
+                generic_source(before.clone(), vec![0], "standard", false),
+                standard_dir,
+                generic_source(before, vec![2], "extended", true),
+                extended_dir,
+            )
+            .unwrap();
+        let result = loop {
+            if let Some(result) = worker.poll() {
+                break result;
+            }
+            std::thread::yield_now();
+        };
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn combined_worker_rejects_sources_from_different_revisions_before_starting() {
+        let root = tempfile::tempdir().unwrap();
+        let before = combined_source_image();
+        let standard = generic_source(before.clone(), vec![0], "standard", false);
+        let mut extended = generic_source(before, vec![2], "extended", true);
+        extended.expected_revision += 1;
+        let mut worker = GraphicsImportWorker::default();
+        assert!(
+            worker
+                .start_combined(
+                    standard,
+                    root.path().join("Graphics"),
+                    extended,
+                    root.path().join("ExGraphics"),
+                )
+                .unwrap_err()
+                .contains("one ROM revision")
+        );
+        assert!(!worker.is_running());
     }
 
     #[test]

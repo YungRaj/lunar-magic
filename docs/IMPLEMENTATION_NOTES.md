@@ -5785,3 +5785,21 @@ expanded secondary-exit tail, writes the `$AA` clear metadata, and is idempotent
 intact. Complete physical-image hashes match five live Lunar Magic 3.63 command-line oracles,
 including an explicit mixed `0,1` list. Authenticated native command coverage is now 267 of 317
 named table slots, leaving 50 pending.
+
+## Insert All Graphics (`$23D7`)
+
+This is one original transaction, not shorthand for activating the standard and ExGFX quick
+buttons independently. The recovered dispatcher case `$3B` calls `$0047FC30`, whose standard phase
+uses `joined | flags | 6`, whose second phase imports ExGFX, and whose finalization executes only
+after both return success. The native toolbar route therefore resolves the fixed ROM-sibling
+`Graphics` or `Graphics/AllGFX.bin` source and `ExGraphics` directory up front, retains the existing
+format warning, and runs both phases through one cancellable worker. The standard mutation is
+applied only to an unpublished staging image; ExGFX preparation consumes that image; one final
+mutation spans the original to the fully staged ROM.
+
+Focused tests require mismatched revisions to reject, a malformed late ExGFX file to publish no
+standard commit, and a pristine combined import to produce one checksum-valid revision that
+semantically reopens both runtimes and undoes/redoes byte-exactly. The retained Wine gate executes
+Lunar Magic's own `-ImportAllGraphics` from the same files and requires Lunar Magic to re-export all
+52 standard files and deterministic `ExGFX80` byte-identically from both results. The authenticated
+native command partition is now 268 of 317 named slots, leaving 49 pending.

@@ -81,6 +81,10 @@ enum PendingGraphicsFormatWarningTarget {
 struct PendingGraphicsFormatWarning {
     source: graphics_import::GraphicsImportSource,
     target: PendingGraphicsFormatWarningTarget,
+    combined: Option<(
+        graphics_import::GraphicsImportSource,
+        PendingGraphicsFormatWarningTarget,
+    )>,
 }
 
 const GRAPHICS_FORMAT_WARNING_TITLE: &str = "Graphics Format Change Warning!";
@@ -186,6 +190,47 @@ impl RomGraphicsEditor {
             return Err(error);
         }
         Ok(())
+    }
+
+    pub(crate) fn start_insert_all_graphics(
+        &mut self,
+        app: &AppState,
+        joined_standard: bool,
+    ) -> Result<(), String> {
+        if self.graphics_import.is_running()
+            || self.pending_graphics_format_warning.is_some()
+            || self.ordinary_insertion_dialog.is_some()
+        {
+            return Err("a graphics insertion is already running".into());
+        }
+        if self.error.is_some() {
+            return Err("dismiss the current ROM graphics error before inserting GFX".into());
+        }
+        if modified_controller(self.workspace.as_ref()) {
+            return Err("commit or discard staged graphics edits before inserting GFX".into());
+        }
+        let (standard_source, standard_target) =
+            quick_graphics_import_source(app, QuickGraphicsInsertion::Standard, joined_standard)?;
+        let (extended_source, extended_target) =
+            quick_graphics_import_source(app, QuickGraphicsInsertion::ExGraphics, joined_standard)?;
+        let pending = PendingGraphicsFormatWarning {
+            source: standard_source,
+            target: standard_target,
+            combined: Some((extended_source, extended_target)),
+        };
+        if pending.source.smw_us_v1_standard_install
+            && lm_profile::requires_smw_us_v1_4bpp_graphics_warning(&pending.source.image)
+        {
+            self.pending_graphics_format_warning = Some(pending);
+            self.io_status = None;
+        } else {
+            self.start_pending_graphics_import(pending);
+        }
+        if let Some(error) = self.error.take() {
+            Err(error)
+        } else {
+            Ok(())
+        }
     }
 
     fn refresh_internal_cache(&mut self, level: Option<u16>, special_world_passed: bool) {
@@ -1966,8 +2011,11 @@ impl RomGraphicsEditor {
         if source.smw_us_v1_standard_install
             && lm_profile::requires_smw_us_v1_4bpp_graphics_warning(&source.image)
         {
-            self.pending_graphics_format_warning =
-                Some(PendingGraphicsFormatWarning { source, target });
+            self.pending_graphics_format_warning = Some(PendingGraphicsFormatWarning {
+                source,
+                target,
+                combined: None,
+            });
             self.io_status = None;
             return;
         }
@@ -2098,7 +2146,33 @@ impl RomGraphicsEditor {
             self.pending_graphics_format_warning = None;
             self.io_status = Some("GFX insertion cancelled.".into());
         } else if proceed && let Some(pending) = self.pending_graphics_format_warning.take() {
-            self.start_graphics_import(pending.source, pending.target);
+            self.start_pending_graphics_import(pending);
+        }
+    }
+
+    fn start_pending_graphics_import(&mut self, pending: PendingGraphicsFormatWarning) {
+        let result = match pending.combined {
+            Some((extended_source, PendingGraphicsFormatWarningTarget::Directory(extended))) => {
+                match pending.target {
+                    PendingGraphicsFormatWarningTarget::Directory(standard) => self
+                        .graphics_import
+                        .start_combined(pending.source, standard, extended_source, extended),
+                    PendingGraphicsFormatWarningTarget::Joined(standard) => self
+                        .graphics_import
+                        .start_combined_joined(pending.source, standard, extended_source, extended),
+                }
+            }
+            Some((_, PendingGraphicsFormatWarningTarget::Joined(_))) => {
+                Err("combined ExGFX insertion requires the ExGraphics directory".into())
+            }
+            None => {
+                self.start_graphics_import(pending.source, pending.target);
+                return;
+            }
+        };
+        match result {
+            Ok(()) => self.io_status = None,
+            Err(error) => self.error = Some(error),
         }
     }
 }
@@ -2619,6 +2693,185 @@ mod tests {
                 .unwrap_err()
                 .contains("insert regular GFX as 4bpp")
         );
+    }
+
+    #[test]
+    fn insert_all_graphics_is_one_reopenable_undoable_standard_and_exgfx_commit() {
+        let root = tempfile::tempdir().unwrap();
+        let original = crate::test_support::pristine_smw_us_rom_bytes();
+        let image = RomImage::from_bytes(original.clone()).unwrap();
+        let standard_source = super::standard_graphics_batch_source(
+            image,
+            lm_profile::smw_us_v1_vanilla_graphics_layout(),
+            true,
+        )
+        .unwrap();
+        let graphics = root.path().join("Graphics");
+        std::fs::create_dir(&graphics).unwrap();
+        let mut extraction = super::graphics_batch::GraphicsBatchWorker::default();
+        extraction.start(standard_source, graphics).unwrap();
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(120);
+        loop {
+            if let Some(result) = extraction.poll() {
+                assert_eq!(result.unwrap(), Some(0x34));
+                break;
+            }
+            assert!(std::time::Instant::now() < deadline);
+            std::thread::yield_now();
+        }
+        let exgraphics = root.path().join("ExGraphics");
+        std::fs::create_dir(&exgraphics).unwrap();
+        let exgfx80 = (0..0x1000_usize)
+            .map(|index| index.to_le_bytes()[0].wrapping_mul(37).wrapping_add(11))
+            .collect::<Vec<_>>();
+        std::fs::write(exgraphics.join("ExGFX80.bin"), &exgfx80).unwrap();
+
+        let mut app = lm_app::AppState::default();
+        app.load_rom(original.clone()).unwrap();
+        app.document_path = Some(root.path().join("game.smc"));
+        let mut editor = RomGraphicsEditor::default();
+        editor.start_insert_all_graphics(&app, false).unwrap();
+        assert!(editor.pending_graphics_format_warning.is_none());
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(120);
+        let commit = loop {
+            if let Some(result) = editor.graphics_import.poll() {
+                break result
+                    .unwrap()
+                    .expect("combined graphics insertion prepares one commit");
+            }
+            assert!(std::time::Instant::now() < deadline);
+            std::thread::yield_now();
+        };
+        assert_eq!(commit.description, "Insert all GFX and ExGFX to ROM");
+        app.dispatch(commit.into_command()).unwrap();
+        assert_eq!(app.project_revision(), 1);
+        let installed = RomImage::from_bytes(app.controller_snapshot().unwrap().rom_bytes).unwrap();
+        assert!(lm_profile::has_smw_us_v1_4bpp_graphics_prerequisite(
+            &installed
+        ));
+        assert!(lm_profile::probe_smw_us_v1_exgraphics_runtime(&installed).is_ok());
+        assert!(
+            lm_rom::detect_identity(&installed)
+                .unwrap()
+                .checksum_matches()
+        );
+        let route =
+            lm_profile::smw_us_v1_exgraphics_pointer_in_rom(&installed, 0x80, Mapper::LoRom)
+                .unwrap();
+        assert_ne!(installed.read(route.pointer_offset, 3).unwrap(), [0; 3]);
+        app.dispatch(lm_app::Command::Undo).unwrap();
+        assert_eq!(app.controller_snapshot().unwrap().rom_bytes, original);
+        app.dispatch(lm_app::Command::Redo).unwrap();
+        assert_eq!(app.project_revision(), 3);
+        let reopened = RomImage::from_bytes(app.controller_snapshot().unwrap().rom_bytes).unwrap();
+        assert!(lm_profile::probe_smw_us_v1_exgraphics_runtime(&reopened).is_ok());
+    }
+
+    #[test]
+    #[ignore = "requires Wine, Lunar Magic 3.63, and the legally retained pristine SMW ROM"]
+    fn lunar_magic_import_all_graphics_and_atomic_rust_route_reexport_the_same_assets() {
+        let repository = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let wine = std::env::var_os("WINE_BIN")
+            .map(std::path::PathBuf::from)
+            .unwrap_or_else(|| std::path::PathBuf::from("wine"));
+        let lunar_magic = std::env::var_os("LUNAR_MAGIC_EXE")
+            .map(std::path::PathBuf::from)
+            .unwrap_or_else(|| repository.join("lm363/Lunar Magic.exe"));
+        let pristine = std::env::var_os("LM_PRISTINE_GFX_ROM")
+            .map(std::path::PathBuf::from)
+            .unwrap_or_else(|| repository.join("sysLMRestore/smwOrig.smc"));
+        let root = tempfile::tempdir().unwrap();
+        let oracle_path = root.path().join("oracle.smc");
+        std::fs::copy(&pristine, &oracle_path).unwrap();
+        let export = std::process::Command::new(&wine)
+            .arg(&lunar_magic)
+            .args(["-ExportGFX", "oracle.smc"])
+            .current_dir(root.path())
+            .output()
+            .unwrap();
+        assert!(
+            export.status.success(),
+            "Lunar Magic GFX export failed: {}",
+            String::from_utf8_lossy(&export.stderr)
+        );
+        let exgraphics = root.path().join("ExGraphics");
+        std::fs::create_dir(&exgraphics).unwrap();
+        let exgfx80 = (0..0x1000_usize)
+            .map(|index| index.to_le_bytes()[0].wrapping_mul(37).wrapping_add(11))
+            .collect::<Vec<_>>();
+        std::fs::write(exgraphics.join("ExGFX80.bin"), exgfx80).unwrap();
+        let original = std::fs::read(&pristine).unwrap();
+        let import = std::process::Command::new(&wine)
+            .arg(&lunar_magic)
+            .args(["-ImportAllGraphics", "oracle.smc"])
+            .current_dir(root.path())
+            .output()
+            .unwrap();
+        assert!(
+            import.status.success(),
+            "Lunar Magic combined import failed: {}",
+            String::from_utf8_lossy(&import.stderr)
+        );
+
+        let mut app = lm_app::AppState::default();
+        app.load_rom(original.clone()).unwrap();
+        app.document_path = Some(root.path().join("rust.smc"));
+        let mut editor = RomGraphicsEditor::default();
+        editor.start_insert_all_graphics(&app, false).unwrap();
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(120);
+        let commit = loop {
+            if let Some(result) = editor.graphics_import.poll() {
+                break result.unwrap().unwrap();
+            }
+            assert!(std::time::Instant::now() < deadline);
+            std::thread::yield_now();
+        };
+        app.dispatch(commit.into_command()).unwrap();
+        let rust = app.controller_snapshot().unwrap().rom_bytes;
+        let oracle = std::fs::read(oracle_path).unwrap();
+        assert_eq!(rust.len(), oracle.len());
+        let rust_identity =
+            lm_rom::detect_identity(&RomImage::from_bytes(rust.clone()).unwrap()).unwrap();
+        let oracle_identity =
+            lm_rom::detect_identity(&RomImage::from_bytes(oracle.clone()).unwrap()).unwrap();
+        assert!(rust_identity.checksum_matches());
+        assert!(oracle_identity.checksum_matches());
+        assert_eq!(rust_identity.game, oracle_identity.game);
+        assert_eq!(rust_identity.mapper, oracle_identity.mapper);
+        assert_eq!(rust_identity.region, oracle_identity.region);
+
+        for (label, bytes) in [("rust", &rust), ("oracle", &oracle)] {
+            let directory = root.path().join(format!("{label}-export"));
+            std::fs::create_dir(&directory).unwrap();
+            std::fs::write(directory.join("result.smc"), bytes).unwrap();
+            for operation in ["-ExportGFX", "-ExportExGFX"] {
+                let output = std::process::Command::new(&wine)
+                    .arg(&lunar_magic)
+                    .args([operation, "result.smc"])
+                    .current_dir(&directory)
+                    .output()
+                    .unwrap();
+                assert!(
+                    output.status.success(),
+                    "Lunar Magic {operation} failed for {label}: {}",
+                    String::from_utf8_lossy(&output.stderr)
+                );
+            }
+        }
+        for number in 0..0x34 {
+            let name = format!("GFX{number:02X}.bin");
+            assert_eq!(
+                std::fs::read(root.path().join("rust-export/Graphics").join(&name)).unwrap(),
+                std::fs::read(root.path().join("oracle-export/Graphics").join(&name)).unwrap(),
+                "{name}"
+            );
+        }
+        assert_eq!(
+            std::fs::read(root.path().join("rust-export/ExGraphics/ExGFX80.bin")).unwrap(),
+            std::fs::read(root.path().join("oracle-export/ExGraphics/ExGFX80.bin")).unwrap()
+        );
+        app.dispatch(lm_app::Command::Undo).unwrap();
+        assert_eq!(app.controller_snapshot().unwrap().rom_bytes, original);
     }
 
     #[test]
