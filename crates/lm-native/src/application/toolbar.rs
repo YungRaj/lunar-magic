@@ -467,6 +467,11 @@ impl NativeApplication {
                     Err(status) => self.app.status = status,
                 }
             }
+            UserToolbarNativeAction::TwoBppViewMode => {
+                if crate::vanilla_level_editor::VanillaLevelEditor::handles(&self.app) {
+                    self.two_bpp_view_confirmation = true;
+                }
+            }
             UserToolbarNativeAction::WarnVerticalFireballBuoyancy => {
                 self.set_warn_vertical_fireball_buoyancy(
                     !self.warn_vertical_fireball_buoyancy.unwrap_or(true),
@@ -850,6 +855,12 @@ impl NativeApplication {
                 self.current_level_palette_transfer.start(&self.app, action);
             }
             UserToolbarNativeAction::QuickExtractGraphics(action) => {
+                if matches!(action, QuickGraphicsExtraction::Standard)
+                    && self.vanilla_level_editor.two_bpp_view_mode() != 0
+                {
+                    self.effects.error = Some("GFX saving not available in 2bpp mode.".into());
+                    return;
+                }
                 if let Err(error) = self.toolbar_graphics_transfer.start(
                     &self.app,
                     action,
@@ -860,6 +871,12 @@ impl NativeApplication {
                 }
             }
             UserToolbarNativeAction::ExtractGraphics(action) => {
+                if matches!(action, QuickGraphicsExtraction::Standard)
+                    && self.vanilla_level_editor.two_bpp_view_mode() != 0
+                {
+                    self.effects.error = Some("GFX saving not available in 2bpp mode.".into());
+                    return;
+                }
                 if let Err(error) = self.toolbar_graphics_transfer.start(
                     &self.app,
                     action,
@@ -1833,6 +1850,7 @@ enum UserToolbarNativeAction {
     ConvertBerryGfxTile,
     GraphicsGridColor,
     AppendCustomCollection,
+    TwoBppViewMode,
     WarnVerticalFireballBuoyancy,
     GfxBypassListDialogs,
     JoinedGraphicsFiles,
@@ -1952,6 +1970,7 @@ fn user_toolbar_native_action(name: &str) -> Option<UserToolbarNativeAction> {
         "LM_KEY_ADD_CSPRITE" | "LM_KEY_ADD_CUSTOM" => {
             UserToolbarNativeAction::AppendCustomCollection
         }
+        "LM_KEY_2BPP_MODE" => UserToolbarNativeAction::TwoBppViewMode,
         "LM_OPTIONS_WARN_SPRITE_33" => UserToolbarNativeAction::WarnVerticalFireballBuoyancy,
         "LM_OPTIONS_INSTALL_VRAM" => UserToolbarNativeAction::GfxBypassListDialogs,
         "LM_OPTIONS_ATTACH_FILES" => UserToolbarNativeAction::JoinedGraphicsFiles,
@@ -3008,7 +3027,7 @@ mod user_toolbar_tests {
                     || user_toolbar_native_action(entry.name).is_some()
             })
             .collect::<Vec<_>>();
-        assert_eq!(supported.len(), 302);
+        assert_eq!(supported.len(), 303);
         assert!(
             supported
                 .iter()
@@ -3422,6 +3441,60 @@ mod user_toolbar_tests {
     }
 
     #[test]
+    fn two_bpp_command_requires_confirmation_then_cycles_all_three_session_modes() {
+        assert_eq!(
+            user_toolbar_native_action("LM_KEY_2BPP_MODE"),
+            Some(UserToolbarNativeAction::TwoBppViewMode)
+        );
+        let mut native = NativeApplication::default();
+        native.apply_user_toolbar_native_action(
+            &egui::Context::default(),
+            UserToolbarNativeAction::TwoBppViewMode,
+        );
+        assert!(!native.two_bpp_view_confirmation);
+
+        native
+            .app
+            .load_rom(crate::test_support::pristine_smw_us_rom_bytes())
+            .unwrap();
+        native.app.dispatch(Command::SelectLevel(0x105)).unwrap();
+        native.apply_user_toolbar_native_action(
+            &egui::Context::default(),
+            UserToolbarNativeAction::TwoBppViewMode,
+        );
+        assert!(native.two_bpp_view_confirmation);
+        assert_eq!(
+            native
+                .vanilla_level_editor
+                .toolbar_cycle_two_bpp_view_mode(),
+            "2bpp view mode set to 1"
+        );
+        assert_eq!(
+            native
+                .vanilla_level_editor
+                .toolbar_cycle_two_bpp_view_mode(),
+            "2bpp view mode set to 2"
+        );
+        assert_eq!(
+            native
+                .vanilla_level_editor
+                .toolbar_cycle_two_bpp_view_mode(),
+            "2bpp view mode set to 0"
+        );
+        native
+            .vanilla_level_editor
+            .toolbar_cycle_two_bpp_view_mode();
+        native.apply_user_toolbar_native_action(
+            &egui::Context::default(),
+            UserToolbarNativeAction::QuickExtractGraphics(QuickGraphicsExtraction::Standard),
+        );
+        assert_eq!(
+            native.effects.error.as_deref(),
+            Some("GFX saving not available in 2bpp mode.")
+        );
+    }
+
+    #[test]
     fn historical_install_vram_command_toggles_gfx_bypass_dialog_style() {
         let mut native = NativeApplication::default();
         assert_eq!(native.gfx_bypass_list_dialogs, None);
@@ -3818,7 +3891,7 @@ mod user_toolbar_tests {
                     && user_toolbar_native_action(entry.name).is_none()
             })
             .collect::<Vec<_>>();
-        assert_eq!(unsupported.len(), 15);
+        assert_eq!(unsupported.len(), 14);
         if std::env::var_os("LM_DIAGNOSTIC_UNSUPPORTED_TOOLBAR_COMMANDS").is_some() {
             for entry in unsupported {
                 eprintln!(

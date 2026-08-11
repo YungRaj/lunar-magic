@@ -573,6 +573,7 @@ pub(crate) struct VanillaLevelEditor {
     exanimation_trigger_view_state: ExAnimationTriggerViewState,
     blue_pow_active: bool,
     silver_pow_active: bool,
+    two_bpp_view_mode: u8,
     background_512_height: bool,
     translucent_overlays: bool,
     tools_panel_visible: Option<bool>,
@@ -624,6 +625,7 @@ pub(crate) struct VanillaLevelEditor {
         bool,
         bool,
         lm_render::LunarMagicConditionalViewState,
+        u8,
     )>,
     map16_texture: Option<egui::TextureHandle>,
     outline_texture: Option<egui::TextureHandle>,
@@ -2528,6 +2530,7 @@ impl VanillaLevelEditor {
             self.blue_pow_active,
             self.silver_pow_active,
             self.conditional_view_state,
+            self.two_bpp_view_mode,
         );
         if self.map16_key == Some(key) {
             return;
@@ -2569,6 +2572,7 @@ impl VanillaLevelEditor {
                 blue_pow_active: self.blue_pow_active,
                 silver_pow_active: self.silver_pow_active,
                 conditional: self.conditional_view_state,
+                two_bpp_mode: self.two_bpp_view_mode,
             },
             background_bank,
             background_tilemap,
@@ -5526,6 +5530,16 @@ impl VanillaLevelEditor {
 
     pub(crate) fn toolbar_blue_pow_toggle(&mut self) {
         self.blue_pow_active = !self.blue_pow_active;
+    }
+
+    pub(crate) fn toolbar_cycle_two_bpp_view_mode(&mut self) -> String {
+        self.two_bpp_view_mode = (self.two_bpp_view_mode + 1) % 3;
+        self.invalidate_graphics_preview();
+        format!("2bpp view mode set to {:X}", self.two_bpp_view_mode)
+    }
+
+    pub(crate) const fn two_bpp_view_mode(&self) -> u8 {
+        self.two_bpp_view_mode
     }
 
     pub(crate) fn toolbar_invisible_pow_objects_toggle(&mut self) {

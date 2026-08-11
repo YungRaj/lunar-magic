@@ -1160,6 +1160,23 @@ semantically reopens the ROM. Enabled mode matches the highest visible object/sp
 disabled mode retains the manual five-bit header. Both focused auto-screen tests and all 39
 authenticated toolbar tests pass; the partition is 289 routed / 28 pending.
 
+## Diagnostic 2bpp view recovery (2026-08-11)
+
+Ghidra command table `$26B0 -> $D4` and `HandleLevelEditorCommand` authenticate the Yes/No prompt,
+three-state modulo cycle, cache rebuild, Map16 invalidation, and exact hexadecimal status. Global
+`$00E27888` has 28 code references. Disassembly at `$00465260..$004652F8` proves the ordinary
+`$600`-tile 4bpp decode and the two overrides: mode 1 calls the generic decoder with bpp 2/count
+`$400` over source `$0086B7E8`, while mode 2 performs six bpp-2/count-`$80` calls with source stride
+`$1000` and destination stride `$2000`. `RenderMap16TileToPixelBuffer` divides palette selection by
+four in nonzero modes; `LoadGraphicsEditorPaletteColors` selects the reduced-color bank; and
+`WriteLayer3TilemapGfxFiles` rejects nonzero mode with `GFX saving not available in 2bpp mode.`
+String evidence also authenticates `Switch 2bpp viewing mode?`, `Can't do in 2bpp mode!`, and the
+status format. Rust focused plane, band, palette, confirmation, save-block, command-partition, and
+three-render Level `$105` tests pass.
+The post-change renderer gate passes 235/235; the native gate passes 1,130 tests with 13 explicit
+external-fixture ignores and materializes all 512 pristine levels; the Windows i686 cross-check
+also passes.
+
 ## Context-sensitive custom collection append (2026-08-11)
 
 Ghidra command-table byte `$D3` maps both `LM_KEY_ADD_CSPRITE` and `LM_KEY_ADD_CUSTOM` at `$26AF`.

@@ -5994,6 +5994,22 @@ creation, repeated append/reopen, malformed and incomplete failure, cancel, sele
 both toolbar aliases are covered. Authenticated native command coverage is now 302 of 317 named
 slots, leaving 15 pending.
 
+## Diagnostic 2bpp viewing mode (`$26B0`)
+
+The authenticated command-table selector `$D4` first displays `Switch 2bpp viewing mode?`; Yes
+increments global session byte `$00E27888` modulo three, rebuilds loaded graphics and ExAnimation
+caches, propagates Map16 change flags, and reports `2bpp view mode set to %X`. Disassembly of
+`DecodeLoadedLevelGraphicsCaches` proves mode 1 reinterprets the first `$4000` raw bytes as `$400`
+2bpp tiles, while mode 2 makes six `$80`-tile decodes from successive `$1000` source bands into
+successive `$2000` pixel-cache bands. Rust performs those exact low/high-plane splits over the
+ordinary 4bpp cache, including retained normal pixels behind destinations not overwritten by the
+diagnostic decode. Map16 palette selection divides the encoded row by four and selects the recovered
+foreground reduced-color half. The mode is deliberately session-only and changing it invalidates
+the same level graphics path; standard GFX extraction while nonzero reports
+`GFX saving not available in 2bpp mode.` Synthetic cache/palette tests and complete pristine Level
+`$105` renders prove modes 0, 1, and 2 are visually distinct, with normal mode unchanged.
+Authenticated native command coverage is now 303 of 317 named slots, leaving 14 pending.
+
 ## Complete responsive game viewport
 
 The native level editor no longer uses cover scaling for its 256×224 game viewport. Cover scaling

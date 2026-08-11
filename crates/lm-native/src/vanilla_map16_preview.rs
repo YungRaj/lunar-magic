@@ -41,6 +41,7 @@ pub(crate) struct VanillaAnimationViewState {
     pub(crate) blue_pow_active: bool,
     pub(crate) silver_pow_active: bool,
     pub(crate) conditional: lm_render::LunarMagicConditionalViewState,
+    pub(crate) two_bpp_mode: u8,
 }
 
 impl Default for VanillaAnimationViewState {
@@ -49,6 +50,7 @@ impl Default for VanillaAnimationViewState {
             blue_pow_active: false,
             silver_pow_active: false,
             conditional: lm_render::LunarMagicConditionalViewState::default(),
+            two_bpp_mode: 0,
         }
     }
 }
@@ -776,6 +778,12 @@ fn render_with_editor_palette_phase_and_animation_view_state(
     background_tilemap: Option<Vec<u16>>,
     convert_berry_gfx_tile: bool,
 ) -> Result<VanillaMap16Preview, String> {
+    if animation_view_state.two_bpp_mode > 2 {
+        return Err(format!(
+            "2bpp view mode {} is outside 0..=2",
+            animation_view_state.two_bpp_mode
+        ));
+    }
     if editor_palette_phase >= 8 {
         return Err(format!(
             "vanilla editor palette phase {editor_palette_phase} is outside 0..8"
@@ -794,14 +802,22 @@ fn render_with_editor_palette_phase_and_animation_view_state(
             .map_err(|error| error.to_string())?;
     let graphics_slots =
         load_layer1_sprite_graphics_slots(&project, graphics_files, convert_berry_gfx_tile)?;
-    let base_foreground_graphics = materialize_layer1_sprite_vram(&graphics_slots);
+    let mut base_foreground_graphics = materialize_layer1_sprite_vram(&graphics_slots);
+    apply_lunar_magic_two_bpp_view(
+        &mut base_foreground_graphics,
+        animation_view_state.two_bpp_mode,
+    );
     let background_graphics_files = game_graphics_files(level, header, graphics_files);
     let background_graphics_slots = load_layer1_sprite_graphics_slots(
         &project,
         background_graphics_files,
         convert_berry_gfx_tile,
     )?;
-    let base_background_graphics = materialize_layer1_sprite_vram(&background_graphics_slots);
+    let mut base_background_graphics = materialize_layer1_sprite_vram(&background_graphics_slots);
+    apply_lunar_magic_two_bpp_view(
+        &mut base_background_graphics,
+        animation_view_state.two_bpp_mode,
+    );
     let map16 = lm_profile::load_smw_us_v1_level_map16_base(&project.rom, usize::from(tileset))
         .map_err(|error| error.to_string())?;
     let background_map16 = lm_profile::load_smw_us_v1_background_map16(&project.rom)
@@ -838,6 +854,9 @@ fn render_with_editor_palette_phase_and_animation_view_state(
     let mut palette = composed_palette.palette;
     if !game_runtime {
         apply_vanilla_editor_palette_animation(&mut palette, editor_palette_phase);
+    }
+    if animation_view_state.two_bpp_mode != 0 {
+        apply_lunar_magic_two_bpp_palette_rows(&mut palette);
     }
     let mut sprite_graphics_files = lm_profile::smw_us_v1_sprite_tileset_graphics_files(
         &project.rom,
@@ -2307,6 +2326,63 @@ fn materialize_layer1_sprite_vram(slots: &[Vec<IndexedTile>]) -> Vec<IndexedTile
         tiles[start..start + len].clone_from_slice(&source[..len]);
     }
     tiles
+}
+
+/// Reinterprets Lunar Magic's foreground/background working buffer through the two diagnostic
+/// 2bpp layouts selected by `$26B0`. Mode 1 decodes the first `$4000` raw bytes contiguously;
+/// mode 2 decodes `$80` tiles from each of six `$1000` source bands. The ordinary 4bpp decode is
+/// retained behind every overwritten destination, matching `DecodeLoadedLevelGraphicsCaches`.
+fn apply_lunar_magic_two_bpp_view(tiles: &mut Vec<IndexedTile>, mode: u8) {
+    if mode == 0 {
+        return;
+    }
+    let blank = IndexedTile::new([0; IndexedTile::PIXEL_COUNT]);
+    let source = tiles.clone();
+    tiles.resize_with(0x600, || blank.clone());
+    let split = |tile: &IndexedTile, high: bool| {
+        IndexedTile::new(std::array::from_fn(|index| {
+            let pixel = tile.pixels()[index];
+            if high { pixel >> 2 } else { pixel & 3 }
+        }))
+    };
+    match mode {
+        1 => {
+            for source_index in 0..0x200 {
+                let tile = source.get(source_index).unwrap_or(&blank);
+                tiles[source_index * 2] = split(tile, false);
+                tiles[source_index * 2 + 1] = split(tile, true);
+            }
+        }
+        2 => {
+            for band in 0..6 {
+                for within in 0..0x40 {
+                    let source_index = band * 0x80 + within;
+                    let tile = source.get(source_index).unwrap_or(&blank);
+                    let destination = band * 0x80 + within * 2;
+                    tiles[destination] = split(tile, false);
+                    tiles[destination + 1] = split(tile, true);
+                }
+            }
+        }
+        _ => unreachable!("2bpp view mode is validated before materialization"),
+    }
+}
+
+/// Map16 rendering divides the encoded three-bit palette by four in 2bpp mode and uses the
+/// foreground reduced-color half beginning at CGRAM row 2.
+fn apply_lunar_magic_two_bpp_palette_rows(palette: &mut Palette) {
+    let original = palette.colors.clone();
+    for encoded_row in 0..8 {
+        let source_row = 2 + encoded_row / 4;
+        let source = source_row * Palette::COLORS_PER_ROW;
+        let destination = encoded_row * Palette::COLORS_PER_ROW;
+        if source + Palette::COLORS_PER_ROW <= original.len()
+            && destination + Palette::COLORS_PER_ROW <= palette.colors.len()
+        {
+            palette.colors[destination..destination + Palette::COLORS_PER_ROW]
+                .clone_from_slice(&original[source..source + Palette::COLORS_PER_ROW]);
+        }
+    }
 }
 
 fn load_vanilla_sprite_display_page(project: &Project) -> Result<Vec<Vec<IndexedTile>>, String> {
@@ -3837,5 +3913,87 @@ mod tests {
             actual.backdrop.0,
             expected.backdrop
         );
+    }
+}
+
+#[cfg(test)]
+mod two_bpp_tests {
+    use super::*;
+
+    #[test]
+    fn two_bpp_view_modes_match_recovered_contiguous_and_banded_decodes() {
+        let source = (0..0x600)
+            .map(|tile| {
+                IndexedTile::new(std::array::from_fn(|pixel| {
+                    ((tile / 64 + pixel) & 0x0f).to_le_bytes()[0]
+                }))
+            })
+            .collect::<Vec<_>>();
+        let mut contiguous = source.clone();
+        apply_lunar_magic_two_bpp_view(&mut contiguous, 1);
+        assert_eq!(contiguous.len(), 0x600);
+        assert_eq!(contiguous[0].pixels()[7], source[0].pixels()[7] & 3);
+        assert_eq!(contiguous[1].pixels()[7], source[0].pixels()[7] >> 2);
+        assert_eq!(
+            contiguous[0x3ff].pixels(),
+            source[0x1ff].pixels().map(|p| p >> 2).as_slice()
+        );
+
+        let mut banded = source.clone();
+        apply_lunar_magic_two_bpp_view(&mut banded, 2);
+        assert_eq!(banded[0x80].pixels()[3], source[0x80].pixels()[3] & 3);
+        assert_eq!(banded[0x81].pixels()[3], source[0x80].pixels()[3] >> 2);
+        assert_ne!(contiguous[0x80], banded[0x80]);
+        assert_eq!(banded[0x300], source[0x300]);
+    }
+
+    #[test]
+    fn two_bpp_palette_routes_four_encoded_rows_to_each_reduced_row() {
+        let mut palette = Palette {
+            colors: (0..256).map(lm_graphics::Bgr555).collect(),
+        };
+        apply_lunar_magic_two_bpp_palette_rows(&mut palette);
+        for row in 0..8 {
+            assert_eq!(
+                &palette.colors[row * 16..row * 16 + 16],
+                &((2 + row / 4) * 16..(3 + row / 4) * 16)
+                    .map(|value| lm_graphics::Bgr555(value as u16))
+                    .collect::<Vec<_>>()
+            );
+        }
+    }
+
+    #[test]
+    fn pristine_level_105_renders_three_distinct_two_bpp_view_states() {
+        let bytes = crate::test_support::pristine_smw_us_rom_bytes();
+        let project = Project::new(RomImage::from_bytes(bytes.clone()).unwrap());
+        let level = project
+            .load_level_slot(
+                0x105,
+                lm_profile::smw_us_v1_vanilla_level_layout(),
+                &lm_level::SpriteLengthTable::standard(),
+            )
+            .unwrap();
+        let render_mode = |mode| {
+            render_with_animation_view_state(
+                bytes.clone(),
+                0x105,
+                level.layer1.header,
+                false,
+                false,
+                VanillaAnimationViewState {
+                    two_bpp_mode: mode,
+                    ..VanillaAnimationViewState::default()
+                },
+            )
+            .unwrap()
+            .image
+        };
+        let normal = render_mode(0);
+        let contiguous = render_mode(1);
+        let banded = render_mode(2);
+        assert_ne!(normal, contiguous);
+        assert_ne!(normal, banded);
+        assert_ne!(contiguous, banded);
     }
 }

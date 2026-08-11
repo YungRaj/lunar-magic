@@ -945,6 +945,16 @@ selection-rebase, and exact-status tests pass. The authenticated partition is no
 **302 routed / 15 pending**. The aggregate remains 59/65 because the configuration row is still
 Partial.
 
+Toolbar coverage update (2026-08-11, diagnostic 2bpp view): authenticated `LM_KEY_2BPP_MODE`
+`$26B0` now presents the original `Switch 2bpp viewing mode?` confirmation and cycles session-only
+modes 0/1/2 with exact hexadecimal status text. Modes 1 and 2 reproduce the recovered contiguous
+`$4000`-byte and six-band `$80`-tile planar reinterpretations, reduced four-color foreground
+palette routing, graphics/ExAnimation cache invalidation, and the original standard-GFX-save block.
+Normal mode remains byte-for-byte unaffected. Synthetic plane/band/palette tests and three distinct
+pristine Level `$105` renders pass. The authenticated partition is now
+**303 routed / 14 pending**. The aggregate remains 59/65 because the configuration row is still
+Partial.
+
 Toolbar coverage update (2026-08-10, selection editors): `LM_EDIT_PROPERTIES` `$2468` now toggles
 an independent modeless properties window, while `LM_EDIT_EDIT_MANUAL` `$2469` opens (and repeated
 activation reuses) the manual editor dialog. Both follow the live Layer 1, object-backed Layer 2,

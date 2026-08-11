@@ -203,6 +203,7 @@ pub(crate) struct NativeApplication {
     convert_berry_gfx_tile: Option<bool>,
     ips_sibling_save_warning: Option<IpsSiblingSaveIntent>,
     ips_sibling_save_authorized: bool,
+    two_bpp_view_confirmation: bool,
     level_view_visibility: LevelViewVisibility,
     renderer: NativeRenderState,
     vanilla_graphics_editor: VanillaGraphicsEditor,
@@ -1009,6 +1010,32 @@ impl NativeApplication {
         }
     }
 
+    fn show_two_bpp_view_confirmation(&mut self, context: &egui::Context) {
+        if !self.two_bpp_view_confirmation {
+            return;
+        }
+        let mut accept = false;
+        let mut cancel = false;
+        egui::Window::new("Lunar Magic Rust")
+            .collapsible(false)
+            .resizable(false)
+            .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+            .show(context, |ui| {
+                ui.label("Switch 2bpp viewing mode?");
+                ui.horizontal(|ui| {
+                    accept = ui.button("Yes").clicked();
+                    cancel = ui.button("No").clicked();
+                });
+            });
+        if accept {
+            self.two_bpp_view_confirmation = false;
+            self.app.status = self.vanilla_level_editor.toolbar_cycle_two_bpp_view_mode();
+            self.renderer.invalidate();
+        } else if cancel {
+            self.two_bpp_view_confirmation = false;
+        }
+    }
+
     fn synchronize_level_text(&mut self) {
         if let EditorMode::Level(level) = self.app.mode
             && !self
@@ -1499,6 +1526,7 @@ impl eframe::App for NativeApplication {
         self.show_user_toolbar_recent_menu(context);
         self.show_confirmation(context);
         self.show_same_name_ips_warning(context);
+        self.show_two_bpp_view_confirmation(context);
         if let Some(status) = self
             .custom_collection_append_dialog
             .show(context, self.app.document_path.as_deref())
