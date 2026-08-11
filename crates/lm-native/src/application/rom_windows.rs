@@ -146,11 +146,17 @@ impl NativeApplication {
             self.request_quit(context);
         }
         let active_sidecar = self.native_map16_sidecar_editor.value().cloned();
+        let map16_selection_generation = self.rom_map16_editor.selection_generation();
         let (quit, command) = self.rom_map16_editor.show(
             context,
             self.app.project_revision(),
             active_sidecar.as_ref(),
         );
+        if self.auto_deselect_on_editor_select
+            && self.rom_map16_editor.selection_generation() != map16_selection_generation
+        {
+            self.vanilla_level_editor.editor_selector_selected();
+        }
         if let Some(command) = command
             && self.try_dispatch(context, command)
         {

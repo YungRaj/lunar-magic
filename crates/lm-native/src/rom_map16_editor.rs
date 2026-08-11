@@ -153,6 +153,7 @@ pub(crate) struct RomMap16Editor {
     workspace: Option<Workspace>,
     page: usize,
     tile: usize,
+    selection_generation: u64,
     rectangle_drag_anchor: Option<usize>,
     quadrant: usize,
     subtile: map16_subtile_form::SubtileForm,
@@ -227,6 +228,10 @@ pub(crate) struct RomMap16Editor {
 }
 
 impl RomMap16Editor {
+    pub(crate) const fn selection_generation(&self) -> u64 {
+        self.selection_generation
+    }
+
     pub(crate) fn show(
         &mut self,
         context: &egui::Context,
@@ -585,12 +590,14 @@ impl RomMap16Editor {
             }
             self.selected_width = format!("{width:X}");
             self.selected_height = format!("{height:X}");
+            self.selection_generation = self.selection_generation.wrapping_add(1);
         } else if response.clicked()
             && let Some(tile) = pointer_tile
         {
             self.tile = tile;
             self.selected_width = "1".into();
             self.selected_height = "1".into();
+            self.selection_generation = self.selection_generation.wrapping_add(1);
             self.invalidate();
             self.load();
         }

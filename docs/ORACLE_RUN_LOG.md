@@ -1100,6 +1100,15 @@ from their obsolete labels. Focused stable-ROM/state tests, the complete 317-com
 and the Windows cross-build pass. Provenance is retained under
 `docs/oracle-work/lm363/deprecated-options-no-ops/`.
 
+## Lunar Magic 3.63 Auto-Deselect on Editor Select (2026-08-10)
+
+The live command table maps `$24DB` to case `$A4`, and the retained 3.63 CHM binds the effect to
+new Add Object/Sprite or Map16 editor selections—not ordinary main-canvas clicks. Rust now persists
+that independent application preference and applies it to all native object/sprite selector
+families plus Map16 tile/rectangle selection. Focused tests prove disabled preservation, enabled
+cross-domain clearing, toggle status, persistence/reopen, and exact command classification.
+Provenance is retained under `docs/oracle-work/lm363/auto-deselect-on-editor-select/`.
+
 ## Lunar Magic 3.63 ROM user-area scan (2026-08-10)
 
 An isolated Wine prefix opened a headered 2-MiB SMW-US ROM attributed to Lunar Magic 3.63 and

@@ -540,6 +540,13 @@ impl NativeApplication {
                     }
                 }
             });
+            let mut auto_deselect = self.auto_deselect_on_editor_select;
+            if ui
+                .checkbox(&mut auto_deselect, "Auto-Deselect on Editor Select")
+                .changed()
+            {
+                self.set_auto_deselect_on_editor_select(auto_deselect);
+            }
             let locale = self.app.localization().map_or_else(
                 || self.menu_text(UiTextKey::ToolsBuiltInEnglish),
                 |catalog| catalog.locale().into(),

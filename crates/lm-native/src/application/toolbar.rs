@@ -422,6 +422,9 @@ impl NativeApplication {
             UserToolbarNativeAction::DeprecatedDecryptLevelsNoOp => {}
             UserToolbarNativeAction::DeprecatedSelectForegroundBackgroundNoOp => {}
             UserToolbarNativeAction::DeprecatedOptionsNoOp => {}
+            UserToolbarNativeAction::AutoDeselectOnEditorSelect => {
+                self.set_auto_deselect_on_editor_select(!self.auto_deselect_on_editor_select);
+            }
             UserToolbarNativeAction::GraphicsCompressionOptions => {
                 self.graphics_migration_dialog.open(&self.app);
             }
@@ -1043,6 +1046,18 @@ impl NativeApplication {
         self.show_user_toolbar_recent_clear_confirmation(context);
     }
 
+    pub(super) fn set_auto_deselect_on_editor_select(&mut self, enabled: bool) {
+        self.auto_deselect_on_editor_select = enabled;
+        self.vanilla_level_editor
+            .set_auto_deselect_on_editor_select(enabled);
+        self.app.status = if enabled {
+            "Enabled auto-deselect on editor select"
+        } else {
+            "Disabled auto-deselect on editor select"
+        }
+        .into();
+    }
+
     fn activate_user_toolbar_recent_path(
         &mut self,
         context: &egui::Context,
@@ -1551,6 +1566,7 @@ enum UserToolbarNativeAction {
     DeprecatedDecryptLevelsNoOp,
     DeprecatedSelectForegroundBackgroundNoOp,
     DeprecatedOptionsNoOp,
+    AutoDeselectOnEditorSelect,
     GraphicsCompressionOptions,
     GeneralOptions,
     RestoreOptions,
@@ -1646,6 +1662,7 @@ fn user_toolbar_native_action(name: &str) -> Option<UserToolbarNativeAction> {
         "LM_OPTIONS_CUSTOM_SPRTES" | "LM_OPTIONS_WHEEL_ZOOM" | "LM_OPTIONS_ZOOM_MENU" => {
             UserToolbarNativeAction::DeprecatedOptionsNoOp
         }
+        "LM_OPTIONS_AUTO_DESELECT" => UserToolbarNativeAction::AutoDeselectOnEditorSelect,
         "LM_OPTIONS_COMPRESSION" => UserToolbarNativeAction::GraphicsCompressionOptions,
         "LM_OPTIONS_GENERAL" => UserToolbarNativeAction::GeneralOptions,
         "LM_OPTIONS_RESTORE" => UserToolbarNativeAction::RestoreOptions,
@@ -2688,7 +2705,7 @@ mod user_toolbar_tests {
                     || user_toolbar_native_action(entry.name).is_some()
             })
             .collect::<Vec<_>>();
-        assert_eq!(supported.len(), 279);
+        assert_eq!(supported.len(), 280);
         assert!(
             supported
                 .iter()
@@ -2800,6 +2817,28 @@ mod user_toolbar_tests {
         assert_eq!(after.rom_bytes, before.rom_bytes);
         assert_eq!(native.app.status, "unchanged");
         assert!(native.effects.error.is_none());
+    }
+
+    #[test]
+    fn auto_deselect_command_toggles_the_persisted_editor_preference() {
+        let mut native = NativeApplication::default();
+        assert!(!native.auto_deselect_on_editor_select);
+        assert_eq!(
+            user_toolbar_native_action("LM_OPTIONS_AUTO_DESELECT"),
+            Some(UserToolbarNativeAction::AutoDeselectOnEditorSelect)
+        );
+        native.apply_user_toolbar_native_action(
+            &egui::Context::default(),
+            UserToolbarNativeAction::AutoDeselectOnEditorSelect,
+        );
+        assert!(native.auto_deselect_on_editor_select);
+        assert_eq!(native.app.status, "Enabled auto-deselect on editor select");
+        native.apply_user_toolbar_native_action(
+            &egui::Context::default(),
+            UserToolbarNativeAction::AutoDeselectOnEditorSelect,
+        );
+        assert!(!native.auto_deselect_on_editor_select);
+        assert_eq!(native.app.status, "Disabled auto-deselect on editor select");
     }
 
     #[test]
@@ -2985,7 +3024,7 @@ mod user_toolbar_tests {
                     && user_toolbar_native_action(entry.name).is_none()
             })
             .collect::<Vec<_>>();
-        assert_eq!(unsupported.len(), 38);
+        assert_eq!(unsupported.len(), 37);
         if std::env::var_os("LM_DIAGNOSTIC_UNSUPPORTED_TOOLBAR_COMMANDS").is_some() {
             for entry in unsupported {
                 eprintln!(

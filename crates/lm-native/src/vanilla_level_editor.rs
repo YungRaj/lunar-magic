@@ -536,6 +536,7 @@ pub(crate) struct VanillaLevelEditor {
     initial_vertical_scroll_tiles: Option<u16>,
     placement_mode: Option<CanvasPlacementMode>,
     canvas_entity_selection: Option<CanvasEntitySelection>,
+    auto_deselect_on_editor_select: bool,
     paste_target: Option<EntityPasteTarget>,
     pending_layer2_mode_reset: Option<HeaderForm>,
     error: Option<String>,
@@ -621,6 +622,23 @@ fn wrapping_index(value: u8, delta: i8, modulus: u8) -> u8 {
 }
 
 impl VanillaLevelEditor {
+    pub(crate) fn set_auto_deselect_on_editor_select(&mut self, enabled: bool) {
+        self.auto_deselect_on_editor_select = enabled;
+    }
+
+    pub(crate) fn editor_selector_selected(&mut self) {
+        self.prepare_editor_selector_choice();
+    }
+
+    fn prepare_editor_selector_choice(&mut self) {
+        if self.auto_deselect_on_editor_select {
+            self.selected_object_group.clear();
+            self.selected_layer2_object_group.clear();
+            self.selected_sprite_group.clear();
+            self.canvas_entity_selection = None;
+        }
+    }
+
     pub(crate) fn invalidate_graphics_preview(&mut self) {
         self.map16_key = None;
     }
@@ -7884,6 +7902,7 @@ impl VanillaLevelEditor {
     }
 
     fn select_standard_object_from_catalog(&mut self, command: u8, layer2: bool) {
+        self.prepare_editor_selector_choice();
         self.object_catalog_preview_selector = None;
         let form = if layer2 {
             &mut self.layer2_object_form
@@ -7984,6 +8003,7 @@ impl VanillaLevelEditor {
         selector: lm_level::OscObjectSelector,
         layer2: bool,
     ) {
+        self.prepare_editor_selector_choice();
         match custom_object_native_record(selector) {
             Ok(record) if layer2 => {
                 self.object_catalog_preview_selector = Some(selector);
@@ -8106,6 +8126,7 @@ impl VanillaLevelEditor {
     }
 
     fn select_extended_object_from_catalog(&mut self, selector: u8, layer2: bool) {
+        self.prepare_editor_selector_choice();
         self.object_catalog_preview_selector = None;
         let record = ObjectRecord::new(vec![0, 0, selector])
             .expect("extended catalog selectors always encode three-byte objects");
@@ -8390,6 +8411,7 @@ impl VanillaLevelEditor {
                             });
                     });
                 if let Some((index, form)) = chosen {
+                    self.prepare_editor_selector_choice();
                     self.selected_sprite = index;
                     self.sprite_form = form;
                     self.placement_mode = Some(CanvasPlacementMode::Sprite);
@@ -8865,6 +8887,7 @@ impl VanillaLevelEditor {
     }
 
     fn choose_custom_sprite(&mut self, selector: lm_level::SscSpriteSelector) {
+        self.prepare_editor_selector_choice();
         let Some(controller) = self.controller.as_ref() else {
             self.error = Some("native level controller is unavailable".into());
             return;
@@ -8888,6 +8911,7 @@ impl VanillaLevelEditor {
     }
 
     fn choose_standard_sprite(&mut self, sprite_number: u8) {
+        self.prepare_editor_selector_choice();
         self.sprite_catalog_preview_selector = None;
         let fields = NativeSpriteRecordFields {
             y_low: self.sprite_form.y_low,
@@ -23719,5 +23743,32 @@ mod tests {
             )
             .is_ok()
         );
+    }
+
+    #[test]
+    fn auto_deselect_clears_every_canvas_domain_only_for_editor_selector_choices() {
+        let mut editor = VanillaLevelEditor::default();
+        editor.selected_object_group = vec![1, 3];
+        editor.selected_layer2_object_group = vec![2];
+        editor.selected_sprite_group = vec![4, 5];
+        editor.canvas_entity_selection = Some(CanvasEntitySelection::Sprite);
+
+        editor.prepare_editor_selector_choice();
+        assert_eq!(editor.selected_object_group, vec![1, 3]);
+        assert_eq!(editor.selected_layer2_object_group, vec![2]);
+        assert_eq!(editor.selected_sprite_group, vec![4, 5]);
+        assert_eq!(
+            editor.canvas_entity_selection,
+            Some(CanvasEntitySelection::Sprite)
+        );
+
+        editor.set_auto_deselect_on_editor_select(true);
+        editor.select_extended_object_from_catalog(0x25, false);
+        assert!(editor.selected_object_group.is_empty());
+        assert!(editor.selected_layer2_object_group.is_empty());
+        assert!(editor.selected_sprite_group.is_empty());
+        assert_eq!(editor.canvas_entity_selection, None);
+        assert_eq!(editor.placement_mode, Some(CanvasPlacementMode::Object));
+        assert_eq!(editor.object_form.parameter, 0x25);
     }
 }

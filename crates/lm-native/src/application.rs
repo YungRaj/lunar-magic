@@ -200,6 +200,7 @@ pub(crate) struct NativeApplication {
     rom_user_area_scan_dialog: RomUserAreaScanDialog,
     live_emulator: crate::live_emulator::LiveEmulator,
     integrated_emulator_options: IntegratedEmulatorOptions,
+    auto_deselect_on_editor_select: bool,
     overworld_editor: OverworldEditor,
     path_editor: PathEditor,
     metadata_editor: MetadataEditor,
@@ -279,6 +280,7 @@ impl NativeApplication {
     const EXTERNAL_TOOLS_STORAGE_KEY: &'static str = "lunar_magic_rust.external_tools.v1";
     const ANIMATION_RATE_STORAGE_KEY: &'static str = "lunar_magic_rust.animation_rate.v1";
     const INTEGRATED_EMULATOR_STORAGE_KEY: &'static str = "lunar_magic_rust.integrated_emulator.v1";
+    const AUTO_DESELECT_STORAGE_KEY: &'static str = "lunar_magic_rust.auto_deselect.v1";
 
     pub(crate) fn from_startup(
         initialized: Result<crate::startup::InitializedNative, String>,
@@ -570,6 +572,15 @@ impl NativeApplication {
                     self.effects.error = Some(format!(
                         "cannot load integrated-emulator preferences: {error}"
                     ));
+                }
+            }
+        }
+        if let Some(encoded) = storage.get_string(Self::AUTO_DESELECT_STORAGE_KEY) {
+            match decode_auto_deselect_preference(&encoded) {
+                Ok(enabled) => self.auto_deselect_on_editor_select = enabled,
+                Err(error) => {
+                    self.effects.error =
+                        Some(format!("cannot load auto-deselect preference: {error}"));
                 }
             }
         }
@@ -933,6 +944,10 @@ impl eframe::App for NativeApplication {
             Self::INTEGRATED_EMULATOR_STORAGE_KEY,
             encode_integrated_emulator_options(self.integrated_emulator_options),
         );
+        storage.set_string(
+            Self::AUTO_DESELECT_STORAGE_KEY,
+            encode_auto_deselect_preference(self.auto_deselect_on_editor_select),
+        );
         match encode_external_tools_preference(self.app.external_tools()) {
             Ok(encoded) => storage.set_string(Self::EXTERNAL_TOOLS_STORAGE_KEY, encoded),
             Err(error) => {
@@ -971,6 +986,8 @@ impl eframe::App for NativeApplication {
                 .initialize_draw_selection_over_live(
                     self.integrated_emulator_options.draw_selected_tiles,
                 );
+            self.vanilla_level_editor
+                .set_auto_deselect_on_editor_select(self.auto_deselect_on_editor_select);
             if vanilla_level
                 && let Some(command) = self.vanilla_level_editor.show(
                     ui,
@@ -1175,6 +1192,18 @@ fn decode_joined_graphics_preference(value: &str) -> Result<bool, String> {
         "joined" => Ok(true),
         "separate" => Ok(false),
         _ => Err("unknown joined-GFX preference version".into()),
+    }
+}
+
+fn encode_auto_deselect_preference(enabled: bool) -> String {
+    if enabled { "enabled" } else { "disabled" }.to_owned()
+}
+
+fn decode_auto_deselect_preference(value: &str) -> Result<bool, String> {
+    match value {
+        "enabled" => Ok(true),
+        "disabled" => Ok(false),
+        _ => Err("unknown auto-deselect preference version".into()),
     }
 }
 
@@ -1677,6 +1706,23 @@ mod preference_tests {
         let mut reopened = NativeApplication::default();
         reopened.load_persistent_preferences(Some(&storage));
         assert_eq!(reopened.integrated_emulator_options, expected);
+    }
+
+    #[test]
+    fn native_save_and_reopen_persist_auto_deselect_on_editor_select() {
+        for expected in [false, true] {
+            let mut source = NativeApplication {
+                auto_deselect_on_editor_select: expected,
+                ..NativeApplication::default()
+            };
+            let mut storage = MemoryStorage::default();
+            eframe::App::save(&mut source, &mut storage);
+
+            let mut reopened = NativeApplication::default();
+            reopened.load_persistent_preferences(Some(&storage));
+            assert_eq!(reopened.auto_deselect_on_editor_select, expected);
+        }
+        assert!(decode_auto_deselect_preference("true").is_err());
     }
 
     #[test]

@@ -1049,6 +1049,16 @@ no-op; focused coverage requires stable revision, complete ROM bytes, status, an
 authenticated partition is now **279 routed / 38 pending**. The aggregate remains 59/65 because
 the configuration row is still Partial.
 
+Toolbar coverage update (2026-08-10, Auto Deselect): authenticated
+`LM_OPTIONS_AUTO_DESELECT` `$24DB` now reproduces central case `$A4` and the CHM-defined
+cross-editor selection behavior. The persisted native toggle is available in Tools and through the
+original toolbar route. When enabled, standard/extended/custom object choices, existing/standard/
+custom sprite choices, and Map16 tile or rectangle selections clear active Layer 1, Layer 2, and
+sprite groups in the main level canvas; when disabled those choices preserve the canvas selection.
+Ordinary canvas selection remains unchanged. Focused toggle, persistence, selector, and command-
+partition tests pass. The authenticated partition is now **280 routed / 37 pending**. The aggregate
+remains 59/65 because the configuration row is still Partial.
+
 Toolbar coverage update (2026-08-10, Open Level Number): `LM_FILE_OPEN_LEVEL` `$238E` now opens
 the native equivalent of original dialog resource `1000`. It uses the authenticated title,
 `Level Number (0-1FF)` label, OK/Cancel controls, and original-language resource overrides; seeds
