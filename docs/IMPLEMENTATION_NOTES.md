@@ -6343,3 +6343,17 @@ The focused test installs a four-tile graphics file, stages one tile replacement
 reopens the recovery record, and decodes the replacement while proving the live application stays
 clean and history-free. The complete native gate passes 1,167 tests with 11 explicit fixture
 ignores, including all 512 pristine-level materializations; the renderer remains 237/237.
+
+## Crash recovery includes staged installed-ROM ExAnimation
+
+The installed ExAnimation workspace now contributes its active level or global controller revision
+to the shared recovery generation and prepares the same allocation-checked atomic mutation used by
+ordinary Save. The workspace's target-switch invariant guarantees the prepared controller is the
+modified domain; an unexpected modified inactive domain is rejected rather than producing a
+partial recovery record. Recovery preserves the selected level and leaves the live project clean
+and history-free.
+
+The focused test installs level ExAnimation into an expanded pristine ROM, stages a setting change,
+creates and reopens the recovery record, and reloads the exact changed animation from the recovered
+ROM. The complete native gate passes 1,168 tests with 11 explicit fixture/device ignores, including
+all 512 pristine-level materializations; the renderer remains green at 237/237.

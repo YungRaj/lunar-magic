@@ -42,6 +42,52 @@ pub(crate) struct RomExAnimationEditor {
 }
 
 impl RomExAnimationEditor {
+    pub(crate) fn staged_recovery_generation(&self, app: &AppState) -> Option<u64> {
+        let workspace = self.workspace.as_ref()?;
+        workspace.any_modified().then(|| {
+            let alternate_revision = workspace
+                .alternate_controller
+                .as_ref()
+                .filter(|controller| controller.is_modified())
+                .map_or(0, |controller| controller.revision().rotate_left(7));
+            app.project_revision().wrapping_mul(0x8ebc_6af0_9c88_c6e3)
+                ^ workspace.controller.revision().rotate_left(31)
+                ^ alternate_revision
+                ^ u64::from(workspace.editing_global)
+                ^ 0x4558_414e_494d_0000
+        })
+    }
+
+    pub(crate) fn staged_recovery_snapshot(
+        &self,
+        app: &AppState,
+    ) -> Result<Option<lm_app::RecoverySnapshot>, String> {
+        let workspace = self
+            .workspace
+            .as_ref()
+            .ok_or("ExAnimation workspace is closed")?;
+        if !workspace.any_modified() {
+            return Ok(app.recovery_snapshot());
+        }
+        if !workspace.controller.is_modified() {
+            return Err("inactive ExAnimation recovery domain is unexpectedly modified".into());
+        }
+        let command = self.prepare_commit()?;
+        let Command::CommitRomMutation {
+            expected_revision,
+            mutation,
+            ..
+        } = command
+        else {
+            return Err("ExAnimation recovery expected one prepared ROM mutation".into());
+        };
+        if expected_revision != app.project_revision() {
+            return Err("ExAnimation recovery mutation was prepared from a stale revision".into());
+        }
+        app.recovery_snapshot_with_mutation(&mutation, Some(workspace.slot))
+            .map_err(|error| error.to_string())
+    }
+
     pub(crate) fn show(
         &mut self,
         context: &egui::Context,
@@ -418,5 +464,108 @@ impl RomExAnimationEditor {
     }
     fn invalidate(&mut self) {
         self.loaded = None;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{RomExAnimationEditor, Workspace};
+    use lm_app::{Command, ExAnimationController, ExAnimationControllerEdit};
+    use lm_graphics::CompactExAnimation;
+    use lm_project::{ExAnimationSaveOptions, Project};
+    use lm_rats::AllocationPolicy;
+    use lm_rom::RomImage;
+
+    #[test]
+    fn staged_rom_exanimation_edit_is_recovered_without_committing_live_project() {
+        let mut source = lm_app::AppState::default();
+        source
+            .load_rom(crate::test_support::pristine_smw_us_rom_bytes())
+            .unwrap();
+        source
+            .dispatch(Command::ConvertRomTo64MbitExLoRom {
+                expected_revision: source.project_revision(),
+            })
+            .unwrap();
+        let profile = lm_profile::test_support::profile();
+        let initial = CompactExAnimation {
+            setting: 1,
+            header_value: 0x1234,
+            trigger_mask: 0,
+            trigger_values: [0; 16],
+            records: Vec::new(),
+        };
+        let mut project =
+            Project::new(RomImage::from_bytes(source.project().unwrap().save_snapshot()).unwrap());
+        project
+            .save_exanimation_with_checksum(
+                0,
+                &initial,
+                profile.exanimation,
+                &profile.exanimation_double_size_modes,
+                0x7fdc,
+                &ExAnimationSaveOptions {
+                    allocation: AllocationPolicy {
+                        search: 0x600000..0x680000,
+                        bank_size: Some(0x8000),
+                        fill_bytes: vec![0, 0xff],
+                        protected: Vec::new(),
+                    },
+                    previous_block: None,
+                    reuse_identical: true,
+                    erase_fill: 0xff,
+                },
+            )
+            .unwrap();
+
+        let mut app = lm_app::AppState::default();
+        app.load_rom(project.save_snapshot()).unwrap();
+        app.dispatch(Command::ShowExAnimation(0)).unwrap();
+        let snapshot = app.controller_snapshot().unwrap();
+        let mut controller = ExAnimationController::decode(
+            &snapshot,
+            profile.exanimation,
+            &profile.exanimation_double_size_modes,
+        )
+        .unwrap();
+        let replacement = 7;
+        controller
+            .apply_edits(&[ExAnimationControllerEdit::SetSetting(replacement)])
+            .unwrap();
+        let image = RomImage::from_bytes(snapshot.rom_bytes.clone()).unwrap();
+        let editor = RomExAnimationEditor {
+            workspace: Some(Workspace {
+                controller,
+                alternate_controller: None,
+                global_unavailable: None,
+                editing_global: false,
+                profile: profile.clone(),
+                modes: profile.exanimation_double_size_modes,
+                slot: 0,
+                image,
+                internal_header: snapshot.identity.internal_header_offset,
+            }),
+            search_start: "600000".into(),
+            search_end: "680000".into(),
+            ..RomExAnimationEditor::default()
+        };
+
+        assert!(editor.staged_recovery_generation(&app).is_some());
+        let recovery = editor.staged_recovery_snapshot(&app).unwrap().unwrap();
+        assert_eq!(app.capabilities().project, lm_app::ProjectStatus::OpenClean);
+        assert_eq!(app.project().unwrap().history.undo_len(), 0);
+
+        let mut reopened = lm_app::AppState::default();
+        reopened.load_recovery(recovery).unwrap();
+        let animation = reopened
+            .project()
+            .unwrap()
+            .load_exanimation(
+                0,
+                profile.exanimation,
+                &profile.exanimation_double_size_modes,
+            )
+            .unwrap();
+        assert_eq!(animation.setting, replacement);
     }
 }
