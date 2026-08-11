@@ -65,6 +65,48 @@ impl RomLegacyGraphicsBypassEditor {
         self.workspace.is_some()
     }
 
+    pub(crate) fn staged_recovery_generation(&self, app: &AppState) -> Option<u64> {
+        let workspace = self.workspace.as_ref()?;
+        workspace.is_modified().then(|| {
+            let selectors = workspace.selectors();
+            let content_revision = workspace
+                .table()
+                .encode()
+                .iter()
+                .fold(0x4c45_4741_4359_4746_u64, |revision, byte| {
+                    revision.rotate_left(5) ^ u64::from(*byte)
+                })
+                ^ u64::from(selectors.foreground_background.unwrap_or(0xff)).rotate_left(17)
+                ^ u64::from(selectors.sprites.unwrap_or(0xff)).rotate_left(41);
+            app.project_revision().wrapping_mul(0x9e37_79b9_7f4a_7c15)
+                ^ workspace.revision().rotate_left(27)
+                ^ content_revision
+        })
+    }
+
+    pub(crate) fn staged_recovery_snapshot(
+        &self,
+        app: &AppState,
+    ) -> Result<Option<lm_app::RecoverySnapshot>, String> {
+        let workspace = self
+            .workspace
+            .as_ref()
+            .ok_or("legacy graphics-bypass workspace is closed")?;
+        if !workspace.is_modified() {
+            return Ok(app.recovery_snapshot());
+        }
+        let prepared = workspace
+            .prepare_commit(format!("Recover staged {}", self.domain.title()))
+            .map_err(|error| error.to_string())?;
+        if prepared.expected_revision != app.project_revision() {
+            return Err(
+                "legacy graphics-bypass recovery was prepared from a stale revision".into(),
+            );
+        }
+        app.recovery_snapshot_with_mutation(&prepared.mutation, Some(workspace.level()))
+            .map_err(|error| error.to_string())
+    }
+
     pub(crate) fn set_use_list_dialog(&mut self, enabled: bool) {
         self.use_list_dialog = enabled;
     }
@@ -328,6 +370,48 @@ impl RomLegacyGraphicsBypassEditor {
 mod tests {
     use super::*;
     use lm_app::Command;
+
+    #[test]
+    fn staged_legacy_graphics_bypass_is_recovered_without_committing_live_project() {
+        let mut installer = AppState::default();
+        installer
+            .load_rom(crate::test_support::pristine_smw_us_rom_bytes())
+            .unwrap();
+        installer
+            .dispatch(Command::InstallSettings { rev: 0 })
+            .unwrap();
+        let installed = installer.project().unwrap().save_snapshot();
+
+        let mut app = AppState::default();
+        app.load_rom(installed).unwrap();
+        app.dispatch(Command::SelectLevel(0x105)).unwrap();
+        let mut editor =
+            RomLegacyGraphicsBypassEditor::new(LegacyGraphicsBypassDomain::ForegroundBackground);
+        editor.open(&app).unwrap();
+        editor.enabled = true;
+        editor.row = 9;
+        editor.files = [0x11, 0x22, 0x33, 0x44];
+        editor.stage();
+
+        assert!(editor.staged_recovery_generation(&app).is_some());
+        let recovery = editor.staged_recovery_snapshot(&app).unwrap().unwrap();
+        assert_eq!(app.capabilities().project, lm_app::ProjectStatus::OpenClean);
+        assert_eq!(app.project().unwrap().history.undo_len(), 0);
+        let live =
+            LegacyGraphicsBypassWorkspace::load(&app.controller_snapshot().unwrap()).unwrap();
+        assert_eq!(live.selectors().foreground_background, None);
+
+        let mut reopened = AppState::default();
+        reopened.load_recovery(recovery).unwrap();
+        assert_eq!(reopened.current_level(), Some(0x105));
+        let recovered =
+            LegacyGraphicsBypassWorkspace::load(&reopened.controller_snapshot().unwrap()).unwrap();
+        assert_eq!(recovered.selectors().foreground_background, Some(9));
+        assert_eq!(
+            recovered.table().entry(9).unwrap().0,
+            [0x11, 0x22, 0x33, 0x44]
+        );
+    }
 
     #[test]
     fn historical_dialog_style_switch_preserves_the_complete_row_model() {

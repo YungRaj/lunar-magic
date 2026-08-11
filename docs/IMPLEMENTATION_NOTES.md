@@ -6385,3 +6385,16 @@ The focused test stages one native word, recovers the selected level, and reload
 through the installed settings loader. The complete native gate passes 1,171 tests with 11 explicit
 fixture/device ignores, including all 512 pristine-level materializations; the renderer remains
 green at 237/237.
+
+## Crash recovery includes staged legacy graphics bypass
+
+Both standalone standard-GFX bypass dialogs now contribute content-sensitive recovery generations
+covering the complete 255-row assignment table and both per-level selector domains. Recovery reuses
+the workspace's ordinary combined mutation, including Layer 1 allocation/repointing, table storage,
+checksum repair, and semantic reopen. Foreground/background and sprite dialogs are counted as
+independent staged editors, so simultaneous divergent work rejects instead of silently choosing one.
+
+The focused test stages a foreground/background selector plus all four row assignments, proves the
+clean live project retains neither change, and then reloads both exactly from the recovered ROM at
+the retained level. The complete native gate passes 1,172 tests with 11 explicit fixture/device
+ignores, including all 512 pristine-level materializations; the renderer remains green at 237/237.

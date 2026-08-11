@@ -1763,6 +1763,12 @@ impl eframe::App for NativeApplication {
         let expanded_settings_recovery_revision = self
             .rom_expanded_settings_editor
             .staged_recovery_generation(&self.app);
+        let legacy_fg_bg_recovery_revision = self
+            .rom_legacy_fg_bg_bypass_editor
+            .staged_recovery_generation(&self.app);
+        let legacy_sprite_recovery_revision = self
+            .rom_legacy_sprite_bypass_editor
+            .staged_recovery_generation(&self.app);
         let level_assets_recovery_revision = self
             .rom_level_assets_editor
             .staged_recovery_generation(&self.app);
@@ -1779,6 +1785,8 @@ impl eframe::App for NativeApplication {
             title_tilemap_recovery_revision,
             credits_tilemap_recovery_revision,
             expanded_settings_recovery_revision,
+            legacy_fg_bg_recovery_revision,
+            legacy_sprite_recovery_revision,
             level_assets_recovery_revision,
             overworld_recovery_revision,
         ]
@@ -1795,14 +1803,16 @@ impl eframe::App for NativeApplication {
                         + usize::from(exanimation_recovery_revision.is_some())
                         + usize::from(title_tilemap_recovery_revision.is_some())
                         + usize::from(credits_tilemap_recovery_revision.is_some())
-                        + usize::from(expanded_settings_recovery_revision.is_some());
+                        + usize::from(expanded_settings_recovery_revision.is_some())
+                        + usize::from(legacy_fg_bg_recovery_revision.is_some())
+                        + usize::from(legacy_sprite_recovery_revision.is_some());
                 let staged_editors =
                     staged_editors + usize::from(level_assets_recovery_revision.is_some());
                 let staged_editors =
                     staged_editors + usize::from(overworld_recovery_revision.is_some());
                 if staged_editors > 1 {
                     return Err(
-                        "cannot compose simultaneous staged level, level-assets, expanded settings, graphics, ExAnimation, title/credits tilemap, palette, Map16, or overworld recovery yet".into(),
+                        "cannot compose simultaneous staged level, level-assets, expanded settings, legacy graphics bypass, graphics, ExAnimation, title/credits tilemap, palette, Map16, or overworld recovery yet".into(),
                     );
                 }
                 if palette_recovery_revision.is_some() {
@@ -1823,6 +1833,12 @@ impl eframe::App for NativeApplication {
                         .staged_recovery_snapshot(&self.app)
                 } else if expanded_settings_recovery_revision.is_some() {
                     self.rom_expanded_settings_editor
+                        .staged_recovery_snapshot(&self.app)
+                } else if legacy_fg_bg_recovery_revision.is_some() {
+                    self.rom_legacy_fg_bg_bypass_editor
+                        .staged_recovery_snapshot(&self.app)
+                } else if legacy_sprite_recovery_revision.is_some() {
+                    self.rom_legacy_sprite_bypass_editor
                         .staged_recovery_snapshot(&self.app)
                 } else if level_assets_recovery_revision.is_some() {
                     self.rom_level_assets_editor

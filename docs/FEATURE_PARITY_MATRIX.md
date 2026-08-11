@@ -387,7 +387,12 @@ mutation on an isolated recovery clone. The retained selected level reopens with
 32-byte record while the live project remains clean and history-free. This independently covers
 Super GFX bypass, custom Layer 3 configuration, expanded mode flags, sprite-boundary mechanics, and
 all opaque native words; `staged_expanded_settings_are_recovered_without_committing_live_project`
-binds the boundary. Other editor-local staged forms remain part of the Release-row gap.
+binds the boundary. The two standalone legacy standard-GFX bypass dialogs now independently add
+content-sensitive recovery for the complete 255-row assignment table and both per-level selector
+domains through their ordinary allocation-, checksum-, and reopen-verified mutation;
+`staged_legacy_graphics_bypass_is_recovered_without_committing_live_project` proves the live project
+stays clean while the recovered selected level retains the exact selector and four-file row. Other
+editor-local staged forms remain part of the Release-row gap.
 
 ## Workflow ledger
 
