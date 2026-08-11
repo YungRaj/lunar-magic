@@ -187,6 +187,7 @@ pub(crate) struct NativeApplication {
     joined_graphics_files: bool,
     auto_set_screens: Option<bool>,
     allow_fragmentation: Option<bool>,
+    maintain_checksum: Option<bool>,
     level_view_visibility: LevelViewVisibility,
     renderer: NativeRenderState,
     vanilla_graphics_editor: VanillaGraphicsEditor,
@@ -289,6 +290,7 @@ impl NativeApplication {
     const UNDO_HISTORY_STORAGE_KEY: &'static str = "lunar_magic_rust.undo_history.v1";
     const JOINED_GRAPHICS_STORAGE_KEY: &'static str = "lunar_magic_rust.joined_graphics.v1";
     const ALLOW_FRAGMENTATION_STORAGE_KEY: &'static str = "lunar_magic_rust.allow_fragmentation.v1";
+    const MAINTAIN_CHECKSUM_STORAGE_KEY: &'static str = "lunar_magic_rust.maintain_checksum.v1";
     const EXTERNAL_TOOLS_STORAGE_KEY: &'static str = "lunar_magic_rust.external_tools.v1";
     const ANIMATION_RATE_STORAGE_KEY: &'static str = "lunar_magic_rust.animation_rate.v1";
     const INTEGRATED_EMULATOR_STORAGE_KEY: &'static str = "lunar_magic_rust.integrated_emulator.v1";
@@ -678,6 +680,14 @@ impl NativeApplication {
                 }
             }
         }
+        if let Some(encoded) = storage.get_string(Self::MAINTAIN_CHECKSUM_STORAGE_KEY) {
+            match decode_maintain_checksum_preference(&encoded) {
+                Ok(enabled) => self.maintain_checksum = Some(enabled),
+                Err(error) => {
+                    self.effects.error = Some(format!("cannot load checksum preference: {error}"));
+                }
+            }
+        }
         if let Some(encoded) = storage.get_string(Self::EXTERNAL_TOOLS_STORAGE_KEY) {
             match decode_external_tools_preference(&encoded).and_then(|config| {
                 self.app
@@ -1033,6 +1043,10 @@ impl eframe::App for NativeApplication {
             encode_allow_fragmentation_preference(self.allow_fragmentation.unwrap_or(true)),
         );
         storage.set_string(
+            Self::MAINTAIN_CHECKSUM_STORAGE_KEY,
+            encode_maintain_checksum_preference(self.maintain_checksum.unwrap_or(true)),
+        );
+        storage.set_string(
             Self::ANIMATION_RATE_STORAGE_KEY,
             crate::animation_rate::encode_preference(self.animation_rate),
         );
@@ -1083,6 +1097,8 @@ impl eframe::App for NativeApplication {
     }
 
     fn update(&mut self, context: &egui::Context, _frame: &mut eframe::Frame) {
+        self.app
+            .set_maintain_checksum(self.maintain_checksum.unwrap_or(true));
         if context.input(|input| input.viewport().close_requested()) && !self.effects.quit_requested
         {
             context.send_viewport_cmd(egui::ViewportCommand::CancelClose);
@@ -1373,6 +1389,18 @@ fn decode_allow_fragmentation_preference(value: &str) -> Result<bool, String> {
         "enabled" => Ok(true),
         "disabled" => Ok(false),
         _ => Err("unknown fragmentation preference version".into()),
+    }
+}
+
+fn encode_maintain_checksum_preference(enabled: bool) -> String {
+    if enabled { "enabled" } else { "disabled" }.to_owned()
+}
+
+fn decode_maintain_checksum_preference(value: &str) -> Result<bool, String> {
+    match value {
+        "enabled" => Ok(true),
+        "disabled" => Ok(false),
+        _ => Err("unknown checksum preference version".into()),
     }
 }
 
@@ -2102,6 +2130,22 @@ mod preference_tests {
     }
 
     #[test]
+    fn native_save_and_reopen_persist_maintain_checksum() {
+        for expected in [false, true] {
+            let mut source = NativeApplication {
+                maintain_checksum: Some(expected),
+                ..NativeApplication::default()
+            };
+            let mut storage = MemoryStorage::default();
+            eframe::App::save(&mut source, &mut storage);
+
+            let mut reopened = NativeApplication::default();
+            reopened.load_persistent_preferences(Some(&storage));
+            assert_eq!(reopened.maintain_checksum, Some(expected));
+        }
+    }
+
+    #[test]
     fn malformed_native_tool_preference_is_authoritative_and_failure_atomic() {
         let original = vec![configured_tool()];
         let mut application = NativeApplication::default();
@@ -2192,6 +2236,15 @@ mod preference_tests {
         assert!(decode_allow_fragmentation_preference("enabled").unwrap());
         assert!(!decode_allow_fragmentation_preference("disabled").unwrap());
         assert!(decode_allow_fragmentation_preference("true").is_err());
+    }
+
+    #[test]
+    fn maintain_checksum_preference_round_trips_both_original_modes() {
+        assert_eq!(encode_maintain_checksum_preference(true), "enabled");
+        assert_eq!(encode_maintain_checksum_preference(false), "disabled");
+        assert!(decode_maintain_checksum_preference("enabled").unwrap());
+        assert!(!decode_maintain_checksum_preference("disabled").unwrap());
+        assert!(decode_maintain_checksum_preference("true").is_err());
     }
 
     #[test]

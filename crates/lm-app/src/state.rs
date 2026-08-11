@@ -69,6 +69,7 @@ pub struct AppState {
     pub(crate) project_revision: u64,
     pub(crate) level_navigation: LevelNavigationHistory,
     undo_history: UndoHistoryPreference,
+    maintain_checksum: Option<bool>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -761,6 +762,17 @@ impl From<lm_overworld::NativeOverworldPlayerStartError> for AppError {
 }
 
 impl AppState {
+    /// Controls whether serializer-produced mutations publish their SNES checksum bytes.
+    /// Lunar Magic defaults this option on when no preference has been stored.
+    pub fn set_maintain_checksum(&mut self, enabled: bool) {
+        self.maintain_checksum = Some(enabled);
+    }
+
+    #[must_use]
+    pub fn maintain_checksum(&self) -> bool {
+        self.maintain_checksum.unwrap_or(true)
+    }
+
     pub const DEFAULT_UNDO_SNAPSHOT_LIMIT: usize = 33;
     pub const MAX_UNDO_SNAPSHOT_LIMIT: usize = 51;
 

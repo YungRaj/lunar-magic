@@ -5879,6 +5879,17 @@ within-screen ordering. The setting is a persisted editor preference, defaults o
 does not alter sprite ordering or ROM allocator behavior. Authenticated native command coverage is
 now 290 of 317 named slots, leaving 27 pending.
 
+## Maintain Checksum (`$24BB`)
+
+The command table maps `LM_OPTIONS_MAINTAIN_CHECKSUM` to dispatcher case `$86`, toggling persisted
+default-on byte `$005E76FA` (`Options` bit 3). Rust enforces the option at the application mutation
+boundary: enabled commits preserve the checksum bytes prepared by domain serializers, while the
+disabled path splits any intersecting write around the active ROM identity's four-byte checksum and
+complement field. This retains every non-checksum byte and any appended allocation tail, so the
+option changes checksum maintenance without weakening transaction validation, semantic preparation,
+or undo history. Authenticated native command coverage is now 291 of 317 named slots, leaving 26
+pending.
+
 ## Deprecated Select FG/BG commands (`$2473/$2474`)
 
 Both authenticated central dispatch bytes are `$DF`, while the Lunar Magic 3.63 command switch

@@ -476,6 +476,17 @@ impl NativeApplication {
                 }
                 .into();
             }
+            UserToolbarNativeAction::MaintainChecksum => {
+                let enabled = !self.maintain_checksum.unwrap_or(true);
+                self.maintain_checksum = Some(enabled);
+                self.app.set_maintain_checksum(enabled);
+                self.app.status = if enabled {
+                    "Enabled automatic ROM checksum maintenance"
+                } else {
+                    "Disabled automatic ROM checksum maintenance"
+                }
+                .into();
+            }
             UserToolbarNativeAction::VramPatchOptions => {
                 self.vram_patch_options_dialog.open(&self.app);
             }
@@ -1699,6 +1710,7 @@ enum UserToolbarNativeAction {
     JoinedGraphicsFiles,
     AutoSetScreens,
     AllowFragmentation,
+    MaintainChecksum,
     VramPatchOptions,
     GraphicsCompressionOptions,
     GeneralOptions,
@@ -1805,6 +1817,7 @@ fn user_toolbar_native_action(name: &str) -> Option<UserToolbarNativeAction> {
         "LM_OPTIONS_ATTACH_FILES" => UserToolbarNativeAction::JoinedGraphicsFiles,
         "LM_OPTIONS_AUTO_SCREENS" => UserToolbarNativeAction::AutoSetScreens,
         "LM_OPTIONS_ALLOW_FRAGMENT" => UserToolbarNativeAction::AllowFragmentation,
+        "LM_OPTIONS_MAINTAIN_CHECKSUM" => UserToolbarNativeAction::MaintainChecksum,
         "LM_OPTIONS_VRAM" => UserToolbarNativeAction::VramPatchOptions,
         "LM_OPTIONS_COMPRESSION" => UserToolbarNativeAction::GraphicsCompressionOptions,
         "LM_OPTIONS_GENERAL" => UserToolbarNativeAction::GeneralOptions,
@@ -2851,7 +2864,7 @@ mod user_toolbar_tests {
                     || user_toolbar_native_action(entry.name).is_some()
             })
             .collect::<Vec<_>>();
-        assert_eq!(supported.len(), 290);
+        assert_eq!(supported.len(), 291);
         assert!(
             supported
                 .iter()
@@ -3231,6 +3244,35 @@ mod user_toolbar_tests {
     }
 
     #[test]
+    fn maintain_checksum_command_toggles_the_original_default_on_option() {
+        let mut native = NativeApplication::default();
+        assert_eq!(native.maintain_checksum, None);
+        assert!(native.app.maintain_checksum());
+        assert_eq!(
+            user_toolbar_native_action("LM_OPTIONS_MAINTAIN_CHECKSUM"),
+            Some(UserToolbarNativeAction::MaintainChecksum)
+        );
+
+        native.apply_user_toolbar_native_action(
+            &egui::Context::default(),
+            UserToolbarNativeAction::MaintainChecksum,
+        );
+        assert_eq!(native.maintain_checksum, Some(false));
+        assert!(!native.app.maintain_checksum());
+        assert_eq!(
+            native.app.status,
+            "Disabled automatic ROM checksum maintenance"
+        );
+
+        native.apply_user_toolbar_native_action(
+            &egui::Context::default(),
+            UserToolbarNativeAction::MaintainChecksum,
+        );
+        assert_eq!(native.maintain_checksum, Some(true));
+        assert!(native.app.maintain_checksum());
+    }
+
+    #[test]
     fn recent_menu_route_opens_at_the_pointer_and_escape_dismisses_it() {
         let mut native = NativeApplication::default();
         let context = egui::Context::default();
@@ -3413,7 +3455,7 @@ mod user_toolbar_tests {
                     && user_toolbar_native_action(entry.name).is_none()
             })
             .collect::<Vec<_>>();
-        assert_eq!(unsupported.len(), 27);
+        assert_eq!(unsupported.len(), 26);
         if std::env::var_os("LM_DIAGNOSTIC_UNSUPPORTED_TOOLBAR_COMMANDS").is_some() {
             for entry in unsupported {
                 eprintln!(

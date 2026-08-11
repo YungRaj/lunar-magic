@@ -1205,6 +1205,16 @@ affect sprites. Focused model, route, preference, commit/reopen, and command-par
 The authenticated partition is now **290 routed / 27 pending**. The aggregate remains 59/65 because
 the configuration row is still Partial.
 
+Toolbar coverage update (2026-08-11, checksum maintenance):
+`LM_OPTIONS_MAINTAIN_CHECKSUM` `$24BB` now reproduces dispatcher case `$86`, persisted `Options`
+bit 3, and default-on byte `$005E76FA`. Enabled serializer commits retain their prepared SNES
+checksum/complement update. Disabled commits remove only the active identity's four-byte internal
+header checksum range, including when it lies inside a larger contiguous write; surrounding ROM
+edits, allocation tails, undo/redo, and stale-revision validation remain unchanged. The native
+preference persists through save/reopen and applies immediately. Focused split-write, route,
+preference, and command-partition tests pass. The authenticated partition is now **291 routed / 26
+pending**. The aggregate remains 59/65 because the configuration row is still Partial.
+
 Toolbar coverage update (2026-08-10, Open Level Number): `LM_FILE_OPEN_LEVEL` `$238E` now opens
 the native equivalent of original dialog resource `1000`. It uses the authenticated title,
 `Level Number (0-1FF)` label, OK/Cancel controls, and original-language resource overrides; seeds

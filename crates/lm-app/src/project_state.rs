@@ -68,13 +68,14 @@ impl AppState {
                 actual: self.project_revision,
             });
         }
+        let writes = self.checksum_policy_writes(writes);
         let project = self.project.as_ref().ok_or(AppError::NoProject)?;
-        if !project.writes_would_change(writes)? {
+        if !project.writes_would_change(&writes)? {
             return Ok(Vec::new());
         }
         self.ensure_project_revision_capacity()?;
         let project = self.project.as_mut().ok_or(AppError::NoProject)?;
-        let changed = project.apply_writes(description.clone(), writes)?;
+        let changed = project.apply_writes(description.clone(), &writes)?;
         debug_assert!(changed);
         self.advance_project_revision()?;
         self.status.clone_from(&description);
@@ -100,13 +101,14 @@ impl AppState {
                 actual: self.project_revision,
             });
         }
+        let mutation = self.checksum_policy_mutation(mutation);
         let project = self.project.as_ref().ok_or(AppError::NoProject)?;
-        if !project.mutation_would_change(mutation)? {
+        if !project.mutation_would_change(&mutation)? {
             return Ok(Vec::new());
         }
         self.ensure_project_revision_capacity()?;
         let project = self.project.as_mut().ok_or(AppError::NoProject)?;
-        let changed = project.apply_mutation(description.clone(), mutation)?;
+        let changed = project.apply_mutation(description.clone(), &mutation)?;
         debug_assert!(changed);
         self.advance_project_revision()?;
         self.status.clone_from(&description);
@@ -115,6 +117,28 @@ impl AppState {
             mode: self.mode,
             revision: self.project_revision,
         }])
+    }
+
+    fn checksum_policy_mutation(&self, mutation: &RomMutation) -> RomMutation {
+        let mut mutation = mutation.clone();
+        mutation.writes = self.checksum_policy_writes(&mutation.writes);
+        mutation
+    }
+
+    fn checksum_policy_writes(&self, writes: &[RomWrite]) -> Vec<RomWrite> {
+        if self.maintain_checksum() {
+            return writes.to_vec();
+        }
+        let Some(project) = self.project.as_ref() else {
+            return writes.to_vec();
+        };
+        let Some(identity) = project.identity.as_ref() else {
+            return writes.to_vec();
+        };
+        exclude_write_range(
+            writes,
+            identity.internal_header_offset + 0x1c..identity.internal_header_offset + 0x20,
+        )
     }
 
     pub(crate) fn advance_project_revision(&mut self) -> Result<(), AppError> {
@@ -188,4 +212,28 @@ impl AppState {
     pub fn current_level(&self) -> Option<u16> {
         self.level_navigation.current().map(|state| state.level)
     }
+}
+
+fn exclude_write_range(writes: &[RomWrite], excluded: std::ops::Range<usize>) -> Vec<RomWrite> {
+    let mut retained = Vec::with_capacity(writes.len());
+    for write in writes {
+        let end = write.offset.saturating_add(write.bytes.len());
+        if end <= excluded.start || excluded.end <= write.offset {
+            retained.push(write.clone());
+            continue;
+        }
+        if write.offset < excluded.start {
+            retained.push(RomWrite {
+                offset: write.offset,
+                bytes: write.bytes[..excluded.start - write.offset].to_vec(),
+            });
+        }
+        if excluded.end < end {
+            retained.push(RomWrite {
+                offset: excluded.end,
+                bytes: write.bytes[excluded.end - write.offset..].to_vec(),
+            });
+        }
+    }
+    retained
 }

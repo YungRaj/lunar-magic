@@ -56,6 +56,43 @@ fn controller_writes_commit_atomically_and_invalidate_the_active_view() {
 }
 
 #[test]
+fn maintain_checksum_policy_excludes_only_the_internal_header_checksum() {
+    let mut app = AppState::default();
+    app.load_rom(test_rom()).unwrap();
+    let original_checksum = app.project().unwrap().rom.read(0x7fdc, 4).unwrap().to_vec();
+
+    assert!(app.maintain_checksum());
+    app.set_maintain_checksum(false);
+    app.dispatch(Command::CommitRomMutation {
+        expected_revision: 0,
+        description: "Edit without maintaining checksum".into(),
+        mutation: lm_project::RomMutation {
+            mapper: lm_rom::Mapper::LoRom,
+            expected_len: 0x8000,
+            appended: Vec::new(),
+            writes: vec![lm_project::RomWrite {
+                offset: 0x7fda,
+                bytes: vec![0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88],
+            }],
+        },
+    })
+    .unwrap();
+
+    assert_eq!(
+        app.project().unwrap().rom.read(0x7fda, 2).unwrap(),
+        [0x11, 0x22]
+    );
+    assert_eq!(
+        app.project().unwrap().rom.read(0x7fdc, 4).unwrap(),
+        original_checksum
+    );
+    assert_eq!(
+        app.project().unwrap().rom.read(0x7fe0, 2).unwrap(),
+        [0x77, 0x88]
+    );
+}
+
+#[test]
 fn controller_mutation_can_expand_and_undo_as_one_revision() {
     let mut app = AppState::default();
     app.load_rom(test_rom()).unwrap();

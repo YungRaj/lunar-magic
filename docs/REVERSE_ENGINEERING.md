@@ -4917,6 +4917,15 @@ sets and generated palette remain unchanged. Reapplying graphics materialization
 construction after this synthetic-cell substitution matches the original palette, graphics, and
 all 65,536 live Map16 definitions byte-for-byte.
 
+## Maintain Checksum option
+
+The adjacent editor option `LM_OPTIONS_MAINTAIN_CHECKSUM` (`$24BB`) enters central dispatcher case
+`$86` and toggles byte `$005E76FA`. `SynchronizeApplicationSettingsRegistry` maps that byte to
+`Options` bit 3; the initialized live value is one. The original help describes the enabled path as
+updating the ROM checksum after data insertion and notes the save-speed tradeoff when disabled.
+This is distinct from checksum-compensation regions used by particular expansion/install formats:
+it controls publication of the internal-header checksum/complement bytes after an editor mutation.
+
 ## Dedicated overworld animation-options runtime
 
 Lunar Magic 3.63 installs the per-map overworld animation-option storage through the dedicated
