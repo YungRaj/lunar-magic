@@ -31,6 +31,54 @@ pub(crate) struct RomOverworldSpecialEventEditor {
 }
 
 impl RomOverworldSpecialEventEditor {
+    pub(crate) fn staged_recovery_generation(&self, app: &AppState) -> Option<u64> {
+        let workspace = self.workspace.as_ref()?;
+        if workspace.current == workspace.original {
+            return None;
+        }
+        let content_revision = workspace
+            .current
+            .reveals
+            .iter()
+            .flat_map(|reveal| {
+                reveal
+                    .source_tile
+                    .to_le_bytes()
+                    .into_iter()
+                    .chain(reveal.destination_tile.to_le_bytes())
+            })
+            .chain(workspace.current.directions)
+            .fold(0x5350_4543_4556_454e_u64, |revision, byte| {
+                revision.rotate_left(5) ^ u64::from(byte)
+            });
+        Some(
+            app.project_revision().wrapping_mul(0xa24b_aed4_963e_e407)
+                ^ workspace.revision.rotate_left(31)
+                ^ content_revision,
+        )
+    }
+
+    pub(crate) fn staged_recovery_snapshot(
+        &self,
+        app: &AppState,
+    ) -> Result<Option<lm_app::RecoverySnapshot>, String> {
+        let workspace = self
+            .workspace
+            .as_ref()
+            .ok_or_else(|| "special-event workspace is closed".to_owned())?;
+        if workspace.revision != app.project_revision() {
+            return Err("stale special-event workspace cannot be recovered".into());
+        }
+        if workspace.current == workspace.original {
+            return Ok(app.recovery_snapshot());
+        }
+        let mut staged = app.project().ok_or("open a supported ROM first")?.clone();
+        lm_app::save_native_special_event_reveals_to_project(&mut staged, &workspace.current)
+            .map_err(|error| error.to_string())?;
+        app.recovery_snapshot_with_current_rom(staged.save_snapshot(), app.current_level())
+            .map_err(|error| error.to_string())
+    }
+
     pub(crate) fn is_open(&self) -> bool {
         self.workspace.is_some()
     }
@@ -311,5 +359,82 @@ mod tests {
         assert!(editor.prepare_commit(1).is_err());
         assert!(!editor.request_close(false));
         assert!(editor.is_open());
+    }
+
+    #[test]
+    fn staged_pristine_special_events_recover_all_three_complete_planes() {
+        let app = pristine_app();
+        let mut editor = RomOverworldSpecialEventEditor::default();
+        editor.open(&app);
+        editor.reveal.source = "0111".into();
+        editor.reveal.destination = "0222".into();
+        editor.direction = "33".into();
+        editor.apply_selected().unwrap();
+        editor.index = "17".into();
+        editor.loaded_index = None;
+        editor.load_selected().unwrap();
+        editor.reveal.source = "0444".into();
+        editor.reveal.destination = "0555".into();
+        editor.direction = "66".into();
+        editor.apply_selected().unwrap();
+        let expected = editor.workspace.as_ref().unwrap().current.clone();
+
+        assert!(editor.staged_recovery_generation(&app).is_some());
+        let recovery = editor.staged_recovery_snapshot(&app).unwrap().unwrap();
+        assert_eq!(app.capabilities().project, lm_app::ProjectStatus::OpenClean);
+        assert_eq!(app.project().unwrap().history.undo_len(), 0);
+        let mut reopened = AppState::default();
+        reopened.load_recovery(recovery).unwrap();
+        let table = reopened
+            .project()
+            .unwrap()
+            .load_special_event_reveals_detected(smw_us_v1_special_event_reveal_locator())
+            .unwrap()
+            .table;
+        assert_eq!(table, expected);
+    }
+
+    #[test]
+    fn staged_installed_special_event_update_preserves_prior_record() {
+        let mut installer = pristine_app();
+        let mut first = RomOverworldSpecialEventEditor::default();
+        first.open(&installer);
+        first.reveal.source = "0123".into();
+        first.reveal.destination = "0234".into();
+        first.direction = "45".into();
+        first.apply_selected().unwrap();
+        installer
+            .dispatch(first.prepare_commit(0).unwrap().unwrap())
+            .unwrap();
+
+        let mut app = AppState::default();
+        app.load_rom(installer.project().unwrap().save_snapshot())
+            .unwrap();
+        let mut editor = RomOverworldSpecialEventEditor::default();
+        editor.open(&app);
+        editor.index = "17".into();
+        editor.loaded_index = None;
+        editor.load_selected().unwrap();
+        editor.reveal.source = "0345".into();
+        editor.reveal.destination = "0456".into();
+        editor.direction = "67".into();
+        editor.apply_selected().unwrap();
+
+        let recovery = editor.staged_recovery_snapshot(&app).unwrap().unwrap();
+        assert_eq!(app.capabilities().project, lm_app::ProjectStatus::OpenClean);
+        let mut reopened = AppState::default();
+        reopened.load_recovery(recovery).unwrap();
+        let table = reopened
+            .project()
+            .unwrap()
+            .load_special_event_reveals_detected(smw_us_v1_special_event_reveal_locator())
+            .unwrap()
+            .table;
+        assert_eq!(table.reveals[0].source_tile, 0x123);
+        assert_eq!(table.reveals[0].destination_tile, 0x234);
+        assert_eq!(table.directions[0], 0x45);
+        assert_eq!(table.reveals[23].source_tile, 0x345);
+        assert_eq!(table.reveals[23].destination_tile, 0x456);
+        assert_eq!(table.directions[23], 0x67);
     }
 }

@@ -432,7 +432,12 @@ standalone overworld global-settings editor now hashes and recovers all seven co
 records through ordinary pristine runtime installation or installed-table update, including semantic
 Layer 3 fields and opaque words. `staged_pristine_overworld_settings_recover_all_seven_records` and
 `staged_installed_overworld_settings_preserve_prior_submap_edits` prove exact complete-table reopen,
-clean live state, and preservation of independently committed submap settings.
+clean live state, and preservation of independently committed submap settings. The standalone
+special-event editor now hashes and recovers all 24 source, destination, and direction records
+through ordinary pristine two-runtime installation or installed update/reallocation.
+`staged_pristine_special_events_recover_all_three_complete_planes` and
+`staged_installed_special_event_update_preserves_prior_record` prove exact three-plane reopen, clean
+live state, boundary entry 23, and preservation of a previously committed event.
 
 ## Workflow ledger
 

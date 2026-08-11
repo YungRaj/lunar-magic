@@ -4,6 +4,7 @@ use lm_profile::{
     SMW_US_V1_CHECKSUM_FIELD, smw_us_v1_special_event_reveal_installation_plan,
     smw_us_v1_special_event_reveal_locator, smw_us_v1_special_event_update_policy,
 };
+use lm_project::Project;
 use lm_rom::{Mapper, Region, SupportedGame};
 
 impl AppState {
@@ -21,31 +22,9 @@ impl AppState {
         self.require_no_pending_save()?;
         self.ensure_project_revision_capacity()?;
         let project = self.project.as_mut().ok_or(AppError::NoProject)?;
-        let identity = project.identity.as_ref().ok_or(AppError::NoProject)?;
-        if identity.game != SupportedGame::SuperMarioWorld
-            || identity.region != Region::NorthAmerica
-            || identity.revision != 0
-            || identity.mapper != Mapper::LoRom
-        {
-            return Err(AppError::NativeSpecialEventIdentityMismatch);
-        }
-        if project
-            .load_special_event_reveals_detected(smw_us_v1_special_event_reveal_locator())?
-            .table
-            == *table
-        {
+        if !save_native_special_event_reveals_to_project(project, table)? {
             return Ok(Vec::new());
         }
-        let plan = smw_us_v1_special_event_reveal_installation_plan(table)?;
-        let update = smw_us_v1_special_event_update_policy(project.rom.logical_len());
-        project.save_special_event_reveals_detected(
-            table,
-            smw_us_v1_special_event_reveal_locator(),
-            &plan,
-            &update,
-            SMW_US_V1_CHECKSUM_FIELD,
-            0xff,
-        )?;
         self.advance_project_revision()?;
         let description = "Replace native SMW special-event reveals".to_owned();
         self.status.clone_from(&description);
@@ -55,6 +34,39 @@ impl AppState {
             revision: self.project_revision,
         }])
     }
+}
+
+/// Applies the native 24-record special-event persistence used by the application command.
+pub fn save_native_special_event_reveals_to_project(
+    project: &mut Project,
+    table: &SpecialEventRevealTable,
+) -> Result<bool, AppError> {
+    let identity = project.identity.as_ref().ok_or(AppError::NoProject)?;
+    if identity.game != SupportedGame::SuperMarioWorld
+        || identity.region != Region::NorthAmerica
+        || identity.revision != 0
+        || identity.mapper != Mapper::LoRom
+    {
+        return Err(AppError::NativeSpecialEventIdentityMismatch);
+    }
+    if project
+        .load_special_event_reveals_detected(smw_us_v1_special_event_reveal_locator())?
+        .table
+        == *table
+    {
+        return Ok(false);
+    }
+    let plan = smw_us_v1_special_event_reveal_installation_plan(table)?;
+    let update = smw_us_v1_special_event_update_policy(project.rom.logical_len());
+    project.save_special_event_reveals_detected(
+        table,
+        smw_us_v1_special_event_reveal_locator(),
+        &plan,
+        &update,
+        SMW_US_V1_CHECKSUM_FIELD,
+        0xff,
+    )?;
+    Ok(true)
 }
 
 #[cfg(test)]

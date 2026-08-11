@@ -6503,3 +6503,16 @@ Focused tests recover independent edits in the first and last records through pr
 then preserve a previously committed submap-2 edit while recovering a staged submap-6 edit through
 installed storage. All six overworld-settings editor tests, four application persistence and variant
 tests, and all 237 renderer tests pass.
+
+## Crash recovery includes all staged overworld special events
+
+The standalone special-event editor now contributes a content-sensitive generation over all 24
+source tiles, destination tiles, and direction bytes. Recovery invokes the same shared detected
+persistence as ordinary commit, choosing pristine two-runtime installation or authenticated
+installed-table update/reallocation and requiring exact reopen on an isolated clone. The live
+project remains clean and history-free.
+
+Focused tests recover independent edits at entries 0 and 23 across all three planes through pristine
+installation, then preserve a committed entry 0 while recovering entry 23 through installed storage.
+All four special-event editor tests, the application install/update/two-Undo test, and all 237
+renderer tests pass.
