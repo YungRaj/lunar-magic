@@ -5829,3 +5829,11 @@ and its 513-line manifest; normal, vertical, and `$02D` test-level samples match
 content. The isolated `c20496c` build reproduces `$02D`'s same viewport, and the retained semantic
 manifest remains byte-identical at SHA-256
 `254a1a050d12785973241910e26d8b7917a5cb5e2a56602a330fc6cbd833c04d`.
+
+## Deprecated Select FG/BG commands (`$2473/$2474`)
+
+Both authenticated central dispatch bytes are `$DF`, while the Lunar Magic 3.63 command switch
+ends at `$DE`. Rust therefore preserves these two historical toolbar names as a successful typed
+no-op rather than incorrectly mapping them to the active Layer 1/Layer 2 edit commands. Focused
+tests require stable project revision, complete ROM bytes, status, and error state. Authenticated
+native command coverage is now 275 of 317 named slots, leaving 42 pending.

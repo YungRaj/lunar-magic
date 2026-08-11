@@ -1022,6 +1022,14 @@ an isolated build of the last verified commit reproduces the current viewport, r
 renderer regression from this command family. The retained semantic manifest remains byte-identical
 at SHA-256 `254a1a050d12785973241910e26d8b7917a5cb5e2a56602a330fc6cbd833c04d`.
 
+Toolbar coverage update (2026-08-10, deprecated Select FG/BG): authenticated historical commands
+`LM_EDIT_SELECT_FG` `$2473` and `LM_EDIT_SELECT_BG` `$2474` now reproduce their exact Lunar Magic
+3.63 no-op behavior. Both central dispatch-table entries are `$DF`, beyond the implemented
+`$00..$DE` switch, so they must not alias the active Layer 1/Layer 2 edit commands. Rust uses one
+explicit typed no-op; focused coverage requires stable revision, complete ROM bytes, status, and
+error state. The authenticated partition is now **275 routed / 42 pending**. The aggregate remains
+59/65 because the configuration row is still Partial.
+
 Toolbar coverage update (2026-08-10, Open Level Number): `LM_FILE_OPEN_LEVEL` `$238E` now opens
 the native equivalent of original dialog resource `1000`. It uses the authenticated title,
 `Level Number (0-1FF)` label, OK/Cancel controls, and original-language resource overrides; seeds

@@ -413,6 +413,7 @@ impl NativeApplication {
                 }
             }
             UserToolbarNativeAction::DeprecatedDecryptLevelsNoOp => {}
+            UserToolbarNativeAction::DeprecatedSelectForegroundBackgroundNoOp => {}
             UserToolbarNativeAction::GraphicsCompressionOptions => {
                 self.graphics_migration_dialog.open(&self.app);
             }
@@ -1450,6 +1451,7 @@ enum UserToolbarNativeAction {
     ApplyIps,
     RestrictLevelAccess,
     DeprecatedDecryptLevelsNoOp,
+    DeprecatedSelectForegroundBackgroundNoOp,
     GraphicsCompressionOptions,
     GeneralOptions,
     RestoreOptions,
@@ -1538,6 +1540,9 @@ fn user_toolbar_native_action(name: &str) -> Option<UserToolbarNativeAction> {
         "LM_FILE_APPLY_IPS" => UserToolbarNativeAction::ApplyIps,
         "LM_FILE_ENCRYPT_LEVELS" => UserToolbarNativeAction::RestrictLevelAccess,
         "LM_FILE_DECRYPT_LEVELS" => UserToolbarNativeAction::DeprecatedDecryptLevelsNoOp,
+        "LM_EDIT_SELECT_FG" | "LM_EDIT_SELECT_BG" => {
+            UserToolbarNativeAction::DeprecatedSelectForegroundBackgroundNoOp
+        }
         "LM_OPTIONS_COMPRESSION" => UserToolbarNativeAction::GraphicsCompressionOptions,
         "LM_OPTIONS_GENERAL" => UserToolbarNativeAction::GeneralOptions,
         "LM_OPTIONS_RESTORE" => UserToolbarNativeAction::RestoreOptions,
@@ -2580,7 +2585,7 @@ mod user_toolbar_tests {
                     || user_toolbar_native_action(entry.name).is_some()
             })
             .collect::<Vec<_>>();
-        assert_eq!(supported.len(), 273);
+        assert_eq!(supported.len(), 275);
         assert!(
             supported
                 .iter()
@@ -2635,6 +2640,32 @@ mod user_toolbar_tests {
         assert_eq!(after.revision, before.revision);
         assert_eq!(after.rom_bytes, before.rom_bytes);
         assert!(!native.level_access_restriction_dialog.is_open());
+        assert!(native.effects.error.is_none());
+    }
+
+    #[test]
+    fn deprecated_select_foreground_background_commands_match_original_no_ops() {
+        for name in ["LM_EDIT_SELECT_FG", "LM_EDIT_SELECT_BG"] {
+            assert_eq!(
+                user_toolbar_native_action(name),
+                Some(UserToolbarNativeAction::DeprecatedSelectForegroundBackgroundNoOp)
+            );
+        }
+        let mut native = NativeApplication::default();
+        native
+            .app
+            .load_rom(crate::test_support::pristine_smw_us_rom_bytes())
+            .unwrap();
+        native.app.status = "unchanged".into();
+        let before = native.app.controller_snapshot().unwrap();
+        native.apply_user_toolbar_native_action(
+            &egui::Context::default(),
+            UserToolbarNativeAction::DeprecatedSelectForegroundBackgroundNoOp,
+        );
+        let after = native.app.controller_snapshot().unwrap();
+        assert_eq!(after.revision, before.revision);
+        assert_eq!(after.rom_bytes, before.rom_bytes);
+        assert_eq!(native.app.status, "unchanged");
         assert!(native.effects.error.is_none());
     }
 
@@ -2758,7 +2789,7 @@ mod user_toolbar_tests {
                     && user_toolbar_native_action(entry.name).is_none()
             })
             .collect::<Vec<_>>();
-        assert_eq!(unsupported.len(), 44);
+        assert_eq!(unsupported.len(), 42);
         if std::env::var_os("LM_DIAGNOSTIC_UNSUPPORTED_TOOLBAR_COMMANDS").is_some() {
             for entry in unsupported {
                 eprintln!(
