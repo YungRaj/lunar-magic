@@ -7,6 +7,15 @@ pub enum Mapper {
     Sa1,
 }
 
+/// Selects which mirrored CPU-bank window is used when encoding ordinary LoROM pointers.
+/// Both forms resolve to the same cartridge bytes; banks $80-$FF permit FastROM timing.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum LoRomAddressing {
+    #[default]
+    Slow,
+    Fast,
+}
+
 pub const MAPPER_BANK_LEN: usize = 0x8000;
 
 /// Reports whether a complete logical ROM image has valid bank shape and mapper addressability.
@@ -75,13 +84,29 @@ pub fn snes_to_pc(mapper: Mapper, address: u32) -> Result<usize, RomError> {
 ///
 /// Returns [`RomError`] when the offset cannot be represented by the selected mapping.
 pub fn pc_to_snes(mapper: Mapper, offset: usize) -> Result<u32, RomError> {
+    pc_to_snes_with_lorom_addressing(mapper, offset, LoRomAddressing::Fast)
+}
+
+/// Converts a headerless offset while explicitly selecting the ordinary-LoROM mirror.
+/// Non-LoROM mappers have fixed canonical encodings and ignore `addressing`.
+pub fn pc_to_snes_with_lorom_addressing(
+    mapper: Mapper,
+    offset: usize,
+    addressing: LoRomAddressing,
+) -> Result<u32, RomError> {
     let offset32 = u32::try_from(offset).map_err(|_| RomError::UnrepresentablePcOffset(offset))?;
     match mapper {
         Mapper::LoRom => {
             if offset >= 0x0040_0000 {
                 return Err(RomError::UnrepresentablePcOffset(offset));
             }
-            Ok((((offset32 >> 15) | 0x80) << 16) | 0x8000 | (offset32 & 0x7fff))
+            let bank = offset32 >> 15;
+            let bank = match addressing {
+                // Banks $7E/$7F are WRAM, so their cartridge mirrors must remain in $FE/$FF.
+                LoRomAddressing::Slow if bank < 0x7e => bank,
+                LoRomAddressing::Slow | LoRomAddressing::Fast => bank | 0x80,
+            };
+            Ok((bank << 16) | 0x8000 | (offset32 & 0x7fff))
         }
         Mapper::ExLoRom => {
             if offset >= 0x0080_0000 {
@@ -194,6 +219,29 @@ mod tests {
         assert_eq!(pc_to_snes(Mapper::Sa1, 0x3f_ffff), Ok(0xbf_ffff));
         assert_eq!(pc_to_snes(Mapper::Sa1, 0x40_0000), Ok(0xc0_0000));
         assert_eq!(pc_to_snes(Mapper::Sa1, 0x7f_ffff), Ok(0xff_ffff));
+    }
+
+    #[test]
+    fn ordinary_lorom_addressing_policy_selects_exact_mirrors() {
+        for offset in [0, 1, 0x7fff, 0x8000, 0x1f_ffff, 0x3f_ffff] {
+            let slow =
+                pc_to_snes_with_lorom_addressing(Mapper::LoRom, offset, LoRomAddressing::Slow)
+                    .unwrap();
+            let fast =
+                pc_to_snes_with_lorom_addressing(Mapper::LoRom, offset, LoRomAddressing::Fast)
+                    .unwrap();
+            if offset < 0x3f_0000 {
+                assert_eq!(fast, slow | 0x80_0000);
+            } else {
+                assert_eq!(fast, slow);
+            }
+            assert_eq!(snes_to_pc(Mapper::LoRom, slow), Ok(offset));
+            assert_eq!(snes_to_pc(Mapper::LoRom, fast), Ok(offset));
+        }
+        assert!(
+            pc_to_snes_with_lorom_addressing(Mapper::LoRom, 0x40_0000, LoRomAddressing::Slow,)
+                .is_err()
+        );
     }
 
     #[test]

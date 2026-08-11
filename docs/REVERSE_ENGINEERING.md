@@ -5120,3 +5120,19 @@ dispatcher state to a valid value and redispatch; the general unknown standard-o
 display node when enabled, and jumps through the corrected node callback; disabled mode renders
 the nonfatal fallback directly. Thus the option controls real in-memory correction, not merely
 whether the final warning dialog is shown.
+
+## FastROM option pair
+
+The Options menu constructs `LM_OPTIONS_USE_FASTROM` `$24CC` from byte `$005E78FB` and
+`LM_OPTIONS_PATCH_FASTROM` `$24CD` from byte `$005E78FE`; each byte is shifted into the Win32
+checked-menu flag. ROM initialization clears both at `$0047C78B..$0047C794` and subsequently
+derives them from ROM state at `$0047C93A/$0047C956`. The `$24CC` byte is consumed throughout the
+pointer encoders, including `$004416B7`, while `$24CD` reaches the save-time patch path beginning
+at `$00484592`.
+
+The retained 3.63 help confirms that Use FastROM changes only newly saved data/ASM addresses to
+the `$80:8000` LoROM mirror and does not patch existing pointers. Apply Patch is a separate,
+irreversible next-level-save action that rewrites original-game 24-bit pointers and installs the
+speed-enabling ASM. Both are unavailable for ExLoROM and special-chip ROMs. Ordinary slow LoROM
+cannot encode payload in CPU banks `$7E/$7F` because they are WRAM, so offsets `$3F0000..$3FFFFF`
+must use their `$FE/$FF` mirrors even when Use FastROM is disabled.

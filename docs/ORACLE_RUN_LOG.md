@@ -1351,3 +1351,13 @@ explicit fixture ignores and its own full 512-level materialization gate; the re
 513-line manifest remains SHA-256
 `254a1a050d12785973241910e26d8b7917a5cb5e2a56602a330fc6cbd833c04d`; and the i686 Windows check
 passes. The authenticated partition is 313/317 with four pending commands.
+
+## FastROM address-policy foundation (2026-08-11)
+
+Static PE disassembly identifies `$24CC -> $005E78FB` and `$24CD -> $005E78FE`, separates the
+address-encoding consumers from the save-time patch consumer, and confirms ROM-derived rather
+than application-preference state. Rust now exposes an explicit ordinary-LoROM slow/fast address
+policy. Exhaustive boundary tests prove both mirrors resolve to identical cartridge offsets and
+preserve the mandatory `$FE/$FF` mirrors for the WRAM-shadowed final 64 KiB. The focused lm-rom
+gate passes 38/38. The two commands remain pending until their ROM marker and atomic save-time
+consumer are authenticated and wired; command coverage therefore remains 313/317.

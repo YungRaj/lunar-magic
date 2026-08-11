@@ -21,5 +21,8 @@ pub use image::{ChangeRange, RomImage};
 pub use ips::{IpsError, MAX_IPS_IMAGE_LEN, MAX_IPS_PATCH_LEN, apply_ips, create_ips};
 pub use lunar_magic_metadata::{LunarMagicRomMetadata, LunarMagicRomMetadataError};
 pub use lunar_magic_metadata_file::LunarMagicRomMetadataFileError;
-pub use mapping::{MAPPER_BANK_LEN, Mapper, mapper_supports_image_len, pc_to_snes, snes_to_pc};
+pub use mapping::{
+    LoRomAddressing, MAPPER_BANK_LEN, Mapper, mapper_supports_image_len, pc_to_snes,
+    pc_to_snes_with_lorom_addressing, snes_to_pc,
+};
 pub use pointer::{PointerTable24, SnesPointer24};
