@@ -6287,3 +6287,16 @@ native subtile, reopens it through the complete SMW Map16 loader from the recove
 the live project remains clean, unexpanded, and history-free.
 The complete native gate passes 1,164 active tests with 11 explicit fixture/device ignores,
 including the 512-level materialization audit; all 237 renderer tests pass.
+
+## Crash recovery includes staged aggregate level assets
+
+The installed aggregate level-assets workspace now contributes its independent controller
+revision and prepares its normal atomic mutation on an isolated recovery clone. The boundary
+covers every domain owned by that controller: the complete level record, optional Layer 2 object
+or tilemap storage, per-level palette, ExAnimation and feature state, expanded settings, sprite
+spawn/boundary flags, Layer 3 tilemap/graphics settings, and Super GFX bypass assignments. The
+recovery record retains the selected level and never advances live history. The focused retained-
+fixture test stages a palette change, recovers it, and decodes the complete aggregate while proving
+the live application remains clean. Multi-editor collision detection now includes this workspace.
+The complete native gate passes 1,165 active tests with 11 explicit fixture/device ignores,
+including all 512 pristine levels; all 237 renderer tests pass.

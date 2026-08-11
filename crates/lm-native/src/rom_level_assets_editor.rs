@@ -1631,6 +1631,42 @@ fn layer2_reset_confirmation_is_current(
 }
 
 impl RomLevelAssetsEditor {
+    pub(crate) fn staged_recovery_generation(&self, app: &AppState) -> Option<u64> {
+        let workspace = self.workspace.as_ref()?;
+        workspace.controller.is_modified().then(|| {
+            app.project_revision().wrapping_mul(0xe703_7ed1_a0b4_28db)
+                ^ workspace.controller.revision().rotate_left(31)
+                ^ 0x4c45_5645_4c41_5354
+        })
+    }
+
+    pub(crate) fn staged_recovery_snapshot(
+        &self,
+        app: &AppState,
+    ) -> Result<Option<lm_app::RecoverySnapshot>, String> {
+        let workspace = self
+            .workspace
+            .as_ref()
+            .ok_or("level-assets workspace is closed")?;
+        if !workspace.controller.is_modified() {
+            return Ok(app.recovery_snapshot());
+        }
+        let command = self.prepare_commit()?;
+        let Command::CommitRomMutation {
+            expected_revision,
+            mutation,
+            ..
+        } = command
+        else {
+            return Err("level-assets recovery expected one prepared ROM mutation".into());
+        };
+        if expected_revision != app.project_revision() {
+            return Err("level-assets recovery mutation was prepared from a stale revision".into());
+        }
+        app.recovery_snapshot_with_mutation(&mutation, Some(workspace.source_slot))
+            .map_err(|error| error.to_string())
+    }
+
     fn start_level_image_batch(
         &mut self,
         format: image_batch::LevelImageFormat,
@@ -3565,6 +3601,69 @@ mod tests {
     use std::sync::atomic::{AtomicU64, Ordering};
 
     static NEXT_IMAGE_PATH: AtomicU64 = AtomicU64::new(0);
+
+    #[test]
+    fn staged_installed_level_assets_are_recovered_without_live_commit() {
+        let mut source = image_batch::tests::installed_source(false);
+        source
+            .image
+            .expand(lm_rom::Mapper::LoRom, 0x20_0000, 0xff)
+            .unwrap();
+        let mut expanded = lm_project::Project::new(source.image.clone());
+        expanded.refresh_checksum(0x7fdc).unwrap();
+        source.image = expanded.rom.clone();
+        source.snapshot.rom_bytes = expanded.save_snapshot();
+        let mut app = AppState::default();
+        app.load_rom(source.snapshot.rom_bytes.clone()).unwrap();
+        app.dispatch(Command::SelectLevel(0)).unwrap();
+        let snapshot = app.controller_snapshot().unwrap();
+        let mut controller = source
+            .profile
+            .decode_native_level_assets(&snapshot, source.ownership.clone())
+            .unwrap();
+        let replacement = Bgr555(controller.assets().palette.colors[1].0 ^ 0x001f);
+        controller
+            .apply_edits(&[NativeLevelAssetsControllerEdit::Palette(vec![
+                lm_app::PaletteControllerEdit::ApplyChanges(vec![lm_graphics::PaletteChange {
+                    index: 1,
+                    color: replacement,
+                }]),
+            ])])
+            .unwrap();
+        let editor = RomLevelAssetsEditor {
+            workspace: Some(Workspace {
+                controller,
+                global_exanimation: load_workspace_global_exanimation(
+                    &source.profile,
+                    &source.image,
+                )
+                .unwrap(),
+                snapshot,
+                profile: source.profile.clone(),
+                source_slot: 0,
+                image: source.image.clone(),
+                internal_header: source.snapshot.identity.internal_header_offset,
+                ownership: source.ownership.clone(),
+            }),
+            search_start: "1C0000".into(),
+            search_end: "200000".into(),
+            ..RomLevelAssetsEditor::default()
+        };
+
+        assert!(editor.staged_recovery_generation(&app).is_some());
+        let recovery = editor.staged_recovery_snapshot(&app).unwrap().unwrap();
+        assert_eq!(recovery.level, Some(0));
+        assert_eq!(app.capabilities().project, lm_app::ProjectStatus::OpenClean);
+        assert_eq!(app.project().unwrap().history.undo_len(), 0);
+
+        let mut reopened = AppState::default();
+        reopened.load_recovery(recovery).unwrap();
+        let recovered = source
+            .profile
+            .decode_native_level_assets(&reopened.controller_snapshot().unwrap(), source.ownership)
+            .unwrap();
+        assert_eq!(recovered.assets().palette.colors[1], replacement);
+    }
 
     #[test]
     fn direct_bitmap_export_source_requires_an_open_profiled_level_without_an_ownership_file() {

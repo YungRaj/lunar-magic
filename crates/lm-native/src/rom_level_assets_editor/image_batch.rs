@@ -247,7 +247,7 @@ fn batch_output_path(
 }
 
 #[cfg(test)]
-mod tests {
+pub(super) mod tests {
     use super::{
         BatchImageSource, LevelImageBatchOptions, LevelImageFormat, RunningBatch,
         batch_output_path, export_batch, render_batch_level_canvas,
@@ -265,7 +265,7 @@ mod tests {
     };
     use std::time::{SystemTime, UNIX_EPOCH};
 
-    fn installed_source(headered: bool) -> BatchImageSource {
+    pub(in crate::rom_level_assets_editor) fn installed_source(headered: bool) -> BatchImageSource {
         let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
         let physical = std::fs::read(
             root.join("oracle-work/lm363/pristine-us/mwl-layer3-settings-positive/after.smc"),
