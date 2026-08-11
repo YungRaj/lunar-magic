@@ -145,6 +145,29 @@ pub enum FastRomPatchError {
     FixedRange { offset: usize, len: usize },
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum SmwUsV1FastRomPatchState {
+    Absent,
+    Installed,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum SmwUsV1FastRomPatchDetectError {
+    Truncated { offset: usize, len: usize },
+    PartialOrModified,
+    RuntimeAddress(RomError),
+    RuntimeOwner(lm_rats::HeaderError),
+    RuntimePayload,
+}
+
+impl std::fmt::Display for SmwUsV1FastRomPatchDetectError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(formatter, "invalid SMW US FastROM patch: {self:?}")
+    }
+}
+
+impl std::error::Error for SmwUsV1FastRomPatchDetectError {}
+
 impl std::fmt::Display for FastRomPatchError {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(formatter, "cannot apply SMW FastROM patch: {self:?}")
@@ -226,6 +249,62 @@ const MAP_MODE_OFFSET: usize = 0x007fd5;
 const FIRST_HOOK_WORD_OFFSET: usize = 0x007fea;
 const SECOND_HOOK_WORD_OFFSET: usize = 0x007ffc;
 const PATCH_MARKER_OFFSET: usize = 0x007f_fef;
+
+/// Authenticates the complete fixed hook and dynamically owned runtime contract.
+pub fn detect_smw_us_v1_fastrom_patch(
+    bytes: &[u8],
+) -> Result<SmwUsV1FastRomPatchState, SmwUsV1FastRomPatchDetectError> {
+    let map_mode = detect_exact(bytes, MAP_MODE_OFFSET, 1)?[0];
+    let first_hook = detect_exact(bytes, FIRST_HOOK_WORD_OFFSET, 2)?;
+    let second_hook = detect_exact(bytes, SECOND_HOOK_WORD_OFFSET, 2)?;
+    let trampoline = detect_exact(bytes, TRAMPOLINE_OFFSET, 8)?;
+    let marker = detect_exact(bytes, PATCH_MARKER_OFFSET, 1)?[0];
+    let absent = map_mode == 0x20
+        && first_hook == [0x6a, 0x81]
+        && second_hook == [0x00, 0x80]
+        && trampoline.iter().all(|byte| *byte == 0xff)
+        && marker != lm_rom::LunarMagicRomMetadata::FASTROM_MARKER;
+    if absent {
+        return Ok(SmwUsV1FastRomPatchState::Absent);
+    }
+    if map_mode != 0x30
+        || first_hook != [0x4e, 0xba]
+        || second_hook != [0x52, 0xba]
+        || trampoline[..5] != [0x5c, 0x6a, 0x81, 0x80, 0x5c]
+        || marker != lm_rom::LunarMagicRomMetadata::FASTROM_MARKER
+    {
+        return Err(SmwUsV1FastRomPatchDetectError::PartialOrModified);
+    }
+    let runtime_address =
+        u32::from(trampoline[5]) | u32::from(trampoline[6]) << 8 | u32::from(trampoline[7]) << 16;
+    let payload_offset = snes_to_pc(Mapper::LoRom, runtime_address)
+        .map_err(SmwUsV1FastRomPatchDetectError::RuntimeAddress)?;
+    let header_offset = payload_offset
+        .checked_sub(lm_rats::HEADER_LEN)
+        .ok_or(SmwUsV1FastRomPatchDetectError::RuntimePayload)?;
+    let block = lm_rats::parse_at(bytes, header_offset)
+        .map_err(SmwUsV1FastRomPatchDetectError::RuntimeOwner)?;
+    if block.payload.start != payload_offset
+        || detect_exact(bytes, block.payload.start, block.payload.len())?
+            != [
+                0x78, 0xa9, 0x01, 0x8d, 0x0d, 0x42, 0x5c, 0x00, 0x80, 0x80, 0xff, 0xff, 0xff, 0xff,
+                0xff, 0xff,
+            ]
+    {
+        return Err(SmwUsV1FastRomPatchDetectError::RuntimePayload);
+    }
+    Ok(SmwUsV1FastRomPatchState::Installed)
+}
+
+fn detect_exact(
+    bytes: &[u8],
+    offset: usize,
+    len: usize,
+) -> Result<&[u8], SmwUsV1FastRomPatchDetectError> {
+    bytes
+        .get(offset..offset.saturating_add(len))
+        .ok_or(SmwUsV1FastRomPatchDetectError::Truncated { offset, len })
+}
 
 /// Builds the failure-atomic core FastROM installation plan for ordinary SMW US revision 0.
 /// The caller supplies the profile-wide protected allocation policy used for the 16-byte runtime.
@@ -419,6 +498,10 @@ mod tests {
             plan.payloads[0].bytes
         );
         let reopened = lm_rom::RomImage::from_bytes(project.save_snapshot()).unwrap();
+        assert_eq!(
+            detect_smw_us_v1_fastrom_patch(reopened.logical_bytes()),
+            Ok(SmwUsV1FastRomPatchState::Installed)
+        );
         assert_eq!(reopened.logical_bytes()[MAP_MODE_OFFSET], 0x30);
         assert_eq!(
             reopened.logical_bytes()[PATCH_MARKER_OFFSET],
@@ -426,5 +509,41 @@ mod tests {
         );
         project.undo().unwrap();
         assert_eq!(project.save_snapshot(), original);
+        let restored = lm_rom::RomImage::from_bytes(original).unwrap();
+        assert_eq!(
+            detect_smw_us_v1_fastrom_patch(restored.logical_bytes()),
+            Ok(SmwUsV1FastRomPatchState::Absent)
+        );
+    }
+
+    #[test]
+    fn detector_rejects_every_owned_runtime_region() {
+        let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let original =
+            std::fs::read(root.join("oracle-work/lm363/pristine-us/level-save-000/after.smc"))
+                .unwrap();
+        let mut project =
+            lm_project::Project::open_supported(lm_rom::RomImage::from_bytes(original).unwrap())
+                .unwrap();
+        let len = project.rom.logical_len();
+        let plan = smw_us_v1_fastrom_patch_plan(
+            project.rom.logical_bytes(),
+            AllocationPolicy::lorom(0x8_7e6f..len),
+            crate::SMW_US_V1_CHECKSUM_FIELD,
+        )
+        .unwrap();
+        let result = project.install_relocatable_patch(&plan).unwrap();
+        for offset in [
+            MAP_MODE_OFFSET,
+            FIRST_HOOK_WORD_OFFSET,
+            SECOND_HOOK_WORD_OFFSET,
+            TRAMPOLINE_OFFSET,
+            PATCH_MARKER_OFFSET,
+            result.blocks[0].payload.start,
+        ] {
+            let mut corrupt = project.rom.logical_bytes().to_vec();
+            corrupt[offset] ^= 1;
+            assert!(detect_smw_us_v1_fastrom_patch(&corrupt).is_err());
+        }
     }
 }

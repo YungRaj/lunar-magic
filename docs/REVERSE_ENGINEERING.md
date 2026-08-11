@@ -5156,3 +5156,9 @@ packed 24-bit pointers; the guarded conversion changes a bank below `$10` only w
 in `$8000..$FFFF`. At `$00490A20..$00490C08`, twenty-four source addresses at `$005E9D88`
 identify exact `A9 bank 48 AB` (`LDA #bank / PHA / PLB`) sequences and set the immediate bank's
 high bit. Pristine SMW has 747 qualifying packed pointers and all 24 bank-load sequences.
+
+Rust's patch-state detector authenticates the entire owned installation rather than trusting
+feature marker 8 alone: map mode, both original hook words, all eight trampoline bytes, the
+decoded runtime pointer, its immediately preceding RATS owner, and the exact 16-byte speed
+runtime must agree. Partial installations and one-byte mutations are rejected. An installed
+retained fixture reopens as `Installed`; byte-exact Undo returns it to `Absent`.

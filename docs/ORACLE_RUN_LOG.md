@@ -1406,3 +1406,8 @@ the marker and map mode intact, and one Undo restores the exact original ROM. Fi
 pass. This core intentionally accepts an externally resolved protected allocation policy; the
 remaining work is to derive Lunar Magic's ROM-specific search cursor/85-byte ownership record and
 then expose the completed transaction through `$24CD`.
+
+The follow-up strict detector verifies every fixed location plus the dynamically addressed RATS
+owner and exact speed-runtime payload. Corruption probes independently alter the map-mode byte,
+both hooks, trampoline, marker, and runtime; all are rejected. Installation/reopen and byte-exact
+Undo classify as `Installed` and `Absent` respectively. The focused FastROM suite passes 6/6.
