@@ -5,8 +5,11 @@ use crate::{
 };
 use eframe::egui;
 use lm_app::{AppState, Command};
-use lm_profile::smw_us_v1_title_recording_locator;
 use lm_profile::smw_us_v1_title_recording_recorder_locator;
+use lm_profile::{
+    SMW_US_V1_CHECKSUM_FIELD, SMW_US_V1_TITLE_RECORDING_RECLAIM_FILL,
+    smw_us_v1_title_recording_allocation_policy, smw_us_v1_title_recording_locator,
+};
 use lm_project::TitleRecordingRecorderState;
 use lm_title::{
     TitleScreenRecording, decode_snes9x_title_recording, decode_zsnes_title_recording,
@@ -49,6 +52,53 @@ pub(crate) struct RomTitleRecordingEditor {
 }
 
 impl RomTitleRecordingEditor {
+    pub(crate) fn staged_recovery_generation(&self, app: &AppState) -> Option<u64> {
+        let workspace = self.workspace.as_ref()?;
+        workspace.is_dirty().then(|| {
+            let content_revision = workspace
+                .text
+                .as_bytes()
+                .iter()
+                .fold(0x5449_544c_4552_4543_u64, |revision, byte| {
+                    revision.rotate_left(5) ^ u64::from(*byte)
+                });
+            app.project_revision().wrapping_mul(0xbf58_476d_1ce4_e5b9)
+                ^ workspace.revision.rotate_left(31)
+                ^ content_revision
+        })
+    }
+
+    pub(crate) fn staged_recovery_snapshot(
+        &self,
+        app: &AppState,
+    ) -> Result<Option<lm_app::RecoverySnapshot>, String> {
+        let workspace = self
+            .workspace
+            .as_ref()
+            .ok_or("title-recording workspace is closed")?;
+        if !workspace.is_dirty() {
+            return Ok(app.recovery_snapshot());
+        }
+        if workspace.revision != app.project_revision() {
+            return Err("stale title-recording workspace cannot be recovered".into());
+        }
+        let recording = parse_recording(&workspace.text)?;
+        let mut staged = app.project().ok_or("open a supported ROM first")?.clone();
+        let locator = smw_us_v1_title_recording_locator();
+        let allocation = smw_us_v1_title_recording_allocation_policy(staged.rom.logical_len());
+        staged
+            .save_title_recording_detected(
+                &recording,
+                &locator,
+                &allocation,
+                SMW_US_V1_CHECKSUM_FIELD,
+                SMW_US_V1_TITLE_RECORDING_RECLAIM_FILL,
+            )
+            .map_err(|error| error.to_string())?;
+        app.recovery_snapshot_with_current_rom(staged.save_snapshot(), app.current_level())
+            .map_err(|error| error.to_string())
+    }
+
     pub(crate) fn is_open(&self) -> bool {
         self.workspace.is_some()
     }
@@ -484,6 +534,38 @@ mod tests {
         app.load_rom(crate::test_support::pristine_smw_us_rom_bytes())
             .unwrap();
         app
+    }
+
+    #[test]
+    fn staged_title_recording_is_recovered_without_committing_live_project() {
+        let app = pristine_app();
+        let mut editor = RomTitleRecordingEditor::default();
+        editor.open(&app);
+        editor.workspace.as_mut().unwrap().text = "12 34 56 FF".into();
+
+        assert!(editor.staged_recovery_generation(&app).is_some());
+        let recovery = editor.staged_recovery_snapshot(&app).unwrap().unwrap();
+        assert_eq!(app.capabilities().project, lm_app::ProjectStatus::OpenClean);
+        assert_eq!(app.project().unwrap().history.undo_len(), 0);
+        assert!(
+            app.project()
+                .unwrap()
+                .load_title_recording_detected(&smw_us_v1_title_recording_locator())
+                .unwrap()
+                .recording
+                .is_none()
+        );
+
+        let mut reopened = AppState::default();
+        reopened.load_recovery(recovery).unwrap();
+        let recording = reopened
+            .project()
+            .unwrap()
+            .load_title_recording_detected(&smw_us_v1_title_recording_locator())
+            .unwrap()
+            .recording
+            .unwrap();
+        assert_eq!(recording.bytes(), [0x12, 0x34, 0x56, 0xff]);
     }
 
     #[test]

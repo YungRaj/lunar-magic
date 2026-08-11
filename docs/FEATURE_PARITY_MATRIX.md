@@ -392,7 +392,12 @@ content-sensitive recovery for the complete 255-row assignment table and both pe
 domains through their ordinary allocation-, checksum-, and reopen-verified mutation;
 `staged_legacy_graphics_bypass_is_recovered_without_committing_live_project` proves the live project
 stays clean while the recovered selected level retains the exact selector and four-file row. Other
-editor-local staged forms remain part of the Release-row gap.
+editor-local staged forms remain part of the Release-row gap. Title-screen recording text now also
+participates through a content-sensitive generation: recovery validates the exact bounded movement
+payload and uses the ordinary detected allocation/checksum/reclaim policy on an isolated clone,
+while recorder install/uninstall remains ordinary immediately committed project state.
+`staged_title_recording_is_recovered_without_committing_live_project` proves the pristine live ROM
+stays patch-free and the recovered ROM reopens the exact movement bytes.
 
 ## Workflow ledger
 

@@ -6398,3 +6398,17 @@ The focused test stages a foreground/background selector plus all four row assig
 clean live project retains neither change, and then reloads both exactly from the recovered ROM at
 the retained level. The complete native gate passes 1,172 tests with 11 explicit fixture/device
 ignores, including all 512 pristine-level materializations; the renderer remains green at 237/237.
+
+## Crash recovery includes staged title-screen recordings
+
+The title-recording editor now contributes a content-sensitive recovery generation for its staged
+movement text. Recovery validates the complete bounded hexadecimal payload, rejects stale or invalid
+text visibly, and applies the same detected locator, allocation policy, checksum field, and reclaim
+fill as the ordinary installed-ROM command to an isolated clone. Temporary recorder installation
+and removal already mutate the live project immediately and therefore remain covered by ordinary
+project recovery rather than being double-applied as editor-local state.
+
+The focused test starts from a pristine ROM with no playback patch, stages a four-byte movement,
+proves the live project remains clean and patch-free, then reopens the exact installed recording
+from recovery. The renderer remains green at 237/237, and the 512-level materialization audit
+completed without a rendering failure.
