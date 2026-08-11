@@ -4,7 +4,8 @@ use lm_app::{
     OverworldControllerEdit, OverworldLayerId,
 };
 use lm_graphics::{
-    Bgr555, CompactExAnimation, ExAnimationRecord, Palette, PaletteChange, PaletteOwnership,
+    Bgr555, CompactExAnimation, ExAnimationFrame, ExAnimationFrameEdit, ExAnimationRecord, Palette,
+    PaletteChange, PaletteOwnership,
 };
 use lm_overworld::{
     EventReveal, EventRevealTable, NativeCustomOverworldSprite, NativeCustomOverworldSpriteTable,
@@ -395,14 +396,57 @@ fn edit_interactively_variant(physical: Vec<u8>, pointer_base: usize) -> Vec<u8>
                     extra: vec![0xcc, 0xdd],
                 },
             },
-            OverworldControllerEdit::PaletteChanges(vec![PaletteChange {
-                index: 3,
-                color: Bgr555(0x1234),
-            }]),
-            OverworldControllerEdit::Animation(vec![ExAnimationControllerEdit::ReplaceRecord {
-                index: 0,
-                record: animation_record(12),
-            }]),
+            OverworldControllerEdit::PaletteChanges(vec![
+                PaletteChange {
+                    index: 0,
+                    color: Bgr555(0x0123),
+                },
+                PaletteChange {
+                    index: 15,
+                    color: Bgr555(0x1234),
+                },
+            ]),
+            OverworldControllerEdit::Animation(vec![
+                ExAnimationControllerEdit::SetSetting(7),
+                ExAnimationControllerEdit::SetHeaderValue(0x89ab_cdef),
+                ExAnimationControllerEdit::SetTrigger {
+                    trigger: 0,
+                    value: None,
+                },
+                ExAnimationControllerEdit::SetTrigger {
+                    trigger: 15,
+                    value: Some(0x5a),
+                },
+                ExAnimationControllerEdit::ReplaceRecord {
+                    index: 0,
+                    record: animation_record(12),
+                },
+                ExAnimationControllerEdit::InsertRecord {
+                    index: 1,
+                    record: animation_record(13),
+                },
+                ExAnimationControllerEdit::MoveRecordBefore { from: 1, before: 0 },
+                ExAnimationControllerEdit::EditRecordFrames {
+                    record: 0,
+                    edits: vec![
+                        ExAnimationFrameEdit::Insert {
+                            index: 1,
+                            frame: ExAnimationFrame {
+                                source_words: vec![0x4567],
+                            },
+                        },
+                        ExAnimationFrameEdit::Replace {
+                            index: 0,
+                            frame: ExAnimationFrame {
+                                source_words: vec![0x2345],
+                            },
+                        },
+                        ExAnimationFrameEdit::MoveBefore { from: 1, before: 0 },
+                        ExAnimationFrameEdit::Remove { index: 1 },
+                    ],
+                },
+                ExAnimationControllerEdit::RemoveRecord { index: 1 },
+            ]),
         ])
         .unwrap();
     let expected = controller.data().clone();
@@ -425,6 +469,22 @@ fn edit_interactively_variant(physical: Vec<u8>, pointer_base: usize) -> Vec<u8>
     );
     assert!(detect_identity(&project.rom).unwrap().checksum_matches());
     let edited = project.rom.as_file_bytes().to_vec();
+    let reopened_identity = detect_identity(&project.rom).unwrap();
+    let reopened = OverworldController::decode(
+        &ControllerSnapshot {
+            revision: 11,
+            mode: EditorMode::Overworld,
+            identity: reopened_identity,
+            document_path: None,
+            rom_bytes: edited.clone(),
+        },
+        0,
+        layout,
+        &MODES,
+        PaletteOwnership::editable(16),
+    )
+    .unwrap();
+    assert_eq!(reopened.data(), &expected);
     assert!(project.undo().unwrap());
     assert_eq!(project.rom.as_file_bytes(), original);
     assert!(project.redo().unwrap());

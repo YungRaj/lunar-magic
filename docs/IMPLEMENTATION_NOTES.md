@@ -6705,3 +6705,20 @@ native adapter's semantic staging route directly. The lower-level raw-mutation c
 continues to validate overlap and repair the final checksum for same-size callers; it deliberately
 rejects raw growth that lacks semantic allocation information. Native compilation, all 237 renderer
 tests, and a fresh 488-image pristine corpus hash comparison pass.
+
+## Complete overworld palette and ExAnimation variant persistence
+
+`interactive_overworld_edits_match_every_supported_identity_and_layout_variant` now exercises the
+complete semantic palette/ExAnimation editing surface across the accepted physical ROM product:
+SMW North America, SMW Japan, and All-Stars + World North America; LoROM `$20`, Fast LoROM `$30`,
+SA-1 `$23`, and ExLoROM `$32`; two independently placed pointer-table families; and copier-header
+absence/presence. The animation transaction changes the setting, header value, absent and present
+trigger endpoints, record replacement/insertion/reordering/removal, and frame
+insertion/replacement/reordering/removal. Palette edits cover both ends of the owned range.
+
+Each of the 48 physical cases reopens the complete aggregate through both the project decoder and a
+fresh application controller, retains a valid checksum, preserves an exact 512-byte copier prefix,
+restores and reapplies exact physical bytes through one Undo/Redo boundary, and produces identical
+logical output across header forms. This closes the supported mapper/identity persistence evidence
+for these two domains; the parity-matrix row remains Partial pending broader original-editor
+behavioral evidence.
