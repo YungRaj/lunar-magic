@@ -3395,6 +3395,16 @@ restores the native default instead of encoding an invented empty custom layout.
 `LMTBAR01` bytes persist through native application storage, while configured layouts without a
 localization catalog use a complete English fallback table rather than disappearing.
 
+This dialog is a Rust extension, not an original parity requirement. The authenticated Lunar Magic
+3.63 CHM exposes toolbar customization through executable-adjacent `usertoolbar.txt`, and the
+complete 318-slot Ghidra command table contains no global customization-dialog command. The
+original file-driven surface is complete: retained Wine proves a distinct two-button
+`ToolbarWindow32` beside the 52-button main toolbar; parser, image, shortcut, lifecycle,
+notification, and all 317 named-command routes pass; isolated Wine exercises Windows icon and key
+ABIs; and both `lm-windows` and the complete native frontend cross-compile for
+`x86_64-pc-windows-gnu`. The matrix therefore counts the original GUI/variant boundary as Pass
+without pretending the optional Rust dialog existed in Lunar Magic.
+
 The separate original `usertoolbar.txt` surface is now modeled independently rather than being
 conflated with that Rust-only editor. The bounded UTF-8 parser implements Lunar Magic's documented
 five-line definitions, implicit `***START***` termination, spacers, internal and external targets,
