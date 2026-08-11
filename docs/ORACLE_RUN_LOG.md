@@ -1433,3 +1433,14 @@ conversions plus fixed hooks, trampoline, runtime, map mode, marker, and checksu
 `Installed`. One Undo restores the prior enabled-addressing ROM, and a second restores the original
 physical bytes. Focused application tests pass 3/3 and the exhaustive native partition passes at
 315/317, leaving only `$24D3` and `$24D6` pending.
+
+## Prefer-past-2-MiB allocation option (2026-08-11)
+
+Ghidra command case `$9C` authenticates `$24D3` as a toggle of byte `$005E7B23`, persisted in
+registry `Options` bit 18 with a default-on missing-value mask. Its two allocator consumers prove
+the option changes search priority rather than granting expansion: on an ordinary ROM already
+larger than `$200200` physical bytes, enabled mode tries space at and above that boundary before
+the lower interval and retains the normal fallback. Rust now persists and routes the option,
+propagates it into application allocation state, and uses it when placing the FastROM runtime.
+The two focused native tests, three FastROM application tests, and exhaustive route-partition test
+pass. Authenticated command coverage is 316/317; only `$24D6` remains pending.

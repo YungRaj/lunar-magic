@@ -493,6 +493,11 @@ impl NativeApplication {
             UserToolbarNativeAction::CorrectFatalErrors => {
                 self.set_correct_fatal_errors(!self.correct_fatal_errors.unwrap_or(true));
             }
+            UserToolbarNativeAction::PrioritizeAllocationsPast2Mb => {
+                let enabled = !self.prioritize_allocations_past_2mb.unwrap_or(true);
+                self.prioritize_allocations_past_2mb = Some(enabled);
+                self.app.set_prioritize_allocations_past_2mb(enabled);
+            }
             UserToolbarNativeAction::WarnIpsSiblingOnSave => {
                 self.set_warn_ips_sibling_on_save(!self.warn_ips_sibling_on_save.unwrap_or(true));
             }
@@ -2055,6 +2060,7 @@ enum UserToolbarNativeAction {
     SaveMouseGestures,
     UseFastRomAddressing,
     ApplyFastRomPatch,
+    PrioritizeAllocationsPast2Mb,
     InstallVramPatch,
     VramPatchOptions,
     GraphicsCompressionOptions,
@@ -2187,6 +2193,7 @@ fn user_toolbar_native_action(name: &str) -> Option<UserToolbarNativeAction> {
         "LM_OPTIONS_SAVE_GESTURES" => UserToolbarNativeAction::SaveMouseGestures,
         "LM_OPTIONS_USE_FASTROM" => UserToolbarNativeAction::UseFastRomAddressing,
         "LM_OPTIONS_PATCH_FASTROM" => UserToolbarNativeAction::ApplyFastRomPatch,
+        "LM_OPTIONS_PAST_2MB" => UserToolbarNativeAction::PrioritizeAllocationsPast2Mb,
         "LM_OPTIONS_INSTALL_VRAM" => UserToolbarNativeAction::InstallVramPatch,
         "LM_OPTIONS_VRAM" => UserToolbarNativeAction::VramPatchOptions,
         "LM_OPTIONS_COMPRESSION" => UserToolbarNativeAction::GraphicsCompressionOptions,
@@ -3252,7 +3259,7 @@ mod user_toolbar_tests {
                     || user_toolbar_native_action(entry.name).is_some()
             })
             .collect::<Vec<_>>();
-        assert_eq!(supported.len(), 315);
+        assert_eq!(supported.len(), 316);
         assert!(
             supported
                 .iter()
@@ -3266,6 +3273,31 @@ mod user_toolbar_tests {
             user_toolbar_native_action("LM_OPTIONS_PATCH_FASTROM"),
             Some(UserToolbarNativeAction::ApplyFastRomPatch)
         );
+        assert_eq!(
+            user_toolbar_native_action("LM_OPTIONS_PAST_2MB"),
+            Some(UserToolbarNativeAction::PrioritizeAllocationsPast2Mb)
+        );
+    }
+
+    #[test]
+    fn past_2mb_toolbar_route_toggles_the_original_default_on_preference() {
+        let mut native = NativeApplication::default();
+        assert_eq!(native.prioritize_allocations_past_2mb, None);
+        assert!(native.app.prioritize_allocations_past_2mb());
+
+        native.apply_user_toolbar_native_action(
+            &egui::Context::default(),
+            UserToolbarNativeAction::PrioritizeAllocationsPast2Mb,
+        );
+        assert_eq!(native.prioritize_allocations_past_2mb, Some(false));
+        assert!(!native.app.prioritize_allocations_past_2mb());
+
+        native.apply_user_toolbar_native_action(
+            &egui::Context::default(),
+            UserToolbarNativeAction::PrioritizeAllocationsPast2Mb,
+        );
+        assert_eq!(native.prioritize_allocations_past_2mb, Some(true));
+        assert!(native.app.prioritize_allocations_past_2mb());
     }
 
     #[test]

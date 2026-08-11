@@ -1312,7 +1312,13 @@ converts all three recovered pointer families, installs the fixed trampoline and
 runtime, writes map mode and marker 8, repairs the checksum, reopens as `Installed`, and undoes in
 one step. Its allocator starts after the highest valid expanded-area RATS owner, preserves existing
 ROM size when trailing space exists, and uses the recovered bank-at-a-time expansion retry only on
-exhaustion. The remaining commands are prefer-past-2-MiB and SA-1 RAM remap. The aggregate remains
+exhaustion. `LM_OPTIONS_PAST_2MB` `$24D3` now routes as the original default-on persisted
+allocation-order preference. Ghidra binds it to registry `Options` bit 18 and proves the two
+allocator consumers try physical `$200200` and above before lower free space in already-expanded
+ordinary ROMs; Rust persists the option, propagates it into application allocation state, and
+applies it to the FastROM runtime transaction. Toggle, persistence, routing, and FastROM regression
+tests pass. The authenticated partition is now **316 routed / 1 pending**; SA-1 RAM remap remains.
+The aggregate remains
 59/65 because the configuration row is still Partial.
 
 Toolbar coverage update (2026-08-11, current per-ROM VRAM patch options): authenticated

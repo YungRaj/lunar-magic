@@ -6171,3 +6171,15 @@ active native tests with 13 explicit fixture ignores, the 235-test renderer suit
 Windows cross-build. All 512 pristine levels materialize, and the regenerated 513-line semantic
 manifest remains byte-identical at SHA-256
 `254a1a050d12785973241910e26d8b7917a5cb5e2a56602a330fc6cbd833c04d`.
+
+## Prefer allocation above 2 MiB (`$24D3`)
+
+The final generic allocation option is now authenticated rather than inferred from its toolbar
+name. Original command case `$9C` toggles global byte `$005E7B23`; registry synchronization maps
+it exactly to default-on `Options` bit 18. Both recovered allocation engines consult it only for
+ordinary ROMs already beyond physical `$200200`, trying the upper interval first and falling back
+to their existing lower-space and growth paths. The Rust frontend persists the same default-on
+choice, exposes it through the authenticated toolbar route, propagates it into `AppState`, and
+uses it for relocatable FastROM runtime placement. Focused toggle, persistence, route-partition,
+and FastROM tests pass. Authenticated native command coverage is now 316 of 317 named slots; only
+the ROM-scoped SA-1 RAM-remap option remains pending.

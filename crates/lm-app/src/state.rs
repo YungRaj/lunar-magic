@@ -70,6 +70,7 @@ pub struct AppState {
     pub(crate) level_navigation: LevelNavigationHistory,
     undo_history: UndoHistoryPreference,
     maintain_checksum: Option<bool>,
+    prioritize_allocations_past_2mb: Option<bool>,
     silently_add_copier_header: Option<bool>,
 }
 
@@ -788,6 +789,17 @@ impl AppState {
     #[must_use]
     pub fn maintain_checksum(&self) -> bool {
         self.maintain_checksum.unwrap_or(true)
+    }
+
+    /// Controls whether relocatable data prefers free space above the first 2 MiB.
+    /// Lunar Magic defaults registry `Options` bit 18 on when no preference exists.
+    pub fn set_prioritize_allocations_past_2mb(&mut self, enabled: bool) {
+        self.prioritize_allocations_past_2mb = Some(enabled);
+    }
+
+    #[must_use]
+    pub fn prioritize_allocations_past_2mb(&self) -> bool {
+        self.prioritize_allocations_past_2mb.unwrap_or(true)
     }
 
     pub fn set_silently_add_copier_header(&mut self, enabled: bool) {

@@ -5162,3 +5162,14 @@ feature marker 8 alone: map mode, both original hook words, all eight trampoline
 decoded runtime pointer, its immediately preceding RATS owner, and the exact 16-byte speed
 runtime must agree. Partial installations and one-byte mutations are rejected. An installed
 retained fixture reopens as `Installed`; byte-exact Undo returns it to `Absent`.
+
+## Prefer allocation past 2 MiB
+
+`LM_OPTIONS_PAST_2MB` `$24D3` selects command case `$9C`, which toggles byte `$005E7B23` and
+updates the checked state without touching the open ROM. `SynchronizeApplicationSettingsRegistry`
+stores that byte as `Options` bit 18 and defaults it on through the missing-value mask `$007FFFFF`.
+The only non-UI consumers are `AllocateMappedRomSpaceWithGrowth` `$004A84D0` and
+`AllocateRomSpaceWithExpansion` `$004A8810`. For an already expanded ordinary ROM larger than
+`$200200` physical bytes, enabled mode tries free space beginning at physical `$200200` before
+the lower search interval, then retains the ordinary fallback and growth paths. It is therefore
+an allocation-order preference, not permission to expand beyond 2 MiB.

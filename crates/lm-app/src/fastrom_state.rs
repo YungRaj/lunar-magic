@@ -59,6 +59,7 @@ impl AppState {
         }
         self.require_no_pending_save()?;
         self.ensure_project_revision_capacity()?;
+        let prioritize_past_2mb = self.prioritize_allocations_past_2mb();
         let project = self.project.as_mut().ok_or(AppError::NoProject)?;
         let identity = project.identity.as_ref().ok_or(AppError::NoProject)?;
         if identity.game != SupportedGame::SuperMarioWorld
@@ -82,13 +83,16 @@ impl AppState {
         }
 
         let bytes = project.rom.logical_bytes();
-        let allocation_start = lm_rats::scan(bytes)
+        let mut allocation_start = lm_rats::scan(bytes)
             .into_iter()
             .filter(|block| block.header_offset >= 0x08_0000)
             .map(|block| block.payload.end)
             .max()
             .unwrap_or(0x08_0000)
             .min(bytes.len());
+        if prioritize_past_2mb && bytes.len() > 0x20_0000 {
+            allocation_start = allocation_start.max(0x20_0000);
+        }
         let plan = lm_profile::smw_us_v1_fastrom_patch_plan(
             bytes,
             AllocationPolicy::lorom(allocation_start..bytes.len()),
