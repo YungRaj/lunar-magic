@@ -471,6 +471,11 @@ The recovery coordinator also composes simultaneous staged path and warp editors
 persistence order on one isolated allocation image instead of rejecting or byte-merging them.
 `simultaneous_pristine_path_and_warp_growth_allocate_and_recover_together` proves both pristine
 runtime installations coexist, both complete tables reopen exactly, and live state stays clean.
+The coordinator likewise composes all four simultaneously staged overworld event domains through
+typed, allocation-aware persistence on one isolated project.
+`simultaneous_pristine_event_family_installs_and_recovers_every_domain` proves full event-number
+installation, ordinary reveal growth, special-event installation, and both compressed tilemap
+streams coexist and reopen exactly while live state remains clean.
 
 ## Workflow ledger
 

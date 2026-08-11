@@ -1917,6 +1917,39 @@ impl eframe::App for NativeApplication {
                         )
                         .map_err(|error| error.to_string());
                 }
+                if staged_editors == 4
+                    && event_number_recovery_revision.is_some()
+                    && event_reveal_recovery_revision.is_some()
+                    && special_event_recovery_revision.is_some()
+                    && event_tilemap_recovery_revision.is_some()
+                {
+                    let numbers = self
+                        .rom_overworld_event_number_editor
+                        .staged_recovery_map(&self.app)?
+                        .ok_or("staged event-number recovery map disappeared")?;
+                    let reveals = self
+                        .rom_overworld_event_reveal_editor
+                        .staged_recovery_table(&self.app)?
+                        .ok_or("staged event-reveal recovery table disappeared")?;
+                    let special = self
+                        .rom_overworld_special_event_editor
+                        .staged_recovery_table(&self.app)?
+                        .ok_or("staged special-event recovery table disappeared")?;
+                    let tilemaps = self
+                        .rom_overworld_event_tilemap_editor
+                        .staged_recovery_buffers(&self.app)?
+                        .ok_or("staged event-tilemap recovery buffers disappeared")?;
+                    return self
+                        .app
+                        .recovery_snapshot_with_overworld_event_family(
+                            numbers,
+                            reveals,
+                            special,
+                            tilemaps,
+                            self.app.current_level(),
+                        )
+                        .map_err(|error| error.to_string());
+                }
                 if staged_editors > 1 {
                     return Err(
                         "cannot compose simultaneous staged level, level-assets, expanded settings, legacy graphics bypass, title recording, shared palette, overworld/boss messages, secondary exits, overworld level names/player starts/settings/special events/event numbers/event reveals/event tilemaps/metadata/path/warp links, graphics, ExAnimation, title/credits tilemap, palette, Map16, or overworld recovery yet".into(),

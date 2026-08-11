@@ -6557,6 +6557,21 @@ tables, reopens both exact installed tables from one recovery record, retains le
 proves the live project remains clean and history-free. Both navigation editor families and all 237
 renderer tests remain green.
 
+## Crash recovery composes the complete staged overworld event family
+
+The recovery coordinator now recognizes simultaneous event-number, ordinary reveal, special-event,
+and event-tilemap workspaces and applies all four typed persistence routes sequentially to one
+isolated project. This is allocation-aware: pristine full-map installation, reveal-table growth,
+special-event runtime installation, and both compressed tilemap streams all see the preceding
+staged allocation state. Workspace revisions are validated before composition; other unsupported
+simultaneous combinations still fail visibly.
+
+`simultaneous_pristine_event_family_installs_and_recovers_every_domain` installs all four domains
+from one pristine ROM, reopens the complete 256-byte number map, 113-record reveal table, all 24
+special records, and both 2,048-tile buffers exactly, retains level `$105`, and proves the live
+project is clean and history-free. All twelve focused event-editor tests and all 237 renderer tests
+remain green.
+
 ## Crash recovery includes the complete staged overworld event-number map
 
 The standalone event-number editor now contributes a content-sensitive generation over the exact

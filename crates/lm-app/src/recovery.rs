@@ -112,6 +112,25 @@ impl AppState {
         self.recovery_snapshot_with_current_rom(staged.save_snapshot(), level)
     }
 
+    /// Persists all four staged overworld-event domains sequentially into one isolated project so
+    /// their pristine installers allocate against a shared evolving ROM image.
+    pub fn recovery_snapshot_with_overworld_event_family(
+        &self,
+        numbers: &lm_overworld::EventNumberMap,
+        reveals: &lm_overworld::EventRevealTable,
+        special: &lm_overworld::SpecialEventRevealTable,
+        tilemaps: &lm_overworld::EventTilemapBuffers,
+        level: Option<u16>,
+    ) -> Result<Option<RecoverySnapshot>, AppError> {
+        let project = self.project.as_ref().ok_or(AppError::NoProject)?;
+        let mut staged = project.clone();
+        crate::save_native_overworld_event_number_map_to_project(&mut staged, numbers)?;
+        crate::save_native_overworld_event_reveals_to_project(&mut staged, reveals)?;
+        crate::save_native_special_event_reveals_to_project(&mut staged, special)?;
+        crate::save_native_overworld_event_tilemaps_to_project(&mut staged, tilemaps)?;
+        self.recovery_snapshot_with_current_rom(staged.save_snapshot(), level)
+    }
+
     /// Restores a recovery record as an unnamed, dirty project.
     ///
     /// The original path is deliberately not restored. The first explicit save therefore uses
@@ -201,5 +220,91 @@ mod tests {
                 .table,
             warps
         );
+    }
+
+    #[test]
+    fn simultaneous_pristine_event_family_installs_and_recovers_every_domain() {
+        use lm_overworld::{EventReveal, EventTilemapBuffers};
+        use lm_profile::{
+            load_smw_us_v1_event_tilemaps, smw_us_v1_overworld_event_number_map_locator,
+            smw_us_v1_overworld_event_reveal_locator, smw_us_v1_special_event_reveal_locator,
+        };
+
+        let mut app = AppState::default();
+        app.load_rom(crate::test_support::pristine_smw_us_rom_bytes())
+            .unwrap();
+        let project = app.project().unwrap();
+        let mut numbers =
+            project
+                .load_overworld_event_number_map_detected(
+                    smw_us_v1_overworld_event_number_map_locator(),
+                )
+                .unwrap()
+                .map;
+        numbers.set(0xff, 0x7e);
+        let mut reveals = project
+            .load_overworld_event_reveals_detected(smw_us_v1_overworld_event_reveal_locator())
+            .unwrap()
+            .table;
+        reveals.entries.push(EventReveal {
+            source_tile: 0x321,
+            destination_tile: 0x654,
+        });
+        let mut special = project
+            .load_special_event_reveals_detected(smw_us_v1_special_event_reveal_locator())
+            .unwrap()
+            .table;
+        special.reveals[23] = EventReveal {
+            source_tile: 0x456,
+            destination_tile: 0x765,
+        };
+        special.directions[23] = 3;
+        let mut tilemaps = EventTilemapBuffers::default();
+        tilemaps.primary_bytes_mut()[0xfff] = 0xa5;
+        tilemaps.secondary_high_bytes_mut()[0x7ff] = 0x5a;
+
+        let recovery = app
+            .recovery_snapshot_with_overworld_event_family(
+                &numbers,
+                &reveals,
+                &special,
+                &tilemaps,
+                Some(0x105),
+            )
+            .unwrap()
+            .unwrap();
+        assert_eq!(app.capabilities().project, crate::ProjectStatus::OpenClean);
+        assert_eq!(app.project().unwrap().history.undo_len(), 0);
+        let mut reopened = AppState::default();
+        reopened.load_recovery(recovery).unwrap();
+        let project = reopened.project().unwrap();
+        assert_eq!(
+            project
+                .load_overworld_event_number_map_detected(
+                    smw_us_v1_overworld_event_number_map_locator(),
+                )
+                .unwrap()
+                .map,
+            numbers
+        );
+        assert_eq!(
+            project
+                .load_overworld_event_reveals_detected(smw_us_v1_overworld_event_reveal_locator(),)
+                .unwrap()
+                .table,
+            reveals
+        );
+        assert_eq!(
+            project
+                .load_special_event_reveals_detected(smw_us_v1_special_event_reveal_locator())
+                .unwrap()
+                .table,
+            special
+        );
+        assert_eq!(
+            load_smw_us_v1_event_tilemaps(project).unwrap().buffers,
+            tilemaps
+        );
+        assert_eq!(reveals.entries.len(), 113);
     }
 }
