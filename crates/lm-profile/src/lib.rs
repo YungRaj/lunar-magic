@@ -81,6 +81,7 @@ mod vanilla_level_palette;
 
 pub use fastrom_patch::{
     FastRomPatchError, apply_smw_us_v1_fastrom_jsl_pass, apply_smw_us_v1_fastrom_pointer_passes,
+    smw_us_v1_fastrom_patch_plan,
 };
 mod vanilla_object_family;
 mod vanilla_smw;

@@ -1,6 +1,8 @@
 //! Authenticated Lunar Magic 3.63 FastROM conversion primitives for SMW US revision 0.
 
-use lm_rom::{Mapper, RomError, snes_to_pc};
+use lm_project::{PatchFixup, PatchFixupEncoding, PatchPayload, PatchWrite, RelocatablePatchPlan};
+use lm_rats::AllocationPolicy;
+use lm_rom::{Mapper, RomError, pc_to_snes, snes_to_pc};
 
 const ERSANIO_JSL_SOURCES: &[u32] = &[
     0x808203, 0x808209, 0x808e6b, 0x809325, 0x8094a3, 0x8094f2, 0x809529, 0x80953f, 0x809557,
@@ -140,6 +142,7 @@ const BANK_LOAD_SOURCES: &[u32] = &[
 pub enum FastRomPatchError {
     Address { address: u32, source: RomError },
     Truncated { address: u32, offset: usize },
+    FixedRange { offset: usize, len: usize },
 }
 
 impl std::fmt::Display for FastRomPatchError {
@@ -218,6 +221,117 @@ fn resolve(address: u32) -> Result<usize, FastRomPatchError> {
         .map_err(|source| FastRomPatchError::Address { address, source })
 }
 
+const TRAMPOLINE_OFFSET: usize = 0x003a4e;
+const MAP_MODE_OFFSET: usize = 0x007fd5;
+const FIRST_HOOK_WORD_OFFSET: usize = 0x007fea;
+const SECOND_HOOK_WORD_OFFSET: usize = 0x007ffc;
+const PATCH_MARKER_OFFSET: usize = 0x007f_fef;
+
+/// Builds the failure-atomic core FastROM installation plan for ordinary SMW US revision 0.
+/// The caller supplies the profile-wide protected allocation policy used for the 16-byte runtime.
+pub fn smw_us_v1_fastrom_patch_plan(
+    bytes: &[u8],
+    allocation: AllocationPolicy,
+    checksum_field: usize,
+) -> Result<RelocatablePatchPlan, FastRomPatchError> {
+    let mut converted = bytes.to_vec();
+    apply_smw_us_v1_fastrom_jsl_pass(&mut converted)?;
+    apply_smw_us_v1_fastrom_pointer_passes(&mut converted)?;
+
+    let mut writes = changed_byte_writes(bytes, &converted);
+    let first_target = exact(bytes, FIRST_HOOK_WORD_OFFSET, 2)?;
+    let second_target = exact(bytes, SECOND_HOOK_WORD_OFFSET, 2)?;
+    let trampoline_address = pc_to_snes(Mapper::LoRom, TRAMPOLINE_OFFSET).map_err(|source| {
+        FastRomPatchError::Address {
+            address: u32::try_from(TRAMPOLINE_OFFSET).unwrap_or(u32::MAX),
+            source,
+        }
+    })?;
+    let trampoline_low = (trampoline_address as u16).to_le_bytes();
+    let second_hook = u16::from_le_bytes(trampoline_low)
+        .wrapping_add(4)
+        .to_le_bytes();
+
+    let runtime = vec![
+        0x78,
+        0xa9,
+        0x01,
+        0x8d,
+        0x0d,
+        0x42,
+        0x5c,
+        second_target[0],
+        second_target[1],
+        0x80,
+        0xff,
+        0xff,
+        0xff,
+        0xff,
+        0xff,
+        0xff,
+    ];
+    writes.extend([
+        fixed_write(MAP_MODE_OFFSET, exact(bytes, MAP_MODE_OFFSET, 1)?, &[0x30]),
+        fixed_write(FIRST_HOOK_WORD_OFFSET, first_target, &trampoline_low),
+        fixed_write(SECOND_HOOK_WORD_OFFSET, second_target, &second_hook),
+        PatchWrite {
+            offset: TRAMPOLINE_OFFSET,
+            expected: exact(bytes, TRAMPOLINE_OFFSET, 8)?.to_vec(),
+            replacement: vec![0x5c, first_target[0], first_target[1], 0x80, 0x5c, 0, 0, 0],
+            fixups: vec![PatchFixup {
+                offset: 5,
+                target_payload: 0,
+                target_addend: 0,
+                encoding: PatchFixupEncoding::Long24,
+            }],
+        },
+        fixed_write(
+            PATCH_MARKER_OFFSET,
+            exact(bytes, PATCH_MARKER_OFFSET, 1)?,
+            &[lm_rom::LunarMagicRomMetadata::FASTROM_MARKER],
+        ),
+    ]);
+
+    Ok(RelocatablePatchPlan {
+        description: "enable SMW US FastROM speed and apply patch".into(),
+        mapper: Mapper::LoRom,
+        allocation,
+        checksum_field,
+        expansion_fill: 0xff,
+        payloads: vec![PatchPayload {
+            bytes: runtime,
+            fixups: Vec::new(),
+        }],
+        writes,
+    })
+}
+
+fn exact(bytes: &[u8], offset: usize, len: usize) -> Result<&[u8], FastRomPatchError> {
+    bytes
+        .get(offset..offset.saturating_add(len))
+        .ok_or(FastRomPatchError::FixedRange { offset, len })
+}
+
+fn fixed_write(offset: usize, expected: &[u8], replacement: &[u8]) -> PatchWrite {
+    PatchWrite {
+        offset,
+        expected: expected.to_vec(),
+        replacement: replacement.to_vec(),
+        fixups: Vec::new(),
+    }
+}
+
+fn changed_byte_writes(before: &[u8], after: &[u8]) -> Vec<PatchWrite> {
+    before
+        .iter()
+        .zip(after)
+        .enumerate()
+        .filter_map(|(offset, (&expected, &replacement))| {
+            (expected != replacement).then(|| fixed_write(offset, &[expected], &[replacement]))
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -253,5 +367,64 @@ mod tests {
         let mut bytes = image.logical_bytes().to_vec();
         assert_eq!(apply_smw_us_v1_fastrom_pointer_passes(&mut bytes), Ok(771));
         assert_eq!(apply_smw_us_v1_fastrom_pointer_passes(&mut bytes), Ok(0));
+    }
+
+    #[test]
+    fn retained_level_save_builds_an_atomic_core_plan() {
+        let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let bytes =
+            std::fs::read(root.join("oracle-work/lm363/pristine-us/level-save-000/after.smc"))
+                .unwrap();
+        let image = lm_rom::RomImage::from_bytes(bytes).unwrap();
+        let logical = image.logical_bytes();
+        let plan = smw_us_v1_fastrom_patch_plan(
+            logical,
+            AllocationPolicy::lorom(0x8_7e6f..logical.len()),
+            crate::SMW_US_V1_CHECKSUM_FIELD,
+        )
+        .unwrap();
+        assert_eq!(plan.payloads[0].bytes.len(), 16);
+        assert_eq!(
+            plan.writes
+                .iter()
+                .filter(|write| write.replacement == [0x30])
+                .count(),
+            1
+        );
+        assert!(plan.writes.len() > 1_600);
+    }
+
+    #[test]
+    fn core_plan_installs_reopens_checksum_and_undoes_as_one_edit() {
+        let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let original =
+            std::fs::read(root.join("oracle-work/lm363/pristine-us/level-save-000/after.smc"))
+                .unwrap();
+        let mut project = lm_project::Project::open_supported(
+            lm_rom::RomImage::from_bytes(original.clone()).unwrap(),
+        )
+        .unwrap();
+        let logical_len = project.rom.logical_len();
+        let plan = smw_us_v1_fastrom_patch_plan(
+            project.rom.logical_bytes(),
+            AllocationPolicy::lorom(0x8_7e6f..logical_len),
+            crate::SMW_US_V1_CHECKSUM_FIELD,
+        )
+        .unwrap();
+        let result = project.install_relocatable_patch(&plan).unwrap();
+        assert_eq!(result.blocks.len(), 1);
+        assert_eq!(result.blocks[0].header_offset, 0x87e6f);
+        assert_eq!(
+            &project.rom.logical_bytes()[result.blocks[0].payload.clone()],
+            plan.payloads[0].bytes
+        );
+        let reopened = lm_rom::RomImage::from_bytes(project.save_snapshot()).unwrap();
+        assert_eq!(reopened.logical_bytes()[MAP_MODE_OFFSET], 0x30);
+        assert_eq!(
+            reopened.logical_bytes()[PATCH_MARKER_OFFSET],
+            lm_rom::LunarMagicRomMetadata::FASTROM_MARKER
+        );
+        project.undo().unwrap();
+        assert_eq!(project.save_snapshot(), original);
     }
 }

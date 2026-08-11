@@ -1395,3 +1395,14 @@ The remaining 122 bytes have been isolated to the dynamically allocated two-entr
 internal FastROM map-mode byte, two original hooks, small RATS-owned speed routine, feature marker,
 and an 85-byte Lunar Magic ownership/free-space record. Focused tests pass 3/3; the command stays
 pending until those allocations are planned and committed atomically.
+
+## FastROM atomic core installation plan (2026-08-11)
+
+The authenticated conversion families are now composed with the `$20 -> $30` internal map-mode
+change, two original hook words, fixed two-entry JML trampoline, 16-byte RATS-owned speed runtime,
+runtime-address fixup, patch marker, and checksum repair in one `RelocatablePatchPlan`. A retained
+LM 3.63 level-save fixture allocates the runtime at the observed logical `$087E6F`, reopens with
+the marker and map mode intact, and one Undo restores the exact original ROM. Five focused tests
+pass. This core intentionally accepts an externally resolved protected allocation policy; the
+remaining work is to derive Lunar Magic's ROM-specific search cursor/85-byte ownership record and
+then expose the completed transaction through `$24CD`.
