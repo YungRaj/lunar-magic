@@ -561,6 +561,13 @@ impl NativeApplication {
             {
                 self.set_remember_window_size(remember_window_size);
             }
+            let mut scan_exits = self.scan_exits_on_save.unwrap_or(true);
+            if ui
+                .checkbox(&mut scan_exits, "Scan Exits on Save to ROM")
+                .changed()
+            {
+                self.set_scan_exits_on_save(scan_exits);
+            }
             let locale = self.app.localization().map_or_else(
                 || self.menu_text(UiTextKey::ToolsBuiltInEnglish),
                 |catalog| catalog.locale().into(),

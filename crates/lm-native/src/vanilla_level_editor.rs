@@ -450,6 +450,12 @@ struct InvalidExitScanResult {
     screens: Vec<u8>,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct InvalidExitSaveWarning {
+    screens: Vec<u8>,
+    command: Command,
+}
+
 #[derive(Default)]
 pub(crate) struct VanillaLevelEditor {
     key: Option<EditorKey>,
@@ -528,6 +534,7 @@ pub(crate) struct VanillaLevelEditor {
     screen_exit_follow_prompt: Option<u16>,
     screen_exit_follow_after_save: Option<PendingScreenExitFollowSave>,
     invalid_exit_scan_result: Option<InvalidExitScanResult>,
+    invalid_exit_save_warning: Option<InvalidExitSaveWarning>,
     game_preview: Option<bool>,
     snes_viewport: Option<bool>,
     draw_selection_over_live: Option<bool>,
@@ -539,6 +546,7 @@ pub(crate) struct VanillaLevelEditor {
     auto_deselect_on_editor_select: bool,
     show_add_editor_ids: Option<bool>,
     background_cursor_highlight: Option<bool>,
+    scan_exits_on_save: Option<bool>,
     paste_target: Option<EntityPasteTarget>,
     pending_layer2_mode_reset: Option<HeaderForm>,
     error: Option<String>,
@@ -634,6 +642,10 @@ impl VanillaLevelEditor {
 
     pub(crate) fn set_background_cursor_highlight(&mut self, enabled: bool) {
         self.background_cursor_highlight = Some(enabled);
+    }
+
+    pub(crate) fn set_scan_exits_on_save(&mut self, enabled: bool) {
+        self.scan_exits_on_save = Some(enabled);
     }
 
     pub(crate) fn editor_selector_selected(&mut self) {
@@ -741,6 +753,7 @@ impl VanillaLevelEditor {
         external_assets: &lm_graphics::ExternalSpriteAssets,
         external_asset_revision: u64,
         custom_objects: Option<&lm_level::OscResolvedTable>,
+        custom_dsc: Option<&lm_level::DscResolvedTable>,
         custom_map16: Option<&lm_app::NativeMap16SidecarDocument>,
         live_frame: Option<(egui::TextureId, [usize; 2], bool)>,
         toolbar_images: &MainToolbarImageSet,
@@ -768,7 +781,11 @@ impl VanillaLevelEditor {
                 if let Some(pending) = &mut self.screen_exit_follow_after_save {
                     pending.intermediate_revision = None;
                 }
-                return Some(command);
+                match self.request_exit_scan_before_save(&snapshot, custom_dsc, command) {
+                    Ok(Some(command)) => return Some(command),
+                    Ok(None) => {}
+                    Err(error) => self.error = Some(error),
+                }
             }
             Ok(None) => {}
             Err(error) => self.error = Some(error),
@@ -777,8 +794,15 @@ impl VanillaLevelEditor {
             self.load(&snapshot, key, custom_sprites);
         }
         self.show_invalid_exit_scan_result(ui.ctx());
-        if let Some(command) = self.show_screen_exit_follow_confirmation(ui.ctx(), &snapshot) {
+        if let Some(command) = self.show_invalid_exit_save_warning(ui.ctx()) {
             return Some(command);
+        }
+        if let Some(command) = self.show_screen_exit_follow_confirmation(ui.ctx(), &snapshot) {
+            match self.request_exit_scan_before_save(&snapshot, custom_dsc, command) {
+                Ok(Some(command)) => return Some(command),
+                Ok(None) => {}
+                Err(error) => self.error = Some(error),
+            }
         }
         if self.external_asset_revision != external_asset_revision {
             self.external_asset_revision = external_asset_revision;
@@ -957,7 +981,7 @@ impl VanillaLevelEditor {
                         }
                         self.show_map16_preview(ui, object_tileset);
                         if pending_command.is_none() {
-                            pending_command = self.show_commit_controls(ui, &snapshot);
+                            pending_command = self.show_commit_controls(ui, &snapshot, custom_dsc);
                         }
                     });
                 ui.separator();
@@ -1041,6 +1065,7 @@ impl VanillaLevelEditor {
         &mut self,
         ui: &mut egui::Ui,
         snapshot: &lm_app::ControllerSnapshot,
+        custom_dsc: Option<&lm_level::DscResolvedTable>,
     ) -> Option<Command> {
         ui.separator();
         let expanded = RomImage::from_bytes(snapshot.rom_bytes.clone())
@@ -1078,7 +1103,15 @@ impl VanillaLevelEditor {
                     .expect("controller presence checked above"),
                 snapshot,
             ) {
-                Ok(command) => Some(command),
+                Ok(command) => {
+                    match self.request_exit_scan_before_save(snapshot, custom_dsc, command) {
+                        Ok(command) => command,
+                        Err(error) => {
+                            self.error = Some(error);
+                            None
+                        }
+                    }
+                }
                 Err(error) => {
                     self.error = Some(error);
                     None
@@ -1939,6 +1972,7 @@ impl VanillaLevelEditor {
         self.last_canvas_native_position = None;
         self.screen_exit_follow_prompt = None;
         self.invalid_exit_scan_result = None;
+        self.invalid_exit_save_warning = None;
         self.pending_layer2_mode_reset = None;
         self.canvas_entity_selection = None;
         if let Err(error) = validate_builtin_graphics_layout(snapshot) {
@@ -2141,6 +2175,7 @@ impl VanillaLevelEditor {
         self.screen_exit_follow_prompt = None;
         self.screen_exit_follow_after_save = None;
         self.invalid_exit_scan_result = None;
+        self.invalid_exit_save_warning = None;
         self.entrance_controller = None;
         self.secondary_exits = None;
         self.secondary_exit_references = None;
@@ -3122,6 +3157,80 @@ impl VanillaLevelEditor {
             );
         }
         Ok(screens.into_iter().collect())
+    }
+
+    fn request_exit_scan_before_save(
+        &mut self,
+        snapshot: &lm_app::ControllerSnapshot,
+        custom_dsc: Option<&lm_level::DscResolvedTable>,
+        command: Command,
+    ) -> Result<Option<Command>, String> {
+        if !self.scan_exits_on_save.unwrap_or(true) {
+            return Ok(Some(command));
+        }
+        let screens = self.scan_invalid_exit_destinations(snapshot, custom_dsc)?;
+        Ok(self.gate_invalid_exit_save_result(screens, command))
+    }
+
+    fn gate_invalid_exit_save_result(
+        &mut self,
+        screens: Vec<u8>,
+        command: Command,
+    ) -> Option<Command> {
+        if screens.is_empty() {
+            return Some(command);
+        }
+        self.invalid_exit_save_warning = Some(InvalidExitSaveWarning { screens, command });
+        None
+    }
+
+    fn resolve_invalid_exit_save_warning(&mut self, save_anyway: bool) -> Option<Command> {
+        let warning = self.invalid_exit_save_warning.take()?;
+        if save_anyway {
+            Some(warning.command)
+        } else {
+            self.screen_exit_follow_after_save = None;
+            self.pending_expansion_commit = None;
+            None
+        }
+    }
+
+    fn show_invalid_exit_save_warning(&mut self, context: &egui::Context) -> Option<Command> {
+        let warning = self.invalid_exit_save_warning.clone()?;
+        let mut save_anyway = false;
+        let mut cancel = false;
+        egui::Window::new("Scan Exits on Save to ROM")
+            .collapsible(false)
+            .resizable(false)
+            .show(context, |ui| {
+                ui.label("The following screens have exit-enabled objects that lead to level 0 or 0x100:");
+                ui.monospace(
+                    warning
+                        .screens
+                        .iter()
+                        .map(|screen| format!("{screen:02X}"))
+                        .collect::<Vec<_>>()
+                        .join(", "),
+                );
+                ui.label("If you do not set an exit destination or remove the exit-enabled objects on these screens, the player could become trapped in an endless bonus game.");
+                ui.label("To disable this warning, turn off “Scan Exits on Save to ROM” in Tools.");
+                ui.label("Save the level anyway?");
+                ui.horizontal(|ui| {
+                    if ui.button("Save Anyway").clicked() {
+                        save_anyway = true;
+                    }
+                    if ui.button("Cancel").clicked() {
+                        cancel = true;
+                    }
+                });
+            });
+        if save_anyway {
+            return self.resolve_invalid_exit_save_warning(true);
+        }
+        if cancel {
+            return self.resolve_invalid_exit_save_warning(false);
+        }
+        None
     }
 
     fn show_invalid_exit_scan_result(&mut self, context: &egui::Context) {
@@ -20068,6 +20177,73 @@ mod tests {
             &mut screens,
         );
         assert!(screens.is_empty());
+    }
+
+    #[test]
+    fn save_exit_scan_gates_nonempty_results_and_resolves_save_or_abort_atomically() {
+        let command = Command::CommitRomWrites {
+            expected_revision: 7,
+            description: "test save".into(),
+            writes: Vec::new(),
+        };
+        let mut editor = VanillaLevelEditor::default();
+        assert_eq!(
+            editor.gate_invalid_exit_save_result(Vec::new(), command.clone()),
+            Some(command.clone())
+        );
+        assert_eq!(editor.invalid_exit_save_warning, None);
+
+        assert_eq!(
+            editor.gate_invalid_exit_save_result(vec![2, 9], command.clone()),
+            None
+        );
+        assert_eq!(
+            editor.invalid_exit_save_warning.as_ref().unwrap().screens,
+            vec![2, 9]
+        );
+        assert_eq!(
+            editor.resolve_invalid_exit_save_warning(true),
+            Some(command.clone())
+        );
+        assert_eq!(editor.invalid_exit_save_warning, None);
+
+        editor.screen_exit_follow_after_save = Some(PendingScreenExitFollowSave {
+            destination: 0x106,
+            final_revision: 1,
+            intermediate_revision: None,
+        });
+        editor.gate_invalid_exit_save_result(vec![3], command);
+        assert_eq!(editor.resolve_invalid_exit_save_warning(false), None);
+        assert!(editor.screen_exit_follow_after_save.is_none());
+    }
+
+    #[test]
+    fn disabled_save_exit_scan_bypasses_scanner_before_it_requires_an_editor() {
+        let mut app = AppState::default();
+        app.load_rom(crate::test_support::pristine_smw_us_rom_bytes())
+            .unwrap();
+        app.dispatch(Command::SelectLevel(0x105)).unwrap();
+        let snapshot = app.controller_snapshot().unwrap();
+        let command = Command::CommitRomWrites {
+            expected_revision: snapshot.revision,
+            description: "test save".into(),
+            writes: Vec::new(),
+        };
+        let mut editor = VanillaLevelEditor::default();
+        editor.set_scan_exits_on_save(false);
+        assert_eq!(
+            editor
+                .request_exit_scan_before_save(&snapshot, None, command.clone())
+                .unwrap(),
+            Some(command.clone())
+        );
+        editor.set_scan_exits_on_save(true);
+        assert_eq!(
+            editor
+                .request_exit_scan_before_save(&snapshot, None, command)
+                .unwrap_err(),
+            "the current level is unavailable"
+        );
     }
 
     #[test]

@@ -204,6 +204,7 @@ pub(crate) struct NativeApplication {
     show_add_editor_ids: Option<bool>,
     background_cursor_highlight: Option<bool>,
     remember_window_size: Option<bool>,
+    scan_exits_on_save: Option<bool>,
     overworld_editor: OverworldEditor,
     path_editor: PathEditor,
     metadata_editor: MetadataEditor,
@@ -289,6 +290,7 @@ impl NativeApplication {
         "lunar_magic_rust.background_cursor_highlight.v1";
     const REMEMBER_WINDOW_SIZE_STORAGE_KEY: &'static str =
         "lunar_magic_rust.remember_window_size.v1";
+    const SCAN_EXITS_ON_SAVE_STORAGE_KEY: &'static str = "lunar_magic_rust.scan_exits_on_save.v1";
 
     pub(crate) fn from_startup(
         initialized: Result<crate::startup::InitializedNative, String>,
@@ -617,6 +619,14 @@ impl NativeApplication {
                 Err(error) => {
                     self.effects.error =
                         Some(format!("cannot load window-size preference: {error}"));
+                }
+            }
+        }
+        if let Some(encoded) = storage.get_string(Self::SCAN_EXITS_ON_SAVE_STORAGE_KEY) {
+            match decode_scan_exits_on_save_preference(&encoded) {
+                Ok(enabled) => self.scan_exits_on_save = Some(enabled),
+                Err(error) => {
+                    self.effects.error = Some(format!("cannot load exit-scan preference: {error}"));
                 }
             }
         }
@@ -996,6 +1006,10 @@ impl eframe::App for NativeApplication {
             Self::REMEMBER_WINDOW_SIZE_STORAGE_KEY,
             encode_remember_window_size_preference(self.remember_window_size.unwrap_or(true)),
         );
+        storage.set_string(
+            Self::SCAN_EXITS_ON_SAVE_STORAGE_KEY,
+            encode_scan_exits_on_save_preference(self.scan_exits_on_save.unwrap_or(true)),
+        );
         if !self.remember_window_size.unwrap_or(true) {
             // eframe stores native window geometry under this key immediately before App::save.
             // An invalid value makes its next-start decoder fall back to NativeOptions' default.
@@ -1045,6 +1059,8 @@ impl eframe::App for NativeApplication {
                 .set_show_add_editor_ids(self.show_add_editor_ids.unwrap_or(true));
             self.vanilla_level_editor
                 .set_background_cursor_highlight(self.background_cursor_highlight.unwrap_or(true));
+            self.vanilla_level_editor
+                .set_scan_exits_on_save(self.scan_exits_on_save.unwrap_or(true));
             if vanilla_level
                 && let Some(command) = self.vanilla_level_editor.show(
                     ui,
@@ -1055,6 +1071,7 @@ impl eframe::App for NativeApplication {
                     self.ssc_sidecar_editor.external_assets(),
                     self.ssc_sidecar_editor.asset_revision(),
                     self.osc_sidecar_editor.resolved(),
+                    self.dsc_sidecar_editor.resolved(),
                     self.native_map16_sidecar_editor.value(),
                     live_frame,
                     &self.main_toolbar_images,
@@ -1297,6 +1314,18 @@ fn decode_remember_window_size_preference(value: &str) -> Result<bool, String> {
         "remember" => Ok(true),
         "default" => Ok(false),
         _ => Err("unknown window-size preference version".into()),
+    }
+}
+
+fn encode_scan_exits_on_save_preference(enabled: bool) -> String {
+    if enabled { "scan" } else { "skip" }.to_owned()
+}
+
+fn decode_scan_exits_on_save_preference(value: &str) -> Result<bool, String> {
+    match value {
+        "scan" => Ok(true),
+        "skip" => Ok(false),
+        _ => Err("unknown exit-scan preference version".into()),
     }
 }
 
@@ -1872,6 +1901,23 @@ mod preference_tests {
             assert_eq!(reopened.remember_window_size, Some(expected));
         }
         assert!(decode_remember_window_size_preference("enabled").is_err());
+    }
+
+    #[test]
+    fn native_save_and_reopen_persist_scan_exits_on_save() {
+        for expected in [false, true] {
+            let mut source = NativeApplication {
+                scan_exits_on_save: Some(expected),
+                ..NativeApplication::default()
+            };
+            let mut storage = MemoryStorage::default();
+            eframe::App::save(&mut source, &mut storage);
+
+            let mut reopened = NativeApplication::default();
+            reopened.load_persistent_preferences(Some(&storage));
+            assert_eq!(reopened.scan_exits_on_save, Some(expected));
+        }
+        assert!(decode_scan_exits_on_save_preference("enabled").is_err());
     }
 
     #[test]

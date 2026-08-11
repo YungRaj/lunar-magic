@@ -1098,6 +1098,21 @@ persistence, geometry-retention/invalidation, malformed-value, and command-parti
 The authenticated partition is now **283 routed / 34 pending**. The aggregate remains 59/65
 because the configuration row is still Partial.
 
+Toolbar coverage update (2026-08-10, Scan Exits on Save): authenticated
+`LM_OPTIONS_SCAN_EXITS` `$24C2` now reproduces central dispatch case `$8C` and the pre-write guard
+in `SaveLevelToRom`. The initialized byte at `$005E7ADD` proves the default-on state; the recovered
+registry serializer binds it to `Options` bit 27; and `ReportInvalidExitObjectDestinations` proves
+the affected-screen list, endless-bonus-game warning, and `Save the level anyway?` decision.
+Rust reuses the authenticated manual scanner, including direct/secondary exits, acts-like tiles,
+DSC custom blocks, Layer 2 objects, and overworld exclusions. A nonempty automatic result now
+holds the exact prepared revision-bound commit before any ROM mutation; Save Anyway releases that
+unchanged command once, while Cancel discards it and any pending follow/expansion continuation.
+The same guard covers ordinary commits, post-expansion commits, and save-before-following-an-exit.
+The persisted Tools toggle and authenticated internal-toolbar route share the same default-on state.
+Focused scan, gate, save/abort, toggle, persistence, and command-partition tests pass. The
+authenticated partition is now **284 routed / 33 pending**. The aggregate remains 59/65 because
+the configuration row is still Partial.
+
 Toolbar coverage update (2026-08-10, Open Level Number): `LM_FILE_OPEN_LEVEL` `$238E` now opens
 the native equivalent of original dialog resource `1000`. It uses the authenticated title,
 `Level Number (0-1FF)` label, OK/Cancel controls, and original-language resource overrides; seeds
