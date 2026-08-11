@@ -934,6 +934,17 @@ pristine or installed 8×8 editor's exact Ctrl+Alt+F8 white/black cycle without 
 visibility. The aggregate remains 59/65 because
 the configuration row is still Partial.
 
+Toolbar coverage update (2026-08-11, custom collection append): authenticated aliases
+`LM_KEY_ADD_CSPRITE` and `LM_KEY_ADD_CUSTOM` share dispatcher `$26AF` and now route according to
+the active object/sprite edit domain. The complete selected group is rebased into native custom
+placement coordinates, prompted for a description (empty becomes `(not specified)`), and appended
+to the ROM-adjacent `.mw0/.mw0t` or `.mw2/.mwt` pair. Existing framing and entries are retained,
+an unterminated description tail is made picker-visible, revision sprite-length tables are honored,
+and paired persistence is failure-atomic. Create, append, malformed/incomplete pair, cancel,
+selection-rebase, and exact-status tests pass. The authenticated partition is now
+**302 routed / 15 pending**. The aggregate remains 59/65 because the configuration row is still
+Partial.
+
 Toolbar coverage update (2026-08-10, selection editors): `LM_EDIT_PROPERTIES` `$2468` now toggles
 an independent modeless properties window, while `LM_EDIT_EDIT_MANUAL` `$2469` opens (and repeated
 activation reuses) the manual editor dialog. Both follow the live Layer 1, object-backed Layer 2,

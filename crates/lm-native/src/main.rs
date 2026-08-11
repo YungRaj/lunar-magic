@@ -13,6 +13,7 @@ mod custom_object_editor_form;
 mod custom_sprite_editor;
 mod custom_sprite_editor_form;
 mod current_level_palette_transfer;
+mod custom_collection_append;
 mod dialogs;
 mod document_loader;
 mod document_persistence;

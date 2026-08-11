@@ -461,6 +461,12 @@ impl NativeApplication {
                 };
                 self.app.status = status.into();
             }
+            UserToolbarNativeAction::AppendCustomCollection => {
+                match self.vanilla_level_editor.custom_collection_selection() {
+                    Ok(selection) => self.custom_collection_append_dialog.open(selection),
+                    Err(status) => self.app.status = status,
+                }
+            }
             UserToolbarNativeAction::WarnVerticalFireballBuoyancy => {
                 self.set_warn_vertical_fireball_buoyancy(
                     !self.warn_vertical_fireball_buoyancy.unwrap_or(true),
@@ -1826,6 +1832,7 @@ enum UserToolbarNativeAction {
     WarnIpsSiblingOnSave,
     ConvertBerryGfxTile,
     GraphicsGridColor,
+    AppendCustomCollection,
     WarnVerticalFireballBuoyancy,
     GfxBypassListDialogs,
     JoinedGraphicsFiles,
@@ -1942,6 +1949,9 @@ fn user_toolbar_native_action(name: &str) -> Option<UserToolbarNativeAction> {
         "LM_OPTIONS_WARN_IPS" => UserToolbarNativeAction::WarnIpsSiblingOnSave,
         "LM_OPTIONS_CONVERT_BERRY" => UserToolbarNativeAction::ConvertBerryGfxTile,
         "LM_KEY_GRID_COLOR" => UserToolbarNativeAction::GraphicsGridColor,
+        "LM_KEY_ADD_CSPRITE" | "LM_KEY_ADD_CUSTOM" => {
+            UserToolbarNativeAction::AppendCustomCollection
+        }
         "LM_OPTIONS_WARN_SPRITE_33" => UserToolbarNativeAction::WarnVerticalFireballBuoyancy,
         "LM_OPTIONS_INSTALL_VRAM" => UserToolbarNativeAction::GfxBypassListDialogs,
         "LM_OPTIONS_ATTACH_FILES" => UserToolbarNativeAction::JoinedGraphicsFiles,
@@ -2998,7 +3008,7 @@ mod user_toolbar_tests {
                     || user_toolbar_native_action(entry.name).is_some()
             })
             .collect::<Vec<_>>();
-        assert_eq!(supported.len(), 300);
+        assert_eq!(supported.len(), 302);
         assert!(
             supported
                 .iter()
@@ -3393,6 +3403,22 @@ mod user_toolbar_tests {
             UserToolbarNativeAction::GraphicsGridColor,
         );
         assert_eq!(native.app.status, "Tile grid color 1.");
+    }
+
+    #[test]
+    fn shared_26af_aliases_route_by_active_level_selection() {
+        for name in ["LM_KEY_ADD_CSPRITE", "LM_KEY_ADD_CUSTOM"] {
+            assert_eq!(
+                user_toolbar_native_action(name),
+                Some(UserToolbarNativeAction::AppendCustomCollection)
+            );
+        }
+        let mut native = NativeApplication::default();
+        native.apply_user_toolbar_native_action(
+            &egui::Context::default(),
+            UserToolbarNativeAction::AppendCustomCollection,
+        );
+        assert_eq!(native.app.status, "Nothing selected or couldn't open file.");
     }
 
     #[test]
@@ -3792,7 +3818,7 @@ mod user_toolbar_tests {
                     && user_toolbar_native_action(entry.name).is_none()
             })
             .collect::<Vec<_>>();
-        assert_eq!(unsupported.len(), 17);
+        assert_eq!(unsupported.len(), 15);
         if std::env::var_os("LM_DIAGNOSTIC_UNSUPPORTED_TOOLBAR_COMMANDS").is_some() {
             for entry in unsupported {
                 eprintln!(

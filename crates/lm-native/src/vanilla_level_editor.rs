@@ -405,6 +405,12 @@ enum CanvasEntitySelection {
     Sprite,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) enum CustomCollectionSelection {
+    Objects(Vec<lm_level::ObjectRecord>),
+    Sprites(Vec<lm_level::SpriteRecord>, lm_level::SpriteLengthTable),
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum CanvasEntityShortcut {
     SelectAll,
@@ -4392,6 +4398,126 @@ impl VanillaLevelEditor {
                     })
                     .collect::<Result<Vec<_>, _>>()?;
                 crate::native_clipboard::encode_level_sprites(&records)
+            }
+        }
+    }
+
+    /// Clones the active Layer 1 object or sprite selection into Lunar Magic's custom-collection
+    /// coordinate space. The selected group is rebased to its native anchor through the same
+    /// relocation engines used by canvas dragging, so screen boundaries, vertical levels, and
+    /// extension bytes retain their canonical encodings.
+    pub(crate) fn custom_collection_selection(&self) -> Result<CustomCollectionSelection, String> {
+        let selection = self
+            .canvas_entity_selection
+            .ok_or_else(|| "Nothing selected or couldn't open file.".to_owned())?;
+        let controller = self
+            .controller
+            .as_ref()
+            .ok_or_else(|| "Nothing selected or couldn't open file.".to_owned())?;
+        let vertical = controller.level().layer1.header.is_vertical();
+        match selection {
+            CanvasEntitySelection::Layer1Object => {
+                let selected = selected_indexes(&self.selected_object_group, self.selected_object);
+                let stream = &controller.level().layer1.objects;
+                let placements = stream.native_placements_for_orientation(vertical);
+                let selected_placements = placements
+                    .iter()
+                    .filter(|placement| selected.contains(&placement.record_index))
+                    .collect::<Vec<_>>();
+                let anchor_major = selected_placements
+                    .iter()
+                    .map(|placement| placement.major)
+                    .min()
+                    .ok_or_else(|| "Nothing selected or couldn't open file.".to_owned())?;
+                let anchor_minor = selected_placements
+                    .iter()
+                    .map(|placement| placement.minor)
+                    .min()
+                    .ok_or_else(|| "Nothing selected or couldn't open file.".to_owned())?;
+                let records = selected
+                    .into_iter()
+                    .map(|index| {
+                        let placement = placements
+                            .iter()
+                            .find(|placement| placement.record_index == index)
+                            .ok_or_else(|| "Nothing selected or couldn't open file.".to_owned())?;
+                        let relative_major = placement.major - anchor_major;
+                        let relative_minor = placement.minor - anchor_minor;
+                        if relative_major > 0x0f || relative_minor > 0x1f {
+                            return Err("Nothing selected or couldn't open file.".to_owned());
+                        }
+                        let mut record =
+                            stream.records.get(index).cloned().ok_or_else(|| {
+                                "Nothing selected or couldn't open file.".to_owned()
+                            })?;
+                        record
+                            .set_coordinate_nibbles(ObjectCoordinateNibbles {
+                                first: relative_minor & 0x0f,
+                                second: relative_major.to_le_bytes()[0],
+                            })
+                            .and_then(|()| {
+                                record.set_perpendicular_high_coordinate(relative_minor >= 0x10)
+                            })
+                            .map_err(|_| "Nothing selected or couldn't open file.".to_owned())?;
+                        Ok(record)
+                    })
+                    .collect::<Result<Vec<_>, _>>()?;
+                Ok(CustomCollectionSelection::Objects(records))
+            }
+            CanvasEntitySelection::Sprite => {
+                let selected = selected_indexes(&self.selected_sprite_group, self.selected_sprite);
+                let stream = &controller.level().sprites;
+                let placements = stream.native_placements();
+                let selected_placements = placements
+                    .iter()
+                    .filter(|placement| selected.contains(&placement.token_index))
+                    .collect::<Vec<_>>();
+                let anchor_major = selected_placements
+                    .iter()
+                    .map(|placement| placement.major)
+                    .min()
+                    .ok_or_else(|| "Nothing selected or couldn't open file.".to_owned())?;
+                let anchor_minor = selected_placements
+                    .iter()
+                    .map(|placement| placement.minor)
+                    .min()
+                    .ok_or_else(|| "Nothing selected or couldn't open file.".to_owned())?;
+                let records = selected
+                    .into_iter()
+                    .map(|index| {
+                        let placement = placements
+                            .iter()
+                            .find(|placement| placement.token_index == index)
+                            .ok_or_else(|| "Nothing selected or couldn't open file.".to_owned())?;
+                        let relative_major = placement.major - anchor_major;
+                        let relative_minor = placement.minor - anchor_minor;
+                        if relative_major > 0x1ff || relative_minor > 0x1f {
+                            return Err("Nothing selected or couldn't open file.".to_owned());
+                        }
+                        let Some(SpriteToken::Record(mut record)) =
+                            stream.tokens.get(index).cloned()
+                        else {
+                            return Err("Nothing selected or couldn't open file.".to_owned());
+                        };
+                        let mut fields = record
+                            .native_fields()
+                            .map_err(|_| "Nothing selected or couldn't open file.".to_owned())?;
+                        fields.screen = (relative_major / 16).to_le_bytes()[0];
+                        fields.x = (relative_major % 16).to_le_bytes()[0];
+                        fields.y_low = relative_minor.to_le_bytes()[0];
+                        record
+                            .set_native_fields(fields, controller.sprite_lengths())
+                            .map_err(|_| "Nothing selected or couldn't open file.".to_owned())?;
+                        Ok(record)
+                    })
+                    .collect::<Result<Vec<_>, _>>()?;
+                Ok(CustomCollectionSelection::Sprites(
+                    records,
+                    controller.sprite_lengths().clone(),
+                ))
+            }
+            CanvasEntitySelection::Layer2Object => {
+                Err("Nothing selected or couldn't open file.".to_owned())
             }
         }
     }
@@ -25037,6 +25163,23 @@ mod tests {
         editor.canvas_entity_selection = Some(CanvasEntitySelection::Layer1Object);
         editor.selected_object = selected[1];
         editor.selected_object_group = selected.clone();
+        let CustomCollectionSelection::Objects(custom_objects) =
+            editor.custom_collection_selection().unwrap()
+        else {
+            panic!("Layer 1 selection must produce a custom-object group");
+        };
+        let custom_stream = lm_level::ObjectStream {
+            records: custom_objects,
+        };
+        let custom_placements = custom_stream.native_placements();
+        assert_eq!(
+            custom_placements.iter().map(|item| item.major).min(),
+            Some(0)
+        );
+        assert_eq!(
+            custom_placements.iter().map(|item| item.minor).min(),
+            Some(0)
+        );
         let text = editor.toolbar_copy_selection().unwrap();
         let copied = crate::native_clipboard::decode_level_objects(&text).unwrap();
         assert_eq!(copied.len(), 2);
@@ -25098,6 +25241,28 @@ mod tests {
         assert_eq!(sprite_indexes.len(), 2);
         editor.selected_sprite = sprite_indexes[0];
         editor.selected_sprite_group = sprite_indexes;
+        let CustomCollectionSelection::Sprites(custom_sprites, _) =
+            editor.custom_collection_selection().unwrap()
+        else {
+            panic!("sprite selection must produce a custom-sprite placement");
+        };
+        let custom_stream = lm_level::NativeSpriteStream {
+            header: 0,
+            expanded: false,
+            tokens: custom_sprites
+                .into_iter()
+                .map(SpriteToken::Record)
+                .collect(),
+        };
+        let custom_placements = custom_stream.native_placements();
+        assert_eq!(
+            custom_placements.iter().map(|item| item.major).min(),
+            Some(0)
+        );
+        assert_eq!(
+            custom_placements.iter().map(|item| item.minor).min(),
+            Some(0)
+        );
         let sprites = editor.toolbar_copy_selection().unwrap();
         assert_eq!(
             crate::native_clipboard::decode_level_sprites(&sprites)

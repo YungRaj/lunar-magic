@@ -5977,6 +5977,23 @@ stale pixels.
 pristine/profile-backed 8×8 editor state as Ctrl+Alt+F8. It cycles white/black without changing
 grid visibility and retains Lunar Magic's exact `Tile grid color 1.` / `Tile grid color 2.` status.
 
+## Add selection to custom collection (`$26AF`)
+
+The two original names `LM_KEY_ADD_CSPRITE` and `LM_KEY_ADD_CUSTOM` occupy the same command ID and
+dispatcher case. Lunar Magic chooses the object or sprite path from its active edit-domain byte,
+rejects an empty selection with `Nothing selected or couldn't open file.`, prompts for one
+description, and appends the cloned selection to the same-stem ROM-adjacent `.mw0/.mw0t` or
+`.mw2/.mwt` collection. Rust now follows that context-sensitive route. It derives a bounding-box
+origin from complete selected placements, rewrites only native coordinate fields while preserving
+object parameters and sprite extension bytes, carries the active revision's sprite-length table,
+and emits native placement boundary markers. Empty input becomes `(not specified)` and the prior
+text framing is retained while forcing a trailing separator so Lunar Magic's list-population loop
+publishes the appended row. Both sidecars are created or replaced as one failure-atomic group;
+malformed, incomplete, oversized, or unwritable pairs publish neither half. Exact success statuses,
+creation, repeated append/reopen, malformed and incomplete failure, cancel, selection rebasing, and
+both toolbar aliases are covered. Authenticated native command coverage is now 302 of 317 named
+slots, leaving 15 pending.
+
 ## Complete responsive game viewport
 
 The native level editor no longer uses cover scaling for its 256×224 game viewport. Cover scaling

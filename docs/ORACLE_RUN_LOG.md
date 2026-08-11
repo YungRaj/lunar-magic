@@ -1160,6 +1160,21 @@ semantically reopens the ROM. Enabled mode matches the highest visible object/sp
 disabled mode retains the manual five-bit header. Both focused auto-screen tests and all 39
 authenticated toolbar tests pass; the partition is 289 routed / 28 pending.
 
+## Context-sensitive custom collection append (2026-08-11)
+
+Ghidra command-table byte `$D3` maps both `LM_KEY_ADD_CSPRITE` and `LM_KEY_ADD_CUSTOM` at `$26AF`.
+`HandleLevelEditorCommand` branches on the active sprite/object mode, requires a nonempty current
+selection, prompts for a description, and calls `AppendAndReloadCustomObjectTemplate` at
+`$0052CB70` or `AppendAndRefreshCustomSpritePlacement` at `$00576E00`. Their core append routines
+use ROM same-stem `.mw0/.mw0t` and `.mw2/.mwt` pairs, 32-KiB per-buffer bounds, `(not specified)`
+for an empty description, and exact success/failure status resources. The Rust route preserves the
+authenticated file and prompt boundary while strengthening the original sequential writes into one
+paired atomic publication. Focused create/append/reopen, boundary-marker, malformed/incomplete,
+cancel, selection-coordinate, alias, and exact-status tests pass. The renderer remains green at
+235/235 and the full native gate materialized all 512 pristine levels without a render failure;
+the only first-pass failures were the intentionally advanced command partition counters, updated
+from 300/17 to 302/15.
+
 ## Responsive viewport crop regression (2026-08-11)
 
 A live pristine level `$105` capture exposed that responsive cover scaling could crop the opposite

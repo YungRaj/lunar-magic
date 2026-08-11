@@ -10,6 +10,7 @@ use crate::{
     custom_object_editor::CustomObjectEditor,
     custom_sprite_editor::CustomSpriteEditor,
     current_level_palette_transfer::CurrentLevelPaletteTransfer,
+    custom_collection_append::CustomCollectionAppendDialog,
     dsc_sidecar_editor::DscSidecarEditor,
     editor_view,
     effects::Confirmation,
@@ -237,6 +238,7 @@ pub(crate) struct NativeApplication {
     mwl_editor: MwlEditor,
     expanded_settings_editor: ExpandedSettingsEditor,
     custom_object_editor: CustomObjectEditor,
+    custom_collection_append_dialog: CustomCollectionAppendDialog,
     custom_sprite_editor: CustomSpriteEditor,
     current_level_palette_transfer: CurrentLevelPaletteTransfer,
     native_map16_sidecar_editor: NativeMap16SidecarEditor,
@@ -1497,6 +1499,12 @@ impl eframe::App for NativeApplication {
         self.show_user_toolbar_recent_menu(context);
         self.show_confirmation(context);
         self.show_same_name_ips_warning(context);
+        if let Some(status) = self
+            .custom_collection_append_dialog
+            .show(context, self.app.document_path.as_deref())
+        {
+            self.app.status = status;
+        }
         if let Some((level, command)) = self.level_deletion_dialog.show(context, &self.app)
             && self.try_dispatch(context, command)
         {
