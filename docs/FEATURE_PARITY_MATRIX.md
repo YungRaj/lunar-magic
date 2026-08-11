@@ -397,7 +397,12 @@ participates through a content-sensitive generation: recovery validates the exac
 payload and uses the ordinary detected allocation/checksum/reclaim policy on an isolated clone,
 while recorder install/uninstall remains ordinary immediately committed project state.
 `staged_title_recording_is_recovered_without_committing_live_project` proves the pristine live ROM
-stays patch-free and the recovered ROM reopens the exact movement bytes.
+stays patch-free and the recovered ROM reopens the exact movement bytes. The shared/custom palette
+editor now retains the detected mapper instead of hardcoding LoROM, so ExLoROM opens and recovery
+use the correct profile layout. Content-sensitive recovery preserves legacy or expanded backend
+shape and chooses the normal direct save or expanded-runtime installation path before exact reopen;
+`staged_legacy_shared_palette_is_recovered_without_committing_live_project` and
+`exlorom_shared_palette_open_and_recovery_use_the_detected_mapper` cover both forms.
 
 ## Workflow ledger
 

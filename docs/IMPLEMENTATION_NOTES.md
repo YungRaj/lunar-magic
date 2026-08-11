@@ -6412,3 +6412,17 @@ The focused test starts from a pristine ROM with no playback patch, stages a fou
 proves the live project remains clean and patch-free, then reopens the exact installed recording
 from recovery. The renderer remains green at 237/237, and the 512-level materialization audit
 completed without a rendering failure.
+
+## Shared-palette editor uses the detected mapper and recovers staged data
+
+The native shared/custom palette editor no longer assumes the LoROM table layout. Its workspace now
+retains the authenticated open-ROM mapper and loads LoROM or ExLoROM storage through the matching
+profile layout. Staged recovery hashes the complete encoded file, preserves legacy versus expanded
+backend shape, and applies either the ordinary direct save or the exact expanded-runtime installation
+plan to an isolated clone before requiring semantic reopen. Stale work rejects, and the live project
+and history remain unchanged.
+
+Focused tests recover an edited legacy LoROM color without upgrading its backend and convert a
+pristine ROM to ExLoROM, install expanded shared palettes, open through the detected ExLoROM layout,
+recover an edited color, and reopen the exact expanded backend. All 10 shared-palette editor tests
+and all 237 renderer tests pass.

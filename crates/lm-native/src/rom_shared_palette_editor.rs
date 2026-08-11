@@ -5,7 +5,7 @@ use crate::{
 use eframe::egui;
 use lm_app::{AppState, Command};
 use lm_graphics::{Bgr555, SmwPaletteBackend};
-use lm_profile::smw_us_v1_shared_palette_layout;
+use lm_profile::smw_us_v1_shared_palette_layout_for_mapper;
 
 mod form;
 mod transfer;
@@ -55,6 +55,20 @@ pub(crate) struct RomSharedPaletteEditor {
 }
 
 impl RomSharedPaletteEditor {
+    pub(crate) fn staged_recovery_generation(&self, app: &AppState) -> Option<u64> {
+        self.workspace.as_ref()?.staged_recovery_generation(app)
+    }
+
+    pub(crate) fn staged_recovery_snapshot(
+        &self,
+        app: &AppState,
+    ) -> Result<Option<lm_app::RecoverySnapshot>, String> {
+        self.workspace
+            .as_ref()
+            .ok_or_else(|| "shared-palette workspace is closed".to_owned())?
+            .staged_recovery_snapshot(app)
+    }
+
     pub(crate) fn is_open(&self) -> bool {
         self.workspace.is_some()
     }
@@ -67,12 +81,23 @@ impl RomSharedPaletteEditor {
             .project()
             .ok_or_else(|| "open a supported ROM first".to_owned())
             .and_then(|project| {
+                let mapper = project
+                    .identity
+                    .as_ref()
+                    .ok_or_else(|| "open a supported ROM first".to_owned())?
+                    .mapper;
+                if !matches!(mapper, lm_rom::Mapper::LoRom | lm_rom::Mapper::ExLoRom) {
+                    return Err(
+                        "shared palettes are supported only for SMW LoROM and ExLoROM".into(),
+                    );
+                }
                 project
-                    .load_shared_palette(smw_us_v1_shared_palette_layout())
+                    .load_shared_palette(smw_us_v1_shared_palette_layout_for_mapper(mapper))
                     .map_err(|error| error.to_string())
+                    .map(|palette| (mapper, palette))
             });
         match result {
-            Ok(palette) => {
+            Ok((mapper, palette)) => {
                 self.form = match ColorForm::load(&palette, 0) {
                     Ok(form) => form,
                     Err(error) => {
@@ -83,6 +108,7 @@ impl RomSharedPaletteEditor {
                 self.auxiliary = format_bytes(palette.auxiliary_bytes());
                 self.workspace = Some(Workspace {
                     revision: app.project_revision(),
+                    mapper,
                     original: palette.clone(),
                     current: palette,
                 });
@@ -620,6 +646,79 @@ mod tests {
     }
 
     #[test]
+    fn staged_legacy_shared_palette_is_recovered_without_committing_live_project() {
+        let (app, _) = pristine_app();
+        let mut editor = RomSharedPaletteEditor::default();
+        editor.open(&app);
+        assert_eq!(
+            editor.workspace.as_ref().unwrap().mapper,
+            lm_rom::Mapper::LoRom
+        );
+        editor
+            .workspace
+            .as_mut()
+            .unwrap()
+            .replace_color(0x123, Bgr555(0x4567))
+            .unwrap();
+
+        assert!(editor.staged_recovery_generation(&app).is_some());
+        let recovery = editor.staged_recovery_snapshot(&app).unwrap().unwrap();
+        assert_eq!(app.capabilities().project, lm_app::ProjectStatus::OpenClean);
+        assert_eq!(app.project().unwrap().history.undo_len(), 0);
+
+        let mut reopened = AppState::default();
+        reopened.load_recovery(recovery).unwrap();
+        let palette = reopened
+            .project()
+            .unwrap()
+            .load_shared_palette(smw_us_v1_shared_palette_layout_for_mapper(
+                lm_rom::Mapper::LoRom,
+            ))
+            .unwrap();
+        assert_eq!(palette.backend(), SmwPaletteBackend::Legacy);
+        assert_eq!(palette.palette().unwrap().colors[0x123], Bgr555(0x4567));
+    }
+
+    #[test]
+    fn exlorom_shared_palette_open_and_recovery_use_the_detected_mapper() {
+        let (mut installer, _) = pristine_app();
+        installer
+            .dispatch(Command::ConvertRomTo64MbitExLoRom {
+                expected_revision: installer.project_revision(),
+            })
+            .unwrap();
+        installer
+            .dispatch(Command::InstallExpandedSharedPalettes {
+                rev: installer.project_revision(),
+            })
+            .unwrap();
+        let installed = installer.project().unwrap().save_snapshot();
+        let mut app = AppState::default();
+        app.load_rom(installed).unwrap();
+
+        let mut editor = RomSharedPaletteEditor::default();
+        editor.open(&app);
+        let workspace = editor.workspace.as_mut().unwrap();
+        assert_eq!(workspace.mapper, lm_rom::Mapper::ExLoRom);
+        assert_eq!(workspace.current.backend(), SmwPaletteBackend::Expanded);
+        workspace.replace_color(0x234, Bgr555(0x3210)).unwrap();
+
+        let recovery = editor.staged_recovery_snapshot(&app).unwrap().unwrap();
+        assert_eq!(app.capabilities().project, lm_app::ProjectStatus::OpenClean);
+        let mut reopened = AppState::default();
+        reopened.load_recovery(recovery).unwrap();
+        let palette = reopened
+            .project()
+            .unwrap()
+            .load_shared_palette(smw_us_v1_shared_palette_layout_for_mapper(
+                lm_rom::Mapper::ExLoRom,
+            ))
+            .unwrap();
+        assert_eq!(palette.backend(), SmwPaletteBackend::Expanded);
+        assert_eq!(palette.palette().unwrap().colors[0x234], Bgr555(0x3210));
+    }
+
+    #[test]
     fn pristine_gui_color_edit_dispatches_reopens_and_undoes_exactly() {
         let (mut app, original) = pristine_app();
         let mut editor = RomSharedPaletteEditor::default();
@@ -634,7 +733,9 @@ mod tests {
         assert_eq!(
             app.project()
                 .unwrap()
-                .load_shared_palette(smw_us_v1_shared_palette_layout())
+                .load_shared_palette(smw_us_v1_shared_palette_layout_for_mapper(
+                    lm_rom::Mapper::LoRom,
+                ))
                 .unwrap(),
             expected
         );
@@ -689,7 +790,9 @@ mod tests {
         assert_eq!(
             app.project()
                 .unwrap()
-                .load_shared_palette(smw_us_v1_shared_palette_layout())
+                .load_shared_palette(smw_us_v1_shared_palette_layout_for_mapper(
+                    lm_rom::Mapper::LoRom,
+                ))
                 .unwrap(),
             imported
         );
