@@ -271,6 +271,36 @@ fn crash_recovery_restores_exact_dirty_bytes_level_and_saved_baseline() {
 }
 
 #[test]
+fn crash_recovery_composes_a_staged_editor_mutation_without_changing_live_state() {
+    let original = test_rom();
+    let mut app = AppState::default();
+    app.load_rom(original.clone()).unwrap();
+    let project = app.project().unwrap();
+    let mapper = project.identity.as_ref().unwrap().mapper;
+    let logical_len = project.rom.logical_len();
+    let mutation = lm_project::RomMutation {
+        mapper,
+        expected_len: logical_len,
+        appended: Vec::new(),
+        writes: vec![lm_project::RomWrite {
+            offset: 4,
+            bytes: vec![0xa5],
+        }],
+    };
+
+    let snapshot = app
+        .recovery_snapshot_with_mutation(&mutation, Some(0x105))
+        .unwrap()
+        .unwrap();
+    assert_eq!(snapshot.saved_baseline, original);
+    assert_ne!(snapshot.current_rom, snapshot.saved_baseline);
+    assert_eq!(snapshot.level, Some(0x105));
+    assert_eq!(app.capabilities().project, ProjectStatus::OpenClean);
+    assert_eq!(app.project().unwrap().history.undo_len(), 0);
+    assert_eq!(app.project().unwrap().save_snapshot(), original);
+}
+
+#[test]
 fn crash_recovery_rejects_clean_records_and_open_project_replacement() {
     let original = test_rom();
     let clean = RecoverySnapshot {

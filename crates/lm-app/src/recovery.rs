@@ -22,6 +22,49 @@ impl AppState {
         })
     }
 
+    /// Captures recovery state after applying one revision-bound editor mutation to an isolated
+    /// clone of the current project.
+    ///
+    /// Native editor forms use this for changes that are intentionally staged outside
+    /// [`AppState`]. The live project, its history, and its save baseline remain untouched.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when no project is open or the staged mutation is incompatible with the
+    /// current ROM snapshot.
+    pub fn recovery_snapshot_with_mutation(
+        &self,
+        mutation: &lm_project::RomMutation,
+        level: Option<u16>,
+    ) -> Result<Option<RecoverySnapshot>, AppError> {
+        let project = self.project.as_ref().ok_or(AppError::NoProject)?;
+        let mut staged = project.clone();
+        staged
+            .apply_mutation("Stage editor state for crash recovery", mutation)
+            .map_err(|error| AppError::Recovery(error.to_string()))?;
+        self.recovery_snapshot_with_current_rom(staged.save_snapshot(), level)
+    }
+
+    /// Validates and captures an editor-composed physical ROM without publishing it to the live
+    /// application project.
+    pub fn recovery_snapshot_with_current_rom(
+        &self,
+        current_rom: Vec<u8>,
+        level: Option<u16>,
+    ) -> Result<Option<RecoverySnapshot>, AppError> {
+        let project = self.project.as_ref().ok_or(AppError::NoProject)?;
+        let saved_baseline = project.saved_baseline_snapshot();
+        let staged =
+            lm_project::Project::open_recovered(saved_baseline.clone(), current_rom.clone())
+                .map_err(|error| AppError::Recovery(error.to_string()))?;
+        Ok(staged.is_modified().then(|| RecoverySnapshot {
+            revision: self.project_revision,
+            level,
+            saved_baseline,
+            current_rom,
+        }))
+    }
+
     /// Restores a recovery record as an unnamed, dirty project.
     ///
     /// The original path is deliberately not restored. The first explicit save therefore uses

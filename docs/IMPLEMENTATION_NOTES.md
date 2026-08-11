@@ -6245,3 +6245,19 @@ comparison no longer remains ignored. The gate reads every mapping byte, SNES po
 and local-word base from the installed `$C30` core, reconstructs the runtime from the generated
 template, and requires byte equality with the complete installed core. The full `lm-profile` run
 passes 345 active library tests with 19 external-fixture ignores plus all 10 ROM integration tests.
+
+## Crash recovery includes staged primary level edits
+
+Crash recovery no longer depends solely on mutations already committed to `AppState`. The native
+level editor mixes its independent controller revision into the recovery generation and composes
+uncommitted Layer 1, Layer 2, and sprite edits into a validated recovery ROM. For a pristine
+512 KiB source that needs level-data relocation, composition expands an isolated project clone to
+1 MiB, rebases the cloned editor controller, applies the prepared mutation, and snapshots the
+result; the live project remains clean and gains no history entry. Preparation failures now reach
+the recovery-store error path and remain retryable instead of silently suppressing the revision.
+
+The focused recovery tests cover exact staged-byte restoration, isolated expansion, reopen of the
+edited object and sprite streams, clean live state, and worker retry after composition failure.
+The complete gates pass 640 active `lm-app` library tests with 13 explicit fixture ignores, 1,162
+active native tests with 11 explicit fixture/device ignores (including all 512 pristine levels),
+and all 237 renderer tests.

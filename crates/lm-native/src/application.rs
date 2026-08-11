@@ -1744,13 +1744,12 @@ impl eframe::App for NativeApplication {
         }
         self.show_editor_windows(context);
         self.show_global_effects(context);
-        let recovery_revision = matches!(
-            self.app.capabilities().project,
-            lm_app::ProjectStatus::OpenModified
-        )
-        .then(|| self.app.project_revision());
+        let recovery_revision = self.vanilla_level_editor.recovery_generation(&self.app);
         self.recovery_store
-            .synchronize_project(recovery_revision, || self.app.recovery_snapshot());
+            .synchronize_project(recovery_revision, || {
+                self.vanilla_level_editor
+                    .staged_recovery_snapshot(&self.app)
+            });
         if let Some(error) = self.recovery_store.error.take() {
             self.effects.error = Some(error);
         }

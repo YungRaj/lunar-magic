@@ -1234,6 +1234,90 @@ impl VanillaLevelEditor {
         self.allow_fragmentation.unwrap_or(true)
     }
 
+    pub(crate) fn staged_recovery_snapshot(
+        &self,
+        app: &AppState,
+    ) -> Result<Option<lm_app::RecoverySnapshot>, String> {
+        let Some(controller) = self.controller.as_ref() else {
+            return Ok(app.recovery_snapshot());
+        };
+        if !controller.is_modified() {
+            return Ok(app.recovery_snapshot());
+        }
+        let snapshot = app
+            .controller_snapshot()
+            .map_err(|error| error.to_string())?;
+        let level = u16::try_from(controller.level().number)
+            .map_err(|_| "level recovery number is out of range".to_owned())?;
+        let image =
+            RomImage::from_bytes(snapshot.rom_bytes.clone()).map_err(|error| error.to_string())?;
+        if image.logical_len() <= 0x80_000
+            && (controller.layer1_is_modified() || controller.layer2_is_modified())
+        {
+            let mut staged_project = app
+                .project()
+                .ok_or("level recovery project is closed")?
+                .clone();
+            staged_project
+                .expand_rom(
+                    snapshot.identity.mapper,
+                    0x10_0000,
+                    0xff,
+                    snapshot.identity.internal_header_offset + 0x1c,
+                )
+                .map_err(|error| error.to_string())?;
+            let expanded_snapshot = lm_app::ControllerSnapshot {
+                revision: snapshot.revision.saturating_add(1),
+                mode: snapshot.mode,
+                identity: staged_project
+                    .identity
+                    .clone()
+                    .ok_or("expanded recovery project lost its identity")?,
+                document_path: snapshot.document_path,
+                rom_bytes: staged_project.rom.as_file_bytes().to_vec(),
+            };
+            let mut rebased = controller.clone();
+            rebased
+                .rebase_after_rom_expansion(&expanded_snapshot)
+                .map_err(|error| error.to_string())?;
+            let mutation = recovery_mutation_from_command(
+                prepare_commit(&rebased, &expanded_snapshot)?,
+                expanded_snapshot.revision,
+            )?;
+            staged_project
+                .apply_mutation("Stage expanded level for crash recovery", &mutation)
+                .map_err(|error| error.to_string())?;
+            return app
+                .recovery_snapshot_with_current_rom(staged_project.save_snapshot(), Some(level))
+                .map_err(|error| error.to_string());
+        }
+        let mutation = recovery_mutation_from_command(
+            prepare_commit(controller, &snapshot)?,
+            snapshot.revision,
+        )?;
+        app.recovery_snapshot_with_mutation(&mutation, Some(level))
+            .map_err(|error| error.to_string())
+    }
+
+    pub(crate) fn recovery_generation(&self, app: &AppState) -> Option<u64> {
+        if let Some(controller) = self.controller.as_ref()
+            && controller.is_modified()
+        {
+            // The application and staged-controller revisions advance independently. Mix both
+            // so every accepted editor mutation schedules a fresh recovery publication even
+            // though the live ROM revision has not changed yet.
+            return Some(
+                app.project_revision().wrapping_mul(0x9e37_79b9_7f4a_7c15)
+                    ^ controller.revision().rotate_left(29),
+            );
+        }
+        matches!(
+            app.capabilities().project,
+            lm_app::ProjectStatus::OpenModified
+        )
+        .then(|| app.project_revision())
+    }
+
     pub(crate) fn initialize_draw_selection_over_live(&mut self, enabled: bool) {
         self.draw_selection_over_live.get_or_insert(enabled);
     }
@@ -16202,6 +16286,24 @@ fn prepare_commit(
     prepare_commit_with_auto_screen(controller, snapshot, false)
 }
 
+fn recovery_mutation_from_command(
+    command: Command,
+    revision: u64,
+) -> Result<lm_project::RomMutation, String> {
+    let Command::CommitRomMutation {
+        expected_revision,
+        mutation,
+        ..
+    } = command
+    else {
+        return Err("level recovery expected one prepared ROM mutation".into());
+    };
+    if expected_revision != revision {
+        return Err("level recovery mutation was prepared from a stale revision".into());
+    }
+    Ok(mutation)
+}
+
 fn prepare_commit_with_auto_screen(
     controller: &LevelController,
     snapshot: &lm_app::ControllerSnapshot,
@@ -17849,6 +17951,65 @@ mod tests {
         assert_eq!(app.project().unwrap().history.undo_len(), 1);
         app.dispatch(Command::Undo).unwrap();
         assert_eq!(app.project().unwrap().save_snapshot(), baseline);
+    }
+
+    #[test]
+    fn staged_level_edits_are_composed_into_crash_recovery_without_live_commit() {
+        let mut app = AppState::default();
+        app.load_rom(crate::test_support::pristine_smw_us_rom_bytes())
+            .unwrap();
+        app.dispatch(Command::SelectLevel(0x105)).unwrap();
+        let source = app.controller_snapshot().unwrap();
+        let mut controller = LevelController::decode(
+            &source,
+            lm_profile::smw_us_v1_vanilla_level_layout(),
+            &SpriteLengthTable::standard(),
+        )
+        .unwrap();
+        let expected_header = controller.level().sprites.header ^ 1;
+        let object_count = controller.level().layer1.objects.records.len();
+        let object = controller.level().layer1.objects.records[1].clone();
+        controller
+            .apply_edits(&[
+                NativeLevelEdit::SetSpriteHeader(expected_header),
+                NativeLevelEdit::Objects(vec![ObjectEdit::Insert {
+                    index: object_count,
+                    record: object,
+                }]),
+            ])
+            .unwrap();
+        let editor = VanillaLevelEditor {
+            controller: Some(controller),
+            ..VanillaLevelEditor::default()
+        };
+
+        assert_eq!(app.capabilities().project, lm_app::ProjectStatus::OpenClean);
+        assert!(editor.recovery_generation(&app).is_some());
+        let recovery = editor.staged_recovery_snapshot(&app).unwrap().unwrap();
+        assert_eq!(recovery.level, Some(0x105));
+        assert_eq!(
+            RomImage::from_bytes(recovery.current_rom.clone())
+                .unwrap()
+                .logical_len(),
+            0x10_0000
+        );
+        assert_eq!(app.capabilities().project, lm_app::ProjectStatus::OpenClean);
+        assert_eq!(app.project().unwrap().history.undo_len(), 0);
+
+        let mut recovered = AppState::default();
+        recovered.load_recovery(recovery).unwrap();
+        let reopened = LevelController::decode(
+            &recovered.controller_snapshot().unwrap(),
+            lm_profile::smw_us_v1_vanilla_level_layout(),
+            &SpriteLengthTable::standard(),
+        )
+        .unwrap();
+        assert_eq!(reopened.level().sprites.header, expected_header);
+        assert_eq!(
+            reopened.level().layer1.objects.records.len(),
+            object_count + 1
+        );
+        assert_eq!(recovered.mode, lm_app::EditorMode::Level(0x105));
     }
 
     #[test]

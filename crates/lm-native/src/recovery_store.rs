@@ -115,7 +115,7 @@ impl RecoveryStore {
     pub fn synchronize_project(
         &mut self,
         revision: Option<u64>,
-        snapshot: impl FnOnce() -> Option<RecoverySnapshot>,
+        snapshot: impl FnOnce() -> Result<Option<RecoverySnapshot>, String>,
     ) {
         self.poll_results();
         if !self.pending.is_empty() || self.path.is_none() {
@@ -126,7 +126,14 @@ impl RecoveryStore {
             if self.queued_revision == Some(revision) {
                 return;
             }
-            let Some(snapshot) = snapshot() else { return };
+            let snapshot = match snapshot() {
+                Ok(Some(snapshot)) => snapshot,
+                Ok(None) => return,
+                Err(error) => {
+                    self.error = Some(error);
+                    return;
+                }
+            };
             RecoveryCommand::Write(snapshot)
         } else {
             if self.clear_queued {
@@ -496,7 +503,7 @@ mod tests {
         {
             let mut store = RecoveryStore::default();
             store.enable_at(path.clone());
-            store.synchronize_project(Some(42), || Some(snapshot()));
+            store.synchronize_project(Some(42), || Ok(Some(snapshot())));
             store.synchronize_project(Some(42), || {
                 panic!("an already queued revision must not be cloned again")
             });
@@ -511,6 +518,22 @@ mod tests {
             store.discard_pending();
         }
         assert_eq!(read_record(&path).unwrap(), None);
+    }
+
+    #[test]
+    fn staged_snapshot_preparation_errors_are_reported_and_can_be_retried() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("session.recovery");
+        let mut store = RecoveryStore::default();
+        store.enable_at(path.clone());
+
+        store.synchronize_project(Some(42), || Err("cannot compose staged edit".into()));
+        assert_eq!(store.error.as_deref(), Some("cannot compose staged edit"));
+        assert_eq!(store.queued_revision, None);
+
+        store.synchronize_project(Some(42), || Ok(Some(snapshot())));
+        drop(store);
+        assert_eq!(read_record(&path).unwrap(), Some(snapshot()));
     }
 
     #[test]
