@@ -5,7 +5,7 @@ use lm_profile::{
     smw_us_v1_overworld_level_name_installation_plan, smw_us_v1_overworld_level_name_locator,
     smw_us_v1_overworld_level_name_runtime,
 };
-use lm_project::OverworldLevelNameStorage;
+use lm_project::{OverworldLevelNameStorage, Project};
 use lm_rom::{Mapper, Region, SupportedGame};
 
 impl AppState {
@@ -22,48 +22,9 @@ impl AppState {
         }
         self.require_no_pending_save()?;
         self.ensure_project_revision_capacity()?;
-        table.encode()?;
         let project = self.project.as_mut().ok_or(AppError::NoProject)?;
-        let identity = project.identity.as_ref().ok_or(AppError::NoProject)?;
-        if identity.game != SupportedGame::SuperMarioWorld
-            || identity.region != Region::NorthAmerica
-            || identity.revision != 0
-            || identity.mapper != Mapper::LoRom
-        {
-            return Err(AppError::NativeOverworldLevelNameIdentityMismatch);
-        }
-        let loaded = project.load_overworld_level_names_detected(
-            smw_us_v1_overworld_level_name_locator(),
-            smw_us_v1_overworld_level_name_runtime(),
-        )?;
-        let changed = match loaded.storage {
-            OverworldLevelNameStorage::Vanilla => {
-                project.install_relocatable_patch(
-                    &smw_us_v1_overworld_level_name_installation_plan(table)?,
-                )?;
-                true
-            }
-            storage @ OverworldLevelNameStorage::Expanded { .. } => project
-                .save_installed_overworld_level_names(
-                    table,
-                    storage,
-                    Mapper::LoRom,
-                    &smw_us_v1_overworld_level_name_allocation_policy(),
-                    SMW_US_V1_CHECKSUM_FIELD,
-                    0xff,
-                )?,
-        };
-        if !changed {
+        if !save_native_overworld_level_names_to_project(project, table)? {
             return Ok(Vec::new());
-        }
-        let reopened = project
-            .load_overworld_level_names_detected(
-                smw_us_v1_overworld_level_name_locator(),
-                smw_us_v1_overworld_level_name_runtime(),
-            )?
-            .table;
-        if reopened != *table {
-            return Err(AppError::NativeOverworldLevelNameReopenMismatch);
         }
         self.advance_project_revision()?;
         let description = "Replace native SMW overworld level names".to_owned();
@@ -74,6 +35,59 @@ impl AppState {
             revision: self.project_revision,
         }])
     }
+}
+
+/// Applies the native overworld level-name persistence route used by the application command.
+///
+/// Returns `true` when the project changed. Vanilla storage always installs the expanded runtime;
+/// an identical already-expanded table is a no-op. Every changed result is reopened semantically.
+pub fn save_native_overworld_level_names_to_project(
+    project: &mut Project,
+    table: &NativeOverworldLevelNameTable,
+) -> Result<bool, AppError> {
+    table.encode()?;
+    let identity = project.identity.as_ref().ok_or(AppError::NoProject)?;
+    if identity.game != SupportedGame::SuperMarioWorld
+        || identity.region != Region::NorthAmerica
+        || identity.revision != 0
+        || identity.mapper != Mapper::LoRom
+    {
+        return Err(AppError::NativeOverworldLevelNameIdentityMismatch);
+    }
+    let loaded = project.load_overworld_level_names_detected(
+        smw_us_v1_overworld_level_name_locator(),
+        smw_us_v1_overworld_level_name_runtime(),
+    )?;
+    let changed = match loaded.storage {
+        OverworldLevelNameStorage::Vanilla => {
+            project.install_relocatable_patch(
+                &smw_us_v1_overworld_level_name_installation_plan(table)?,
+            )?;
+            true
+        }
+        storage @ OverworldLevelNameStorage::Expanded { .. } => project
+            .save_installed_overworld_level_names(
+                table,
+                storage,
+                Mapper::LoRom,
+                &smw_us_v1_overworld_level_name_allocation_policy(),
+                SMW_US_V1_CHECKSUM_FIELD,
+                0xff,
+            )?,
+    };
+    if !changed {
+        return Ok(false);
+    }
+    let reopened = project
+        .load_overworld_level_names_detected(
+            smw_us_v1_overworld_level_name_locator(),
+            smw_us_v1_overworld_level_name_runtime(),
+        )?
+        .table;
+    if reopened != *table {
+        return Err(AppError::NativeOverworldLevelNameReopenMismatch);
+    }
+    Ok(true)
 }
 
 #[cfg(test)]

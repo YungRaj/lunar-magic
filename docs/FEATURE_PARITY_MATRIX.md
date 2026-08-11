@@ -418,7 +418,12 @@ reopen, clean live state, namespace boundary `$1FFF`, prior installed-entry pres
 invalid-field rejection are covered by
 `staged_pristine_secondary_exits_recover_the_complete_installed_table`,
 `staged_installed_secondary_exit_update_preserves_prior_entries`, and
-`invalid_staged_secondary_exit_is_reported_without_panicking_recovery_generation`.
+`invalid_staged_secondary_exit_is_reported_without_panicking_recovery_generation`. The standalone
+overworld level-name editor now hashes the complete variable record set and recovers through the
+ordinary vanilla-runtime installation or authenticated expanded-table update/reallocation path.
+`staged_pristine_level_names_recover_the_complete_maximum_table` and
+`staged_installed_level_name_growth_preserves_prior_name` prove exact 256-record reopen through the
+level `$1DB`/tile `$12` boundary, clean live state, and preservation of previously committed names.
 
 ## Workflow ledger
 

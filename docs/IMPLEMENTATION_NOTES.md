@@ -6463,3 +6463,17 @@ Focused tests cover a field-complete edit at the `$1FFF` namespace boundary, ins
 preserves an independently committed earlier entry, and invalid staged fields that report recovery
 failure without panicking or mutating live state. All eight secondary-exit editor tests and both
 application persistence tests pass; the renderer remains green at 237/237.
+
+## Crash recovery includes complete staged overworld level names
+
+The standalone overworld level-name editor now contributes a content-sensitive generation over the
+exact record count, canonical level identity, all nineteen tile bytes, and retained raw flags.
+Recovery invokes the same shared persistence operation as ordinary commit: vanilla storage installs
+the expanded runtime, while installed storage updates or reallocates its authenticated RATS table.
+Every changed route requires an exact semantic reopen on an isolated clone and leaves the live
+project clean and history-free.
+
+Focused tests grow both pristine and installed tables through level `$1DB`, tile `$12`, producing
+the maximum 256 canonical records. The installed path also proves a previously committed level-000
+tile survives the reallocation. All five level-name editor tests, the shared application persistence
+test, and all 237 renderer tests pass.

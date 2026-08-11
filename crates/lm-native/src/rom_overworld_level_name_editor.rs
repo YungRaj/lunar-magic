@@ -28,6 +28,54 @@ pub(crate) struct RomOverworldLevelNameEditor {
 }
 
 impl RomOverworldLevelNameEditor {
+    pub(crate) fn staged_recovery_generation(&self, app: &AppState) -> Option<u64> {
+        let workspace = self.workspace.as_ref()?;
+        if workspace.current == workspace.original {
+            return None;
+        }
+        let content_revision = workspace.current.names.iter().fold(
+            0x4c45_5645_4c4e_414d_u64 ^ workspace.current.names.len() as u64,
+            |mut revision, name| {
+                for byte in name
+                    .level
+                    .to_le_bytes()
+                    .into_iter()
+                    .chain(name.tiles)
+                    .chain([name.raw_flags])
+                {
+                    revision = revision.rotate_left(5) ^ u64::from(byte);
+                }
+                revision
+            },
+        );
+        Some(
+            app.project_revision().wrapping_mul(0xa24b_aed4_963e_e407)
+                ^ workspace.revision.rotate_left(31)
+                ^ content_revision,
+        )
+    }
+
+    pub(crate) fn staged_recovery_snapshot(
+        &self,
+        app: &AppState,
+    ) -> Result<Option<lm_app::RecoverySnapshot>, String> {
+        let workspace = self
+            .workspace
+            .as_ref()
+            .ok_or_else(|| "level-name workspace is closed".to_owned())?;
+        if workspace.revision != app.project_revision() {
+            return Err("stale level-name workspace cannot be recovered".into());
+        }
+        if workspace.current == workspace.original {
+            return Ok(app.recovery_snapshot());
+        }
+        let mut staged = app.project().ok_or("open a supported ROM first")?.clone();
+        lm_app::save_native_overworld_level_names_to_project(&mut staged, &workspace.current)
+            .map_err(|error| error.to_string())?;
+        app.recovery_snapshot_with_current_rom(staged.save_snapshot(), app.current_level())
+            .map_err(|error| error.to_string())
+    }
+
     pub(crate) fn is_open(&self) -> bool {
         self.workspace.is_some()
     }
@@ -293,6 +341,13 @@ mod tests {
     use super::*;
     use std::path::PathBuf;
 
+    fn pristine_app() -> AppState {
+        let mut app = AppState::default();
+        app.load_rom(crate::test_support::pristine_smw_us_rom_bytes())
+            .unwrap();
+        app
+    }
+
     fn editor() -> RomOverworldLevelNameEditor {
         let table = NativeOverworldLevelNameTable {
             names: vec![OverworldLevelName {
@@ -360,5 +415,82 @@ mod tests {
             )
             .unwrap();
         assert_eq!(reopened.table.names[0].tiles[0], 0x5a);
+    }
+
+    #[test]
+    fn staged_pristine_level_names_recover_the_complete_maximum_table() {
+        let app = pristine_app();
+        let mut editor = RomOverworldLevelNameEditor::default();
+        editor.open(&app);
+        editor.level = "1DB".into();
+        editor.tile = "12".into();
+        editor.loaded = None;
+        editor.load_selected().unwrap();
+        editor.value = "A5".into();
+        editor.apply_selected().unwrap();
+
+        assert!(editor.staged_recovery_generation(&app).is_some());
+        let recovery = editor.staged_recovery_snapshot(&app).unwrap().unwrap();
+        assert_eq!(app.capabilities().project, lm_app::ProjectStatus::OpenClean);
+        assert_eq!(app.project().unwrap().history.undo_len(), 0);
+
+        let mut reopened = AppState::default();
+        reopened.load_recovery(recovery).unwrap();
+        let loaded = reopened
+            .project()
+            .unwrap()
+            .load_overworld_level_names_detected(
+                smw_us_v1_overworld_level_name_locator(),
+                smw_us_v1_overworld_level_name_runtime(),
+            )
+            .unwrap();
+        assert!(matches!(
+            loaded.storage,
+            lm_project::OverworldLevelNameStorage::Expanded { .. }
+        ));
+        assert_eq!(loaded.table.names.len(), 0x100);
+        assert_eq!(loaded.table.names[0xff].level, 0x1db);
+        assert_eq!(loaded.table.names[0xff].tiles[0x12], 0xa5);
+    }
+
+    #[test]
+    fn staged_installed_level_name_growth_preserves_prior_name() {
+        let mut installer = pristine_app();
+        let mut first = RomOverworldLevelNameEditor::default();
+        first.open(&installer);
+        first.value = "5A".into();
+        first.apply_selected().unwrap();
+        installer
+            .dispatch(first.prepare_commit(0).unwrap().unwrap())
+            .unwrap();
+
+        let mut app = AppState::default();
+        app.load_rom(installer.project().unwrap().save_snapshot())
+            .unwrap();
+        let mut editor = RomOverworldLevelNameEditor::default();
+        editor.open(&app);
+        editor.level = "1DB".into();
+        editor.tile = "12".into();
+        editor.loaded = None;
+        editor.load_selected().unwrap();
+        editor.value = "C3".into();
+        editor.apply_selected().unwrap();
+
+        let recovery = editor.staged_recovery_snapshot(&app).unwrap().unwrap();
+        assert_eq!(app.capabilities().project, lm_app::ProjectStatus::OpenClean);
+        let mut reopened = AppState::default();
+        reopened.load_recovery(recovery).unwrap();
+        let table = reopened
+            .project()
+            .unwrap()
+            .load_overworld_level_names_detected(
+                smw_us_v1_overworld_level_name_locator(),
+                smw_us_v1_overworld_level_name_runtime(),
+            )
+            .unwrap()
+            .table;
+        assert_eq!(table.names[0].tiles[0], 0x5a);
+        assert_eq!(table.names.len(), 0x100);
+        assert_eq!(table.names[0xff].tiles[0x12], 0xc3);
     }
 }
