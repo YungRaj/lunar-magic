@@ -148,6 +148,21 @@ impl AppState {
         self.recovery_snapshot_with_current_rom(staged.save_snapshot(), level)
     }
 
+    /// Persists ordinary overworld messages and the boss-sequence message table sequentially into
+    /// one isolated project so both staged editors share the same evolving allocation image.
+    pub fn recovery_snapshot_with_overworld_message_family(
+        &self,
+        messages: &[lm_overworld::OverworldMessage],
+        boss_sequence: &lm_overworld::BossSequenceMessageTable,
+        level: Option<u16>,
+    ) -> Result<Option<RecoverySnapshot>, AppError> {
+        let project = self.project.as_ref().ok_or(AppError::NoProject)?;
+        let mut staged = project.clone();
+        crate::save_native_overworld_messages_to_project(&mut staged, messages)?;
+        crate::save_native_boss_sequence_to_project(&mut staged, boss_sequence)?;
+        self.recovery_snapshot_with_current_rom(staged.save_snapshot(), level)
+    }
+
     /// Restores a recovery record as an unnamed, dirty project.
     ///
     /// The original path is deliberately not restored. The first explicit save therefore uses
@@ -380,6 +395,53 @@ mod tests {
         assert_eq!(
             load_smw_us_v1_overworld_settings(project).unwrap().settings,
             settings
+        );
+    }
+
+    #[test]
+    fn simultaneous_pristine_message_family_installs_and_recovers_both_tables() {
+        use lm_profile::{
+            load_smw_us_v1_overworld_messages, smw_us_v1_boss_sequence_locator,
+            smw_us_v1_overworld_message_patch_locator,
+        };
+
+        let mut app = AppState::default();
+        app.load_rom(crate::test_support::pristine_smw_us_rom_bytes())
+            .unwrap();
+        let project = app.project().unwrap();
+        let mut messages = load_smw_us_v1_overworld_messages(project).unwrap().messages;
+        messages[0].0[0] ^= 0x01;
+        let mut boss_sequence = project
+            .load_boss_sequence_messages_detected(smw_us_v1_boss_sequence_locator())
+            .unwrap()
+            .table;
+        boss_sequence.messages[0].0[0] ^= 0x01;
+
+        let recovery = app
+            .recovery_snapshot_with_overworld_message_family(&messages, &boss_sequence, Some(0x105))
+            .unwrap()
+            .unwrap();
+        assert_eq!(app.capabilities().project, crate::ProjectStatus::OpenClean);
+        assert_eq!(app.project().unwrap().history.undo_len(), 0);
+        let mut reopened = AppState::default();
+        reopened.load_recovery(recovery).unwrap();
+        assert_eq!(reopened.current_level(), Some(0x105));
+        let project = reopened.project().unwrap();
+        assert_eq!(
+            project
+                .load_expanded_overworld_messages_detected(
+                    smw_us_v1_overworld_message_patch_locator(),
+                )
+                .unwrap()
+                .messages,
+            messages
+        );
+        assert_eq!(
+            project
+                .load_boss_sequence_messages_detected(smw_us_v1_boss_sequence_locator())
+                .unwrap()
+                .table,
+            boss_sequence
         );
     }
 }

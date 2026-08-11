@@ -480,6 +480,10 @@ The coordinator also composes simultaneous staged level-name, player-start, and 
 workspaces through their production persistence routes on one isolated allocation image.
 `simultaneous_pristine_overworld_configuration_installs_and_recovers_every_domain` proves both
 pristine installers and the fixed start block coexist, reopen exactly, and leave live state clean.
+Ordinary overworld messages and boss-sequence messages now also share exported production
+persistence functions and compose as one staged family. `simultaneous_pristine_message_family_`
+`installs_and_recovers_both_tables` proves pristine installation, exact dual-table reopen, retained
+level context, and a clean history-free live project.
 
 ## Workflow ledger
 

@@ -328,6 +328,7 @@ pub use overworld_appearance_document_controller::{
     OverworldAppearanceDocumentController, OverworldAppearanceDocumentControllerError,
     OverworldAppearanceDocumentEdit, OverworldAppearanceDocumentSaveSnapshot,
 };
+pub use overworld_boss_sequence_state::save_native_boss_sequence_to_project;
 pub use overworld_controller::{
     OverworldController, OverworldControllerEdit, OverworldControllerError, OverworldLayerId,
 };
@@ -339,6 +340,7 @@ pub use overworld_event_number_state::save_native_overworld_event_number_map_to_
 pub use overworld_event_state::save_native_overworld_event_reveals_to_project;
 pub use overworld_event_tilemap_state::save_native_overworld_event_tilemaps_to_project;
 pub use overworld_level_name_state::save_native_overworld_level_names_to_project;
+pub use overworld_message_state::save_native_overworld_messages_to_project;
 pub use overworld_metadata_controller::{
     OverworldMetadataController, OverworldMetadataControllerError, OverworldMetadataSaveSnapshot,
 };

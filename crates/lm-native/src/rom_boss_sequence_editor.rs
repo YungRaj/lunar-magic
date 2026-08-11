@@ -21,6 +21,16 @@ pub(crate) struct RomBossSequenceEditor {
 }
 
 impl RomBossSequenceEditor {
+    pub(crate) fn staged_recovery_table<'a>(
+        &'a self,
+        app: &AppState,
+    ) -> Result<Option<&'a lm_overworld::BossSequenceMessageTable>, String> {
+        self.workspace
+            .as_ref()
+            .ok_or_else(|| "boss-sequence workspace is closed".to_owned())?
+            .staged_recovery_table(app)
+    }
+
     pub(crate) fn staged_recovery_generation(&self, app: &AppState) -> Option<u64> {
         self.workspace.as_ref()?.staged_recovery_generation(app)
     }

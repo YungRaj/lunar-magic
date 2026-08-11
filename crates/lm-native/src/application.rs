@@ -1977,6 +1977,27 @@ impl eframe::App for NativeApplication {
                         )
                         .map_err(|error| error.to_string());
                 }
+                if staged_editors == 2
+                    && overworld_message_recovery_revision.is_some()
+                    && boss_sequence_recovery_revision.is_some()
+                {
+                    let messages = self
+                        .rom_overworld_message_editor
+                        .staged_recovery_messages(&self.app)?
+                        .ok_or("staged overworld-message recovery table disappeared")?;
+                    let boss_sequence = self
+                        .rom_boss_sequence_editor
+                        .staged_recovery_table(&self.app)?
+                        .ok_or("staged boss-sequence recovery table disappeared")?;
+                    return self
+                        .app
+                        .recovery_snapshot_with_overworld_message_family(
+                            messages,
+                            boss_sequence,
+                            self.app.current_level(),
+                        )
+                        .map_err(|error| error.to_string());
+                }
                 if staged_editors > 1 {
                     return Err(
                         "cannot compose simultaneous staged level, level-assets, expanded settings, legacy graphics bypass, title recording, shared palette, overworld/boss messages, secondary exits, overworld level names/player starts/settings/special events/event numbers/event reveals/event tilemaps/metadata/path/warp links, graphics, ExAnimation, title/credits tilemap, palette, Map16, or overworld recovery yet".into(),

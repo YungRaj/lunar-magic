@@ -6637,3 +6637,16 @@ Other unsupported simultaneous combinations continue to fail visibly.
 three domains on a pristine ROM, reopens them exactly from one recovery record, retains level
 `$105`, and proves the live project remains clean and history-free. The focused semantic test,
 native application compile gate, and all 237 renderer tests pass.
+
+## Crash recovery composes both staged overworld message editors
+
+Ordinary overworld-message and boss-sequence persistence now share exported, identity-checked,
+semantic-reopen application functions with their normal command routes. The recovery coordinator
+uses those same functions sequentially when both editors are dirty, so pristine message-runtime
+installation and boss-table persistence share one isolated evolving ROM instead of rejecting the
+snapshot. Workspace revisions and message encodings are validated before composition.
+
+`simultaneous_pristine_message_family_installs_and_recovers_both_tables` edits both tables on a
+pristine ROM, reopens them exactly from one recovery record, retains level `$105`, and proves the
+live project remains clean and history-free. Both ordinary command/Undo tests, native compilation,
+and all 237 renderer tests pass.

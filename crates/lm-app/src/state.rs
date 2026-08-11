@@ -208,6 +208,7 @@ pub enum AppError {
     NativeEventTilemap(lm_project::EventTilemapPatchError),
     NativeEventTilemapLoad(lm_profile::SmwUsV1EventTilemapLoadError),
     NativeBossSequenceIdentityMismatch,
+    NativeBossSequenceReopenMismatch,
     NativeBossSequence(lm_project::BossSequencePatchError),
     CreditsTilemapIdentityMismatch,
     CreditsTilemap(lm_project::CreditsTilemapIoError),

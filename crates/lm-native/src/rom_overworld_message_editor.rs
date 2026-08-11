@@ -23,6 +23,16 @@ pub(crate) struct RomOverworldMessageEditor {
 }
 
 impl RomOverworldMessageEditor {
+    pub(crate) fn staged_recovery_messages<'a>(
+        &'a self,
+        app: &AppState,
+    ) -> Result<Option<&'a [lm_overworld::OverworldMessage]>, String> {
+        self.workspace
+            .as_ref()
+            .ok_or_else(|| "overworld-message workspace is closed".to_owned())?
+            .staged_recovery_messages(app)
+    }
+
     pub(crate) fn staged_recovery_generation(&self, app: &AppState) -> Option<u64> {
         self.workspace.as_ref()?.staged_recovery_generation(app)
     }

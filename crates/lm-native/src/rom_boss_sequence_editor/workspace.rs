@@ -1,9 +1,6 @@
 use lm_app::{AppState, Command};
 use lm_overworld::{BossSequenceMessage, BossSequenceMessageTable};
-use lm_profile::{
-    SMW_US_V1_CHECKSUM_FIELD, smw_us_v1_boss_sequence_locator,
-    smw_us_v1_boss_sequence_update_policy,
-};
+use lm_profile::smw_us_v1_boss_sequence_locator;
 
 pub(super) struct BossSequenceWorkspace {
     revision: u64,
@@ -61,6 +58,16 @@ impl BossSequenceWorkspace {
         })
     }
 
+    pub(super) fn staged_recovery_table<'a>(
+        &'a self,
+        app: &AppState,
+    ) -> Result<Option<&'a BossSequenceMessageTable>, String> {
+        if self.is_stale(app.project_revision()) {
+            return Err("stale boss-sequence workspace cannot be recovered".into());
+        }
+        Ok(self.is_dirty().then_some(&self.current))
+    }
+
     pub(super) fn staged_recovery_snapshot(
         &self,
         app: &AppState,
@@ -72,25 +79,8 @@ impl BossSequenceWorkspace {
             return Ok(app.recovery_snapshot());
         }
         let mut staged = app.project().ok_or("open a supported ROM first")?.clone();
-        let locator = smw_us_v1_boss_sequence_locator();
-        let update = smw_us_v1_boss_sequence_update_policy(staged.rom.logical_len());
-        staged
-            .save_boss_sequence_messages_detected(
-                &self.current,
-                locator,
-                &update,
-                SMW_US_V1_CHECKSUM_FIELD,
-                0xff,
-            )
+        lm_app::save_native_boss_sequence_to_project(&mut staged, &self.current)
             .map_err(|error| error.to_string())?;
-        if staged
-            .load_boss_sequence_messages_detected(locator)
-            .map_err(|error| error.to_string())?
-            .table
-            != self.current
-        {
-            return Err("recovered boss-sequence messages did not reopen exactly".into());
-        }
         app.recovery_snapshot_with_current_rom(staged.save_snapshot(), app.current_level())
             .map_err(|error| error.to_string())
     }

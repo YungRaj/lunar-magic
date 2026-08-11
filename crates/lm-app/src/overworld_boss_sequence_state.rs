@@ -4,6 +4,7 @@ use lm_profile::{
     SMW_US_V1_CHECKSUM_FIELD, smw_us_v1_boss_sequence_locator,
     smw_us_v1_boss_sequence_update_policy,
 };
+use lm_project::Project;
 use lm_rom::{Mapper, Region, SupportedGame};
 
 impl AppState {
@@ -21,26 +22,10 @@ impl AppState {
         self.require_no_pending_save()?;
         self.ensure_project_revision_capacity()?;
         let project = self.project.as_mut().ok_or(AppError::NoProject)?;
-        let identity = project.identity.as_ref().ok_or(AppError::NoProject)?;
-        if identity.game != SupportedGame::SuperMarioWorld
-            || identity.region != Region::NorthAmerica
-            || identity.revision != 0
-            || identity.mapper != Mapper::LoRom
-        {
-            return Err(AppError::NativeBossSequenceIdentityMismatch);
-        }
-        let locator = smw_us_v1_boss_sequence_locator();
-        if project.load_boss_sequence_messages_detected(locator)?.table == *table {
+        let changed = save_native_boss_sequence_to_project(project, table)?;
+        if !changed {
             return Ok(Vec::new());
         }
-        let update = smw_us_v1_boss_sequence_update_policy(project.rom.logical_len());
-        project.save_boss_sequence_messages_detected(
-            table,
-            locator,
-            &update,
-            SMW_US_V1_CHECKSUM_FIELD,
-            0xff,
-        )?;
         self.advance_project_revision()?;
         let description = "Replace native SMW overworld boss-sequence messages".to_owned();
         self.status.clone_from(&description);
@@ -50,6 +35,37 @@ impl AppState {
             revision: self.project_revision,
         }])
     }
+}
+
+/// Applies the detected native boss-sequence persistence route used by the application command.
+pub fn save_native_boss_sequence_to_project(
+    project: &mut Project,
+    table: &BossSequenceMessageTable,
+) -> Result<bool, AppError> {
+    let identity = project.identity.as_ref().ok_or(AppError::NoProject)?;
+    if identity.game != SupportedGame::SuperMarioWorld
+        || identity.region != Region::NorthAmerica
+        || identity.revision != 0
+        || identity.mapper != Mapper::LoRom
+    {
+        return Err(AppError::NativeBossSequenceIdentityMismatch);
+    }
+    let locator = smw_us_v1_boss_sequence_locator();
+    if project.load_boss_sequence_messages_detected(locator)?.table == *table {
+        return Ok(false);
+    }
+    let update = smw_us_v1_boss_sequence_update_policy(project.rom.logical_len());
+    project.save_boss_sequence_messages_detected(
+        table,
+        locator,
+        &update,
+        SMW_US_V1_CHECKSUM_FIELD,
+        0xff,
+    )?;
+    if project.load_boss_sequence_messages_detected(locator)?.table != *table {
+        return Err(AppError::NativeBossSequenceReopenMismatch);
+    }
+    Ok(true)
 }
 
 #[cfg(test)]
