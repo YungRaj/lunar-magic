@@ -1421,3 +1421,15 @@ speed-patch marker untouched. Duplicate state is a no-op, stale revisions reject
 restore each prior semantic state and the final physical ROM byte-for-byte, and checksum repair is
 part of each metadata save. Focused application tests pass 2/2 and the exhaustive native command
 partition passes at 314/317, leaving `$24CD`, `$24D3`, and `$24D6` pending.
+
+## ROM-scoped Apply FastROM Patch command (2026-08-11)
+
+Authenticated command `$24CD` now routes independently from `$24CC`. The application rejects a
+stale revision, wrong identity, disabled addressing option, partial installation, and duplicate
+installation before mutation. It places the 16-byte runtime after the highest valid expanded-area
+RATS owner, retaining the current ROM extent when possible and retrying atomically one LoROM bank
+at a time only when necessary. The retained level-save fixture installs all 1,682 guarded pointer
+conversions plus fixed hooks, trampoline, runtime, map mode, marker, and checksum; strict reopen is
+`Installed`. One Undo restores the prior enabled-addressing ROM, and a second restores the original
+physical bytes. Focused application tests pass 3/3 and the exhaustive native partition passes at
+315/317, leaving only `$24D3` and `$24D6` pending.

@@ -1306,8 +1306,14 @@ routes to a ROM-scoped, revision-checked metadata transaction: enabling sets cur
 the permanent ever-enabled lock at marker 7; disabling clears only marker 6; marker 8 remains
 reserved for the separate irreversible speed patch. Save/reopen, idempotence, stale revision,
 two-step Undo, and byte-exact restoration tests pass. The authenticated partition is now
-**314 routed / 3 pending**. The remaining commands are FastROM patch, prefer-past-2-MiB, and SA-1
-RAM remap. The aggregate remains 59/65 because the configuration row is still Partial.
+**315 routed / 2 pending**. `LM_OPTIONS_PATCH_FASTROM` `$24CD` is now the separate irreversible
+transaction: it requires the current FastROM addressing option, strictly authenticates absence,
+converts all three recovered pointer families, installs the fixed trampoline and RATS-owned speed
+runtime, writes map mode and marker 8, repairs the checksum, reopens as `Installed`, and undoes in
+one step. Its allocator starts after the highest valid expanded-area RATS owner, preserves existing
+ROM size when trailing space exists, and uses the recovered bank-at-a-time expansion retry only on
+exhaustion. The remaining commands are prefer-past-2-MiB and SA-1 RAM remap. The aggregate remains
+59/65 because the configuration row is still Partial.
 
 Toolbar coverage update (2026-08-11, current per-ROM VRAM patch options): authenticated
 `LM_OPTIONS_VRAM` `$24E8` now reproduces the live 3.63 `Change VRAM Patch Options` workflow and

@@ -211,6 +211,10 @@ pub enum Command {
         rev: u64,
         enabled: bool,
     },
+    /// Irreversibly installs Lunar Magic's original-game FastROM speed patch.
+    ApplyFastRomPatch {
+        rev: u64,
+    },
     /// Replaces Lunar Magic's complete native expanded secondary-exit table.
     ReplaceNativeSecondaryExits {
         rev: u64,

@@ -719,6 +719,16 @@ impl NativeApplication {
                     );
                 }
             }
+            UserToolbarNativeAction::ApplyFastRomPatch => {
+                if let Ok(snapshot) = self.app.controller_snapshot() {
+                    self.dispatch(
+                        context,
+                        Command::ApplyFastRomPatch {
+                            rev: snapshot.revision,
+                        },
+                    );
+                }
+            }
             UserToolbarNativeAction::GraphicsCompressionOptions => {
                 self.graphics_migration_dialog.open(&self.app);
             }
@@ -2044,6 +2054,7 @@ enum UserToolbarNativeAction {
     MouseGestures,
     SaveMouseGestures,
     UseFastRomAddressing,
+    ApplyFastRomPatch,
     InstallVramPatch,
     VramPatchOptions,
     GraphicsCompressionOptions,
@@ -2175,6 +2186,7 @@ fn user_toolbar_native_action(name: &str) -> Option<UserToolbarNativeAction> {
         "LM_OPTIONS_MOUSE_GESTURES" => UserToolbarNativeAction::MouseGestures,
         "LM_OPTIONS_SAVE_GESTURES" => UserToolbarNativeAction::SaveMouseGestures,
         "LM_OPTIONS_USE_FASTROM" => UserToolbarNativeAction::UseFastRomAddressing,
+        "LM_OPTIONS_PATCH_FASTROM" => UserToolbarNativeAction::ApplyFastRomPatch,
         "LM_OPTIONS_INSTALL_VRAM" => UserToolbarNativeAction::InstallVramPatch,
         "LM_OPTIONS_VRAM" => UserToolbarNativeAction::VramPatchOptions,
         "LM_OPTIONS_COMPRESSION" => UserToolbarNativeAction::GraphicsCompressionOptions,
@@ -3240,7 +3252,7 @@ mod user_toolbar_tests {
                     || user_toolbar_native_action(entry.name).is_some()
             })
             .collect::<Vec<_>>();
-        assert_eq!(supported.len(), 314);
+        assert_eq!(supported.len(), 315);
         assert!(
             supported
                 .iter()
@@ -3249,6 +3261,10 @@ mod user_toolbar_tests {
         assert_eq!(
             user_toolbar_native_action("LM_OPTIONS_USE_FASTROM"),
             Some(UserToolbarNativeAction::UseFastRomAddressing)
+        );
+        assert_eq!(
+            user_toolbar_native_action("LM_OPTIONS_PATCH_FASTROM"),
+            Some(UserToolbarNativeAction::ApplyFastRomPatch)
         );
     }
 

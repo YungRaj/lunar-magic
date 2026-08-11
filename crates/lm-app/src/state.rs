@@ -218,6 +218,10 @@ pub enum AppError {
     TitleRecordingRecorder(lm_project::TitleRecordingRecorderError),
     LunarMagicMetadataIdentityMismatch,
     LunarMagicMetadata(lm_project::LunarMagicRomMetadataIoError),
+    FastRomPatchIdentityMismatch,
+    FastRomPatchAlreadyInstalled,
+    FastRomPatchDetect(lm_profile::SmwUsV1FastRomPatchDetectError),
+    FastRomPatchBuild(lm_profile::FastRomPatchError),
     SecondaryExitIdentityMismatch,
     SecondaryExitPatch(lm_project::SecondaryExitPatchError),
     NativeOverworldWarpIdentityMismatch,
@@ -672,6 +676,18 @@ impl From<lm_project::LunarMagicRomMetadataIoError> for AppError {
     }
 }
 
+impl From<lm_profile::SmwUsV1FastRomPatchDetectError> for AppError {
+    fn from(value: lm_profile::SmwUsV1FastRomPatchDetectError) -> Self {
+        Self::FastRomPatchDetect(value)
+    }
+}
+
+impl From<lm_profile::FastRomPatchError> for AppError {
+    fn from(value: lm_profile::FastRomPatchError) -> Self {
+        Self::FastRomPatchBuild(value)
+    }
+}
+
 impl From<lm_project::SecondaryExitPatchError> for AppError {
     fn from(value: lm_project::SecondaryExitPatchError) -> Self {
         Self::SecondaryExitPatch(value)
@@ -1043,6 +1059,7 @@ impl AppState {
             Command::SetUseFastRomAddressing { rev, enabled } => {
                 self.set_use_fastrom_addressing(rev, enabled)?
             }
+            Command::ApplyFastRomPatch { rev } => self.apply_fastrom_patch(rev)?,
             Command::ReplaceNativeSecondaryExits { rev, table } => {
                 self.replace_native_secondary_exits(rev, &table)?
             }
