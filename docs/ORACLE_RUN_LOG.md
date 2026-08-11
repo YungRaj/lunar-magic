@@ -1372,3 +1372,15 @@ authenticated pointer-table passes, hook/RATS installation, metadata, and checks
 models all three ROM markers and preserves the irreversible history bit when current addressing
 is disabled. The focused lm-rom gate passes 39/39; command coverage remains 313/317 until the
 complete transaction is wired.
+
+## Authenticated Ersanio JSL conversion pass (2026-08-11)
+
+Rust now carries all 916 dword source addresses recovered from Lunar Magic 3.63's
+`$005E8E90..$005E9CDF` table and reproduces the guarded `$004905E8..$0049076F` loop. Every entry
+in pristine SMW US is converted, a second pass changes zero bytes, modified instructions are
+skipped, and truncated images reject with the exact source address and resolved offset. The
+post-Use-FastROM Wine oracle has seven entries already converted by prior save work, so this pass
+explains exactly 909 of its 1,804 patch-save differences. The complete lm-profile gate passes 336
+tests with 20 explicit fixture ignores plus all 10 integration tests. The command remains pending
+until the remaining pointer-table passes, speed hook, marker, checksum, and atomic application
+boundary are composed.
