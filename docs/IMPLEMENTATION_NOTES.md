@@ -6371,3 +6371,17 @@ Focused tests stage and recover a primary title-screen tile word and a credits t
 each through its complete detected native loader after reopening. The complete native gate passes
 1,170 tests with 11 explicit fixture/device ignores, including all 512 pristine-level
 materializations; the renderer remains green at 237/237.
+
+## Crash recovery includes staged installed expanded settings
+
+The standalone installed expanded-settings workspace now contributes a content-sensitive recovery
+generation covering its exact 32-byte record. Recovery reuses the controller's ordinary
+checksum-inclusive mutation, rejects stale project revisions, preserves the selected level, and
+applies the mutation only to the isolated recovery clone. This covers standalone Super GFX bypass,
+custom Layer 3 settings, expanded mode flags, sprite-boundary interaction, and all losslessly
+retained native words without changing the live project or its undo history.
+
+The focused test stages one native word, recovers the selected level, and reloads the exact record
+through the installed settings loader. The complete native gate passes 1,171 tests with 11 explicit
+fixture/device ignores, including all 512 pristine-level materializations; the renderer remains
+green at 237/237.

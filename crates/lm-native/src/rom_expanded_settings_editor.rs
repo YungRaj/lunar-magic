@@ -17,6 +17,45 @@ pub(crate) struct RomExpandedSettingsEditor {
 }
 
 impl RomExpandedSettingsEditor {
+    pub(crate) fn staged_recovery_generation(&self, app: &AppState) -> Option<u64> {
+        let controller = self.controller.as_ref()?;
+        controller.is_modified().then(|| {
+            let content_revision = controller
+                .record()
+                .encoded()
+                .iter()
+                .fold(0x4558_5041_4e44_4544_u64, |revision, byte| {
+                    revision.rotate_left(5) ^ u64::from(*byte)
+                });
+            app.project_revision().wrapping_mul(0xa24b_aed4_963e_e407)
+                ^ controller.revision().rotate_left(29)
+                ^ content_revision
+        })
+    }
+
+    pub(crate) fn staged_recovery_snapshot(
+        &self,
+        app: &AppState,
+    ) -> Result<Option<lm_app::RecoverySnapshot>, String> {
+        let controller = self
+            .controller
+            .as_ref()
+            .ok_or("expanded-settings workspace is closed")?;
+        if !controller.is_modified() {
+            return Ok(app.recovery_snapshot());
+        }
+        let prepared = controller
+            .prepare_commit("Recover staged installed expanded settings")
+            .map_err(|error| error.to_string())?;
+        if prepared.expected_revision != app.project_revision() {
+            return Err(
+                "expanded-settings recovery mutation was prepared from a stale revision".into(),
+            );
+        }
+        app.recovery_snapshot_with_mutation(&prepared.mutation, app.current_level())
+            .map_err(|error| error.to_string())
+    }
+
     pub(crate) fn is_open(&self) -> bool {
         self.controller.is_some()
     }
@@ -313,6 +352,49 @@ mod tests {
     use lm_level::{ExpandedLevelHeader, SuperGraphicsBypass};
     use lm_project::ExpandedLevelSettingsLayout;
     use lm_rom::{Mapper, SnesChecksum, compute_snes_checksum};
+
+    #[test]
+    fn staged_expanded_settings_are_recovered_without_committing_live_project() {
+        let mut bytes = vec![0; 0x8000];
+        bytes[0x7fc0..0x7fd5].copy_from_slice(b"SUPER MARIOWORLD     ");
+        bytes[0x7fd5] = 0x20;
+        bytes[0x7fd9] = 1;
+        let checksum = compute_snes_checksum(&bytes, 0x7fdc).unwrap();
+        bytes[0x7fdc..0x7fe0].copy_from_slice(&checksum.encoded());
+        let layout = ExpandedLevelSettingsLayout {
+            mapper: Mapper::LoRom,
+            table_offset: 0x2000,
+            entries: 0x200,
+            stride: 0x20,
+        };
+        let mut app = AppState::default();
+        app.load_rom(bytes).unwrap();
+        app.dispatch(Command::SelectLevel(0x105)).unwrap();
+        let mut controller =
+            ExpandedSettingsController::decode(&app.controller_snapshot().unwrap(), layout)
+                .unwrap();
+        controller.apply_word_edits(&[(7, 0x3456)]).unwrap();
+        let editor = RomExpandedSettingsEditor {
+            form: ExpandedSettingsForm::load(controller.record()),
+            controller: Some(controller),
+            ..Default::default()
+        };
+
+        assert!(editor.staged_recovery_generation(&app).is_some());
+        let recovery = editor.staged_recovery_snapshot(&app).unwrap().unwrap();
+        assert_eq!(app.capabilities().project, lm_app::ProjectStatus::OpenClean);
+        assert_eq!(app.project().unwrap().history.undo_len(), 0);
+
+        let mut reopened = AppState::default();
+        reopened.load_recovery(recovery).unwrap();
+        assert_eq!(reopened.current_level(), Some(0x105));
+        let record = reopened
+            .project()
+            .unwrap()
+            .load_expanded_level_settings(0x105, layout)
+            .unwrap();
+        assert_eq!(record.word(7).unwrap(), 0x3456);
+    }
 
     #[test]
     fn focused_semantic_controls_commit_reopen_checksum_undo_and_reject_stale_stage() {

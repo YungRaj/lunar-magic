@@ -381,6 +381,14 @@ against deleting a racing unrelated replacement. The 20-test persistence family 
 aliases, distinct hard links, identity-guarded cleanup, rollback, collision, and grouped/paired
 publication; `cargo check -p lm-native --target x86_64-pc-windows-gnu` now completes successfully.
 
+Crash-recovery evidence update (2026-08-11): the standalone installed expanded-settings editor now
+publishes content-sensitive staged generations and reuses its ordinary checksum-inclusive atomic
+mutation on an isolated recovery clone. The retained selected level reopens with the exact changed
+32-byte record while the live project remains clean and history-free. This independently covers
+Super GFX bypass, custom Layer 3 configuration, expanded mode flags, sprite-boundary mechanics, and
+all opaque native words; `staged_expanded_settings_are_recovered_without_committing_live_project`
+binds the boundary. Other editor-local staged forms remain part of the Release-row gap.
+
 ## Workflow ledger
 
 | Area | Original Lunar Magic workflow | Model | Tx | GUI | Oracle | Variants | Status | Primary evidence / next gap |
