@@ -1,5 +1,6 @@
 use crate::{AppError, AppState, FrontendEffect};
 use lm_profile::{SMW_US_V1_CHECKSUM_FIELD, smw_us_v1_lunar_magic_metadata_layout};
+use lm_project::Project;
 use lm_rom::{LunarMagicRomMetadata, Mapper, Region, SupportedGame};
 
 impl AppState {
@@ -17,19 +18,9 @@ impl AppState {
         self.require_no_pending_save()?;
         self.ensure_project_revision_capacity()?;
         let project = self.project.as_mut().ok_or(AppError::NoProject)?;
-        let identity = project.identity.as_ref().ok_or(AppError::NoProject)?;
-        if identity.game != SupportedGame::SuperMarioWorld
-            || identity.region != Region::NorthAmerica
-            || identity.revision != 0
-            || identity.mapper != Mapper::LoRom
-        {
-            return Err(AppError::LunarMagicMetadataIdentityMismatch);
-        }
-        let layout = smw_us_v1_lunar_magic_metadata_layout();
-        if project.load_lunar_magic_rom_metadata(layout)?.as_ref() == Some(metadata) {
+        if !save_lunar_magic_rom_metadata_to_project(project, metadata)? {
             return Ok(Vec::new());
         }
-        project.save_lunar_magic_rom_metadata(metadata, layout, SMW_US_V1_CHECKSUM_FIELD)?;
         self.advance_project_revision()?;
         let description = "Replace Lunar Magic ROM metadata".to_owned();
         self.status.clone_from(&description);
@@ -39,6 +30,28 @@ impl AppState {
             revision: self.project_revision,
         }])
     }
+}
+
+/// Saves authenticated Lunar Magic fixed metadata through the ordinary identity-checked path.
+/// Returns `false` when every owned metadata byte is already exact.
+pub fn save_lunar_magic_rom_metadata_to_project(
+    project: &mut Project,
+    metadata: &LunarMagicRomMetadata,
+) -> Result<bool, AppError> {
+    let identity = project.identity.as_ref().ok_or(AppError::NoProject)?;
+    if identity.game != SupportedGame::SuperMarioWorld
+        || identity.region != Region::NorthAmerica
+        || identity.revision != 0
+        || identity.mapper != Mapper::LoRom
+    {
+        return Err(AppError::LunarMagicMetadataIdentityMismatch);
+    }
+    let layout = smw_us_v1_lunar_magic_metadata_layout();
+    if project.load_lunar_magic_rom_metadata(layout)?.as_ref() == Some(metadata) {
+        return Ok(false);
+    }
+    project.save_lunar_magic_rom_metadata(metadata, layout, SMW_US_V1_CHECKSUM_FIELD)?;
+    Ok(true)
 }
 
 #[cfg(test)]

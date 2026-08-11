@@ -6555,3 +6555,17 @@ Focused tests recover edits at both tile boundaries across all three planes thro
 installation, then preserve a previously installed primary-plane edit while recovering a staged
 secondary-tail update. All four event-tilemap editor tests, the application install/update/Undo
 test, and all 237 renderer tests pass.
+
+## Crash recovery includes staged Lunar Magic fixed metadata
+
+The standalone metadata editor now contributes a content-sensitive generation over all 160
+attribution bytes, the VRAM-version byte, and all 25 feature-record bytes. Recovery clones the
+current project and invokes the same authenticated SMW-US fixed-layout save as ordinary commit,
+including checksum repair, while the metadata model continues to reject edits to the stable
+signature and reserved checksum-status bits. Stale workspaces fail closed and the live project
+remains clean and history-free.
+
+The retained real Lunar Magic 3.63 fixture test stages independent attribution, VRAM-version, and
+feature-record edits, recovers and reloads all three exactly, and proves the live project was not
+mutated. All four metadata editor/workspace tests, the application install/Undo test, and all 237
+renderer tests pass.

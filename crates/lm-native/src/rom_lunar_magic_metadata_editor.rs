@@ -21,6 +21,48 @@ pub(crate) struct RomLunarMagicMetadataEditor {
 }
 
 impl RomLunarMagicMetadataEditor {
+    pub(crate) fn staged_recovery_generation(&self, app: &AppState) -> Option<u64> {
+        let workspace = self.workspace.as_ref()?;
+        if !workspace.is_dirty() {
+            return None;
+        }
+        let metadata = workspace.metadata();
+        let content_revision = metadata
+            .attribution()
+            .iter()
+            .copied()
+            .chain(std::iter::once(metadata.vram_version()))
+            .chain(metadata.feature_record().iter().copied())
+            .fold(0x4c4d_4d45_5441_4441_u64, |revision, byte| {
+                revision.rotate_left(5) ^ u64::from(byte)
+            });
+        Some(
+            app.project_revision().wrapping_mul(0xa24b_aed4_963e_e407)
+                ^ content_revision.rotate_left(31),
+        )
+    }
+
+    pub(crate) fn staged_recovery_snapshot(
+        &self,
+        app: &AppState,
+    ) -> Result<Option<lm_app::RecoverySnapshot>, String> {
+        let workspace = self
+            .workspace
+            .as_ref()
+            .ok_or_else(|| "Lunar Magic metadata workspace is closed".to_owned())?;
+        if workspace.is_stale(app.project_revision()) {
+            return Err("stale Lunar Magic metadata workspace cannot be recovered".into());
+        }
+        if !workspace.is_dirty() {
+            return Ok(app.recovery_snapshot());
+        }
+        let mut staged = app.project().ok_or("open a supported ROM first")?.clone();
+        lm_app::save_lunar_magic_rom_metadata_to_project(&mut staged, workspace.metadata())
+            .map_err(|error| error.to_string())?;
+        app.recovery_snapshot_with_current_rom(staged.save_snapshot(), app.current_level())
+            .map_err(|error| error.to_string())
+    }
+
     pub(crate) fn is_open(&self) -> bool {
         self.workspace.is_some()
     }
@@ -269,5 +311,44 @@ mod tests {
             .unwrap()
             .unwrap();
         assert_eq!(reopened.attribution()[0x9f], 0xa5);
+    }
+
+    #[test]
+    fn staged_real_metadata_recovers_all_owned_regions_without_mutating_live_project() {
+        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let fixture =
+            fs::read(root.join("oracle-work/lm363/pristine-us/level-save-000/after.smc")).unwrap();
+        let mut app = AppState::default();
+        app.load_rom(fixture).unwrap();
+        let mut editor = RomLunarMagicMetadataEditor::default();
+        editor.open(&app);
+        for (region, index, value) in [
+            (MetadataRegion::Attribution, "9F", "A5"),
+            (MetadataRegion::VramVersion, "00", "34"),
+            (MetadataRegion::FeatureRecord, "17", "5A"),
+        ] {
+            editor.form.region = region;
+            editor.form.index = index.into();
+            editor.form.selection_changed();
+            editor.load_selected().unwrap();
+            editor.form.value = value.into();
+            editor.apply_selected().unwrap();
+        }
+
+        assert!(editor.staged_recovery_generation(&app).is_some());
+        let recovery = editor.staged_recovery_snapshot(&app).unwrap().unwrap();
+        assert_eq!(app.capabilities().project, lm_app::ProjectStatus::OpenClean);
+        assert_eq!(app.project().unwrap().history.undo_len(), 0);
+        let mut reopened = AppState::default();
+        reopened.load_recovery(recovery).unwrap();
+        let metadata = reopened
+            .project()
+            .unwrap()
+            .load_lunar_magic_rom_metadata(smw_us_v1_lunar_magic_metadata_layout())
+            .unwrap()
+            .unwrap();
+        assert_eq!(metadata.attribution()[0x9f], 0xa5);
+        assert_eq!(metadata.vram_version(), 0x34);
+        assert_eq!(metadata.feature_record()[0x17], 0x5a);
     }
 }

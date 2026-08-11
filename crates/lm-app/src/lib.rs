@@ -243,6 +243,7 @@ pub use localization::{
     decode_original_language_module_dialogs, decode_original_language_module_strings,
     validate_original_language_module_checksum,
 };
+pub use lunar_magic_metadata_state::save_lunar_magic_rom_metadata_to_project;
 pub use map16_bitmap_allocation::{
     LUNAR_MAGIC_BLANK_MAP16_WORD, Map16BitmapAllocation, Map16BitmapAllocationError,
     Map16BitmapAllocationMode, Map16BitmapAllocationOptions, allocate_bitmap_map16_tiles,

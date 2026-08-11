@@ -452,6 +452,11 @@ through ordinary pristine LZ2 installation or detected installed LZ2/LZ3 update.
 `staged_pristine_event_tilemaps_recover_all_three_complete_planes` proves both tile boundaries and
 all planes; `staged_installed_event_tilemap_update_preserves_prior_planes` proves recovery retains a
 previously committed primary-plane edit while adding a staged secondary-tail update.
+The standalone Lunar Magic metadata editor now hashes and recovers all owned fixed-layout bytes
+through the ordinary authenticated save and checksum path while protected signature/reserved bits
+remain model-enforced. `staged_real_metadata_recovers_all_owned_regions_without_mutating_live_project`
+proves exact attribution, VRAM-version, and feature-record recovery from a retained real Lunar Magic
+3.63 fixture with a clean, history-free live project.
 
 ## Workflow ledger
 
