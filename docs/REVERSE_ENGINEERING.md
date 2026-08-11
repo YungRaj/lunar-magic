@@ -5066,3 +5066,18 @@ GFX/ExGFX file numbers. Legacy/default paths supply four real slots, expanded he
 and slots seven and eight are display-only blanks until overridden. `LoadLayer3GraphicsSet` uses
 the same sentinel across four real 2bpp slots plus four display-only slots. Sprite graphics are not
 part of this dialog.
+
+## Level C7 menu-color fix
+
+`HandleLevelEditorCommand` case `$D1` for command `$26AD` toggles byte `$005E7AFA`, whose PE
+initializer is one, and emits the exact inserted/not-inserted-on-save strings. Its only other
+reference is `SaveLevelToRom` at `$00484278`; there is no registry/persistence reference. The save
+branch requires target level `$00C7` and the enabled flag, then writes `AD 01 07` at both active
+layout-descriptor fields `+$388` and `+$38C`. It subsequently relocates each 16-bit IRAM operand,
+which changes `$0701` to `$6701` for SA-1.
+
+The descriptor pairs are physical `$001ED3/$001D1C` for SMW-NA,
+`$001E6D/$001CB1` for SMW-J, and `$181EEC/$181CFA` for All-Stars + World; removing the copier
+prefix yields Rust logical offsets `$001CD3/$001B1C`, `$001C6D/$001AB1`, and
+`$181CEC/$181AFA`. ExLoROM selects the active upper body. The disabled branch performs no restore,
+so an existing patch remains installed.

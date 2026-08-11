@@ -135,6 +135,26 @@ impl NativeApplication {
             self.level_view_visibility,
             self.animation_rate,
         );
+        let command = command.and_then(|command| {
+            let result = self
+                .app
+                .controller_snapshot()
+                .map_err(|error| error.to_string())
+                .and_then(|snapshot| {
+                    crate::menu_color_fix::prepare_level_save_command(
+                        &snapshot,
+                        self.menu_color_fix.unwrap_or(true),
+                        command,
+                    )
+                });
+            match result {
+                Ok(command) => Some(command),
+                Err(error) => {
+                    self.effects.error = Some(error);
+                    None
+                }
+            }
+        });
         if let Some(command) = command
             && self.try_dispatch(context, command)
         {

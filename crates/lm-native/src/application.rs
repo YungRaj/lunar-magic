@@ -206,6 +206,7 @@ pub(crate) struct NativeApplication {
     two_bpp_view_confirmation: bool,
     gfx_display_override: crate::vanilla_map16_preview::GfxDisplayOverride,
     gfx_display_override_form: Option<(String, String)>,
+    menu_color_fix: Option<bool>,
     level_view_visibility: LevelViewVisibility,
     renderer: NativeRenderState,
     vanilla_graphics_editor: VanillaGraphicsEditor,
@@ -1480,6 +1481,28 @@ impl eframe::App for NativeApplication {
                         }
                     } else {
                         command
+                    }
+                } else {
+                    command
+                };
+                let command = if level_commit {
+                    let snapshot = match self.app.controller_snapshot() {
+                        Ok(snapshot) => snapshot,
+                        Err(error) => {
+                            self.effects.error = Some(error.to_string());
+                            return;
+                        }
+                    };
+                    match crate::menu_color_fix::prepare_level_save_command(
+                        &snapshot,
+                        self.menu_color_fix.unwrap_or(true),
+                        command,
+                    ) {
+                        Ok(command) => command,
+                        Err(error) => {
+                            self.effects.error = Some(error);
+                            return;
+                        }
                     }
                 } else {
                     command

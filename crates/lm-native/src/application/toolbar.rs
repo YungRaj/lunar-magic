@@ -545,6 +545,16 @@ impl NativeApplication {
                     ));
                 }
             }
+            UserToolbarNativeAction::MenuColorFix => {
+                let enabled = !self.menu_color_fix.unwrap_or(true);
+                self.menu_color_fix = Some(enabled);
+                self.app.status = if enabled {
+                    "Color hack will be inserted when saving Level 0xC7."
+                } else {
+                    "Color hack will NOT be inserted when saving Level 0xC7."
+                }
+                .into();
+            }
             UserToolbarNativeAction::WarnVerticalFireballBuoyancy => {
                 self.set_warn_vertical_fireball_buoyancy(
                     !self.warn_vertical_fireball_buoyancy.unwrap_or(true),
@@ -1938,6 +1948,7 @@ enum UserToolbarNativeAction {
     BackgroundEditorOwned,
     DisplayMarioRegions,
     GfxDisplayOverride,
+    MenuColorFix,
     WarnVerticalFireballBuoyancy,
     GfxBypassListDialogs,
     JoinedGraphicsFiles,
@@ -2062,6 +2073,7 @@ fn user_toolbar_native_action(name: &str) -> Option<UserToolbarNativeAction> {
         "LM_KEY_BGEDIT_ONTOP" => UserToolbarNativeAction::BackgroundEditorOwned,
         "LM_KEY_MARIO_REGIONS" => UserToolbarNativeAction::DisplayMarioRegions,
         "LM_KEY_GFX_OVERRIDE" => UserToolbarNativeAction::GfxDisplayOverride,
+        "LM_KEY_MENUCOLOR_FIX" => UserToolbarNativeAction::MenuColorFix,
         "LM_OPTIONS_WARN_SPRITE_33" => UserToolbarNativeAction::WarnVerticalFireballBuoyancy,
         "LM_OPTIONS_INSTALL_VRAM" => UserToolbarNativeAction::GfxBypassListDialogs,
         "LM_OPTIONS_ATTACH_FILES" => UserToolbarNativeAction::JoinedGraphicsFiles,
@@ -3136,7 +3148,7 @@ mod user_toolbar_tests {
                     || user_toolbar_native_action(entry.name).is_some()
             })
             .collect::<Vec<_>>();
-        assert_eq!(supported.len(), 307);
+        assert_eq!(supported.len(), 308);
         assert!(
             supported
                 .iter()
@@ -3707,6 +3719,34 @@ mod user_toolbar_tests {
     }
 
     #[test]
+    fn menu_color_fix_command_toggles_exact_session_state_and_status() {
+        assert_eq!(
+            user_toolbar_native_action("LM_KEY_MENUCOLOR_FIX"),
+            Some(UserToolbarNativeAction::MenuColorFix)
+        );
+        let mut native = NativeApplication::default();
+        assert_eq!(native.menu_color_fix, None);
+        native.apply_user_toolbar_native_action(
+            &egui::Context::default(),
+            UserToolbarNativeAction::MenuColorFix,
+        );
+        assert_eq!(native.menu_color_fix, Some(false));
+        assert_eq!(
+            native.app.status,
+            "Color hack will NOT be inserted when saving Level 0xC7."
+        );
+        native.apply_user_toolbar_native_action(
+            &egui::Context::default(),
+            UserToolbarNativeAction::MenuColorFix,
+        );
+        assert_eq!(native.menu_color_fix, Some(true));
+        assert_eq!(
+            native.app.status,
+            "Color hack will be inserted when saving Level 0xC7."
+        );
+    }
+
+    #[test]
     fn historical_install_vram_command_toggles_gfx_bypass_dialog_style() {
         let mut native = NativeApplication::default();
         assert_eq!(native.gfx_bypass_list_dialogs, None);
@@ -4103,7 +4143,7 @@ mod user_toolbar_tests {
                     && user_toolbar_native_action(entry.name).is_none()
             })
             .collect::<Vec<_>>();
-        assert_eq!(unsupported.len(), 10);
+        assert_eq!(unsupported.len(), 9);
         if std::env::var_os("LM_DIAGNOSTIC_UNSUPPORTED_TOOLBAR_COMMANDS").is_some() {
             for entry in unsupported {
                 eprintln!(

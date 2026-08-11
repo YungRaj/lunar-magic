@@ -990,6 +990,17 @@ existing values like the recovered dialog. Focused pristine, installed, parser, 
 no-ROM-mutation tests pass. The authenticated partition is now **307 routed / 10 pending**. The
 aggregate remains 59/65 because the configuration row is still Partial.
 
+Toolbar coverage update (2026-08-11, Level C7 menu-color fix): authenticated
+`LM_KEY_MENUCOLOR_FIX` `$26AD` now toggles the original default-on, session-only option with exact
+status text. When enabled, a Level `$0C7` save atomically writes `LDA $0701` to both
+identity-selected game sites (`$6701` for SA-1 RAM remapping), composes with either pristine or
+installed level mutations, repairs the checksum, and undoes as one operation. Other levels and the
+disabled state preserve the level-save command byte-for-byte, and disabling never removes an
+already installed patch, matching the recovered save branch. SMW-NA, SMW-J, All-Stars + World,
+ExLoROM active-body, and SA-1 operand routing are covered. The authenticated partition is now
+**308 routed / 9 pending**. The aggregate remains 59/65 because the configuration row is still
+Partial.
+
 Toolbar coverage update (2026-08-10, selection editors): `LM_EDIT_PROPERTIES` `$2468` now toggles
 an independent modeless properties window, while `LM_EDIT_EDIT_MANUAL` `$2469` opens (and repeated
 activation reuses) the manual editor dialog. Both follow the live Layer 1, object-backed Layer 2,

@@ -60,6 +60,7 @@ mod map16_editor;
 mod map16_editor_render;
 mod map16_set_editor;
 mod map16_subtile_form;
+mod menu_color_fix;
 mod metadata_editor;
 mod metadata_editor_forms;
 mod mwl_editor;

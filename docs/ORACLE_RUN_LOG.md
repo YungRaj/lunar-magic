@@ -1229,6 +1229,23 @@ The renderer gate passes 235/235, the complete native gate passes 1,141 tests wi
 external-fixture ignores, all 512 pristine levels materialize, and the Windows i686 cross-check
 passes.
 
+## Level C7 menu-color fix recovery (2026-08-11)
+
+Ghidra command case `$D1` authenticates `LM_KEY_MENUCOLOR_FIX` `$26AD`, the default-one global at
+`$005E7AFA`, exact toggle statuses, and the absence of any settings-persistence reference.
+`SaveLevelToRom` at `$00484268..$0048433B` proves the target-level `$0C7` guard, two
+descriptor-selected writes of `AD 01 07`, and subsequent mapper IRAM-word relocation. Descriptor
+fields `+$388/+$38C` recover the SMW-NA, SMW-J, and All-Stars + World physical pairs; the retained
+pristine ROM confirms the original NA instructions at both sites.
+
+Rust composes those writes with pristine and installed level-save mutations, redirects ExLoROM to
+the active body, emits `$6701` under SA-1, repairs checksum, and preserves one Undo boundary.
+Focused tests cover exact default/toggle text, both pristine sites, checksum/reopen, Undo,
+disabled/wrong-level no-op behavior, every identity pair, ExLoROM, and SA-1.
+The renderer gate passes 235/235, the complete native gate passes 1,145 tests with 13 explicit
+external-fixture ignores, all 512 pristine levels materialize, and the Windows i686 cross-check
+passes.
+
 ## Context-sensitive custom collection append (2026-08-11)
 
 Ghidra command-table byte `$D3` maps both `LM_KEY_ADD_CSPRITE` and `LM_KEY_ADD_CUSTOM` at `$26AF`.
