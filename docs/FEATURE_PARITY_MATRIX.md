@@ -457,6 +457,11 @@ through the ordinary authenticated save and checksum path while protected signat
 remain model-enforced. `staged_real_metadata_recovers_all_owned_regions_without_mutating_live_project`
 proves exact attribution, VRAM-version, and feature-record recovery from a retained real Lunar Magic
 3.63 fixture with a clean, history-free live project.
+The standalone overworld path-link editor now hashes and recovers the complete variable link table
+through fixed-table update, pristine relocatable-runtime installation, or installed
+update/reallocation. `staged_pristine_path_growth_recovers_complete_installed_table` proves exact
+14-to-15-link recovery and `staged_installed_path_update_preserves_prior_tail_link` proves a later
+staged edit retains the previously committed installed tail link.
 
 ## Workflow ledger
 

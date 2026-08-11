@@ -42,6 +42,54 @@ struct PathLinkForm {
 }
 
 impl RomOverworldPathLinkEditor {
+    pub(crate) fn staged_recovery_generation(&self, app: &AppState) -> Option<u64> {
+        let workspace = self.workspace.as_ref()?;
+        if workspace.current == workspace.original {
+            return None;
+        }
+        let content_revision = workspace.current.links.iter().fold(
+            0x4f57_5041_5448_4c4e_u64 ^ workspace.current.links.len() as u64,
+            |revision, link| {
+                revision.rotate_left(7)
+                    ^ u64::from(link.source.x)
+                    ^ u64::from(link.source.y).rotate_left(11)
+                    ^ u64::from(link.source.submap).rotate_left(23)
+                    ^ u64::from(link.destination.x).rotate_left(31)
+                    ^ u64::from(link.destination.y).rotate_left(43)
+                    ^ u64::from(link.destination.submap).rotate_left(53)
+                    ^ u64::from(link.target.x_tile).rotate_left(3)
+                    ^ u64::from(link.target.y_tile).rotate_left(17)
+            },
+        );
+        Some(
+            app.project_revision().wrapping_mul(0xa24b_aed4_963e_e407)
+                ^ workspace.revision.rotate_left(31)
+                ^ content_revision,
+        )
+    }
+
+    pub(crate) fn staged_recovery_snapshot(
+        &self,
+        app: &AppState,
+    ) -> Result<Option<lm_app::RecoverySnapshot>, String> {
+        let workspace = self
+            .workspace
+            .as_ref()
+            .ok_or_else(|| "path-link workspace is closed".to_owned())?;
+        if workspace.revision != app.project_revision() {
+            return Err("stale path-link workspace cannot be recovered".into());
+        }
+        if workspace.current == workspace.original {
+            return Ok(app.recovery_snapshot());
+        }
+        app.recovery_snapshot_with_overworld_path_links(
+            None,
+            &workspace.current,
+            app.current_level(),
+        )
+        .map_err(|error| error.to_string())
+    }
+
     pub(crate) fn is_open(&self) -> bool {
         self.workspace.is_some()
     }
@@ -444,5 +492,83 @@ mod tests {
         editor.apply_selected().unwrap();
         assert!(!editor.request_close(true));
         assert!(editor.is_open());
+    }
+
+    #[test]
+    fn staged_pristine_path_growth_recovers_complete_installed_table() {
+        let mut app = AppState::default();
+        app.load_rom(crate::test_support::pristine_smw_us_rom_bytes())
+            .unwrap();
+        let mut editor = RomOverworldPathLinkEditor::default();
+        editor.open(&app);
+        editor.count = "0F".into();
+        editor.resize().unwrap();
+        editor.form.index = "0E".into();
+        editor.load_selected().unwrap();
+        editor.form.source_x = "1234".into();
+        editor.form.destination_y = "5678".into();
+        editor.form.target_x = "2A".into();
+        editor.form.target_y = "3B".into();
+        editor.apply_selected().unwrap();
+
+        assert!(editor.staged_recovery_generation(&app).is_some());
+        let recovery = editor.staged_recovery_snapshot(&app).unwrap().unwrap();
+        assert_eq!(app.capabilities().project, lm_app::ProjectStatus::OpenClean);
+        assert_eq!(app.project().unwrap().history.undo_len(), 0);
+        let mut reopened = AppState::default();
+        reopened.load_recovery(recovery).unwrap();
+        let table = &reopened
+            .project()
+            .unwrap()
+            .load_overworld_path_links_detected(smw_us_v1_overworld_path_patch_locator())
+            .unwrap()
+            .table;
+        assert_eq!(table.links.len(), 15);
+        assert_eq!(table.links[14].source.x, 0x1234);
+        assert_eq!(table.links[14].destination.y, 0x5678);
+        assert_eq!(table.links[14].target.x_tile, 0x2a);
+        assert_eq!(table.links[14].target.y_tile, 0x3b);
+    }
+
+    #[test]
+    fn staged_installed_path_update_preserves_prior_tail_link() {
+        let mut installer = AppState::default();
+        installer
+            .load_rom(crate::test_support::pristine_smw_us_rom_bytes())
+            .unwrap();
+        let mut first = RomOverworldPathLinkEditor::default();
+        first.open(&installer);
+        first.count = "0F".into();
+        first.resize().unwrap();
+        first.form.index = "0E".into();
+        first.load_selected().unwrap();
+        first.form.target_x = "44".into();
+        first.apply_selected().unwrap();
+        installer
+            .dispatch(first.prepare_commit(0).unwrap().unwrap())
+            .unwrap();
+
+        let mut app = AppState::default();
+        app.load_rom(installer.project().unwrap().save_snapshot())
+            .unwrap();
+        let mut editor = RomOverworldPathLinkEditor::default();
+        editor.open(&app);
+        editor.form.index = "00".into();
+        editor.load_selected().unwrap();
+        editor.form.target_y = "55".into();
+        editor.apply_selected().unwrap();
+
+        let recovery = editor.staged_recovery_snapshot(&app).unwrap().unwrap();
+        let mut reopened = AppState::default();
+        reopened.load_recovery(recovery).unwrap();
+        let table = &reopened
+            .project()
+            .unwrap()
+            .load_overworld_path_links_detected(smw_us_v1_overworld_path_patch_locator())
+            .unwrap()
+            .table;
+        assert_eq!(table.links.len(), 15);
+        assert_eq!(table.links[0].target.y_tile, 0x55);
+        assert_eq!(table.links[14].target.x_tile, 0x44);
     }
 }

@@ -6517,6 +6517,19 @@ installation, then preserve a committed entry 0 while recovering entry 23 throug
 All four special-event editor tests, the application install/update/two-Undo test, and all 237
 renderer tests pass.
 
+## Crash recovery includes staged overworld path links
+
+The standalone path-link editor now contributes a content-sensitive generation over the table
+length and every source endpoint, destination endpoint, submap, and engine target coordinate.
+Recovery uses the existing isolated-project composition path shared with overworld terrain: the
+14-link vanilla fixed table may be edited in place, resized tables install the relocatable runtime,
+and installed tables update or reallocate under the ordinary bounded policy. Exact semantic reopen
+is required while the live project stays clean and history-free.
+
+Focused tests recover a pristine 14-to-15-link growth with distinct endpoint and target fields, then
+preserve that installed tail link while recovering an independent edit to link zero. All four
+path-link editor tests, both application persistence tests, and all 237 renderer tests pass.
+
 ## Crash recovery includes the complete staged overworld event-number map
 
 The standalone event-number editor now contributes a content-sensitive generation over the exact
