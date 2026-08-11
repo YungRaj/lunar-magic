@@ -1,6 +1,7 @@
 use crate::{AppError, AppState, FrontendEffect};
 use lm_overworld::NativeOverworldPlayerStarts;
 use lm_profile::{SMW_US_V1_CHECKSUM_FIELD, smw_us_v1_overworld_player_start_layout};
+use lm_project::Project;
 use lm_rom::{Mapper, Region, SupportedGame};
 
 impl AppState {
@@ -17,28 +18,9 @@ impl AppState {
         }
         self.require_no_pending_save()?;
         self.ensure_project_revision_capacity()?;
-        starts.encode()?;
         let project = self.project.as_mut().ok_or(AppError::NoProject)?;
-        let identity = project.identity.as_ref().ok_or(AppError::NoProject)?;
-        if identity.game != SupportedGame::SuperMarioWorld
-            || identity.region != Region::NorthAmerica
-            || identity.revision != 0
-            || identity.mapper != Mapper::LoRom
-        {
-            return Err(AppError::NativeOverworldPlayerStartIdentityMismatch);
-        }
-        let changed = project.save_overworld_player_starts(
-            starts,
-            smw_us_v1_overworld_player_start_layout(),
-            SMW_US_V1_CHECKSUM_FIELD,
-        )?;
-        if !changed {
+        if !save_native_overworld_player_starts_to_project(project, starts)? {
             return Ok(Vec::new());
-        }
-        if project.load_overworld_player_starts(smw_us_v1_overworld_player_start_layout())?
-            != *starts
-        {
-            return Err(AppError::NativeOverworldPlayerStartReopenMismatch);
         }
         self.advance_project_revision()?;
         let description = "Replace native SMW overworld player starts".to_owned();
@@ -49,6 +31,36 @@ impl AppState {
             revision: self.project_revision,
         }])
     }
+}
+
+/// Applies the fixed native player-start block persistence used by the application command.
+///
+/// Returns `true` when the project changed and requires an exact semantic reopen after every write.
+pub fn save_native_overworld_player_starts_to_project(
+    project: &mut Project,
+    starts: &NativeOverworldPlayerStarts,
+) -> Result<bool, AppError> {
+    starts.encode()?;
+    let identity = project.identity.as_ref().ok_or(AppError::NoProject)?;
+    if identity.game != SupportedGame::SuperMarioWorld
+        || identity.region != Region::NorthAmerica
+        || identity.revision != 0
+        || identity.mapper != Mapper::LoRom
+    {
+        return Err(AppError::NativeOverworldPlayerStartIdentityMismatch);
+    }
+    let changed = project.save_overworld_player_starts(
+        starts,
+        smw_us_v1_overworld_player_start_layout(),
+        SMW_US_V1_CHECKSUM_FIELD,
+    )?;
+    if !changed {
+        return Ok(false);
+    }
+    if project.load_overworld_player_starts(smw_us_v1_overworld_player_start_layout())? != *starts {
+        return Err(AppError::NativeOverworldPlayerStartReopenMismatch);
+    }
+    Ok(true)
 }
 
 #[cfg(test)]

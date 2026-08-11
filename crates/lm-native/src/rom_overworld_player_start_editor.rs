@@ -66,6 +66,60 @@ pub(crate) struct RomOverworldPlayerStartEditor {
 }
 
 impl RomOverworldPlayerStartEditor {
+    pub(crate) fn staged_recovery_generation(&self, app: &AppState) -> Option<u64> {
+        let workspace = self.workspace.as_ref()?;
+        if workspace.current == workspace.original {
+            return None;
+        }
+        let content_revision = workspace
+            .current
+            .starts
+            .iter()
+            .flat_map(|start| {
+                let x = start.x.to_le_bytes();
+                let y = start.y.to_le_bytes();
+                [
+                    start.player,
+                    x[0],
+                    x[1],
+                    y[0],
+                    y[1],
+                    start.submap.encoded(),
+                    start.raw_flags,
+                ]
+            })
+            .chain(workspace.current.reserved)
+            .fold(0x504c_4159_5354_4152_u64, |revision, byte| {
+                revision.rotate_left(5) ^ u64::from(byte)
+            });
+        Some(
+            app.project_revision().wrapping_mul(0xa24b_aed4_963e_e407)
+                ^ workspace.revision.rotate_left(31)
+                ^ content_revision,
+        )
+    }
+
+    pub(crate) fn staged_recovery_snapshot(
+        &self,
+        app: &AppState,
+    ) -> Result<Option<lm_app::RecoverySnapshot>, String> {
+        let workspace = self
+            .workspace
+            .as_ref()
+            .ok_or_else(|| "player-start workspace is closed".to_owned())?;
+        if workspace.revision != app.project_revision() {
+            return Err("stale player-start workspace cannot be recovered".into());
+        }
+        if workspace.current == workspace.original {
+            return Ok(app.recovery_snapshot());
+        }
+        let mut staged = app.project().ok_or("open a supported ROM first")?.clone();
+        lm_app::save_native_overworld_player_starts_to_project(&mut staged, &workspace.current)
+            .map_err(|error| error.to_string())?;
+        app.recovery_snapshot_with_current_rom(staged.save_snapshot(), app.current_level())
+            .map_err(|error| error.to_string())
+    }
+
     pub(crate) fn is_open(&self) -> bool {
         self.workspace.is_some()
     }
@@ -344,5 +398,43 @@ mod tests {
         assert!(editor.prepare_commit(1).is_err());
         assert!(!editor.request_close(false));
         assert!(editor.is_open());
+    }
+
+    #[test]
+    fn staged_player_starts_recover_both_players_and_reserved_options_exactly() {
+        let app = pristine_app();
+        let mut editor = RomOverworldPlayerStartEditor::default();
+        editor.open(&app);
+        let reserved = editor.workspace.as_ref().unwrap().current.reserved;
+
+        editor.form.x = "0098".into();
+        editor.form.y = "00B8".into();
+        editor.form.submap = usize::from(Submap::StarWorld.encoded());
+        editor.apply_selected().unwrap();
+        editor.player = 1;
+        editor.loaded_player = None;
+        editor.load_selected().unwrap();
+        editor.form.x = "0128".into();
+        editor.form.y = "0068".into();
+        editor.form.submap = usize::from(Submap::ForestOfIllusion.encoded());
+        editor.apply_selected().unwrap();
+
+        assert!(editor.staged_recovery_generation(&app).is_some());
+        let recovery = editor.staged_recovery_snapshot(&app).unwrap().unwrap();
+        assert_eq!(app.capabilities().project, lm_app::ProjectStatus::OpenClean);
+        assert_eq!(app.project().unwrap().history.undo_len(), 0);
+
+        let mut reopened = AppState::default();
+        reopened.load_recovery(recovery).unwrap();
+        let starts = reopened
+            .project()
+            .unwrap()
+            .load_overworld_player_starts(smw_us_v1_overworld_player_start_layout())
+            .unwrap();
+        assert_eq!(starts.starts[0].submap, Submap::StarWorld);
+        assert_eq!((starts.starts[0].x, starts.starts[0].y), (0x98, 0xb8));
+        assert_eq!(starts.starts[1].submap, Submap::ForestOfIllusion);
+        assert_eq!((starts.starts[1].x, starts.starts[1].y), (0x128, 0x68));
+        assert_eq!(starts.reserved, reserved);
     }
 }

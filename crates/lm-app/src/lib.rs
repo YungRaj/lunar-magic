@@ -341,6 +341,7 @@ pub use overworld_metadata_controller::{
 pub use overworld_path_controller::{
     OverworldPathController, OverworldPathControllerError, OverworldPathSaveSnapshot,
 };
+pub use overworld_player_start_state::save_native_overworld_player_starts_to_project;
 pub use palette_controller::{PaletteController, PaletteControllerEdit, PaletteControllerError};
 pub use palette_document_controller::{
     PaletteDocumentController, PaletteDocumentControllerError, PaletteDocumentSaveSnapshot,

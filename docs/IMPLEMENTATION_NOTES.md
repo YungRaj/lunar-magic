@@ -6477,3 +6477,15 @@ Focused tests grow both pristine and installed tables through level `$1DB`, tile
 the maximum 256 canonical records. The installed path also proves a previously committed level-000
 tile survives the reallocation. All five level-name editor tests, the shared application persistence
 test, and all 237 renderer tests pass.
+
+## Crash recovery includes both staged overworld player starts
+
+The standalone player-start editor now contributes a content-sensitive generation covering Mario
+and Luigi's player identities, coordinates, submaps, raw flags, and all four adjacent reserved
+runtime-option bytes. Recovery invokes the same identity-checked fixed-block save and exact semantic
+reopen as ordinary commit on an isolated clone, while leaving the live project clean and
+history-free.
+
+The focused test stages distinct Mario and Luigi positions on different submaps, recovers and
+reopens both records exactly, and proves the unowned reserved bytes remain unchanged. All three
+player-start editor tests, the shared application persistence test, and all 237 renderer tests pass.

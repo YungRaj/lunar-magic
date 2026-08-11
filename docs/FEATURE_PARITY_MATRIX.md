@@ -424,6 +424,10 @@ ordinary vanilla-runtime installation or authenticated expanded-table update/rea
 `staged_pristine_level_names_recover_the_complete_maximum_table` and
 `staged_installed_level_name_growth_preserves_prior_name` prove exact 256-record reopen through the
 level `$1DB`/tile `$12` boundary, clean live state, and preservation of previously committed names.
+The standalone overworld player-start editor now hashes and recovers both complete player records
+plus all four retained adjacent option bytes through the ordinary fixed-block save/reopen path.
+`staged_player_starts_recover_both_players_and_reserved_options_exactly` proves distinct Mario and
+Luigi coordinates/submaps survive recovery without changing the live project or unowned bytes.
 
 ## Workflow ledger
 
