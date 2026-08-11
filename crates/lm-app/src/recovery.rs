@@ -194,6 +194,40 @@ impl AppState {
         self.recovery_snapshot_with_current_rom(staged.save_snapshot(), level)
     }
 
+    /// Composes two non-growing mutations prepared from the same ROM revision. Differing
+    /// overlapping writes fail closed, while the shared checksum field is recomputed after both.
+    pub fn recovery_snapshot_with_graphics_family(
+        &self,
+        graphics: &lm_project::RomMutation,
+        exanimation: &lm_project::RomMutation,
+        level: Option<u16>,
+    ) -> Result<Option<RecoverySnapshot>, AppError> {
+        const CHECKSUM_FIELD: usize = 0x7fdc;
+        if !graphics.appended.is_empty() || !exanimation.appended.is_empty() {
+            return Err(AppError::Recovery(
+                "simultaneous graphics recovery cannot yet rebase growing allocations".into(),
+            ));
+        }
+        if graphics.expected_len != exanimation.expected_len
+            || graphics.mapper != exanimation.mapper
+        {
+            return Err(AppError::Recovery(
+                "simultaneous graphics mutations do not share one ROM baseline".into(),
+            ));
+        }
+        reject_conflicting_mutation_writes(graphics, exanimation, CHECKSUM_FIELD)?;
+        let project = self.project.as_ref().ok_or(AppError::NoProject)?;
+        let mut staged = project.clone();
+        staged
+            .apply_mutation("Stage graphics for crash recovery", graphics)
+            .map_err(|error| AppError::Recovery(error.to_string()))?;
+        staged
+            .apply_mutation("Stage ExAnimation for crash recovery", exanimation)
+            .map_err(|error| AppError::Recovery(error.to_string()))?;
+        staged.rom.update_snes_checksum(CHECKSUM_FIELD)?;
+        self.recovery_snapshot_with_current_rom(staged.save_snapshot(), level)
+    }
+
     /// Restores a recovery record as an unnamed, dirty project.
     ///
     /// The original path is deliberately not restored. The first explicit save therefore uses
@@ -571,4 +605,96 @@ mod tests {
             palette
         );
     }
+
+    #[test]
+    fn same_baseline_graphics_mutations_compose_and_repair_the_final_checksum() {
+        use lm_rom::{Mapper, detect_identity};
+
+        let mut app = AppState::default();
+        app.load_rom(crate::test_support::pristine_smw_us_rom_bytes())
+            .unwrap();
+        let before = app.project().unwrap().rom.logical_bytes().to_vec();
+        let mut graphics_image = before.clone();
+        graphics_image[0x10000] ^= 0x01;
+        let graphics =
+            lm_project::RomMutation::between(Mapper::LoRom, &before, &graphics_image).unwrap();
+        let mut exanimation_image = before.clone();
+        exanimation_image[0x10010] ^= 0x02;
+        let exanimation =
+            lm_project::RomMutation::between(Mapper::LoRom, &before, &exanimation_image).unwrap();
+
+        let recovery = app
+            .recovery_snapshot_with_graphics_family(&graphics, &exanimation, Some(0x105))
+            .unwrap()
+            .unwrap();
+        let image = lm_rom::RomImage::from_bytes(recovery.current_rom.clone()).unwrap();
+        assert_eq!(image.logical_bytes()[0x10000], graphics_image[0x10000]);
+        assert_eq!(image.logical_bytes()[0x10010], exanimation_image[0x10010]);
+        assert!(detect_identity(&image).unwrap().checksum_matches());
+        assert_eq!(app.capabilities().project, crate::ProjectStatus::OpenClean);
+        assert_eq!(app.project().unwrap().history.undo_len(), 0);
+    }
+
+    #[test]
+    fn graphics_mutation_composition_rejects_growth_and_conflicts() {
+        use lm_project::{RomMutation, RomWrite};
+        use lm_rom::Mapper;
+
+        let mut app = AppState::default();
+        app.load_rom(crate::test_support::pristine_smw_us_rom_bytes())
+            .unwrap();
+        let len = app.project().unwrap().rom.logical_len();
+        let first = RomMutation {
+            mapper: Mapper::LoRom,
+            expected_len: len,
+            appended: Vec::new(),
+            writes: vec![RomWrite {
+                offset: 0x10000,
+                bytes: vec![1],
+            }],
+        };
+        let mut conflict = first.clone();
+        conflict.writes[0].bytes[0] = 2;
+        assert!(
+            app.recovery_snapshot_with_graphics_family(&first, &conflict, None)
+                .is_err()
+        );
+        let mut growth = first.clone();
+        growth.appended.push(0xff);
+        assert!(
+            app.recovery_snapshot_with_graphics_family(&growth, &first, None)
+                .is_err()
+        );
+    }
+}
+
+fn reject_conflicting_mutation_writes(
+    first: &lm_project::RomMutation,
+    second: &lm_project::RomMutation,
+    checksum_field: usize,
+) -> Result<(), AppError> {
+    let checksum_end = checksum_field + 4;
+    for left in &first.writes {
+        for right in &second.writes {
+            let left_end = left.offset.checked_add(left.bytes.len()).ok_or_else(|| {
+                AppError::Recovery("first graphics mutation write range overflowed".into())
+            })?;
+            let right_end = right.offset.checked_add(right.bytes.len()).ok_or_else(|| {
+                AppError::Recovery("second graphics mutation write range overflowed".into())
+            })?;
+            let start = left.offset.max(right.offset);
+            let end = left_end.min(right_end);
+            for offset in start..end {
+                if (checksum_field..checksum_end).contains(&offset) {
+                    continue;
+                }
+                if left.bytes[offset - left.offset] != right.bytes[offset - right.offset] {
+                    return Err(AppError::Recovery(format!(
+                        "simultaneous graphics mutations conflict at logical ROM offset {offset:06X}"
+                    )));
+                }
+            }
+        }
+    }
+    Ok(())
 }

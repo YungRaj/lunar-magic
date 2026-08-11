@@ -6676,3 +6676,17 @@ expanded-runtime installation on the same isolated ROM.
 independent staged mutation survives first-time expanded shared-palette installation, exact reopen,
 level `$105` retention, and a clean history-free live project. The ordinary shared-palette Undo
 test, native compilation, and all 237 renderer tests pass.
+
+## Crash recovery composes installed graphics and ExAnimation mutations
+
+The graphics and ExAnimation editors now expose their exact revision-bound prepared mutations and
+level context. When both mutations are non-growing and share one mapper/length baseline, recovery
+validates every overlapping byte, rejects differing non-checksum writes, applies both on one
+isolated project, and recomputes the final SNES checksum after both edits. This closes installed
+same-size composition without accepting last-writer checksum corruption.
+
+`same_baseline_graphics_mutations_compose_and_repair_the_final_checksum` proves both independent
+writes survive with a valid checksum and clean live state. `graphics_mutation_composition_`
+`rejects_growth_and_conflicts` proves allocation growth and conflicting writes fail visibly. The
+remaining gap is semantic rebasing when either editor grows the ROM; it is explicitly rejected
+rather than silently merged. Native compilation and all 237 renderer tests pass.

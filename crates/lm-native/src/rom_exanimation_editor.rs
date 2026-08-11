@@ -42,6 +42,35 @@ pub(crate) struct RomExAnimationEditor {
 }
 
 impl RomExAnimationEditor {
+    pub(crate) fn staged_recovery_mutation(
+        &self,
+        app: &AppState,
+    ) -> Result<Option<(lm_project::RomMutation, u16)>, String> {
+        let workspace = self
+            .workspace
+            .as_ref()
+            .ok_or("ExAnimation workspace is closed")?;
+        if !workspace.any_modified() {
+            return Ok(None);
+        }
+        if !workspace.controller.is_modified() {
+            return Err("inactive ExAnimation recovery domain is unexpectedly modified".into());
+        }
+        let command = self.prepare_commit()?;
+        let Command::CommitRomMutation {
+            expected_revision,
+            mutation,
+            ..
+        } = command
+        else {
+            return Err("ExAnimation recovery expected one prepared ROM mutation".into());
+        };
+        if expected_revision != app.project_revision() {
+            return Err("ExAnimation recovery mutation was prepared from a stale revision".into());
+        }
+        Ok(Some((mutation, workspace.slot)))
+    }
+
     pub(crate) fn staged_recovery_generation(&self, app: &AppState) -> Option<u64> {
         let workspace = self.workspace.as_ref()?;
         workspace.any_modified().then(|| {
@@ -69,22 +98,10 @@ impl RomExAnimationEditor {
         if !workspace.any_modified() {
             return Ok(app.recovery_snapshot());
         }
-        if !workspace.controller.is_modified() {
-            return Err("inactive ExAnimation recovery domain is unexpectedly modified".into());
-        }
-        let command = self.prepare_commit()?;
-        let Command::CommitRomMutation {
-            expected_revision,
-            mutation,
-            ..
-        } = command
-        else {
-            return Err("ExAnimation recovery expected one prepared ROM mutation".into());
-        };
-        if expected_revision != app.project_revision() {
-            return Err("ExAnimation recovery mutation was prepared from a stale revision".into());
-        }
-        app.recovery_snapshot_with_mutation(&mutation, Some(workspace.slot))
+        let (mutation, slot) = self
+            .staged_recovery_mutation(app)?
+            .ok_or("staged ExAnimation mutation disappeared")?;
+        app.recovery_snapshot_with_mutation(&mutation, Some(slot))
             .map_err(|error| error.to_string())
     }
 

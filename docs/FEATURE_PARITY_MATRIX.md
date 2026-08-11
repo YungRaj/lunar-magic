@@ -490,6 +490,9 @@ expanded-storage installs, exact complete-map reopen, retained level context, an
 Installed-ROM palette mutations and shared-palette files now compose in production persistence
 order. `simultaneous_pristine_palette_family_recovers_mutation_and_expanded_shared_palette` proves
 the independent mutation survives first-time expanded palette installation and exact reopen.
+Installed same-size graphics and ExAnimation mutations now compose with overlap validation and a
+final checksum repair. Growth or differing non-checksum overlaps fail visibly pending semantic
+allocation rebasing; focused success and rejection tests cover both sides of that boundary.
 
 ## Workflow ledger
 
