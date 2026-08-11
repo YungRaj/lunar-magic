@@ -34,6 +34,47 @@ pub(crate) struct RomOverworldSettingsEditor {
 }
 
 impl RomOverworldSettingsEditor {
+    pub(crate) fn staged_recovery_generation(&self, app: &AppState) -> Option<u64> {
+        let workspace = self.workspace.as_ref()?;
+        if workspace.current == workspace.original {
+            return None;
+        }
+        let content_revision = workspace
+            .current
+            .records
+            .iter()
+            .flat_map(|record| record.encoded().iter().copied())
+            .fold(0x4f57_5345_5454_494e_u64, |revision, byte| {
+                revision.rotate_left(5) ^ u64::from(byte)
+            });
+        Some(
+            app.project_revision().wrapping_mul(0xa24b_aed4_963e_e407)
+                ^ workspace.revision.rotate_left(31)
+                ^ content_revision,
+        )
+    }
+
+    pub(crate) fn staged_recovery_snapshot(
+        &self,
+        app: &AppState,
+    ) -> Result<Option<lm_app::RecoverySnapshot>, String> {
+        let workspace = self
+            .workspace
+            .as_ref()
+            .ok_or_else(|| "overworld-settings workspace is closed".to_owned())?;
+        if workspace.revision != app.project_revision() {
+            return Err("stale overworld-settings workspace cannot be recovered".into());
+        }
+        if workspace.current == workspace.original {
+            return Ok(app.recovery_snapshot());
+        }
+        let mut staged = app.project().ok_or("open a supported ROM first")?.clone();
+        lm_app::save_native_overworld_settings_to_project(&mut staged, &workspace.current)
+            .map_err(|error| error.to_string())?;
+        app.recovery_snapshot_with_current_rom(staged.save_snapshot(), app.current_level())
+            .map_err(|error| error.to_string())
+    }
+
     pub(crate) fn is_open(&self) -> bool {
         self.workspace.is_some()
     }
@@ -474,5 +515,70 @@ mod tests {
         assert_eq!(reopened.maps[4], after);
         app.dispatch(Command::Undo).unwrap();
         assert_eq!(app.project().unwrap().save_snapshot(), original);
+    }
+
+    #[test]
+    fn staged_pristine_overworld_settings_recover_all_seven_records() {
+        let app = pristine_app();
+        let mut editor = RomOverworldSettingsEditor::default();
+        editor.open(&app);
+        editor.form.words[0] = "1234".into();
+        editor.apply_selected().unwrap();
+        editor.submap = 6;
+        editor.loaded_submap = None;
+        editor.load_selected().unwrap();
+        editor.form.words[15] = "ABCD".into();
+        editor.apply_selected().unwrap();
+        let expected = editor.workspace.as_ref().unwrap().current.clone();
+
+        assert!(editor.staged_recovery_generation(&app).is_some());
+        let recovery = editor.staged_recovery_snapshot(&app).unwrap().unwrap();
+        assert_eq!(app.capabilities().project, lm_app::ProjectStatus::OpenClean);
+        assert_eq!(app.project().unwrap().history.undo_len(), 0);
+
+        let mut reopened = AppState::default();
+        reopened.load_recovery(recovery).unwrap();
+        let loaded = load_smw_us_v1_overworld_settings(reopened.project().unwrap()).unwrap();
+        assert!(loaded.installed);
+        assert_eq!(loaded.settings, expected);
+        assert_eq!(loaded.settings.records[0].word(0).unwrap(), 0x1234);
+        assert_eq!(loaded.settings.records[6].word(15).unwrap(), 0xabcd);
+    }
+
+    #[test]
+    fn staged_installed_overworld_settings_preserve_prior_submap_edits() {
+        let mut installer = pristine_app();
+        let mut first = RomOverworldSettingsEditor::default();
+        first.open(&installer);
+        first.submap = 2;
+        first.loaded_submap = None;
+        first.load_selected().unwrap();
+        first.form.words[9] = "3456".into();
+        first.apply_selected().unwrap();
+        installer
+            .dispatch(first.prepare_commit(0).unwrap().unwrap())
+            .unwrap();
+
+        let mut app = AppState::default();
+        app.load_rom(installer.project().unwrap().save_snapshot())
+            .unwrap();
+        let mut editor = RomOverworldSettingsEditor::default();
+        editor.open(&app);
+        assert!(editor.workspace.as_ref().unwrap().installed);
+        editor.submap = 6;
+        editor.loaded_submap = None;
+        editor.load_selected().unwrap();
+        editor.form.words[11] = "5678".into();
+        editor.apply_selected().unwrap();
+
+        let recovery = editor.staged_recovery_snapshot(&app).unwrap().unwrap();
+        assert_eq!(app.capabilities().project, lm_app::ProjectStatus::OpenClean);
+        let mut reopened = AppState::default();
+        reopened.load_recovery(recovery).unwrap();
+        let settings = load_smw_us_v1_overworld_settings(reopened.project().unwrap())
+            .unwrap()
+            .settings;
+        assert_eq!(settings.records[2].word(9).unwrap(), 0x3456);
+        assert_eq!(settings.records[6].word(11).unwrap(), 0x5678);
     }
 }

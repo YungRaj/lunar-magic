@@ -427,7 +427,12 @@ level `$1DB`/tile `$12` boundary, clean live state, and preservation of previous
 The standalone overworld player-start editor now hashes and recovers both complete player records
 plus all four retained adjacent option bytes through the ordinary fixed-block save/reopen path.
 `staged_player_starts_recover_both_players_and_reserved_options_exactly` proves distinct Mario and
-Luigi coordinates/submaps survive recovery without changing the live project or unowned bytes.
+Luigi coordinates/submaps survive recovery without changing the live project or unowned bytes. The
+standalone overworld global-settings editor now hashes and recovers all seven complete 32-byte
+records through ordinary pristine runtime installation or installed-table update, including semantic
+Layer 3 fields and opaque words. `staged_pristine_overworld_settings_recover_all_seven_records` and
+`staged_installed_overworld_settings_preserve_prior_submap_edits` prove exact complete-table reopen,
+clean live state, and preservation of independently committed submap settings.
 
 ## Workflow ledger
 

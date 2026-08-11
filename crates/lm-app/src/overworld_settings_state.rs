@@ -7,6 +7,7 @@ use lm_profile::{
     smw_us_v1_expanded_settings_installation_plan_for_rom_with_overworld_settings,
     smw_us_v1_installed_expanded_settings_layout,
 };
+use lm_project::Project;
 use lm_rom::{Mapper, Region, SupportedGame};
 
 impl AppState {
@@ -38,40 +39,7 @@ impl AppState {
         self.require_no_pending_save()?;
         self.ensure_project_revision_capacity()?;
         let project = self.project.as_mut().ok_or(AppError::NoProject)?;
-        let identity = project.identity.as_ref().ok_or(AppError::NoProject)?;
-        if identity.game != SupportedGame::SuperMarioWorld
-            || identity.region != Region::NorthAmerica
-            || identity.revision != 0
-            || identity.mapper != Mapper::LoRom
-        {
-            return Err(AppError::NativeOverworldSettingsIdentityMismatch);
-        }
-        let installed_layout = smw_us_v1_installed_expanded_settings_layout(project)
-            .map_err(|error| AppError::NativeOverworldSettingsStorage(error.to_string()))?;
-        if let Some(layout) = installed_layout {
-            project.save_expanded_overworld_settings(
-                SMW_US_V1_OVERWORLD_SETTINGS_FIRST_SLOT,
-                settings,
-                layout,
-                SMW_US_V1_CHECKSUM_FIELD,
-            )?;
-        } else {
-            let plan =
-                smw_us_v1_expanded_settings_installation_plan_for_rom_with_overworld_settings(
-                    &project.rom,
-                    Some(settings),
-                )?;
-            project.install_relocatable_patch_with_expansion_retry(
-                &plan,
-                SMW_US_V1_EXPANDED_SETTINGS_MAXIMUM_LOROM_LEN,
-            )?;
-        }
-        let reopened = load_smw_us_v1_overworld_settings(project)
-            .map_err(|error| AppError::NativeOverworldSettingsStorage(error.to_string()))?
-            .settings;
-        if reopened != *settings {
-            return Err(AppError::NativeOverworldSettingsReopenMismatch);
-        }
+        save_native_overworld_settings_to_project(project, settings)?;
         self.advance_project_revision()?;
         let description = "Replace native SMW overworld settings".to_owned();
         self.status.clone_from(&description);
@@ -81,6 +49,50 @@ impl AppState {
             revision: self.project_revision,
         }])
     }
+}
+
+/// Applies the native seven-record overworld-settings persistence used by the application command.
+///
+/// Pristine ROMs install the recovered expanded-settings runtime with expansion retry; installed
+/// ROMs update their detected table. Both paths require an exact semantic reopen.
+pub fn save_native_overworld_settings_to_project(
+    project: &mut Project,
+    settings: &ExpandedOverworldSettings,
+) -> Result<(), AppError> {
+    let identity = project.identity.as_ref().ok_or(AppError::NoProject)?;
+    if identity.game != SupportedGame::SuperMarioWorld
+        || identity.region != Region::NorthAmerica
+        || identity.revision != 0
+        || identity.mapper != Mapper::LoRom
+    {
+        return Err(AppError::NativeOverworldSettingsIdentityMismatch);
+    }
+    let installed_layout = smw_us_v1_installed_expanded_settings_layout(project)
+        .map_err(|error| AppError::NativeOverworldSettingsStorage(error.to_string()))?;
+    if let Some(layout) = installed_layout {
+        project.save_expanded_overworld_settings(
+            SMW_US_V1_OVERWORLD_SETTINGS_FIRST_SLOT,
+            settings,
+            layout,
+            SMW_US_V1_CHECKSUM_FIELD,
+        )?;
+    } else {
+        let plan = smw_us_v1_expanded_settings_installation_plan_for_rom_with_overworld_settings(
+            &project.rom,
+            Some(settings),
+        )?;
+        project.install_relocatable_patch_with_expansion_retry(
+            &plan,
+            SMW_US_V1_EXPANDED_SETTINGS_MAXIMUM_LOROM_LEN,
+        )?;
+    }
+    let reopened = load_smw_us_v1_overworld_settings(project)
+        .map_err(|error| AppError::NativeOverworldSettingsStorage(error.to_string()))?
+        .settings;
+    if reopened != *settings {
+        return Err(AppError::NativeOverworldSettingsReopenMismatch);
+    }
+    Ok(())
 }
 
 #[cfg(test)]

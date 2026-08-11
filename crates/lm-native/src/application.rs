@@ -1790,6 +1790,9 @@ impl eframe::App for NativeApplication {
         let player_start_recovery_revision = self
             .rom_overworld_player_start_editor
             .staged_recovery_generation(&self.app);
+        let overworld_settings_recovery_revision = self
+            .rom_overworld_settings_editor
+            .staged_recovery_generation(&self.app);
         let level_assets_recovery_revision = self
             .rom_level_assets_editor
             .staged_recovery_generation(&self.app);
@@ -1815,6 +1818,7 @@ impl eframe::App for NativeApplication {
             secondary_exit_recovery_revision,
             level_name_recovery_revision,
             player_start_recovery_revision,
+            overworld_settings_recovery_revision,
             level_assets_recovery_revision,
             overworld_recovery_revision,
         ]
@@ -1845,12 +1849,14 @@ impl eframe::App for NativeApplication {
                 let staged_editors =
                     staged_editors + usize::from(player_start_recovery_revision.is_some());
                 let staged_editors =
+                    staged_editors + usize::from(overworld_settings_recovery_revision.is_some());
+                let staged_editors =
                     staged_editors + usize::from(level_assets_recovery_revision.is_some());
                 let staged_editors =
                     staged_editors + usize::from(overworld_recovery_revision.is_some());
                 if staged_editors > 1 {
                     return Err(
-                        "cannot compose simultaneous staged level, level-assets, expanded settings, legacy graphics bypass, title recording, shared palette, overworld/boss messages, secondary exits, overworld level names/player starts, graphics, ExAnimation, title/credits tilemap, palette, Map16, or overworld recovery yet".into(),
+                        "cannot compose simultaneous staged level, level-assets, expanded settings, legacy graphics bypass, title recording, shared palette, overworld/boss messages, secondary exits, overworld level names/player starts/settings, graphics, ExAnimation, title/credits tilemap, palette, Map16, or overworld recovery yet".into(),
                     );
                 }
                 if palette_recovery_revision.is_some() {
@@ -1898,6 +1904,9 @@ impl eframe::App for NativeApplication {
                         .staged_recovery_snapshot(&self.app)
                 } else if player_start_recovery_revision.is_some() {
                     self.rom_overworld_player_start_editor
+                        .staged_recovery_snapshot(&self.app)
+                } else if overworld_settings_recovery_revision.is_some() {
+                    self.rom_overworld_settings_editor
                         .staged_recovery_snapshot(&self.app)
                 } else if level_assets_recovery_revision.is_some() {
                     self.rom_level_assets_editor

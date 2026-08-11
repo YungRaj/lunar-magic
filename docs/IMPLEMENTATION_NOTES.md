@@ -6489,3 +6489,17 @@ history-free.
 The focused test stages distinct Mario and Luigi positions on different submaps, recovers and
 reopens both records exactly, and proves the unowned reserved bytes remain unchanged. All three
 player-start editor tests, the shared application persistence test, and all 237 renderer tests pass.
+
+## Crash recovery includes all staged overworld global settings
+
+The standalone overworld-settings editor now contributes a content-sensitive generation over all
+seven 32-byte records, including semantic Layer 3 fields and every retained opaque word. Recovery
+uses the same shared persistence route as ordinary commit: pristine ROMs install the recovered
+expanded-settings runtime with bounded expansion retry, while installed ROMs update their detected
+table. Both paths require exact seven-record reopen on an isolated clone and leave the live project
+clean and history-free.
+
+Focused tests recover independent edits in the first and last records through pristine installation,
+then preserve a previously committed submap-2 edit while recovering a staged submap-6 edit through
+installed storage. All six overworld-settings editor tests, four application persistence and variant
+tests, and all 237 renderer tests pass.
