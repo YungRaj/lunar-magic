@@ -5081,3 +5081,24 @@ The descriptor pairs are physical `$001ED3/$001D1C` for SMW-NA,
 prefix yields Rust logical offsets `$001CD3/$001B1C`, `$001C6D/$001AB1`, and
 `$181CEC/$181AFA`. ExLoROM selects the active upper body. The disabled branch performs no restore,
 so an existing patch remains installed.
+
+## Remove data beyond the level-mode screen limit
+
+The central command-byte table maps `LM_KEY_TRUNCATE` `$26B1` to handler case `$D5`.
+`HandleLevelEditorCommand` calls `ConfirmAndInvalidateLevelLayout` at `$0047B1D0`; No returns
+without mutation, while Yes clears both object and sprite selections, invalidates their layouts,
+calls `RebuildAndValidateLevelObjectLayout` `$00469740` and
+`RebuildAndValidateSpriteLayout` `$00469800`, captures the combined object/sprite Undo mask
+`$C0000000`, and marks the level modified. The exact fallback title is
+`Remove data beyond max screens?`; the body is `This will delete all objects and sprites beyond
+the current max screen limit for this level mode.  Proceed?`.
+
+The limit is the active result of `ConfigureLevelLayoutDimensions` `$00421690`, represented by the
+recovered complete mode table: `$00/$0C/$0E/$1E` use 32 major screens, `$01/$02/$0F/$1F` use 16,
+`$03/$04` use 13, `$05..$08` use 14, and `$0A/$0D` use 28; modes without an editor canvas use
+zero. Rust applies the exclusive bound to the resolved screen positions in Layer 1, object-backed
+Layer 2, and the sprite stream, preserving a single aggregate history boundary.
+
+The adjacent command-table byte for `LM_KEY_DUMP_DATA` `$26B2` is `$DF`. The handler switch has
+cases only through `$DE`, so this historical name deliberately returns through the successful
+default path without UI, file output, ROM mutation, or editor-state mutation.

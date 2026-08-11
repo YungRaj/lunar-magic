@@ -2027,3 +2027,55 @@ fn installed_animation_features_load_edit_commit_and_reopen_with_the_aggregate()
     assert!(project.undo().unwrap());
     assert_eq!(project.rom.logical_bytes(), original);
 }
+
+#[test]
+fn installed_truncate_is_one_cross_domain_undo_boundary() {
+    let snapshot = snapshot();
+    let mut controller = NativeLevelAssetsController::decode_with_layer2(
+        &snapshot,
+        layout(),
+        Some(layer2_layout()),
+        &SpriteLengthTable::standard(),
+        &[false; 256],
+        PaletteOwnership::editable(2),
+    )
+    .unwrap();
+    let record = ObjectRecord::new(vec![1, 0x10, 0]).unwrap();
+    let position = ObjectCoordinateNibbles {
+        first: 1,
+        second: 0,
+    };
+    controller
+        .apply_edits(&[
+            NativeLevelAssetsControllerEdit::Level(vec![
+                crate::NativeLevelEdit::Objects(vec![ObjectEdit::InsertOrdinaryAt {
+                    record: record.clone(),
+                    screen: 13,
+                    coordinates: position,
+                }]),
+                crate::NativeLevelEdit::PlaceSpriteAtPosition {
+                    record: SpriteRecord {
+                        encoded: vec![0, 0, 2],
+                    },
+                    screen: 13,
+                    x: 0,
+                    y: 1,
+                },
+            ]),
+            NativeLevelAssetsControllerEdit::Layer2Objects(vec![
+                ObjectEdit::InsertOrdinaryAt {
+                    record,
+                    screen: 13,
+                    coordinates: position,
+                },
+            ]),
+        ])
+        .unwrap();
+    let before_truncate = controller.assets().clone();
+    let before_layer2 = controller.layer2().unwrap().clone();
+
+    assert_eq!(controller.truncate_beyond_screen_limit(13), (1, 1, 1));
+    assert!(controller.undo());
+    assert_eq!(controller.assets(), &before_truncate);
+    assert_eq!(controller.layer2(), Some(&before_layer2));
+}

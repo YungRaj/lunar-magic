@@ -1217,3 +1217,96 @@ fn mode_mapper_and_legacy_token_mismatches_are_rejected() {
     ));
     assert_eq!(controller.level(), &original);
 }
+
+#[test]
+fn truncate_removes_all_three_positioned_domains_at_the_exclusive_mode_limit() {
+    let header = lm_level::LegacyLevelHeader::decode(&[0x1f, 0x03, 0, 0, 0]).unwrap();
+    let before = ObjectRecord::new(vec![1, 0x10, 0]).unwrap();
+    let jump = ObjectRecord::new(vec![0x0d, 0, 1]).unwrap();
+    let beyond = ObjectRecord::new(vec![2, 0x11, 0]).unwrap();
+    let mut level = lm_project::LoadedLevelSlot {
+        number: 0x105,
+        layer1: lm_level::LevelObjectData {
+            header,
+            objects: lm_level::ObjectStream {
+                records: vec![before.clone(), jump.clone(), beyond.clone()],
+            },
+        },
+        sprites: lm_level::NativeSpriteStream::parse(
+            &[0, 0, 0x0c, 1, 0, 0x0d, 2, 0xff],
+            false,
+            &SpriteLengthTable::standard(),
+        )
+        .unwrap(),
+    };
+    let mut layer2 = lm_level::NativeLayer2Data::Objects(lm_level::LevelObjectData {
+        header,
+        objects: lm_level::ObjectStream {
+            records: vec![before, jump, beyond],
+        },
+    });
+
+    assert_eq!(
+        truncate_loaded_level_beyond_screen_limit(&mut level, Some(&mut layer2), 13),
+        (1, 1, 1)
+    );
+    assert_eq!(level.layer1.objects.native_placements().len(), 1);
+    assert_eq!(level.sprites.native_placements().len(), 1);
+    let lm_level::NativeLayer2Data::Objects(layer2) = layer2 else {
+        unreachable!();
+    };
+    assert_eq!(layer2.objects.native_placements().len(), 1);
+    assert_eq!(level.sprites.native_placements()[0].screen, 12);
+}
+
+#[test]
+fn truncate_controller_uses_one_undo_boundary_for_objects_and_sprites() {
+    let mut app = AppState::default();
+    app.load_rom(test_rom()).unwrap();
+    app.dispatch(Command::SelectLevel(0x105)).unwrap();
+    let snapshot = app.controller_snapshot().unwrap();
+    let mut controller =
+        LevelController::decode(&snapshot, layout(), &SpriteLengthTable::standard()).unwrap();
+    controller
+        .apply_edits(&[
+            NativeLevelEdit::Objects(vec![ObjectEdit::InsertOrdinaryAt {
+                record: ObjectRecord::new(vec![1, 0x10, 0]).unwrap(),
+                screen: 13,
+                coordinates: lm_level::ObjectCoordinateNibbles {
+                    first: 1,
+                    second: 0,
+                },
+            }]),
+            NativeLevelEdit::PlaceSpriteAtPosition {
+                record: SpriteRecord {
+                    encoded: vec![0, 0, 2],
+                },
+                screen: 13,
+                x: 0,
+                y: 1,
+            },
+        ])
+        .unwrap();
+    let before_truncate = controller.level().clone();
+
+    assert_eq!(controller.truncate_beyond_screen_limit(13), (1, 0, 1));
+    assert!(
+        controller
+            .level()
+            .layer1
+            .objects
+            .native_placements()
+            .iter()
+            .all(|placement| placement.screen < 13)
+    );
+    assert!(
+        controller
+            .level()
+            .sprites
+            .native_placements()
+            .iter()
+            .all(|placement| placement.screen < 13)
+    );
+    assert!(controller.undo());
+    assert_eq!(controller.level(), &before_truncate);
+}

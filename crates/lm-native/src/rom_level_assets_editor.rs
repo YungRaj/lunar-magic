@@ -638,6 +638,28 @@ pub(crate) struct RomLevelAssetsEditor {
 }
 
 impl RomLevelAssetsEditor {
+    pub(crate) fn toolbar_truncate_beyond_mode_limit(&mut self) -> Option<(usize, usize, usize)> {
+        let workspace = self.workspace.as_mut()?;
+        let mode = lm_profile::smw_us_v1_level_mode(
+            workspace
+                .controller
+                .assets()
+                .level
+                .layer1
+                .header
+                .level_mode(),
+        );
+        if mode.editor_major_screens == 0 {
+            self.error = Some("the current level mode has no editable canvas".into());
+            return None;
+        }
+        let removed = workspace
+            .controller
+            .truncate_beyond_screen_limit(mode.editor_major_screens);
+        self.pending_layer2_mode_reset = None;
+        self.invalidate_after_asset_edit();
+        Some(removed)
+    }
     pub(crate) fn toolbar_export_current_level_bitmap(
         &mut self,
         app: &AppState,

@@ -464,6 +464,7 @@ impl NativeApplication {
             UserToolbarNativeAction::DeprecatedDecryptLevelsNoOp => {}
             UserToolbarNativeAction::DeprecatedSelectForegroundBackgroundNoOp => {}
             UserToolbarNativeAction::DeprecatedOptionsNoOp => {}
+            UserToolbarNativeAction::DeprecatedDumpDataNoOp => {}
             UserToolbarNativeAction::AutoDeselectOnEditorSelect => {
                 self.set_auto_deselect_on_editor_select(!self.auto_deselect_on_editor_select);
             }
@@ -554,6 +555,15 @@ impl NativeApplication {
                     "Color hack will NOT be inserted when saving Level 0xC7."
                 }
                 .into();
+            }
+            UserToolbarNativeAction::TruncateLevel => {
+                if self
+                    .app
+                    .controller_snapshot()
+                    .is_ok_and(|snapshot| matches!(snapshot.mode, lm_app::EditorMode::Level(_)))
+                {
+                    self.truncate_level_confirmation = true;
+                }
             }
             UserToolbarNativeAction::WarnVerticalFireballBuoyancy => {
                 self.set_warn_vertical_fireball_buoyancy(
@@ -1932,6 +1942,7 @@ enum UserToolbarNativeAction {
     DeprecatedDecryptLevelsNoOp,
     DeprecatedSelectForegroundBackgroundNoOp,
     DeprecatedOptionsNoOp,
+    DeprecatedDumpDataNoOp,
     AutoDeselectOnEditorSelect,
     ShowAddEditorIds,
     BackgroundCursorHighlight,
@@ -1949,6 +1960,7 @@ enum UserToolbarNativeAction {
     DisplayMarioRegions,
     GfxDisplayOverride,
     MenuColorFix,
+    TruncateLevel,
     WarnVerticalFireballBuoyancy,
     GfxBypassListDialogs,
     JoinedGraphicsFiles,
@@ -2074,6 +2086,8 @@ fn user_toolbar_native_action(name: &str) -> Option<UserToolbarNativeAction> {
         "LM_KEY_MARIO_REGIONS" => UserToolbarNativeAction::DisplayMarioRegions,
         "LM_KEY_GFX_OVERRIDE" => UserToolbarNativeAction::GfxDisplayOverride,
         "LM_KEY_MENUCOLOR_FIX" => UserToolbarNativeAction::MenuColorFix,
+        "LM_KEY_TRUNCATE" => UserToolbarNativeAction::TruncateLevel,
+        "LM_KEY_DUMP_DATA" => UserToolbarNativeAction::DeprecatedDumpDataNoOp,
         "LM_OPTIONS_WARN_SPRITE_33" => UserToolbarNativeAction::WarnVerticalFireballBuoyancy,
         "LM_OPTIONS_INSTALL_VRAM" => UserToolbarNativeAction::GfxBypassListDialogs,
         "LM_OPTIONS_ATTACH_FILES" => UserToolbarNativeAction::JoinedGraphicsFiles,
@@ -3148,7 +3162,7 @@ mod user_toolbar_tests {
                     || user_toolbar_native_action(entry.name).is_some()
             })
             .collect::<Vec<_>>();
-        assert_eq!(supported.len(), 308);
+        assert_eq!(supported.len(), 310);
         assert!(
             supported
                 .iter()
@@ -3747,6 +3761,54 @@ mod user_toolbar_tests {
     }
 
     #[test]
+    fn truncate_command_requires_an_open_level_then_opens_exact_confirmation() {
+        assert_eq!(
+            user_toolbar_native_action("LM_KEY_TRUNCATE"),
+            Some(UserToolbarNativeAction::TruncateLevel)
+        );
+        let mut native = NativeApplication::default();
+        native.apply_user_toolbar_native_action(
+            &egui::Context::default(),
+            UserToolbarNativeAction::TruncateLevel,
+        );
+        assert!(!native.truncate_level_confirmation);
+        native
+            .app
+            .load_rom(crate::test_support::pristine_smw_us_rom_bytes())
+            .unwrap();
+        native.app.dispatch(Command::SelectLevel(0x105)).unwrap();
+        native.apply_user_toolbar_native_action(
+            &egui::Context::default(),
+            UserToolbarNativeAction::TruncateLevel,
+        );
+        assert!(native.truncate_level_confirmation);
+    }
+
+    #[test]
+    fn dump_data_command_matches_the_original_out_of_switch_successful_no_op() {
+        assert_eq!(
+            user_toolbar_native_action("LM_KEY_DUMP_DATA"),
+            Some(UserToolbarNativeAction::DeprecatedDumpDataNoOp)
+        );
+        let mut native = NativeApplication::default();
+        native
+            .app
+            .load_rom(crate::test_support::pristine_smw_us_rom_bytes())
+            .unwrap();
+        native.app.status = "unchanged".into();
+        let before = native.app.controller_snapshot().unwrap();
+        native.apply_user_toolbar_native_action(
+            &egui::Context::default(),
+            UserToolbarNativeAction::DeprecatedDumpDataNoOp,
+        );
+        let after = native.app.controller_snapshot().unwrap();
+        assert_eq!(after.revision, before.revision);
+        assert_eq!(after.rom_bytes, before.rom_bytes);
+        assert_eq!(native.app.status, "unchanged");
+        assert!(native.effects.error.is_none());
+    }
+
+    #[test]
     fn historical_install_vram_command_toggles_gfx_bypass_dialog_style() {
         let mut native = NativeApplication::default();
         assert_eq!(native.gfx_bypass_list_dialogs, None);
@@ -4143,7 +4205,7 @@ mod user_toolbar_tests {
                     && user_toolbar_native_action(entry.name).is_none()
             })
             .collect::<Vec<_>>();
-        assert_eq!(unsupported.len(), 9);
+        assert_eq!(unsupported.len(), 7);
         if std::env::var_os("LM_DIAGNOSTIC_UNSUPPORTED_TOOLBAR_COMMANDS").is_some() {
             for entry in unsupported {
                 eprintln!(

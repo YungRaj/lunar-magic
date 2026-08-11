@@ -610,6 +610,25 @@ impl LevelController {
         Ok(())
     }
 
+    /// Removes positioned objects and sprites outside the active level-mode screen capacity.
+    ///
+    /// Layer 1, object-backed Layer 2, and sprites are captured in the controller's shared
+    /// history as one operation, matching Lunar Magic's combined object/sprite Undo snapshot.
+    /// The caller supplies the recovered mode-specific editor capacity.
+    #[must_use]
+    pub fn truncate_beyond_screen_limit(&mut self, maximum_screens: u8) -> (usize, usize, usize) {
+        let previous = self.state();
+        let mut next = previous.clone();
+        let removed = truncate_loaded_level_beyond_screen_limit(
+            &mut next.level,
+            next.layer2.as_mut(),
+            maximum_screens,
+        );
+        self.restore(next);
+        self.finish_edit(previous);
+        removed
+    }
+
     /// Remaps every matching Direct Map16 object in Layer 1 and object-backed Layer 2 as one
     /// failure-atomic history operation. Each lookup uses the record's pre-remap source tile.
     pub fn remap_direct_map16_objects(
@@ -768,6 +787,61 @@ impl LevelController {
             self.redo.clear();
         }
     }
+}
+
+pub(crate) fn truncate_loaded_level_beyond_screen_limit(
+    level: &mut LoadedLevelSlot,
+    layer2: Option<&mut NativeLayer2Data>,
+    maximum_screens: u8,
+) -> (usize, usize, usize) {
+    let maximum_screens = u16::from(maximum_screens.min(32));
+    let mut layer1_indexes = level
+        .layer1
+        .objects
+        .native_placements()
+        .into_iter()
+        .filter_map(|placement| {
+            (placement.screen >= maximum_screens).then_some(placement.record_index)
+        })
+        .collect::<Vec<_>>();
+    layer1_indexes.sort_unstable();
+    layer1_indexes.dedup();
+    for index in layer1_indexes.iter().rev() {
+        level.layer1.objects.records.remove(*index);
+    }
+
+    let mut removed_layer2 = 0;
+    if let Some(NativeLayer2Data::Objects(objects)) = layer2 {
+        let mut indexes = objects
+            .objects
+            .native_placements()
+            .into_iter()
+            .filter_map(|placement| {
+                (placement.screen >= maximum_screens).then_some(placement.record_index)
+            })
+            .collect::<Vec<_>>();
+        indexes.sort_unstable();
+        indexes.dedup();
+        removed_layer2 = indexes.len();
+        for index in indexes.into_iter().rev() {
+            objects.objects.records.remove(index);
+        }
+    }
+
+    let mut sprite_indexes = level
+        .sprites
+        .native_placements()
+        .into_iter()
+        .filter_map(|placement| {
+            (placement.screen >= maximum_screens).then_some(placement.token_index)
+        })
+        .collect::<Vec<_>>();
+    sprite_indexes.sort_unstable();
+    sprite_indexes.dedup();
+    for index in sprite_indexes.iter().rev() {
+        level.sprites.tokens.remove(*index);
+    }
+    (layer1_indexes.len(), removed_layer2, sprite_indexes.len())
 }
 
 fn remap_direct_map16_record(

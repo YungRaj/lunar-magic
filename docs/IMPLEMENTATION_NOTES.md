@@ -6070,3 +6070,26 @@ ends at `$DE`. Rust therefore preserves these two historical toolbar names as a 
 no-op rather than incorrectly mapping them to the active Layer 1/Layer 2 edit commands. Focused
 tests require stable project revision, complete ROM bytes, status, and error state. Authenticated
 native command coverage is now 275 of 317 named slots, leaving 42 pending.
+
+## Mode-bounded level truncation (`$26B1`) and dump-data no-op (`$26B2`)
+
+The native toolbar now reproduces Lunar Magic's destructive level-layout cleanup rather than
+silently clipping only the rendered image. Its exact confirmation guards a staged operation that
+walks resolved native placements and deletes entities whose screen is at or beyond the recovered
+mode-specific capacity. Layer 1 objects, object-backed Layer 2 objects, and sprites are changed in
+one controller history snapshot for both pristine and installed workspaces. Acceptance refreshes
+forms, clears entity selections, invalidates graphics state, and reports per-domain removal counts;
+No leaves the staged model unchanged. Focused tests cover the exclusive `$03`-mode screen-13
+boundary and prove one Undo restores all three domains.
+
+The authenticated selector table maps the adjacent deprecated dump-data name to `$DF`, while the
+original command handler ends at `$DE`. Rust therefore exposes it as a distinct successful no-op,
+with tests proving ROM bytes, revision, status, and error state remain unchanged. Authenticated
+native command coverage is now 310 of 317 named slots, leaving only seven ROM-patch option commands
+pending.
+
+Verification passes 632 active `lm-app` library tests with 13 explicit fixture ignores, 1,147
+active native tests with 13 explicit fixture ignores, the 235-test renderer suite, and the i686
+Windows cross-build. All 512 pristine levels materialize, and the regenerated 513-line semantic
+manifest remains byte-identical at SHA-256
+`254a1a050d12785973241910e26d8b7917a5cb5e2a56602a330fc6cbd833c04d`.

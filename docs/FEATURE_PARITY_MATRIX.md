@@ -1001,6 +1001,19 @@ ExLoROM active-body, and SA-1 operand routing are covered. The authenticated par
 **308 routed / 9 pending**. The aggregate remains 59/65 because the configuration row is still
 Partial.
 
+Toolbar coverage update (2026-08-11, level-layout truncation and deprecated dump-data command):
+authenticated `LM_KEY_TRUNCATE` `$26B1` now presents Lunar Magic's exact confirmation title and
+body, then removes every positioned Layer 1 object, object-backed Layer 2 object, and sprite at or
+beyond the current mode's recovered editor-screen capacity. The 32-mode table includes the
+13-screen `$03/$04`, 14-screen `$05..$08`, and 28-screen `$0A/$0D` layouts rather than using an
+orientation-only approximation. Pristine and installed controllers capture all three domains in
+one Undo boundary and the native editor clears stale selections and render caches. The adjacent
+`LM_KEY_DUMP_DATA` `$26B2` maps to selector `$DF`, outside the original handler's `$00..=$DE`
+switch, and is therefore retained as a successful no-op. Focused boundary, cross-domain Undo,
+route, and no-mutation tests pass. The authenticated partition is now **310 routed / 7 pending**.
+The remaining commands are the seven authenticated ROM-patch options. The aggregate remains 59/65
+because the configuration row is still Partial.
+
 Toolbar coverage update (2026-08-10, selection editors): `LM_EDIT_PROPERTIES` `$2468` now toggles
 an independent modeless properties window, while `LM_EDIT_EDIT_MANUAL` `$2469` opens (and repeated
 activation reuses) the manual editor dialog. Both follow the live Layer 1, object-backed Layer 2,

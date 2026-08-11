@@ -4069,6 +4069,23 @@ impl VanillaLevelEditor {
         self.toolbar_delete_selection();
     }
 
+    pub(crate) fn toolbar_truncate_beyond_mode_limit(
+        &mut self,
+    ) -> Result<(usize, usize, usize), &'static str> {
+        let controller = self
+            .controller
+            .as_mut()
+            .ok_or("no editable level is loaded")?;
+        let mode = lm_profile::smw_us_v1_level_mode(controller.level().layer1.header.level_mode());
+        if mode.editor_major_screens == 0 {
+            return Err("the current level mode has no editable canvas");
+        }
+        let removed = controller.truncate_beyond_screen_limit(mode.editor_major_screens);
+        self.refresh_forms_after_history();
+        self.invalidate_graphics_preview();
+        Ok(removed)
+    }
+
     pub(crate) fn toolbar_edit_conditional_direct_map16(&mut self) {
         let selected = match self.selected_direct_map16_records() {
             Ok(selected) => selected,

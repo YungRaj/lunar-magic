@@ -1271,3 +1271,24 @@ capture was inspected; the renderer passes 235/235 tests, the native suite passe
 13 external-fixture ignores, all 512 pristine levels materialize, the Windows i686 check passes,
 and the regenerated semantic manifest remains byte-identical at SHA-256
 `254a1a050d12785973241910e26d8b7917a5cb5e2a56602a330fc6cbd833c04d`.
+
+## Level-layout truncation and dump-data no-op recovery (2026-08-11)
+
+The live port-8098 Ghidra bridge confirms command selector `$26B1 -> $D5` and `$26B2 -> $DF`.
+Case `$D5` calls `ConfirmAndInvalidateLevelLayout` `$0047B1D0`; its retained strings supply the
+exact confirmation title/body. Acceptance clears object/sprite selection and layout state, invokes
+the object and sprite rebuild/validation functions, captures Undo mask `$C0000000`, and marks the
+level modified. `RebuildAndValidateLevelObjectLayout` `$00469740` delegates to
+`RebuildLevelMap16FromObjectLists` and reports corrected fatal layout errors under the existing
+warning option. The recovered `ConfigureLevelLayoutDimensions` table supplies the exact exclusive
+screen bounds instead of an inferred horizontal/vertical constant.
+
+Rust focused gates cover the 13-screen boundary simultaneously in Layer 1, object-backed Layer 2,
+and sprites; one Undo restores all three for both pristine and installed aggregate controllers.
+The authenticated route opens only with a level selected. `$26B2` is tested as byte-, revision-,
+status-, and error-neutral because `$DF` lies beyond the original switch's `$DE` final case. The
+command partition is now 310/317 with exactly the seven ROM-patch option commands pending.
+
+The final gates pass 632 active `lm-app` tests, 1,147 active native tests, 235 renderer tests, the
+complete 512-level traversal, and the i686 Windows cross-build. The fresh 513-line manifest retains
+SHA-256 `254a1a050d12785973241910e26d8b7917a5cb5e2a56602a330fc6cbd833c04d`.

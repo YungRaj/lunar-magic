@@ -549,6 +549,23 @@ impl NativeLevelAssetsController {
         self.apply_edits_with_layer2_reset(edits, false)
     }
 
+    /// Removes every positioned level entity outside the recovered mode-specific screen limit.
+    ///
+    /// All affected aggregate domains share one history boundary.
+    #[must_use]
+    pub fn truncate_beyond_screen_limit(&mut self, maximum_screens: u8) -> (usize, usize, usize) {
+        let previous = self.state();
+        let mut next = previous.clone();
+        let removed = crate::level_controller::truncate_loaded_level_beyond_screen_limit(
+            &mut next.assets.level,
+            next.layer2.as_mut(),
+            maximum_screens,
+        );
+        self.restore(next);
+        self.finish_edit(previous);
+        removed
+    }
+
     /// Applies a mixed aggregate batch and explicitly authorizes Lunar Magic's destructive Layer
     /// 2 reset when the final level mode crosses the object/tilemap storage boundary.
     ///

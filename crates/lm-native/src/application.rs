@@ -204,6 +204,7 @@ pub(crate) struct NativeApplication {
     ips_sibling_save_warning: Option<IpsSiblingSaveIntent>,
     ips_sibling_save_authorized: bool,
     two_bpp_view_confirmation: bool,
+    truncate_level_confirmation: bool,
     gfx_display_override: crate::vanilla_map16_preview::GfxDisplayOverride,
     gfx_display_override_form: Option<(String, String)>,
     menu_color_fix: Option<bool>,
@@ -1048,6 +1049,50 @@ impl NativeApplication {
         }
     }
 
+    fn show_truncate_level_confirmation(&mut self, context: &egui::Context) {
+        if !self.truncate_level_confirmation {
+            return;
+        }
+        let mut accept = false;
+        let mut cancel = false;
+        egui::Window::new("Remove data beyond max screens?")
+            .collapsible(false)
+            .resizable(false)
+            .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+            .show(context, |ui| {
+                ui.label(
+                    "This will delete all objects and sprites beyond the current max screen limit for this level mode.  Proceed?",
+                );
+                ui.horizontal(|ui| {
+                    accept = ui.button("Yes").clicked();
+                    cancel = ui.button("No").clicked();
+                });
+            });
+        if accept {
+            self.truncate_level_confirmation = false;
+            let removed = if crate::vanilla_level_editor::VanillaLevelEditor::handles(&self.app) {
+                self.vanilla_level_editor
+                    .toolbar_truncate_beyond_mode_limit()
+                    .map_err(|error| error.to_owned())
+            } else {
+                self.rom_level_assets_editor
+                    .toolbar_truncate_beyond_mode_limit()
+                    .ok_or_else(|| "no editable level workspace is open".to_owned())
+            };
+            match removed {
+                Ok((layer1, layer2, sprites)) => {
+                    self.app.status = format!(
+                        "Removed {layer1} Layer 1 object(s), {layer2} Layer 2 object(s), and {sprites} sprite(s) beyond the level-mode screen limit"
+                    );
+                    self.renderer.invalidate();
+                }
+                Err(error) => self.effects.error = Some(error),
+            }
+        } else if cancel {
+            self.truncate_level_confirmation = false;
+        }
+    }
+
     fn synchronize_level_text(&mut self) {
         if let EditorMode::Level(level) = self.app.mode
             && !self
@@ -1565,6 +1610,7 @@ impl eframe::App for NativeApplication {
         self.show_confirmation(context);
         self.show_same_name_ips_warning(context);
         self.show_two_bpp_view_confirmation(context);
+        self.show_truncate_level_confirmation(context);
         if let Some(status) = self
             .custom_collection_append_dialog
             .show(context, self.app.document_path.as_deref())
