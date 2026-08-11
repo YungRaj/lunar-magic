@@ -484,6 +484,13 @@ impl NativeApplication {
             UserToolbarNativeAction::BackgroundEditorOwned => {
                 self.set_background_editor_owned(!self.background_editor_owned.unwrap_or(false));
             }
+            UserToolbarNativeAction::DisplayMarioRegions => {
+                self.app.status = self
+                    .vanilla_level_editor
+                    .toolbar_toggle_mario_regions()
+                    .into();
+                self.renderer.invalidate();
+            }
             UserToolbarNativeAction::WarnVerticalFireballBuoyancy => {
                 self.set_warn_vertical_fireball_buoyancy(
                     !self.warn_vertical_fireball_buoyancy.unwrap_or(true),
@@ -1875,6 +1882,7 @@ enum UserToolbarNativeAction {
     TwoBppViewMode,
     Layer3SixteenBySixteenMode,
     BackgroundEditorOwned,
+    DisplayMarioRegions,
     WarnVerticalFireballBuoyancy,
     GfxBypassListDialogs,
     JoinedGraphicsFiles,
@@ -1997,6 +2005,7 @@ fn user_toolbar_native_action(name: &str) -> Option<UserToolbarNativeAction> {
         "LM_KEY_2BPP_MODE" => UserToolbarNativeAction::TwoBppViewMode,
         "LM_KEY_LAYER3_16X16_MODE" => UserToolbarNativeAction::Layer3SixteenBySixteenMode,
         "LM_KEY_BGEDIT_ONTOP" => UserToolbarNativeAction::BackgroundEditorOwned,
+        "LM_KEY_MARIO_REGIONS" => UserToolbarNativeAction::DisplayMarioRegions,
         "LM_OPTIONS_WARN_SPRITE_33" => UserToolbarNativeAction::WarnVerticalFireballBuoyancy,
         "LM_OPTIONS_INSTALL_VRAM" => UserToolbarNativeAction::GfxBypassListDialogs,
         "LM_OPTIONS_ATTACH_FILES" => UserToolbarNativeAction::JoinedGraphicsFiles,
@@ -3053,7 +3062,7 @@ mod user_toolbar_tests {
                     || user_toolbar_native_action(entry.name).is_some()
             })
             .collect::<Vec<_>>();
-        assert_eq!(supported.len(), 305);
+        assert_eq!(supported.len(), 306);
         assert!(
             supported
                 .iter()
@@ -3271,6 +3280,28 @@ mod user_toolbar_tests {
             native.app.status,
             "BG window not owned by main window (default, may require restart)."
         );
+    }
+
+    #[test]
+    fn mario_region_command_toggles_exact_session_state_and_status() {
+        let mut native = NativeApplication::default();
+        assert_eq!(
+            user_toolbar_native_action("LM_KEY_MARIO_REGIONS"),
+            Some(UserToolbarNativeAction::DisplayMarioRegions)
+        );
+        assert!(!native.vanilla_level_editor.displays_mario_regions());
+        native.apply_user_toolbar_native_action(
+            &egui::Context::default(),
+            UserToolbarNativeAction::DisplayMarioRegions,
+        );
+        assert!(native.vanilla_level_editor.displays_mario_regions());
+        assert_eq!(native.app.status, "Display Mario regions on.");
+        native.apply_user_toolbar_native_action(
+            &egui::Context::default(),
+            UserToolbarNativeAction::DisplayMarioRegions,
+        );
+        assert!(!native.vanilla_level_editor.displays_mario_regions());
+        assert_eq!(native.app.status, "Display Mario regions off.");
     }
 
     #[test]
@@ -3977,7 +4008,7 @@ mod user_toolbar_tests {
                     && user_toolbar_native_action(entry.name).is_none()
             })
             .collect::<Vec<_>>();
-        assert_eq!(unsupported.len(), 12);
+        assert_eq!(unsupported.len(), 11);
         if std::env::var_os("LM_DIAGNOSTIC_UNSUPPORTED_TOOLBAR_COMMANDS").is_some() {
             for entry in unsupported {
                 eprintln!(

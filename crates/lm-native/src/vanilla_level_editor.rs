@@ -575,6 +575,7 @@ pub(crate) struct VanillaLevelEditor {
     silver_pow_active: bool,
     two_bpp_view_mode: u8,
     layer3_16x16_view_mode: u8,
+    display_mario_regions: bool,
     background_512_height: bool,
     translucent_overlays: bool,
     tools_panel_visible: Option<bool>,
@@ -5568,6 +5569,20 @@ impl VanillaLevelEditor {
         self.layer3_16x16_view_mode
     }
 
+    pub(crate) fn toolbar_toggle_mario_regions(&mut self) -> &'static str {
+        self.display_mario_regions = !self.display_mario_regions;
+        if self.display_mario_regions {
+            "Display Mario regions on."
+        } else {
+            "Display Mario regions off."
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) const fn displays_mario_regions(&self) -> bool {
+        self.display_mario_regions
+    }
+
     pub(crate) fn toolbar_invisible_pow_objects_toggle(&mut self) {
         self.conditional_view_state.invisible_pow_objects =
             !self.conditional_view_state.invisible_pow_objects;
@@ -6285,6 +6300,7 @@ impl VanillaLevelEditor {
                     cell,
                     level_mode,
                     self.game_preview_camera_origin(major_tiles, minor_tiles, vertical),
+                    self.display_mario_regions,
                 );
             }
             if self.raw_layer1_pc_address.is_none() {
@@ -11061,6 +11077,7 @@ fn draw_level_boundary_guide(
     cell: f32,
     level_mode: u8,
     camera: (u16, u16),
+    display_mario_regions: bool,
 ) {
     let geometry = level_boundary_guide_geometry(level_mode, camera);
     let margin = cell / 4.0;
@@ -11079,6 +11096,85 @@ fn draw_level_boundary_guide(
         egui::Stroke::new(2.0_f32, egui::Color32::from_rgb(0, 224, 224)),
         egui::StrokeKind::Inside,
     );
+    if display_mario_regions {
+        draw_mario_region_overlay(painter, canvas, cell, level_mode, camera);
+    }
+}
+
+fn mario_region_rectangles(level_mode: u8, camera: (u16, u16)) -> [egui::Rect; 6] {
+    let boundary = level_boundary_guide_geometry(level_mode, camera);
+    let origin = egui::pos2(boundary.x_tiles, boundary.y_tiles);
+    let center_x = boundary.width_tiles * 0.5;
+    let vertical_offset = if boundary.height_tiles == 14.0 {
+        0.25
+    } else {
+        0.0
+    };
+    let vertical_height = if boundary.height_tiles == 14.0 {
+        13.5
+    } else {
+        14.0
+    };
+    [
+        egui::Rect::from_min_size(
+            origin + egui::vec2(0.0, 7.5),
+            egui::vec2(boundary.width_tiles, 1.0),
+        ),
+        egui::Rect::from_min_size(
+            origin + egui::vec2(0.0, 9.0),
+            egui::vec2(boundary.width_tiles, 1.0),
+        ),
+        egui::Rect::from_min_size(
+            origin + egui::vec2(center_x - 5.5, vertical_offset),
+            egui::vec2(1.0, vertical_height),
+        ),
+        egui::Rect::from_min_size(
+            origin + egui::vec2(center_x - 1.5, vertical_offset),
+            egui::vec2(1.0, vertical_height),
+        ),
+        egui::Rect::from_min_size(
+            origin + egui::vec2(center_x + 0.5, vertical_offset),
+            egui::vec2(1.0, vertical_height),
+        ),
+        egui::Rect::from_min_size(
+            origin + egui::vec2(center_x + 4.5, vertical_offset),
+            egui::vec2(1.0, vertical_height),
+        ),
+    ]
+}
+
+fn draw_mario_region_overlay(
+    painter: &egui::Painter,
+    canvas: egui::Rect,
+    cell: f32,
+    level_mode: u8,
+    camera: (u16, u16),
+) {
+    let fill = egui::Color32::from_rgba_unmultiplied(255, 224, 0, 30);
+    let stroke = egui::Stroke::new(
+        1.0_f32,
+        egui::Color32::from_rgba_unmultiplied(255, 255, 0, 180),
+    );
+    for region in mario_region_rectangles(level_mode, camera) {
+        let screen = egui::Rect::from_min_max(
+            canvas.min + region.min.to_vec2() * cell,
+            canvas.min + region.max.to_vec2() * cell,
+        )
+        .intersect(canvas);
+        painter.rect_filled(screen, 0.0, fill);
+        painter.extend(egui::Shape::dashed_line(
+            &[
+                screen.left_top(),
+                screen.right_top(),
+                screen.right_bottom(),
+                screen.left_bottom(),
+                screen.left_top(),
+            ],
+            stroke,
+            4.0,
+            4.0,
+        ));
+    }
 }
 
 fn pasted_text(ui: &egui::Ui) -> Option<String> {
@@ -21955,6 +22051,24 @@ mod tests {
                 height_tiles: 14.0,
             }
         );
+    }
+
+    #[test]
+    fn mario_regions_follow_recovered_six_bands_at_every_boundary_width() {
+        for (mode, width, expected_x, vertical) in [
+            (0, 16.0, [2.5, 6.5, 8.5, 12.5], (0.0, 14.0)),
+            (5, 22.0, [5.5, 9.5, 11.5, 15.5], (0.0, 14.0)),
+            (7, 28.0, [8.5, 12.5, 14.5, 18.5], (0.25, 13.5)),
+        ] {
+            let regions = mario_region_rectangles(mode, (3, 4));
+            assert_eq!(regions[0].min, egui::pos2(3.0, 11.5));
+            assert_eq!(regions[0].size(), egui::vec2(width, 1.0));
+            assert_eq!(regions[1].min, egui::pos2(3.0, 13.0));
+            for (region, x) in regions[2..].iter().zip(expected_x) {
+                assert_eq!(region.min, egui::pos2(3.0 + x, 4.0 + vertical.0));
+                assert_eq!(region.size(), egui::vec2(1.0, vertical.1));
+            }
+        }
     }
 
     #[test]

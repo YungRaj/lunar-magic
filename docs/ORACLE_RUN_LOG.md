@@ -1200,6 +1200,17 @@ window or null owner only while creating the modeless dialog, and the command ha
 The existing-window path merely restores and activates the same HWND, authenticating the restart
 qualification. Rust focused command/default/status and both-value save/reopen tests pass.
 
+## Mario-region overlay recovery (2026-08-11)
+
+Ghidra command-table entry `$26B4 -> $D6` toggles `$005E7B12`; its four references are confined to
+the command handler and `DrawLevelBoundaryGuideOverlay` at `$00451F90`. The parent
+`RenderLevelEditorViewportRegion` calls that renderer only while boundary-guide state
+`$00E278E7` is active. Decompilation authenticates the three boundary widths/heights, horizontal
+bands at `$78..$88` and `$90..$A0`, the four midpoint-relative vertical bands, whole-canvas color
+addition, and dashed edges. Focused Rust tests bind all six rectangles for normal, alternate
+horizontal, and alternate vertical layouts, camera translation, exact route, default-off state,
+and both status strings.
+
 ## Context-sensitive custom collection append (2026-08-11)
 
 Ghidra command-table byte `$D3` maps both `LM_KEY_ADD_CSPRITE` and `LM_KEY_ADD_CUSTOM` at `$26AF`.

@@ -972,6 +972,14 @@ workspace is already structurally owned by its one native root, so close/focus o
 leave an orphan child. The authenticated partition is now **305 routed / 12 pending**. The
 aggregate remains 59/65 because the configuration row is still Partial.
 
+Toolbar coverage update (2026-08-11, Mario regions): authenticated `LM_KEY_MARIO_REGIONS`
+`$26B4` now toggles Lunar Magic's default-off session overlay with exact status text. When the
+boundary guide is visible, the native canvas draws the recovered two horizontal and four vertical
+Mario movement/camera bands with mode-dependent 256x232, 352x232, or 448x224 geometry, camera
+translation, translucent fill, dashed boundaries, and responsive scale. The authenticated
+partition is now **306 routed / 11 pending**. The aggregate remains 59/65 because the
+configuration row is still Partial.
+
 Toolbar coverage update (2026-08-10, selection editors): `LM_EDIT_PROPERTIES` `$2468` now toggles
 an independent modeless properties window, while `LM_EDIT_EDIT_MANUAL` `$2469` opens (and repeated
 activation reuses) the manual editor dialog. Both follow the live Layer 1, object-backed Layer 2,

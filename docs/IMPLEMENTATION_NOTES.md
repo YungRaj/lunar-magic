@@ -6036,6 +6036,19 @@ window, so the owned lifecycle (main close, focus restoration, and no orphan win
 the preference remains available for original-configuration compatibility. Authenticated native
 command coverage is now 305 of 317 named slots, leaving 12 pending.
 
+## Mario-region boundary overlay (`$26B4`)
+
+Selector `$D6` toggles session byte `$005E7B12`, redraws only when the boundary-guide layer is
+active, and reports exact on/off statuses. Its sole renderer consumer is
+`DrawLevelBoundaryGuideOverlay`. After drawing the mode-dependent 256x232, 352x232, or 448x224
+camera boundary, Lunar Magic adds two 16-pixel horizontal bands at Y `$78` and `$90`, plus four
+16-pixel vertical bands centered around the view midpoint at offsets -88, -24, +8, and +72 pixels.
+The 448x224 layout begins its vertical bands four pixels lower and limits them to 216 pixels.
+Rust now draws those six translucent dashed regions through the same camera anchor and responsive
+canvas scaling as its recovered boundary guide. The toggle is session-only and does not affect the
+game-pixel view. Authenticated native command coverage is now 306 of 317 named slots, leaving 11
+pending.
+
 ## Complete responsive game viewport
 
 The native level editor no longer uses cover scaling for its 256×224 game viewport. Cover scaling
