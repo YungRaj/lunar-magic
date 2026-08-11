@@ -1303,3 +1303,16 @@ the actual dialog; an authenticated installed runtime still forces 4bpp on. Focu
 consumer tests pass, moving the authenticated partition to 311/317 with six pending commands. The
 complete native gate passes 1,149 tests with 13 explicit fixture ignores; renderer 235/235, the
 all-512 traversal, byte-identical 513-line manifest, and i686 cross-build remain green.
+
+## Other-bypass route correction (2026-08-11)
+
+Live port-8098 Ghidra evidence separates two previously conflated options. `$24D2 -> $9B` toggles
+persisted default-one `$005E7ADF` (`Options` bit 9) and selects list versus edit-field standard
+bypass dialogs. Rust now routes `LM_OPTIONS_OTHER_BYPASS` to that existing persisted state and its
+real FG/BG and sprite editor consumers. `$24C4 -> $8E` instead toggles `$005E7AE3`; its xrefs enter
+level validation/save, expanded sprite serialization, mode controls, and sprite-limit reporting.
+The incorrect `LM_OPTIONS_INSTALL_VRAM` dialog-style route was removed. Coverage stays 311/317
+because the newly evidenced command replaces one false positive; six commands remain pending.
+The corrected full native gate passes 1,150 tests with 13 explicit fixture ignores; renderer
+235/235, the all-512 traversal, byte-identical 513-line manifest, and i686 cross-build remain
+green.

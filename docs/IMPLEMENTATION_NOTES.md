@@ -5541,6 +5541,25 @@ renderer remains green at 235/235 tests, all 512 pristine levels materialize, an
 `254a1a050d12785973241910e26d8b7917a5cb5e2a56602a330fc6cbd833c04d`, and the i686 Windows
 cross-build passes.
 
+## Other Super GFX bypass preference (`$24D2`) and route correction
+
+Selector `$9B` toggles default-on byte `$005E7ADF`; `SynchronizeApplicationSettingsRegistry`
+stores it as `Options` bit 9. The standard FG/BG and sprite bypass handlers use that choice to
+select list-based versus alternate edit-field dialogs. Rust's existing persisted dialog-style
+model and both real editor consumers are now bound to the correct authenticated
+`LM_OPTIONS_OTHER_BYPASS` command.
+
+This recovery also invalidates the earlier `$24C4` attribution. `LM_OPTIONS_INSTALL_VRAM` maps to
+selector `$8E` and byte `$005E7AE3`; Ghidra cross-references show that byte participates in level
+open/save, sprite serialization, level-mode enablement, and sprite-limit reporting, not bypass
+dialog selection. The false route was removed and returned to pending rather than counted as
+parity. The authenticated partition consequently remains 311/317: one correctly implemented
+command replaces one disproven claim.
+
+The corrected full native gate passes 1,150 tests with 13 explicit fixture ignores. Renderer
+235/235, the all-512 traversal, byte-identical 513-line manifest, and i686 cross-build remain
+green.
+
 ## Per-level music bypass (`$2522`)
 
 Port-8089 recovery maps byte-table selector `$AC` to resource `$0400` and dialog procedure

@@ -2100,7 +2100,7 @@ fn user_toolbar_native_action(name: &str) -> Option<UserToolbarNativeAction> {
         "LM_KEY_TRUNCATE" => UserToolbarNativeAction::TruncateLevel,
         "LM_KEY_DUMP_DATA" => UserToolbarNativeAction::DeprecatedDumpDataNoOp,
         "LM_OPTIONS_WARN_SPRITE_33" => UserToolbarNativeAction::WarnVerticalFireballBuoyancy,
-        "LM_OPTIONS_INSTALL_VRAM" => UserToolbarNativeAction::GfxBypassListDialogs,
+        "LM_OPTIONS_OTHER_BYPASS" => UserToolbarNativeAction::GfxBypassListDialogs,
         "LM_OPTIONS_ATTACH_FILES" => UserToolbarNativeAction::JoinedGraphicsFiles,
         "LM_OPTIONS_AUTO_SCREENS" => UserToolbarNativeAction::AutoSetScreens,
         "LM_OPTIONS_ALLOW_FRAGMENT" => UserToolbarNativeAction::AllowFragmentation,
@@ -3820,11 +3820,16 @@ mod user_toolbar_tests {
     }
 
     #[test]
-    fn historical_install_vram_command_toggles_gfx_bypass_dialog_style() {
+    fn historical_install_vram_name_is_not_the_gfx_bypass_dialog_preference() {
+        assert_eq!(user_toolbar_native_action("LM_OPTIONS_INSTALL_VRAM"), None);
+    }
+
+    #[test]
+    fn other_super_bypass_command_toggles_the_persisted_dialog_style() {
         let mut native = NativeApplication::default();
         assert_eq!(native.gfx_bypass_list_dialogs, None);
         assert_eq!(
-            user_toolbar_native_action("LM_OPTIONS_INSTALL_VRAM"),
+            user_toolbar_native_action("LM_OPTIONS_OTHER_BYPASS"),
             Some(UserToolbarNativeAction::GfxBypassListDialogs)
         );
         native.apply_user_toolbar_native_action(
@@ -3832,16 +3837,11 @@ mod user_toolbar_tests {
             UserToolbarNativeAction::GfxBypassListDialogs,
         );
         assert_eq!(native.gfx_bypass_list_dialogs, Some(false));
-        assert_eq!(
-            native.app.status,
-            "Using alternate edit-field GFX bypass dialogs"
-        );
         native.apply_user_toolbar_native_action(
             &egui::Context::default(),
             UserToolbarNativeAction::GfxBypassListDialogs,
         );
         assert_eq!(native.gfx_bypass_list_dialogs, Some(true));
-        assert_eq!(native.app.status, "Using list-based GFX bypass dialogs");
     }
 
     #[test]

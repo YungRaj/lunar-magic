@@ -1268,10 +1268,9 @@ save/abort, toggle, persistence, ordering, and command-partition tests pass. The
 partition is now **285 routed / 32 pending**. The aggregate remains 59/65 because the configuration
 row is still Partial.
 
-Toolbar coverage update (2026-08-10, historical GFX-bypass dialog style): the misleadingly named
-internal command `LM_OPTIONS_INSTALL_VRAM` `$24C4` now reproduces central dispatch case `$8E`
-without pretending to own Lunar Magic 3.63's current per-ROM VRAM patch setting. The initialized
-byte at `$005E7ADF` proves the default-on state, `SynchronizeApplicationSettingsRegistry` binds it
+Toolbar coverage correction (2026-08-11, historical GFX-bypass dialog style): authenticated
+`LM_OPTIONS_OTHER_BYPASS` `$24D2` reproduces central dispatch case `$9B`. The initialized byte at
+`$005E7ADF` proves the default-on state, `SynchronizeApplicationSettingsRegistry` binds it
 to `Options` bit 9, and `TransferGeneralOptionsDialogSettings` supplies the decisive obsolete-option
 tooltip: turning it off selects alternate GFX-bypass dialogs with regular edit fields instead of
 lists. `HandleLevelEditorCommand` proves the flag chooses dialog families 2/3 and 4/5. Rust now
@@ -1279,10 +1278,13 @@ persists that process preference and switches both standard FG/BG and sprite byp
 a complete 255-row labeled selector and the alternate hexadecimal row field while sharing the exact
 same staged table, selectors, commit, reopen, and Undo semantics. The historical internal route is
 available to user-toolbar configurations; no false 3.63 menu item or ROM-patch mutation was added.
-Focused default, toggle, persistence, complete-row-model, and command-partition tests pass. The
-authenticated partition is now **286 routed / 31 pending**. The aggregate remains 59/65 because the
-configuration row is still Partial. Actual VRAM patch selection remains owned by `LM_OPTIONS_VRAM`
-`$24E8` and is tracked separately.
+Focused default, toggle, persistence, complete-row-model, and command-partition tests pass.
+The prior `$24C4` attribution was false: `LM_OPTIONS_INSTALL_VRAM` maps to case `$8E` and byte
+`$005E7AE3`, whose save and sprite-serialization consumers are unrelated to dialog style, so that
+route has been returned to the pending partition. The authenticated partition therefore remains
+**311 routed / 6 pending** while replacing one false positive with this evidenced route. The
+aggregate remains 59/65 because the configuration row is still Partial. Actual VRAM patch
+selection remains owned by `LM_OPTIONS_VRAM` `$24E8` and is tracked separately.
 
 Toolbar coverage update (2026-08-11, current per-ROM VRAM patch options): authenticated
 `LM_OPTIONS_VRAM` `$24E8` now reproduces the live 3.63 `Change VRAM Patch Options` workflow and
