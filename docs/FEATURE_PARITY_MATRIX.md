@@ -491,7 +491,12 @@ The Patches/runtime row additionally routes authenticated SMW-US SA-1 sources th
 SA-1 expanded-settings hook and runtime family instead of rejecting their mapper. The native
 `InstallSettings` command preserves its revision gate and installs the owned allocation as one
 checksum-valid mutation. `application_installs_sa1_settings_reopens_and_undoes_exactly` proves
-command reachability, mapper-stable reopen, one history revision, and byte-exact Undo. Expanded
+command reachability, mapper-stable reopen, one history revision, and byte-exact Undo. The
+installer also follows packed feature bit 17: fifteen recovered IRAM operands plus the `$2180`
+runtime word are remapped only when enabled, while the two SA-1 mapper adaptations remain
+unconditional. `sa1_ram_remap_controls_exactly_fifteen_iram_operands_and_one_word` and
+`application_honors_sa1_ram_remap_metadata_during_settings_install` prove both metadata variants,
+all nineteen affected bytes, checksum-valid reopen, and exact Undo. Expanded
 shared/custom palettes are now descriptor-routed through the relocated SMW body after an actual
 LoROM-to-ExLoROM conversion, while checksum repair correctly remains on ExLoROM's authoritative
 low first-bank header. `converted_exlorom_installs_edits_reopens_and_undoes_expanded_palettes`

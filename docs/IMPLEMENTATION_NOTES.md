@@ -6194,3 +6194,10 @@ ROM state rather than a frontend-only preference. Rust's metadata model toggles 
 the application transaction is stale-safe, idempotent, checksum-repaired, reopenable, and exactly
 undoable, and the native route selects current ROM state before dispatch. Focused tests pass and
 the authenticated native command inventory is now 317 of 317 named slots with none pending.
+
+The expanded-settings consumer now honors the persisted option as well as editing it. Its SA-1
+plan keeps the two unconditional mapper adaptations separate from the fifteen IRAM operands and
+one two-byte runtime operand controlled by bit 17. Both first-time settings and first-ExGFX
+prerequisite installation read mapper-qualified metadata. Planner tests compare every conditional
+byte, while application tests exercise bit-off and bit-on ROMs through checksum-valid install,
+semantic reopen, and byte-exact Undo.

@@ -5188,3 +5188,9 @@ and writes the SA-1 relocation bank selected by the insertion context. ExLoROM t
 relocation path before consulting this bit. Expanded level headers, ExAnimation, VRAM, Layer 3,
 Map16, secondary exits, graphics compression, overworld features, and inserted-ASM relocation all
 share these helpers, so the persisted bit is ROM-scoped and affects future runtime installations.
+
+`InstallExpandedLevelHeaderRuntime` provides a concrete installation boundary. It invokes
+`PatchRelocatedIramWordAddress` for exactly fifteen operands, then conditionally changes the
+adjacent `$2180` operand to `$EB3B` when both SA-1 and feature bit 17 are enabled. Two further
+mapper adaptations in the generated runtime—fixed bytes `$07F9F7: $18->$60` and
+`$07FBD6: $18->$38`—are outside that conditional and apply to every SA-1 installation.

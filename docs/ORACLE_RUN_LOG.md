@@ -1455,3 +1455,13 @@ operands are remapped through the SA-1 relocation context. Rust now exposes the 
 metadata bit, revision-checks and checksum-repairs the command, makes duplicate state a no-op,
 supports exact Undo, and routes the authenticated toolbar name. Focused metadata, application,
 and exhaustive partition tests pass. Command coverage is 317/317 with no pending original names.
+
+## SA-1 expanded-settings RAM-remap consumption (2026-08-11)
+
+`InstallExpandedLevelHeaderRuntime` calls `PatchRelocatedIramWordAddress` fifteen times and guards
+those relocations plus its `$2180 -> $EB3B` operand behind SA-1 state and packed feature bit 17.
+The fixed `$07F9F7` and `$07FBD6` mapper adaptations occur outside that guard. Rust now preserves
+that exact partition for direct settings and first-ExGFX prerequisite installation, using a
+mapper-qualified metadata layout. The bit-off and bit-on application gates verify all nineteen
+bytes, checksum-valid reopen, and byte-exact Undo; the focused SA-1 suite passes 8 active tests
+with six retained external-oracle tests ignored pending their proprietary fixtures.

@@ -682,7 +682,7 @@ mod tests {
     use lm_profile::RevisionProfile;
     use lm_project::{PatchFixup, PatchPayload, PatchWrite, Project};
     use lm_rats::{HEADER_LEN, make_header};
-    use lm_rom::{Mapper, RomImage, pc_to_snes};
+    use lm_rom::{LunarMagicRomMetadata, Mapper, RomImage, pc_to_snes};
     use std::{fs, path::PathBuf};
 
     fn write_pointer(bytes: &mut [u8], offset: usize, mapper: Mapper, target: usize) {
@@ -1473,6 +1473,85 @@ mod tests {
             app.project().unwrap().rom.read(0x087ff8, 4).unwrap(),
             b"STAR"
         );
+        assert!(
+            lm_rom::detect_identity(&app.project().unwrap().rom)
+                .unwrap()
+                .checksum_matches()
+        );
+        app.dispatch(Command::Undo).unwrap();
+        assert_eq!(app.project().unwrap().save_snapshot(), original);
+    }
+
+    #[test]
+    fn application_honors_sa1_ram_remap_metadata_during_settings_install() {
+        const REMAPPED_BYTES: &[(usize, u8)] = &[
+            (0x07f192, 0x61),
+            (0x07f7a3, 0x61),
+            (0x07f82f, 0x79),
+            (0x07f9c7, 0x73),
+            (0x07f9e2, 0x61),
+            (0x07faf2, 0x7f),
+            (0x07faf5, 0x7f),
+            (0x07fafc, 0x61),
+            (0x07fb20, 0x3b),
+            (0x07fb21, 0xeb),
+            (0x07fb45, 0x67),
+            (0x07fb48, 0x68),
+            (0x07fb4b, 0x6d),
+            (0x07fb4e, 0x7f),
+            (0x07fc9b, 0x67),
+            (0x07fd90, 0x74),
+            (0x07fddf, 0x74),
+        ];
+        let pristine = crate::test_support::pristine_smw_us_rom_bytes();
+        let mut image = RomImage::from_bytes(pristine).unwrap();
+        image.expand(Mapper::Sa1, 0x10_0000, 0xff).unwrap();
+        let plan = lm_profile::smw_us_v1_sa1_expanded_settings_installation_plan().unwrap();
+        for write in &plan.writes {
+            image.write(write.offset, &write.expected).unwrap();
+        }
+        image.write(0x007fd5, &[0x23]).unwrap();
+
+        let mut attribution = [b' '; LunarMagicRomMetadata::ATTRIBUTION_LEN];
+        attribution[..LunarMagicRomMetadata::SIGNATURE.len()]
+            .copy_from_slice(LunarMagicRomMetadata::SIGNATURE);
+        let metadata = LunarMagicRomMetadata::from_parts(
+            &attribution,
+            1,
+            &[0; LunarMagicRomMetadata::FEATURE_LEN],
+        )
+        .unwrap()
+        .with_sa1_ram_remap(true);
+        let layout = lm_profile::smw_us_v1_lunar_magic_metadata_layout_for_mapper(Mapper::Sa1);
+        image
+            .write(layout.attribution, metadata.attribution())
+            .unwrap();
+        image
+            .write(layout.vram_version, &[metadata.vram_version()])
+            .unwrap();
+        image
+            .write(layout.feature_record, metadata.feature_record())
+            .unwrap();
+        image
+            .update_snes_checksum(lm_profile::SMW_US_V1_CHECKSUM_FIELD)
+            .unwrap();
+        let original = image.as_file_bytes().to_vec();
+
+        let mut app = AppState::default();
+        app.load_rom(original.clone()).unwrap();
+        app.dispatch(Command::InstallSettings { rev: 0 }).unwrap();
+        for &(offset, replacement) in REMAPPED_BYTES {
+            assert_eq!(
+                app.project().unwrap().rom.read(offset, 1).unwrap(),
+                &[replacement]
+            );
+        }
+        for (offset, replacement) in [(0x07f9f7, 0x60), (0x07fbd6, 0x38)] {
+            assert_eq!(
+                app.project().unwrap().rom.read(offset, 1).unwrap(),
+                &[replacement]
+            );
+        }
         assert!(
             lm_rom::detect_identity(&app.project().unwrap().rom)
                 .unwrap()
