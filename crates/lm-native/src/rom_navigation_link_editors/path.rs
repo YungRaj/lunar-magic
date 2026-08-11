@@ -42,6 +42,19 @@ struct PathLinkForm {
 }
 
 impl RomOverworldPathLinkEditor {
+    pub(crate) fn staged_recovery_table<'a>(
+        &'a self,
+        app: &AppState,
+    ) -> Result<Option<&'a OverworldPathLinkTable>, String> {
+        let Some(workspace) = self.workspace.as_ref() else {
+            return Ok(None);
+        };
+        if workspace.revision != app.project_revision() {
+            return Err("stale path-link workspace cannot be recovered".into());
+        }
+        Ok((workspace.current != workspace.original).then_some(&workspace.current))
+    }
+
     pub(crate) fn staged_recovery_generation(&self, app: &AppState) -> Option<u64> {
         let workspace = self.workspace.as_ref()?;
         if workspace.current == workspace.original {

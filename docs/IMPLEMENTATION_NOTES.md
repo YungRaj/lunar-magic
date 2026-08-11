@@ -6544,6 +6544,19 @@ then preserve the installed tail link while recovering an independent edit to li
 warp-link editor tests, all four application storage/migration tests, and all 237 renderer tests
 pass.
 
+## Crash recovery composes simultaneous path and warp link editors
+
+The native recovery coordinator no longer rejects the paired staged path-link and warp-link
+editors. It validates both workspace revisions, then installs their complete tables sequentially
+into one isolated project so two pristine relocatable runtimes allocate against the same evolving
+ROM image rather than colliding through a bytewise merge. Other simultaneous staged-domain
+combinations continue to fail visibly until they receive an equivalent typed composition route.
+
+`simultaneous_pristine_path_and_warp_growth_allocate_and_recover_together` grows both vanilla
+tables, reopens both exact installed tables from one recovery record, retains level `$105`, and
+proves the live project remains clean and history-free. Both navigation editor families and all 237
+renderer tests remain green.
+
 ## Crash recovery includes the complete staged overworld event-number map
 
 The standalone event-number editor now contributes a content-sensitive generation over the exact

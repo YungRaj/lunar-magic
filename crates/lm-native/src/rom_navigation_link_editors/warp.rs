@@ -36,6 +36,19 @@ struct WarpLinkForm {
 }
 
 impl RomOverworldWarpLinkEditor {
+    pub(crate) fn staged_recovery_table<'a>(
+        &'a self,
+        app: &AppState,
+    ) -> Result<Option<&'a OverworldWarpLinkTable>, String> {
+        let Some(workspace) = self.workspace.as_ref() else {
+            return Ok(None);
+        };
+        if workspace.revision != app.project_revision() {
+            return Err("stale warp-link workspace cannot be recovered".into());
+        }
+        Ok((workspace.current != workspace.original).then_some(&workspace.current))
+    }
+
     pub(crate) fn staged_recovery_generation(&self, app: &AppState) -> Option<u64> {
         let workspace = self.workspace.as_ref()?;
         if workspace.current == workspace.original {

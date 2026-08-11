@@ -467,6 +467,10 @@ table through fixed update, current-runtime installation/update, or legacy-runti
 `staged_pristine_warp_growth_recovers_complete_installed_table` proves exact 27-to-28-link recovery
 and `staged_installed_warp_update_preserves_prior_tail_link` proves an independent staged edit
 retains the previously committed installed tail link.
+The recovery coordinator also composes simultaneous staged path and warp editors in typed
+persistence order on one isolated allocation image instead of rejecting or byte-merging them.
+`simultaneous_pristine_path_and_warp_growth_allocate_and_recover_together` proves both pristine
+runtime installations coexist, both complete tables reopen exactly, and live state stays clean.
 
 ## Workflow ledger
 

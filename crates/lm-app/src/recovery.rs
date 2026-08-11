@@ -97,6 +97,21 @@ impl AppState {
         self.recovery_snapshot_with_current_rom(staged.save_snapshot(), level)
     }
 
+    /// Installs staged path and warp tables sequentially into one isolated project. Sequential
+    /// allocation is required because both pristine tables may install relocatable runtimes.
+    pub fn recovery_snapshot_with_overworld_navigation_links(
+        &self,
+        paths: &lm_overworld::OverworldPathLinkTable,
+        warps: &lm_overworld::OverworldWarpLinkTable,
+        level: Option<u16>,
+    ) -> Result<Option<RecoverySnapshot>, AppError> {
+        let project = self.project.as_ref().ok_or(AppError::NoProject)?;
+        let mut staged = project.clone();
+        crate::overworld_path_link_state::replace_native_path_links_in_project(&mut staged, paths)?;
+        crate::overworld_warp_link_state::replace_native_warp_links_in_project(&mut staged, warps)?;
+        self.recovery_snapshot_with_current_rom(staged.save_snapshot(), level)
+    }
+
     /// Restores a recovery record as an unnamed, dirty project.
     ///
     /// The original path is deliberately not restored. The first explicit save therefore uses
@@ -130,5 +145,61 @@ impl AppState {
         }
         self.status = "Recovered unsaved ROM; use Save As to preserve it".into();
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use lm_overworld::{OverworldPathLink, OverworldWarpLink};
+    use lm_profile::{
+        smw_us_v1_overworld_path_patch_locator, smw_us_v1_overworld_warp_patch_locator,
+    };
+
+    #[test]
+    fn simultaneous_pristine_path_and_warp_growth_allocate_and_recover_together() {
+        let mut app = AppState::default();
+        app.load_rom(crate::test_support::pristine_smw_us_rom_bytes())
+            .unwrap();
+        let project = app.project().unwrap();
+        let mut paths = project
+            .load_overworld_path_links_detected(smw_us_v1_overworld_path_patch_locator())
+            .unwrap()
+            .table;
+        let mut path_tail: OverworldPathLink = *paths.links.last().unwrap();
+        path_tail.target.x_tile ^= 0x5a;
+        paths.links.push(path_tail);
+        let mut warps = project
+            .load_overworld_warp_links_detected(smw_us_v1_overworld_warp_patch_locator())
+            .unwrap()
+            .table;
+        let mut warp_tail: OverworldWarpLink = *warps.links.last().unwrap();
+        warp_tail.destination.horizontal_tile ^= 0x1234;
+        warps.links.push(warp_tail);
+
+        let recovery = app
+            .recovery_snapshot_with_overworld_navigation_links(&paths, &warps, Some(0x105))
+            .unwrap()
+            .unwrap();
+        assert_eq!(app.capabilities().project, crate::ProjectStatus::OpenClean);
+        assert_eq!(app.project().unwrap().history.undo_len(), 0);
+        let mut reopened = AppState::default();
+        reopened.load_recovery(recovery).unwrap();
+        assert_eq!(reopened.current_level(), Some(0x105));
+        let project = reopened.project().unwrap();
+        assert_eq!(
+            project
+                .load_overworld_path_links_detected(smw_us_v1_overworld_path_patch_locator())
+                .unwrap()
+                .table,
+            paths
+        );
+        assert_eq!(
+            project
+                .load_overworld_warp_links_detected(smw_us_v1_overworld_warp_patch_locator())
+                .unwrap()
+                .table,
+            warps
+        );
     }
 }
