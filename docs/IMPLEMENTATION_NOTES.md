@@ -6213,3 +6213,14 @@ installation or the five-owner Layer 3-only path when settings survived a prior 
 Header variants, semantic reopen, checksum, Undo/Redo, and corruption atomicity pass. The renderer
 remains 237/237 and the broad application library gate is 639 active passed with 13 explicit
 fixture ignores.
+
+## Exhaustive original toolbar route closure
+
+The authenticated table contains 317 named entries followed by one null sentinel. Every named
+entry now resolves through exactly one of the application-command, native-action, or local-view
+routes; the public inventory intentionally omits the sentinel. The exhaustive partition test was
+updated from its stale historical unsupported count to require an empty unsupported set. The full
+native suite passes 1,157 active tests with 13 explicit fixture ignores, including all 512 pristine
+level render-asset materializations. This closes named-command reachability while leaving the
+Configuration/Toolbar row Partial for original customization-dialog interaction and platform
+variants.

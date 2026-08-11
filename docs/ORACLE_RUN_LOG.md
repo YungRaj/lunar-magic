@@ -1476,3 +1476,12 @@ already-installed-settings branch, headered and headerless framing, and a corrup
 precondition are independently covered. The renderer passes 237/237 and `lm-app --lib` passes
 639 active tests with 13 explicit external-fixture ignores. Original live-process evidence for
 the remaining identity and SA-1 combined variants remains open.
+
+## Complete named toolbar route partition (2026-08-11)
+
+The retained Lunar Magic 3.63 table has 317 named slots and a terminal null sentinel. Re-evaluating
+each name against the three authoritative Rust route families yields zero unsupported named
+entries; the public iterator correctly excludes the sentinel. The corrected exhaustive gate passes,
+as does the complete native suite: 1,157 active tests, 13 explicit external-fixture ignores, and
+the all-512-level built-in render-asset materialization audit. Toolbar customization remains
+Partial for dialog/variant fidelity, not for internal-command reachability.
