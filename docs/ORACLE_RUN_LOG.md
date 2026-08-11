@@ -1090,6 +1090,16 @@ and persists clearing only after confirmation. Focused route, interaction, and p
 cover the publication boundary; provenance is retained under
 `docs/oracle-work/lm363/recent-menu/`.
 
+## Lunar Magic 3.63 deprecated Options entries (2026-08-10)
+
+The command-byte table at `command_id + $004965D3` was re-read from the live port-8089 program.
+`LM_OPTIONS_CUSTOM_SPRTES` `$24C5`, `LM_OPTIONS_WHEEL_ZOOM` `$24DC`, and
+`LM_OPTIONS_ZOOM_MENU` `$24DD` each contain `$DF`; `HandleLevelEditorCommand` ends at case `$DE`.
+Rust therefore classifies all three as explicit successful no-ops instead of assigning behavior
+from their obsolete labels. Focused stable-ROM/state tests, the complete 317-command partition,
+and the Windows cross-build pass. Provenance is retained under
+`docs/oracle-work/lm363/deprecated-options-no-ops/`.
+
 ## Lunar Magic 3.63 ROM user-area scan (2026-08-10)
 
 An isolated Wine prefix opened a headered 2-MiB SMW-US ROM attributed to Lunar Magic 3.63 and

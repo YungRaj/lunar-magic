@@ -1040,6 +1040,15 @@ dismissal do not mutate state. Focused tests bind placement/dismissal, selection
 complete command partition. The authenticated partition is now **276 routed / 41 pending**. The
 aggregate remains 59/65 because the configuration row is still Partial.
 
+Toolbar coverage update (2026-08-10, deprecated Options entries): authenticated historical
+commands `LM_OPTIONS_CUSTOM_SPRTES` `$24C5`, `LM_OPTIONS_WHEEL_ZOOM` `$24DC`, and
+`LM_OPTIONS_ZOOM_MENU` `$24DD` now reproduce their exact Lunar Magic 3.63 no-op behavior. All
+three central dispatch-table entries are `$DF`, beyond the implemented `$00..$DE` switch, and must
+not be aliased to active sprite-library or canvas-zoom features. Rust uses one explicit typed
+no-op; focused coverage requires stable revision, complete ROM bytes, status, and error state. The
+authenticated partition is now **279 routed / 38 pending**. The aggregate remains 59/65 because
+the configuration row is still Partial.
+
 Toolbar coverage update (2026-08-10, Open Level Number): `LM_FILE_OPEN_LEVEL` `$238E` now opens
 the native equivalent of original dialog resource `1000`. It uses the authenticated title,
 `Level Number (0-1FF)` label, OK/Cancel controls, and original-language resource overrides; seeds
