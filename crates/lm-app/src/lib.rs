@@ -269,7 +269,8 @@ pub use mwl_batch_export::{
     native_level_is_in_expanded_area, publish_mwl_batch_new,
 };
 pub use mwl_batch_import::{
-    MwlDirectoryListing, discover_mwl_directory, prepare_declared_mwl_import,
+    MwlDirectoryListing, discover_mwl_directory, prepare_declared_legacy_mwl_import,
+    prepare_declared_mwl_import,
 };
 pub use mwl_document_controller::{
     MwlDocumentController, MwlDocumentControllerError, MwlDocumentEdit, MwlDocumentSaveSnapshot,

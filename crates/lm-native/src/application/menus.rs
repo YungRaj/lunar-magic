@@ -103,6 +103,18 @@ impl NativeApplication {
             let enabled = !matches!(status, ProjectStatus::Closed);
             if ui
                 .add_enabled(
+                    enabled && !self.rom_mwl_import_dialog.is_open(),
+                    egui::Button::new(self.menu_text(UiTextKey::FileOpenLevelFile)),
+                )
+                .clicked()
+            {
+                ui.close_menu();
+                if let Err(error) = self.rom_mwl_import_dialog.open(&self.app) {
+                    self.effects.error = Some(error);
+                }
+            }
+            if ui
+                .add_enabled(
                     enabled,
                     egui::Button::new(self.menu_text(UiTextKey::FileOpenLevelNumber)),
                 )

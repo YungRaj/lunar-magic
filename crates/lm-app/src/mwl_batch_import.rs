@@ -2,7 +2,7 @@ use crate::{
     EditorMode, PreparedRomCommit, ProfiledControllerSnapshot, RevisionProfileControllers,
 };
 use lm_level::MwlFile;
-use lm_project::MwlNativeLevel;
+use lm_project::{LegacyMwlBundle, MwlNativeLevel};
 use lm_rom::RomImage;
 use std::fs;
 use std::ops::Range;
@@ -141,14 +141,78 @@ pub fn prepare_declared_mwl_import(
     Ok((level, prepared))
 }
 
+/// Prepares one legacy manifest-and-sidecar level import into its declared level.
+///
+/// The destination palette is loaded before decoding because a legacy bundle without a usable
+/// `.mw3` retains that level's shared palette. All other persistence and allocation rules share
+/// the modern MWL transaction.
+///
+/// # Errors
+///
+/// Rejects an out-of-profile target, malformed legacy records, unavailable installed layouts, and
+/// any cross-domain save preflight failure.
+pub fn prepare_declared_legacy_mwl_import(
+    profiled: &ProfiledControllerSnapshot,
+    bundle: &LegacyMwlBundle,
+    search: Range<usize>,
+) -> Result<(u16, PreparedRomCommit), String> {
+    let level = bundle.manifest.level_number;
+    if usize::from(level) >= profiled.profile.level.layer1.entries {
+        return Err(format!(
+            "legacy MWL target level {level:03X} is outside the active profile"
+        ));
+    }
+    let image = RomImage::from_bytes(profiled.snapshot.rom_bytes.clone())
+        .map_err(|error| error.to_string())?;
+    let (layout, options) = profiled
+        .profile
+        .native_level_assets_save_plan_for_rom(
+            search.clone(),
+            &image,
+            profiled.snapshot.identity.internal_header_offset,
+        )
+        .map_err(|error| error.to_string())?;
+    let Some((_, layer2_options)) = profiled
+        .profile
+        .level_layer2_save_plan(
+            search,
+            image.logical_len(),
+            profiled.snapshot.identity.internal_header_offset,
+        )
+        .map_err(|error| error.to_string())?
+    else {
+        return Err("active revision profile has no native Layer 2 layout".into());
+    };
+    let ownership = lm_graphics::PaletteOwnership::editable(layout.palette.colors_per_palette);
+    let mut snapshot = profiled.snapshot.clone();
+    snapshot.mode = EditorMode::Level(level);
+    let controller = profiled
+        .profile
+        .decode_native_level_assets(&snapshot, ownership)
+        .map_err(|error| error.to_string())?;
+    let source = bundle
+        .decode_native(
+            &profiled.profile.sprite_lengths,
+            &controller.assets().palette,
+            controller.assets().expanded_settings.is_some(),
+        )
+        .map_err(|error| error.to_string())?;
+    let prepared = controller
+        .prepare_smw_us_v1_installed_mwl_import(&source, &options, &layer2_options)
+        .map_err(|error| error.to_string())?;
+    Ok((level, prepared))
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{discover_mwl_directory, prepare_declared_mwl_import};
+    use super::{
+        discover_mwl_directory, prepare_declared_legacy_mwl_import, prepare_declared_mwl_import,
+    };
     use crate::{ControllerSnapshot, EditorMode, ProfiledControllerSnapshot};
-    use lm_level::{MwlFile, SpriteLengthTable};
+    use lm_level::{LegacyMwlManifest, MwlFile, SpriteLengthTable};
     use lm_project::{
-        ExAnimationRomLayout, InstalledExAnimationRomLayout, InstalledLayout, LevelPointerTable,
-        MwlNativeLevel, Project,
+        ExAnimationRomLayout, InstalledExAnimationRomLayout, InstalledLayout, LegacyMwlBundle,
+        LevelPointerTable, MwlNativeLevel, Project,
     };
     use lm_rom::{Mapper, RomImage, detect_identity};
     use std::fs;
@@ -302,6 +366,48 @@ mod tests {
             assert_eq!(
                 project.rom.copier_header_bytes().map(<[u8]>::to_vec),
                 original_header
+            );
+            assert!(detect_identity(&project.rom).unwrap().checksum_matches());
+            results.push(project.rom.logical_bytes().to_vec());
+        }
+        assert_eq!(results[0], results[1]);
+    }
+
+    #[test]
+    fn installed_legacy_level_file_import_prepares_its_declared_target() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../..")
+            .join("oracle-work/lm363/pristine-us/legacy-level-000-custom-palette");
+        let manifest =
+            LegacyMwlManifest::decode(&fs::read(root.join("Level 000.mwl")).unwrap()).unwrap();
+        let bundle = LegacyMwlBundle {
+            manifest,
+            layer1: fs::read(root.join("Level 000.mw0")).unwrap(),
+            layer2: fs::read(root.join("Level 000.mw1")).unwrap(),
+            sprites: fs::read(root.join("Level 000.mw2")).unwrap(),
+            palette: Some(fs::read(root.join("Level 000.mw3")).unwrap()),
+        };
+        let mut results = Vec::new();
+        for headered in [true, false] {
+            let profiled = installed_fixture(headered);
+            let image = RomImage::from_bytes(profiled.snapshot.rom_bytes.clone()).unwrap();
+            let copier = image.copier_header_bytes().map(<[u8]>::to_vec);
+            let (level, prepared) = prepare_declared_legacy_mwl_import(
+                &profiled,
+                &bundle,
+                0x080000..image.logical_len(),
+            )
+            .unwrap();
+            assert_eq!(level, 0);
+            assert_eq!(prepared.expected_revision, 17);
+            assert!(!prepared.mutation.is_empty());
+            let mut project = Project::new(image);
+            project
+                .apply_mutation(&prepared.description, &prepared.mutation)
+                .unwrap();
+            assert_eq!(
+                project.rom.copier_header_bytes().map(<[u8]>::to_vec),
+                copier
             );
             assert!(detect_identity(&project.rom).unwrap().checksum_matches());
             results.push(project.rom.logical_bytes().to_vec());

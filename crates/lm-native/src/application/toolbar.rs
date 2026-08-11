@@ -357,6 +357,11 @@ impl NativeApplication {
         match action {
             UserToolbarNativeAction::HelpContents => self.help_dialog.open(),
             UserToolbarNativeAction::HelpAbout => self.about_dialog.open(),
+            UserToolbarNativeAction::OpenLevelFile => {
+                if let Err(error) = self.rom_mwl_import_dialog.open(&self.app) {
+                    self.effects.error = Some(error);
+                }
+            }
             UserToolbarNativeAction::OpenLevelNumber => {
                 if let Some(level) = self.app.current_level() {
                     self.open_level_number_dialog.open(Some(level));
@@ -1344,6 +1349,7 @@ fn legacy_graphics_bypass_prerequisite_installed(app: &lm_app::AppState) -> Resu
 enum UserToolbarNativeAction {
     HelpContents,
     HelpAbout,
+    OpenLevelFile,
     OpenLevelNumber,
     OpenLevelAddress,
     Sprite19Fix,
@@ -1414,6 +1420,7 @@ fn user_toolbar_native_action(name: &str) -> Option<UserToolbarNativeAction> {
     Some(match name {
         "LM_HELP_CONTENTS" => UserToolbarNativeAction::HelpContents,
         "LM_HELP_ABOUT" => UserToolbarNativeAction::HelpAbout,
+        "LM_FILE_OPEN_FILE" => UserToolbarNativeAction::OpenLevelFile,
         "LM_FILE_OPEN_LEVEL" => UserToolbarNativeAction::OpenLevelNumber,
         "LM_FILE_OPEN_LEVEL_ADDRESS" => UserToolbarNativeAction::OpenLevelAddress,
         "LM_KEY_SPRITE19_FIX" => UserToolbarNativeAction::Sprite19Fix,
@@ -1940,6 +1947,10 @@ mod user_toolbar_tests {
             user_toolbar_native_action("LM_HELP_ABOUT"),
             Some(UserToolbarNativeAction::HelpAbout)
         );
+        assert_eq!(
+            user_toolbar_native_action("LM_FILE_OPEN_FILE"),
+            Some(UserToolbarNativeAction::OpenLevelFile)
+        );
         assert_eq!(user_toolbar_native_action("LM_HELP_UNKNOWN"), None);
         assert_eq!(
             user_toolbar_native_action("LM_KEY_SPRITE19_FIX"),
@@ -2396,7 +2407,7 @@ mod user_toolbar_tests {
                     || user_toolbar_native_action(entry.name).is_some()
             })
             .collect::<Vec<_>>();
-        assert_eq!(supported.len(), 261);
+        assert_eq!(supported.len(), 262);
         assert!(
             supported
                 .iter()
@@ -2499,7 +2510,7 @@ mod user_toolbar_tests {
                     && user_toolbar_native_action(entry.name).is_none()
             })
             .collect::<Vec<_>>();
-        assert_eq!(unsupported.len(), 56);
+        assert_eq!(unsupported.len(), 55);
         if std::env::var_os("LM_DIAGNOSTIC_UNSUPPORTED_TOOLBAR_COMMANDS").is_some() {
             for entry in unsupported {
                 eprintln!(

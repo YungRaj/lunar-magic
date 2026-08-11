@@ -5714,3 +5714,21 @@ the Windows target compiles, all 512 pristine slots materialize and capture, and
 renderer manifest retains SHA-256
 `254a1a050d12785973241910e26d8b7917a5cb5e2a56602a330fc6cbd833c04d`. Authenticated native
 command coverage is now 261 of 317 named table slots, leaving 56 pending.
+
+## Open Level From File (`$238D`)
+
+The normal File menu and authenticated toolbar command now share a nonblocking direct level-file
+importer. Binary `LM` containers remain on the exact binary decoder even when malformed, preventing
+a damaged modern file from being reinterpreted as legacy text. A legacy manifest instead starts a
+second bounded read for its required `.mw0`, `.mw1`, and `.mw2` files and an optional `.mw3` only
+when declared. The optional-palette absence continues with the destination shared palette and
+clears the imported custom-palette state; any missing required sidecar rejects the operation.
+
+Both formats use the file's declared level, the profile-derived complete asset save plan, one
+revision-bound mutation, checksum repair, and post-commit navigation. The legacy preparation helper
+first loads the destination palette because that value is semantic input when `.mw3` is absent.
+Authentic binary and custom-palette legacy fixtures pass across both copier-header forms with
+identical logical results. The Windows cross-build and complete 1,028-test native gate pass, all
+512 pristine levels materialize, and the 513-line renderer manifest retains SHA-256
+`254a1a050d12785973241910e26d8b7917a5cb5e2a56602a330fc6cbd833c04d`. Authenticated native
+command coverage is now 262 of 317 named table slots, leaving 55 pending.

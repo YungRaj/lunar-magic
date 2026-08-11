@@ -57,6 +57,7 @@ impl NativeApplication {
         close_or_pause!(self, rom_level_assets_editor);
         close_or_pause!(self, rom_mwl_batch_export_dialog);
         close_or_pause!(self, rom_mwl_batch_import_dialog);
+        close_or_pause!(self, rom_mwl_import_dialog);
         close_or_pause!(self, rom_map16_editor);
         close_or_pause!(self, rom_palette_editor);
         close_or_pause!(self, rom_graphics_editor);

@@ -1048,6 +1048,7 @@ pub enum UiTextKey {
     FileOpenLevelNumber,
     FileOpenLevelAddress,
     FileScanRom,
+    FileOpenLevelFile,
 }
 
 impl UiTextKey {
@@ -1110,6 +1111,7 @@ impl UiTextKey {
             Self::FileOpenLevelNumber => "Open Level Number…",
             Self::FileOpenLevelAddress => "Open Level From Address…",
             Self::FileScanRom => "Scan ROM…",
+            Self::FileOpenLevelFile => "Open Level From File…",
             Self::ToolsLanguageFormat => "Language ({locale})",
             Self::ToolsInstallLanguage => "Install Language Catalog…",
             Self::ToolsUseBuiltInEnglish => "Use Built-in English",
@@ -1291,7 +1293,7 @@ impl UiTextKey {
         }
     }
 
-    pub const ALL: [Self; 198] = [
+    pub const ALL: [Self; 199] = [
         Self::AppTitle,
         Self::FileOpen,
         Self::FileSave,
@@ -1490,6 +1492,7 @@ impl UiTextKey {
         Self::FileOpenLevelNumber,
         Self::FileOpenLevelAddress,
         Self::FileScanRom,
+        Self::FileOpenLevelFile,
     ];
 
     fn from_byte(value: u8) -> Option<Self> {

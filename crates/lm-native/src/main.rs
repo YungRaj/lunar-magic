@@ -106,6 +106,7 @@ mod rom_lunar_magic_metadata_editor;
 mod rom_map16_editor;
 mod rom_mwl_batch_export_dialog;
 mod rom_mwl_batch_import_dialog;
+mod rom_mwl_import_dialog;
 mod rom_navigation_link_editors;
 mod rom_overworld_editor;
 mod rom_overworld_event_number_editor;

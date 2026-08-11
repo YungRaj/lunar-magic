@@ -1006,3 +1006,20 @@ byte-identical at SHA-256
 `254a1a050d12785973241910e26d8b7917a5cb5e2a56602a330fc6cbd833c04d`. The authenticated
 partition is now **261 routed / 56 pending**. The aggregate remains 59/65 because the
 configuration row is still Partial.
+
+Toolbar coverage update (2026-08-10, Open Level From File): authenticated `LM_FILE_OPEN_FILE`
+`$238D` now opens the native single-level importer from both the File menu and original user
+toolbar. A leading binary `LM` signature selects the bounded eight-section MWL decoder; all other
+inputs enter the bounded legacy text-manifest path and load its three required sidecars plus the
+conditionally optional palette. Both paths target the level declared by the file, bind every
+background read to the starting ROM revision, prepare one cross-domain atomic mutation, preserve
+copier framing, repair the checksum, and navigate to the imported level only after commit succeeds.
+The direct legacy route retains Lunar Magic's captured missing-palette fallback while required
+Layer 1, Layer 2, and sprite failures reject. Focused authentic binary and five-file legacy gates
+produce byte-identical logical results from headered and headerless installed ROMs. The
+Windows cross-build passes; the complete native suite passes 1,028 tests with 12 explicit
+external-fixture ignores; all 512 pristine levels materialize; and the 513-line renderer manifest
+remains byte-identical at SHA-256
+`254a1a050d12785973241910e26d8b7917a5cb5e2a56602a330fc6cbd833c04d`. The authenticated
+partition is now **262 routed / 55 pending**. The aggregate remains 59/65 because the
+configuration row is still Partial.

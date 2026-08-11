@@ -207,6 +207,16 @@ impl NativeApplication {
                 self.rom_mwl_batch_import_dialog.commit_failed();
             }
         }
+        if let Some(command) = self.rom_mwl_import_dialog.show(context, &self.app) {
+            if self.try_dispatch(context, command) {
+                if let Some(level) = self.rom_mwl_import_dialog.commit_succeeded() {
+                    let _ = self.try_dispatch(context, lm_app::Command::SelectLevel(level));
+                }
+                self.renderer.invalidate();
+            } else {
+                self.rom_mwl_import_dialog.commit_failed();
+            }
+        }
         show_project_operation!(self, context, rom_expansion_dialog);
         let ips_workflow_active = self.ips_create_dialog.has_open_workflow();
         if let Some(action) =
