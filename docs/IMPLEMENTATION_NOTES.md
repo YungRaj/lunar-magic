@@ -6426,3 +6426,15 @@ Focused tests recover an edited legacy LoROM color without upgrading its backend
 pristine ROM to ExLoROM, install expanded shared palettes, open through the detected ExLoROM layout,
 recover an edited color, and reopen the exact expanded backend. All 10 shared-palette editor tests
 and all 237 renderer tests pass.
+
+## Crash recovery includes complete staged overworld messages
+
+The standalone overworld-message editor now contributes a content-sensitive generation over every
+byte and the exact variable table length. Recovery validates the complete 194–512-message model and
+uses the same two persistence routes as ordinary commit: installing the relocatable runtime from a
+pristine selector table, or updating/reallocating detected installed storage. Both routes require
+exact semantic reopen on an isolated clone and leave the live project and history untouched.
+
+Focused tests recover a pristine table grown to 200 messages with a changed last tile, then recover
+a distinct edit through the already-installed update path. All five overworld-message editor tests
+and all 237 renderer tests pass.

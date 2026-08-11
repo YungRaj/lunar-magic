@@ -23,6 +23,20 @@ pub(crate) struct RomOverworldMessageEditor {
 }
 
 impl RomOverworldMessageEditor {
+    pub(crate) fn staged_recovery_generation(&self, app: &AppState) -> Option<u64> {
+        self.workspace.as_ref()?.staged_recovery_generation(app)
+    }
+
+    pub(crate) fn staged_recovery_snapshot(
+        &self,
+        app: &AppState,
+    ) -> Result<Option<lm_app::RecoverySnapshot>, String> {
+        self.workspace
+            .as_ref()
+            .ok_or_else(|| "overworld-message workspace is closed".to_owned())?
+            .staged_recovery_snapshot(app)
+    }
+
     pub(crate) fn is_open(&self) -> bool {
         self.workspace.is_some()
     }
@@ -237,8 +251,75 @@ impl RomOverworldMessageEditor {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use lm_overworld::OverworldMessage;
     use lm_profile::load_smw_us_v1_overworld_messages;
     use std::path::PathBuf;
+
+    fn pristine_app() -> AppState {
+        let mut app = AppState::default();
+        app.load_rom(crate::test_support::pristine_smw_us_rom_bytes())
+            .unwrap();
+        app
+    }
+
+    #[test]
+    fn staged_pristine_overworld_messages_are_recovered_as_complete_installed_table() {
+        let app = pristine_app();
+        let mut editor = RomOverworldMessageEditor::default();
+        editor.open(&app);
+        editor.workspace.as_mut().unwrap().resize(200).unwrap();
+        editor
+            .workspace
+            .as_mut()
+            .unwrap()
+            .set_tile((199, 7, 17), 0xa5)
+            .unwrap();
+
+        assert!(editor.staged_recovery_generation(&app).is_some());
+        let recovery = editor.staged_recovery_snapshot(&app).unwrap().unwrap();
+        assert_eq!(app.capabilities().project, lm_app::ProjectStatus::OpenClean);
+        assert_eq!(app.project().unwrap().history.undo_len(), 0);
+
+        let mut reopened = AppState::default();
+        reopened.load_recovery(recovery).unwrap();
+        let loaded = load_smw_us_v1_overworld_messages(reopened.project().unwrap()).unwrap();
+        assert_eq!(loaded.messages.len(), 200);
+        assert_eq!(loaded.messages[199].0[143], 0xa5);
+    }
+
+    #[test]
+    fn staged_installed_overworld_message_update_is_recovered_exactly() {
+        let mut installer = pristine_app();
+        installer
+            .dispatch(Command::ReplaceNativeOverworldMessages {
+                rev: 0,
+                messages: vec![OverworldMessage([0x1f; OverworldMessage::ENCODED_LEN]); 200],
+            })
+            .unwrap();
+        let installed = installer.project().unwrap().save_snapshot();
+        let mut app = AppState::default();
+        app.load_rom(installed).unwrap();
+        let mut editor = RomOverworldMessageEditor::default();
+        editor.open(&app);
+        assert!(matches!(
+            editor.workspace.as_ref().unwrap().storage,
+            lm_profile::SmwUsV1OverworldMessageStorage::Expanded(_)
+        ));
+        editor
+            .workspace
+            .as_mut()
+            .unwrap()
+            .set_tile((0, 0, 0), 0x7b)
+            .unwrap();
+
+        let recovery = editor.staged_recovery_snapshot(&app).unwrap().unwrap();
+        assert_eq!(app.capabilities().project, lm_app::ProjectStatus::OpenClean);
+        let mut reopened = AppState::default();
+        reopened.load_recovery(recovery).unwrap();
+        let loaded = load_smw_us_v1_overworld_messages(reopened.project().unwrap()).unwrap();
+        assert_eq!(loaded.messages.len(), 200);
+        assert_eq!(loaded.messages[0].0[0], 0x7b);
+    }
 
     #[test]
     fn pristine_table_grows_commits_and_semantically_reopens() {

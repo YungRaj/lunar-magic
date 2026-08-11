@@ -1,8 +1,10 @@
 use lm_app::{AppState, Command};
 use lm_overworld::{OverworldMessage, encode_native_overworld_message_file};
 use lm_profile::{
-    SmwUsV1OverworldMessageStorage, load_smw_us_v1_overworld_messages,
-    smw_us_v1_overworld_message_installation_plan,
+    SMW_US_V1_CHECKSUM_FIELD, SMW_US_V1_OVERWORLD_MESSAGE_HOOK_EXPECTED,
+    SMW_US_V1_OVERWORLD_MESSAGE_HOOK_OFFSET, SmwUsV1OverworldMessageStorage,
+    load_smw_us_v1_overworld_messages, smw_us_v1_overworld_message_allocation_policy,
+    smw_us_v1_overworld_message_installation_plan, smw_us_v1_overworld_message_patch_locator,
 };
 
 pub(super) struct OverworldMessageWorkspace {
@@ -80,6 +82,78 @@ impl OverworldMessageWorkspace {
 
     pub(super) fn is_dirty(&self) -> bool {
         self.current != self.original
+    }
+
+    pub(super) fn staged_recovery_generation(&self, app: &AppState) -> Option<u64> {
+        self.is_dirty().then(|| {
+            let content_revision = self
+                .current
+                .iter()
+                .flat_map(|message| message.0)
+                .fold(0x4f56_4552_4d53_4753_u64, |revision, byte| {
+                    revision.rotate_left(5) ^ u64::from(byte)
+                });
+            app.project_revision().wrapping_mul(0xd6e8_feb8_6659_fd93)
+                ^ self.revision.rotate_left(31)
+                ^ content_revision
+                ^ (self.current.len() as u64).rotate_left(17)
+        })
+    }
+
+    pub(super) fn staged_recovery_snapshot(
+        &self,
+        app: &AppState,
+    ) -> Result<Option<lm_app::RecoverySnapshot>, String> {
+        if self.is_stale(app.project_revision()) {
+            return Err("stale overworld-message workspace cannot be recovered".into());
+        }
+        if !self.is_dirty() {
+            return Ok(app.recovery_snapshot());
+        }
+        self.validate()?;
+        let mut staged = app.project().ok_or("open a supported ROM first")?.clone();
+        let hook = staged
+            .rom
+            .read(
+                SMW_US_V1_OVERWORLD_MESSAGE_HOOK_OFFSET,
+                SMW_US_V1_OVERWORLD_MESSAGE_HOOK_EXPECTED.len(),
+            )
+            .map_err(|error| error.to_string())?;
+        if hook == SMW_US_V1_OVERWORLD_MESSAGE_HOOK_EXPECTED {
+            let plan = smw_us_v1_overworld_message_installation_plan(&self.current)
+                .map_err(|error| error.to_string())?;
+            staged
+                .install_relocatable_patch(&plan)
+                .map_err(|error| error.to_string())?;
+        } else if hook.first() == Some(&0x22) {
+            let loaded = staged
+                .load_expanded_overworld_messages_detected(
+                    smw_us_v1_overworld_message_patch_locator(),
+                )
+                .map_err(|error| error.to_string())?;
+            staged
+                .save_installed_overworld_messages(
+                    &self.current,
+                    &loaded.storage,
+                    smw_us_v1_overworld_message_patch_locator(),
+                    &smw_us_v1_overworld_message_allocation_policy(),
+                    SMW_US_V1_CHECKSUM_FIELD,
+                    0xff,
+                )
+                .map_err(|error| error.to_string())?;
+        } else {
+            return Err("overworld-message runtime hook is not recognized".into());
+        }
+        if staged
+            .load_expanded_overworld_messages_detected(smw_us_v1_overworld_message_patch_locator())
+            .map_err(|error| error.to_string())?
+            .messages
+            != self.current
+        {
+            return Err("recovered overworld messages did not reopen exactly".into());
+        }
+        app.recovery_snapshot_with_current_rom(staged.save_snapshot(), app.current_level())
+            .map_err(|error| error.to_string())
     }
 
     pub(super) const fn is_stale(&self, revision: u64) -> bool {

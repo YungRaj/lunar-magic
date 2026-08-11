@@ -402,7 +402,11 @@ editor now retains the detected mapper instead of hardcoding LoROM, so ExLoROM o
 use the correct profile layout. Content-sensitive recovery preserves legacy or expanded backend
 shape and chooses the normal direct save or expanded-runtime installation path before exact reopen;
 `staged_legacy_shared_palette_is_recovered_without_committing_live_project` and
-`exlorom_shared_palette_open_and_recovery_use_the_detected_mapper` cover both forms.
+`exlorom_shared_palette_open_and_recovery_use_the_detected_mapper` cover both forms. The standalone
+overworld-message editor now hashes and recovers the complete variable 194–512-message table through
+both pristine runtime installation and detected installed reallocation, with exact reopen and no
+live-project mutation. `staged_pristine_overworld_messages_are_recovered_as_complete_installed_table`
+and `staged_installed_overworld_message_update_is_recovered_exactly` cover both storage paths.
 
 ## Workflow ledger
 
