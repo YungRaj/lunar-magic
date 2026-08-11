@@ -1078,6 +1078,18 @@ boundary. Rust now refreshes the tracked child PID, finds the first visible owne
 it when minimized, and requests foreground activation without creating a second process. Focused
 launcher tests retain pending/running de-duplication and the Windows target cross-compiles.
 
+## Lunar Magic 3.63 Recent Files popup (2026-08-10)
+
+Port-8089 Ghidra recovery binds `LM_FILE_RECENT_MENU` `$23DB` to central dispatcher case `$3D`.
+The case refreshes state, builds the temporary recent menu with `FUN_004790A0`, tracks it at the
+pointer, and destroys it after dismissal. The builder proves the ten-entry bound, disabled empty
+item, populated separator, and `$23DA` clear command. Executable strings bind the empty label,
+clear label, confirmation title, and confirmation sentence. Rust now exposes that popup through
+the original user-toolbar route, delegates path selection to the existing recent-ROM lifecycle,
+and persists clearing only after confirmation. Focused route, interaction, and partition tests
+cover the publication boundary; provenance is retained under
+`docs/oracle-work/lm363/recent-menu/`.
+
 ## Lunar Magic 3.63 ROM user-area scan (2026-08-10)
 
 An isolated Wine prefix opened a headered 2-MiB SMW-US ROM attributed to Lunar Magic 3.63 and

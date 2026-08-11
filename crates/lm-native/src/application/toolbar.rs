@@ -372,6 +372,13 @@ impl NativeApplication {
                     self.open_level_address_dialog.open();
                 }
             }
+            UserToolbarNativeAction::RecentMenu => {
+                self.user_toolbar_recent_menu_position = Some(
+                    context
+                        .pointer_latest_pos()
+                        .unwrap_or_else(|| context.screen_rect().center()),
+                );
+            }
             UserToolbarNativeAction::Sprite19Fix => {
                 self.built_in_runtime_installer.open_sprite19_fix(&self.app);
             }
@@ -986,6 +993,95 @@ impl NativeApplication {
             self.handle_frontend_activation(context, activation);
         }
     }
+
+    pub(super) fn show_user_toolbar_recent_menu(&mut self, context: &egui::Context) {
+        if let Some(position) = self.user_toolbar_recent_menu_position {
+            let recent = self.app.recent_documents().paths().to_vec();
+            let mut chosen = None;
+            let mut clear = false;
+            let response = egui::Area::new(egui::Id::new("user-toolbar-recent-menu"))
+                .order(egui::Order::Foreground)
+                .fixed_pos(position)
+                .movable(false)
+                .show(context, |ui| {
+                    egui::Frame::popup(ui.style()).show(ui, |ui| {
+                        ui.set_min_width(220.0);
+                        if recent.is_empty() {
+                            ui.add_enabled(false, egui::Label::new("Open a Recent File"));
+                            return;
+                        }
+                        for path in &recent {
+                            if ui.button(path.display().to_string()).clicked() {
+                                chosen = Some(path.clone());
+                            }
+                        }
+                        ui.separator();
+                        clear = ui.button("Clear Recent Files").clicked();
+                    });
+                });
+            let dismiss = chosen.is_some()
+                || clear
+                || context.input(|input| input.key_pressed(egui::Key::Escape))
+                || context.input(|input| {
+                    input.pointer.any_pressed()
+                        && input
+                            .pointer
+                            .interact_pos()
+                            .is_some_and(|pointer| !response.response.rect.contains(pointer))
+                });
+            if dismiss {
+                self.user_toolbar_recent_menu_position = None;
+            }
+            if clear {
+                self.user_toolbar_recent_clear_confirmation = true;
+            }
+            if let Some(path) = chosen {
+                self.activate_user_toolbar_recent_path(context, path);
+            }
+        }
+        self.show_user_toolbar_recent_clear_confirmation(context);
+    }
+
+    fn activate_user_toolbar_recent_path(
+        &mut self,
+        context: &egui::Context,
+        path: std::path::PathBuf,
+    ) {
+        self.user_toolbar_recent_menu_position = None;
+        self.open_recent(context, path);
+    }
+
+    fn show_user_toolbar_recent_clear_confirmation(&mut self, context: &egui::Context) {
+        if !self.user_toolbar_recent_clear_confirmation {
+            return;
+        }
+        egui::Window::new("Clear Recent Files List?")
+            .id(egui::Id::new("user-toolbar-clear-recent-confirmation"))
+            .collapsible(false)
+            .resizable(false)
+            .anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO)
+            .show(context, |ui| {
+                ui.label(
+                    "This will clear your recent files list. Are you sure you want to do this?",
+                );
+                ui.horizontal(|ui| {
+                    if ui.button("Yes").clicked() {
+                        self.clear_user_toolbar_recent_files();
+                    }
+                    if ui.button("No").clicked() {
+                        self.user_toolbar_recent_clear_confirmation = false;
+                    }
+                });
+            });
+    }
+
+    fn clear_user_toolbar_recent_files(&mut self) {
+        self.app
+            .set_recent_documents(lm_app::RecentDocuments::default());
+        self.user_toolbar_recent_clear_confirmation = false;
+        self.persist_recent_state();
+        self.app.status = "Cleared recent files list".into();
+    }
 }
 
 fn toolbar_button_indexes_with_option(toolbar: &lm_app::UserToolbar, option: &str) -> Vec<usize> {
@@ -1442,6 +1538,7 @@ enum UserToolbarNativeAction {
     OpenLevelFile,
     OpenLevelNumber,
     OpenLevelAddress,
+    RecentMenu,
     Sprite19Fix,
     AnalyzeLevels,
     ScanRom,
@@ -1531,6 +1628,7 @@ fn user_toolbar_native_action(name: &str) -> Option<UserToolbarNativeAction> {
         "LM_FILE_OPEN_FILE" => UserToolbarNativeAction::OpenLevelFile,
         "LM_FILE_OPEN_LEVEL" => UserToolbarNativeAction::OpenLevelNumber,
         "LM_FILE_OPEN_LEVEL_ADDRESS" => UserToolbarNativeAction::OpenLevelAddress,
+        "LM_FILE_RECENT_MENU" => UserToolbarNativeAction::RecentMenu,
         "LM_KEY_SPRITE19_FIX" => UserToolbarNativeAction::Sprite19Fix,
         "LM_FILE_ANALYZE_LEVELS" => UserToolbarNativeAction::AnalyzeLevels,
         "LM_FILE_SCAN_ROM" => UserToolbarNativeAction::ScanRom,
@@ -2585,7 +2683,7 @@ mod user_toolbar_tests {
                     || user_toolbar_native_action(entry.name).is_some()
             })
             .collect::<Vec<_>>();
-        assert_eq!(supported.len(), 275);
+        assert_eq!(supported.len(), 276);
         assert!(
             supported
                 .iter()
@@ -2667,6 +2765,69 @@ mod user_toolbar_tests {
         assert_eq!(after.rom_bytes, before.rom_bytes);
         assert_eq!(native.app.status, "unchanged");
         assert!(native.effects.error.is_none());
+    }
+
+    #[test]
+    fn recent_menu_route_opens_at_the_pointer_and_escape_dismisses_it() {
+        let mut native = NativeApplication::default();
+        let context = egui::Context::default();
+        let mut input = egui::RawInput::default();
+        input
+            .events
+            .push(egui::Event::PointerMoved(egui::pos2(47.0, 83.0)));
+        context.begin_pass(input);
+        native.apply_user_toolbar_native_action(&context, UserToolbarNativeAction::RecentMenu);
+        assert_eq!(
+            native.user_toolbar_recent_menu_position,
+            Some(egui::pos2(47.0, 83.0))
+        );
+        native.show_user_toolbar_recent_menu(&context);
+        assert!(native.user_toolbar_recent_menu_position.is_some());
+        let _ = context.end_pass();
+
+        let mut input = egui::RawInput::default();
+        input.events.push(egui::Event::Key {
+            key: egui::Key::Escape,
+            physical_key: None,
+            pressed: true,
+            repeat: false,
+            modifiers: egui::Modifiers::NONE,
+        });
+        context.begin_pass(input);
+        native.show_user_toolbar_recent_menu(&context);
+        assert!(native.user_toolbar_recent_menu_position.is_none());
+        let _ = context.end_pass();
+        assert_eq!(
+            user_toolbar_native_action("LM_FILE_RECENT_MENU"),
+            Some(UserToolbarNativeAction::RecentMenu)
+        );
+    }
+
+    #[test]
+    fn recent_menu_selection_uses_the_existing_recent_rom_open_workflow() {
+        let mut native = NativeApplication::default();
+        native.user_toolbar_recent_menu_position = Some(egui::pos2(47.0, 83.0));
+        let context = egui::Context::default();
+        native.activate_user_toolbar_recent_path(
+            &context,
+            std::path::PathBuf::from("/tmp/Recent ROM.smc"),
+        );
+        assert!(native.user_toolbar_recent_menu_position.is_none());
+        assert!(native.effects.error.is_none());
+    }
+
+    #[test]
+    fn recent_menu_clear_action_uses_the_original_confirmation_boundary() {
+        let mut native = NativeApplication::default();
+        let mut recent = lm_app::RecentDocuments::default();
+        recent.note("first.smc");
+        recent.note("second.smc");
+        native.app.set_recent_documents(recent);
+        native.user_toolbar_recent_clear_confirmation = true;
+        native.clear_user_toolbar_recent_files();
+        assert!(native.app.recent_documents().paths().is_empty());
+        assert!(!native.user_toolbar_recent_clear_confirmation);
+        assert_eq!(native.app.status, "Cleared recent files list");
     }
 
     #[test]
@@ -2789,7 +2950,7 @@ mod user_toolbar_tests {
                     && user_toolbar_native_action(entry.name).is_none()
             })
             .collect::<Vec<_>>();
-        assert_eq!(unsupported.len(), 42);
+        assert_eq!(unsupported.len(), 41);
         if std::env::var_os("LM_DIAGNOSTIC_UNSUPPORTED_TOOLBAR_COMMANDS").is_some() {
             for entry in unsupported {
                 eprintln!(

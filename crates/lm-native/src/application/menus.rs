@@ -492,7 +492,7 @@ impl NativeApplication {
         });
     }
 
-    fn open_recent(&mut self, context: &egui::Context, path: std::path::PathBuf) {
+    pub(super) fn open_recent(&mut self, context: &egui::Context, path: std::path::PathBuf) {
         self.effects.request_rom_path(path);
         match self.app.dispatch(Command::Open) {
             Ok(effects) => self.effects.handle(&mut self.app, context, effects),

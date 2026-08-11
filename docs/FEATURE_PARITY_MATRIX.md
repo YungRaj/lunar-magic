@@ -1030,6 +1030,16 @@ explicit typed no-op; focused coverage requires stable revision, complete ROM by
 error state. The authenticated partition is now **275 routed / 42 pending**. The aggregate remains
 59/65 because the configuration row is still Partial.
 
+Toolbar coverage update (2026-08-10, Recent Files popup): authenticated command
+`LM_FILE_RECENT_MENU` `$23DB` now reproduces recovered central-dispatch case `$3D`. The native
+pointer-anchored popup exposes at most ten persisted recent paths, the authenticated disabled
+`Open a Recent File` empty state, and the populated separator plus `Clear Recent Files` action.
+Path activation shares the existing dirty-ROM/open lifecycle; clearing uses the original title and
+confirmation sentence before atomically persisting the empty list. Escape and outside-click
+dismissal do not mutate state. Focused tests bind placement/dismissal, selection, clearing, and the
+complete command partition. The authenticated partition is now **276 routed / 41 pending**. The
+aggregate remains 59/65 because the configuration row is still Partial.
+
 Toolbar coverage update (2026-08-10, Open Level Number): `LM_FILE_OPEN_LEVEL` `$238E` now opens
 the native equivalent of original dialog resource `1000`. It uses the authenticated title,
 `Level Number (0-1FF)` label, OK/Cancel controls, and original-language resource overrides; seeds

@@ -179,6 +179,8 @@ pub(crate) struct NativeApplication {
     user_toolbar_observed_level: Option<u16>,
     user_toolbar_pending_save_notifications: u8,
     user_toolbar_pending_deleted_levels: Vec<u16>,
+    user_toolbar_recent_menu_position: Option<egui::Pos2>,
+    user_toolbar_recent_clear_confirmation: bool,
     level_text: String,
     special_world_passed: bool,
     joined_graphics_files: bool,
@@ -1047,6 +1049,7 @@ impl eframe::App for NativeApplication {
         });
         self.integrated_emulator_options.draw_selected_tiles =
             self.vanilla_level_editor.draw_selection_over_live();
+        self.show_user_toolbar_recent_menu(context);
         self.show_confirmation(context);
         if let Some((level, command)) = self.level_deletion_dialog.show(context, &self.app)
             && self.try_dispatch(context, command)
