@@ -994,6 +994,15 @@ identity/checksum/length and byte-identical Lunar Magic re-export of all 52 stan
 **268 routed / 49 pending**. The aggregate remains 59/65 because the configuration row is still
 Partial.
 
+Toolbar coverage update (2026-08-10, deprecated Decrypt Levels): authenticated historical entry
+`LM_FILE_DECRYPT_LEVELS` `$23A5` now reproduces its exact Lunar Magic 3.63 no-op behavior. The
+central dispatch table maps `$23A5` to byte `$DF`, while `HandleLevelEditorCommand` implements only
+cases `$00..$DE`; it therefore returns successfully without opening the active restriction workflow
+or mutating the ROM. Rust uses an explicit typed no-op, with focused coverage requiring unchanged
+revision and complete ROM bytes, no dialog, and no error. The authenticated partition is now
+**269 routed / 48 pending**. The aggregate remains 59/65 because the configuration row is still
+Partial.
+
 Toolbar coverage update (2026-08-10, Open Level Number): `LM_FILE_OPEN_LEVEL` `$238E` now opens
 the native equivalent of original dialog resource `1000`. It uses the authenticated title,
 `Level Number (0-1FF)` label, OK/Cancel controls, and original-language resource overrides; seeds

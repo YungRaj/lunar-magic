@@ -412,6 +412,7 @@ impl NativeApplication {
                     self.level_access_restriction_dialog.open();
                 }
             }
+            UserToolbarNativeAction::DeprecatedDecryptLevelsNoOp => {}
             UserToolbarNativeAction::GraphicsCompressionOptions => {
                 self.graphics_migration_dialog.open(&self.app);
             }
@@ -1390,6 +1391,7 @@ enum UserToolbarNativeAction {
     CreateIps,
     ApplyIps,
     RestrictLevelAccess,
+    DeprecatedDecryptLevelsNoOp,
     GraphicsCompressionOptions,
     GeneralOptions,
     RestoreOptions,
@@ -1473,6 +1475,7 @@ fn user_toolbar_native_action(name: &str) -> Option<UserToolbarNativeAction> {
         "LM_FILE_CREATE_IPS" => UserToolbarNativeAction::CreateIps,
         "LM_FILE_APPLY_IPS" => UserToolbarNativeAction::ApplyIps,
         "LM_FILE_ENCRYPT_LEVELS" => UserToolbarNativeAction::RestrictLevelAccess,
+        "LM_FILE_DECRYPT_LEVELS" => UserToolbarNativeAction::DeprecatedDecryptLevelsNoOp,
         "LM_OPTIONS_COMPRESSION" => UserToolbarNativeAction::GraphicsCompressionOptions,
         "LM_OPTIONS_GENERAL" => UserToolbarNativeAction::GeneralOptions,
         "LM_OPTIONS_RESTORE" => UserToolbarNativeAction::RestoreOptions,
@@ -1928,6 +1931,10 @@ mod user_toolbar_tests {
         assert_eq!(
             user_toolbar_native_action("LM_FILE_ENCRYPT_LEVELS"),
             Some(UserToolbarNativeAction::RestrictLevelAccess)
+        );
+        assert_eq!(
+            user_toolbar_native_action("LM_FILE_DECRYPT_LEVELS"),
+            Some(UserToolbarNativeAction::DeprecatedDecryptLevelsNoOp)
         );
         assert_eq!(
             user_toolbar_native_action("LM_FILE_DELETE_MULT_LEVELS"),
@@ -2487,7 +2494,7 @@ mod user_toolbar_tests {
                     || user_toolbar_native_action(entry.name).is_some()
             })
             .collect::<Vec<_>>();
-        assert_eq!(supported.len(), 268);
+        assert_eq!(supported.len(), 269);
         assert!(
             supported
                 .iter()
@@ -2524,6 +2531,25 @@ mod user_toolbar_tests {
             UserToolbarNativeAction::RestrictLevelAccess,
         );
         assert!(native.level_access_restriction_dialog.is_open());
+    }
+
+    #[test]
+    fn deprecated_decrypt_levels_command_matches_the_original_successful_no_op() {
+        let mut native = NativeApplication::default();
+        native
+            .app
+            .load_rom(crate::test_support::pristine_smw_us_rom_bytes())
+            .unwrap();
+        let before = native.app.controller_snapshot().unwrap();
+        native.apply_user_toolbar_native_action(
+            &egui::Context::default(),
+            UserToolbarNativeAction::DeprecatedDecryptLevelsNoOp,
+        );
+        let after = native.app.controller_snapshot().unwrap();
+        assert_eq!(after.revision, before.revision);
+        assert_eq!(after.rom_bytes, before.rom_bytes);
+        assert!(!native.level_access_restriction_dialog.is_open());
+        assert!(native.effects.error.is_none());
     }
 
     #[test]
@@ -2610,7 +2636,7 @@ mod user_toolbar_tests {
                     && user_toolbar_native_action(entry.name).is_none()
             })
             .collect::<Vec<_>>();
-        assert_eq!(unsupported.len(), 49);
+        assert_eq!(unsupported.len(), 48);
         if std::env::var_os("LM_DIAGNOSTIC_UNSUPPORTED_TOOLBAR_COMMANDS").is_some() {
             for entry in unsupported {
                 eprintln!(

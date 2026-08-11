@@ -5803,3 +5803,13 @@ semantically reopens both runtimes and undoes/redoes byte-exactly. The retained 
 Lunar Magic's own `-ImportAllGraphics` from the same files and requires Lunar Magic to re-export all
 52 standard files and deterministic `ExGFX80` byte-identically from both results. The authenticated
 native command partition is now 268 of 317 named slots, leaving 49 pending.
+
+## Deprecated Decrypt Levels command (`$23A5`)
+
+The authenticated toolbar table retains the historical name, but the 3.63 central dispatcher does
+not retain an implementation. Its byte-table entry at `$00498978` is `$DF`; the recovered switch
+ends at case `$DE`, so activation takes the successful default return. Rust models that distinction
+with a typed no-op instead of aliasing `$23A5` to the active, irreversible restriction workflow at
+`$23A4`. The focused native test requires complete history and ROM-byte stability and proves no
+dialog or error is produced. Authenticated native command coverage is now 269 of 317 named slots,
+leaving 48 pending.
