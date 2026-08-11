@@ -1318,6 +1318,12 @@ impl VanillaLevelEditor {
         .then(|| app.project_revision())
     }
 
+    pub(crate) fn has_staged_recovery_edits(&self) -> bool {
+        self.controller
+            .as_ref()
+            .is_some_and(LevelController::is_modified)
+    }
+
     pub(crate) fn initialize_draw_selection_over_live(&mut self, enabled: bool) {
         self.draw_selection_over_live.get_or_insert(enabled);
     }

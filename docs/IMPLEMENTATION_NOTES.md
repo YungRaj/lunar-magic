@@ -6261,3 +6261,16 @@ edited object and sprite streams, clean live state, and worker retry after compo
 The complete gates pass 640 active `lm-app` library tests with 13 explicit fixture ignores, 1,162
 active native tests with 11 explicit fixture/device ignores (including all 512 pristine levels),
 and all 237 renderer tests.
+
+## Crash recovery includes staged installed-ROM palettes
+
+The installed ROM palette controller now contributes its independent revision to recovery and
+prepares the same ownership-qualified allocation mutation used by an explicit commit. Recovery
+applies that mutation only to an isolated project clone, validates the resulting physical ROM,
+and retains the live application's clean baseline and empty history. The application coordinator
+detects simultaneous staged level and palette editors and reports that unsupported composition
+instead of publishing a plausible but incomplete record. The end-to-end native test changes a
+color, recovers and reopens the expanded ExLoROM image, and reads the replacement through the
+palette ROM layout while proving the live project was never committed.
+The complete native gate passes 1,163 active tests with 11 explicit fixture/device ignores,
+including all 512 pristine-level render materializations; the renderer remains 237/237.

@@ -1744,11 +1744,27 @@ impl eframe::App for NativeApplication {
         }
         self.show_editor_windows(context);
         self.show_global_effects(context);
-        let recovery_revision = self.vanilla_level_editor.recovery_generation(&self.app);
+        let palette_recovery_revision = self
+            .rom_palette_editor
+            .staged_recovery_generation(&self.app);
+        let level_recovery_revision = self.vanilla_level_editor.recovery_generation(&self.app);
+        let recovery_revision = palette_recovery_revision
+            .map(|palette| palette ^ level_recovery_revision.unwrap_or(0).rotate_left(11))
+            .or(level_recovery_revision);
         self.recovery_store
             .synchronize_project(recovery_revision, || {
-                self.vanilla_level_editor
-                    .staged_recovery_snapshot(&self.app)
+                if palette_recovery_revision.is_some() {
+                    if self.vanilla_level_editor.has_staged_recovery_edits() {
+                        return Err(
+                            "cannot compose simultaneous staged level and palette recovery yet"
+                                .into(),
+                        );
+                    }
+                    self.rom_palette_editor.staged_recovery_snapshot(&self.app)
+                } else {
+                    self.vanilla_level_editor
+                        .staged_recovery_snapshot(&self.app)
+                }
             });
         if let Some(error) = self.recovery_store.error.take() {
             self.effects.error = Some(error);

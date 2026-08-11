@@ -57,6 +57,42 @@ pub(crate) struct RomPaletteEditor {
 }
 
 impl RomPaletteEditor {
+    pub(crate) fn staged_recovery_generation(&self, app: &AppState) -> Option<u64> {
+        let workspace = self.workspace.as_ref()?;
+        workspace.controller.is_modified().then(|| {
+            app.project_revision().wrapping_mul(0xd6e8_feb8_6659_fd93)
+                ^ workspace.controller.revision().rotate_left(17)
+                ^ 0x5041_4c45_5454_4500
+        })
+    }
+
+    pub(crate) fn staged_recovery_snapshot(
+        &self,
+        app: &AppState,
+    ) -> Result<Option<lm_app::RecoverySnapshot>, String> {
+        let workspace = self
+            .workspace
+            .as_ref()
+            .ok_or("palette workspace is closed")?;
+        if !workspace.controller.is_modified() {
+            return Ok(app.recovery_snapshot());
+        }
+        let command = self.prepare_commit()?;
+        let Command::CommitRomMutation {
+            expected_revision,
+            mutation,
+            ..
+        } = command
+        else {
+            return Err("palette recovery expected one prepared ROM mutation".into());
+        };
+        if expected_revision != app.project_revision() {
+            return Err("palette recovery mutation was prepared from a stale revision".into());
+        }
+        app.recovery_snapshot_with_mutation(&mutation, None)
+            .map_err(|error| error.to_string())
+    }
+
     pub(crate) fn show(
         &mut self,
         context: &egui::Context,
@@ -502,9 +538,9 @@ fn palette_paste_changes(
 
 #[cfg(test)]
 mod tests {
-    use super::{PalettePasteTarget, palette_paste_changes, toggle_palette_mask};
+    use super::*;
     use crate::native_clipboard;
-    use lm_graphics::Bgr555;
+    use lm_graphics::{Bgr555, PaletteOwnership};
 
     #[test]
     fn palette_mask_click_and_alt_row_preserve_unrelated_and_partial_rows() {
@@ -537,5 +573,85 @@ mod tests {
             (colors[0], colors[15])
         );
         assert!(palette_paste_changes(&text, 256, 257, PalettePasteTarget::Row).is_err());
+    }
+
+    #[test]
+    fn staged_rom_palette_edit_is_recovered_without_committing_live_project() {
+        let mut source = AppState::default();
+        source
+            .load_rom(crate::test_support::pristine_smw_us_rom_bytes())
+            .unwrap();
+        source
+            .dispatch(Command::ConvertRomTo64MbitExLoRom {
+                expected_revision: source.project_revision(),
+            })
+            .unwrap();
+        let profile = lm_profile::test_support::profile();
+        let mut project = lm_project::Project::new(
+            lm_rom::RomImage::from_bytes(source.project().unwrap().save_snapshot()).unwrap(),
+        );
+        let initial = lm_graphics::Palette {
+            colors: vec![Bgr555(0x0123); profile.palette.colors_per_palette],
+        };
+        project
+            .save_palette_with_checksum(
+                0,
+                &initial,
+                profile.palette,
+                0x7fdc,
+                &lm_project::PaletteSaveOptions {
+                    allocation: lm_rats::AllocationPolicy {
+                        search: 0x600000..0x680000,
+                        bank_size: Some(0x8000),
+                        fill_bytes: vec![0, 0xff],
+                        protected: Vec::new(),
+                    },
+                    previous_block: None,
+                    reuse_identical: true,
+                    erase_fill: 0xff,
+                },
+            )
+            .unwrap();
+        let mut app = AppState::default();
+        app.load_rom(project.save_snapshot()).unwrap();
+        app.dispatch(Command::ShowPalette(0)).unwrap();
+        let snapshot = app.controller_snapshot().unwrap();
+        let ownership = PaletteOwnership::editable(profile.palette.colors_per_palette);
+        let mut controller =
+            PaletteController::decode(&snapshot, profile.palette, ownership).unwrap();
+        let replacement = Bgr555(controller.palette().colors[1].0 ^ 0x001f);
+        controller
+            .apply_edits(&[PaletteControllerEdit::ApplyChanges(vec![PaletteChange {
+                index: 1,
+                color: replacement,
+            }])])
+            .unwrap();
+        let image = lm_rom::RomImage::from_bytes(snapshot.rom_bytes.clone()).unwrap();
+        let editor = RomPaletteEditor {
+            workspace: Some(Workspace {
+                controller,
+                profile: profile.clone(),
+                slot: 0,
+                image,
+                internal_header: snapshot.identity.internal_header_offset,
+            }),
+            search_start: "600000".into(),
+            search_end: "680000".into(),
+            ..RomPaletteEditor::default()
+        };
+
+        assert!(editor.staged_recovery_generation(&app).is_some());
+        let recovery = editor.staged_recovery_snapshot(&app).unwrap().unwrap();
+        assert_eq!(app.capabilities().project, lm_app::ProjectStatus::OpenClean);
+        assert_eq!(app.project().unwrap().history.undo_len(), 0);
+
+        let mut reopened = AppState::default();
+        reopened.load_recovery(recovery).unwrap();
+        let palette = reopened
+            .project()
+            .unwrap()
+            .load_palette(0, profile.palette)
+            .unwrap();
+        assert_eq!(palette.colors[1], replacement);
     }
 }
