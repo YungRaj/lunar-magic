@@ -1,5 +1,9 @@
 use lm_app::{AppState, Command};
 use lm_overworld::{CreditsTilemap, ExpandedLayerTilemap};
+use lm_profile::{
+    SMW_US_V1_CHECKSUM_FIELD, smw_us_v1_credits_allocation_policy,
+    smw_us_v1_title_tilemap_allocation_policy,
+};
 use lm_profile::{smw_us_v1_credits_tilemap_locator, smw_us_v1_title_tilemap_locator};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -84,6 +88,67 @@ impl TilemapWorkspace {
 
     pub(super) fn is_dirty(&self) -> bool {
         self.current != self.original
+    }
+
+    pub(super) fn staged_recovery_generation(&self, app: &AppState) -> Option<u64> {
+        self.is_dirty().then(|| {
+            let content_revision = match &self.current {
+                TilemapData::Title(tilemap) => tilemap
+                    .primary_bytes()
+                    .iter()
+                    .chain(tilemap.secondary_bytes())
+                    .fold(0x5449_544c_4554_494c_u64, |revision, byte| {
+                        revision.rotate_left(5) ^ u64::from(*byte)
+                    }),
+                TilemapData::Credits(tilemap) => tilemap
+                    .words()
+                    .iter()
+                    .fold(0x4352_4544_5449_4c45_u64, |revision, word| {
+                        revision.rotate_left(5) ^ u64::from(*word)
+                    }),
+            };
+            app.project_revision().wrapping_mul(0xd6e8_feb8_6659_fd93)
+                ^ self.revision.rotate_left(23)
+                ^ content_revision
+        })
+    }
+
+    pub(super) fn staged_recovery_snapshot(
+        &self,
+        app: &AppState,
+    ) -> Result<Option<lm_app::RecoverySnapshot>, String> {
+        if self.revision != app.project_revision() {
+            return Err("stale tilemap workspace cannot be recovered".into());
+        }
+        if !self.is_dirty() {
+            return Ok(app.recovery_snapshot());
+        }
+        let mut staged = app
+            .project()
+            .ok_or_else(|| "open a supported ROM first".to_owned())?
+            .clone();
+        match &self.current {
+            TilemapData::Title(tilemap) => staged
+                .save_title_tilemap_detected(
+                    tilemap,
+                    smw_us_v1_title_tilemap_locator(),
+                    &smw_us_v1_title_tilemap_allocation_policy(staged.rom.logical_len()),
+                    SMW_US_V1_CHECKSUM_FIELD,
+                    0xff,
+                )
+                .map_err(|error| error.to_string())?,
+            TilemapData::Credits(tilemap) => staged
+                .save_credits_tilemap_detected(
+                    tilemap,
+                    &smw_us_v1_credits_tilemap_locator(),
+                    &smw_us_v1_credits_allocation_policy(staged.rom.logical_len()),
+                    SMW_US_V1_CHECKSUM_FIELD,
+                    0xff,
+                )
+                .map_err(|error| error.to_string())?,
+        };
+        app.recovery_snapshot_with_current_rom(staged.save_snapshot(), app.current_level())
+            .map_err(|error| error.to_string())
     }
 
     pub(super) fn word(&self, selection: (usize, usize, usize)) -> Result<u16, String> {

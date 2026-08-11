@@ -6357,3 +6357,17 @@ The focused test installs level ExAnimation into an expanded pristine ROM, stage
 creates and reopens the recovery record, and reloads the exact changed animation from the recovered
 ROM. The complete native gate passes 1,168 tests with 11 explicit fixture/device ignores, including
 all 512 pristine-level materializations; the renderer remains green at 237/237.
+
+## Crash recovery includes staged title and credits tilemaps
+
+The installed title-screen and credits tilemap workspaces now contribute content-sensitive staged
+generations to the shared recovery coordinator. Each recovery path applies the same detected native
+storage and allocation policy as its ordinary commit to an isolated project clone, validates the
+result through the recovery reopen boundary, and leaves the live project and undo history untouched.
+Stale workspaces reject, and simultaneous independently allocating editor work remains an explicit
+collision instead of producing a partial record.
+
+Focused tests stage and recover a primary title-screen tile word and a credits tile word, then load
+each through its complete detected native loader after reopening. The complete native gate passes
+1,170 tests with 11 explicit fixture/device ignores, including all 512 pristine-level
+materializations; the renderer remains green at 237/237.

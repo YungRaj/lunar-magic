@@ -35,6 +35,20 @@ impl RomTilemapEditor {
         self.workspace.is_some()
     }
 
+    fn staged_recovery_generation(&self, app: &AppState) -> Option<u64> {
+        self.workspace.as_ref()?.staged_recovery_generation(app)
+    }
+
+    fn staged_recovery_snapshot(
+        &self,
+        app: &AppState,
+    ) -> Result<Option<lm_app::RecoverySnapshot>, String> {
+        self.workspace
+            .as_ref()
+            .ok_or_else(|| "tilemap workspace is closed".to_owned())?
+            .staged_recovery_snapshot(app)
+    }
+
     fn open(&mut self, app: &AppState) {
         if self.is_open() {
             return;
@@ -239,6 +253,17 @@ macro_rules! tilemap_editor_wrapper {
                 self.0.open(app);
             }
 
+            pub(crate) fn staged_recovery_generation(&self, app: &AppState) -> Option<u64> {
+                self.0.staged_recovery_generation(app)
+            }
+
+            pub(crate) fn staged_recovery_snapshot(
+                &self,
+                app: &AppState,
+            ) -> Result<Option<lm_app::RecoverySnapshot>, String> {
+                self.0.staged_recovery_snapshot(app)
+            }
+
             pub(crate) fn request_close(&mut self, application: bool) -> bool {
                 self.0.request_close(application)
             }
@@ -341,5 +366,64 @@ mod tests {
         assert!(!editor.request_close(false));
         assert_eq!(editor.pending_close, Some(PendingClose::Editor));
         assert!(editor.is_open());
+    }
+
+    #[test]
+    fn staged_title_tilemap_edit_is_recovered_without_committing_live_project() {
+        let app = pristine_app();
+        let mut editor = RomTilemapEditor::new(TilemapKind::Title);
+        editor.open(&app);
+        editor.form.value = "4567".into();
+        editor.apply_selected().unwrap();
+
+        assert!(editor.staged_recovery_generation(&app).is_some());
+        let recovery = editor.staged_recovery_snapshot(&app).unwrap().unwrap();
+        assert_eq!(app.capabilities().project, lm_app::ProjectStatus::OpenClean);
+        assert_eq!(app.project().unwrap().history.undo_len(), 0);
+
+        let mut reopened = AppState::default();
+        reopened.load_recovery(recovery).unwrap();
+        let loaded = reopened
+            .project()
+            .unwrap()
+            .load_title_tilemap_detected(smw_us_v1_title_tilemap_locator())
+            .unwrap();
+        assert_eq!(
+            u16::from_le_bytes([
+                loaded.tilemap.primary_bytes()[0],
+                loaded.tilemap.primary_bytes()[1]
+            ]),
+            0x4567
+        );
+    }
+
+    #[test]
+    fn staged_credits_tilemap_edit_is_recovered_without_committing_live_project() {
+        let app = pristine_app();
+        let mut editor = RomTilemapEditor::new(TilemapKind::Credits);
+        editor.open(&app);
+        editor.form.row = "C9".into();
+        editor.form.column = "00".into();
+        editor.form.selection_changed();
+        editor.load_selected().unwrap();
+        editor.form.value = "5678".into();
+        editor.apply_selected().unwrap();
+
+        assert!(editor.staged_recovery_generation(&app).is_some());
+        let recovery = editor.staged_recovery_snapshot(&app).unwrap().unwrap();
+        assert_eq!(app.capabilities().project, lm_app::ProjectStatus::OpenClean);
+        assert_eq!(app.project().unwrap().history.undo_len(), 0);
+
+        let mut reopened = AppState::default();
+        reopened.load_recovery(recovery).unwrap();
+        let loaded = reopened
+            .project()
+            .unwrap()
+            .load_credits_tilemap_detected(&smw_us_v1_credits_tilemap_locator())
+            .unwrap();
+        assert_eq!(
+            loaded.tilemap.words()[0xc9 * CreditsTilemap::COLUMNS],
+            0x5678
+        );
     }
 }
