@@ -1113,6 +1113,22 @@ Focused scan, gate, save/abort, toggle, persistence, and command-partition tests
 authenticated partition is now **284 routed / 33 pending**. The aggregate remains 59/65 because
 the configuration row is still Partial.
 
+Toolbar coverage update (2026-08-10, Count Sprites on Save): authenticated
+`LM_OPTIONS_SCAN_SPRITES` `$24C3` now reproduces central dispatch case `$8D` and the second
+pre-write guard in `SaveLevelToRom`. The initialized byte at `$005E7ADE` proves the default-on
+state. Ghidra-recovered `ReportSpriteCountLimitWarning` proves that only ordinary sprite nodes are
+counted, that the warning appears only above the practical limit, and that rejecting or cancelling
+the prompt aborts before any ROM writes. Rust counts native placements rather than stream-control
+tokens, uses Lunar Magic's normal enabled-runtime limit of 128 and its 255 limit for SA-1 or the
+descriptor-routed inverted legacy sprite-program flag at logical `$07FFE0`, and preserves the
+original ordering after the undefined-exit
+scan. Save Anyway releases the exact revision-bound command once; Cancel also clears pending
+follow/expansion continuations. The persisted Tools toggle and authenticated internal-toolbar route
+share the original default-on state. Focused count, threshold, mapper/framing, control-token,
+save/abort, toggle, persistence, ordering, and command-partition tests pass. The authenticated
+partition is now **285 routed / 32 pending**. The aggregate remains 59/65 because the configuration
+row is still Partial.
+
 Toolbar coverage update (2026-08-10, Open Level Number): `LM_FILE_OPEN_LEVEL` `$238E` now opens
 the native equivalent of original dialog resource `1000`. It uses the authenticated title,
 `Level Number (0-1FF)` label, OK/Cancel controls, and original-language resource overrides; seeds

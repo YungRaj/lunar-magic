@@ -568,6 +568,13 @@ impl NativeApplication {
             {
                 self.set_scan_exits_on_save(scan_exits);
             }
+            let mut count_sprites = self.count_sprites_on_save.unwrap_or(true);
+            if ui
+                .checkbox(&mut count_sprites, "Count Sprites on Save to ROM")
+                .changed()
+            {
+                self.set_count_sprites_on_save(count_sprites);
+            }
             let locale = self.app.localization().map_or_else(
                 || self.menu_text(UiTextKey::ToolsBuiltInEnglish),
                 |catalog| catalog.locale().into(),

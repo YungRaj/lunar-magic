@@ -456,6 +456,13 @@ struct InvalidExitSaveWarning {
     command: Command,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct SpriteCountSaveWarning {
+    count: usize,
+    limit: usize,
+    command: Command,
+}
+
 #[derive(Default)]
 pub(crate) struct VanillaLevelEditor {
     key: Option<EditorKey>,
@@ -535,6 +542,7 @@ pub(crate) struct VanillaLevelEditor {
     screen_exit_follow_after_save: Option<PendingScreenExitFollowSave>,
     invalid_exit_scan_result: Option<InvalidExitScanResult>,
     invalid_exit_save_warning: Option<InvalidExitSaveWarning>,
+    sprite_count_save_warning: Option<SpriteCountSaveWarning>,
     game_preview: Option<bool>,
     snes_viewport: Option<bool>,
     draw_selection_over_live: Option<bool>,
@@ -547,6 +555,7 @@ pub(crate) struct VanillaLevelEditor {
     show_add_editor_ids: Option<bool>,
     background_cursor_highlight: Option<bool>,
     scan_exits_on_save: Option<bool>,
+    count_sprites_on_save: Option<bool>,
     paste_target: Option<EntityPasteTarget>,
     pending_layer2_mode_reset: Option<HeaderForm>,
     error: Option<String>,
@@ -646,6 +655,10 @@ impl VanillaLevelEditor {
 
     pub(crate) fn set_scan_exits_on_save(&mut self, enabled: bool) {
         self.scan_exits_on_save = Some(enabled);
+    }
+
+    pub(crate) fn set_count_sprites_on_save(&mut self, enabled: bool) {
+        self.count_sprites_on_save = Some(enabled);
     }
 
     pub(crate) fn editor_selector_selected(&mut self) {
@@ -795,6 +808,13 @@ impl VanillaLevelEditor {
         }
         self.show_invalid_exit_scan_result(ui.ctx());
         if let Some(command) = self.show_invalid_exit_save_warning(ui.ctx()) {
+            match self.request_sprite_count_before_save(&snapshot, command) {
+                Ok(Some(command)) => return Some(command),
+                Ok(None) => {}
+                Err(error) => self.error = Some(error),
+            }
+        }
+        if let Some(command) = self.show_sprite_count_save_warning(ui.ctx()) {
             return Some(command);
         }
         if let Some(command) = self.show_screen_exit_follow_confirmation(ui.ctx(), &snapshot) {
@@ -1973,6 +1993,7 @@ impl VanillaLevelEditor {
         self.screen_exit_follow_prompt = None;
         self.invalid_exit_scan_result = None;
         self.invalid_exit_save_warning = None;
+        self.sprite_count_save_warning = None;
         self.pending_layer2_mode_reset = None;
         self.canvas_entity_selection = None;
         if let Err(error) = validate_builtin_graphics_layout(snapshot) {
@@ -2176,6 +2197,7 @@ impl VanillaLevelEditor {
         self.screen_exit_follow_after_save = None;
         self.invalid_exit_scan_result = None;
         self.invalid_exit_save_warning = None;
+        self.sprite_count_save_warning = None;
         self.entrance_controller = None;
         self.secondary_exits = None;
         self.secondary_exit_references = None;
@@ -3166,10 +3188,95 @@ impl VanillaLevelEditor {
         command: Command,
     ) -> Result<Option<Command>, String> {
         if !self.scan_exits_on_save.unwrap_or(true) {
-            return Ok(Some(command));
+            return self.request_sprite_count_before_save(snapshot, command);
         }
         let screens = self.scan_invalid_exit_destinations(snapshot, custom_dsc)?;
-        Ok(self.gate_invalid_exit_save_result(screens, command))
+        let command = self.gate_invalid_exit_save_result(screens, command);
+        match command {
+            Some(command) => self.request_sprite_count_before_save(snapshot, command),
+            None => Ok(None),
+        }
+    }
+
+    fn request_sprite_count_before_save(
+        &mut self,
+        snapshot: &lm_app::ControllerSnapshot,
+        command: Command,
+    ) -> Result<Option<Command>, String> {
+        if !self.count_sprites_on_save.unwrap_or(true) {
+            return Ok(Some(command));
+        }
+        let controller = self
+            .controller
+            .as_ref()
+            .ok_or_else(|| "the current level is unavailable".to_owned())?;
+        let count = ordinary_sprite_count(&controller.level().sprites);
+        let limit = sprite_count_save_limit(
+            snapshot.identity.mapper,
+            legacy_sprite_program_uses_255_limit(&snapshot.rom_bytes)?,
+        );
+        Ok(self.gate_sprite_count_save_result(count, limit, command))
+    }
+
+    fn gate_sprite_count_save_result(
+        &mut self,
+        count: usize,
+        limit: usize,
+        command: Command,
+    ) -> Option<Command> {
+        if count <= limit {
+            return Some(command);
+        }
+        self.sprite_count_save_warning = Some(SpriteCountSaveWarning {
+            count,
+            limit,
+            command,
+        });
+        None
+    }
+
+    fn resolve_sprite_count_save_warning(&mut self, save_anyway: bool) -> Option<Command> {
+        let warning = self.sprite_count_save_warning.take()?;
+        if save_anyway {
+            Some(warning.command)
+        } else {
+            self.screen_exit_follow_after_save = None;
+            self.pending_expansion_commit = None;
+            None
+        }
+    }
+
+    fn show_sprite_count_save_warning(&mut self, context: &egui::Context) -> Option<Command> {
+        let warning = self.sprite_count_save_warning.clone()?;
+        let mut save_anyway = false;
+        let mut cancel = false;
+        egui::Window::new("Count Sprites on Save to ROM")
+            .collapsible(false)
+            .resizable(false)
+            .show(context, |ui| {
+                ui.label(format!(
+                    "You currently have {} sprites in the level (limit is usually around {}).",
+                    warning.count, warning.limit
+                ));
+                ui.label("Exceeding the maximum limit may cause extra sprites to not appear, or the game could freeze or display random sprites when the player reaches the affected screen.");
+                ui.label("To disable this warning, turn off “Count Sprites on Save to ROM” in Tools.");
+                ui.label("Save the level anyway?");
+                ui.horizontal(|ui| {
+                    if ui.button("Save Anyway").clicked() {
+                        save_anyway = true;
+                    }
+                    if ui.button("Cancel").clicked() {
+                        cancel = true;
+                    }
+                });
+            });
+        if save_anyway {
+            return self.resolve_sprite_count_save_warning(true);
+        }
+        if cancel {
+            return self.resolve_sprite_count_save_warning(false);
+        }
+        None
     }
 
     fn gate_invalid_exit_save_result(
@@ -14620,6 +14727,32 @@ fn editor_level_layout(
     Ok(layout)
 }
 
+const SMW_US_V1_LEGACY_FEATURE_DISABLE_FLAGS_OFFSET: usize = 0x0007_ffe0;
+
+/// Lunar Magic 3.63's `ReportSpriteCountLimitWarning` uses 128 while its level runtime is enabled
+/// (the normal/default state), and 255 for SA-1 or a detected third-party sprite program. The
+/// historical 84-sprite fallback belongs to Lunar Magic's disabled-runtime compatibility mode;
+/// the Rust editor does not expose that unsafe legacy mode and always writes the supported runtime.
+fn sprite_count_save_limit(mapper: lm_rom::Mapper, third_party_sprite_program: bool) -> usize {
+    if mapper == lm_rom::Mapper::Sa1 || third_party_sprite_program {
+        255
+    } else {
+        128
+    }
+}
+
+fn legacy_sprite_program_uses_255_limit(rom_bytes: &[u8]) -> Result<bool, String> {
+    let rom = RomImage::from_bytes(rom_bytes.to_vec()).map_err(|error| error.to_string())?;
+    let flags = rom
+        .read(SMW_US_V1_LEGACY_FEATURE_DISABLE_FLAGS_OFFSET, 1)
+        .map_err(|error| error.to_string())?[0];
+    Ok(flags & 1 == 0)
+}
+
+fn ordinary_sprite_count(sprites: &lm_level::NativeSpriteStream) -> usize {
+    sprites.native_placements().len()
+}
+
 fn workspace_tool_width(available_width: f32) -> f32 {
     ROM_LEVEL_TOOL_PANEL_WIDTH.min((available_width * 0.49).max(280.0))
 }
@@ -20218,6 +20351,76 @@ mod tests {
     }
 
     #[test]
+    fn sprite_count_save_gate_matches_lunar_magic_threshold_and_abort_semantics() {
+        let command = Command::CommitRomWrites {
+            expected_revision: 7,
+            description: "test save".into(),
+            writes: Vec::new(),
+        };
+        let mut editor = VanillaLevelEditor::default();
+        assert_eq!(
+            editor.gate_sprite_count_save_result(128, 128, command.clone()),
+            Some(command.clone())
+        );
+        assert_eq!(editor.sprite_count_save_warning, None);
+
+        assert_eq!(
+            editor.gate_sprite_count_save_result(129, 128, command.clone()),
+            None
+        );
+        assert_eq!(
+            editor
+                .sprite_count_save_warning
+                .as_ref()
+                .map(|warning| (warning.count, warning.limit)),
+            Some((129, 128))
+        );
+        assert_eq!(
+            editor.resolve_sprite_count_save_warning(true),
+            Some(command.clone())
+        );
+
+        editor.screen_exit_follow_after_save = Some(PendingScreenExitFollowSave {
+            destination: 0x106,
+            final_revision: 1,
+            intermediate_revision: None,
+        });
+        editor.gate_sprite_count_save_result(256, 255, command);
+        assert_eq!(editor.resolve_sprite_count_save_warning(false), None);
+        assert!(editor.screen_exit_follow_after_save.is_none());
+    }
+
+    #[test]
+    fn sprite_count_excludes_control_tokens_and_selects_authenticated_limits() {
+        let ordinary = lm_level::NativeSpriteStream {
+            header: 0,
+            expanded: false,
+            tokens: vec![
+                SpriteToken::Screen(3),
+                SpriteToken::Control(0x80),
+                SpriteToken::Record(lm_level::SpriteRecord {
+                    encoded: vec![0, 0, 0x0f],
+                }),
+                SpriteToken::Record(lm_level::SpriteRecord {
+                    encoded: vec![0, 0],
+                }),
+            ],
+        };
+        assert_eq!(ordinary_sprite_count(&ordinary), 1);
+        assert_eq!(sprite_count_save_limit(lm_rom::Mapper::LoRom, false), 128);
+        assert_eq!(sprite_count_save_limit(lm_rom::Mapper::LoRom, true), 255);
+        assert_eq!(sprite_count_save_limit(lm_rom::Mapper::Sa1, false), 255);
+
+        let pristine = crate::test_support::pristine_smw_us_rom_bytes();
+        assert!(!legacy_sprite_program_uses_255_limit(&pristine).unwrap());
+        let mut third_party = RomImage::from_bytes(pristine).unwrap();
+        third_party
+            .write(SMW_US_V1_LEGACY_FEATURE_DISABLE_FLAGS_OFFSET, &[0xfe])
+            .unwrap();
+        assert!(legacy_sprite_program_uses_255_limit(third_party.as_file_bytes()).unwrap());
+    }
+
+    #[test]
     fn disabled_save_exit_scan_bypasses_scanner_before_it_requires_an_editor() {
         let mut app = AppState::default();
         app.load_rom(crate::test_support::pristine_smw_us_rom_bytes())
@@ -20231,6 +20434,7 @@ mod tests {
         };
         let mut editor = VanillaLevelEditor::default();
         editor.set_scan_exits_on_save(false);
+        editor.set_count_sprites_on_save(false);
         assert_eq!(
             editor
                 .request_exit_scan_before_save(&snapshot, None, command.clone())
