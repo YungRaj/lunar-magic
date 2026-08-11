@@ -1139,3 +1139,15 @@ retained first-save oracle owns payload `$080962..$083CF2`; its exact relocated 
 fixed writes are covered by Rust tests. Hashes, resource geometry, function addresses, and the
 clean-room evidence boundary are recorded in
 `docs/oracle-work/lm363/vram-patch-options/PROVENANCE.md`.
+
+## Renderer audit offset and joined-GFX route verification (2026-08-11)
+
+The renderer crate passed 234/234 tests and
+`every_pristine_level_materializes_its_builtin_render_assets` passed across all 512 vanilla slots.
+The audit harness defect was isolated by identical level `$105` editor hashes at requested offsets
+`$0` and `$8`; after adding orientation-aware major-axis scrolling, the same captures produced
+distinct hashes `8fd03ca5a9360ba9ed2aa95d2dabe10d5b42f382d299e20e24135c2594caaa70`
+and `102e18d35723e74b5f2d652d6802f711daba4b583be759c9107e8e5bc7c32611`.
+Independent game-preview offsets `$0` and `$8` were also distinct. The 38-test authenticated
+user-toolbar suite then passed with `LM_OPTIONS_ATTACH_FILES` routed to the existing persisted
+joined-GFX mode and the complete partition at 288 routed / 29 pending.

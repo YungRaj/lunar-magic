@@ -5830,6 +5830,25 @@ content. The isolated `c20496c` build reproduces `$02D`'s same viewport, and the
 manifest remains byte-identical at SHA-256
 `254a1a050d12785973241910e26d8b7917a5cb5e2a56602a330fc6cbd833c04d`.
 
+## Joined standard-GFX option (`$24BD`)
+
+The authenticated command table maps `LM_OPTIONS_ATTACH_FILES` to dispatcher case `$88`. That case
+toggles `$00E278C0`; registry synchronization stores it in `Options` bit 4, and all ordinary/quick
+standard-GFX extraction and insertion handlers pass it as their joined-file flag. Rust now routes the
+original internal command to its existing persisted `joined_graphics_files` state, so the toolbar,
+the pristine and installed graphics editors, and every fixed-directory operation select the same
+52-file or `AllGFX.bin` behavior. ExGFX remains separate, matching the original help contract.
+Authenticated native command coverage is now 288 of 317 named slots, leaving 29 pending.
+
+## Orientation-aware renderer audit offsets
+
+`tools/render-audit.sh` interprets each requested screen as a major-axis offset for both output
+styles. Game captures continue to use the preview-camera offset. Editor captures pass a distinct
+major-axis tile offset that the level editor resolves after decoding orientation, preventing
+horizontal assumptions from corrupting vertical audits. Explicit row/column origins from a retained
+Lunar Magic reference manifest override the generic offset. This repairs the audit evidence path;
+it does not alter ordinary interactive camera or scroll state.
+
 ## Deprecated Select FG/BG commands (`$2473/$2474`)
 
 Both authenticated central dispatch bytes are `$DF`, while the Lunar Magic 3.63 command switch

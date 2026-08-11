@@ -1161,6 +1161,25 @@ replacement, unknown rejection, save/reopen, and one-step Undo. Provenance is re
 partition is now **287 routed / 30 pending**. The aggregate remains 59/65 because the
 configuration row is still Partial.
 
+Toolbar coverage update (2026-08-11, joined standard-GFX files): authenticated
+`LM_OPTIONS_ATTACH_FILES` `$24BD` now routes through central dispatcher case `$88` to the same
+persisted joined/separate mode already consumed by every standard-GFX extraction and insertion
+workflow. Ghidra binds the toggled byte `$00E278C0` to `Options` bit 4; the retained original-editor
+fixture proves zero means 52 separate `GFXxx.bin` files and one means `AllGFX.bin`. The Rust route
+toggles that shared state directly, reports the selected mode, survives preference encoding and
+reopen, and does not affect ExGFX. Focused route, toggle, persistence, and complete command-partition
+tests pass. The authenticated partition is now **288 routed / 29 pending**. The aggregate remains
+59/65 because the configuration row is still Partial.
+
+Renderer evidence correction (2026-08-11): the multi-screen audit harness formerly applied its
+`SCREENS` offsets only to the 256×224 game-preview camera. Editor-style captures therefore repeated
+the entrance frame and could falsely suggest a renderer regression. `render-audit.sh` now passes an
+orientation-neutral major-axis tile offset; the native editor resolves it to X for horizontal levels
+and Y for vertical levels, while explicit reference-manifest X/Y origins retain precedence. Fresh
+vanilla level `$105` editor captures at offsets `$0` and `$8` have distinct SHA-256 hashes, as do the
+independent game-preview captures. All 234 renderer tests and the exhaustive 512-level built-in asset
+materialization gate pass.
+
 Toolbar coverage update (2026-08-10, Open Level Number): `LM_FILE_OPEN_LEVEL` `$238E` now opens
 the native equivalent of original dialog resource `1000`. It uses the authenticated title,
 `Level Number (0-1FF)` label, OK/Cancel controls, and original-language resource overrides; seeds

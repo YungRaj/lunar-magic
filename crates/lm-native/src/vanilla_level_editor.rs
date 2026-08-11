@@ -2759,9 +2759,12 @@ impl VanillaLevelEditor {
             .id_salt(scroll_id)
             .max_height(ui.available_height().max(160.0))
             .auto_shrink([false, false]);
-        let requested_horizontal_scroll =
-            visual_smoke_editor_scroll_column().map(|column| f32::from(column) * cell);
+        let requested_major_scroll = visual_smoke_editor_scroll_major();
+        let requested_horizontal_scroll = visual_smoke_editor_scroll_column()
+            .or_else(|| (!vertical).then_some(requested_major_scroll).flatten())
+            .map(|column| f32::from(column) * cell);
         let requested_vertical_scroll = visual_smoke_editor_scroll_row()
+            .or_else(|| vertical.then_some(requested_major_scroll).flatten())
             .or(self.initial_vertical_scroll_tiles)
             .map(|row| f32::from(row) * cell);
         if !snes_viewport && let Some(offset) = requested_horizontal_scroll {
@@ -14920,6 +14923,13 @@ fn visual_smoke_editor_scroll_column() -> Option<u16> {
         .and_then(|value| value.parse().ok())
 }
 
+#[cfg(feature = "visual-smoke")]
+fn visual_smoke_editor_scroll_major() -> Option<u16> {
+    std::env::var("LM_NATIVE_EDITOR_SCROLL_MAJOR")
+        .ok()
+        .and_then(|value| value.parse().ok())
+}
+
 #[cfg(not(feature = "visual-smoke"))]
 const fn visual_smoke_editor_scroll_column() -> Option<u16> {
     None
@@ -14927,6 +14937,11 @@ const fn visual_smoke_editor_scroll_column() -> Option<u16> {
 
 #[cfg(not(feature = "visual-smoke"))]
 const fn visual_smoke_editor_scroll_row() -> Option<u16> {
+    None
+}
+
+#[cfg(not(feature = "visual-smoke"))]
+const fn visual_smoke_editor_scroll_major() -> Option<u16> {
     None
 }
 

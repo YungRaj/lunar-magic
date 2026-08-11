@@ -445,6 +445,15 @@ impl NativeApplication {
             UserToolbarNativeAction::GfxBypassListDialogs => {
                 self.set_gfx_bypass_list_dialogs(!self.gfx_bypass_list_dialogs.unwrap_or(true));
             }
+            UserToolbarNativeAction::JoinedGraphicsFiles => {
+                self.joined_graphics_files = !self.joined_graphics_files;
+                self.app.status = if self.joined_graphics_files {
+                    "Using joined AllGFX.bin files"
+                } else {
+                    "Using separate GFX files"
+                }
+                .into();
+            }
             UserToolbarNativeAction::VramPatchOptions => {
                 self.vram_patch_options_dialog.open(&self.app);
             }
@@ -1665,6 +1674,7 @@ enum UserToolbarNativeAction {
     ScanExitsOnSave,
     CountSpritesOnSave,
     GfxBypassListDialogs,
+    JoinedGraphicsFiles,
     VramPatchOptions,
     GraphicsCompressionOptions,
     GeneralOptions,
@@ -1768,6 +1778,7 @@ fn user_toolbar_native_action(name: &str) -> Option<UserToolbarNativeAction> {
         "LM_OPTIONS_SCAN_EXITS" => UserToolbarNativeAction::ScanExitsOnSave,
         "LM_OPTIONS_SCAN_SPRITES" => UserToolbarNativeAction::CountSpritesOnSave,
         "LM_OPTIONS_INSTALL_VRAM" => UserToolbarNativeAction::GfxBypassListDialogs,
+        "LM_OPTIONS_ATTACH_FILES" => UserToolbarNativeAction::JoinedGraphicsFiles,
         "LM_OPTIONS_VRAM" => UserToolbarNativeAction::VramPatchOptions,
         "LM_OPTIONS_COMPRESSION" => UserToolbarNativeAction::GraphicsCompressionOptions,
         "LM_OPTIONS_GENERAL" => UserToolbarNativeAction::GeneralOptions,
@@ -2134,6 +2145,9 @@ fn split_command_line(value: &str) -> Result<(String, Vec<String>), String> {
 #[cfg(test)]
 mod user_toolbar_tests {
     use super::*;
+    use crate::application::{
+        decode_joined_graphics_preference, encode_joined_graphics_preference,
+    };
 
     #[test]
     fn external_command_line_preserves_quoted_arguments() {
@@ -2811,7 +2825,7 @@ mod user_toolbar_tests {
                     || user_toolbar_native_action(entry.name).is_some()
             })
             .collect::<Vec<_>>();
-        assert_eq!(supported.len(), 287);
+        assert_eq!(supported.len(), 288);
         assert!(
             supported
                 .iter()
@@ -3113,6 +3127,34 @@ mod user_toolbar_tests {
     }
 
     #[test]
+    fn attach_files_command_toggles_the_persisted_joined_gfx_mode() {
+        let mut native = NativeApplication::default();
+        assert!(!native.joined_graphics_files);
+        assert_eq!(
+            user_toolbar_native_action("LM_OPTIONS_ATTACH_FILES"),
+            Some(UserToolbarNativeAction::JoinedGraphicsFiles)
+        );
+        native.apply_user_toolbar_native_action(
+            &egui::Context::default(),
+            UserToolbarNativeAction::JoinedGraphicsFiles,
+        );
+        assert!(native.joined_graphics_files);
+        assert_eq!(native.app.status, "Using joined AllGFX.bin files");
+        assert!(
+            decode_joined_graphics_preference(&encode_joined_graphics_preference(
+                native.joined_graphics_files
+            ))
+            .unwrap()
+        );
+        native.apply_user_toolbar_native_action(
+            &egui::Context::default(),
+            UserToolbarNativeAction::JoinedGraphicsFiles,
+        );
+        assert!(!native.joined_graphics_files);
+        assert_eq!(native.app.status, "Using separate GFX files");
+    }
+
+    #[test]
     fn recent_menu_route_opens_at_the_pointer_and_escape_dismisses_it() {
         let mut native = NativeApplication::default();
         let context = egui::Context::default();
@@ -3295,7 +3337,7 @@ mod user_toolbar_tests {
                     && user_toolbar_native_action(entry.name).is_none()
             })
             .collect::<Vec<_>>();
-        assert_eq!(unsupported.len(), 30);
+        assert_eq!(unsupported.len(), 29);
         if std::env::var_os("LM_DIAGNOSTIC_UNSUPPORTED_TOOLBAR_COMMANDS").is_some() {
             for entry in unsupported {
                 eprintln!(

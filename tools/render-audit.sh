@@ -11,6 +11,7 @@ usage() {
     echo "  LM_RENDER_AUDIT_REFRESH: replace existing captures instead of reusing them (default: 0)" >&2
     echo "  LM_NATIVE_EDITOR_SCROLL_ROW: editor world row at the viewport top (default: entrance)" >&2
     echo "  LM_NATIVE_EDITOR_SCROLL_COLUMN: editor world column at the viewport left (default: 0)" >&2
+    echo "  LM_NATIVE_EDITOR_SCROLL_MAJOR: editor major-axis tile offset (set automatically from SCREENS)" >&2
     echo "  LM_NATIVE_EDITOR_OVERLAYS: draw editor grid, markers, and labels (default: 1)" >&2
     echo "  LM_NATIVE_EDITOR_LAYER1: draw Layer 1 objects in editor captures (default: 1)" >&2
     echo "  LM_NATIVE_EDITOR_LAYER2: draw Layer 2/background in editor captures (default: 1)" >&2
@@ -94,6 +95,7 @@ capture_one() {
     image=$5
     scroll_column=$6
     scroll_row=$7
+    scroll_major=$8
     if [ "$refresh" -eq 1 ] || [ ! -f "$image" ]; then
         if [ "$refresh" -eq 1 ] && [ -f "$image" ]; then
             rm -- "$image"
@@ -104,6 +106,7 @@ capture_one() {
         LM_NATIVE_PREVIEW_CAMERA_MAJOR="$major_tiles" \
         LM_NATIVE_EDITOR_SCROLL_COLUMN="$scroll_column" \
         LM_NATIVE_EDITOR_SCROLL_ROW="$scroll_row" \
+        LM_NATIVE_EDITOR_SCROLL_MAJOR="$scroll_major" \
             "$binary" --level "$level" "$rom"
         if [ "$recompress" -eq 1 ] && command -v sips >/dev/null 2>&1; then
             compressed="${image%.png}.recompressed.png"
@@ -127,8 +130,9 @@ for level in $levels; do
         esac
         for screen in $screen_spec; do
             major_tiles=$((0x$screen * 16))
-            scroll_column=${LM_NATIVE_EDITOR_SCROLL_COLUMN:-0}
-            scroll_row=${LM_NATIVE_EDITOR_SCROLL_ROW:-0}
+            scroll_column=${LM_NATIVE_EDITOR_SCROLL_COLUMN:-}
+            scroll_row=${LM_NATIVE_EDITOR_SCROLL_ROW:-}
+            scroll_major=$major_tiles
             if [ -n "$reference_manifest" ]; then
                 # Prefix both values so hexadecimal slots containing `E` (for
                 # example 0E3) cannot be coerced to AWK scientific notation.
@@ -136,12 +140,13 @@ for level in $levels; do
                 if [ -n "$aligned" ]; then
                     scroll_column=${aligned% *}
                     scroll_row=${aligned#* }
+                    scroll_major=
                 fi
             fi
             image_name="level-${level}-${style}-screen-${screen}.png"
             image="$output_dir/images/$image_name"
             capture_one "$level" "$style" "$screen" "$major_tiles" "$image" \
-                "$scroll_column" "$scroll_row" &
+                "$scroll_column" "$scroll_row" "$scroll_major" &
             pids="${pids:+$pids,}$!"
             running=$((running + 1))
             if [ "$running" -eq "$jobs" ]; then
