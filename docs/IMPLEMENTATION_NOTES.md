@@ -5749,3 +5749,14 @@ Headered and headerless tests require identical logical results and exact physic
 file reads and writes remain bounded and nonblocking; both the normal File menu and authenticated
 toolbar routes share them. Authenticated native command coverage is now 264 of 317 named table
 slots, leaving 53 pending.
+
+## Restrict Level Access authenticated toolbar route (`$23A4`)
+
+The original `LM_FILE_ENCRYPT_LEVELS` user-toolbar command now opens the full native level-access
+restriction state machine already shared with the normal File menu. It requires an authenticated
+open ROM and does not mutate on activation; confirmation still owns key generation, mapper-specific
+bulk migration, checksum repair, persistence, restore archive creation, the optional IPS workflow,
+and final close. The retained live central-dispatcher capture corrects the active command to `$23A4`.
+The historically named `$23A5` slot is deliberately not aliased without equivalent dispatcher
+evidence. Authenticated native command coverage is now 265 of 317 named table slots, leaving 52
+pending.

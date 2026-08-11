@@ -407,6 +407,11 @@ impl NativeApplication {
                     self.effects.error = Some(error);
                 }
             }
+            UserToolbarNativeAction::RestrictLevelAccess => {
+                if self.app.project().is_some() {
+                    self.level_access_restriction_dialog.open();
+                }
+            }
             UserToolbarNativeAction::GraphicsCompressionOptions => {
                 self.graphics_migration_dialog.open(&self.app);
             }
@@ -1363,6 +1368,7 @@ enum UserToolbarNativeAction {
     CreateRestorePoint,
     CreateIps,
     ApplyIps,
+    RestrictLevelAccess,
     GraphicsCompressionOptions,
     GeneralOptions,
     RestoreOptions,
@@ -1437,6 +1443,7 @@ fn user_toolbar_native_action(name: &str) -> Option<UserToolbarNativeAction> {
         "LM_FILE_CREATE_RESTORE" => UserToolbarNativeAction::CreateRestorePoint,
         "LM_FILE_CREATE_IPS" => UserToolbarNativeAction::CreateIps,
         "LM_FILE_APPLY_IPS" => UserToolbarNativeAction::ApplyIps,
+        "LM_FILE_ENCRYPT_LEVELS" => UserToolbarNativeAction::RestrictLevelAccess,
         "LM_OPTIONS_COMPRESSION" => UserToolbarNativeAction::GraphicsCompressionOptions,
         "LM_OPTIONS_GENERAL" => UserToolbarNativeAction::GeneralOptions,
         "LM_OPTIONS_RESTORE" => UserToolbarNativeAction::RestoreOptions,
@@ -1885,6 +1892,10 @@ mod user_toolbar_tests {
         assert_eq!(
             user_toolbar_native_action("LM_OPTIONS_GENERAL"),
             Some(UserToolbarNativeAction::GeneralOptions)
+        );
+        assert_eq!(
+            user_toolbar_native_action("LM_FILE_ENCRYPT_LEVELS"),
+            Some(UserToolbarNativeAction::RestrictLevelAccess)
         );
         assert_eq!(
             user_toolbar_native_action("LM_OPTIONS_RESTORE"),
@@ -2432,7 +2443,7 @@ mod user_toolbar_tests {
                     || user_toolbar_native_action(entry.name).is_some()
             })
             .collect::<Vec<_>>();
-        assert_eq!(supported.len(), 264);
+        assert_eq!(supported.len(), 265);
         assert!(
             supported
                 .iter()
@@ -2449,6 +2460,26 @@ mod user_toolbar_tests {
             UserToolbarNativeAction::GeneralOptions,
         );
         assert!(native.undo_history_settings.is_open());
+    }
+
+    #[test]
+    fn restrict_level_access_toolbar_route_requires_a_rom_and_opens_the_full_workflow() {
+        let mut native = NativeApplication::default();
+        native.apply_user_toolbar_native_action(
+            &egui::Context::default(),
+            UserToolbarNativeAction::RestrictLevelAccess,
+        );
+        assert!(!native.level_access_restriction_dialog.is_open());
+
+        native
+            .app
+            .load_rom(crate::test_support::pristine_smw_us_rom_bytes())
+            .unwrap();
+        native.apply_user_toolbar_native_action(
+            &egui::Context::default(),
+            UserToolbarNativeAction::RestrictLevelAccess,
+        );
+        assert!(native.level_access_restriction_dialog.is_open());
     }
 
     #[test]
@@ -2535,7 +2566,7 @@ mod user_toolbar_tests {
                     && user_toolbar_native_action(entry.name).is_none()
             })
             .collect::<Vec<_>>();
-        assert_eq!(unsupported.len(), 53);
+        assert_eq!(unsupported.len(), 52);
         if std::env::var_os("LM_DIAGNOSTIC_UNSUPPORTED_TOOLBAR_COMMANDS").is_some() {
             for entry in unsupported {
                 eprintln!(

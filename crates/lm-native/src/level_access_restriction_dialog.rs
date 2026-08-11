@@ -34,6 +34,11 @@ pub(crate) enum LevelAccessRestrictionAction {
 }
 
 impl LevelAccessRestrictionDialog {
+    #[cfg(test)]
+    pub(crate) const fn is_open(&self) -> bool {
+        self.open
+    }
+
     pub(crate) fn open(&mut self) {
         self.open = true;
         self.acknowledged = false;

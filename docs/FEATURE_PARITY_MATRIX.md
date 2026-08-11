@@ -963,6 +963,15 @@ expanded settings, replaces all 256 rows, repairs the checksum, reopens semantic
 one atomic operation across both copier-header forms. The authenticated partition is now **264
 routed / 53 pending**. The aggregate remains 59/65 because the configuration row is still Partial.
 
+Toolbar coverage update (2026-08-10, Restrict Level Access): authenticated
+`LM_FILE_ENCRYPT_LEVELS` `$23A4` now opens the same complete native restriction workflow as the
+normal File command. The route remains unavailable without an authenticated open ROM and retains
+the existing title/key generation, mapper-specific bulk migration, restore archive, optional IPS,
+persistence-before-close, checksum, reopen, and one-step Undo gates. The corrected live dispatcher
+oracle binds `$23A4`; historical `$23A5` remains pending rather than being guessed as an alias.
+The authenticated partition is now **265 routed / 52 pending**. The aggregate remains 59/65
+because the configuration row is still Partial.
+
 Toolbar coverage update (2026-08-10, Open Level Number): `LM_FILE_OPEN_LEVEL` `$238E` now opens
 the native equivalent of original dialog resource `1000`. It uses the authenticated title,
 `Level Number (0-1FF)` label, OK/Cancel controls, and original-language resource overrides; seeds
