@@ -1211,6 +1211,24 @@ addition, and dashed edges. Focused Rust tests bind all six rectangles for norma
 horizontal, and alternate vertical layouts, camera translation, exact route, default-off state,
 and both status strings.
 
+## GFX display override recovery (2026-08-11)
+
+Command-table entry `$26B8 -> $DA` opens localized modal resource `$04D7` through callback
+`$00407660`, then refreshes graphics resources only after OK. The callback formats and parses two
+eight-word arrays at `$005E770C..$005E771A` and `$005E771C..$005E772A`; every executable default
+is `$007F`, formatting is uppercase hexadecimal with spaces, and parsing writes only the valid
+`< $1000` prefix while retaining invalid or omitted slots. The retained Lunar Magic 3.63 resource
+supplied the exact title, Layer 1/2 and Layer 3 labels, and design-only/no-ROM-mutation note.
+
+Cross-references from the default, ROM-selected, expanded-header, and Layer 3 graphics loaders
+prove eight display slots per domain. `$7F` delegates to the real four legacy or six expanded
+Layer 1/2 assignments and four real Layer 3 assignments; later slots stay blank unless explicitly
+overridden. Focused Rust gates cover pristine and installed high-slot substitution, partial
+parsing, preview invalidation, and byte-identical ROM ownership.
+The renderer gate passes 235/235, the complete native gate passes 1,141 tests with 13 explicit
+external-fixture ignores, all 512 pristine levels materialize, and the Windows i686 cross-check
+passes.
+
 ## Context-sensitive custom collection append (2026-08-11)
 
 Ghidra command-table byte `$D3` maps both `LM_KEY_ADD_CSPRITE` and `LM_KEY_ADD_CUSTOM` at `$26AF`.

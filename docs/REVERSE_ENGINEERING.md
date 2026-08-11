@@ -5051,3 +5051,18 @@ selected SMW body, while an authentic SA-1 Pack conversion retains the SMW-US lo
 Rust authenticates the selected family with nonzero delays, color indexes 1–7, and the recovered
 eight-byte selector prologue. Complete foreign or corrupt routines disable only built-in lightning;
 truncated selected sources reject. No cross-identity or lower-mirror fallback is attempted.
+
+## GFX display override dialog
+
+`HandleLevelEditorCommand` maps command `$26B8` through case `$DA` to localized modal resource
+`$04D7` and callback `$00407660`. Its two eight-word arrays live at
+`$005E770C..$005E771A` (Layer 1/2) and `$005E771C..$005E772A` (Layer 3), initialize entirely to
+`$007F`, and are session state rather than ROM data. OK invokes the graphics-resource refresh;
+Cancel does not. The parser consumes an uppercase hexadecimal, space-separated prefix and updates
+only values below `$1000`, retaining prior values for invalid or omitted entries.
+
+The three Layer 1/2 loaders interpret `$7F` as the real level assignment and explicit values as
+GFX/ExGFX file numbers. Legacy/default paths supply four real slots, expanded headers supply six,
+and slots seven and eight are display-only blanks until overridden. `LoadLayer3GraphicsSet` uses
+the same sentinel across four real 2bpp slots plus four display-only slots. Sprite graphics are not
+part of this dialog.

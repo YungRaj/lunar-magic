@@ -980,6 +980,16 @@ translation, translucent fill, dashed boundaries, and responsive scale. The auth
 partition is now **306 routed / 11 pending**. The aggregate remains 59/65 because the
 configuration row is still Partial.
 
+Toolbar coverage update (2026-08-11, GFX display override): authenticated `LM_KEY_GFX_OVERRIDE`
+`$26B8` now opens the original session-only two-row hexadecimal dialog. Eight Layer 1/2 and eight
+Layer 3 slots default to `$7F` (use the real level assignment); explicit `$000..=$FFF` values
+replace only their display slots without modifying ROM bytes. Pristine and installed-ROM live
+previews, full-level image exports, and batch exports share the same override state, including the
+four additional display-only slots in each domain. Partial parsing retains invalid or omitted
+existing values like the recovered dialog. Focused pristine, installed, parser, invalidation, and
+no-ROM-mutation tests pass. The authenticated partition is now **307 routed / 10 pending**. The
+aggregate remains 59/65 because the configuration row is still Partial.
+
 Toolbar coverage update (2026-08-10, selection editors): `LM_EDIT_PROPERTIES` `$2468` now toggles
 an independent modeless properties window, while `LM_EDIT_EDIT_MANUAL` `$2469` opens (and repeated
 activation reuses) the manual editor dialog. Both follow the live Layer 1, object-backed Layer 2,

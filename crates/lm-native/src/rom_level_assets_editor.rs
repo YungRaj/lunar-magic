@@ -65,6 +65,7 @@ struct BatchImageSource {
     animation_phase: Option<usize>,
     special_world_passed: bool,
     visibility: crate::application::LevelViewVisibility,
+    gfx_display_override: crate::vanilla_map16_preview::GfxDisplayOverride,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -633,6 +634,7 @@ pub(crate) struct RomLevelAssetsEditor {
     bypass_map16_grid: bool,
     bypass_selection: Option<PreviewMap16Selection>,
     bypass_inspection: Option<PreviewMap16Inspection>,
+    gfx_display_override: crate::vanilla_map16_preview::GfxDisplayOverride,
 }
 
 impl RomLevelAssetsEditor {
@@ -643,7 +645,12 @@ impl RomLevelAssetsEditor {
         visibility: crate::application::LevelViewVisibility,
     ) {
         let result = (|| {
-            let source = direct_image_source(app, special_world_passed, visibility)?;
+            let source = direct_image_source(
+                app,
+                special_world_passed,
+                visibility,
+                self.gfx_display_override,
+            )?;
             let lm_app::EditorMode::Level(level) = source.snapshot.mode else {
                 return Err("select a level before exporting its bitmap".into());
             };
@@ -674,7 +681,12 @@ impl RomLevelAssetsEditor {
             if self.image_batch_worker.is_running() {
                 return Err("a level image batch is already running".into());
             }
-            let source = direct_image_source(app, special_world_passed, visibility)?;
+            let source = direct_image_source(
+                app,
+                special_world_passed,
+                visibility,
+                self.gfx_display_override,
+            )?;
             let Some(template) = crate::dialogs::choose_level_image_batch_template("bmp") else {
                 return Ok(());
             };
@@ -694,6 +706,17 @@ impl RomLevelAssetsEditor {
     pub(crate) fn invalidate_graphics_preview(&mut self) {
         self.bypass_preview.invalidate();
         self.bypass_layer2_texture = None;
+    }
+
+    pub(crate) fn set_gfx_display_override(
+        &mut self,
+        value: crate::vanilla_map16_preview::GfxDisplayOverride,
+    ) {
+        if self.gfx_display_override != value {
+            self.gfx_display_override = value;
+            self.bypass_validation = None;
+            self.invalidate_graphics_preview();
+        }
     }
 
     pub(crate) fn show(
@@ -942,7 +965,10 @@ impl RomLevelAssetsEditor {
             }
         }
         if ui.button("Validate selected Super GFX files").clicked() {
-            self.bypass_validation = self.workspace.as_ref().map(validate_super_graphics);
+            self.bypass_validation = self
+                .workspace
+                .as_ref()
+                .map(|workspace| validate_super_graphics(workspace, self.gfx_display_override));
         }
         let preview_button = if self.bypass_preview.enabled {
             "Stop live bypass-aware preview"
@@ -1093,6 +1119,7 @@ impl RomLevelAssetsEditor {
                         phases.selection,
                         special_world_passed,
                         visibility,
+                        self.gfx_display_override,
                     )
                 });
             self.bypass_preview.finish_refresh(result.is_ok());
@@ -1543,6 +1570,7 @@ fn direct_image_source(
     app: &AppState,
     special_world_passed: bool,
     visibility: crate::application::LevelViewVisibility,
+    gfx_display_override: crate::vanilla_map16_preview::GfxDisplayOverride,
 ) -> Result<BatchImageSource, String> {
     let profiled = app
         .profiled_controller_snapshot()
@@ -1560,6 +1588,7 @@ fn direct_image_source(
         animation_phase: None,
         special_world_passed,
         visibility,
+        gfx_display_override,
     })
 }
 
@@ -1600,6 +1629,7 @@ impl RomLevelAssetsEditor {
             animation_phase,
             special_world_passed,
             visibility,
+            gfx_display_override: self.gfx_display_override,
         };
         self.level_image_status = None;
         self.image_batch_worker
@@ -1623,6 +1653,7 @@ impl RomLevelAssetsEditor {
             None,
             special_world_passed,
             visibility,
+            self.gfx_display_override,
         )?;
         let canvas = crop_level_image_canvas(
             &canvas,
@@ -1661,6 +1692,7 @@ fn render_batch_level_canvas(
         None,
         source.special_world_passed,
         source.visibility,
+        source.gfx_display_override,
     )?;
     crop_level_image_canvas(
         &canvas,
@@ -1720,10 +1752,13 @@ fn publish_level_image(
     lm_app::file_persistence::write_new(destination, &bytes).map_err(|error| error.to_string())
 }
 
-fn validate_super_graphics(workspace: &Workspace) -> String {
+fn validate_super_graphics(
+    workspace: &Workspace,
+    gfx_display_override: crate::vanilla_map16_preview::GfxDisplayOverride,
+) -> String {
     let project = lm_project::Project::new(workspace.image.clone());
     let header = workspace.controller.assets().level.layer1.header;
-    match resolve_level_graphics(workspace, &project, header, false) {
+    match resolve_level_graphics(workspace, &project, header, false, gfx_display_override) {
         Ok(resolved) => {
             let foreground_tiles = resolved.vram.foreground_background.len();
             let sprite_tiles = resolved.vram.sprites.len();
@@ -1745,6 +1780,7 @@ fn render_super_graphics_level_preview(
     selection_phase: Option<u32>,
     special_world_passed: bool,
     visibility: crate::application::LevelViewVisibility,
+    gfx_display_override: crate::vanilla_map16_preview::GfxDisplayOverride,
 ) -> Result<
     (
         egui::ColorImage,
@@ -1759,6 +1795,7 @@ fn render_super_graphics_level_preview(
         selection,
         special_world_passed,
         visibility,
+        gfx_display_override,
     )?;
     render_level_viewport_canvas(
         &canvas,
@@ -1777,6 +1814,7 @@ fn render_super_graphics_level_canvas(
     selection: Option<PreviewMap16Selection>,
     special_world_passed: bool,
     visibility: crate::application::LevelViewVisibility,
+    gfx_display_override: crate::vanilla_map16_preview::GfxDisplayOverride,
 ) -> Result<
     (
         lm_render::Canvas,
@@ -1787,7 +1825,13 @@ fn render_super_graphics_level_canvas(
 > {
     let project = lm_project::Project::new(workspace.image.clone());
     let header = workspace.controller.assets().level.layer1.header;
-    let resolved = resolve_level_graphics(workspace, &project, header, special_world_passed)?;
+    let resolved = resolve_level_graphics(
+        workspace,
+        &project,
+        header,
+        special_world_passed,
+        gfx_display_override,
+    )?;
     let mut vram = resolved.vram;
     let mut palette = workspace.controller.assets().palette.clone();
     let animation_options = installed_animation_options(workspace);
@@ -1924,7 +1968,13 @@ fn render_super_graphics_level_canvas(
         diagnostics.extend(sprite_diagnostics);
     }
     let visible = visible_level_parts(visibility, &layer2, &layer1, &sprites);
-    let layer3 = load_installed_layer3(workspace, &project, header, visibility.layer3)?;
+    let layer3 = load_installed_layer3(
+        workspace,
+        &project,
+        header,
+        visibility.layer3,
+        &gfx_display_override.layer_3,
+    )?;
     let inspection = selection.map(|selection| {
         inspect_preview_map16_selection(
             selection,
@@ -2258,6 +2308,7 @@ fn load_installed_layer3(
     project: &lm_project::Project,
     header: lm_level::LegacyLevelHeader,
     visible: bool,
+    gfx_display_override: &[u16; 8],
 ) -> Result<Option<InstalledLayer3>, String> {
     if !visible {
         return Ok(None);
@@ -2304,10 +2355,11 @@ fn load_installed_layer3(
         };
         layer3.tilemap = materialize_custom_layer3_tilemap(descriptor, &decoded)?;
     }
-    let tiles = crate::vanilla_map16_preview::load_layer3_tiles(
+    let tiles = crate::vanilla_map16_preview::load_layer3_tiles_with_override(
         project,
         usize::from(workspace.source_slot),
         workspace.profile.graphics,
+        gfx_display_override,
     )?;
     let (initial_y, clamp_editor_row_at_30) = installed_layer3_editor_position(
         expanded_settings.map(lm_level::ExpandedLevelSettingsRecord::layer3_expanded_mode_flags),
@@ -2440,6 +2492,7 @@ fn resolve_level_graphics(
     project: &lm_project::Project,
     header: lm_level::LegacyLevelHeader,
     special_world_passed: bool,
+    gfx_display_override: crate::vanilla_map16_preview::GfxDisplayOverride,
 ) -> Result<ResolvedLevelGraphics, String> {
     if let Some(settings) = workspace.controller.assets().expanded_settings.as_ref()
         && let Some(loaded) = project
@@ -2458,9 +2511,49 @@ fn resolve_level_graphics(
             workspace.profile.graphics,
             special_world_passed,
         )?;
+        apply_installed_gfx_display_override(
+            &mut resolved,
+            project,
+            workspace.profile.graphics,
+            &gfx_display_override.layer_1_2,
+        )?;
         return Ok(resolved);
     }
-    resolve_legacy_level_graphics(workspace, project, header, special_world_passed)
+    let mut resolved =
+        resolve_legacy_level_graphics(workspace, project, header, special_world_passed)?;
+    apply_installed_gfx_display_override(
+        &mut resolved,
+        project,
+        workspace.profile.graphics,
+        &gfx_display_override.layer_1_2,
+    )?;
+    Ok(resolved)
+}
+
+fn apply_installed_gfx_display_override(
+    resolved: &mut ResolvedLevelGraphics,
+    project: &lm_project::Project,
+    graphics_layout: lm_project::GraphicsRomLayout,
+    overrides: &[u16; 8],
+) -> Result<(), String> {
+    let blank = lm_graphics::IndexedTile::new([0; lm_graphics::IndexedTile::PIXEL_COUNT]);
+    resolved.vram.foreground_background.resize(8 * 0x80, blank);
+    for (slot, &file) in overrides.iter().enumerate() {
+        if file == 0x7f {
+            continue;
+        }
+        let loaded = project
+            .load_super_graphics_file(file, graphics_layout)
+            .map_err(|error| {
+                format!(
+                    "cannot load GFX display override slot {} file GFX{file:03X}: {error}",
+                    slot + 1
+                )
+            })?;
+        let start = slot * 0x80;
+        resolved.vram.foreground_background[start..start + 0x80].clone_from_slice(&loaded.tiles);
+    }
+    Ok(())
 }
 
 fn resolve_legacy_level_graphics(
@@ -3458,6 +3551,7 @@ mod tests {
             &app,
             false,
             crate::application::LevelViewVisibility::default(),
+            Default::default(),
         )
         .err()
         .expect("closed application must reject direct bitmap export");
@@ -4012,6 +4106,43 @@ mod tests {
         assert_eq!(&resolved.vram.sprites[128..256], special.as_slice());
         assert!(
             resolved.vram.sprites[256..]
+                .iter()
+                .all(|tile| tile == &blank)
+        );
+    }
+
+    #[test]
+    fn installed_gfx_display_override_materializes_all_eight_slots() {
+        let image =
+            lm_rom::RomImage::from_bytes(crate::test_support::pristine_smw_us_rom_bytes()).unwrap();
+        let project = lm_project::Project::new(image);
+        let blank = IndexedTile::new([0; IndexedTile::PIXEL_COUNT]);
+        let mut resolved = ResolvedLevelGraphics {
+            vram: MaterializedSuperGraphicsVram {
+                foreground_background: vec![blank.clone(); 4 * 128],
+                sprites: vec![],
+            },
+            foreground_background_files: 4,
+            sprite_files: 0,
+            source: "legacy",
+        };
+        let mut overrides = [0x7f; 8];
+        overrides[7] = 0x28;
+        apply_installed_gfx_display_override(
+            &mut resolved,
+            &project,
+            lm_profile::smw_us_v1_vanilla_graphics_layout(),
+            &overrides,
+        )
+        .unwrap();
+        assert_eq!(resolved.vram.foreground_background.len(), 8 * 128);
+        assert!(
+            resolved.vram.foreground_background[7 * 128..]
+                .iter()
+                .any(|tile| tile.pixels().iter().any(|&pixel| pixel != 0))
+        );
+        assert!(
+            resolved.vram.foreground_background[4 * 128..7 * 128]
                 .iter()
                 .all(|tile| tile == &blank)
         );

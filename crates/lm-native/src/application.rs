@@ -204,6 +204,8 @@ pub(crate) struct NativeApplication {
     ips_sibling_save_warning: Option<IpsSiblingSaveIntent>,
     ips_sibling_save_authorized: bool,
     two_bpp_view_confirmation: bool,
+    gfx_display_override: crate::vanilla_map16_preview::GfxDisplayOverride,
+    gfx_display_override_form: Option<(String, String)>,
     level_view_visibility: LevelViewVisibility,
     renderer: NativeRenderState,
     vanilla_graphics_editor: VanillaGraphicsEditor,

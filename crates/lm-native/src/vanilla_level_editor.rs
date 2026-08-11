@@ -575,6 +575,7 @@ pub(crate) struct VanillaLevelEditor {
     silver_pow_active: bool,
     two_bpp_view_mode: u8,
     layer3_16x16_view_mode: u8,
+    gfx_display_override: crate::vanilla_map16_preview::GfxDisplayOverride,
     display_mario_regions: bool,
     background_512_height: bool,
     translucent_overlays: bool,
@@ -627,8 +628,7 @@ pub(crate) struct VanillaLevelEditor {
         bool,
         bool,
         lm_render::LunarMagicConditionalViewState,
-        u8,
-        u8,
+        (u8, u8, crate::vanilla_map16_preview::GfxDisplayOverride),
     )>,
     map16_texture: Option<egui::TextureHandle>,
     outline_texture: Option<egui::TextureHandle>,
@@ -2533,8 +2533,11 @@ impl VanillaLevelEditor {
             self.blue_pow_active,
             self.silver_pow_active,
             self.conditional_view_state,
-            self.two_bpp_view_mode,
-            self.layer3_16x16_view_mode,
+            (
+                self.two_bpp_view_mode,
+                self.layer3_16x16_view_mode,
+                self.gfx_display_override,
+            ),
         );
         if self.map16_key == Some(key) {
             return;
@@ -2578,6 +2581,7 @@ impl VanillaLevelEditor {
                 conditional: self.conditional_view_state,
                 two_bpp_mode: self.two_bpp_view_mode,
                 layer3_16x16_mode: self.layer3_16x16_view_mode,
+                gfx_display_override: self.gfx_display_override,
             },
             background_bank,
             background_tilemap,
@@ -4138,6 +4142,16 @@ impl VanillaLevelEditor {
 
     pub(crate) fn toolbar_open_manual_edit_dialog(&mut self) {
         self.manual_edit_dialog_open = true;
+    }
+
+    pub(crate) fn set_gfx_display_override(
+        &mut self,
+        value: crate::vanilla_map16_preview::GfxDisplayOverride,
+    ) {
+        if self.gfx_display_override != value {
+            self.gfx_display_override = value;
+            self.map16_key = None;
+        }
     }
 
     fn selected_direct_map16_records(&self) -> Result<Vec<(usize, ObjectRecord)>, String> {
@@ -25868,5 +25882,30 @@ mod tests {
             layer2_hovered_canvas_cell(Some(egui::pos2(400.0, 400.0)), canvas, 10.0, true, true),
             None
         );
+    }
+
+    #[test]
+    fn gfx_display_override_invalidates_only_when_session_values_change() {
+        let mut editor = VanillaLevelEditor::default();
+        editor.map16_key = Some((
+            1,
+            0x105,
+            0,
+            0,
+            0,
+            false,
+            false,
+            false,
+            false,
+            Default::default(),
+            (0, 0, Default::default()),
+        ));
+        editor.set_gfx_display_override(Default::default());
+        assert!(editor.map16_key.is_some());
+        let mut changed = crate::vanilla_map16_preview::GfxDisplayOverride::default();
+        changed.layer_1_2[7] = 0x123;
+        editor.set_gfx_display_override(changed);
+        assert!(editor.map16_key.is_none());
+        assert_eq!(editor.gfx_display_override, changed);
     }
 }

@@ -338,6 +338,7 @@ mod tests {
             animation_phase: Some(2),
             special_world_passed: false,
             visibility: crate::application::LevelViewVisibility::default(),
+            gfx_display_override: Default::default(),
         }
     }
 

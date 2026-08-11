@@ -43,6 +43,7 @@ pub(crate) struct VanillaAnimationViewState {
     pub(crate) conditional: lm_render::LunarMagicConditionalViewState,
     pub(crate) two_bpp_mode: u8,
     pub(crate) layer3_16x16_mode: u8,
+    pub(crate) gfx_display_override: GfxDisplayOverride,
 }
 
 impl Default for VanillaAnimationViewState {
@@ -53,8 +54,46 @@ impl Default for VanillaAnimationViewState {
             conditional: lm_render::LunarMagicConditionalViewState::default(),
             two_bpp_mode: 0,
             layer3_16x16_mode: 0,
+            gfx_display_override: GfxDisplayOverride::default(),
         }
     }
+}
+
+/// Lunar Magic's session-only `GFX Display Override` values.
+///
+/// Each `$7F` entry delegates to the level's real assignment. Other values select an explicit
+/// GFX/ExGFX file for editor display only; these values are deliberately never written to ROM.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct GfxDisplayOverride {
+    pub(crate) layer_1_2: [u16; 8],
+    pub(crate) layer_3: [u16; 8],
+}
+
+impl Default for GfxDisplayOverride {
+    fn default() -> Self {
+        Self {
+            layer_1_2: [0x7f; 8],
+            layer_3: [0x7f; 8],
+        }
+    }
+}
+
+fn apply_display_override<const N: usize>(
+    mut files: [usize; N],
+    overrides: &[u16; 8],
+) -> [usize; N] {
+    for (file, &override_file) in files.iter_mut().zip(overrides) {
+        if override_file != 0x7f {
+            *file = usize::from(override_file);
+        }
+    }
+    files
+}
+
+fn layer_1_2_display_files(real: [usize; 4], overrides: &[u16; 8]) -> [usize; 8] {
+    let mut files = [0x7f; 8];
+    files[..real.len()].copy_from_slice(&real);
+    apply_display_override(files, overrides)
 }
 
 pub(crate) fn compose_native_map16_plane(
@@ -176,6 +215,7 @@ const LAYER3_SLOT_TILES: usize = 0x80;
 const LAYER1_SPRITE_SLOT_TILES: usize = 0x80;
 const LAYER1_SPRITE_SLOT_STRIDE: usize = LAYER1_SPRITE_SLOT_TILES;
 const LAYER1_SPRITE_GLOBAL_TILES: usize = 4 * LAYER1_SPRITE_SLOT_STRIDE;
+const LAYER1_DISPLAY_TILES: usize = 8 * LAYER1_SPRITE_SLOT_STRIDE;
 const GFX33_DECODED_TILE_PADDING: usize = 0x30;
 
 pub(crate) const INTERNAL_GRAPHICS_CACHE_TILES: usize = 0x4000;
@@ -808,17 +848,27 @@ fn render_with_editor_palette_phase_and_animation_view_state(
     let graphics_files =
         lm_profile::smw_us_v1_object_tileset_graphics_files(&project.rom, usize::from(tileset))
             .map_err(|error| error.to_string())?;
-    let graphics_slots =
-        load_layer1_sprite_graphics_slots(&project, graphics_files, convert_berry_gfx_tile)?;
+    let display_graphics_files = layer_1_2_display_files(
+        graphics_files,
+        &animation_view_state.gfx_display_override.layer_1_2,
+    );
+    let graphics_slots = load_layer1_sprite_graphics_slots(
+        &project,
+        display_graphics_files,
+        convert_berry_gfx_tile,
+    )?;
     let mut base_foreground_graphics = materialize_layer1_sprite_vram(&graphics_slots);
     apply_lunar_magic_two_bpp_view(
         &mut base_foreground_graphics,
         animation_view_state.two_bpp_mode,
     );
-    let background_graphics_files = game_graphics_files(level, header, graphics_files);
+    let background_display_graphics_files = layer_1_2_display_files(
+        game_graphics_files(level, header, graphics_files),
+        &animation_view_state.gfx_display_override.layer_1_2,
+    );
     let background_graphics_slots = load_layer1_sprite_graphics_slots(
         &project,
-        background_graphics_files,
+        background_display_graphics_files,
         convert_berry_gfx_tile,
     )?;
     let mut base_background_graphics = materialize_layer1_sprite_vram(&background_graphics_slots);
@@ -967,10 +1017,11 @@ fn render_with_editor_palette_phase_and_animation_view_state(
     let sprite_image = render_sprite_graphics_atlas(&sprite_graphics, &palette);
     let entrance_image = render_default_entrance_marker(&project, &palette)?;
     let foreground_image = render_foreground_graphics_atlas(&foreground_graphics, &palette);
-    let layer3_tiles = load_layer3_tiles(
+    let layer3_tiles = load_layer3_tiles_with_override(
         &project,
         usize::from(level),
         lm_profile::smw_us_v1_vanilla_graphics_layout(),
+        &animation_view_state.gfx_display_override.layer_3,
     )?;
     let entrance = project
         .load_vanilla_main_entrance(
@@ -1024,8 +1075,12 @@ fn render_with_editor_palette_phase_and_animation_view_state(
         layer3_position,
         layer3_editor_row_offset,
         layer3_between_background_and_foreground,
-        graphics_files,
-        background_graphics_files,
+        graphics_files: display_graphics_files[..4]
+            .try_into()
+            .expect("four display slots"),
+        background_graphics_files: background_display_graphics_files[..4]
+            .try_into()
+            .expect("four display slots"),
         sprite_image,
         animated_sprite_images,
         entrance_image,
@@ -2235,10 +2290,19 @@ pub(crate) fn load_layer3_tiles(
     level: usize,
     graphics_layout: lm_project::GraphicsRomLayout,
 ) -> Result<Vec<IndexedTile>, String> {
+    load_layer3_tiles_with_override(project, level, graphics_layout, &[0x7f; 8])
+}
+
+pub(crate) fn load_layer3_tiles_with_override(
+    project: &Project,
+    level: usize,
+    graphics_layout: lm_project::GraphicsRomLayout,
+    overrides: &[u16; 8],
+) -> Result<Vec<IndexedTile>, String> {
     let settings = lm_profile::load_smw_us_v1_expanded_level_settings(project, level)
         .map_err(|error| error.to_string())?
         .settings;
-    load_layer3_tiles_from_settings(project, &settings, graphics_layout)
+    load_layer3_tiles_from_settings_with_override(project, &settings, graphics_layout, overrides)
 }
 
 fn load_layer3_tiles_from_settings(
@@ -2246,16 +2310,28 @@ fn load_layer3_tiles_from_settings(
     settings: &lm_level::ExpandedLevelSettingsRecord,
     graphics_layout: lm_project::GraphicsRomLayout,
 ) -> Result<Vec<IndexedTile>, String> {
-    let files = [
-        usize::from(settings.word(15).map_err(|error| error.to_string())? & 0x0fff),
-        usize::from(settings.word(14).map_err(|error| error.to_string())? & 0x0fff),
-        usize::from(settings.word(13).map_err(|error| error.to_string())? & 0x0fff),
-        usize::from(settings.word(12).map_err(|error| error.to_string())? & 0x0fff),
-        0x7f,
-        0x7f,
-        0x7f,
-        0x7f,
-    ];
+    load_layer3_tiles_from_settings_with_override(project, settings, graphics_layout, &[0x7f; 8])
+}
+
+fn load_layer3_tiles_from_settings_with_override(
+    project: &Project,
+    settings: &lm_level::ExpandedLevelSettingsRecord,
+    graphics_layout: lm_project::GraphicsRomLayout,
+    overrides: &[u16; 8],
+) -> Result<Vec<IndexedTile>, String> {
+    let files = apply_display_override(
+        [
+            usize::from(settings.word(15).map_err(|error| error.to_string())? & 0x0fff),
+            usize::from(settings.word(14).map_err(|error| error.to_string())? & 0x0fff),
+            usize::from(settings.word(13).map_err(|error| error.to_string())? & 0x0fff),
+            usize::from(settings.word(12).map_err(|error| error.to_string())? & 0x0fff),
+            0x7f,
+            0x7f,
+            0x7f,
+            0x7f,
+        ],
+        overrides,
+    );
     let mut tiles = Vec::with_capacity(files.len() * LAYER3_SLOT_TILES);
     for file in files {
         if file == 0x7f {
@@ -2282,14 +2358,20 @@ fn load_layer3_tiles_from_settings(
     Ok(tiles)
 }
 
-fn load_layer1_sprite_graphics_slots(
+fn load_layer1_sprite_graphics_slots<const N: usize>(
     project: &Project,
-    files: [usize; 4],
+    files: [usize; N],
     convert_berry_gfx_tile: bool,
 ) -> Result<Vec<Vec<IndexedTile>>, String> {
     files
         .into_iter()
         .map(|file| {
+            if file == 0x7f {
+                return Ok(vec![
+                    IndexedTile::new([0; IndexedTile::PIXEL_COUNT]);
+                    LAYER1_SPRITE_SLOT_TILES
+                ]);
+            }
             let decoded = project
                 .load_decompressed_graphics_file(
                     file,
@@ -2361,8 +2443,8 @@ const fn vanilla_graphics_bitplanes(decoded_len: usize) -> Option<u8> {
 
 fn materialize_layer1_sprite_vram(slots: &[Vec<IndexedTile>]) -> Vec<IndexedTile> {
     let blank = IndexedTile::new([0; IndexedTile::PIXEL_COUNT]);
-    let mut tiles = vec![blank; LAYER1_SPRITE_GLOBAL_TILES];
-    for (slot, source) in slots.iter().take(4).enumerate() {
+    let mut tiles = vec![blank; slots.len().max(4) * LAYER1_SPRITE_SLOT_STRIDE];
+    for (slot, source) in slots.iter().enumerate() {
         let start = slot * LAYER1_SPRITE_SLOT_STRIDE;
         let len = source.len().min(LAYER1_SPRITE_SLOT_TILES);
         tiles[start..start + len].clone_from_slice(&source[..len]);
@@ -3391,7 +3473,7 @@ mod tests {
                     >= preview.foreground_tiles.len()
             })
             .count();
-        assert_eq!(preview.foreground_tiles.len(), LAYER1_SPRITE_GLOBAL_TILES);
+        assert_eq!(preview.foreground_tiles.len(), LAYER1_DISPLAY_TILES);
         let animated = project
             .load_decompressed_graphics_file(
                 0,
@@ -4078,5 +4160,63 @@ mod two_bpp_tests {
         assert_ne!(normal, contiguous);
         assert_ne!(normal, banded);
         assert_ne!(contiguous, banded);
+    }
+
+    #[test]
+    fn gfx_display_override_replaces_only_non_7f_slots() {
+        let files = [0x14, 0x17, 0x19, 0x15];
+        let mut overrides = [0x7f; 8];
+        overrides[1] = 0x123;
+        overrides[3] = 0;
+        assert_eq!(
+            apply_display_override(files, &overrides),
+            [0x14, 0x123, 0x19, 0]
+        );
+    }
+
+    #[test]
+    fn gfx_display_override_changes_preview_without_mutating_rom() {
+        let bytes = crate::test_support::pristine_smw_us_rom_bytes();
+        let image = RomImage::from_bytes(bytes.clone()).unwrap();
+        let project = Project::new(image);
+        let level = project
+            .load_level_slot(
+                0x105,
+                lm_profile::smw_us_v1_vanilla_level_layout(),
+                &lm_level::SpriteLengthTable::standard(),
+            )
+            .unwrap();
+        let ordinary = render_with_animation_view_state(
+            bytes.clone(),
+            0x105,
+            level.layer1.header,
+            false,
+            false,
+            VanillaAnimationViewState::default(),
+        )
+        .unwrap();
+        let mut state = VanillaAnimationViewState::default();
+        state.gfx_display_override.layer_1_2[0] = 0;
+        state.gfx_display_override.layer_1_2[7] = 0x28;
+        state.gfx_display_override.layer_3[0] = 0x29;
+        let overridden = render_with_animation_view_state(
+            bytes.clone(),
+            0x105,
+            level.layer1.header,
+            false,
+            false,
+            state,
+        )
+        .unwrap();
+        assert_eq!(overridden.graphics_files[0], 0);
+        assert_ne!(ordinary.image, overridden.image);
+        assert_eq!(overridden.foreground_tiles.len(), LAYER1_DISPLAY_TILES);
+        assert!(
+            overridden.foreground_tiles[7 * LAYER1_SPRITE_SLOT_TILES..]
+                .iter()
+                .any(|tile| tile.pixels().iter().any(|&pixel| pixel != 0))
+        );
+        assert_ne!(ordinary.layer3_tiles, overridden.layer3_tiles);
+        assert_eq!(bytes, crate::test_support::pristine_smw_us_rom_bytes());
     }
 }

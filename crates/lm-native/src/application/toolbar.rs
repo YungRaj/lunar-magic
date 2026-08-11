@@ -215,6 +215,48 @@ impl NativeApplication {
             ui.separator();
             self.user_toolbar(context, ui);
         }
+        self.show_gfx_display_override_dialog(context);
+    }
+
+    fn show_gfx_display_override_dialog(&mut self, context: &egui::Context) {
+        let Some((mut layer_1_2, mut layer_3)) = self.gfx_display_override_form.take() else {
+            return;
+        };
+        let mut open = true;
+        let mut apply = false;
+        let mut cancel = false;
+        egui::Window::new("GFX Display Override (in hex)")
+            .open(&mut open)
+            .collapsible(false)
+            .show(context, |ui| {
+                ui.horizontal(|ui| {
+                    ui.label("Layer 1/2");
+                    ui.text_edit_singleline(&mut layer_1_2);
+                });
+                ui.horizontal(|ui| {
+                    ui.label("Layer 3");
+                    ui.text_edit_singleline(&mut layer_3);
+                });
+                ui.label("Note that this is for design purposes only.  The ROM is not affected by these settings.  Set a slot to 7F to use the real setting.");
+                ui.horizontal(|ui| {
+                    apply = ui.button("OK").clicked();
+                    cancel = ui.button("Cancel").clicked();
+                });
+            });
+        if cancel {
+            open = false;
+        }
+        if apply {
+            apply_gfx_display_override_line(&layer_1_2, &mut self.gfx_display_override.layer_1_2);
+            apply_gfx_display_override_line(&layer_3, &mut self.gfx_display_override.layer_3);
+            self.vanilla_level_editor
+                .set_gfx_display_override(self.gfx_display_override);
+            self.rom_level_assets_editor
+                .set_gfx_display_override(self.gfx_display_override);
+            self.renderer.invalidate();
+        } else if open {
+            self.gfx_display_override_form = Some((layer_1_2, layer_3));
+        }
     }
 
     fn user_toolbar(&mut self, context: &egui::Context, ui: &mut egui::Ui) {
@@ -490,6 +532,18 @@ impl NativeApplication {
                     .toolbar_toggle_mario_regions()
                     .into();
                 self.renderer.invalidate();
+            }
+            UserToolbarNativeAction::GfxDisplayOverride => {
+                if self
+                    .app
+                    .controller_snapshot()
+                    .is_ok_and(|snapshot| matches!(snapshot.mode, lm_app::EditorMode::Level(_)))
+                {
+                    self.gfx_display_override_form = Some((
+                        format_gfx_display_override(self.gfx_display_override.layer_1_2),
+                        format_gfx_display_override(self.gfx_display_override.layer_3),
+                    ));
+                }
             }
             UserToolbarNativeAction::WarnVerticalFireballBuoyancy => {
                 self.set_warn_vertical_fireball_buoyancy(
@@ -1883,6 +1937,7 @@ enum UserToolbarNativeAction {
     Layer3SixteenBySixteenMode,
     BackgroundEditorOwned,
     DisplayMarioRegions,
+    GfxDisplayOverride,
     WarnVerticalFireballBuoyancy,
     GfxBypassListDialogs,
     JoinedGraphicsFiles,
@@ -2006,6 +2061,7 @@ fn user_toolbar_native_action(name: &str) -> Option<UserToolbarNativeAction> {
         "LM_KEY_LAYER3_16X16_MODE" => UserToolbarNativeAction::Layer3SixteenBySixteenMode,
         "LM_KEY_BGEDIT_ONTOP" => UserToolbarNativeAction::BackgroundEditorOwned,
         "LM_KEY_MARIO_REGIONS" => UserToolbarNativeAction::DisplayMarioRegions,
+        "LM_KEY_GFX_OVERRIDE" => UserToolbarNativeAction::GfxDisplayOverride,
         "LM_OPTIONS_WARN_SPRITE_33" => UserToolbarNativeAction::WarnVerticalFireballBuoyancy,
         "LM_OPTIONS_INSTALL_VRAM" => UserToolbarNativeAction::GfxBypassListDialogs,
         "LM_OPTIONS_ATTACH_FILES" => UserToolbarNativeAction::JoinedGraphicsFiles,
@@ -2173,6 +2229,24 @@ fn user_toolbar_native_action(name: &str) -> Option<UserToolbarNativeAction> {
         ),
         _ => return None,
     })
+}
+
+fn format_gfx_display_override(values: [u16; 8]) -> String {
+    values
+        .into_iter()
+        .map(|value| format!("{value:X}"))
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+fn apply_gfx_display_override_line(text: &str, values: &mut [u16; 8]) {
+    for (slot, token) in values.iter_mut().zip(text.split_whitespace()) {
+        if let Ok(value) = u16::from_str_radix(token.trim_start_matches('$'), 16)
+            && value < 0x1000
+        {
+            *slot = value;
+        }
+    }
 }
 
 fn configured_snes_emulator_tool_id(tools: &[lm_app::ExternalTool]) -> Option<String> {
@@ -3062,7 +3136,7 @@ mod user_toolbar_tests {
                     || user_toolbar_native_action(entry.name).is_some()
             })
             .collect::<Vec<_>>();
-        assert_eq!(supported.len(), 306);
+        assert_eq!(supported.len(), 307);
         assert!(
             supported
                 .iter()
@@ -3612,6 +3686,27 @@ mod user_toolbar_tests {
     }
 
     #[test]
+    fn gfx_display_override_command_routes_to_the_original_session_dialog() {
+        assert_eq!(
+            user_toolbar_native_action("LM_KEY_GFX_OVERRIDE"),
+            Some(UserToolbarNativeAction::GfxDisplayOverride)
+        );
+        let mut native = NativeApplication::default();
+        native.apply_user_toolbar_native_action(
+            &egui::Context::default(),
+            UserToolbarNativeAction::GfxDisplayOverride,
+        );
+        assert!(native.gfx_display_override_form.is_none());
+        assert_eq!(
+            format_gfx_display_override([0x7f; 8]),
+            "7F 7F 7F 7F 7F 7F 7F 7F"
+        );
+        let mut values = [0x7f; 8];
+        apply_gfx_display_override_line("1 $2 nope 1000 00A", &mut values);
+        assert_eq!(values, [1, 2, 0x7f, 0x7f, 0x0a, 0x7f, 0x7f, 0x7f]);
+    }
+
+    #[test]
     fn historical_install_vram_command_toggles_gfx_bypass_dialog_style() {
         let mut native = NativeApplication::default();
         assert_eq!(native.gfx_bypass_list_dialogs, None);
@@ -4008,7 +4103,7 @@ mod user_toolbar_tests {
                     && user_toolbar_native_action(entry.name).is_none()
             })
             .collect::<Vec<_>>();
-        assert_eq!(unsupported.len(), 11);
+        assert_eq!(unsupported.len(), 10);
         if std::env::var_os("LM_DIAGNOSTIC_UNSUPPORTED_TOOLBAR_COMMANDS").is_some() {
             for entry in unsupported {
                 eprintln!(
