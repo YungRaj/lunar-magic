@@ -27,6 +27,10 @@ impl LunarMagicRomMetadata {
     pub const ATTRIBUTION_LEN: usize = 0xa0;
     pub const FEATURE_LEN: usize = 0x19;
     pub const SIGNATURE: &'static [u8] = b"Lunar Magic Version ";
+    pub const FASTROM_MARKER: u8 = b'B';
+    const USE_FASTROM_INDEX: usize = 6;
+    const FASTROM_EVER_ENABLED_INDEX: usize = 7;
+    const FASTROM_PATCH_INDEX: usize = 8;
 
     /// Constructs an exact metadata snapshot while validating its stable framing.
     ///
@@ -90,6 +94,45 @@ impl LunarMagicRomMetadata {
         self.feature_record[5]
     }
 
+    /// Whether newly saved pointers use the FastROM `$80-$FF` LoROM mirrors.
+    #[must_use]
+    pub const fn use_fastrom_addressing(&self) -> bool {
+        self.feature_record[Self::USE_FASTROM_INDEX] == Self::FASTROM_MARKER
+    }
+
+    /// Whether FastROM addressing was ever enabled, permanently ruling out later ExLoROM use.
+    #[must_use]
+    pub const fn fastrom_ever_enabled(&self) -> bool {
+        self.feature_record[Self::FASTROM_EVER_ENABLED_INDEX] == Self::FASTROM_MARKER
+    }
+
+    /// Whether Lunar Magic's irreversible original-game FastROM speed patch is installed.
+    #[must_use]
+    pub const fn fastrom_speed_patch_applied(&self) -> bool {
+        self.feature_record[Self::FASTROM_PATCH_INDEX] == Self::FASTROM_MARKER
+    }
+
+    /// Returns an exact metadata copy with the ROM-scoped addressing option updated.
+    /// Enabling permanently records the historical lock; disabling never clears that lock.
+    #[must_use]
+    pub fn with_use_fastrom_addressing(&self, enabled: bool) -> Self {
+        let mut updated = self.clone();
+        updated.feature_record[Self::USE_FASTROM_INDEX] =
+            if enabled { Self::FASTROM_MARKER } else { 0 };
+        if enabled {
+            updated.feature_record[Self::FASTROM_EVER_ENABLED_INDEX] = Self::FASTROM_MARKER;
+        }
+        updated
+    }
+
+    /// Returns an exact metadata copy with the irreversible speed-patch marker installed.
+    #[must_use]
+    pub fn with_fastrom_speed_patch_applied(&self) -> Self {
+        let mut updated = self.clone();
+        updated.feature_record[Self::FASTROM_PATCH_INDEX] = Self::FASTROM_MARKER;
+        updated
+    }
+
     #[must_use]
     pub fn runtime_pointer(&self, index: usize) -> Option<u32> {
         let start = 9usize.checked_add(index.checked_mul(3)?)?;
@@ -124,5 +167,31 @@ mod tests {
         assert_eq!(metadata.runtime_pointer(0), Some(0x03_0201));
         assert_eq!(metadata.runtime_pointer(4), Some(0x0f_0e0d));
         assert_eq!(metadata.runtime_pointer(5), None);
+    }
+
+    #[test]
+    fn fastrom_markers_preserve_the_irreversible_history_contract() {
+        let mut attribution = [b' '; LunarMagicRomMetadata::ATTRIBUTION_LEN];
+        attribution[..LunarMagicRomMetadata::SIGNATURE.len()]
+            .copy_from_slice(LunarMagicRomMetadata::SIGNATURE);
+        let metadata = LunarMagicRomMetadata::from_parts(
+            &attribution,
+            1,
+            &[0; LunarMagicRomMetadata::FEATURE_LEN],
+        )
+        .unwrap();
+        assert!(!metadata.use_fastrom_addressing());
+        assert!(!metadata.fastrom_ever_enabled());
+        assert!(!metadata.fastrom_speed_patch_applied());
+
+        let enabled = metadata.with_use_fastrom_addressing(true);
+        assert!(enabled.use_fastrom_addressing());
+        assert!(enabled.fastrom_ever_enabled());
+        let disabled = enabled.with_use_fastrom_addressing(false);
+        assert!(!disabled.use_fastrom_addressing());
+        assert!(disabled.fastrom_ever_enabled());
+        let patched = disabled.with_fastrom_speed_patch_applied();
+        assert!(patched.fastrom_speed_patch_applied());
+        assert_eq!(patched.feature_record()[6..9], [0, b'B', b'B']);
     }
 }

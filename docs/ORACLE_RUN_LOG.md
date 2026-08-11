@@ -1361,3 +1361,14 @@ policy. Exhaustive boundary tests prove both mirrors resolve to identical cartri
 preserve the mandatory `$FE/$FF` mirrors for the WRAM-shadowed final 64 KiB. The focused lm-rom
 gate passes 38/38. The two commands remain pending until their ROM marker and atomic save-time
 consumer are authenticated and wired; command coverage therefore remains 313/317.
+
+## FastROM live marker and patch capture (2026-08-11)
+
+A live Lunar Magic 3.63 Wine session on a disposable 2 MiB ordinary-LoROM oracle confirmed the
+option warning, state byte `$005E78FB`, and save-time feature-record transitions `00 00 00 ->
+42 42 00 -> 42 42 42`. The patch save changed 1,804 physical bytes: 909 were directly explained
+by the recovered 916-entry Ersanio JSL table, with the remainder belonging to the additional
+authenticated pointer-table passes, hook/RATS installation, metadata, and checksum. Rust now
+models all three ROM markers and preserves the irreversible history bit when current addressing
+is disabled. The focused lm-rom gate passes 39/39; command coverage remains 313/317 until the
+complete transaction is wired.

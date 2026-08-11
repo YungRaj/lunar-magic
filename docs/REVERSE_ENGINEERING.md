@@ -5136,3 +5136,16 @@ irreversible next-level-save action that rewrites original-game 24-bit pointers 
 speed-enabling ASM. Both are unavailable for ExLoROM and special-chip ROMs. Ordinary slow LoROM
 cannot encode payload in CPU banks `$7E/$7F` because they are WRAM, so offsets `$3F0000..$3FFFFF`
 must use their `$FE/$FF` mirrors even when Use FastROM is disabled.
+
+The 32-byte ROM feature record loaded at `$0047C6A2..$0047C6B0` places these markers at feature
+indexes 6, 7, and 8. Live Wine oracle saves establish their meanings byte-for-byte: a normal save
+has `00 00 00`; enabling Use FastROM and saving produces `42 42 00`; then applying the speed patch
+and saving produces `42 42 42`. Index 6 is the current addressing choice, index 7 is the permanent
+“ever enabled” ExLoROM lock, and index 8 records the installed speed patch. Disabling addressing
+therefore clears only index 6.
+
+`ApplyFastRomPatch` begins at `$00490320`. Its Ersanio source-address table is 916 dwords at
+`$005E8E90..$005E9CDF`. For each listed original-game JSL, the loop resolves the ROM address,
+requires opcode `$22`, a target word in `$8000..$FFFF`, and a target bank below `$10`, then sets
+the bank's high bit. The same transaction installs the speed-enable hook and marks feature index
+8, explaining why unchecking the option cannot reverse it.
