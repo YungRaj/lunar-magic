@@ -6274,3 +6274,16 @@ color, recovers and reopens the expanded ExLoROM image, and reads the replacemen
 palette ROM layout while proving the live project was never committed.
 The complete native gate passes 1,163 active tests with 11 explicit fixture/device ignores,
 including all 512 pristine-level render materializations; the renderer remains 237/237.
+
+## Crash recovery includes staged installed-ROM Map16
+
+The installed Map16 editor now contributes controller revisions to the shared recovery generation
+and prepares its normal profile-backed or native-SMW mutation against an isolated project clone.
+This covers complete foreground/background definitions and foreground Acts Like data, including
+the native 512 KiB to 1 MiB allocation path. Recovery does not expand or dirty the live ROM. The
+coordinator now counts staged level, palette, and Map16 workspaces and refuses to publish a partial
+record when more than one independently allocating editor is dirty. The focused test changes a
+native subtile, reopens it through the complete SMW Map16 loader from the recovery image, and proves
+the live project remains clean, unexpanded, and history-free.
+The complete native gate passes 1,164 active tests with 11 explicit fixture/device ignores,
+including the 512-level materialization audit; all 237 renderer tests pass.

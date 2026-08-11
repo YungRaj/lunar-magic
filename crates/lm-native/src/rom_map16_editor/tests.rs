@@ -686,6 +686,34 @@ fn ordinary_rom_gui_route_edits_and_commits_native_map16() {
 }
 
 #[test]
+fn staged_native_map16_edit_is_recovered_without_committing_live_project() {
+    let mut app = AppState::default();
+    app.load_rom(pristine_fixture()).unwrap();
+    app.dispatch(Command::ShowMap16).unwrap();
+    let mut editor = RomMap16Editor::default();
+    editor.open(&app);
+    let replacement = Subtile(0x2345);
+    editor.apply(Map16ControllerEdit::SetSubtile {
+        address: Map16Address { page: 0, tile: 0 },
+        quadrant: Map16Quadrant::BottomRight,
+        subtile: replacement,
+        resolution_limit: 0x1_0000,
+    });
+
+    assert!(editor.staged_recovery_generation(&app).is_some());
+    let recovery = editor.staged_recovery_snapshot(&app).unwrap().unwrap();
+    assert_eq!(app.capabilities().project, lm_app::ProjectStatus::OpenClean);
+    assert_eq!(app.project().unwrap().history.undo_len(), 0);
+    assert_eq!(app.project().unwrap().rom.logical_len(), 0x80_000);
+
+    let mut reopened = AppState::default();
+    reopened.load_recovery(recovery).unwrap();
+    assert_eq!(reopened.project().unwrap().rom.logical_len(), 0x10_0000);
+    let map16 = load_smw_us_v1_complete_map16(reopened.project().unwrap()).unwrap();
+    assert_eq!(map16.foreground.definitions[3], replacement.0);
+}
+
+#[test]
 fn complete_lunar_magic_file_import_commits_and_reopens_every_domain() {
     let mut app = AppState::default();
     app.load_rom(pristine_fixture()).unwrap();

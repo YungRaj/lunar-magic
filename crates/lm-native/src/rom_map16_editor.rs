@@ -228,6 +228,39 @@ pub(crate) struct RomMap16Editor {
 }
 
 impl RomMap16Editor {
+    pub(crate) fn staged_recovery_generation(&self, app: &AppState) -> Option<u64> {
+        let workspace = self.workspace.as_ref()?;
+        workspace.controller.is_modified().then(|| {
+            app.project_revision().wrapping_mul(0xa076_1d64_78bd_642f)
+                ^ workspace.controller.revision().rotate_left(23)
+                ^ 0x4d41_5031_3600_0000
+        })
+    }
+
+    pub(crate) fn staged_recovery_snapshot(
+        &self,
+        app: &AppState,
+    ) -> Result<Option<lm_app::RecoverySnapshot>, String> {
+        let workspace = self.workspace.as_ref().ok_or("Map16 workspace is closed")?;
+        if !workspace.controller.is_modified() {
+            return Ok(app.recovery_snapshot());
+        }
+        let command = self.prepare_commit()?;
+        let Command::CommitRomMutation {
+            expected_revision,
+            mutation,
+            ..
+        } = command
+        else {
+            return Err("Map16 recovery expected one prepared ROM mutation".into());
+        };
+        if expected_revision != app.project_revision() {
+            return Err("Map16 recovery mutation was prepared from a stale revision".into());
+        }
+        app.recovery_snapshot_with_mutation(&mutation, None)
+            .map_err(|error| error.to_string())
+    }
+
     pub(crate) const fn selection_generation(&self) -> u64 {
         self.selection_generation
     }
