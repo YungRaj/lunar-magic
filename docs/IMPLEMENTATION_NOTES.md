@@ -6301,6 +6301,20 @@ the live application remains clean. Multi-editor collision detection now include
 The complete native gate passes 1,165 active tests with 11 explicit fixture/device ignores,
 including all 512 pristine levels; all 237 renderer tests pass.
 
+## Left-origin full-level canvas regression repair
+
+The native level editor's scroll-area child now uses an explicit top-left layout. Inheriting the
+centered parent layout placed a wide level canvas several screens left of its nominal origin before
+the requested scroll offset was applied; later screens consequently showed only the repeating
+background even though their Layer 1 objects and sprites had decoded correctly. The canvas extent
+is also capped by the declared level span plus genuinely staged placements, so a resizable object
+clipped at the 32-screen renderer boundary cannot manufacture trailing blank screens.
+
+A fresh pristine level `$105` editor audit at screen offsets `$0`, `$6`, and `$8` renders the
+entrance and the distinct expected mid-level platforms, pipes, blocks, entrances, and sprites.
+The complete native gate passes 1,166 tests with 11 explicit fixture ignores, including all 512
+pristine-level materializations; the renderer remains green at 237/237.
+
 ## Crash recovery includes staged overworld terrain and aggregates
 
 The installed overworld editor now contributes its full staged generation: complete-overworld

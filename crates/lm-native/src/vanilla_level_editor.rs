@@ -2958,10 +2958,18 @@ impl VanillaLevelEditor {
             .copied()
             .collect::<Vec<_>>();
         let mut major_tiles = canvas_major_tiles(&visible_objects, &sprite_placements);
+        let declared_major_tiles = self.controller.as_ref().map_or(16, |controller| {
+            (u16::from(controller.level().layer1.header.last_screen()) + 1).saturating_mul(16)
+        });
         let mode_major_tiles =
             u16::from(lm_profile::smw_us_v1_level_mode(level_mode).editor_major_screens)
                 .saturating_mul(16);
-        major_tiles = major_tiles.max(mode_major_tiles);
+        major_tiles = major_tiles.max(declared_major_tiles).max(mode_major_tiles);
+        // Resizable objects are rendered into a 32-screen cache, so a shape that reaches the
+        // cache boundary can report a 512-tile extent even when the level header declares a much
+        // shorter level. Keep genuinely staged placements visible, but do not turn that clipped
+        // renderer extent into scrollable blank screens beyond the declared level.
+        let placement_major_tiles = major_tiles;
         // A horizontal SMW screen is 16×27 tiles. Byte 0 bit $10 places objects in its lower
         // 11-tile region; parameter nibbles describe command geometry and are not canvas bounds.
         let mut minor_tiles = if vertical {
@@ -2986,12 +2994,16 @@ impl VanillaLevelEditor {
                 minor_tiles = minor_tiles.max(rendered_minor);
             }
         }
-        if !layer2_tilemap.is_empty() {
+        let canvas_major_ceiling = if !layer2_tilemap.is_empty() {
             // The SNES background plane is 32×32 and wraps while the camera traverses the level.
             // It guarantees one screen-pair along the level's major axis, but its off-viewport
             // second half must not double the editable minor axis of an ordinary level.
             major_tiles = major_tiles.max(32);
-        }
+            placement_major_tiles.max(32)
+        } else {
+            placement_major_tiles
+        };
+        major_tiles = major_tiles.min(canvas_major_ceiling);
         let game_preview = self.game_preview();
         let snes_viewport = game_preview && self.snes_viewport();
         self.show_canvas_tools(ui, major_tiles, minor_tiles, vertical, live_frame.is_some());
@@ -3181,7 +3193,10 @@ impl VanillaLevelEditor {
             paint_canvas(ui);
             return;
         }
-        let scroll_output = scroll_area.show(ui, paint_canvas);
+        let scroll_output = scroll_area.show(ui, |ui| {
+            ui.with_layout(egui::Layout::top_down(egui::Align::Min), paint_canvas)
+                .inner
+        });
         if !snes_viewport && let Some(requested) = requested_vertical_scroll {
             let target = clamped_scroll_offset(
                 requested,
