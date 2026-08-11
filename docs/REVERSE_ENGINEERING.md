@@ -4952,7 +4952,7 @@ authenticated command partition.
 ## Level mouse-gesture options
 
 Commands `$24C8/$24C9` (`LM_OPTIONS_MOUSE_GESTURES` and `LM_OPTIONS_SAVE_GESTURES`) map to central
-dispatch cases `$6B/$6C`. `SynchronizeApplicationSettingsRegistry` stores gesture enable byte
+dispatch cases `$91/$92`. `SynchronizeApplicationSettingsRegistry` stores gesture enable byte
 `$005E7AE1` in `Options` bit 12 and auto-save byte `$00E278C1` in bit 30; their initialized values
 are one and zero respectively. `BeginLevelEditorSwipeGesture` at `$00489E50` captures the
 right-button start point when enabled. `HandleLevelEditorSwipeGesture` at `$00489E80` accepts any
@@ -4966,6 +4966,17 @@ check before sending previous/next-level commands `$2391/$2390`. The CHM additio
 the UI conflict rule: unmodified gestures operate when object/sprite editor windows are closed,
 Shift forces history gestures regardless of those windows, and Shift+Alt/Alt select the specialized
 routes.
+
+## Vertical-fireball buoyancy save check
+
+Command `$24D9` (`LM_OPTIONS_WARN_SPRITE_33`) resolves through the authenticated byte table to
+central dispatcher case `$A2`. The call at `$00497AE6` passes byte `$005E7AE6` to
+`ToggleLevelDisplayOption`; the byte initializes to one and is stored in `Options` bit 21.
+`SaveLevelToRom` at `$00483240` invokes `ReportVerticalFireballBuoyancyWarning` at `$0048BE80`
+after the exit, sprite-count, and unsafe-object checks. That helper requires the cached sprite-$33
+presence byte and tests `(sprite_header & $C0) == 0`, so either buoyancy choice suppresses it. Its
+interactive branch appends the option guidance and “Save the level anyway?” prompt; No and Cancel
+return the abort result to the enclosing save transaction.
 
 ## Dedicated overworld animation-options runtime
 

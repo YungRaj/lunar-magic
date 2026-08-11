@@ -442,6 +442,11 @@ impl NativeApplication {
             UserToolbarNativeAction::CountSpritesOnSave => {
                 self.set_count_sprites_on_save(!self.count_sprites_on_save.unwrap_or(true));
             }
+            UserToolbarNativeAction::WarnVerticalFireballBuoyancy => {
+                self.set_warn_vertical_fireball_buoyancy(
+                    !self.warn_vertical_fireball_buoyancy.unwrap_or(true),
+                );
+            }
             UserToolbarNativeAction::GfxBypassListDialogs => {
                 self.set_gfx_bypass_list_dialogs(!self.gfx_bypass_list_dialogs.unwrap_or(true));
             }
@@ -1220,6 +1225,18 @@ impl NativeApplication {
         .into();
     }
 
+    pub(super) fn set_warn_vertical_fireball_buoyancy(&mut self, enabled: bool) {
+        self.warn_vertical_fireball_buoyancy = Some(enabled);
+        self.vanilla_level_editor
+            .set_warn_vertical_fireball_buoyancy(enabled);
+        self.app.status = if enabled {
+            "Enabled vertical-fireball buoyancy warning on level save"
+        } else {
+            "Disabled vertical-fireball buoyancy warning on level save"
+        }
+        .into();
+    }
+
     pub(super) fn set_gfx_bypass_list_dialogs(&mut self, enabled: bool) {
         self.gfx_bypass_list_dialogs = Some(enabled);
         self.rom_legacy_fg_bg_bypass_editor
@@ -1748,6 +1765,7 @@ enum UserToolbarNativeAction {
     RememberWindowSize,
     ScanExitsOnSave,
     CountSpritesOnSave,
+    WarnVerticalFireballBuoyancy,
     GfxBypassListDialogs,
     JoinedGraphicsFiles,
     AutoSetScreens,
@@ -1859,6 +1877,7 @@ fn user_toolbar_native_action(name: &str) -> Option<UserToolbarNativeAction> {
         "LM_OPTIONS_WINDOW_SIZE" => UserToolbarNativeAction::RememberWindowSize,
         "LM_OPTIONS_SCAN_EXITS" => UserToolbarNativeAction::ScanExitsOnSave,
         "LM_OPTIONS_SCAN_SPRITES" => UserToolbarNativeAction::CountSpritesOnSave,
+        "LM_OPTIONS_WARN_SPRITE_33" => UserToolbarNativeAction::WarnVerticalFireballBuoyancy,
         "LM_OPTIONS_INSTALL_VRAM" => UserToolbarNativeAction::GfxBypassListDialogs,
         "LM_OPTIONS_ATTACH_FILES" => UserToolbarNativeAction::JoinedGraphicsFiles,
         "LM_OPTIONS_AUTO_SCREENS" => UserToolbarNativeAction::AutoSetScreens,
@@ -2914,7 +2933,7 @@ mod user_toolbar_tests {
                     || user_toolbar_native_action(entry.name).is_some()
             })
             .collect::<Vec<_>>();
-        assert_eq!(supported.len(), 295);
+        assert_eq!(supported.len(), 296);
         assert!(
             supported
                 .iter()
@@ -3188,6 +3207,30 @@ mod user_toolbar_tests {
             native.app.status,
             "Enabled sprite-count warning on level save"
         );
+    }
+
+    #[test]
+    fn vertical_fireball_warning_command_toggles_the_original_default_on_preference() {
+        let mut native = NativeApplication::default();
+        assert_eq!(native.warn_vertical_fireball_buoyancy, None);
+        assert_eq!(
+            user_toolbar_native_action("LM_OPTIONS_WARN_SPRITE_33"),
+            Some(UserToolbarNativeAction::WarnVerticalFireballBuoyancy)
+        );
+        native.apply_user_toolbar_native_action(
+            &egui::Context::default(),
+            UserToolbarNativeAction::WarnVerticalFireballBuoyancy,
+        );
+        assert_eq!(native.warn_vertical_fireball_buoyancy, Some(false));
+        assert_eq!(
+            native.app.status,
+            "Disabled vertical-fireball buoyancy warning on level save"
+        );
+        native.apply_user_toolbar_native_action(
+            &egui::Context::default(),
+            UserToolbarNativeAction::WarnVerticalFireballBuoyancy,
+        );
+        assert_eq!(native.warn_vertical_fireball_buoyancy, Some(true));
     }
 
     #[test]
@@ -3587,7 +3630,7 @@ mod user_toolbar_tests {
                     && user_toolbar_native_action(entry.name).is_none()
             })
             .collect::<Vec<_>>();
-        assert_eq!(unsupported.len(), 22);
+        assert_eq!(unsupported.len(), 21);
         if std::env::var_os("LM_DIAGNOSTIC_UNSUPPORTED_TOOLBAR_COMMANDS").is_some() {
             for entry in unsupported {
                 eprintln!(

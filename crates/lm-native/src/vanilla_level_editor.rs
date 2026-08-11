@@ -484,6 +484,11 @@ struct SpriteCountSaveWarning {
     command: Command,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct VerticalFireballSaveWarning {
+    command: Command,
+}
+
 #[derive(Default)]
 pub(crate) struct VanillaLevelEditor {
     key: Option<EditorKey>,
@@ -572,6 +577,7 @@ pub(crate) struct VanillaLevelEditor {
     invalid_exit_scan_result: Option<InvalidExitScanResult>,
     invalid_exit_save_warning: Option<InvalidExitSaveWarning>,
     sprite_count_save_warning: Option<SpriteCountSaveWarning>,
+    vertical_fireball_save_warning: Option<VerticalFireballSaveWarning>,
     game_preview: Option<bool>,
     snes_viewport: Option<bool>,
     draw_selection_over_live: Option<bool>,
@@ -585,6 +591,7 @@ pub(crate) struct VanillaLevelEditor {
     background_cursor_highlight: Option<bool>,
     scan_exits_on_save: Option<bool>,
     count_sprites_on_save: Option<bool>,
+    warn_vertical_fireball_buoyancy: Option<bool>,
     auto_set_screens: Option<bool>,
     allow_fragmentation: Option<bool>,
     deferred_rom_option_save: bool,
@@ -691,6 +698,13 @@ impl VanillaLevelEditor {
 
     pub(crate) fn set_count_sprites_on_save(&mut self, enabled: bool) {
         self.count_sprites_on_save = Some(enabled);
+    }
+
+    pub(crate) fn set_warn_vertical_fireball_buoyancy(&mut self, enabled: bool) {
+        self.warn_vertical_fireball_buoyancy = Some(enabled);
+        if !enabled {
+            self.vertical_fireball_save_warning = None;
+        }
     }
 
     pub(crate) fn editor_selector_selected(&mut self) {
@@ -849,7 +863,12 @@ impl VanillaLevelEditor {
                 Err(error) => self.error = Some(error),
             }
         }
-        if let Some(command) = self.show_sprite_count_save_warning(ui.ctx()) {
+        if let Some(command) = self.show_sprite_count_save_warning(ui.ctx())
+            && let Some(command) = self.request_vertical_fireball_before_save(command)
+        {
+            return Some(command);
+        }
+        if let Some(command) = self.show_vertical_fireball_save_warning(ui.ctx()) {
             return Some(command);
         }
         if let Some(command) = self.show_screen_exit_follow_confirmation(ui.ctx(), &snapshot) {
@@ -2100,6 +2119,7 @@ impl VanillaLevelEditor {
         self.invalid_exit_scan_result = None;
         self.invalid_exit_save_warning = None;
         self.sprite_count_save_warning = None;
+        self.vertical_fireball_save_warning = None;
         self.pending_layer2_mode_reset = None;
         self.canvas_entity_selection = None;
         if let Err(error) = validate_builtin_graphics_layout(snapshot) {
@@ -2304,6 +2324,7 @@ impl VanillaLevelEditor {
         self.invalid_exit_scan_result = None;
         self.invalid_exit_save_warning = None;
         self.sprite_count_save_warning = None;
+        self.vertical_fireball_save_warning = None;
         self.entrance_controller = None;
         self.secondary_exits = None;
         self.secondary_exit_references = None;
@@ -3337,7 +3358,7 @@ impl VanillaLevelEditor {
         command: Command,
     ) -> Result<Option<Command>, String> {
         if !self.count_sprites_on_save.unwrap_or(true) {
-            return Ok(Some(command));
+            return Ok(self.request_vertical_fireball_before_save(command));
         }
         let controller = self
             .controller
@@ -3348,7 +3369,12 @@ impl VanillaLevelEditor {
             snapshot.identity.mapper,
             legacy_sprite_program_uses_255_limit(&snapshot.rom_bytes)?,
         );
-        Ok(self.gate_sprite_count_save_result(count, limit, command))
+        Ok(
+            match self.gate_sprite_count_save_result(count, limit, command) {
+                Some(command) => self.request_vertical_fireball_before_save(command),
+                None => None,
+            },
+        )
     }
 
     fn gate_sprite_count_save_result(
@@ -3409,6 +3435,60 @@ impl VanillaLevelEditor {
         }
         if cancel {
             return self.resolve_sprite_count_save_warning(false);
+        }
+        None
+    }
+
+    fn request_vertical_fireball_before_save(&mut self, command: Command) -> Option<Command> {
+        if !self.warn_vertical_fireball_buoyancy.unwrap_or(true) {
+            return Some(command);
+        }
+        let Some(controller) = self.controller.as_ref() else {
+            return Some(command);
+        };
+        if !vertical_fireball_needs_buoyancy_warning(&controller.level().sprites) {
+            return Some(command);
+        }
+        self.vertical_fireball_save_warning = Some(VerticalFireballSaveWarning { command });
+        None
+    }
+
+    fn resolve_vertical_fireball_save_warning(&mut self, save_anyway: bool) -> Option<Command> {
+        let warning = self.vertical_fireball_save_warning.take()?;
+        if save_anyway {
+            return Some(warning.command);
+        }
+        self.screen_exit_follow_after_save = None;
+        self.editor_transition_after_save = None;
+        self.pending_expansion_commit = None;
+        None
+    }
+
+    fn show_vertical_fireball_save_warning(&mut self, context: &egui::Context) -> Option<Command> {
+        self.vertical_fireball_save_warning.as_ref()?;
+        let mut save_anyway = false;
+        let mut cancel = false;
+        egui::Window::new("Check if Vertical Fireball has Buoyancy")
+            .collapsible(false)
+            .resizable(false)
+            .show(context, |ui| {
+                ui.label("Sprite 33 (vertical fireball) is used in this level, but sprite buoyancy is not enabled. This will usually cause the game to freeze.");
+                ui.label("To disable this warning, turn off “Check if Vertical Fireball has Buoyancy” in Tools.");
+                ui.label("Save the level anyway?");
+                ui.horizontal(|ui| {
+                    if ui.button("Save Anyway").clicked() {
+                        save_anyway = true;
+                    }
+                    if ui.button("Cancel").clicked() {
+                        cancel = true;
+                    }
+                });
+            });
+        if save_anyway {
+            return self.resolve_vertical_fireball_save_warning(true);
+        }
+        if cancel {
+            return self.resolve_vertical_fireball_save_warning(false);
         }
         None
     }
@@ -15157,6 +15237,16 @@ fn ordinary_sprite_count(sprites: &lm_level::NativeSpriteStream) -> usize {
     sprites.native_placements().len()
 }
 
+fn vertical_fireball_needs_buoyancy_warning(sprites: &lm_level::NativeSpriteStream) -> bool {
+    let header = lm_level::NativeSpriteHeader::from_raw(sprites.header);
+    !header.buoyancy_1()
+        && !header.buoyancy_2()
+        && sprites
+            .native_placements()
+            .iter()
+            .any(|placement| placement.sprite_number == 0x33)
+}
+
 fn workspace_tool_width(available_width: f32) -> f32 {
     ROM_LEVEL_TOOL_PANEL_WIDTH.min((available_width * 0.49).max(280.0))
 }
@@ -21158,6 +21248,117 @@ mod tests {
             .write(SMW_US_V1_LEGACY_FEATURE_DISABLE_FLAGS_OFFSET, &[0xfe])
             .unwrap();
         assert!(legacy_sprite_program_uses_255_limit(third_party.as_file_bytes()).unwrap());
+    }
+
+    #[test]
+    fn vertical_fireball_warning_requires_sprite_33_and_neither_buoyancy_bit() {
+        let stream = |header, sprite_number| lm_level::NativeSpriteStream {
+            header,
+            expanded: false,
+            tokens: vec![SpriteToken::Record(lm_level::SpriteRecord {
+                encoded: vec![0, 0, sprite_number],
+            })],
+        };
+        assert!(vertical_fireball_needs_buoyancy_warning(&stream(0, 0x33)));
+        assert!(!vertical_fireball_needs_buoyancy_warning(&stream(0, 0x32)));
+        assert!(!vertical_fireball_needs_buoyancy_warning(&stream(
+            0x80, 0x33
+        )));
+        assert!(!vertical_fireball_needs_buoyancy_warning(&stream(
+            0x40, 0x33
+        )));
+        assert!(!vertical_fireball_needs_buoyancy_warning(&stream(
+            0xc0, 0x33
+        )));
+    }
+
+    #[test]
+    fn vertical_fireball_save_warning_preserves_save_or_abort_intent() {
+        let command = Command::CommitRomWrites {
+            expected_revision: 7,
+            description: "test save".into(),
+            writes: Vec::new(),
+        };
+        let mut editor = VanillaLevelEditor {
+            vertical_fireball_save_warning: Some(VerticalFireballSaveWarning {
+                command: command.clone(),
+            }),
+            ..VanillaLevelEditor::default()
+        };
+        assert_eq!(
+            editor.resolve_vertical_fireball_save_warning(true),
+            Some(command.clone())
+        );
+
+        editor.screen_exit_follow_after_save = Some(PendingScreenExitFollowSave {
+            destination: 0x106,
+            final_revision: 1,
+            intermediate_revision: None,
+        });
+        editor.vertical_fireball_save_warning = Some(VerticalFireballSaveWarning { command });
+        assert_eq!(editor.resolve_vertical_fireball_save_warning(false), None);
+        assert!(editor.screen_exit_follow_after_save.is_none());
+    }
+
+    #[test]
+    fn vertical_fireball_gate_reads_the_staged_sprite_stream_and_option() {
+        let mut app = AppState::default();
+        app.load_rom(crate::test_support::pristine_smw_us_rom_bytes())
+            .unwrap();
+        app.dispatch(Command::SelectLevel(0x105)).unwrap();
+        let snapshot = app.controller_snapshot().unwrap();
+        let mut controller = LevelController::decode(
+            &snapshot,
+            lm_profile::smw_us_v1_vanilla_level_layout(),
+            &SpriteLengthTable::standard(),
+        )
+        .unwrap();
+        let insertion = controller.level().sprites.tokens.len();
+        controller
+            .apply_edits(&[
+                NativeLevelEdit::SetSpriteHeader(0),
+                NativeLevelEdit::InsertSprite {
+                    index: insertion,
+                    token: SpriteToken::Record(lm_level::SpriteRecord {
+                        encoded: vec![0, 0, 0x33],
+                    }),
+                },
+            ])
+            .unwrap();
+        let command = Command::SelectLevel(0x106);
+        let mut editor = VanillaLevelEditor {
+            controller: Some(controller),
+            ..VanillaLevelEditor::default()
+        };
+        assert_eq!(
+            editor.request_vertical_fireball_before_save(command.clone()),
+            None
+        );
+        assert_eq!(
+            editor.vertical_fireball_save_warning,
+            Some(VerticalFireballSaveWarning {
+                command: command.clone()
+            })
+        );
+
+        editor.vertical_fireball_save_warning = None;
+        editor.set_warn_vertical_fireball_buoyancy(false);
+        assert_eq!(
+            editor.request_vertical_fireball_before_save(command.clone()),
+            Some(command.clone())
+        );
+
+        editor.set_warn_vertical_fireball_buoyancy(true);
+        editor
+            .controller
+            .as_mut()
+            .unwrap()
+            .apply_edits(&[NativeLevelEdit::SetSpriteHeader(0x80)])
+            .unwrap();
+        assert_eq!(
+            editor.request_vertical_fireball_before_save(command.clone()),
+            Some(command)
+        );
     }
 
     #[test]

@@ -214,6 +214,7 @@ pub(crate) struct NativeApplication {
     remember_window_size: Option<bool>,
     scan_exits_on_save: Option<bool>,
     count_sprites_on_save: Option<bool>,
+    warn_vertical_fireball_buoyancy: Option<bool>,
     gfx_bypass_list_dialogs: Option<bool>,
     overworld_editor: OverworldEditor,
     path_editor: PathEditor,
@@ -311,6 +312,8 @@ impl NativeApplication {
     const SCAN_EXITS_ON_SAVE_STORAGE_KEY: &'static str = "lunar_magic_rust.scan_exits_on_save.v1";
     const COUNT_SPRITES_ON_SAVE_STORAGE_KEY: &'static str =
         "lunar_magic_rust.count_sprites_on_save.v1";
+    const WARN_VERTICAL_FIREBALL_STORAGE_KEY: &'static str =
+        "lunar_magic_rust.warn_vertical_fireball_buoyancy.v1";
     const GFX_BYPASS_LIST_DIALOGS_STORAGE_KEY: &'static str =
         "lunar_magic_rust.gfx_bypass_list_dialogs.v1";
 
@@ -659,6 +662,12 @@ impl NativeApplication {
                     self.effects.error =
                         Some(format!("cannot load sprite-count preference: {error}"));
                 }
+            }
+        }
+        if let Some(encoded) = storage.get_string(Self::WARN_VERTICAL_FIREBALL_STORAGE_KEY) {
+            match decode_enabled_preference(&encoded, "vertical-fireball buoyancy warning") {
+                Ok(enabled) => self.warn_vertical_fireball_buoyancy = Some(enabled),
+                Err(error) => self.effects.error = Some(error),
             }
         }
         if let Some(encoded) = storage.get_string(Self::GFX_BYPASS_LIST_DIALOGS_STORAGE_KEY) {
@@ -1161,6 +1170,10 @@ impl eframe::App for NativeApplication {
             encode_count_sprites_on_save_preference(self.count_sprites_on_save.unwrap_or(true)),
         );
         storage.set_string(
+            Self::WARN_VERTICAL_FIREBALL_STORAGE_KEY,
+            encode_enabled_preference(self.warn_vertical_fireball_buoyancy.unwrap_or(true)),
+        );
+        storage.set_string(
             Self::GFX_BYPASS_LIST_DIALOGS_STORAGE_KEY,
             encode_gfx_bypass_list_dialogs_preference(self.gfx_bypass_list_dialogs.unwrap_or(true)),
         );
@@ -1221,6 +1234,10 @@ impl eframe::App for NativeApplication {
                 .set_scan_exits_on_save(self.scan_exits_on_save.unwrap_or(true));
             self.vanilla_level_editor
                 .set_count_sprites_on_save(self.count_sprites_on_save.unwrap_or(true));
+            self.vanilla_level_editor
+                .set_warn_vertical_fireball_buoyancy(
+                    self.warn_vertical_fireball_buoyancy.unwrap_or(true),
+                );
             self.vanilla_level_editor
                 .set_auto_set_screens(self.auto_set_screens.unwrap_or(true));
             self.vanilla_level_editor
@@ -2256,6 +2273,22 @@ mod preference_tests {
             assert_eq!(reopened.count_sprites_on_save, Some(expected));
         }
         assert!(decode_count_sprites_on_save_preference("enabled").is_err());
+    }
+
+    #[test]
+    fn native_save_and_reopen_persist_vertical_fireball_warning() {
+        for expected in [false, true] {
+            let mut source = NativeApplication {
+                warn_vertical_fireball_buoyancy: Some(expected),
+                ..NativeApplication::default()
+            };
+            let mut storage = MemoryStorage::default();
+            eframe::App::save(&mut source, &mut storage);
+
+            let mut reopened = NativeApplication::default();
+            reopened.load_persistent_preferences(Some(&storage));
+            assert_eq!(reopened.warn_vertical_fireball_buoyancy, Some(expected));
+        }
     }
 
     #[test]

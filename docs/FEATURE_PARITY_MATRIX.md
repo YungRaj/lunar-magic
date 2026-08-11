@@ -966,6 +966,15 @@ transition until its final revision. Focused classifier, command-marker, toggle,
 automatic transition-save tests pass. The authenticated partition is now **295 routed / 22
 pending**. The aggregate remains 59/65 because the configuration row is still Partial.
 
+Toolbar coverage update (2026-08-11, vertical-fireball buoyancy warning): authenticated
+`LM_OPTIONS_WARN_SPRITE_33` `$24D9` now routes the original default-on, persisted level-save check.
+The gate detects native sprite `$33` placements, accepts either sprite-header buoyancy bit, and
+otherwise offers Save Anyway/Cancel after the existing exit and sprite-count checks. Continuation
+retains the exact prepared save command; cancellation clears deferred navigation and expansion
+intent. Focused detection, both-buoyancy-bit, continuation, cancellation, toggle, persistence, and
+command-partition tests pass. The authenticated partition is now **296 routed / 21 pending**. The
+aggregate remains 59/65 because the configuration row is still Partial.
+
 Toolbar coverage update (2026-08-10, old ExGFX bypass list): authenticated
 `LM_FILE_EXTRACT_EXGFX_LIST` `$239B` and `LM_FILE_INSERT_EXGFX_LIST` `$239C` now transfer the exact
 legacy `$400`-byte `Bypass.lst` table rather than aliasing ordinary ExGFX file transfer. Bundled-help,
