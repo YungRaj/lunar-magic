@@ -445,6 +445,9 @@ impl NativeApplication {
             UserToolbarNativeAction::GfxBypassListDialogs => {
                 self.set_gfx_bypass_list_dialogs(!self.gfx_bypass_list_dialogs.unwrap_or(true));
             }
+            UserToolbarNativeAction::VramPatchOptions => {
+                self.vram_patch_options_dialog.open(&self.app);
+            }
             UserToolbarNativeAction::GraphicsCompressionOptions => {
                 self.graphics_migration_dialog.open(&self.app);
             }
@@ -1662,6 +1665,7 @@ enum UserToolbarNativeAction {
     ScanExitsOnSave,
     CountSpritesOnSave,
     GfxBypassListDialogs,
+    VramPatchOptions,
     GraphicsCompressionOptions,
     GeneralOptions,
     RestoreOptions,
@@ -1764,6 +1768,7 @@ fn user_toolbar_native_action(name: &str) -> Option<UserToolbarNativeAction> {
         "LM_OPTIONS_SCAN_EXITS" => UserToolbarNativeAction::ScanExitsOnSave,
         "LM_OPTIONS_SCAN_SPRITES" => UserToolbarNativeAction::CountSpritesOnSave,
         "LM_OPTIONS_INSTALL_VRAM" => UserToolbarNativeAction::GfxBypassListDialogs,
+        "LM_OPTIONS_VRAM" => UserToolbarNativeAction::VramPatchOptions,
         "LM_OPTIONS_COMPRESSION" => UserToolbarNativeAction::GraphicsCompressionOptions,
         "LM_OPTIONS_GENERAL" => UserToolbarNativeAction::GeneralOptions,
         "LM_OPTIONS_RESTORE" => UserToolbarNativeAction::RestoreOptions,
@@ -2806,7 +2811,7 @@ mod user_toolbar_tests {
                     || user_toolbar_native_action(entry.name).is_some()
             })
             .collect::<Vec<_>>();
-        assert_eq!(supported.len(), 286);
+        assert_eq!(supported.len(), 287);
         assert!(
             supported
                 .iter()
@@ -3290,7 +3295,7 @@ mod user_toolbar_tests {
                     && user_toolbar_native_action(entry.name).is_none()
             })
             .collect::<Vec<_>>();
-        assert_eq!(unsupported.len(), 31);
+        assert_eq!(unsupported.len(), 30);
         if std::env::var_os("LM_DIAGNOSTIC_UNSUPPORTED_TOOLBAR_COMMANDS").is_some() {
             for entry in unsupported {
                 eprintln!(

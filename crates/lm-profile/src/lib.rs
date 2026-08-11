@@ -80,6 +80,7 @@ mod vanilla_level_palette;
 mod vanilla_object_family;
 mod vanilla_smw;
 mod vanilla_standard_object_map;
+mod vram_patch;
 
 use lm_level::SpriteLengthTable;
 use lm_project::{
@@ -635,6 +636,11 @@ pub use vanilla_standard_object_map::{
     SMW_US_V1_STANDARD_OBJECT_FAMILIES, SMW_US_V1_STANDARD_OBJECTS_PER_FAMILY,
     SMW_US_V1_UNKNOWN_STANDARD_OBJECT_DEFINITION, SmwUsV1StandardObjectDefinitionMap,
     SmwUsV1StandardObjectMapError, load_smw_us_v1_standard_object_definition_map,
+};
+pub use vram_patch::{
+    SMW_US_V1_VRAM_PATCH_PRIMARY_HOOK, SMW_US_V1_VRAM_PATCH_SECONDARY_HOOK,
+    SmwUsV1VramPatchBuildError, SmwUsV1VramPatchState, detect_smw_us_v1_vram_patch,
+    smw_us_v1_normal_vram_patch_installation_plan, smw_us_v1_normal_vram_patch_payload,
 };
 
 /// Complete, externally recovered ROM-layout metadata for one supported game revision.

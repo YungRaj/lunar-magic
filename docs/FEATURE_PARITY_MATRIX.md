@@ -1145,6 +1145,22 @@ authenticated partition is now **286 routed / 31 pending**. The aggregate remain
 configuration row is still Partial. Actual VRAM patch selection remains owned by `LM_OPTIONS_VRAM`
 `$24E8` and is tracked separately.
 
+Toolbar coverage update (2026-08-11, current per-ROM VRAM patch options): authenticated
+`LM_OPTIONS_VRAM` `$24E8` now reproduces the live 3.63 `Change VRAM Patch Options` workflow and
+its next-level-save boundary. Resource `$1FD` supplies the exact `$3390`-byte Normal runtime plus
+`LMRELOC1` metadata; Rust executes its `INT2`, `INT3`, `TAB3`, and `OPT3` relocations, writes all
+eleven authenticated runtime hooks, the two fixed local branches, version byte 1, RATS ownership,
+and checksum as one transaction with the prepared level save. A pristine ROM offers None and
+Normal with Normal selected; an installed recognized runtime disables None; generation `$0114`
+is reclaimed and replaced; generation `$0115` is retained; and malformed, future, or unowned
+installations disable every choice and reject mutation. Focused tests prove exact resource
+relocation at the retained oracle address and an arbitrary address, every fixed hook, deferred
+None, an unchanged level's enabled deferred-save route, pristine install, old-generation
+replacement, unknown rejection, save/reopen, and one-step Undo. Provenance is retained under
+`docs/oracle-work/lm363/vram-patch-options/`. The authenticated
+partition is now **287 routed / 30 pending**. The aggregate remains 59/65 because the
+configuration row is still Partial.
+
 Toolbar coverage update (2026-08-10, Open Level Number): `LM_FILE_OPEN_LEVEL` `$238E` now opens
 the native equivalent of original dialog resource `1000`. It uses the authenticated title,
 `Level Number (0-1FF)` label, OK/Cancel controls, and original-language resource overrides; seeds

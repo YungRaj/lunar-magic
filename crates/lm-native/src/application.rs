@@ -79,6 +79,7 @@ use crate::{
     user_toolbar_images::{MainToolbarImageSet, UserToolbarImageSet},
     vanilla_graphics_editor::VanillaGraphicsEditor,
     vanilla_level_editor::VanillaLevelEditor,
+    vram_patch_options_dialog::VramPatchOptionsDialog,
 };
 use eframe::egui;
 use lm_app::{
@@ -257,6 +258,8 @@ pub(crate) struct NativeApplication {
     rom_credits_tilemap_editor: RomCreditsTilemapEditor,
     rom_expansion_dialog: RomExpansionDialog,
     graphics_migration_dialog: GraphicsMigrationDialog,
+    vram_patch_options_dialog: VramPatchOptionsDialog,
+    pending_vram_patch_selection: Option<crate::vram_patch_options_dialog::VramPatchSelection>,
     ips_create_dialog: IpsCreateDialog,
     ips_patch_dialog: IpsPatchDialog,
     copier_header_dialog: CopierHeaderDialog,
@@ -711,8 +714,15 @@ impl NativeApplication {
     ///
     /// ROM editor windows use this acknowledgement before discarding their staged controller.
     fn try_dispatch(&mut self, context: &egui::Context, command: Command) -> bool {
+        let clears_deferred_vram = matches!(
+            &command,
+            Command::Open | Command::Reload | Command::Close | Command::Quit
+        );
         match self.app.dispatch(command) {
             Ok(effects) => {
+                if clears_deferred_vram {
+                    self.pending_vram_patch_selection = None;
+                }
                 self.effects.handle(&mut self.app, context, effects);
                 true
             }
@@ -1095,6 +1105,8 @@ impl eframe::App for NativeApplication {
                 .set_scan_exits_on_save(self.scan_exits_on_save.unwrap_or(true));
             self.vanilla_level_editor
                 .set_count_sprites_on_save(self.count_sprites_on_save.unwrap_or(true));
+            self.vanilla_level_editor
+                .set_deferred_rom_option_save(self.pending_vram_patch_selection.is_some());
             self.rom_legacy_fg_bg_bypass_editor
                 .set_use_list_dialog(self.gfx_bypass_list_dialogs.unwrap_or(true));
             self.rom_legacy_sprite_bypass_editor
@@ -1126,8 +1138,33 @@ impl eframe::App for NativeApplication {
                     command,
                     Command::CommitRomWrites { .. } | Command::CommitRomMutation { .. }
                 );
+                let command = if level_commit {
+                    if let Some(selection) = self.pending_vram_patch_selection {
+                        let snapshot = match self.app.controller_snapshot() {
+                            Ok(snapshot) => snapshot,
+                            Err(error) => {
+                                self.effects.error = Some(error.to_string());
+                                return;
+                            }
+                        };
+                        match crate::vram_patch_options_dialog::prepare_level_save_command(
+                            &snapshot, selection, command,
+                        ) {
+                            Ok(command) => command,
+                            Err(error) => {
+                                self.effects.error = Some(error);
+                                return;
+                            }
+                        }
+                    } else {
+                        command
+                    }
+                } else {
+                    command
+                };
                 if self.try_dispatch(context, command) {
                     if level_commit {
+                        self.pending_vram_patch_selection = None;
                         self.mark_user_toolbar_save_notification(
                             lm_app::LunarMagicNotificationKind::SaveLevel,
                         );
@@ -2405,6 +2442,22 @@ mod tests {
 
         assert!(!application.try_dispatch(&context, Command::Save));
         assert!(application.effects.error.is_some());
+        assert!(application.app.project().is_none());
+    }
+
+    #[test]
+    fn closing_a_rom_discards_its_deferred_vram_choice() {
+        let context = egui::Context::default();
+        let mut application = NativeApplication::default();
+        application
+            .app
+            .load_rom(crate::test_support::pristine_smw_us_rom_bytes())
+            .unwrap();
+        application.pending_vram_patch_selection =
+            Some(crate::vram_patch_options_dialog::VramPatchSelection::Normal);
+
+        assert!(application.try_dispatch(&context, Command::Close));
+        assert!(application.pending_vram_patch_selection.is_none());
         assert!(application.app.project().is_none());
     }
 }

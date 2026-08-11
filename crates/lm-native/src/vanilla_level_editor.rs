@@ -556,6 +556,7 @@ pub(crate) struct VanillaLevelEditor {
     background_cursor_highlight: Option<bool>,
     scan_exits_on_save: Option<bool>,
     count_sprites_on_save: Option<bool>,
+    deferred_rom_option_save: bool,
     paste_target: Option<EntityPasteTarget>,
     pending_layer2_mode_reset: Option<HeaderForm>,
     error: Option<String>,
@@ -1077,6 +1078,10 @@ impl VanillaLevelEditor {
         self.draw_selection_over_live = Some(enabled);
     }
 
+    pub(crate) fn set_deferred_rom_option_save(&mut self, enabled: bool) {
+        self.deferred_rom_option_save = enabled;
+    }
+
     pub(crate) fn initialize_draw_selection_over_live(&mut self, enabled: bool) {
         self.draw_selection_over_live.get_or_insert(enabled);
     }
@@ -1106,14 +1111,25 @@ impl VanillaLevelEditor {
                 }));
             }
         }
+        let can_commit = self
+            .controller
+            .as_ref()
+            .is_some_and(LevelController::is_modified)
+            || self.deferred_rom_option_save;
+        let label = if self.deferred_rom_option_save
+            && !self
+                .controller
+                .as_ref()
+                .is_some_and(LevelController::is_modified)
+        {
+            "Save level and apply pending ROM option"
+        } else {
+            "Commit level changes to ROM"
+        };
         if ui
             .add_enabled(
-                (expanded || !relocation_needed)
-                    && self
-                        .controller
-                        .as_ref()
-                        .is_some_and(LevelController::is_modified),
-                egui::Button::new("Commit level changes to ROM"),
+                (expanded || !relocation_needed) && self.controller.is_some() && can_commit,
+                egui::Button::new(label),
             )
             .clicked()
         {
@@ -15570,6 +15586,41 @@ mod tests {
         assert_eq!(reopened.level().layer1.objects.records.len(), baseline + 1);
         assert_eq!(reopened.level().sprites.tokens.len(), sprite_baseline + 1);
         assert_eq!(app.project().unwrap().rom.logical_len(), 0x10_0000);
+    }
+
+    #[test]
+    fn deferred_vram_option_can_save_an_unchanged_pristine_level() {
+        let mut app = AppState::default();
+        app.load_rom(crate::test_support::pristine_smw_us_rom_bytes())
+            .unwrap();
+        app.dispatch(Command::SelectLevel(0x105)).unwrap();
+        let snapshot = app.controller_snapshot().unwrap();
+        let controller = LevelController::decode(
+            &snapshot,
+            lm_profile::smw_us_v1_vanilla_level_layout(),
+            &SpriteLengthTable::standard(),
+        )
+        .unwrap();
+        assert!(!controller.is_modified());
+
+        let level_save = prepare_commit(&controller, &snapshot).unwrap();
+        let combined = crate::vram_patch_options_dialog::prepare_level_save_command(
+            &snapshot,
+            crate::vram_patch_options_dialog::VramPatchSelection::Normal,
+            level_save,
+        )
+        .unwrap();
+        app.dispatch(combined).unwrap();
+        let reopened = app.controller_snapshot().unwrap();
+        let image = RomImage::from_bytes(reopened.rom_bytes).unwrap();
+        assert!(matches!(
+            lm_profile::detect_smw_us_v1_vram_patch(&image).unwrap(),
+            lm_profile::SmwUsV1VramPatchState::Installed {
+                generation: 0x0115,
+                requires_replacement: false,
+                ..
+            }
+        ));
     }
 
     #[test]

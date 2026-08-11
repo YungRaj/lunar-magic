@@ -271,6 +271,23 @@ impl NativeApplication {
             }
         }
         show_project_operation!(self, context, graphics_migration_dialog);
+        self.vram_patch_options_dialog.show(context);
+        if let Some(selection) = self.vram_patch_options_dialog.take_pending() {
+            self.pending_vram_patch_selection = Some(selection);
+            self.app.status = match selection {
+                crate::vram_patch_options_dialog::VramPatchSelection::None => {
+                    "VRAM patch will remain uninstalled on the next level save."
+                }
+                crate::vram_patch_options_dialog::VramPatchSelection::Normal => {
+                    "Normal VRAM patch will be applied on the next level save."
+                }
+                crate::vram_patch_options_dialog::VramPatchSelection::Hd16x9
+                | crate::vram_patch_options_dialog::VramPatchSelection::Hd21x9 => {
+                    "The installed HD VRAM patch selection is retained."
+                }
+            }
+            .into();
+        }
         show_project_operation!(self, context, rats_reclamation_dialog);
         show_project_operation!(self, context, ips_patch_dialog);
         show_project_operation!(self, context, copier_header_dialog);

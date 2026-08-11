@@ -136,6 +136,7 @@ mod user_toolbar_images;
 mod vanilla_graphics_editor;
 mod vanilla_level_editor;
 mod vanilla_map16_preview;
+mod vram_patch_options_dialog;
 
 use application::NativeApplication;
 

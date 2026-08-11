@@ -1121,3 +1121,21 @@ at `$100010..$100020`. The dialog reported one conflict and `$10` conflicted byt
 overlap `$10`, proving that the copier prefix participates in log addresses. The retained values,
 exact original log line, mutation description, and static function/resource provenance are under
 `docs/oracle-work/lm363/pristine-us/rom-user-area-scan/`; no ROM or executable is retained.
+
+## Lunar Magic 3.63 per-ROM VRAM patch options (2026-08-11)
+
+The live dialog reached through `LM_OPTIONS_VRAM` `$24E8` has title `Change VRAM Patch Options`
+and radio controls None `$294`, Normal `$295`, HD 16:9 `$296`, and HD 21:9 `$297`. On a pristine
+ROM None and Normal are enabled with Normal selected by default. After the ordinary runtime is
+installed, None is disabled and Normal remains selected; both HD choices are disabled in this
+ordinary-LoROM observation. The extracted CHM states that changes take effect on the next level
+save and that an unrecognized installed patch disables all choices.
+
+Ghidra `CheckInstalledVramPatchCompatibility` authenticates the primary JML owner through its RATS
+payload trailer `LM` plus generation `$0115`, accepts `$0114` for replacement, and rejects unknown
+or future generations. `InstallVramPatchRuntime` installs PE resource `$1FD`, executes its
+`LMRELOC1` records, writes the complete fixed hook table, and updates the version field. The
+retained first-save oracle owns payload `$080962..$083CF2`; its exact relocated payload and all
+fixed writes are covered by Rust tests. Hashes, resource geometry, function addresses, and the
+clean-room evidence boundary are recorded in
+`docs/oracle-work/lm363/vram-patch-options/PROVENANCE.md`.
