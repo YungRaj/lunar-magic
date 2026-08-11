@@ -406,7 +406,12 @@ shape and chooses the normal direct save or expanded-runtime installation path b
 overworld-message editor now hashes and recovers the complete variable 194–512-message table through
 both pristine runtime installation and detected installed reallocation, with exact reopen and no
 live-project mutation. `staged_pristine_overworld_messages_are_recovered_as_complete_installed_table`
-and `staged_installed_overworld_message_update_is_recovered_exactly` cover both storage paths.
+and `staged_installed_overworld_message_update_is_recovered_exactly` cover both storage paths. The
+standalone boss-sequence editor likewise hashes and recovers its complete seven-message table through
+ordinary detected pristine installation or installed update, requiring exact reopen without changing
+the live project. `staged_pristine_boss_sequence_is_recovered_as_complete_table` and
+`staged_installed_boss_sequence_update_is_recovered_exactly` cover both persistence routes and prove
+that already-committed messages survive an installed staged recovery.
 
 ## Workflow ledger
 

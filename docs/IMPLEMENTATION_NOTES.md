@@ -6438,3 +6438,15 @@ exact semantic reopen on an isolated clone and leave the live project and histor
 Focused tests recover a pristine table grown to 200 messages with a changed last tile, then recover
 a distinct edit through the already-installed update path. All five overworld-message editor tests
 and all 237 renderer tests pass.
+
+## Crash recovery includes complete staged boss-sequence messages
+
+The standalone boss-sequence editor now contributes a content-sensitive generation across all seven
+24×8 messages. Recovery uses the same detected locator and update policy as ordinary persistence,
+so a pristine ROM installs the native table while an installed ROM updates its existing storage.
+Both paths require an exact semantic reopen of the complete table on an isolated clone and leave the
+live project clean and history-free.
+
+Focused tests recover a changed final tile through the pristine installation path and preserve a
+previously committed message while recovering a distinct staged message through the installed path.
+All five boss-sequence editor tests and all 237 renderer tests pass.

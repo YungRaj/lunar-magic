@@ -21,6 +21,20 @@ pub(crate) struct RomBossSequenceEditor {
 }
 
 impl RomBossSequenceEditor {
+    pub(crate) fn staged_recovery_generation(&self, app: &AppState) -> Option<u64> {
+        self.workspace.as_ref()?.staged_recovery_generation(app)
+    }
+
+    pub(crate) fn staged_recovery_snapshot(
+        &self,
+        app: &AppState,
+    ) -> Result<Option<lm_app::RecoverySnapshot>, String> {
+        self.workspace
+            .as_ref()
+            .ok_or_else(|| "boss-sequence workspace is closed".to_owned())?
+            .staged_recovery_snapshot(app)
+    }
+
     pub(crate) fn is_open(&self) -> bool {
         self.workspace.is_some()
     }
@@ -206,6 +220,83 @@ mod tests {
     use super::*;
     use lm_profile::smw_us_v1_boss_sequence_locator;
     use std::path::PathBuf;
+
+    fn pristine_app() -> AppState {
+        let mut app = AppState::default();
+        app.load_rom(crate::test_support::pristine_smw_us_rom_bytes())
+            .unwrap();
+        app
+    }
+
+    #[test]
+    fn staged_pristine_boss_sequence_is_recovered_as_complete_table() {
+        let app = pristine_app();
+        let mut editor = RomBossSequenceEditor::default();
+        editor.open(&app);
+        editor
+            .workspace
+            .as_mut()
+            .unwrap()
+            .set_tile((6, 7, 23), 0xa5)
+            .unwrap();
+
+        assert!(editor.staged_recovery_generation(&app).is_some());
+        let recovery = editor.staged_recovery_snapshot(&app).unwrap().unwrap();
+        assert_eq!(app.capabilities().project, lm_app::ProjectStatus::OpenClean);
+        assert_eq!(app.project().unwrap().history.undo_len(), 0);
+
+        let mut reopened = AppState::default();
+        reopened.load_recovery(recovery).unwrap();
+        let table = reopened
+            .project()
+            .unwrap()
+            .load_boss_sequence_messages_detected(smw_us_v1_boss_sequence_locator())
+            .unwrap()
+            .table;
+        assert_eq!(table.messages[6].0[191], 0xa5);
+    }
+
+    #[test]
+    fn staged_installed_boss_sequence_update_is_recovered_exactly() {
+        let mut installer = pristine_app();
+        let mut table = installer
+            .project()
+            .unwrap()
+            .load_boss_sequence_messages_detected(smw_us_v1_boss_sequence_locator())
+            .unwrap()
+            .table;
+        table.messages[0].0[0] = 0x11;
+        installer
+            .dispatch(Command::ReplaceNativeOverworldBossSequence {
+                rev: 0,
+                table: Box::new(table),
+            })
+            .unwrap();
+        let installed = installer.project().unwrap().save_snapshot();
+        let mut app = AppState::default();
+        app.load_rom(installed).unwrap();
+        let mut editor = RomBossSequenceEditor::default();
+        editor.open(&app);
+        editor
+            .workspace
+            .as_mut()
+            .unwrap()
+            .set_tile((1, 0, 0), 0x22)
+            .unwrap();
+
+        let recovery = editor.staged_recovery_snapshot(&app).unwrap().unwrap();
+        assert_eq!(app.capabilities().project, lm_app::ProjectStatus::OpenClean);
+        let mut reopened = AppState::default();
+        reopened.load_recovery(recovery).unwrap();
+        let table = reopened
+            .project()
+            .unwrap()
+            .load_boss_sequence_messages_detected(smw_us_v1_boss_sequence_locator())
+            .unwrap()
+            .table;
+        assert_eq!(table.messages[0].0[0], 0x11);
+        assert_eq!(table.messages[1].0[0], 0x22);
+    }
 
     #[test]
     fn pristine_rom_commit_reopens_exact_staged_tile_and_closes_editor() {

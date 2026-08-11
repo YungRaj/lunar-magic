@@ -1,6 +1,9 @@
 use lm_app::{AppState, Command};
 use lm_overworld::{BossSequenceMessage, BossSequenceMessageTable};
-use lm_profile::smw_us_v1_boss_sequence_locator;
+use lm_profile::{
+    SMW_US_V1_CHECKSUM_FIELD, smw_us_v1_boss_sequence_locator,
+    smw_us_v1_boss_sequence_update_policy,
+};
 
 pub(super) struct BossSequenceWorkspace {
     revision: u64,
@@ -41,6 +44,55 @@ impl BossSequenceWorkspace {
 
     pub(super) fn is_dirty(&self) -> bool {
         self.current != self.original
+    }
+
+    pub(super) fn staged_recovery_generation(&self, app: &AppState) -> Option<u64> {
+        self.is_dirty().then(|| {
+            let content_revision = self
+                .current
+                .encode_native_payload()
+                .iter()
+                .fold(0x424f_5353_5345_5155_u64, |revision, byte| {
+                    revision.rotate_left(5) ^ u64::from(*byte)
+                });
+            app.project_revision().wrapping_mul(0xa24b_aed4_963e_e407)
+                ^ self.revision.rotate_left(31)
+                ^ content_revision
+        })
+    }
+
+    pub(super) fn staged_recovery_snapshot(
+        &self,
+        app: &AppState,
+    ) -> Result<Option<lm_app::RecoverySnapshot>, String> {
+        if self.is_stale(app.project_revision()) {
+            return Err("stale boss-sequence workspace cannot be recovered".into());
+        }
+        if !self.is_dirty() {
+            return Ok(app.recovery_snapshot());
+        }
+        let mut staged = app.project().ok_or("open a supported ROM first")?.clone();
+        let locator = smw_us_v1_boss_sequence_locator();
+        let update = smw_us_v1_boss_sequence_update_policy(staged.rom.logical_len());
+        staged
+            .save_boss_sequence_messages_detected(
+                &self.current,
+                locator,
+                &update,
+                SMW_US_V1_CHECKSUM_FIELD,
+                0xff,
+            )
+            .map_err(|error| error.to_string())?;
+        if staged
+            .load_boss_sequence_messages_detected(locator)
+            .map_err(|error| error.to_string())?
+            .table
+            != self.current
+        {
+            return Err("recovered boss-sequence messages did not reopen exactly".into());
+        }
+        app.recovery_snapshot_with_current_rom(staged.save_snapshot(), app.current_level())
+            .map_err(|error| error.to_string())
     }
 
     pub(super) const fn is_stale(&self, project_revision: u64) -> bool {
