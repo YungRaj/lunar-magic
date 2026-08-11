@@ -595,6 +595,13 @@ impl NativeApplication {
             {
                 self.set_warn_vertical_fireball_buoyancy(warn_vertical_fireball);
             }
+            let mut warn_ips_sibling = self.warn_ips_sibling_on_save.unwrap_or(true);
+            if ui
+                .checkbox(&mut warn_ips_sibling, "Check if ROMFileName.ips Exists")
+                .changed()
+            {
+                self.set_warn_ips_sibling_on_save(warn_ips_sibling);
+            }
             let locale = self.app.localization().map_or_else(
                 || self.menu_text(UiTextKey::ToolsBuiltInEnglish),
                 |catalog| catalog.locale().into(),

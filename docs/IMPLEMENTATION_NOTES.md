@@ -5954,6 +5954,18 @@ acceptance continues to the vertical-fireball check and cancellation clears defe
 editor transition, and expansion intent. Authenticated native command coverage is now 297 of 317
 named slots, leaving 20 pending.
 
+## Same-name IPS save warning (`$24CF`)
+
+The authenticated command maps `LM_OPTIONS_WARN_IPS` to dispatcher case `$98`, toggling default-on
+byte `$005E7AE4`; registry synchronization stores it in `Options` bit 17. Immediately before
+opening the physical ROM backing stream, Lunar Magic replaces the ROM filename extension with
+`.ips`, accepts any existing non-directory sibling, and warns because some emulators apply that
+patch automatically. Rust now performs the same check before creating any ordinary ROM-save
+request, including Save chosen from a dirty close/open/reload confirmation. Save Anyway releases
+the exact deferred save once; Cancel leaves the dirty project in memory and cancels a deferred open
+path. The persisted Tools option bypasses only this companion-file warning. Authenticated native
+command coverage is now 298 of 317 named slots, leaving 19 pending.
+
 ## Deprecated Select FG/BG commands (`$2473/$2474`)
 
 Both authenticated central dispatch bytes are `$DF`, while the Lunar Magic 3.63 command switch

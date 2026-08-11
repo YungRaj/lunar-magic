@@ -914,6 +914,16 @@ failure-atomic history boundary. Save/reopen and renderer-state tests pass. This
 250/67 count above: the authenticated partition is now **252 routed / 65 pending**. The aggregate
 remains 59/65 because the configuration row is still Partial.
 
+Toolbar coverage update (2026-08-11, same-name IPS save warning): authenticated
+`LM_OPTIONS_WARN_IPS` `$24CF` now routes the original default-on, persisted companion-file check.
+Before ordinary physical Save publication, Rust replaces the current ROM extension with `.ips` and
+warns for an existing non-directory sibling; directories and absent/unreadable paths do not warn.
+The same boundary protects Save selected from dirty document-transition confirmation. Save Anyway
+releases exactly one deferred save, while Cancel preserves dirty state and cancels a pending Open
+target. Focused path-shape, pre-dispatch, toggle, persistence, and command-partition tests pass. The
+authenticated partition is now **298 routed / 19 pending**. The aggregate remains 59/65 because
+the configuration row is still Partial.
+
 Toolbar coverage update (2026-08-10, selection editors): `LM_EDIT_PROPERTIES` `$2468` now toggles
 an independent modeless properties window, while `LM_EDIT_EDIT_MANUAL` `$2469` opens (and repeated
 activation reuses) the manual editor dialog. Both follow the live Layer 1, object-backed Layer 2,

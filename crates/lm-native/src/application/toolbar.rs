@@ -447,6 +447,9 @@ impl NativeApplication {
                     !self.check_object_placement_on_save.unwrap_or(true),
                 );
             }
+            UserToolbarNativeAction::WarnIpsSiblingOnSave => {
+                self.set_warn_ips_sibling_on_save(!self.warn_ips_sibling_on_save.unwrap_or(true));
+            }
             UserToolbarNativeAction::WarnVerticalFireballBuoyancy => {
                 self.set_warn_vertical_fireball_buoyancy(
                     !self.warn_vertical_fireball_buoyancy.unwrap_or(true),
@@ -1242,6 +1245,19 @@ impl NativeApplication {
         .into();
     }
 
+    pub(super) fn set_warn_ips_sibling_on_save(&mut self, enabled: bool) {
+        self.warn_ips_sibling_on_save = Some(enabled);
+        if !enabled {
+            self.ips_sibling_save_warning = None;
+        }
+        self.app.status = if enabled {
+            "Enabled same-name IPS warning on ROM save"
+        } else {
+            "Disabled same-name IPS warning on ROM save"
+        }
+        .into();
+    }
+
     pub(super) fn set_warn_vertical_fireball_buoyancy(&mut self, enabled: bool) {
         self.warn_vertical_fireball_buoyancy = Some(enabled);
         self.vanilla_level_editor
@@ -1783,6 +1799,7 @@ enum UserToolbarNativeAction {
     ScanExitsOnSave,
     CountSpritesOnSave,
     CheckObjectPlacementOnSave,
+    WarnIpsSiblingOnSave,
     WarnVerticalFireballBuoyancy,
     GfxBypassListDialogs,
     JoinedGraphicsFiles,
@@ -1896,6 +1913,7 @@ fn user_toolbar_native_action(name: &str) -> Option<UserToolbarNativeAction> {
         "LM_OPTIONS_SCAN_EXITS" => UserToolbarNativeAction::ScanExitsOnSave,
         "LM_OPTIONS_SCAN_SPRITES" => UserToolbarNativeAction::CountSpritesOnSave,
         "LM_OPTIONS_WARN_OBJECT" => UserToolbarNativeAction::CheckObjectPlacementOnSave,
+        "LM_OPTIONS_WARN_IPS" => UserToolbarNativeAction::WarnIpsSiblingOnSave,
         "LM_OPTIONS_WARN_SPRITE_33" => UserToolbarNativeAction::WarnVerticalFireballBuoyancy,
         "LM_OPTIONS_INSTALL_VRAM" => UserToolbarNativeAction::GfxBypassListDialogs,
         "LM_OPTIONS_ATTACH_FILES" => UserToolbarNativeAction::JoinedGraphicsFiles,
@@ -2952,7 +2970,7 @@ mod user_toolbar_tests {
                     || user_toolbar_native_action(entry.name).is_some()
             })
             .collect::<Vec<_>>();
-        assert_eq!(supported.len(), 297);
+        assert_eq!(supported.len(), 298);
         assert!(
             supported
                 .iter()
@@ -3277,6 +3295,34 @@ mod user_toolbar_tests {
         assert_eq!(
             native.app.status,
             "Enabled object-placement warning on level save"
+        );
+    }
+
+    #[test]
+    fn same_name_ips_warning_command_toggles_the_original_default_on_preference() {
+        let mut native = NativeApplication::default();
+        assert_eq!(native.warn_ips_sibling_on_save, None);
+        assert_eq!(
+            user_toolbar_native_action("LM_OPTIONS_WARN_IPS"),
+            Some(UserToolbarNativeAction::WarnIpsSiblingOnSave)
+        );
+        native.apply_user_toolbar_native_action(
+            &egui::Context::default(),
+            UserToolbarNativeAction::WarnIpsSiblingOnSave,
+        );
+        assert_eq!(native.warn_ips_sibling_on_save, Some(false));
+        assert_eq!(
+            native.app.status,
+            "Disabled same-name IPS warning on ROM save"
+        );
+        native.apply_user_toolbar_native_action(
+            &egui::Context::default(),
+            UserToolbarNativeAction::WarnIpsSiblingOnSave,
+        );
+        assert_eq!(native.warn_ips_sibling_on_save, Some(true));
+        assert_eq!(
+            native.app.status,
+            "Enabled same-name IPS warning on ROM save"
         );
     }
 
@@ -3677,7 +3723,7 @@ mod user_toolbar_tests {
                     && user_toolbar_native_action(entry.name).is_none()
             })
             .collect::<Vec<_>>();
-        assert_eq!(unsupported.len(), 20);
+        assert_eq!(unsupported.len(), 19);
         if std::env::var_os("LM_DIAGNOSTIC_UNSUPPORTED_TOOLBAR_COMMANDS").is_some() {
             for entry in unsupported {
                 eprintln!(

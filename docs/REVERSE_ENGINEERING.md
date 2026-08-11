@@ -4991,6 +4991,18 @@ right side of the last.” Its interactive branch asks whether to save anyway, a
 aborts the enclosing transaction. The 3.63 help independently identifies this as the unsafe SNES
 RAM-placement check and says disabling the option suppresses the save warning.
 
+## Same-name IPS companion warning
+
+Command `$24CF` (`LM_OPTIONS_WARN_IPS`) maps through byte-table entry `$00498AA2` to central
+dispatcher case `$98`, toggling `$005E7AE4`. The byte initializes to one, and
+`SynchronizeApplicationSettingsRegistry` persists it in `Options` bit 17. `OpenRomFileForEditing`
+at `$0044E7B0` reads it at `$0044E841` before copier-header validation or
+`OpenRomBackingStream`. When enabled, it concatenates the current directory and ROM filename,
+finds the extension boundary, replaces the suffix with `.ips`, and calls the UTF-8 file-attribute
+wrapper. An existing path warns unless its directory bit is set; invalid/missing attributes skip
+the warning. The 3.63 help supplies the rationale: some emulators automatically apply this sibling
+patch and can therefore hide newly saved editor changes or cause other problems.
+
 ## Dedicated overworld animation-options runtime
 
 Lunar Magic 3.63 installs the per-map overworld animation-option storage through the dedicated

@@ -156,6 +156,12 @@ impl Default for LevelViewVisibility {
     }
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct IpsSiblingSaveIntent {
+    command: Command,
+    confirmation: Option<Confirmation>,
+}
+
 #[derive(Default)]
 pub(crate) struct NativeApplication {
     app: AppState,
@@ -192,6 +198,9 @@ pub(crate) struct NativeApplication {
     save_prompt: Option<bool>,
     mouse_gestures: Option<bool>,
     save_mouse_gestures: Option<bool>,
+    warn_ips_sibling_on_save: Option<bool>,
+    ips_sibling_save_warning: Option<IpsSiblingSaveIntent>,
+    ips_sibling_save_authorized: bool,
     level_view_visibility: LevelViewVisibility,
     renderer: NativeRenderState,
     vanilla_graphics_editor: VanillaGraphicsEditor,
@@ -317,6 +326,8 @@ impl NativeApplication {
         "lunar_magic_rust.check_object_placement_on_save.v1";
     const WARN_VERTICAL_FIREBALL_STORAGE_KEY: &'static str =
         "lunar_magic_rust.warn_vertical_fireball_buoyancy.v1";
+    const WARN_IPS_SIBLING_STORAGE_KEY: &'static str =
+        "lunar_magic_rust.warn_ips_sibling_on_save.v1";
     const GFX_BYPASS_LIST_DIALOGS_STORAGE_KEY: &'static str =
         "lunar_magic_rust.gfx_bypass_list_dialogs.v1";
 
@@ -679,6 +690,12 @@ impl NativeApplication {
                 Err(error) => self.effects.error = Some(error),
             }
         }
+        if let Some(encoded) = storage.get_string(Self::WARN_IPS_SIBLING_STORAGE_KEY) {
+            match decode_enabled_preference(&encoded, "same-name IPS save warning") {
+                Ok(enabled) => self.warn_ips_sibling_on_save = Some(enabled),
+                Err(error) => self.effects.error = Some(error),
+            }
+        }
         if let Some(encoded) = storage.get_string(Self::GFX_BYPASS_LIST_DIALOGS_STORAGE_KEY) {
             match decode_gfx_bypass_list_dialogs_preference(&encoded) {
                 Ok(enabled) => self.gfx_bypass_list_dialogs = Some(enabled),
@@ -788,10 +805,39 @@ impl NativeApplication {
         let _accepted = self.try_dispatch(context, command);
     }
 
+    fn should_warn_for_same_name_ips(&self) -> bool {
+        self.warn_ips_sibling_on_save.unwrap_or(true)
+            && self
+                .app
+                .document_path
+                .as_deref()
+                .is_some_and(same_name_ips_sibling_exists)
+    }
+
+    fn queue_same_name_ips_warning(
+        &mut self,
+        command: Command,
+        confirmation: Option<Confirmation>,
+    ) {
+        self.ips_sibling_save_warning = Some(IpsSiblingSaveIntent {
+            command,
+            confirmation,
+        });
+        self.app.status = "Waiting for same-name IPS save choice".into();
+    }
+
     /// Dispatches one command and reports whether application state accepted it.
     ///
     /// ROM editor windows use this acknowledgement before discarding their staged controller.
     fn try_dispatch(&mut self, context: &egui::Context, command: Command) -> bool {
+        if matches!(command, Command::Save) {
+            if self.ips_sibling_save_authorized {
+                self.ips_sibling_save_authorized = false;
+            } else if self.should_warn_for_same_name_ips() {
+                self.queue_same_name_ips_warning(command, None);
+                return true;
+            }
+        }
         let mouse_gesture = self
             .vanilla_level_editor
             .take_mouse_gesture_command(&command);
@@ -865,11 +911,15 @@ impl NativeApplication {
             ui.horizontal(|ui| {
                 if ui.button(&save).clicked() {
                     self.effects.confirmation = None;
-                    self.effects.save_before_confirmation_action(
-                        &mut self.app,
-                        context,
-                        confirmation,
-                    );
+                    if self.should_warn_for_same_name_ips() {
+                        self.queue_same_name_ips_warning(Command::Save, Some(confirmation));
+                    } else {
+                        self.effects.save_before_confirmation_action(
+                            &mut self.app,
+                            context,
+                            confirmation,
+                        );
+                    }
                 }
                 if ui.button(&cancel).clicked() {
                     self.effects.confirmation = None;
@@ -893,6 +943,59 @@ impl NativeApplication {
                 }
             });
         });
+    }
+
+    fn show_same_name_ips_warning(&mut self, context: &egui::Context) {
+        let Some(intent) = self.ips_sibling_save_warning.clone() else {
+            return;
+        };
+        let file_name = self
+            .app
+            .document_path
+            .as_deref()
+            .map(same_name_ips_sibling_path)
+            .and_then(|path| {
+                path.file_name()
+                    .map(|name| name.to_string_lossy().into_owned())
+            })
+            .unwrap_or_else(|| "ROMFileName.ips".into());
+        let mut save_anyway = false;
+        let mut cancel = false;
+        egui::Window::new("Check if ROMFileName.ips Exists")
+            .collapsible(false)
+            .resizable(false)
+            .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+            .show(context, |ui| {
+                ui.label(format!(
+                    "A same-name IPS file ({file_name}) exists beside the ROM. Some emulators automatically apply it, which can hide saved editor changes or cause other problems."
+                ));
+                ui.label("Rename or move the IPS file to avoid automatic patching.");
+                ui.label("Save the ROM anyway?");
+                ui.horizontal(|ui| {
+                    if ui.button("Save Anyway").clicked() {
+                        save_anyway = true;
+                    }
+                    if ui.button("Cancel").clicked() {
+                        cancel = true;
+                    }
+                });
+            });
+        if save_anyway {
+            self.ips_sibling_save_warning = None;
+            if let Some(confirmation) = intent.confirmation {
+                self.effects
+                    .save_before_confirmation_action(&mut self.app, context, confirmation);
+            } else {
+                self.ips_sibling_save_authorized = true;
+                let _accepted = self.try_dispatch(context, intent.command);
+            }
+        } else if cancel {
+            self.ips_sibling_save_warning = None;
+            if matches!(intent.confirmation, Some(Confirmation::DiscardAndOpen)) {
+                self.effects.cancel_requested_rom_path();
+            }
+            self.app.status = "ROM save cancelled because a same-name IPS file exists".into();
+        }
     }
 
     fn synchronize_level_text(&mut self) {
@@ -1187,6 +1290,10 @@ impl eframe::App for NativeApplication {
             encode_enabled_preference(self.warn_vertical_fireball_buoyancy.unwrap_or(true)),
         );
         storage.set_string(
+            Self::WARN_IPS_SIBLING_STORAGE_KEY,
+            encode_enabled_preference(self.warn_ips_sibling_on_save.unwrap_or(true)),
+        );
+        storage.set_string(
             Self::GFX_BYPASS_LIST_DIALOGS_STORAGE_KEY,
             encode_gfx_bypass_list_dialogs_preference(self.gfx_bypass_list_dialogs.unwrap_or(true)),
         );
@@ -1373,6 +1480,7 @@ impl eframe::App for NativeApplication {
             self.vanilla_level_editor.draw_selection_over_live();
         self.show_user_toolbar_recent_menu(context);
         self.show_confirmation(context);
+        self.show_same_name_ips_warning(context);
         if let Some((level, command)) = self.level_deletion_dialog.show(context, &self.app)
             && self.try_dispatch(context, command)
         {
@@ -1558,6 +1666,14 @@ fn decode_enabled_preference(value: &str, name: &str) -> Result<bool, String> {
         "disabled" => Ok(false),
         _ => Err(format!("cannot load {name} preference: unknown version")),
     }
+}
+
+fn same_name_ips_sibling_path(rom_path: &std::path::Path) -> std::path::PathBuf {
+    rom_path.with_extension("ips")
+}
+
+fn same_name_ips_sibling_exists(rom_path: &std::path::Path) -> bool {
+    std::fs::metadata(same_name_ips_sibling_path(rom_path)).is_ok_and(|metadata| !metadata.is_dir())
 }
 
 fn command_leaves_staged_level(app: &lm_app::AppState, command: &Command) -> bool {
@@ -2322,6 +2438,55 @@ mod preference_tests {
             reopened.load_persistent_preferences(Some(&storage));
             assert_eq!(reopened.check_object_placement_on_save, Some(expected));
         }
+    }
+
+    #[test]
+    fn native_save_and_reopen_persist_same_name_ips_warning() {
+        for expected in [false, true] {
+            let mut source = NativeApplication {
+                warn_ips_sibling_on_save: Some(expected),
+                ..NativeApplication::default()
+            };
+            let mut storage = MemoryStorage::default();
+            eframe::App::save(&mut source, &mut storage);
+
+            let mut reopened = NativeApplication::default();
+            reopened.load_persistent_preferences(Some(&storage));
+            assert_eq!(reopened.warn_ips_sibling_on_save, Some(expected));
+        }
+    }
+
+    #[test]
+    fn same_name_ips_warning_accepts_files_rejects_directories_and_precedes_save_dispatch() {
+        let directory = tempfile::tempdir().unwrap();
+        let rom_path = directory.path().join("game.smc");
+        let ips_path = directory.path().join("game.ips");
+        std::fs::write(&rom_path, crate::test_support::pristine_smw_us_rom_bytes()).unwrap();
+        assert_eq!(same_name_ips_sibling_path(&rom_path), ips_path);
+        assert!(!same_name_ips_sibling_exists(&rom_path));
+        std::fs::create_dir(&ips_path).unwrap();
+        assert!(!same_name_ips_sibling_exists(&rom_path));
+        std::fs::remove_dir(&ips_path).unwrap();
+        std::fs::write(&ips_path, b"PATCH").unwrap();
+        assert!(same_name_ips_sibling_exists(&rom_path));
+
+        let mut native = NativeApplication::default();
+        native
+            .app
+            .load_rom(crate::test_support::pristine_smw_us_rom_bytes())
+            .unwrap();
+        native.app.document_path = Some(rom_path);
+        assert!(native.try_dispatch(&egui::Context::default(), Command::Save));
+        assert_eq!(
+            native.ips_sibling_save_warning,
+            Some(IpsSiblingSaveIntent {
+                command: Command::Save,
+                confirmation: None,
+            })
+        );
+        assert_eq!(native.app.pending_save_request_id(), None);
+        native.set_warn_ips_sibling_on_save(false);
+        assert!(native.ips_sibling_save_warning.is_none());
     }
 
     #[test]
