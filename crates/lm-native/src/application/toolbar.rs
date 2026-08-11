@@ -442,6 +442,9 @@ impl NativeApplication {
             UserToolbarNativeAction::CountSpritesOnSave => {
                 self.set_count_sprites_on_save(!self.count_sprites_on_save.unwrap_or(true));
             }
+            UserToolbarNativeAction::GfxBypassListDialogs => {
+                self.set_gfx_bypass_list_dialogs(!self.gfx_bypass_list_dialogs.unwrap_or(true));
+            }
             UserToolbarNativeAction::GraphicsCompressionOptions => {
                 self.graphics_migration_dialog.open(&self.app);
             }
@@ -1130,6 +1133,20 @@ impl NativeApplication {
         .into();
     }
 
+    pub(super) fn set_gfx_bypass_list_dialogs(&mut self, enabled: bool) {
+        self.gfx_bypass_list_dialogs = Some(enabled);
+        self.rom_legacy_fg_bg_bypass_editor
+            .set_use_list_dialog(enabled);
+        self.rom_legacy_sprite_bypass_editor
+            .set_use_list_dialog(enabled);
+        self.app.status = if enabled {
+            "Using list-based GFX bypass dialogs"
+        } else {
+            "Using alternate edit-field GFX bypass dialogs"
+        }
+        .into();
+    }
+
     fn activate_user_toolbar_recent_path(
         &mut self,
         context: &egui::Context,
@@ -1644,6 +1661,7 @@ enum UserToolbarNativeAction {
     RememberWindowSize,
     ScanExitsOnSave,
     CountSpritesOnSave,
+    GfxBypassListDialogs,
     GraphicsCompressionOptions,
     GeneralOptions,
     RestoreOptions,
@@ -1745,6 +1763,7 @@ fn user_toolbar_native_action(name: &str) -> Option<UserToolbarNativeAction> {
         "LM_OPTIONS_WINDOW_SIZE" => UserToolbarNativeAction::RememberWindowSize,
         "LM_OPTIONS_SCAN_EXITS" => UserToolbarNativeAction::ScanExitsOnSave,
         "LM_OPTIONS_SCAN_SPRITES" => UserToolbarNativeAction::CountSpritesOnSave,
+        "LM_OPTIONS_INSTALL_VRAM" => UserToolbarNativeAction::GfxBypassListDialogs,
         "LM_OPTIONS_COMPRESSION" => UserToolbarNativeAction::GraphicsCompressionOptions,
         "LM_OPTIONS_GENERAL" => UserToolbarNativeAction::GeneralOptions,
         "LM_OPTIONS_RESTORE" => UserToolbarNativeAction::RestoreOptions,
@@ -2787,7 +2806,7 @@ mod user_toolbar_tests {
                     || user_toolbar_native_action(entry.name).is_some()
             })
             .collect::<Vec<_>>();
-        assert_eq!(supported.len(), 285);
+        assert_eq!(supported.len(), 286);
         assert!(
             supported
                 .iter()
@@ -3064,6 +3083,31 @@ mod user_toolbar_tests {
     }
 
     #[test]
+    fn historical_install_vram_command_toggles_gfx_bypass_dialog_style() {
+        let mut native = NativeApplication::default();
+        assert_eq!(native.gfx_bypass_list_dialogs, None);
+        assert_eq!(
+            user_toolbar_native_action("LM_OPTIONS_INSTALL_VRAM"),
+            Some(UserToolbarNativeAction::GfxBypassListDialogs)
+        );
+        native.apply_user_toolbar_native_action(
+            &egui::Context::default(),
+            UserToolbarNativeAction::GfxBypassListDialogs,
+        );
+        assert_eq!(native.gfx_bypass_list_dialogs, Some(false));
+        assert_eq!(
+            native.app.status,
+            "Using alternate edit-field GFX bypass dialogs"
+        );
+        native.apply_user_toolbar_native_action(
+            &egui::Context::default(),
+            UserToolbarNativeAction::GfxBypassListDialogs,
+        );
+        assert_eq!(native.gfx_bypass_list_dialogs, Some(true));
+        assert_eq!(native.app.status, "Using list-based GFX bypass dialogs");
+    }
+
+    #[test]
     fn recent_menu_route_opens_at_the_pointer_and_escape_dismisses_it() {
         let mut native = NativeApplication::default();
         let context = egui::Context::default();
@@ -3246,7 +3290,7 @@ mod user_toolbar_tests {
                     && user_toolbar_native_action(entry.name).is_none()
             })
             .collect::<Vec<_>>();
-        assert_eq!(unsupported.len(), 32);
+        assert_eq!(unsupported.len(), 31);
         if std::env::var_os("LM_DIAGNOSTIC_UNSUPPORTED_TOOLBAR_COMMANDS").is_some() {
             for entry in unsupported {
                 eprintln!(

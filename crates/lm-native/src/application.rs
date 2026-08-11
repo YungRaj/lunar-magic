@@ -206,6 +206,7 @@ pub(crate) struct NativeApplication {
     remember_window_size: Option<bool>,
     scan_exits_on_save: Option<bool>,
     count_sprites_on_save: Option<bool>,
+    gfx_bypass_list_dialogs: Option<bool>,
     overworld_editor: OverworldEditor,
     path_editor: PathEditor,
     metadata_editor: MetadataEditor,
@@ -294,6 +295,8 @@ impl NativeApplication {
     const SCAN_EXITS_ON_SAVE_STORAGE_KEY: &'static str = "lunar_magic_rust.scan_exits_on_save.v1";
     const COUNT_SPRITES_ON_SAVE_STORAGE_KEY: &'static str =
         "lunar_magic_rust.count_sprites_on_save.v1";
+    const GFX_BYPASS_LIST_DIALOGS_STORAGE_KEY: &'static str =
+        "lunar_magic_rust.gfx_bypass_list_dialogs.v1";
 
     pub(crate) fn from_startup(
         initialized: Result<crate::startup::InitializedNative, String>,
@@ -639,6 +642,15 @@ impl NativeApplication {
                 Err(error) => {
                     self.effects.error =
                         Some(format!("cannot load sprite-count preference: {error}"));
+                }
+            }
+        }
+        if let Some(encoded) = storage.get_string(Self::GFX_BYPASS_LIST_DIALOGS_STORAGE_KEY) {
+            match decode_gfx_bypass_list_dialogs_preference(&encoded) {
+                Ok(enabled) => self.gfx_bypass_list_dialogs = Some(enabled),
+                Err(error) => {
+                    self.effects.error =
+                        Some(format!("cannot load GFX-bypass dialog preference: {error}"));
                 }
             }
         }
@@ -1026,6 +1038,10 @@ impl eframe::App for NativeApplication {
             Self::COUNT_SPRITES_ON_SAVE_STORAGE_KEY,
             encode_count_sprites_on_save_preference(self.count_sprites_on_save.unwrap_or(true)),
         );
+        storage.set_string(
+            Self::GFX_BYPASS_LIST_DIALOGS_STORAGE_KEY,
+            encode_gfx_bypass_list_dialogs_preference(self.gfx_bypass_list_dialogs.unwrap_or(true)),
+        );
         if !self.remember_window_size.unwrap_or(true) {
             // eframe stores native window geometry under this key immediately before App::save.
             // An invalid value makes its next-start decoder fall back to NativeOptions' default.
@@ -1079,6 +1095,10 @@ impl eframe::App for NativeApplication {
                 .set_scan_exits_on_save(self.scan_exits_on_save.unwrap_or(true));
             self.vanilla_level_editor
                 .set_count_sprites_on_save(self.count_sprites_on_save.unwrap_or(true));
+            self.rom_legacy_fg_bg_bypass_editor
+                .set_use_list_dialog(self.gfx_bypass_list_dialogs.unwrap_or(true));
+            self.rom_legacy_sprite_bypass_editor
+                .set_use_list_dialog(self.gfx_bypass_list_dialogs.unwrap_or(true));
             if vanilla_level
                 && let Some(command) = self.vanilla_level_editor.show(
                     ui,
@@ -1356,6 +1376,18 @@ fn decode_count_sprites_on_save_preference(value: &str) -> Result<bool, String> 
         "count" => Ok(true),
         "skip" => Ok(false),
         _ => Err("unknown sprite-count preference version".into()),
+    }
+}
+
+fn encode_gfx_bypass_list_dialogs_preference(enabled: bool) -> String {
+    if enabled { "lists" } else { "fields" }.to_owned()
+}
+
+fn decode_gfx_bypass_list_dialogs_preference(value: &str) -> Result<bool, String> {
+    match value {
+        "lists" => Ok(true),
+        "fields" => Ok(false),
+        _ => Err("unknown GFX-bypass dialog preference version".into()),
     }
 }
 
@@ -1965,6 +1997,23 @@ mod preference_tests {
             assert_eq!(reopened.count_sprites_on_save, Some(expected));
         }
         assert!(decode_count_sprites_on_save_preference("enabled").is_err());
+    }
+
+    #[test]
+    fn native_save_and_reopen_persist_gfx_bypass_dialog_style() {
+        for expected in [false, true] {
+            let mut source = NativeApplication {
+                gfx_bypass_list_dialogs: Some(expected),
+                ..NativeApplication::default()
+            };
+            let mut storage = MemoryStorage::default();
+            eframe::App::save(&mut source, &mut storage);
+
+            let mut reopened = NativeApplication::default();
+            reopened.load_persistent_preferences(Some(&storage));
+            assert_eq!(reopened.gfx_bypass_list_dialogs, Some(expected));
+        }
+        assert!(decode_gfx_bypass_list_dialogs_preference("enabled").is_err());
     }
 
     #[test]

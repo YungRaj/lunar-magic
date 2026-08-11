@@ -1129,6 +1129,22 @@ save/abort, toggle, persistence, ordering, and command-partition tests pass. The
 partition is now **285 routed / 32 pending**. The aggregate remains 59/65 because the configuration
 row is still Partial.
 
+Toolbar coverage update (2026-08-10, historical GFX-bypass dialog style): the misleadingly named
+internal command `LM_OPTIONS_INSTALL_VRAM` `$24C4` now reproduces central dispatch case `$8E`
+without pretending to own Lunar Magic 3.63's current per-ROM VRAM patch setting. The initialized
+byte at `$005E7ADF` proves the default-on state, `SynchronizeApplicationSettingsRegistry` binds it
+to `Options` bit 9, and `TransferGeneralOptionsDialogSettings` supplies the decisive obsolete-option
+tooltip: turning it off selects alternate GFX-bypass dialogs with regular edit fields instead of
+lists. `HandleLevelEditorCommand` proves the flag chooses dialog families 2/3 and 4/5. Rust now
+persists that process preference and switches both standard FG/BG and sprite bypass editors between
+a complete 255-row labeled selector and the alternate hexadecimal row field while sharing the exact
+same staged table, selectors, commit, reopen, and Undo semantics. The historical internal route is
+available to user-toolbar configurations; no false 3.63 menu item or ROM-patch mutation was added.
+Focused default, toggle, persistence, complete-row-model, and command-partition tests pass. The
+authenticated partition is now **286 routed / 31 pending**. The aggregate remains 59/65 because the
+configuration row is still Partial. Actual VRAM patch selection remains owned by `LM_OPTIONS_VRAM`
+`$24E8` and is tracked separately.
+
 Toolbar coverage update (2026-08-10, Open Level Number): `LM_FILE_OPEN_LEVEL` `$238E` now opens
 the native equivalent of original dialog resource `1000`. It uses the authenticated title,
 `Level Number (0-1FF)` label, OK/Cancel controls, and original-language resource overrides; seeds

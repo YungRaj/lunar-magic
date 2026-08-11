@@ -36,6 +36,7 @@ pub(crate) struct RomLegacyGraphicsBypassEditor {
     enabled: bool,
     row: u8,
     files: [u8; 4],
+    use_list_dialog: bool,
     error: Option<String>,
     pending_close: Option<PendingClose>,
 }
@@ -54,6 +55,7 @@ impl RomLegacyGraphicsBypassEditor {
             enabled: false,
             row: 0,
             files: [0; 4],
+            use_list_dialog: true,
             error: None,
             pending_close: None,
         }
@@ -61,6 +63,10 @@ impl RomLegacyGraphicsBypassEditor {
 
     pub(crate) fn is_open(&self) -> bool {
         self.workspace.is_some()
+    }
+
+    pub(crate) fn set_use_list_dialog(&mut self, enabled: bool) {
+        self.use_list_dialog = enabled;
     }
 
     pub(crate) fn open(&mut self, app: &AppState) -> Result<(), String> {
@@ -146,14 +152,28 @@ impl RomLegacyGraphicsBypassEditor {
         ui.checkbox(&mut self.enabled, "Enable bypass for this level");
 
         let previous_row = self.row;
-        ui.horizontal(|ui| {
-            ui.label("List row");
-            ui.add(
-                egui::DragValue::new(&mut self.row)
-                    .hexadecimal(2, false, true)
-                    .range(0..=0xfe),
+        if self.use_list_dialog {
+            egui::ComboBox::from_label("GFX bypass list row")
+                .selected_text(self.row_label(self.row))
+                .show_ui(ui, |ui| {
+                    for row in 0_u8..=0xfe {
+                        let label = self.row_label(row);
+                        ui.selectable_value(&mut self.row, row, label);
+                    }
+                });
+        } else {
+            ui.horizontal(|ui| {
+                ui.label("List row");
+                ui.add(
+                    egui::DragValue::new(&mut self.row)
+                        .hexadecimal(2, false, true)
+                        .range(0..=0xfe),
+                );
+            });
+            ui.small(
+                "Alternate regular edit-field dialog enabled by the historical Options preference.",
             );
-        });
+        }
         if self.row != previous_row {
             self.load_row();
         }
@@ -213,6 +233,18 @@ impl RomLegacyGraphicsBypassEditor {
             Ok(assignment) => self.files = assignment.0,
             Err(error) => self.error = Some(error.to_string()),
         }
+    }
+
+    fn row_label(&self, row: u8) -> String {
+        let assignment = self
+            .workspace
+            .as_ref()
+            .and_then(|workspace| workspace.table().entry(usize::from(row)).ok())
+            .map_or([0; 4], |assignment| assignment.0);
+        format!(
+            "{row:02X}: {:02X}, {:02X}, {:02X}, {:02X}",
+            assignment[0], assignment[1], assignment[2], assignment[3]
+        )
     }
 
     fn stage(&mut self) {
@@ -296,6 +328,35 @@ impl RomLegacyGraphicsBypassEditor {
 mod tests {
     use super::*;
     use lm_app::Command;
+
+    #[test]
+    fn historical_dialog_style_switch_preserves_the_complete_row_model() {
+        let mut app = AppState::default();
+        app.load_rom(crate::test_support::pristine_smw_us_rom_bytes())
+            .unwrap();
+        app.dispatch(Command::InstallSettings { rev: 0 }).unwrap();
+        app.dispatch(Command::SelectLevel(0x105)).unwrap();
+
+        let mut editor =
+            RomLegacyGraphicsBypassEditor::new(LegacyGraphicsBypassDomain::ForegroundBackground);
+        assert!(editor.use_list_dialog);
+        editor.open(&app).unwrap();
+        assert!(editor.row_label(0).starts_with("00:"));
+        assert!(editor.row_label(0xfe).starts_with("FE:"));
+        editor.set_use_list_dialog(false);
+        assert!(!editor.use_list_dialog);
+        assert_eq!(
+            editor
+                .workspace
+                .as_ref()
+                .unwrap()
+                .table()
+                .entry(0)
+                .unwrap()
+                .0,
+            editor.files
+        );
+    }
 
     #[test]
     fn both_original_dialog_domains_stage_independently_and_commit_one_undo() {
