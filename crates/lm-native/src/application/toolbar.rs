@@ -375,6 +375,11 @@ impl NativeApplication {
                     self.effects.error = Some(error);
                 }
             }
+            UserToolbarNativeAction::ScanRom => {
+                if let Err(error) = self.rom_user_area_scan_dialog.open(&self.app) {
+                    self.effects.error = Some(error);
+                }
+            }
             UserToolbarNativeAction::RestoreRom => {
                 if let Err(error) = self.restore_point_dialog.choose_and_open() {
                     self.effects.error = Some(error);
@@ -1343,6 +1348,7 @@ enum UserToolbarNativeAction {
     OpenLevelAddress,
     Sprite19Fix,
     AnalyzeLevels,
+    ScanRom,
     RestoreRom,
     CreateRestorePoint,
     CreateIps,
@@ -1412,6 +1418,7 @@ fn user_toolbar_native_action(name: &str) -> Option<UserToolbarNativeAction> {
         "LM_FILE_OPEN_LEVEL_ADDRESS" => UserToolbarNativeAction::OpenLevelAddress,
         "LM_KEY_SPRITE19_FIX" => UserToolbarNativeAction::Sprite19Fix,
         "LM_FILE_ANALYZE_LEVELS" => UserToolbarNativeAction::AnalyzeLevels,
+        "LM_FILE_SCAN_ROM" => UserToolbarNativeAction::ScanRom,
         "LM_FILE_RESTORE" => UserToolbarNativeAction::RestoreRom,
         "LM_FILE_CREATE_RESTORE" => UserToolbarNativeAction::CreateRestorePoint,
         "LM_FILE_CREATE_IPS" => UserToolbarNativeAction::CreateIps,
@@ -1943,6 +1950,7 @@ mod user_toolbar_tests {
                 "LM_FILE_ANALYZE_LEVELS",
                 UserToolbarNativeAction::AnalyzeLevels,
             ),
+            ("LM_FILE_SCAN_ROM", UserToolbarNativeAction::ScanRom),
             ("LM_FILE_RESTORE", UserToolbarNativeAction::RestoreRom),
             (
                 "LM_FILE_CREATE_RESTORE",
@@ -2388,7 +2396,7 @@ mod user_toolbar_tests {
                     || user_toolbar_native_action(entry.name).is_some()
             })
             .collect::<Vec<_>>();
-        assert_eq!(supported.len(), 260);
+        assert_eq!(supported.len(), 261);
         assert!(
             supported
                 .iter()
@@ -2468,6 +2476,21 @@ mod user_toolbar_tests {
     }
 
     #[test]
+    fn scan_rom_toolbar_route_requires_a_supported_project() {
+        let mut native = NativeApplication::default();
+        let context = egui::Context::default();
+        native.apply_user_toolbar_native_action(&context, UserToolbarNativeAction::ScanRom);
+        assert!(!native.rom_user_area_scan_dialog.is_open());
+
+        native
+            .app
+            .load_rom(crate::test_support::pristine_smw_us_rom_bytes())
+            .unwrap();
+        native.apply_user_toolbar_native_action(&context, UserToolbarNativeAction::ScanRom);
+        assert!(native.rom_user_area_scan_dialog.is_open());
+    }
+
+    #[test]
     fn diagnostic_authenticated_internal_routes_partition_the_complete_original_table() {
         let unsupported = lm_app::lunar_magic_363_user_toolbar_commands()
             .filter(|entry| {
@@ -2476,7 +2499,7 @@ mod user_toolbar_tests {
                     && user_toolbar_native_action(entry.name).is_none()
             })
             .collect::<Vec<_>>();
-        assert_eq!(unsupported.len(), 57);
+        assert_eq!(unsupported.len(), 56);
         if std::env::var_os("LM_DIAGNOSTIC_UNSUPPORTED_TOOLBAR_COMMANDS").is_some() {
             for entry in unsupported {
                 eprintln!(

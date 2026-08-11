@@ -3,6 +3,7 @@
 mod allocator;
 mod header;
 mod scanner;
+mod user_area;
 
 pub use allocator::{
     AllocationError, AllocationOutcome, AllocationPolicy, FreeSpaceAllocator, ProtectedRange,
@@ -10,3 +11,4 @@ pub use allocator::{
 };
 pub use header::{HEADER_LEN, HeaderError, RatsBlock, SIGNATURE, make_header, parse_at};
 pub use scanner::scan;
+pub use user_area::{RatsConflict, RomUserAreaScan, scan_rom_user_area};

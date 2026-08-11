@@ -986,3 +986,23 @@ tests with 12 explicit external-fixture ignores; all 512 pristine levels materia
 `254a1a050d12785973241910e26d8b7917a5cb5e2a56602a330fc6cbd833c04d`. The authenticated
 partition is now **260 routed / 57 pending**. The aggregate remains 59/65 because the
 configuration row is still Partial.
+
+Toolbar coverage update (2026-08-10, Scan ROM): authenticated `LM_FILE_SCAN_ROM` `$2396` now
+opens the native `ROM User Area Scan Results` report with all eleven original hexadecimal metrics,
+the last Lunar Magic attribution version, and the original conflict notice. The scanner validates
+every `STAR` length/complement header, unions protected ranges, detects nested structures, applies
+the original nine-byte free-run threshold, distinguishes raw largest area from the header-adjusted
+32-KiB-bank capacity, and accepts an explicit legacy unprotected-Map16 interval. Nested conflicts
+append original-shaped records to ROM-adjacent `RATS.log` using physical offsets, including a
+copier-header displacement; non-regular log targets reject safely. A retained isolated-Wine normal
+capture matches `$8C95` protected, `$17736B` free, `$180000` total, five structures, `$8000`
+largest bank, and `$10E1A3` largest area. A controlled nested capture matches one `$10`-byte
+conflict and the exact `$100200/$100210` physical log addresses. Automatic discovery of the
+historical pre-1.64 untagged Map16 region remains an explicit compatibility edge pending an
+authentic fixture. Focused tests, the Windows cross-build, and the complete native suite pass
+1,025 tests with 12 explicit external-fixture ignores; every pristine level materializes, a fresh
+512-image audit completes, and the regenerated 513-line semantic renderer manifest remains
+byte-identical at SHA-256
+`254a1a050d12785973241910e26d8b7917a5cb5e2a56602a330fc6cbd833c04d`. The authenticated
+partition is now **261 routed / 56 pending**. The aggregate remains 59/65 because the
+configuration row is still Partial.

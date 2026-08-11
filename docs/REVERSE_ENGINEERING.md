@@ -107,6 +107,21 @@ Coincidental integer values inside strings/constants and targets belonging to CR
 
 The clean-room differential-testing plan is maintained in `REIMPLEMENTATION_TEST_MATRIX.md`. It defines fixtures, oracle capture, byte-for-byte ROM comparisons, codec round trips, UI-model state checks, malformed-input cases, and subsystem release gates for feature-parity work.
 
+### Scan ROM / RATS accounting
+
+File command `$2396` launches dialog resource `$0427` through the caller/dialog procedure at
+`$00490C20`; the user-area scanner is `$004A8F60`. It walks the user region in 4-KiB chunks while
+recognizing valid eight-byte `STAR` headers, scans inside owned structures to find nested RATS, and
+reports each nested full range as conflicted space. Unprotected zero runs of eight bytes or fewer
+are unusable; runs of nine or more are free. The largest raw free area includes all free bytes,
+whereas the largest allocatable 32-KiB-bank value accounts for the required eight-byte header.
+
+The original conflict string at image `$005C0AF0` records the outer and nested complete ranges and
+their overlap. Its addresses are physical file offsets, including a copier prefix. The caller also
+recognizes an old fixed `$10000`-byte unprotected Map16 allocation when its payload lacks an owning
+RATS header; locating that historical pointer automatically remains pending an authentic pre-1.64
+fixture.
+
 ### Native shared-palette ROM storage
 
 `SaveSharedPalettesToRom` (`0049D940`) writes layout-descriptor entry `$29`.

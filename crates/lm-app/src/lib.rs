@@ -101,6 +101,7 @@ mod revision_patch_state;
 mod revision_profile;
 mod revision_profile_state;
 mod rom_expansion_state;
+mod rom_user_area_scan;
 mod secondary_exit_state;
 mod selection;
 mod selection_state;
@@ -350,6 +351,7 @@ pub use revision_profile::{
     RevisionProfileAudit, RevisionProfileAuditError, RevisionProfileError,
     RevisionProfileReadError,
 };
+pub use rom_user_area_scan::RomUserAreaReport;
 pub use selection::{EditorSelection, SelectionError};
 pub use shortcut::{
     ShortcutBinding, ShortcutConfig, ShortcutError, ShortcutGesture, ShortcutKey, ShortcutModifiers,

@@ -402,6 +402,7 @@ fn original_string_index(key: UiTextKey) -> Option<usize> {
         UiTextKey::FileOpenRecent => 0x0023,
         UiTextKey::FileQuit => 0x0024,
         UiTextKey::FileAnalyzeLevelUsage => 0x0032,
+        UiTextKey::FileScanRom => 0x0033,
         UiTextKey::ToolsTestRomInEmulatorAction => 0x0036,
         UiTextKey::ToolsChooseEmulator => 0x0037,
         UiTextKey::FileCreateFullRestore => 0x004e,
@@ -1046,6 +1047,7 @@ pub enum UiTextKey {
     ToolsAnimationRate,
     FileOpenLevelNumber,
     FileOpenLevelAddress,
+    FileScanRom,
 }
 
 impl UiTextKey {
@@ -1107,6 +1109,7 @@ impl UiTextKey {
             Self::ToolsAnimationRate => "Animation Rate",
             Self::FileOpenLevelNumber => "Open Level Number…",
             Self::FileOpenLevelAddress => "Open Level From Address…",
+            Self::FileScanRom => "Scan ROM…",
             Self::ToolsLanguageFormat => "Language ({locale})",
             Self::ToolsInstallLanguage => "Install Language Catalog…",
             Self::ToolsUseBuiltInEnglish => "Use Built-in English",
@@ -1288,7 +1291,7 @@ impl UiTextKey {
         }
     }
 
-    pub const ALL: [Self; 197] = [
+    pub const ALL: [Self; 198] = [
         Self::AppTitle,
         Self::FileOpen,
         Self::FileSave,
@@ -1486,6 +1489,7 @@ impl UiTextKey {
         Self::ToolsAnimationRate,
         Self::FileOpenLevelNumber,
         Self::FileOpenLevelAddress,
+        Self::FileScanRom,
     ];
 
     fn from_byte(value: u8) -> Option<Self> {

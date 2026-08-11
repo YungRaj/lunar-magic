@@ -177,6 +177,18 @@ impl NativeApplication {
             if ui
                 .add_enabled(
                     enabled,
+                    egui::Button::new(self.menu_text(UiTextKey::FileScanRom)),
+                )
+                .clicked()
+            {
+                ui.close_menu();
+                if let Err(error) = self.rom_user_area_scan_dialog.open(&self.app) {
+                    self.effects.error = Some(error);
+                }
+            }
+            if ui
+                .add_enabled(
+                    enabled,
                     egui::Button::new(self.menu_text(UiTextKey::FileRestrictLevelAccess)),
                 )
                 .clicked()

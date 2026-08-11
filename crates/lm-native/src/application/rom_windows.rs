@@ -195,6 +195,7 @@ impl NativeApplication {
             self.renderer.invalidate();
         }
         self.level_usage_dialog.show(context);
+        self.rom_user_area_scan_dialog.show(context);
         self.ips_create_dialog.show(context);
         self.restore_point_dialog.show(context, &self.app);
         self.rom_mwl_batch_export_dialog.show(context);

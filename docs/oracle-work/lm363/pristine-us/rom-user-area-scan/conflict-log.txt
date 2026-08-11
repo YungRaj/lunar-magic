@@ -1,0 +1,1 @@
+08/10/2026  04:24:52 PM  Lunar Magic 3.63	Nested RAT discovered in scan!  First RAT address: 100200, Size: 000030.  Nested RAT address: 100210, Size: 000010.  Overlapped Size: 000010.

@@ -5693,3 +5693,24 @@ tests with 12 explicit external-fixture ignores, including all-512-level materia
 regenerated 513-line renderer manifest remains byte-identical at SHA-256
 `254a1a050d12785973241910e26d8b7917a5cb5e2a56602a330fc6cbd833c04d`. Authenticated native
 command coverage is now 260 of 317 named table slots, leaving 57 pending.
+
+## ROM user-area scan (`$2396`)
+
+The native File menu and authenticated toolbar route now share a read-only scan of logical ROM
+space above the original 512-KiB SMW image. Valid RATS structures require the complete eight-byte
+`STAR` header, in-range payload, and complementary length words. The accounting unions overlapping
+protected ranges while retaining every structure for conflict reporting; unprotected nonzero bytes
+are used, zero runs of at most eight bytes are unusable, and longer runs are free. Largest raw free
+area and the header-adjusted capacity within one 32-KiB bank are tracked independently.
+
+Nested structures append one compatible `RATS.log` record each beside the ROM. Logged addresses
+are physical file offsets, so headered ROMs add `$200`; the target must be absent or a regular file.
+The report reads the Lunar Magic attribution from the ordinary or ExLoROM active body. Retained
+normal and deliberately nested Wine captures live under
+`docs/oracle-work/lm363/pristine-us/rom-user-area-scan/`. The core scanner models the fixed
+historical unprotected-Map16 interval, but automatic discovery remains pending a genuine pre-1.64
+ROM fixture. The full native suite passes 1,025 tests with 12 explicit external-fixture ignores,
+the Windows target compiles, all 512 pristine slots materialize and capture, and the semantic
+renderer manifest retains SHA-256
+`254a1a050d12785973241910e26d8b7917a5cb5e2a56602a330fc6cbd833c04d`. Authenticated native
+command coverage is now 261 of 317 named table slots, leaving 56 pending.

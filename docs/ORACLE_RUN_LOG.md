@@ -1077,3 +1077,16 @@ already open program. The original executable imports `EnumWindows`, `GetWindowT
 boundary. Rust now refreshes the tracked child PID, finds the first visible owned window, restores
 it when minimized, and requests foreground activation without creating a second process. Focused
 launcher tests retain pending/running de-duplication and the Windows target cross-compiles.
+
+## Lunar Magic 3.63 ROM user-area scan (2026-08-10)
+
+An isolated Wine prefix opened a headered 2-MiB SMW-US ROM attributed to Lunar Magic 3.63 and
+invoked File → Scan ROM. The unmodified expanded image reported protected `$8C95`, free
+`$17736B`, total `$180000`, five structures, largest bank `$8000`, and largest area `$10E1A3`.
+
+A controlled copy added an outer RATS full range at logical `$100000..$100030` and a nested range
+at `$100010..$100020`. The dialog reported one conflict and `$10` conflicted bytes. Its generated
+`RATS.log` used physical addresses `$100200` and `$100210`, complete sizes `$30` and `$10`, and
+overlap `$10`, proving that the copier prefix participates in log addresses. The retained values,
+exact original log line, mutation description, and static function/resource provenance are under
+`docs/oracle-work/lm363/pristine-us/rom-user-area-scan/`; no ROM or executable is retained.
