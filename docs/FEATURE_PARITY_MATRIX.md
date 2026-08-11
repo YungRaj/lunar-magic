@@ -162,7 +162,12 @@ Current native-renderer integration evidence covers a complete level rather than
 viewport. `pristine_full_level_render` composes the stored full extent with authenticated Map16,
 background, object, sprite, entrance, orientation, palette, and animation state. The responsive
 viewport fits exactly one 256-by-224 SNES screen into the available canvas and recomputes that fit
-for horizontal, vertical, and full-screen window changes. The current fixture-backed `lm-native`
+for horizontal, vertical, and full-screen window changes. Its fit is now containment-based: the
+complete camera frame is never cropped, square SNES pixels are retained, and a surplus pane axis
+reveals neighboring editable level space centered around that frame. Live-frame composition and
+canvas hit-testing use the same centered geometry. Focused wide, tall, zoomed, horizontal-only,
+windowed, and full-screen tests plus a fresh pristine level `$105` visual capture cover the
+regression. The current fixture-backed `lm-native`
 gate has 933 passing tests and 12 explicitly ignored external/hardware-fixture tests (the audio
 hardware gate was also rerun explicitly and passed);
 `every_pristine_level_materializes_its_builtin_render_assets` traverses all

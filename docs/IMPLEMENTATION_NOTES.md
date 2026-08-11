@@ -5977,6 +5977,20 @@ stale pixels.
 pristine/profile-backed 8×8 editor state as Ctrl+Alt+F8. It cycles white/black without changing
 grid visibility and retains Lunar Magic's exact `Tile grid color 1.` / `Tile grid color 2.` status.
 
+## Complete responsive game viewport
+
+The native level editor no longer uses cover scaling for its 256×224 game viewport. Cover scaling
+filled a nonmatching pane by silently cropping both edges of the limiting camera axis, which could
+hide entrance-side content after a window resize. The editor now chooses the largest square-pixel
+scale that contains the complete SNES camera frame, centers that frame, and paints neighboring
+editable level space into the surplus pane axis. The same centered origin drives object/sprite hit
+testing, selection overlays, and paused live-frame placement. Wide, tall, zoomed,
+horizontal-resize, windowed, and full-screen unit cases pass; a fresh pristine level `$105` visual
+capture retains both camera edges. The renderer remains green at 235/235 tests, the complete native
+gate passes 1,121 tests with 13 explicit external-fixture ignores, all 512 pristine slots
+materialize, and the semantic renderer manifest remains byte-identical at SHA-256
+`254a1a050d12785973241910e26d8b7917a5cb5e2a56602a330fc6cbd833c04d`.
+
 ## Deprecated Select FG/BG commands (`$2473/$2474`)
 
 Both authenticated central dispatch bytes are `$DF`, while the Lunar Magic 3.63 command switch

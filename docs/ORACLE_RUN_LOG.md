@@ -1159,3 +1159,14 @@ deliberately different Last Screen value, saves once with the option enabled and
 semantically reopens the ROM. Enabled mode matches the highest visible object/sprite screen;
 disabled mode retains the manual five-bit header. Both focused auto-screen tests and all 39
 authenticated toolbar tests pass; the partition is 289 routed / 28 pending.
+
+## Responsive viewport crop regression (2026-08-11)
+
+A live pristine level `$105` capture exposed that responsive cover scaling could crop the opposite
+edges of the nominal 256×224 camera frame. The native editor now contains and centers that complete
+frame with square pixels, using surplus pane space to reveal adjacent level content. Focused aspect,
+zoom, horizontal-resize, windowed, full-screen, and live-frame geometry tests pass. A fresh visual
+capture was inspected; the renderer passes 235/235 tests, the native suite passes 1,121 tests with
+13 external-fixture ignores, all 512 pristine levels materialize, the Windows i686 check passes,
+and the regenerated semantic manifest remains byte-identical at SHA-256
+`254a1a050d12785973241910e26d8b7917a5cb5e2a56602a330fc6cbd833c04d`.
