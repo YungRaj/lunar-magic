@@ -6010,6 +6010,20 @@ the same level graphics path; standard GFX extraction while nonzero reports
 `$105` renders prove modes 0, 1, and 2 are visually distinct, with normal mode unchanged.
 Authenticated native command coverage is now 303 of 317 named slots, leaving 14 pending.
 
+## Layer 3 16x16 diagnostic view (`$26B6`)
+
+The authenticated command-table selector `$D8` increments session byte `$00E27872` modulo three,
+posts the Layer 3 refresh command, and reports one of Lunar Magic's exact normal, 512x512, or
+1024x1024 status strings. `RenderLayer3TilemapCellAtCoordinates` proves that mode 0 retains the
+ordinary four-screen 8x8-cell address mapping, mode 1 addresses one 32x32-word plane, and mode 2
+addresses four 32x32-word pages as a 64x64 plane. In either nonzero mode,
+`RenderLayer3TilemapRegionToPixelBuffer` interprets one tilemap word as a 16x16 metatile composed
+from graphics offsets `+0`, `+1`, `+16`, and `+17`, applying the word's flips across the complete
+metatile and retaining its shared palette and priority attributes. Rust now cycles the same
+session-only state, invalidates the Layer 3 cache, produces exact 512- or 1024-pixel planes, and
+uses the live texture extent for editor repetition and game-viewport wrapping. Normal mode remains
+unchanged. Authenticated native command coverage is now 304 of 317 named slots, leaving 13 pending.
+
 ## Complete responsive game viewport
 
 The native level editor no longer uses cover scaling for its 256×224 game viewport. Cover scaling

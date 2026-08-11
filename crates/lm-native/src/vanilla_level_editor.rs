@@ -574,6 +574,7 @@ pub(crate) struct VanillaLevelEditor {
     blue_pow_active: bool,
     silver_pow_active: bool,
     two_bpp_view_mode: u8,
+    layer3_16x16_view_mode: u8,
     background_512_height: bool,
     translucent_overlays: bool,
     tools_panel_visible: Option<bool>,
@@ -625,6 +626,7 @@ pub(crate) struct VanillaLevelEditor {
         bool,
         bool,
         lm_render::LunarMagicConditionalViewState,
+        u8,
         u8,
     )>,
     map16_texture: Option<egui::TextureHandle>,
@@ -2531,6 +2533,7 @@ impl VanillaLevelEditor {
             self.silver_pow_active,
             self.conditional_view_state,
             self.two_bpp_view_mode,
+            self.layer3_16x16_view_mode,
         );
         if self.map16_key == Some(key) {
             return;
@@ -2573,6 +2576,7 @@ impl VanillaLevelEditor {
                 silver_pow_active: self.silver_pow_active,
                 conditional: self.conditional_view_state,
                 two_bpp_mode: self.two_bpp_view_mode,
+                layer3_16x16_mode: self.layer3_16x16_view_mode,
             },
             background_bank,
             background_tilemap,
@@ -2682,14 +2686,20 @@ impl VanillaLevelEditor {
                 self.layer3_tiles = preview.layer3_tiles;
                 self.layer3_low_texture = preview.layer3_low_image.map(|image| {
                     context.load_texture(
-                        format!("vanilla-layer3-low-{level:03X}-{}", snapshot.revision),
+                        format!(
+                            "vanilla-layer3-low-{level:03X}-{}-{}",
+                            snapshot.revision, self.layer3_16x16_view_mode
+                        ),
                         image,
                         egui::TextureOptions::NEAREST,
                     )
                 });
                 self.layer3_high_texture = preview.layer3_high_image.map(|image| {
                     context.load_texture(
-                        format!("vanilla-layer3-high-{level:03X}-{}", snapshot.revision),
+                        format!(
+                            "vanilla-layer3-high-{level:03X}-{}-{}",
+                            snapshot.revision, self.layer3_16x16_view_mode
+                        ),
                         image,
                         egui::TextureOptions::NEAREST,
                     )
@@ -5540,6 +5550,22 @@ impl VanillaLevelEditor {
 
     pub(crate) const fn two_bpp_view_mode(&self) -> u8 {
         self.two_bpp_view_mode
+    }
+
+    pub(crate) fn toolbar_cycle_layer3_16x16_view_mode(&mut self) -> &'static str {
+        self.layer3_16x16_view_mode = (self.layer3_16x16_view_mode + 1) % 3;
+        self.invalidate_graphics_preview();
+        match self.layer3_16x16_view_mode {
+            0 => "Layer 3 GFX set to normal.",
+            1 => "Layer 3 16x16 tile 512x512 tilemap setting enable.",
+            2 => "Layer 3 16x16 tile 1024x1024 tilemap setting enable.",
+            _ => unreachable!("Layer 3 16x16 mode cycles modulo three"),
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) const fn layer3_16x16_view_mode(&self) -> u8 {
+        self.layer3_16x16_view_mode
     }
 
     pub(crate) fn toolbar_invisible_pow_objects_toggle(&mut self) {
@@ -13254,20 +13280,24 @@ fn draw_layer3_editor_or_viewport(
     let pixel_scale = cell_size / 16.0;
     let world_width = i32::from(width) * 16;
     let world_height = i32::from(height) * 16;
+    let plane_pixels = i32::try_from(texture.size()[0]).unwrap_or(512);
     // RenderLayer3TilemapCellAtCoordinates @ $004502C0 masks coordinates into Lunar Magic's
     // active BG3 plane while traversing vertical editor worlds. Horizontal editors retain the
     // native single Y origin; normalizing a negative position backward by 512 pixels leaks the
     // plane's tail into the top of levels such as $127.
-    let target_y_origins = layer3_plane_y_origins(position.1, world_height, vertical);
+    let target_y_origins = layer3_plane_y_origins(position.1, world_height, vertical, plane_pixels);
     for target_y in target_y_origins {
-        for target_x in repeating_layer3_plane_origins(position.0, world_width) {
+        for target_x in repeating_layer3_plane_origins(position.0, world_width, plane_pixels) {
             let target = egui::Rect::from_min_size(
                 world.min
                     + egui::vec2(
                         screen_pixels_f32(target_x) * pixel_scale,
                         screen_pixels_f32(target_y) * pixel_scale,
                     ),
-                egui::vec2(512.0 * pixel_scale, 512.0 * pixel_scale),
+                egui::vec2(
+                    screen_pixels_f32(plane_pixels) * pixel_scale,
+                    screen_pixels_f32(plane_pixels) * pixel_scale,
+                ),
             );
             painter.image(
                 texture.id(),
@@ -13279,26 +13309,30 @@ fn draw_layer3_editor_or_viewport(
     }
 }
 
-fn repeating_layer3_plane_origins(position: i16, world_extent: i32) -> Vec<i32> {
-    const PLANE_PIXELS: i32 = 512;
+fn repeating_layer3_plane_origins(position: i16, world_extent: i32, plane_pixels: i32) -> Vec<i32> {
     let mut origin = -i32::from(position);
     while origin > 0 {
-        origin -= PLANE_PIXELS;
+        origin -= plane_pixels;
     }
-    while origin + PLANE_PIXELS <= 0 {
-        origin += PLANE_PIXELS;
+    while origin + plane_pixels <= 0 {
+        origin += plane_pixels;
     }
     let mut origins = Vec::new();
     while origin < world_extent {
         origins.push(origin);
-        origin += PLANE_PIXELS;
+        origin += plane_pixels;
     }
     origins
 }
 
-fn layer3_plane_y_origins(position: i16, world_extent: i32, vertical: bool) -> Vec<i32> {
+fn layer3_plane_y_origins(
+    position: i16,
+    world_extent: i32,
+    vertical: bool,
+    plane_pixels: i32,
+) -> Vec<i32> {
     if vertical {
-        repeating_layer3_plane_origins(position, world_extent)
+        repeating_layer3_plane_origins(position, world_extent, plane_pixels)
     } else {
         vec![-i32::from(position)]
     }
@@ -13313,7 +13347,7 @@ fn draw_wrapped_layer3_region(
     camera: (u16, u16),
     view_pixels: (i32, i32),
 ) {
-    const PLANE_PIXELS: i32 = 512;
+    let plane_pixels = i32::try_from(texture.size()[0]).unwrap_or(512);
     let viewport = egui::Rect::from_min_size(
         world.min
             + egui::vec2(
@@ -13326,18 +13360,18 @@ fn draw_wrapped_layer3_region(
         ),
     );
     let pixel_scale = cell_size / 16.0;
-    let source_x = i32::from(position.0).rem_euclid(PLANE_PIXELS);
-    let source_y = i32::from(position.1).rem_euclid(PLANE_PIXELS);
+    let source_x = i32::from(position.0).rem_euclid(plane_pixels);
+    let source_y = i32::from(position.1).rem_euclid(plane_pixels);
     let mut output_y = 0;
     while output_y < view_pixels.1 {
-        let plane_y = (source_y + output_y).rem_euclid(PLANE_PIXELS);
-        let rows = (PLANE_PIXELS - plane_y).min(view_pixels.1 - output_y);
+        let plane_y = (source_y + output_y).rem_euclid(plane_pixels);
+        let rows = (plane_pixels - plane_y).min(view_pixels.1 - output_y);
         let mut output_x = 0;
         while output_x < view_pixels.0 {
-            let plane_x = (source_x + output_x).rem_euclid(PLANE_PIXELS);
-            let columns = (PLANE_PIXELS - plane_x).min(view_pixels.0 - output_x);
+            let plane_x = (source_x + output_x).rem_euclid(plane_pixels);
+            let columns = (plane_pixels - plane_x).min(view_pixels.0 - output_x);
             let pixels = |value| f32::from(u16::try_from(value).unwrap_or_default());
-            let plane_extent = pixels(PLANE_PIXELS);
+            let plane_extent = pixels(plane_pixels);
             let target = egui::Rect::from_min_size(
                 viewport.min
                     + egui::vec2(
@@ -17266,21 +17300,25 @@ mod tests {
     #[test]
     fn layer3_editor_plane_repeats_across_complete_scrolled_world() {
         assert_eq!(
-            repeating_layer3_plane_origins(0, 1_280),
+            repeating_layer3_plane_origins(0, 1_280, 512),
             vec![0, 512, 1_024]
         );
         assert_eq!(
-            repeating_layer3_plane_origins(-64, 1_024),
+            repeating_layer3_plane_origins(-64, 1_024, 512),
             vec![-448, 64, 576]
         );
         assert_eq!(
-            repeating_layer3_plane_origins(112, 1_024),
+            repeating_layer3_plane_origins(112, 1_024, 512),
             vec![-112, 400, 912]
         );
-        assert_eq!(layer3_plane_y_origins(-48, 432, false), vec![48]);
+        assert_eq!(layer3_plane_y_origins(-48, 432, false, 512), vec![48]);
         assert_eq!(
-            layer3_plane_y_origins(-48, 1_024, true),
+            layer3_plane_y_origins(-48, 1_024, true, 512),
             vec![-464, 48, 560]
+        );
+        assert_eq!(
+            repeating_layer3_plane_origins(-64, 2_048, 1_024),
+            vec![-960, 64, 1_088]
         );
     }
 

@@ -1177,6 +1177,20 @@ The post-change renderer gate passes 235/235; the native gate passes 1,130 tests
 external-fixture ignores and materializes all 512 pristine levels; the Windows i686 cross-check
 also passes.
 
+## Layer 3 16x16 view recovery (2026-08-11)
+
+Ghidra command-table entry `$26B6 -> $D8` and `HandleLevelEditorCommand` authenticate the
+three-state `$00E27872` cycle, posted refresh, and exact status strings. Its seven code references
+lead only to the command handler and Layer 3 renderers. `RenderLayer3TilemapCellAtCoordinates` at
+`$004502C0` recovers the mode-0 four-screen 8x8 index, mode-1 32x32 index, and mode-2 paged 64x64
+index. `RenderLayer3TilemapRegionToPixelBuffer` at `$0044FA70` proves nonzero modes read one shared
+word and choose the four 8x8 graphics tiles through `(flipped_y * $10) + flipped_x`, preserving
+priority, palette, and whole-metatile flips. Focused Rust tests bind the four quadrant offsets,
+512/1024 output extents, wrapping extent, exact command route, complete three-status cycle, and
+no-ROM no-op boundary. The renderer gate passes 235/235; the complete native gate passes 1,132
+tests with 13 explicit external-fixture ignores and materializes all 512 pristine levels; the
+Windows i686 cross-check passes.
+
 ## Context-sensitive custom collection append (2026-08-11)
 
 Ghidra command-table byte `$D3` maps both `LM_KEY_ADD_CSPRITE` and `LM_KEY_ADD_CUSTOM` at `$26AF`.

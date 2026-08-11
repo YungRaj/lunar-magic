@@ -472,6 +472,15 @@ impl NativeApplication {
                     self.two_bpp_view_confirmation = true;
                 }
             }
+            UserToolbarNativeAction::Layer3SixteenBySixteenMode => {
+                if crate::vanilla_level_editor::VanillaLevelEditor::handles(&self.app) {
+                    self.app.status = self
+                        .vanilla_level_editor
+                        .toolbar_cycle_layer3_16x16_view_mode()
+                        .into();
+                    self.renderer.invalidate();
+                }
+            }
             UserToolbarNativeAction::WarnVerticalFireballBuoyancy => {
                 self.set_warn_vertical_fireball_buoyancy(
                     !self.warn_vertical_fireball_buoyancy.unwrap_or(true),
@@ -1851,6 +1860,7 @@ enum UserToolbarNativeAction {
     GraphicsGridColor,
     AppendCustomCollection,
     TwoBppViewMode,
+    Layer3SixteenBySixteenMode,
     WarnVerticalFireballBuoyancy,
     GfxBypassListDialogs,
     JoinedGraphicsFiles,
@@ -1971,6 +1981,7 @@ fn user_toolbar_native_action(name: &str) -> Option<UserToolbarNativeAction> {
             UserToolbarNativeAction::AppendCustomCollection
         }
         "LM_KEY_2BPP_MODE" => UserToolbarNativeAction::TwoBppViewMode,
+        "LM_KEY_LAYER3_16X16_MODE" => UserToolbarNativeAction::Layer3SixteenBySixteenMode,
         "LM_OPTIONS_WARN_SPRITE_33" => UserToolbarNativeAction::WarnVerticalFireballBuoyancy,
         "LM_OPTIONS_INSTALL_VRAM" => UserToolbarNativeAction::GfxBypassListDialogs,
         "LM_OPTIONS_ATTACH_FILES" => UserToolbarNativeAction::JoinedGraphicsFiles,
@@ -3027,7 +3038,7 @@ mod user_toolbar_tests {
                     || user_toolbar_native_action(entry.name).is_some()
             })
             .collect::<Vec<_>>();
-        assert_eq!(supported.len(), 303);
+        assert_eq!(supported.len(), 304);
         assert!(
             supported
                 .iter()
@@ -3495,6 +3506,38 @@ mod user_toolbar_tests {
     }
 
     #[test]
+    fn layer3_16x16_command_cycles_exact_session_modes_and_status_text() {
+        assert_eq!(
+            user_toolbar_native_action("LM_KEY_LAYER3_16X16_MODE"),
+            Some(UserToolbarNativeAction::Layer3SixteenBySixteenMode)
+        );
+        let mut native = NativeApplication::default();
+        native.apply_user_toolbar_native_action(
+            &egui::Context::default(),
+            UserToolbarNativeAction::Layer3SixteenBySixteenMode,
+        );
+        assert_eq!(native.vanilla_level_editor.layer3_16x16_view_mode(), 0);
+
+        native
+            .app
+            .load_rom(crate::test_support::pristine_smw_us_rom_bytes())
+            .unwrap();
+        native.app.dispatch(Command::SelectLevel(0x105)).unwrap();
+        for (mode, status) in [
+            (1, "Layer 3 16x16 tile 512x512 tilemap setting enable."),
+            (2, "Layer 3 16x16 tile 1024x1024 tilemap setting enable."),
+            (0, "Layer 3 GFX set to normal."),
+        ] {
+            native.apply_user_toolbar_native_action(
+                &egui::Context::default(),
+                UserToolbarNativeAction::Layer3SixteenBySixteenMode,
+            );
+            assert_eq!(native.vanilla_level_editor.layer3_16x16_view_mode(), mode);
+            assert_eq!(native.app.status, status);
+        }
+    }
+
+    #[test]
     fn historical_install_vram_command_toggles_gfx_bypass_dialog_style() {
         let mut native = NativeApplication::default();
         assert_eq!(native.gfx_bypass_list_dialogs, None);
@@ -3891,7 +3934,7 @@ mod user_toolbar_tests {
                     && user_toolbar_native_action(entry.name).is_none()
             })
             .collect::<Vec<_>>();
-        assert_eq!(unsupported.len(), 14);
+        assert_eq!(unsupported.len(), 13);
         if std::env::var_os("LM_DIAGNOSTIC_UNSUPPORTED_TOOLBAR_COMMANDS").is_some() {
             for entry in unsupported {
                 eprintln!(

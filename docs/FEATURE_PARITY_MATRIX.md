@@ -955,6 +955,15 @@ pristine Level `$105` renders pass. The authenticated partition is now
 **303 routed / 14 pending**. The aggregate remains 59/65 because the configuration row is still
 Partial.
 
+Toolbar coverage update (2026-08-11, Layer 3 16x16 view): authenticated
+`LM_KEY_LAYER3_16X16_MODE` `$26B6` now cycles the original session-only normal, 512x512, and
+1024x1024 modes with exact status text. The renderer reproduces Lunar Magic's nonzero-mode 16x16
+metatile interpretation from graphics offsets `+0/+1/+16/+17`, whole-metatile flips, shared
+priority/palette word, 32x32 versus paged 64x64 addressing, and extent-aware editor/game wrapping.
+Normal 8x8 rendering remains unchanged. The authenticated partition is now
+**304 routed / 13 pending**. The aggregate remains 59/65 because the configuration row is still
+Partial.
+
 Toolbar coverage update (2026-08-10, selection editors): `LM_EDIT_PROPERTIES` `$2468` now toggles
 an independent modeless properties window, while `LM_EDIT_EDIT_MANUAL` `$2469` opens (and repeated
 activation reuses) the manual editor dialog. Both follow the live Layer 1, object-backed Layer 2,

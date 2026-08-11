@@ -42,6 +42,7 @@ pub(crate) struct VanillaAnimationViewState {
     pub(crate) silver_pow_active: bool,
     pub(crate) conditional: lm_render::LunarMagicConditionalViewState,
     pub(crate) two_bpp_mode: u8,
+    pub(crate) layer3_16x16_mode: u8,
 }
 
 impl Default for VanillaAnimationViewState {
@@ -51,6 +52,7 @@ impl Default for VanillaAnimationViewState {
             silver_pow_active: false,
             conditional: lm_render::LunarMagicConditionalViewState::default(),
             two_bpp_mode: 0,
+            layer3_16x16_mode: 0,
         }
     }
 }
@@ -784,6 +786,12 @@ fn render_with_editor_palette_phase_and_animation_view_state(
             animation_view_state.two_bpp_mode
         ));
     }
+    if animation_view_state.layer3_16x16_mode > 2 {
+        return Err(format!(
+            "Layer 3 16x16 mode {} is outside 0..=2",
+            animation_view_state.layer3_16x16_mode
+        ));
+    }
     if editor_palette_phase >= 8 {
         return Err(format!(
             "vanilla editor palette phase {editor_palette_phase} is outside 0..8"
@@ -990,7 +998,13 @@ fn render_with_editor_palette_phase_and_animation_view_state(
             layer3.behavior,
             header.object_tileset(),
         );
-        let (low, high) = render_layer3_planes(&layer3.tilemap, &layer3_tiles, &palette, additive);
+        let (low, high) = render_layer3_planes_with_mode(
+            &layer3.tilemap,
+            &layer3_tiles,
+            &palette,
+            additive,
+            animation_view_state.layer3_16x16_mode,
+        );
         (Some(low), Some(high))
     });
     Ok(VanillaMap16Preview {
@@ -1354,60 +1368,88 @@ fn draw_subtile_over(
     }
 }
 
+#[cfg(test)]
 fn render_layer3_planes(
     tilemap: &[u16],
     graphics: &[IndexedTile],
     palette: &Palette,
     additive: bool,
 ) -> (egui::ColorImage, egui::ColorImage) {
-    const TILES: usize = lm_profile::SMW_US_V1_LAYER3_TILEMAP_SIDE;
+    render_layer3_planes_with_mode(tilemap, graphics, palette, additive, 0)
+}
+
+fn render_layer3_planes_with_mode(
+    tilemap: &[u16],
+    graphics: &[IndexedTile],
+    palette: &Palette,
+    additive: bool,
+    mode: u8,
+) -> (egui::ColorImage, egui::ColorImage) {
+    let tiles = if mode == 1 {
+        32
+    } else {
+        lm_profile::SMW_US_V1_LAYER3_TILEMAP_SIDE
+    };
     const TILE_PIXELS: usize = IndexedTile::WIDTH;
-    const EXTENT: usize = TILES * TILE_PIXELS;
-    let mut low = egui::ColorImage::new([EXTENT, EXTENT], egui::Color32::TRANSPARENT);
-    let mut high = egui::ColorImage::new([EXTENT, EXTENT], egui::Color32::TRANSPARENT);
-    for (position, &word) in tilemap.iter().take(TILES * TILES).enumerate() {
-        // The stripe decoder fills untouched BG3 cells with SMW's canonical
-        // blank word.  Its tile number is not universally blank in the
-        // level-specific graphics set, so treat the sentinel itself as empty.
-        if word == 0x38fc {
-            continue;
-        }
-        let tile_x = position % TILES;
-        let tile_y = position / TILES;
-        let Some(tile) = graphics.get(usize::from(word & 0x03ff)) else {
-            continue;
-        };
-        let palette_number = usize::from((word >> 10) & 7);
-        let x_flip = word & 0x4000 != 0;
-        let y_flip = word & 0x8000 != 0;
-        for y in 0..TILE_PIXELS {
-            for x in 0..TILE_PIXELS {
-                let source_x = if x_flip { TILE_PIXELS - 1 - x } else { x };
-                let source_y = if y_flip { TILE_PIXELS - 1 - y } else { y };
-                let Some(index) = tile.pixel(source_x, source_y) else {
-                    continue;
-                };
-                if index == 0 {
-                    continue;
-                }
-                // BG3 is 2bpp in SMW's normal level mode: each tile palette selects four
-                // consecutive CGRAM colors rather than one sixteen-color 4bpp row.
-                let color_index = palette_number * 4 + usize::from(index);
-                let Some(color) = palette.colors.get(color_index) else {
-                    continue;
-                };
-                let color = color.to_rgb8();
-                let target = if word & 0x2000 == 0 {
-                    &mut low
-                } else {
-                    &mut high
-                };
-                target.pixels[(tile_y * TILE_PIXELS + y) * EXTENT + tile_x * TILE_PIXELS + x] =
-                    if additive {
-                        egui::Color32::from_rgb_additive(color.red, color.green, color.blue)
-                    } else {
-                        egui::Color32::from_rgb(color.red, color.green, color.blue)
+    let cell_pixels = if mode == 0 {
+        TILE_PIXELS
+    } else {
+        TILE_PIXELS * 2
+    };
+    let extent = tiles * cell_pixels;
+    let mut low = egui::ColorImage::new([extent, extent], egui::Color32::TRANSPARENT);
+    let mut high = egui::ColorImage::new([extent, extent], egui::Color32::TRANSPARENT);
+    for tile_y in 0..tiles {
+        for tile_x in 0..tiles {
+            let position = tile_y * lm_profile::SMW_US_V1_LAYER3_TILEMAP_SIDE + tile_x;
+            let Some(&word) = tilemap.get(position) else {
+                continue;
+            };
+            // The stripe decoder fills untouched BG3 cells with SMW's canonical
+            // blank word.  Its tile number is not universally blank in the
+            // level-specific graphics set, so treat the sentinel itself as empty.
+            if word == 0x38fc {
+                continue;
+            }
+            let palette_number = usize::from((word >> 10) & 7);
+            let x_flip = word & 0x4000 != 0;
+            let y_flip = word & 0x8000 != 0;
+            for y in 0..cell_pixels {
+                for x in 0..cell_pixels {
+                    let source_x = if x_flip { cell_pixels - 1 - x } else { x };
+                    let source_y = if y_flip { cell_pixels - 1 - y } else { y };
+                    let subtile = (source_y / TILE_PIXELS) * 0x10 + source_x / TILE_PIXELS;
+                    let tile_number =
+                        usize::from(word & 0x03ff) + if mode == 0 { 0 } else { subtile };
+                    let Some(tile) = graphics.get(tile_number & 0x03ff) else {
+                        continue;
                     };
+                    let Some(index) = tile.pixel(source_x % TILE_PIXELS, source_y % TILE_PIXELS)
+                    else {
+                        continue;
+                    };
+                    if index == 0 {
+                        continue;
+                    }
+                    // BG3 is 2bpp in SMW's normal level mode: each tile palette selects four
+                    // consecutive CGRAM colors rather than one sixteen-color 4bpp row.
+                    let color_index = palette_number * 4 + usize::from(index);
+                    let Some(color) = palette.colors.get(color_index) else {
+                        continue;
+                    };
+                    let color = color.to_rgb8();
+                    let target = if word & 0x2000 == 0 {
+                        &mut low
+                    } else {
+                        &mut high
+                    };
+                    target.pixels[(tile_y * cell_pixels + y) * extent + tile_x * cell_pixels + x] =
+                        if additive {
+                            egui::Color32::from_rgb_additive(color.red, color.green, color.blue)
+                        } else {
+                            egui::Color32::from_rgb(color.red, color.green, color.blue)
+                        };
+                }
             }
         }
     }
@@ -3034,6 +3076,47 @@ mod tests {
         assert_eq!(low.pixels[8 + 7], egui::Color32::TRANSPARENT);
         assert_eq!(high.pixels[0], egui::Color32::TRANSPARENT);
         assert_eq!(low.pixels[1], egui::Color32::TRANSPARENT);
+    }
+
+    #[test]
+    fn layer3_16x16_modes_use_recovered_metatile_quadrants_and_plane_extents() {
+        let blank = IndexedTile::new([0; IndexedTile::PIXEL_COUNT]);
+        let mut graphics = vec![blank; 0x400];
+        graphics[0x10] = IndexedTile::new([1; IndexedTile::PIXEL_COUNT]);
+        graphics[0x11] = IndexedTile::new([2; IndexedTile::PIXEL_COUNT]);
+        graphics[0x20] = IndexedTile::new([3; IndexedTile::PIXEL_COUNT]);
+        graphics[0x21] = IndexedTile::new([1; IndexedTile::PIXEL_COUNT]);
+        let mut colors = vec![Bgr555(0); 256];
+        colors[1] = Bgr555::from_rgb8(Rgb8 {
+            red: 255,
+            green: 0,
+            blue: 0,
+        });
+        colors[2] = Bgr555::from_rgb8(Rgb8 {
+            red: 0,
+            green: 255,
+            blue: 0,
+        });
+        colors[3] = Bgr555::from_rgb8(Rgb8 {
+            red: 0,
+            green: 0,
+            blue: 255,
+        });
+        let palette = Palette { colors };
+        let mut tilemap = vec![0x38fc; lm_profile::SMW_US_V1_LAYER3_TILEMAP_WORDS];
+        tilemap[0] = 0x10;
+
+        let (mode_1, _) = render_layer3_planes_with_mode(&tilemap, &graphics, &palette, false, 1);
+        assert_eq!(mode_1.size, [512, 512]);
+        assert_eq!(mode_1.pixels[0], egui::Color32::RED);
+        assert_eq!(mode_1.pixels[8], egui::Color32::GREEN);
+        assert_eq!(mode_1.pixels[8 * 512], egui::Color32::BLUE);
+        assert_eq!(mode_1.pixels[8 * 512 + 8], egui::Color32::RED);
+
+        let (mode_2, _) = render_layer3_planes_with_mode(&tilemap, &graphics, &palette, false, 2);
+        assert_eq!(mode_2.size, [1024, 1024]);
+        assert_eq!(mode_2.pixels[8], egui::Color32::GREEN);
+        assert_eq!(mode_2.pixels[8 * 1024], egui::Color32::BLUE);
     }
 
     #[test]
