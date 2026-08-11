@@ -180,6 +180,7 @@ pub use expanded_settings_install::{
     SmwUsV1ExpandedSettingsGeneration101MigrationError,
     SmwUsV1ExpandedSettingsGeneration102Migration,
     SmwUsV1ExpandedSettingsGeneration102MigrationError,
+    smw_us_v1_exlorom_expanded_settings_installation_plan,
     smw_us_v1_expanded_settings_generation_100_migration,
     smw_us_v1_expanded_settings_generation_101_migration,
     smw_us_v1_expanded_settings_generation_102_migration,
@@ -250,7 +251,8 @@ pub use layer3_extended_runtime::{
 };
 pub use layer3_install::{
     CompleteLayer3BuildError, smw_us_v1_complete_layer3_feature_plans,
-    smw_us_v1_complete_layer3_installation_plan,
+    smw_us_v1_complete_layer3_installation_plan, smw_us_v1_exlorom_complete_layer3_feature_plans,
+    smw_us_v1_exlorom_complete_layer3_installation_plan,
 };
 pub use layer3_main_patch::{
     Layer3MainEntry, SMW_US_V1_LAYER3_LEVEL_DISPATCH_ENTRY, SMW_US_V1_LAYER3_MAIN_ENTRIES,

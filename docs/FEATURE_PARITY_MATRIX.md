@@ -510,8 +510,19 @@ the exact converted image. `complete_feature_survives_exlorom_conversion_with_ev
 then covers the combined family: all five Layer 3 RATS owners, the expanded-settings owner, and all
 fixed runtime writes are byte-identical in the relocated SMW body, the settings descriptor reopens,
 the mapper checksum remains valid, and one Undo restores the exact pre-conversion installation.
-Alternate identity, direct post-conversion Layer 3 installation, and the remaining SA-1 combined
-runtime variants keep the row `Partial`.
+Direct post-conversion Layer 3 installation now routes through explicit ExLoROM plans: all
+fixed writes and both allocation windows follow the relocated `+$400000` SMW body, converted
+zero/`$FF` free space is accepted, low-bank payload fixups retain active-body addressing, and the
+authoritative checksum remains in the low first bank. Fresh combined installation and the branch
+that reuses settings installed before conversion both pass through the application. Headered and
+headerless framing, all six RATS owners, settings-layout reopen, checksum, exact Undo/Redo, and
+fixed-write corruption atomicity are covered by
+`complete_feature_installs_directly_into_converted_exlorom_and_undoes_exactly`,
+`direct_exlorom_layer3_install_preserves_headerless_physical_framing`,
+`direct_exlorom_layer3_install_rejects_fixed_write_corruption_atomically`,
+`application_installs_layer3_directly_after_exlorom_conversion`, and
+`exlorom_layer3_reuses_settings_installed_before_conversion`. Alternate identity and the remaining
+SA-1 combined runtime variants keep the row `Partial`.
 
 The Configuration/Localization row additionally retains the original persistent distinction
 between `(AutoDetect)` and `(Default)` English. The localized native Language menu now exposes

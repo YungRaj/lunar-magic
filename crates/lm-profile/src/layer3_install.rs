@@ -3,6 +3,7 @@
 use crate::{
     ExpandedSettingsInstallPlanError, Layer3CompatibilityBuildError, SMW_US_V1_CHECKSUM_FIELD,
     SMW_US_V1_LAYER3_MAIN_PATCH_SEARCH_END, SMW_US_V1_LAYER3_MAIN_PATCH_SEARCH_START,
+    smw_us_v1_exlorom_expanded_settings_installation_plan,
     smw_us_v1_expanded_settings_installation_plan, smw_us_v1_layer3_auxiliary_payload,
     smw_us_v1_layer3_compatibility_payload, smw_us_v1_layer3_extended_runtime_payload,
     smw_us_v1_layer3_extended_runtime_writes, smw_us_v1_layer3_main_patch_payload,
@@ -53,6 +54,15 @@ pub fn smw_us_v1_complete_layer3_feature_plans()
     Ok(vec![
         smw_us_v1_complete_layer3_installation_plan()?,
         smw_us_v1_expanded_settings_installation_plan()?,
+    ])
+}
+
+/// Builds both prerequisites directly against a converted ExLoROM's relocated SMW body.
+pub fn smw_us_v1_exlorom_complete_layer3_feature_plans()
+-> Result<Vec<RelocatablePatchPlan>, CompleteLayer3BuildError> {
+    Ok(vec![
+        smw_us_v1_exlorom_complete_layer3_installation_plan()?,
+        smw_us_v1_exlorom_expanded_settings_installation_plan()?,
     ])
 }
 
@@ -110,6 +120,22 @@ pub fn smw_us_v1_complete_layer3_installation_plan()
         payloads,
         writes,
     })
+}
+
+/// Builds the five-owner Layer 3 runtime directly in a converted ExLoROM's active SMW body.
+pub fn smw_us_v1_exlorom_complete_layer3_installation_plan()
+-> Result<RelocatablePatchPlan, Layer3CompatibilityBuildError> {
+    const ACTIVE_BODY: usize = 0x40_0000;
+    let mut plan = smw_us_v1_complete_layer3_installation_plan()?;
+    plan.description = "install complete SMW US ExLoROM Layer 3 runtime".into();
+    plan.mapper = Mapper::ExLoRom;
+    plan.allocation.search =
+        plan.allocation.search.start + ACTIVE_BODY..plan.allocation.search.end + ACTIVE_BODY;
+    plan.allocation.fill_bytes = vec![0x00, 0xff];
+    for write in &mut plan.writes {
+        write.offset += ACTIVE_BODY;
+    }
+    Ok(plan)
 }
 
 fn append_component(
@@ -262,5 +288,98 @@ mod tests {
 
         project.undo().unwrap();
         assert_eq!(project.rom.logical_bytes(), installed);
+    }
+
+    #[test]
+    fn complete_feature_installs_directly_into_converted_exlorom_and_undoes_exactly() {
+        let mut project = Project::open_supported(pristine()).unwrap();
+        project.convert_to_64_mbit_exlorom().unwrap();
+        let converted = project.rom.as_file_bytes().to_vec();
+        let plans = smw_us_v1_exlorom_complete_layer3_feature_plans().unwrap();
+        let results = project
+            .install_relocatable_patch_group("install direct ExLoROM Layer 3 feature", &plans)
+            .unwrap();
+        let installed = project.rom.as_file_bytes().to_vec();
+
+        assert_eq!(results.len(), 2);
+        assert_eq!(results[0].blocks.len(), 5);
+        assert_eq!(results[1].blocks.len(), 1);
+        assert!(
+            results
+                .iter()
+                .flat_map(|result| &result.blocks)
+                .all(|block| { (0x40_0000..0x50_0000).contains(&block.header_offset) })
+        );
+        for write in plans.iter().flat_map(|plan| &plan.writes) {
+            assert!(write.offset >= 0x40_0000);
+            let actual = project
+                .rom
+                .read(write.offset, write.replacement.len())
+                .unwrap();
+            assert_ne!(actual, write.expected);
+            if write.fixups.is_empty() {
+                assert_eq!(actual, write.replacement);
+            }
+        }
+        let settings = crate::smw_us_v1_installed_expanded_settings_layout(&project)
+            .unwrap()
+            .unwrap();
+        assert_eq!(settings.mapper, Mapper::ExLoRom);
+        assert!(
+            lm_rom::detect_identity(&project.rom)
+                .unwrap()
+                .checksum_matches()
+        );
+
+        project.undo().unwrap();
+        assert_eq!(project.rom.as_file_bytes(), converted);
+        project.redo().unwrap();
+        assert_eq!(project.rom.as_file_bytes(), installed);
+    }
+
+    #[test]
+    fn direct_exlorom_layer3_install_rejects_fixed_write_corruption_atomically() {
+        let mut project = Project::open_supported(pristine()).unwrap();
+        project.convert_to_64_mbit_exlorom().unwrap();
+        let plans = smw_us_v1_exlorom_complete_layer3_feature_plans().unwrap();
+        let corrupt_offset = plans[0].writes[0].offset;
+        let corrupt = plans[0].writes[0].expected[0] ^ 0xff;
+        project.rom.write(corrupt_offset, &[corrupt]).unwrap();
+        project
+            .rom
+            .update_snes_checksum(SMW_US_V1_CHECKSUM_FIELD)
+            .unwrap();
+        let before = project.rom.as_file_bytes().to_vec();
+        let history = project.history.undo_len();
+
+        assert!(
+            project
+                .install_relocatable_patch_group("reject corrupt ExLoROM Layer 3 source", &plans)
+                .is_err()
+        );
+        assert_eq!(project.rom.as_file_bytes(), before);
+        assert_eq!(project.history.undo_len(), history);
+    }
+
+    #[test]
+    fn direct_exlorom_layer3_install_preserves_headerless_physical_framing() {
+        let logical = pristine().logical_bytes().to_vec();
+        let mut project = Project::open_supported(RomImage::from_bytes(logical).unwrap()).unwrap();
+        project.convert_to_64_mbit_exlorom().unwrap();
+        let converted = project.rom.as_file_bytes().to_vec();
+        assert!(project.rom.copier_header_bytes().is_none());
+
+        let plans = smw_us_v1_exlorom_complete_layer3_feature_plans().unwrap();
+        project
+            .install_relocatable_patch_group("install headerless ExLoROM Layer 3", &plans)
+            .unwrap();
+        assert!(project.rom.copier_header_bytes().is_none());
+        assert!(
+            lm_rom::detect_identity(&project.rom)
+                .unwrap()
+                .checksum_matches()
+        );
+        project.undo().unwrap();
+        assert_eq!(project.rom.as_file_bytes(), converted);
     }
 }

@@ -1465,3 +1465,14 @@ that exact partition for direct settings and first-ExGFX prerequisite installati
 mapper-qualified metadata layout. The bit-off and bit-on application gates verify all nineteen
 bytes, checksum-valid reopen, and byte-exact Undo; the focused SA-1 suite passes 8 active tests
 with six retained external-oracle tests ignored pending their proprietary fixtures.
+
+## Direct converted-ExLoROM Layer 3 installation (2026-08-11)
+
+The authenticated conversion layout and existing mapper runtime rules were composed into an
+explicit direct-install gate. Rust installs the five Layer 3 owners plus expanded settings into the
+relocated SMW body, verifies every fixed write, reopens the ExLoROM settings descriptor, repairs
+the low-bank checksum, and restores/reapplies exact physical images through Undo/Redo. The
+already-installed-settings branch, headered and headerless framing, and a corrupted fixed-write
+precondition are independently covered. The renderer passes 237/237 and `lm-app --lib` passes
+639 active tests with 13 explicit external-fixture ignores. Original live-process evidence for
+the remaining identity and SA-1 combined variants remains open.

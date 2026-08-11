@@ -130,20 +130,27 @@ impl AppState {
         if identity.game != SupportedGame::SuperMarioWorld
             || identity.region != Region::NorthAmerica
             || identity.revision != 0
-            || identity.mapper != Mapper::LoRom
+            || !matches!(identity.mapper, Mapper::LoRom | Mapper::ExLoRom)
         {
             return Err(AppError::Layer3IdentityMismatch);
         }
         let settings_installed = lm_profile::load_smw_us_v1_overworld_settings(project)
             .map_err(|error| AppError::NativeOverworldSettingsStorage(error.to_string()))?
             .installed;
-        let plans = if settings_installed {
-            vec![
+        let plans = match (identity.mapper, settings_installed) {
+            (Mapper::LoRom, true) => vec![
                 lm_profile::smw_us_v1_complete_layer3_installation_plan()
                     .map_err(lm_profile::CompleteLayer3BuildError::Runtime)?,
-            ]
-        } else {
-            lm_profile::smw_us_v1_complete_layer3_feature_plans()?
+            ],
+            (Mapper::LoRom, false) => lm_profile::smw_us_v1_complete_layer3_feature_plans()?,
+            (Mapper::ExLoRom, true) => vec![
+                lm_profile::smw_us_v1_exlorom_complete_layer3_installation_plan()
+                    .map_err(lm_profile::CompleteLayer3BuildError::Runtime)?,
+            ],
+            (Mapper::ExLoRom, false) => {
+                lm_profile::smw_us_v1_exlorom_complete_layer3_feature_plans()?
+            }
+            _ => unreachable!("identity gate restricts Layer 3 mapper variants"),
         };
         project
             .install_relocatable_patch_group("install complete SMW US Layer 3 feature", &plans)?;
@@ -1387,6 +1394,66 @@ mod tests {
         assert_eq!(app.project().unwrap().history.undo_len(), 1);
         app.dispatch(Command::Undo).unwrap();
         assert_eq!(app.project().unwrap().rom.logical_bytes(), original);
+    }
+
+    #[test]
+    fn application_installs_layer3_directly_after_exlorom_conversion() {
+        let original = crate::test_support::pristine_smw_us_rom_bytes();
+        let mut app = AppState::default();
+        app.load_rom(original).unwrap();
+        app.dispatch(Command::ConvertRomTo64MbitExLoRom {
+            expected_revision: 0,
+        })
+        .unwrap();
+        let converted = app.project().unwrap().save_snapshot();
+
+        app.dispatch(Command::InstallLayer3 { rev: 1 }).unwrap();
+        let installed = app.project().unwrap().save_snapshot();
+        assert_eq!(app.controller_snapshot().unwrap().revision, 2);
+        assert_eq!(app.project().unwrap().history.undo_len(), 2);
+        assert_eq!(
+            app.project().unwrap().identity.as_ref().unwrap().mapper,
+            Mapper::ExLoRom
+        );
+        assert!(
+            lm_profile::smw_us_v1_installed_expanded_settings_layout(app.project().unwrap())
+                .unwrap()
+                .is_some()
+        );
+        assert!(
+            lm_rom::detect_identity(&app.project().unwrap().rom)
+                .unwrap()
+                .checksum_matches()
+        );
+
+        app.dispatch(Command::Undo).unwrap();
+        assert_eq!(app.project().unwrap().save_snapshot(), converted);
+        app.dispatch(Command::Redo).unwrap();
+        assert_eq!(app.project().unwrap().save_snapshot(), installed);
+    }
+
+    #[test]
+    fn exlorom_layer3_reuses_settings_installed_before_conversion() {
+        let original = crate::test_support::pristine_smw_us_rom_bytes();
+        let mut app = AppState::default();
+        app.load_rom(original).unwrap();
+        app.dispatch(Command::InstallSettings { rev: 0 }).unwrap();
+        app.dispatch(Command::ConvertRomTo64MbitExLoRom {
+            expected_revision: 1,
+        })
+        .unwrap();
+        let converted_settings = app.project().unwrap().save_snapshot();
+
+        app.dispatch(Command::InstallLayer3 { rev: 2 }).unwrap();
+        assert_eq!(app.controller_snapshot().unwrap().revision, 3);
+        assert_eq!(app.project().unwrap().history.undo_len(), 3);
+        assert!(
+            lm_rom::detect_identity(&app.project().unwrap().rom)
+                .unwrap()
+                .checksum_matches()
+        );
+        app.dispatch(Command::Undo).unwrap();
+        assert_eq!(app.project().unwrap().save_snapshot(), converted_settings);
     }
 
     #[test]

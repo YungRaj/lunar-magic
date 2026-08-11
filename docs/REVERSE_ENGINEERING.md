@@ -5194,3 +5194,13 @@ share these helpers, so the persisted bit is ROM-scoped and affects future runti
 adjacent `$2180` operand to `$EB3B` when both SA-1 and feature bit 17 are enabled. Two further
 mapper adaptations in the generated runtime—fixed bytes `$07F9F7: $18->$60` and
 `$07FBD6: $18->$38`—are outside that conditional and apply to every SA-1 installation.
+
+## Converted ExLoROM Layer 3 placement
+
+The already authenticated 64-Mbit conversion establishes the relevant addressing invariant: the
+active SMW body and its fixed runtime sites move to logical `+$400000`, its new unused extent is
+zero-filled, and the canonical checksum remains in the low first bank. ExLoROM low-bank SNES
+addresses select that high physical body. Consequently a direct post-conversion Layer 3 install
+must relocate fixed writes and RATS search windows together, accept zero/`$FF` free space, preserve
+the recovered low-bank payload fixups, and must not relocate the checksum field. Rust now models
+that boundary explicitly rather than admitting ExLoROM to the ordinary LoROM plan.

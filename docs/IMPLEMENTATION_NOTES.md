@@ -6201,3 +6201,15 @@ one two-byte runtime operand controlled by bit 17. Both first-time settings and 
 prerequisite installation read mapper-qualified metadata. Planner tests compare every conditional
 byte, while application tests exercise bit-off and bit-on ROMs through checksum-valid install,
 semantic reopen, and byte-exact Undo.
+
+## Direct Layer 3 installation in converted ExLoROM
+
+The complete Layer 3 and expanded-settings planners now have explicit ExLoROM forms. They relocate
+every fixed write and allocation search interval into the active SMW body at `+$400000`, accept
+the conversion's zero-filled free space as well as `$FF`, retain low-bank fixups so allocated code
+is addressed through the high body, and leave the authoritative checksum field in the low first
+bank. The application accepts converted SMW-US sources and selects either the six-owner combined
+installation or the five-owner Layer 3-only path when settings survived a prior conversion.
+Header variants, semantic reopen, checksum, Undo/Redo, and corruption atomicity pass. The renderer
+remains 237/237 and the broad application library gate is 639 active passed with 13 explicit
+fixture ignores.

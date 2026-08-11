@@ -225,6 +225,26 @@ pub fn smw_us_v1_expanded_settings_installation_plan_for_rom_with_overworld_sett
     )
 }
 
+/// Builds the expanded-settings prerequisite in the relocated SMW body of a converted ExLoROM.
+///
+/// Fixed writes and allocation follow the body at logical `+$400000`, while the authoritative
+/// checksum field remains in the low first bank. Converted free space is zero-filled, so both
+/// zero and `$FF` are admissible allocation bytes.
+pub fn smw_us_v1_exlorom_expanded_settings_installation_plan()
+-> Result<RelocatablePatchPlan, ExpandedSettingsInstallPlanError> {
+    const ACTIVE_BODY: usize = 0x40_0000;
+    let mut plan = smw_us_v1_expanded_settings_installation_plan()?;
+    plan.description = "install SMW US ExLoROM expanded level settings".into();
+    plan.mapper = Mapper::ExLoRom;
+    plan.allocation.search =
+        plan.allocation.search.start + ACTIVE_BODY..plan.allocation.search.end + ACTIVE_BODY;
+    plan.allocation.fill_bytes = vec![0x00, 0xff];
+    for write in &mut plan.writes {
+        write.offset += ACTIVE_BODY;
+    }
+    Ok(plan)
+}
+
 /// Builds the current expanded-settings prerequisite against Lunar Magic's authenticated SA-1
 /// Pack hook skeleton.
 ///
