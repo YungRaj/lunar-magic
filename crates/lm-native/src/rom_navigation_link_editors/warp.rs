@@ -36,6 +36,46 @@ struct WarpLinkForm {
 }
 
 impl RomOverworldWarpLinkEditor {
+    pub(crate) fn staged_recovery_generation(&self, app: &AppState) -> Option<u64> {
+        let workspace = self.workspace.as_ref()?;
+        if workspace.current == workspace.original {
+            return None;
+        }
+        let content_revision = workspace.current.links.iter().fold(
+            0x4f57_5741_5250_4c4e_u64 ^ workspace.current.links.len() as u64,
+            |revision, link| {
+                revision.rotate_left(7)
+                    ^ u64::from(link.source.packed_vertical)
+                    ^ u64::from(link.source.horizontal_tile).rotate_left(17)
+                    ^ u64::from(link.destination.packed_vertical).rotate_left(33)
+                    ^ u64::from(link.destination.horizontal_tile).rotate_left(49)
+            },
+        );
+        Some(
+            app.project_revision().wrapping_mul(0xa24b_aed4_963e_e407)
+                ^ workspace.revision.rotate_left(31)
+                ^ content_revision,
+        )
+    }
+
+    pub(crate) fn staged_recovery_snapshot(
+        &self,
+        app: &AppState,
+    ) -> Result<Option<lm_app::RecoverySnapshot>, String> {
+        let workspace = self
+            .workspace
+            .as_ref()
+            .ok_or_else(|| "warp-link workspace is closed".to_owned())?;
+        if workspace.revision != app.project_revision() {
+            return Err("stale warp-link workspace cannot be recovered".into());
+        }
+        if workspace.current == workspace.original {
+            return Ok(app.recovery_snapshot());
+        }
+        app.recovery_snapshot_with_overworld_warp_links(&workspace.current, app.current_level())
+            .map_err(|error| error.to_string())
+    }
+
     pub(crate) fn is_open(&self) -> bool {
         self.workspace.is_some()
     }
@@ -408,5 +448,83 @@ mod tests {
         editor.apply_selected().unwrap();
         assert!(!editor.request_close(true));
         assert!(editor.is_open());
+    }
+
+    #[test]
+    fn staged_pristine_warp_growth_recovers_complete_installed_table() {
+        let mut app = AppState::default();
+        app.load_rom(crate::test_support::pristine_smw_us_rom_bytes())
+            .unwrap();
+        let mut editor = RomOverworldWarpLinkEditor::default();
+        editor.open(&app);
+        editor.count = "01C".into();
+        editor.resize().unwrap();
+        editor.form.index = "1B".into();
+        editor.load_selected().unwrap();
+        editor.form.source_vertical = "1234".into();
+        editor.form.source_horizontal = "2345".into();
+        editor.form.destination_vertical = "3456".into();
+        editor.form.destination_horizontal = "4567".into();
+        editor.apply_selected().unwrap();
+
+        assert!(editor.staged_recovery_generation(&app).is_some());
+        let recovery = editor.staged_recovery_snapshot(&app).unwrap().unwrap();
+        assert_eq!(app.capabilities().project, lm_app::ProjectStatus::OpenClean);
+        assert_eq!(app.project().unwrap().history.undo_len(), 0);
+        let mut reopened = AppState::default();
+        reopened.load_recovery(recovery).unwrap();
+        let table = &reopened
+            .project()
+            .unwrap()
+            .load_overworld_warp_links_detected(smw_us_v1_overworld_warp_patch_locator())
+            .unwrap()
+            .table;
+        assert_eq!(table.links.len(), 28);
+        assert_eq!(table.links[27].source.packed_vertical, 0x1234);
+        assert_eq!(table.links[27].source.horizontal_tile, 0x2345);
+        assert_eq!(table.links[27].destination.packed_vertical, 0x3456);
+        assert_eq!(table.links[27].destination.horizontal_tile, 0x4567);
+    }
+
+    #[test]
+    fn staged_installed_warp_update_preserves_prior_tail_link() {
+        let mut installer = AppState::default();
+        installer
+            .load_rom(crate::test_support::pristine_smw_us_rom_bytes())
+            .unwrap();
+        let mut first = RomOverworldWarpLinkEditor::default();
+        first.open(&installer);
+        first.count = "01C".into();
+        first.resize().unwrap();
+        first.form.index = "1B".into();
+        first.load_selected().unwrap();
+        first.form.destination_horizontal = "6789".into();
+        first.apply_selected().unwrap();
+        installer
+            .dispatch(first.prepare_commit(0).unwrap().unwrap())
+            .unwrap();
+
+        let mut app = AppState::default();
+        app.load_rom(installer.project().unwrap().save_snapshot())
+            .unwrap();
+        let mut editor = RomOverworldWarpLinkEditor::default();
+        editor.open(&app);
+        editor.form.index = "00".into();
+        editor.load_selected().unwrap();
+        editor.form.source_vertical = "789A".into();
+        editor.apply_selected().unwrap();
+
+        let recovery = editor.staged_recovery_snapshot(&app).unwrap().unwrap();
+        let mut reopened = AppState::default();
+        reopened.load_recovery(recovery).unwrap();
+        let table = &reopened
+            .project()
+            .unwrap()
+            .load_overworld_warp_links_detected(smw_us_v1_overworld_warp_patch_locator())
+            .unwrap()
+            .table;
+        assert_eq!(table.links.len(), 28);
+        assert_eq!(table.links[0].source.packed_vertical, 0x789a);
+        assert_eq!(table.links[27].destination.horizontal_tile, 0x6789);
     }
 }

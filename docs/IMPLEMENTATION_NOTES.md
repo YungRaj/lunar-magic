@@ -6530,6 +6530,20 @@ Focused tests recover a pristine 14-to-15-link growth with distinct endpoint and
 preserve that installed tail link while recovering an independent edit to link zero. All four
 path-link editor tests, both application persistence tests, and all 237 renderer tests pass.
 
+## Crash recovery includes staged overworld warp links
+
+The standalone warp-link editor now contributes a content-sensitive generation over the table
+length and all four opaque coordinate words in every record. Recovery clones the project through a
+shared application helper: the 27-link vanilla fixed table may update in place, resized tables
+install the current relocatable runtime, installed tables update or reallocate, and legacy patches
+migrate through the same authenticated runtime path used by ordinary commit. Every changed route
+requires exact semantic reopen while the live project remains clean and history-free.
+
+Focused tests recover a pristine 27-to-28-link growth with all four boundary-record words changed,
+then preserve the installed tail link while recovering an independent edit to link zero. All four
+warp-link editor tests, all four application storage/migration tests, and all 237 renderer tests
+pass.
+
 ## Crash recovery includes the complete staged overworld event-number map
 
 The standalone event-number editor now contributes a content-sensitive generation over the exact

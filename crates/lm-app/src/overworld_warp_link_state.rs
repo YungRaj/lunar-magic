@@ -23,62 +23,8 @@ impl AppState {
         self.require_no_pending_save()?;
         self.ensure_project_revision_capacity()?;
         let project = self.project.as_mut().ok_or(AppError::NoProject)?;
-        let identity = project.identity.as_ref().ok_or(AppError::NoProject)?;
-        if identity.game != SupportedGame::SuperMarioWorld
-            || identity.region != Region::NorthAmerica
-            || identity.revision != 0
-            || identity.mapper != Mapper::LoRom
-        {
-            return Err(AppError::NativeOverworldWarpIdentityMismatch);
-        }
-        let loaded =
-            project.load_overworld_warp_links_detected(smw_us_v1_overworld_warp_patch_locator())?;
-        let changed = match loaded.storage {
-            OverworldWarpLinkStorage::Fixed if table.links.len() == 27 => project
-                .save_overworld_warp_links(
-                    table,
-                    smw_us_v1_overworld_warp_link_layout(),
-                    SMW_US_V1_CHECKSUM_FIELD,
-                )?,
-            OverworldWarpLinkStorage::Fixed => {
-                project.install_relocatable_patch(&smw_us_v1_overworld_warp_installation_plan(
-                    table,
-                )?)?;
-                true
-            }
-            storage @ OverworldWarpLinkStorage::CurrentPatch { .. } => {
-                let allocation = smw_us_v1_overworld_warp_update_policy(project.rom.logical_len());
-                project.save_installed_overworld_warp_links(
-                    table,
-                    storage,
-                    &allocation,
-                    SMW_US_V1_CHECKSUM_FIELD,
-                    0xff,
-                )?
-            }
-            storage @ OverworldWarpLinkStorage::LegacyPatch { .. } => {
-                let allocation = smw_us_v1_overworld_warp_update_policy(project.rom.logical_len());
-                let runtime = smw_us_v1_overworld_warp_runtime_template();
-                project.migrate_legacy_overworld_warp_patch(
-                    table,
-                    storage,
-                    OverworldWarpPatchMigrationOptions {
-                        locator: smw_us_v1_overworld_warp_patch_locator(),
-                        current_runtime: &runtime,
-                        allocation: &allocation,
-                        checksum_field: SMW_US_V1_CHECKSUM_FIELD,
-                        fill: 0xff,
-                    },
-                )?
-            }
-        };
-        if !changed {
+        if !replace_native_warp_links_in_project(project, table)? {
             return Ok(Vec::new());
-        }
-        let reopened =
-            project.load_overworld_warp_links_detected(smw_us_v1_overworld_warp_patch_locator())?;
-        if reopened.table != *table {
-            return Err(AppError::NativeOverworldWarpReopenMismatch);
         }
         self.advance_project_revision()?;
         let description = "Replace native SMW overworld warp links".to_owned();
@@ -89,6 +35,69 @@ impl AppState {
             revision: self.project_revision,
         }])
     }
+}
+
+pub(crate) fn replace_native_warp_links_in_project(
+    project: &mut lm_project::Project,
+    table: &OverworldWarpLinkTable,
+) -> Result<bool, AppError> {
+    let identity = project.identity.as_ref().ok_or(AppError::NoProject)?;
+    if identity.game != SupportedGame::SuperMarioWorld
+        || identity.region != Region::NorthAmerica
+        || identity.revision != 0
+        || identity.mapper != Mapper::LoRom
+    {
+        return Err(AppError::NativeOverworldWarpIdentityMismatch);
+    }
+    let loaded =
+        project.load_overworld_warp_links_detected(smw_us_v1_overworld_warp_patch_locator())?;
+    let changed = match loaded.storage {
+        OverworldWarpLinkStorage::Fixed if table.links.len() == 27 => project
+            .save_overworld_warp_links(
+                table,
+                smw_us_v1_overworld_warp_link_layout(),
+                SMW_US_V1_CHECKSUM_FIELD,
+            )?,
+        OverworldWarpLinkStorage::Fixed => {
+            project
+                .install_relocatable_patch(&smw_us_v1_overworld_warp_installation_plan(table)?)?;
+            true
+        }
+        storage @ OverworldWarpLinkStorage::CurrentPatch { .. } => {
+            let allocation = smw_us_v1_overworld_warp_update_policy(project.rom.logical_len());
+            project.save_installed_overworld_warp_links(
+                table,
+                storage,
+                &allocation,
+                SMW_US_V1_CHECKSUM_FIELD,
+                0xff,
+            )?
+        }
+        storage @ OverworldWarpLinkStorage::LegacyPatch { .. } => {
+            let allocation = smw_us_v1_overworld_warp_update_policy(project.rom.logical_len());
+            let runtime = smw_us_v1_overworld_warp_runtime_template();
+            project.migrate_legacy_overworld_warp_patch(
+                table,
+                storage,
+                OverworldWarpPatchMigrationOptions {
+                    locator: smw_us_v1_overworld_warp_patch_locator(),
+                    current_runtime: &runtime,
+                    allocation: &allocation,
+                    checksum_field: SMW_US_V1_CHECKSUM_FIELD,
+                    fill: 0xff,
+                },
+            )?
+        }
+    };
+    if !changed {
+        return Ok(false);
+    }
+    let reopened =
+        project.load_overworld_warp_links_detected(smw_us_v1_overworld_warp_patch_locator())?;
+    if reopened.table != *table {
+        return Err(AppError::NativeOverworldWarpReopenMismatch);
+    }
+    Ok(true)
 }
 
 #[cfg(test)]

@@ -1811,6 +1811,9 @@ impl eframe::App for NativeApplication {
         let path_link_recovery_revision = self
             .rom_overworld_path_link_editor
             .staged_recovery_generation(&self.app);
+        let warp_link_recovery_revision = self
+            .rom_overworld_warp_link_editor
+            .staged_recovery_generation(&self.app);
         let level_assets_recovery_revision = self
             .rom_level_assets_editor
             .staged_recovery_generation(&self.app);
@@ -1843,6 +1846,7 @@ impl eframe::App for NativeApplication {
             event_tilemap_recovery_revision,
             metadata_recovery_revision,
             path_link_recovery_revision,
+            warp_link_recovery_revision,
             level_assets_recovery_revision,
             overworld_recovery_revision,
         ]
@@ -1887,12 +1891,14 @@ impl eframe::App for NativeApplication {
                 let staged_editors =
                     staged_editors + usize::from(path_link_recovery_revision.is_some());
                 let staged_editors =
+                    staged_editors + usize::from(warp_link_recovery_revision.is_some());
+                let staged_editors =
                     staged_editors + usize::from(level_assets_recovery_revision.is_some());
                 let staged_editors =
                     staged_editors + usize::from(overworld_recovery_revision.is_some());
                 if staged_editors > 1 {
                     return Err(
-                        "cannot compose simultaneous staged level, level-assets, expanded settings, legacy graphics bypass, title recording, shared palette, overworld/boss messages, secondary exits, overworld level names/player starts/settings/special events/event numbers/event reveals/event tilemaps/metadata/path links, graphics, ExAnimation, title/credits tilemap, palette, Map16, or overworld recovery yet".into(),
+                        "cannot compose simultaneous staged level, level-assets, expanded settings, legacy graphics bypass, title recording, shared palette, overworld/boss messages, secondary exits, overworld level names/player starts/settings/special events/event numbers/event reveals/event tilemaps/metadata/path/warp links, graphics, ExAnimation, title/credits tilemap, palette, Map16, or overworld recovery yet".into(),
                     );
                 }
                 if palette_recovery_revision.is_some() {
@@ -1961,6 +1967,9 @@ impl eframe::App for NativeApplication {
                         .staged_recovery_snapshot(&self.app)
                 } else if path_link_recovery_revision.is_some() {
                     self.rom_overworld_path_link_editor
+                        .staged_recovery_snapshot(&self.app)
+                } else if warp_link_recovery_revision.is_some() {
+                    self.rom_overworld_warp_link_editor
                         .staged_recovery_snapshot(&self.app)
                 } else if level_assets_recovery_revision.is_some() {
                     self.rom_level_assets_editor

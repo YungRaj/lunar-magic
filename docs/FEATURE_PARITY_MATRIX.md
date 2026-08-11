@@ -462,6 +462,11 @@ through fixed-table update, pristine relocatable-runtime installation, or instal
 update/reallocation. `staged_pristine_path_growth_recovers_complete_installed_table` proves exact
 14-to-15-link recovery and `staged_installed_path_update_preserves_prior_tail_link` proves a later
 staged edit retains the previously committed installed tail link.
+The standalone overworld warp-link editor now hashes and recovers the complete variable four-plane
+table through fixed update, current-runtime installation/update, or legacy-runtime migration.
+`staged_pristine_warp_growth_recovers_complete_installed_table` proves exact 27-to-28-link recovery
+and `staged_installed_warp_update_preserves_prior_tail_link` proves an independent staged edit
+retains the previously committed installed tail link.
 
 ## Workflow ledger
 

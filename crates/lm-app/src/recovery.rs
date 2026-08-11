@@ -84,6 +84,19 @@ impl AppState {
         self.recovery_snapshot_with_current_rom(staged.save_snapshot(), level)
     }
 
+    /// Applies a complete staged overworld warp-link table to an isolated project and validates the
+    /// resulting recovery image without publishing it to the live project.
+    pub fn recovery_snapshot_with_overworld_warp_links(
+        &self,
+        links: &lm_overworld::OverworldWarpLinkTable,
+        level: Option<u16>,
+    ) -> Result<Option<RecoverySnapshot>, AppError> {
+        let project = self.project.as_ref().ok_or(AppError::NoProject)?;
+        let mut staged = project.clone();
+        crate::overworld_warp_link_state::replace_native_warp_links_in_project(&mut staged, links)?;
+        self.recovery_snapshot_with_current_rom(staged.save_snapshot(), level)
+    }
+
     /// Restores a recovery record as an unnamed, dirty project.
     ///
     /// The original path is deliberately not restored. The first explicit save therefore uses
