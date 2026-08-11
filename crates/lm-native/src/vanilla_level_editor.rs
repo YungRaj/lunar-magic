@@ -438,6 +438,20 @@ struct LevelCanvasGeometry {
     vertical: bool,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct LevelMouseGestureStart {
+    position: egui::Pos2,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum LevelMouseGestureAction {
+    HistoryBack,
+    HistoryForward,
+    PreviousLevel,
+    NextLevel,
+    FollowExit,
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct PendingScreenExitFollowSave {
     destination: u16,
@@ -508,6 +522,11 @@ pub(crate) struct VanillaLevelEditor {
     sprite_form: SpriteForm,
     dragging_sprite: Option<usize>,
     secondary_duplicate_drag: bool,
+    mouse_gestures: Option<bool>,
+    mouse_gesture_start: Option<LevelMouseGestureStart>,
+    pending_canvas_command: Option<Command>,
+    pending_mouse_gesture_command: Option<Command>,
+    auto_confirm_editor_transition_save: bool,
     object_group_drag: Option<CanvasObjectGroupDrag>,
     sprite_catalog_filter: String,
     custom_sprite_catalog_filter: String,
@@ -1045,7 +1064,7 @@ impl VanillaLevelEditor {
                 },
             );
         });
-        pending_command
+        pending_command.or_else(|| self.pending_canvas_command.take())
     }
 
     /// Reports the exact built-in editor commit shape used by Lunar Magic's optimized LMSW path.
@@ -1108,6 +1127,25 @@ impl VanillaLevelEditor {
 
     pub(crate) fn set_allow_fragmentation(&mut self, enabled: bool) {
         self.allow_fragmentation = Some(enabled);
+    }
+
+    pub(crate) fn set_mouse_gestures(&mut self, enabled: bool) {
+        self.mouse_gestures = Some(enabled);
+        if !enabled {
+            self.mouse_gesture_start = None;
+        }
+    }
+
+    pub(crate) fn take_mouse_gesture_command(&mut self, command: &Command) -> bool {
+        if self.pending_mouse_gesture_command.as_ref() != Some(command) {
+            return false;
+        }
+        self.pending_mouse_gesture_command = None;
+        true
+    }
+
+    pub(crate) fn auto_confirm_pending_transition_save(&mut self) {
+        self.auto_confirm_editor_transition_save = true;
     }
 
     pub(crate) fn request_save_prompt_transition(&mut self, command: Command) -> bool {
@@ -2037,6 +2075,9 @@ impl VanillaLevelEditor {
         self.external_sprite_textures.clear();
         self.dragging_sprite = None;
         self.secondary_duplicate_drag = false;
+        self.mouse_gesture_start = None;
+        self.pending_canvas_command = None;
+        self.pending_mouse_gesture_command = None;
     }
 
     #[allow(
@@ -3144,6 +3185,35 @@ impl VanillaLevelEditor {
         let Some(position) = context.pointer_hover_pos() else {
             return Ok(None);
         };
+        self.follow_screen_exit_at_position(position)
+    }
+
+    fn follow_screen_exit_at_position(
+        &mut self,
+        position: egui::Pos2,
+    ) -> Result<Option<Command>, String> {
+        let Some(command) = self.screen_exit_command_at_position(position)? else {
+            return Ok(None);
+        };
+        let Command::SelectLevel(destination) = command else {
+            unreachable!("screen-exit resolution only produces level selection")
+        };
+        let controller = self
+            .controller
+            .as_ref()
+            .ok_or_else(|| "the current level is unavailable".to_owned())?;
+        if controller.is_modified() {
+            self.screen_exit_follow_prompt = Some(destination);
+            Ok(None)
+        } else {
+            Ok(Some(Command::SelectLevel(destination)))
+        }
+    }
+
+    fn screen_exit_command_at_position(
+        &self,
+        position: egui::Pos2,
+    ) -> Result<Option<Command>, String> {
         let Some(geometry) = self.canvas_geometry else {
             return Ok(None);
         };
@@ -3159,12 +3229,7 @@ impl VanillaLevelEditor {
             self.secondary_exits.as_ref(),
             screen,
         )?;
-        if controller.is_modified() {
-            self.screen_exit_follow_prompt = Some(destination);
-            Ok(None)
-        } else {
-            Ok(Some(Command::SelectLevel(destination)))
-        }
+        Ok(Some(Command::SelectLevel(destination)))
     }
 
     pub(crate) fn toolbar_scan_invalid_exits(
@@ -3491,6 +3556,10 @@ impl VanillaLevelEditor {
         custom_dsc: Option<&lm_level::DscResolvedTable>,
     ) -> Option<Command> {
         self.editor_transition_prompt.as_ref()?;
+        if self.auto_confirm_editor_transition_save {
+            self.auto_confirm_editor_transition_save = false;
+            return self.resolve_editor_transition_choice(Some(0), snapshot, custom_dsc);
+        }
         let mut choice = None;
         egui::Window::new("Save level to ROM?")
             .collapsible(false)
@@ -3567,12 +3636,14 @@ impl VanillaLevelEditor {
                 }
             }
             Some(1) => {
+                self.auto_confirm_editor_transition_save = false;
                 self.editor_transition_prompt = None;
                 self.key = None;
                 self.authorized_editor_transition = Some(transition.clone());
                 Some(transition)
             }
             Some(2) => {
+                self.auto_confirm_editor_transition_save = false;
                 self.editor_transition_prompt = None;
                 None
             }
@@ -5939,16 +6010,27 @@ impl VanillaLevelEditor {
         if selection_pressed {
             response.request_focus();
         }
-        let (duplicate_at_pointer, secondary_released) = response.ctx.input(|input| {
-            (
-                response.hovered()
-                    && input.pointer.button_pressed(egui::PointerButton::Secondary)
-                    && !input.modifiers.any(),
-                input
-                    .pointer
-                    .button_released(egui::PointerButton::Secondary),
-            )
-        });
+        let (gesture_at_pointer, duplicate_at_pointer, secondary_released) =
+            response.ctx.input(|input| {
+                let secondary_pressed = response.hovered()
+                    && input.pointer.button_pressed(egui::PointerButton::Secondary);
+                let force_gesture =
+                    input.modifiers.shift || input.modifiers.alt || input.modifiers.ctrl;
+                (
+                    secondary_pressed
+                        && self.mouse_gestures.unwrap_or(true)
+                        && (!self.tools_panel_visible() || force_gesture),
+                    secondary_pressed && !input.modifiers.any(),
+                    input
+                        .pointer
+                        .button_released(egui::PointerButton::Secondary),
+                )
+            });
+        if gesture_at_pointer && let Some(position) = response.interact_pointer_pos() {
+            response.request_focus();
+            self.mouse_gesture_start = Some(LevelMouseGestureStart { position });
+            return;
+        }
         if duplicate_at_pointer
             && self.placement_mode.is_none()
             && let Some(position) = response.interact_pointer_pos()
@@ -5964,6 +6046,14 @@ impl VanillaLevelEditor {
                 self.begin_secondary_duplicate_drag(position, rect, cell, vertical);
                 return;
             }
+        }
+        if secondary_released && self.mouse_gesture_start.is_some() {
+            let position = response
+                .interact_pointer_pos()
+                .or_else(|| response.ctx.pointer_interact_pos());
+            let modifiers = response.ctx.input(|input| input.modifiers);
+            self.finish_level_mouse_gesture(position, modifiers);
+            return;
         }
         if secondary_released && self.secondary_duplicate_drag {
             let position = response
@@ -6653,6 +6743,56 @@ impl VanillaLevelEditor {
                     Err(error) => self.error = Some(error.to_string()),
                 }
             }
+        }
+    }
+
+    fn finish_level_mouse_gesture(&mut self, end: Option<egui::Pos2>, modifiers: egui::Modifiers) {
+        let Some(start) = self.mouse_gesture_start.take() else {
+            return;
+        };
+        let Some(end) = end else {
+            return;
+        };
+        let Some(action) = classify_level_mouse_gesture(start.position, end, modifiers) else {
+            return;
+        };
+        let command = match action {
+            LevelMouseGestureAction::HistoryBack => Some(Command::NavigateLevel(
+                lm_app::LevelNavigationDirection::Back,
+            )),
+            LevelMouseGestureAction::HistoryForward => Some(Command::NavigateLevel(
+                lm_app::LevelNavigationDirection::Forward,
+            )),
+            LevelMouseGestureAction::PreviousLevel => self
+                .controller
+                .as_ref()
+                .and_then(|controller| controller.level().number.checked_sub(1))
+                .and_then(|level| u16::try_from(level).ok())
+                .map(Command::SelectLevel),
+            LevelMouseGestureAction::NextLevel => self
+                .controller
+                .as_ref()
+                .and_then(|controller| controller.level().number.checked_add(1))
+                .filter(|level| *level < 0x200)
+                .and_then(|level| u16::try_from(level).ok())
+                .map(Command::SelectLevel),
+            LevelMouseGestureAction::FollowExit => {
+                // Gesture transitions share the application's ordinary staged-level boundary so
+                // the separate auto-save-on-gesture option can save without presenting a dialog.
+                // The toolbar follow command retains its explicit Save/Discard/Cancel workflow.
+                match self.screen_exit_command_at_position(start.position) {
+                    Ok(command) => command,
+                    Err(error) => {
+                        self.error = Some(error);
+                        None
+                    }
+                }
+            }
+        };
+        if let Some(command) = command {
+            self.pending_mouse_gesture_command = Some(command.clone());
+            self.pending_canvas_command = Some(command);
+            self.error = None;
         }
     }
 
@@ -10233,6 +10373,36 @@ fn screen_exit_table(records: &[ObjectRecord]) -> [Option<u16>; 32] {
         exits[usize::from(exit.screen)] = Some(exit.destination_and_flags);
     }
     exits
+}
+
+fn classify_level_mouse_gesture(
+    start: egui::Pos2,
+    end: egui::Pos2,
+    modifiers: egui::Modifiers,
+) -> Option<LevelMouseGestureAction> {
+    if modifiers.ctrl {
+        return None;
+    }
+    let horizontal = end.x - start.x;
+    let vertical = end.y - start.y;
+    if horizontal == 0.0 || horizontal.abs() <= vertical.abs() {
+        return None;
+    }
+    if modifiers.shift && modifiers.alt {
+        return Some(if horizontal > 0.0 {
+            LevelMouseGestureAction::NextLevel
+        } else {
+            LevelMouseGestureAction::PreviousLevel
+        });
+    }
+    if modifiers.alt && horizontal > 0.0 {
+        return Some(LevelMouseGestureAction::FollowExit);
+    }
+    Some(if horizontal > 0.0 {
+        LevelMouseGestureAction::HistoryForward
+    } else {
+        LevelMouseGestureAction::HistoryBack
+    })
 }
 
 fn screen_at_canvas_position(position: egui::Pos2, geometry: LevelCanvasGeometry) -> Option<u8> {
@@ -15912,6 +16082,45 @@ mod tests {
     }
 
     #[test]
+    fn staged_level_transition_can_auto_confirm_the_same_checked_save_path() {
+        let mut app = AppState::default();
+        app.load_rom(crate::test_support::pristine_smw_us_rom_bytes())
+            .unwrap();
+        app.dispatch(Command::SelectLevel(0x105)).unwrap();
+        let snapshot = app.controller_snapshot().unwrap();
+        let mut controller = LevelController::decode(
+            &snapshot,
+            lm_profile::smw_us_v1_vanilla_level_layout(),
+            &SpriteLengthTable::standard(),
+        )
+        .unwrap();
+        controller
+            .apply_edits(&[NativeLevelEdit::SetSpriteHeader(
+                controller.level().sprites.header ^ 1,
+            )])
+            .unwrap();
+        let transition = Command::SelectLevel(0x106);
+        let mut editor = VanillaLevelEditor {
+            controller: Some(controller),
+            auto_set_screens: Some(false),
+            scan_exits_on_save: Some(false),
+            count_sprites_on_save: Some(false),
+            ..VanillaLevelEditor::default()
+        };
+        assert!(editor.request_save_prompt_transition(transition.clone()));
+        editor.auto_confirm_pending_transition_save();
+        let commit = editor
+            .show_editor_transition_confirmation(&egui::Context::default(), &snapshot, None)
+            .expect("gesture auto-save must emit the ordinary checked level commit");
+        assert!(!editor.auto_confirm_editor_transition_save);
+        app.dispatch(commit).unwrap();
+        assert_eq!(
+            editor.take_editor_transition_after_save(&app.controller_snapshot().unwrap()),
+            Some(transition)
+        );
+    }
+
+    #[test]
     fn auto_screen_save_recomputes_visible_extent_while_disabled_mode_preserves_header() {
         for (auto_set_screens, expected_manual) in [(true, false), (false, true)] {
             let mut app = AppState::default();
@@ -20590,6 +20799,106 @@ mod tests {
             ),
             None
         );
+    }
+
+    #[test]
+    fn level_mouse_gesture_classifier_matches_the_authenticated_dispatch_branches() {
+        let start = egui::pos2(20.0, 20.0);
+        let modifiers = |shift, alt, ctrl| egui::Modifiers {
+            shift,
+            alt,
+            ctrl,
+            ..egui::Modifiers::default()
+        };
+        assert_eq!(
+            classify_level_mouse_gesture(
+                start,
+                egui::pos2(21.0, 20.0),
+                modifiers(false, false, false)
+            ),
+            Some(LevelMouseGestureAction::HistoryForward)
+        );
+        assert_eq!(
+            classify_level_mouse_gesture(
+                start,
+                egui::pos2(19.0, 20.0),
+                modifiers(false, false, false)
+            ),
+            Some(LevelMouseGestureAction::HistoryBack)
+        );
+        assert_eq!(
+            classify_level_mouse_gesture(
+                start,
+                egui::pos2(40.0, 20.0),
+                modifiers(true, true, false)
+            ),
+            Some(LevelMouseGestureAction::NextLevel)
+        );
+        assert_eq!(
+            classify_level_mouse_gesture(
+                start,
+                egui::pos2(0.0, 20.0),
+                modifiers(true, true, false)
+            ),
+            Some(LevelMouseGestureAction::PreviousLevel)
+        );
+        assert_eq!(
+            classify_level_mouse_gesture(
+                start,
+                egui::pos2(40.0, 20.0),
+                modifiers(false, true, false)
+            ),
+            Some(LevelMouseGestureAction::FollowExit)
+        );
+        assert_eq!(
+            classify_level_mouse_gesture(
+                start,
+                egui::pos2(0.0, 20.0),
+                modifiers(false, true, false)
+            ),
+            Some(LevelMouseGestureAction::HistoryBack)
+        );
+        assert_eq!(
+            classify_level_mouse_gesture(
+                start,
+                egui::pos2(40.0, 20.0),
+                modifiers(false, false, true)
+            ),
+            None
+        );
+        assert_eq!(
+            classify_level_mouse_gesture(
+                start,
+                egui::pos2(40.0, 40.0),
+                modifiers(false, false, false)
+            ),
+            None
+        );
+        assert_eq!(
+            classify_level_mouse_gesture(
+                start,
+                egui::pos2(20.0, 40.0),
+                modifiers(false, false, false)
+            ),
+            None
+        );
+    }
+
+    #[test]
+    fn gesture_command_marker_is_single_use_and_disabling_cancels_an_active_gesture() {
+        let command = Command::NavigateLevel(lm_app::LevelNavigationDirection::Back);
+        let mut editor = VanillaLevelEditor {
+            mouse_gesture_start: Some(LevelMouseGestureStart {
+                position: egui::pos2(1.0, 1.0),
+            }),
+            pending_mouse_gesture_command: Some(command.clone()),
+            ..VanillaLevelEditor::default()
+        };
+        assert!(editor.take_mouse_gesture_command(&command));
+        assert!(!editor.take_mouse_gesture_command(&command));
+        editor.set_mouse_gestures(false);
+        assert_eq!(editor.mouse_gesture_start, None);
+        assert_eq!(editor.mouse_gestures, Some(false));
     }
 
     #[test]

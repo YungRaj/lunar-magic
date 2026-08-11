@@ -5913,6 +5913,23 @@ links may span two ordered commits. Discard grants a one-use authorization for t
 and Cancel leaves both the project and staged controller untouched. Authenticated native command
 coverage is now 293 of 317 named slots, leaving 24 pending.
 
+## Level mouse gestures (`$24C8/$24C9`)
+
+The adjacent authenticated commands map `LM_OPTIONS_MOUSE_GESTURES` and
+`LM_OPTIONS_SAVE_GESTURES` to dispatcher bytes `$6B/$6C`. Rust retains their original defaults:
+gestures enabled and gesture auto-save disabled. A dominant horizontal right-button stroke moves
+back or forward in level history; Ctrl cancels; Shift+Alt selects the previous or next level; and
+Alt+right follows the exit under the starting cell. The original has no minimum-distance threshold
+and rejects vertical or exactly diagonal movement, which the native classifier preserves. Ordinary
+right dragging remains object/sprite duplication while the tool panel is visible; modifier-forced
+gestures and gestures with that panel hidden preserve the original conflict boundary.
+
+`Options` registry bits 12 and 30 persist the two choices. When auto-save is enabled, gesture-driven
+history, numeric navigation, and exit following enter the same checked staged-level save transaction
+as the explicit Save path and release navigation only at the expected final revision. With auto-save
+disabled, the ordinary Save Prompt policy remains in control. Authenticated native command coverage
+is now 295 of 317 named slots, leaving 22 pending.
+
 ## Deprecated Select FG/BG commands (`$2473/$2474`)
 
 Both authenticated central dispatch bytes are `$DF`, while the Lunar Magic 3.63 command switch

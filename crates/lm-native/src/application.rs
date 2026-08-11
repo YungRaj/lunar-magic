@@ -190,6 +190,8 @@ pub(crate) struct NativeApplication {
     maintain_checksum: Option<bool>,
     silently_add_copier_header: Option<bool>,
     save_prompt: Option<bool>,
+    mouse_gestures: Option<bool>,
+    save_mouse_gestures: Option<bool>,
     level_view_visibility: LevelViewVisibility,
     renderer: NativeRenderState,
     vanilla_graphics_editor: VanillaGraphicsEditor,
@@ -295,6 +297,8 @@ impl NativeApplication {
     const MAINTAIN_CHECKSUM_STORAGE_KEY: &'static str = "lunar_magic_rust.maintain_checksum.v1";
     const SILENTLY_ADD_HEADER_STORAGE_KEY: &'static str = "lunar_magic_rust.silently_add_header.v1";
     const SAVE_PROMPT_STORAGE_KEY: &'static str = "lunar_magic_rust.save_prompt.v1";
+    const MOUSE_GESTURES_STORAGE_KEY: &'static str = "lunar_magic_rust.mouse_gestures.v1";
+    const SAVE_MOUSE_GESTURES_STORAGE_KEY: &'static str = "lunar_magic_rust.save_mouse_gestures.v1";
     const EXTERNAL_TOOLS_STORAGE_KEY: &'static str = "lunar_magic_rust.external_tools.v1";
     const ANIMATION_RATE_STORAGE_KEY: &'static str = "lunar_magic_rust.animation_rate.v1";
     const INTEGRATED_EMULATOR_STORAGE_KEY: &'static str = "lunar_magic_rust.integrated_emulator.v1";
@@ -710,6 +714,18 @@ impl NativeApplication {
                 }
             }
         }
+        if let Some(encoded) = storage.get_string(Self::MOUSE_GESTURES_STORAGE_KEY) {
+            match decode_enabled_preference(&encoded, "mouse-gesture") {
+                Ok(enabled) => self.mouse_gestures = Some(enabled),
+                Err(error) => self.effects.error = Some(error),
+            }
+        }
+        if let Some(encoded) = storage.get_string(Self::SAVE_MOUSE_GESTURES_STORAGE_KEY) {
+            match decode_enabled_preference(&encoded, "mouse-gesture auto-save") {
+                Ok(enabled) => self.save_mouse_gestures = Some(enabled),
+                Err(error) => self.effects.error = Some(error),
+            }
+        }
         if let Some(encoded) = storage.get_string(Self::EXTERNAL_TOOLS_STORAGE_KEY) {
             match decode_external_tools_preference(&encoded).and_then(|config| {
                 self.app
@@ -758,13 +774,23 @@ impl NativeApplication {
     ///
     /// ROM editor windows use this acknowledgement before discarding their staged controller.
     fn try_dispatch(&mut self, context: &egui::Context, command: Command) -> bool {
-        if self.save_prompt.unwrap_or(true)
+        let mouse_gesture = self
+            .vanilla_level_editor
+            .take_mouse_gesture_command(&command);
+        let auto_save_mouse_gesture = mouse_gesture && self.save_mouse_gestures.unwrap_or(false);
+        if (self.save_prompt.unwrap_or(true) || auto_save_mouse_gesture)
             && command_leaves_staged_level(&self.app, &command)
             && self
                 .vanilla_level_editor
                 .request_save_prompt_transition(command.clone())
         {
-            self.app.status = "Waiting for staged level save choice".into();
+            if auto_save_mouse_gesture {
+                self.vanilla_level_editor
+                    .auto_confirm_pending_transition_save();
+                self.app.status = "Saving staged level before mouse gesture".into();
+            } else {
+                self.app.status = "Waiting for staged level save choice".into();
+            }
             return true;
         }
         if self.save_prompt.unwrap_or(true)
@@ -1095,6 +1121,14 @@ impl eframe::App for NativeApplication {
             encode_save_prompt_preference(self.save_prompt.unwrap_or(true)),
         );
         storage.set_string(
+            Self::MOUSE_GESTURES_STORAGE_KEY,
+            encode_enabled_preference(self.mouse_gestures.unwrap_or(true)),
+        );
+        storage.set_string(
+            Self::SAVE_MOUSE_GESTURES_STORAGE_KEY,
+            encode_enabled_preference(self.save_mouse_gestures.unwrap_or(false)),
+        );
+        storage.set_string(
             Self::ANIMATION_RATE_STORAGE_KEY,
             crate::animation_rate::encode_preference(self.animation_rate),
         );
@@ -1191,6 +1225,8 @@ impl eframe::App for NativeApplication {
                 .set_auto_set_screens(self.auto_set_screens.unwrap_or(true));
             self.vanilla_level_editor
                 .set_allow_fragmentation(self.allow_fragmentation.unwrap_or(true));
+            self.vanilla_level_editor
+                .set_mouse_gestures(self.mouse_gestures.unwrap_or(true));
             self.vanilla_level_editor
                 .set_deferred_rom_option_save(self.pending_vram_patch_selection.is_some());
             self.rom_legacy_fg_bg_bypass_editor
@@ -1475,6 +1511,18 @@ fn decode_save_prompt_preference(value: &str) -> Result<bool, String> {
         "enabled" => Ok(true),
         "disabled" => Ok(false),
         _ => Err("unknown save-prompt preference version".into()),
+    }
+}
+
+fn encode_enabled_preference(enabled: bool) -> String {
+    if enabled { "enabled" } else { "disabled" }.to_owned()
+}
+
+fn decode_enabled_preference(value: &str, name: &str) -> Result<bool, String> {
+    match value {
+        "enabled" => Ok(true),
+        "disabled" => Ok(false),
+        _ => Err(format!("cannot load {name} preference: unknown version")),
     }
 }
 
@@ -2393,6 +2441,15 @@ mod preference_tests {
         assert!(decode_save_prompt_preference("enabled").unwrap());
         assert!(!decode_save_prompt_preference("disabled").unwrap());
         assert!(decode_save_prompt_preference("true").is_err());
+    }
+
+    #[test]
+    fn mouse_gesture_preferences_round_trip_both_original_modes() {
+        assert_eq!(encode_enabled_preference(true), "enabled");
+        assert_eq!(encode_enabled_preference(false), "disabled");
+        assert!(decode_enabled_preference("enabled", "mouse-gesture").unwrap());
+        assert!(!decode_enabled_preference("disabled", "mouse-gesture auto-save").unwrap());
+        assert!(decode_enabled_preference("true", "mouse-gesture").is_err());
     }
 
     #[test]

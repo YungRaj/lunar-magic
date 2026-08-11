@@ -4949,6 +4949,24 @@ it. Focused tests cover level state, complete and profile-free overworld state, 
 terrain plus route-link saves, cancellation, one-use discard authorization, persistence, and the
 authenticated command partition.
 
+## Level mouse-gesture options
+
+Commands `$24C8/$24C9` (`LM_OPTIONS_MOUSE_GESTURES` and `LM_OPTIONS_SAVE_GESTURES`) map to central
+dispatch cases `$6B/$6C`. `SynchronizeApplicationSettingsRegistry` stores gesture enable byte
+`$005E7AE1` in `Options` bit 12 and auto-save byte `$00E278C1` in bit 30; their initialized values
+are one and zero respectively. `BeginLevelEditorSwipeGesture` at `$00489E50` captures the
+right-button start point when enabled. `HandleLevelEditorSwipeGesture` at `$00489E80` accepts any
+nonzero horizontal-dominant displacement, rejects ties/vertical motion and Ctrl, maps ordinary
+left/right to history, Shift+Alt to previous/next level, and Alt+right to exit following. Alt+left
+remains history back.
+
+History back/forward and exit-follow helpers at `$00489AF0/$00489BE0/$00489D20` all consult the
+auto-save byte before leaving modified level state. The Shift+Alt branch performs the same save
+check before sending previous/next-level commands `$2391/$2390`. The CHM additionally establishes
+the UI conflict rule: unmodified gestures operate when object/sprite editor windows are closed,
+Shift forces history gestures regardless of those windows, and Shift+Alt/Alt select the specialized
+routes.
+
 ## Dedicated overworld animation-options runtime
 
 Lunar Magic 3.63 installs the per-map overworld animation-option storage through the dedicated

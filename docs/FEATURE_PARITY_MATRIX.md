@@ -955,6 +955,17 @@ ignores; and the 513-line renderer manifest retains SHA-256
 partition is now **258 routed / 59 pending**. The aggregate remains 59/65 because the
 configuration row is still Partial.
 
+Toolbar coverage update (2026-08-11, level mouse gestures): authenticated
+`LM_OPTIONS_MOUSE_GESTURES`/`LM_OPTIONS_SAVE_GESTURES` `$24C8/$24C9` now route the original
+default-on gesture switch and default-off gesture auto-save switch. The native level canvas matches
+the recovered horizontal-dominance, tie rejection, zero-threshold, Ctrl cancellation, history,
+Shift+Alt previous/next, and Alt+right exit-follow branches while preserving right-drag duplication
+when the tool panel owns unmodified secondary dragging. Both options persist independently. Optional
+auto-save reuses the checked staged-level commit/expansion pipeline and defers the exact gesture
+transition until its final revision. Focused classifier, command-marker, toggle, persistence, and
+automatic transition-save tests pass. The authenticated partition is now **295 routed / 22
+pending**. The aggregate remains 59/65 because the configuration row is still Partial.
+
 Toolbar coverage update (2026-08-10, old ExGFX bypass list): authenticated
 `LM_FILE_EXTRACT_EXGFX_LIST` `$239B` and `LM_FILE_INSERT_EXGFX_LIST` `$239C` now transfer the exact
 legacy `$400`-byte `Bypass.lst` table rather than aliasing ordinary ExGFX file transfer. Bundled-help,

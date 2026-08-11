@@ -508,6 +508,27 @@ impl NativeApplication {
                 }
                 .into();
             }
+            UserToolbarNativeAction::MouseGestures => {
+                let enabled = !self.mouse_gestures.unwrap_or(true);
+                self.mouse_gestures = Some(enabled);
+                self.vanilla_level_editor.set_mouse_gestures(enabled);
+                self.app.status = if enabled {
+                    "Enabled level mouse gestures"
+                } else {
+                    "Disabled level mouse gestures"
+                }
+                .into();
+            }
+            UserToolbarNativeAction::SaveMouseGestures => {
+                let enabled = !self.save_mouse_gestures.unwrap_or(false);
+                self.save_mouse_gestures = Some(enabled);
+                self.app.status = if enabled {
+                    "Enabled auto-save on level mouse gestures"
+                } else {
+                    "Disabled auto-save on level mouse gestures"
+                }
+                .into();
+            }
             UserToolbarNativeAction::VramPatchOptions => {
                 self.vram_patch_options_dialog.open(&self.app);
             }
@@ -1734,6 +1755,8 @@ enum UserToolbarNativeAction {
     MaintainChecksum,
     SilentlyAddHeader,
     SavePrompt,
+    MouseGestures,
+    SaveMouseGestures,
     VramPatchOptions,
     GraphicsCompressionOptions,
     GeneralOptions,
@@ -1843,6 +1866,8 @@ fn user_toolbar_native_action(name: &str) -> Option<UserToolbarNativeAction> {
         "LM_OPTIONS_MAINTAIN_CHECKSUM" => UserToolbarNativeAction::MaintainChecksum,
         "LM_OPTIONS_AUTO_HEADER" => UserToolbarNativeAction::SilentlyAddHeader,
         "LM_OPTIONS_SAVE_PROMPT" => UserToolbarNativeAction::SavePrompt,
+        "LM_OPTIONS_MOUSE_GESTURES" => UserToolbarNativeAction::MouseGestures,
+        "LM_OPTIONS_SAVE_GESTURES" => UserToolbarNativeAction::SaveMouseGestures,
         "LM_OPTIONS_VRAM" => UserToolbarNativeAction::VramPatchOptions,
         "LM_OPTIONS_COMPRESSION" => UserToolbarNativeAction::GraphicsCompressionOptions,
         "LM_OPTIONS_GENERAL" => UserToolbarNativeAction::GeneralOptions,
@@ -2889,7 +2914,7 @@ mod user_toolbar_tests {
                     || user_toolbar_native_action(entry.name).is_some()
             })
             .collect::<Vec<_>>();
-        assert_eq!(supported.len(), 293);
+        assert_eq!(supported.len(), 295);
         assert!(
             supported
                 .iter()
@@ -3343,6 +3368,43 @@ mod user_toolbar_tests {
     }
 
     #[test]
+    fn mouse_gesture_commands_toggle_their_distinct_original_defaults() {
+        let mut native = NativeApplication::default();
+        assert_eq!(native.mouse_gestures, None);
+        assert_eq!(native.save_mouse_gestures, None);
+        assert_eq!(
+            user_toolbar_native_action("LM_OPTIONS_MOUSE_GESTURES"),
+            Some(UserToolbarNativeAction::MouseGestures)
+        );
+        assert_eq!(
+            user_toolbar_native_action("LM_OPTIONS_SAVE_GESTURES"),
+            Some(UserToolbarNativeAction::SaveMouseGestures)
+        );
+
+        native.apply_user_toolbar_native_action(
+            &egui::Context::default(),
+            UserToolbarNativeAction::MouseGestures,
+        );
+        assert_eq!(native.mouse_gestures, Some(false));
+        native.apply_user_toolbar_native_action(
+            &egui::Context::default(),
+            UserToolbarNativeAction::SaveMouseGestures,
+        );
+        assert_eq!(native.save_mouse_gestures, Some(true));
+
+        native.apply_user_toolbar_native_action(
+            &egui::Context::default(),
+            UserToolbarNativeAction::MouseGestures,
+        );
+        native.apply_user_toolbar_native_action(
+            &egui::Context::default(),
+            UserToolbarNativeAction::SaveMouseGestures,
+        );
+        assert_eq!(native.mouse_gestures, Some(true));
+        assert_eq!(native.save_mouse_gestures, Some(false));
+    }
+
+    #[test]
     fn recent_menu_route_opens_at_the_pointer_and_escape_dismisses_it() {
         let mut native = NativeApplication::default();
         let context = egui::Context::default();
@@ -3525,7 +3587,7 @@ mod user_toolbar_tests {
                     && user_toolbar_native_action(entry.name).is_none()
             })
             .collect::<Vec<_>>();
-        assert_eq!(unsupported.len(), 24);
+        assert_eq!(unsupported.len(), 22);
         if std::env::var_os("LM_DIAGNOSTIC_UNSUPPORTED_TOOLBAR_COMMANDS").is_some() {
             for entry in unsupported {
                 eprintln!(
