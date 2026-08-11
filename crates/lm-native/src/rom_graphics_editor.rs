@@ -136,6 +136,44 @@ pub(crate) struct RomGraphicsEditor {
 }
 
 impl RomGraphicsEditor {
+    pub(crate) fn staged_recovery_generation(&self, app: &AppState) -> Option<u64> {
+        let workspace = self.workspace.as_ref()?;
+        workspace.controller.is_modified().then(|| {
+            app.project_revision().wrapping_mul(0xe703_7ed1_a0b4_28db)
+                ^ workspace.controller.revision().rotate_left(29)
+                ^ 0x4752_4150_4849_4353
+        })
+    }
+
+    pub(crate) fn staged_recovery_snapshot(
+        &self,
+        app: &AppState,
+    ) -> Result<Option<lm_app::RecoverySnapshot>, String> {
+        let workspace = self
+            .workspace
+            .as_ref()
+            .ok_or("graphics workspace is closed")?;
+        if !workspace.controller.is_modified() {
+            return Ok(app.recovery_snapshot());
+        }
+        let command = self.prepare_commit()?;
+        let Command::CommitRomMutation {
+            expected_revision,
+            mutation,
+            ..
+        } = command
+        else {
+            return Err("graphics recovery expected one prepared ROM mutation".into());
+        };
+        if expected_revision != app.project_revision() {
+            return Err("graphics recovery mutation was prepared from a stale revision".into());
+        }
+        app.recovery_snapshot_with_mutation(&mutation, workspace.level)
+            .map_err(|error| error.to_string())
+    }
+}
+
+impl RomGraphicsEditor {
     pub(crate) fn toggle_grid_color(&mut self) -> &'static str {
         self.tile_grid
             .apply_f8(egui::Modifiers {
@@ -2614,7 +2652,7 @@ fn installed_exgraphics_slots(
 #[cfg(test)]
 mod tests {
     use super::{
-        PendingGraphicsFormatWarningTarget, QuickGraphicsInsertion, RomGraphicsEditor,
+        PendingGraphicsFormatWarningTarget, QuickGraphicsInsertion, RomGraphicsEditor, Workspace,
         diagnostic_sheet_paste_editable, ensure_external_edit_revision, installed_exgraphics_slots,
         internal_cache_level_graphics_overrides, lunar_magic_standard_graphics_sources,
         overlay_current_graphics_file, paste_target_permitted, pristine_special_graphics,
@@ -2626,9 +2664,108 @@ mod tests {
         level_graphics_export::CurrentLevelGraphicsAssignments,
         vanilla_map16_preview::VanillaInternalGraphicsCache,
     };
-    use lm_graphics::{GraphicsFile4bpp, IndexedTile};
-    use lm_project::{GraphicsCompression, GraphicsRomLayout, LevelPointerTable};
+    use lm_graphics::{Bgr555, GraphicsFile4bpp, GraphicsOwnership, IndexedTile, Palette};
+    use lm_project::{
+        GraphicsCompression, GraphicsRomLayout, GraphicsSaveOptions, LevelPointerTable,
+    };
+    use lm_rats::AllocationPolicy;
     use lm_rom::{Mapper, RomImage};
+
+    #[test]
+    fn staged_rom_graphics_edit_is_recovered_without_committing_live_project() {
+        let mut source = lm_app::AppState::default();
+        source
+            .load_rom(crate::test_support::pristine_smw_us_rom_bytes())
+            .unwrap();
+        source
+            .dispatch(lm_app::Command::ConvertRomTo64MbitExLoRom {
+                expected_revision: source.project_revision(),
+            })
+            .unwrap();
+        let profile = lm_profile::test_support::profile();
+        let initial = GraphicsFile4bpp {
+            tiles: vec![IndexedTile::new([1; IndexedTile::PIXEL_COUNT]); 4],
+        };
+        let mut project = lm_project::Project::new(
+            RomImage::from_bytes(source.project().unwrap().save_snapshot()).unwrap(),
+        );
+        project
+            .save_graphics_file_with_checksum(
+                0,
+                &initial,
+                profile.graphics,
+                0x7fdc,
+                &GraphicsSaveOptions {
+                    allocation: AllocationPolicy {
+                        search: 0x600000..0x680000,
+                        bank_size: Some(0x8000),
+                        fill_bytes: vec![0, 0xff],
+                        protected: Vec::new(),
+                    },
+                    previous_block: None,
+                    reuse_identical: true,
+                    erase_fill: 0xff,
+                },
+            )
+            .unwrap();
+
+        let mut app = lm_app::AppState::default();
+        app.load_rom(project.save_snapshot()).unwrap();
+        app.dispatch(lm_app::Command::ShowGraphics(0)).unwrap();
+        let snapshot = app.controller_snapshot().unwrap();
+        let mut controller = lm_app::GraphicsController::decode(
+            &snapshot,
+            profile.graphics,
+            GraphicsOwnership::editable(initial.tiles.len()),
+        )
+        .unwrap();
+        let replacement = IndexedTile::new([9; IndexedTile::PIXEL_COUNT]);
+        controller
+            .apply_edits(&[lm_app::GraphicsControllerEdit::ReplaceRange {
+                start: 2,
+                tiles: vec![replacement.clone()],
+            }])
+            .unwrap();
+        let image = RomImage::from_bytes(snapshot.rom_bytes.clone()).unwrap();
+        let editor = RomGraphicsEditor {
+            workspace: Some(Workspace {
+                controller,
+                profile: profile.clone(),
+                palette: lm_graphics::PaletteInterchangeFile {
+                    source_palette: 0,
+                    palette: Palette {
+                        colors: vec![Bgr555(0); 16],
+                    },
+                },
+                slot: 0,
+                image,
+                internal_header: snapshot.identity.internal_header_offset,
+                level: None,
+                internal_cache: None,
+                internal_cache_error: None,
+                internal_cache_special_world: false,
+                internal_cache_convert_berry: true,
+                external_sprite_assets: lm_graphics::ExternalSpriteAssets::default(),
+            }),
+            search_start: "600000".into(),
+            search_end: "680000".into(),
+            ..RomGraphicsEditor::default()
+        };
+
+        assert!(editor.staged_recovery_generation(&app).is_some());
+        let recovery = editor.staged_recovery_snapshot(&app).unwrap().unwrap();
+        assert_eq!(app.capabilities().project, lm_app::ProjectStatus::OpenClean);
+        assert_eq!(app.project().unwrap().history.undo_len(), 0);
+
+        let mut reopened = lm_app::AppState::default();
+        reopened.load_recovery(recovery).unwrap();
+        let graphics = reopened
+            .project()
+            .unwrap()
+            .load_graphics_file(0, profile.graphics)
+            .unwrap();
+        assert_eq!(graphics.tiles[2], replacement);
+    }
 
     #[test]
     fn quick_standard_insertion_uses_lunar_magics_fixed_sibling_targets() {

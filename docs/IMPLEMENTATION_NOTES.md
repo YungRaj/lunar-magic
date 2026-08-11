@@ -6329,3 +6329,17 @@ fixture proves terrain-only, routes-only, and combined recovery/reopen while the
 byte-identical and history-free.
 The complete native gate passes 1,166 active tests with 11 explicit fixture/device ignores,
 including all 512 pristine-level materializations; all 237 renderer tests pass.
+
+## Crash recovery includes staged installed-ROM graphics
+
+The installed graphics workspace now contributes its controller revision to the shared recovery
+generation and prepares the same allocation-checked mutation used by ordinary Save. This covers
+ownership-qualified standard GFX and ExGFX slots without committing, expanding, or adding history
+to the live project. Recovery retains the selected level when one was active, and the coordinator
+rejects a simultaneous independently allocating graphics workspace instead of publishing a
+partial snapshot.
+
+The focused test installs a four-tile graphics file, stages one tile replacement, creates and
+reopens the recovery record, and decodes the replacement while proving the live application stays
+clean and history-free. The complete native gate passes 1,167 tests with 11 explicit fixture
+ignores, including all 512 pristine-level materializations; the renderer remains 237/237.
