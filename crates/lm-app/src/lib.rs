@@ -372,6 +372,7 @@ pub use revision_profile::{
 };
 pub use rom_user_area_scan::RomUserAreaReport;
 pub use selection::{EditorSelection, SelectionError};
+pub use shared_palette_state::save_native_shared_palette_to_project;
 pub use shortcut::{
     ShortcutBinding, ShortcutConfig, ShortcutError, ShortcutGesture, ShortcutKey, ShortcutModifiers,
 };

@@ -57,6 +57,32 @@ pub(crate) struct RomPaletteEditor {
 }
 
 impl RomPaletteEditor {
+    pub(crate) fn staged_recovery_mutation(
+        &self,
+        app: &AppState,
+    ) -> Result<Option<lm_project::RomMutation>, String> {
+        let workspace = self
+            .workspace
+            .as_ref()
+            .ok_or("palette workspace is closed")?;
+        if !workspace.controller.is_modified() {
+            return Ok(None);
+        }
+        let command = self.prepare_commit()?;
+        let Command::CommitRomMutation {
+            expected_revision,
+            mutation,
+            ..
+        } = command
+        else {
+            return Err("palette recovery expected one prepared ROM mutation".into());
+        };
+        if expected_revision != app.project_revision() {
+            return Err("palette recovery mutation was prepared from a stale revision".into());
+        }
+        Ok(Some(mutation))
+    }
+
     pub(crate) fn staged_recovery_generation(&self, app: &AppState) -> Option<u64> {
         let workspace = self.workspace.as_ref()?;
         workspace.controller.is_modified().then(|| {
@@ -77,18 +103,9 @@ impl RomPaletteEditor {
         if !workspace.controller.is_modified() {
             return Ok(app.recovery_snapshot());
         }
-        let command = self.prepare_commit()?;
-        let Command::CommitRomMutation {
-            expected_revision,
-            mutation,
-            ..
-        } = command
-        else {
-            return Err("palette recovery expected one prepared ROM mutation".into());
-        };
-        if expected_revision != app.project_revision() {
-            return Err("palette recovery mutation was prepared from a stale revision".into());
-        }
+        let mutation = self
+            .staged_recovery_mutation(app)?
+            .ok_or("staged palette mutation disappeared")?;
         app.recovery_snapshot_with_mutation(&mutation, None)
             .map_err(|error| error.to_string())
     }

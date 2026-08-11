@@ -4,6 +4,7 @@ use lm_profile::{
     SMW_US_V1_CHECKSUM_FIELD, smw_us_v1_expanded_shared_palette_installation_plan_for_mapper,
     smw_us_v1_shared_palette_layout_for_mapper,
 };
+use lm_project::Project;
 use lm_rom::{Mapper, Region, SupportedGame};
 
 impl AppState {
@@ -67,34 +68,7 @@ impl AppState {
         self.require_no_pending_save()?;
         self.ensure_project_revision_capacity()?;
         let project = self.project.as_mut().ok_or(AppError::NoProject)?;
-        let identity = project.identity.as_ref().ok_or(AppError::NoProject)?;
-        if identity.game != SupportedGame::SuperMarioWorld
-            || identity.region != Region::NorthAmerica
-            || identity.revision != 0
-            || !matches!(identity.mapper, Mapper::LoRom | Mapper::ExLoRom)
-        {
-            return Err(AppError::NativeSharedPaletteIdentityMismatch);
-        }
-        let mapper = identity.mapper;
-        let layout = smw_us_v1_shared_palette_layout_for_mapper(mapper);
-        let installed = project.load_shared_palette(layout)?.backend();
-        if installed == SmwPaletteBackend::Legacy
-            && palette.backend() == SmwPaletteBackend::Expanded
-        {
-            let expected = project
-                .rom
-                .read(layout.table_offset, SmwPaletteFile::EXPANDED_FILE_LEN)?
-                .to_vec();
-            let plan = smw_us_v1_expanded_shared_palette_installation_plan_for_mapper(
-                palette, &expected, mapper,
-            )?;
-            project.install_relocatable_patch(&plan)?;
-        } else {
-            project.save_shared_palette(palette, layout, SMW_US_V1_CHECKSUM_FIELD)?;
-        }
-        if project.load_shared_palette(layout)? != *palette {
-            return Err(AppError::NativeSharedPaletteReopenMismatch);
-        }
+        save_native_shared_palette_to_project(project, palette)?;
         self.advance_project_revision()?;
         let description = "Replace native shared SMW palettes".to_owned();
         self.status.clone_from(&description);
@@ -104,6 +78,39 @@ impl AppState {
             revision: self.project_revision,
         }])
     }
+}
+
+pub fn save_native_shared_palette_to_project(
+    project: &mut Project,
+    palette: &SmwPaletteFile,
+) -> Result<(), AppError> {
+    let identity = project.identity.as_ref().ok_or(AppError::NoProject)?;
+    if identity.game != SupportedGame::SuperMarioWorld
+        || identity.region != Region::NorthAmerica
+        || identity.revision != 0
+        || !matches!(identity.mapper, Mapper::LoRom | Mapper::ExLoRom)
+    {
+        return Err(AppError::NativeSharedPaletteIdentityMismatch);
+    }
+    let mapper = identity.mapper;
+    let layout = smw_us_v1_shared_palette_layout_for_mapper(mapper);
+    let installed = project.load_shared_palette(layout)?.backend();
+    if installed == SmwPaletteBackend::Legacy && palette.backend() == SmwPaletteBackend::Expanded {
+        let expected = project
+            .rom
+            .read(layout.table_offset, SmwPaletteFile::EXPANDED_FILE_LEN)?
+            .to_vec();
+        let plan = smw_us_v1_expanded_shared_palette_installation_plan_for_mapper(
+            palette, &expected, mapper,
+        )?;
+        project.install_relocatable_patch(&plan)?;
+    } else {
+        project.save_shared_palette(palette, layout, SMW_US_V1_CHECKSUM_FIELD)?;
+    }
+    if project.load_shared_palette(layout)? != *palette {
+        return Err(AppError::NativeSharedPaletteReopenMismatch);
+    }
+    Ok(())
 }
 
 #[cfg(test)]

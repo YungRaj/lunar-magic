@@ -1,9 +1,5 @@
 use lm_app::AppState;
 use lm_graphics::{Bgr555, SmwPaletteBackend, SmwPaletteFile};
-use lm_profile::{
-    SMW_US_V1_CHECKSUM_FIELD, smw_us_v1_expanded_shared_palette_installation_plan_for_mapper,
-    smw_us_v1_shared_palette_layout_for_mapper,
-};
 use lm_rom::Mapper;
 
 #[derive(Clone)]
@@ -47,42 +43,20 @@ impl Workspace {
             return Ok(app.recovery_snapshot());
         }
         let mut staged = app.project().ok_or("open a supported ROM first")?.clone();
-        let layout = smw_us_v1_shared_palette_layout_for_mapper(self.mapper);
-        let installed = staged
-            .load_shared_palette(layout)
-            .map_err(|error| error.to_string())?
-            .backend();
-        if installed == SmwPaletteBackend::Legacy
-            && self.current.backend() == SmwPaletteBackend::Expanded
-        {
-            let expected = staged
-                .rom
-                .read(layout.table_offset, SmwPaletteFile::EXPANDED_FILE_LEN)
-                .map_err(|error| error.to_string())?
-                .to_vec();
-            let plan = smw_us_v1_expanded_shared_palette_installation_plan_for_mapper(
-                &self.current,
-                &expected,
-                self.mapper,
-            )
+        lm_app::save_native_shared_palette_to_project(&mut staged, &self.current)
             .map_err(|error| error.to_string())?;
-            staged
-                .install_relocatable_patch(&plan)
-                .map_err(|error| error.to_string())?;
-        } else {
-            staged
-                .save_shared_palette(&self.current, layout, SMW_US_V1_CHECKSUM_FIELD)
-                .map_err(|error| error.to_string())?;
-        }
-        if staged
-            .load_shared_palette(layout)
-            .map_err(|error| error.to_string())?
-            != self.current
-        {
-            return Err("recovered shared palette did not reopen exactly".into());
-        }
         app.recovery_snapshot_with_current_rom(staged.save_snapshot(), app.current_level())
             .map_err(|error| error.to_string())
+    }
+
+    pub(super) fn staged_recovery_palette<'a>(
+        &'a self,
+        app: &AppState,
+    ) -> Result<Option<&'a SmwPaletteFile>, String> {
+        if self.revision != app.project_revision() {
+            return Err("stale shared-palette workspace cannot be recovered".into());
+        }
+        Ok(self.dirty().then_some(&self.current))
     }
 
     pub(super) fn replace_file(&mut self, file: SmwPaletteFile) -> Result<(), String> {

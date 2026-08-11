@@ -487,6 +487,9 @@ level context, and a clean history-free live project.
 Title-screen and credits tilemaps likewise share production persistence and compose on one isolated
 allocation image. `simultaneous_pristine_global_tilemaps_install_and_recover_exactly` proves both
 expanded-storage installs, exact complete-map reopen, retained level context, and clean live state.
+Installed-ROM palette mutations and shared-palette files now compose in production persistence
+order. `simultaneous_pristine_palette_family_recovers_mutation_and_expanded_shared_palette` proves
+the independent mutation survives first-time expanded palette installation and exact reopen.
 
 ## Workflow ledger
 

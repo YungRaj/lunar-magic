@@ -6663,3 +6663,16 @@ without collision.
 the credits map, installs both runtimes from a pristine ROM, reopens all words exactly, retains
 level `$105`, and leaves the live project clean and history-free. Both ordinary Undo tests, native
 compilation, and all 237 renderer tests pass.
+
+## Crash recovery composes installed and shared palette editors
+
+Shared-palette persistence now has one exported production function used by ordinary commits,
+standalone recovery, and simultaneous recovery. The installed palette editor exposes its exact
+revision-bound prepared ROM mutation, while the shared editor exposes its validated complete
+palette file. The coordinator applies the mutation first and then performs legacy update or
+expanded-runtime installation on the same isolated ROM.
+
+`simultaneous_pristine_palette_family_recovers_mutation_and_expanded_shared_palette` proves an
+independent staged mutation survives first-time expanded shared-palette installation, exact reopen,
+level `$105` retention, and a clean history-free live project. The ordinary shared-palette Undo
+test, native compilation, and all 237 renderer tests pass.

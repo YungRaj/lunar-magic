@@ -2019,6 +2019,27 @@ impl eframe::App for NativeApplication {
                         )
                         .map_err(|error| error.to_string());
                 }
+                if staged_editors == 2
+                    && palette_recovery_revision.is_some()
+                    && shared_palette_recovery_revision.is_some()
+                {
+                    let mutation = self
+                        .rom_palette_editor
+                        .staged_recovery_mutation(&self.app)?
+                        .ok_or("staged installed-palette mutation disappeared")?;
+                    let shared = self
+                        .rom_shared_palette_editor
+                        .staged_recovery_palette(&self.app)?
+                        .ok_or("staged shared-palette table disappeared")?;
+                    return self
+                        .app
+                        .recovery_snapshot_with_palette_family(
+                            &mutation,
+                            shared,
+                            self.app.current_level(),
+                        )
+                        .map_err(|error| error.to_string());
+                }
                 if staged_editors > 1 {
                     return Err(
                         "cannot compose simultaneous staged level, level-assets, expanded settings, legacy graphics bypass, title recording, shared palette, overworld/boss messages, secondary exits, overworld level names/player starts/settings/special events/event numbers/event reveals/event tilemaps/metadata/path/warp links, graphics, ExAnimation, title/credits tilemap, palette, Map16, or overworld recovery yet".into(),

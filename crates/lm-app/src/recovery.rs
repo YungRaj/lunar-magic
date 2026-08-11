@@ -177,6 +177,23 @@ impl AppState {
         self.recovery_snapshot_with_current_rom(staged.save_snapshot(), level)
     }
 
+    /// Applies an installed-ROM palette mutation and a staged shared-palette file to one isolated
+    /// project, preserving allocation order and validating the resulting recovery image.
+    pub fn recovery_snapshot_with_palette_family(
+        &self,
+        mutation: &lm_project::RomMutation,
+        shared: &lm_graphics::SmwPaletteFile,
+        level: Option<u16>,
+    ) -> Result<Option<RecoverySnapshot>, AppError> {
+        let project = self.project.as_ref().ok_or(AppError::NoProject)?;
+        let mut staged = project.clone();
+        staged
+            .apply_mutation("Stage installed palette for crash recovery", mutation)
+            .map_err(|error| AppError::Recovery(error.to_string()))?;
+        crate::save_native_shared_palette_to_project(&mut staged, shared)?;
+        self.recovery_snapshot_with_current_rom(staged.save_snapshot(), level)
+    }
+
     /// Restores a recovery record as an unnamed, dirty project.
     ///
     /// The original path is deliberately not restored. The first explicit save therefore uses
@@ -504,6 +521,54 @@ mod tests {
                 .unwrap()
                 .tilemap,
             credits
+        );
+    }
+
+    #[test]
+    fn simultaneous_pristine_palette_family_recovers_mutation_and_expanded_shared_palette() {
+        use lm_graphics::SmwPaletteFile;
+        use lm_profile::smw_us_v1_shared_palette_layout_for_mapper;
+        use lm_rom::Mapper;
+
+        let mut app = AppState::default();
+        app.load_rom(crate::test_support::pristine_smw_us_rom_bytes())
+            .unwrap();
+        let project = app.project().unwrap();
+        let before = project.rom.logical_bytes().to_vec();
+        let mut after = before.clone();
+        after[0x10000] ^= 0x01;
+        let mutation = lm_project::RomMutation::between(Mapper::LoRom, &before, &after).unwrap();
+        let layout = smw_us_v1_shared_palette_layout_for_mapper(Mapper::LoRom);
+        let expected = project
+            .rom
+            .read(layout.table_offset, SmwPaletteFile::EXPANDED_FILE_LEN)
+            .unwrap();
+        let mut palette =
+            SmwPaletteFile::expanded(expected[0x10..].to_vec(), expected[..0x10].to_vec()).unwrap();
+        let mut encoded = palette.encode();
+        encoded[0x234] ^= 0x01;
+        palette = SmwPaletteFile::decode(&encoded).unwrap();
+
+        let recovery = app
+            .recovery_snapshot_with_palette_family(&mutation, &palette, Some(0x105))
+            .unwrap()
+            .unwrap();
+        assert_eq!(app.capabilities().project, crate::ProjectStatus::OpenClean);
+        assert_eq!(app.project().unwrap().history.undo_len(), 0);
+        let mut reopened = AppState::default();
+        reopened.load_recovery(recovery).unwrap();
+        assert_eq!(reopened.current_level(), Some(0x105));
+        assert_eq!(
+            reopened.project().unwrap().rom.logical_bytes()[0x10000],
+            after[0x10000]
+        );
+        assert_eq!(
+            reopened
+                .project()
+                .unwrap()
+                .load_shared_palette(layout)
+                .unwrap(),
+            palette
         );
     }
 }
