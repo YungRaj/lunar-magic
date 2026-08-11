@@ -425,6 +425,9 @@ impl NativeApplication {
             UserToolbarNativeAction::AutoDeselectOnEditorSelect => {
                 self.set_auto_deselect_on_editor_select(!self.auto_deselect_on_editor_select);
             }
+            UserToolbarNativeAction::ShowAddEditorIds => {
+                self.set_show_add_editor_ids(!self.show_add_editor_ids.unwrap_or(true));
+            }
             UserToolbarNativeAction::GraphicsCompressionOptions => {
                 self.graphics_migration_dialog.open(&self.app);
             }
@@ -1058,6 +1061,17 @@ impl NativeApplication {
         .into();
     }
 
+    pub(super) fn set_show_add_editor_ids(&mut self, enabled: bool) {
+        self.show_add_editor_ids = Some(enabled);
+        self.vanilla_level_editor.set_show_add_editor_ids(enabled);
+        self.app.status = if enabled {
+            "Showing IDs and object sizes in Add Object/Sprite editors"
+        } else {
+            "Hiding IDs and object sizes in Add Object/Sprite editors"
+        }
+        .into();
+    }
+
     fn activate_user_toolbar_recent_path(
         &mut self,
         context: &egui::Context,
@@ -1567,6 +1581,7 @@ enum UserToolbarNativeAction {
     DeprecatedSelectForegroundBackgroundNoOp,
     DeprecatedOptionsNoOp,
     AutoDeselectOnEditorSelect,
+    ShowAddEditorIds,
     GraphicsCompressionOptions,
     GeneralOptions,
     RestoreOptions,
@@ -1663,6 +1678,7 @@ fn user_toolbar_native_action(name: &str) -> Option<UserToolbarNativeAction> {
             UserToolbarNativeAction::DeprecatedOptionsNoOp
         }
         "LM_OPTIONS_AUTO_DESELECT" => UserToolbarNativeAction::AutoDeselectOnEditorSelect,
+        "LM_OPTIONS_SPRITE_OBJECT_ID" => UserToolbarNativeAction::ShowAddEditorIds,
         "LM_OPTIONS_COMPRESSION" => UserToolbarNativeAction::GraphicsCompressionOptions,
         "LM_OPTIONS_GENERAL" => UserToolbarNativeAction::GeneralOptions,
         "LM_OPTIONS_RESTORE" => UserToolbarNativeAction::RestoreOptions,
@@ -2705,7 +2721,7 @@ mod user_toolbar_tests {
                     || user_toolbar_native_action(entry.name).is_some()
             })
             .collect::<Vec<_>>();
-        assert_eq!(supported.len(), 280);
+        assert_eq!(supported.len(), 281);
         assert!(
             supported
                 .iter()
@@ -2839,6 +2855,34 @@ mod user_toolbar_tests {
         );
         assert!(!native.auto_deselect_on_editor_select);
         assert_eq!(native.app.status, "Disabled auto-deselect on editor select");
+    }
+
+    #[test]
+    fn show_add_editor_ids_command_toggles_the_original_default_on_preference() {
+        let mut native = NativeApplication::default();
+        assert_eq!(native.show_add_editor_ids, None);
+        assert_eq!(
+            user_toolbar_native_action("LM_OPTIONS_SPRITE_OBJECT_ID"),
+            Some(UserToolbarNativeAction::ShowAddEditorIds)
+        );
+        native.apply_user_toolbar_native_action(
+            &egui::Context::default(),
+            UserToolbarNativeAction::ShowAddEditorIds,
+        );
+        assert_eq!(native.show_add_editor_ids, Some(false));
+        assert_eq!(
+            native.app.status,
+            "Hiding IDs and object sizes in Add Object/Sprite editors"
+        );
+        native.apply_user_toolbar_native_action(
+            &egui::Context::default(),
+            UserToolbarNativeAction::ShowAddEditorIds,
+        );
+        assert_eq!(native.show_add_editor_ids, Some(true));
+        assert_eq!(
+            native.app.status,
+            "Showing IDs and object sizes in Add Object/Sprite editors"
+        );
     }
 
     #[test]
@@ -3024,7 +3068,7 @@ mod user_toolbar_tests {
                     && user_toolbar_native_action(entry.name).is_none()
             })
             .collect::<Vec<_>>();
-        assert_eq!(unsupported.len(), 37);
+        assert_eq!(unsupported.len(), 36);
         if std::env::var_os("LM_DIAGNOSTIC_UNSUPPORTED_TOOLBAR_COMMANDS").is_some() {
             for entry in unsupported {
                 eprintln!(

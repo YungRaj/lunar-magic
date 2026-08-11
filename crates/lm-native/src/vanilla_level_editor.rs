@@ -537,6 +537,7 @@ pub(crate) struct VanillaLevelEditor {
     placement_mode: Option<CanvasPlacementMode>,
     canvas_entity_selection: Option<CanvasEntitySelection>,
     auto_deselect_on_editor_select: bool,
+    show_add_editor_ids: Option<bool>,
     paste_target: Option<EntityPasteTarget>,
     pending_layer2_mode_reset: Option<HeaderForm>,
     error: Option<String>,
@@ -624,6 +625,10 @@ fn wrapping_index(value: u8, delta: i8, modulus: u8) -> u8 {
 impl VanillaLevelEditor {
     pub(crate) fn set_auto_deselect_on_editor_select(&mut self, enabled: bool) {
         self.auto_deselect_on_editor_select = enabled;
+    }
+
+    pub(crate) fn set_show_add_editor_ids(&mut self, enabled: bool) {
+        self.show_add_editor_ids = Some(enabled);
     }
 
     pub(crate) fn editor_selector_selected(&mut self) {
@@ -7861,6 +7866,7 @@ impl VanillaLevelEditor {
                 };
                 let preview_icons = self.object_catalog_preview_icons.unwrap_or(true);
                 let vertical_layout = self.object_catalog_vertical_layout.unwrap_or(false);
+                let show_ids = self.show_add_editor_ids.unwrap_or(true);
                 let mut chosen = None;
                 egui::ScrollArea::vertical()
                     .id_salt(if layer2 {
@@ -7882,11 +7888,16 @@ impl VanillaLevelEditor {
                                         &handler_map,
                                         &definitions,
                                         command == selected_command,
+                                        show_ids,
                                     )
                                 } else {
                                     ui.selectable_label(
                                         command == selected_command,
-                                        format!("Standard object ${command:02X}"),
+                                        if show_ids {
+                                            format!("Standard object ${command:02X}")
+                                        } else {
+                                            "Standard object".to_owned()
+                                        },
                                     )
                                 };
                                 if response.clicked() {
@@ -7956,6 +7967,7 @@ impl VanillaLevelEditor {
                 let foreground_texture = self.foreground_texture.clone();
                 let preview_icons = self.object_catalog_preview_icons.unwrap_or(true);
                 let vertical_layout = self.object_catalog_vertical_layout.unwrap_or(false);
+                let show_ids = self.show_add_editor_ids.unwrap_or(true);
                 let mut chosen = None;
                 egui::ScrollArea::vertical()
                     .id_salt(if layer2 {
@@ -7974,16 +7986,28 @@ impl VanillaLevelEditor {
                                         foreground_texture.as_ref(),
                                         custom_map16,
                                         entry,
+                                        show_ids,
                                     )
                                 } else {
                                     ui.selectable_label(
                                         false,
-                                        format!(
-                                            "${:02X}/${:02X} {}",
-                                            entry.selector.object_type,
-                                            entry.selector.parameter,
-                                            entry.description.as_deref().unwrap_or("custom object")
-                                        ),
+                                        if show_ids {
+                                            format!(
+                                                "${:02X}/${:02X} {}",
+                                                entry.selector.object_type,
+                                                entry.selector.parameter,
+                                                entry
+                                                    .description
+                                                    .as_deref()
+                                                    .unwrap_or("custom object")
+                                            )
+                                        } else {
+                                            entry
+                                                .description
+                                                .as_deref()
+                                                .unwrap_or("custom object")
+                                                .to_owned()
+                                        },
                                     )
                                 };
                                 if response.clicked() {
@@ -8085,6 +8109,7 @@ impl VanillaLevelEditor {
                 let selected = (selected.command_id, selected.parameter);
                 let preview_icons = self.object_catalog_preview_icons.unwrap_or(true);
                 let vertical_layout = self.object_catalog_vertical_layout.unwrap_or(false);
+                let show_ids = self.show_add_editor_ids.unwrap_or(true);
                 let mut chosen = None;
                 egui::ScrollArea::vertical()
                     .id_salt(if layer2 {
@@ -8106,11 +8131,16 @@ impl VanillaLevelEditor {
                                         &handler_map,
                                         &definitions,
                                         selected == (0, selector),
+                                        show_ids,
                                     )
                                 } else {
                                     ui.selectable_label(
                                         selected == (0, selector),
-                                        format!("Extended object $00/${selector:02X}"),
+                                        if show_ids {
+                                            format!("Extended object $00/${selector:02X}")
+                                        } else {
+                                            "Extended object".to_owned()
+                                        },
                                     )
                                 };
                                 if response.clicked() {
@@ -8395,6 +8425,7 @@ impl VanillaLevelEditor {
                                             placement.sprite_number,
                                             mode,
                                             index == self.selected_sprite,
+                                            self.show_add_editor_ids.unwrap_or(true),
                                         )
                                         .on_hover_text(format!(
                                             "Existing record {index}\nScreen {}, tile ${:X},{}\nSelect to place a copy",
@@ -8618,6 +8649,7 @@ impl VanillaLevelEditor {
                 mode.alternate_display = self.silver_pow_active;
                 let preview_icons = self.sprite_catalog_preview_icons.unwrap_or(true);
                 let vertical_layout = self.sprite_catalog_vertical_layout.unwrap_or(false);
+                let show_ids = self.show_add_editor_ids.unwrap_or(true);
                 let mut chosen = None;
                 egui::ScrollArea::vertical()
                     .id_salt("vanilla-standard-sprite-catalog-scroll")
@@ -8633,11 +8665,16 @@ impl VanillaLevelEditor {
                                         id,
                                         mode,
                                         id == self.sprite_form.sprite_number,
+                                        show_ids,
                                     )
                                 } else {
                                     ui.selectable_label(
                                         id == self.sprite_form.sprite_number,
-                                        format!("Standard sprite ${id:02X}"),
+                                        if show_ids {
+                                            format!("Standard sprite ${id:02X}")
+                                        } else {
+                                            "Standard sprite".to_owned()
+                                        },
                                     )
                                 };
                                 if response.clicked() {
@@ -8686,6 +8723,7 @@ impl VanillaLevelEditor {
                     .or_else(|| texture.clone());
                 let preview_icons = self.sprite_catalog_preview_icons.unwrap_or(true);
                 let vertical_layout = self.sprite_catalog_vertical_layout.unwrap_or(false);
+                let show_ids = self.show_add_editor_ids.unwrap_or(true);
                 let mut chosen = None;
                 egui::ScrollArea::vertical()
                     .id_salt("vanilla-custom-sprite-catalog-scroll")
@@ -8728,16 +8766,28 @@ impl VanillaLevelEditor {
                                         atlas_parts.as_deref(),
                                         external_parts.as_deref(),
                                         &self.external_sprite_textures,
+                                        show_ids,
                                     )
                                 } else {
                                     ui.selectable_label(
                                         false,
-                                        format!(
-                                            "${:02X} · E{} {}",
-                                            entry.selector.sprite_number,
-                                            entry.selector.extra_bits,
-                                            entry.description.as_deref().unwrap_or("custom sprite")
-                                        ),
+                                        if show_ids {
+                                            format!(
+                                                "${:02X} · E{} {}",
+                                                entry.selector.sprite_number,
+                                                entry.selector.extra_bits,
+                                                entry
+                                                    .description
+                                                    .as_deref()
+                                                    .unwrap_or("custom sprite")
+                                            )
+                                        } else {
+                                            entry
+                                                .description
+                                                .as_deref()
+                                                .unwrap_or("custom sprite")
+                                                .to_owned()
+                                        },
                                     )
                                 };
                                 if response.clicked() {
@@ -10316,6 +10366,7 @@ fn draw_custom_object_catalog_entry(
     foreground_texture: Option<&egui::TextureHandle>,
     custom_map16: Option<&lm_app::NativeMap16SidecarDocument>,
     object: &lm_level::OscResolvedObject,
+    show_ids: bool,
 ) -> egui::Response {
     let (rect, response) = ui.allocate_exact_size(egui::vec2(78.0, 70.0), egui::Sense::click());
     let painter = ui.painter_at(rect);
@@ -10336,23 +10387,27 @@ fn draw_custom_object_catalog_entry(
             1.0,
         );
     }
-    painter.text(
-        egui::pos2(rect.center().x, rect.bottom() - 12.0),
-        egui::Align2::CENTER_CENTER,
-        format!(
-            "${:02X}/${:02X}",
-            object.selector.object_type, object.selector.parameter
-        ),
-        egui::FontId::monospace(9.0),
-        egui::Color32::WHITE,
-    );
-    response.on_hover_text(format!(
-        "{}\nObject ${:02X}, parameter ${:02X}, variant {}",
-        object.description.as_deref().unwrap_or("custom OSC object"),
-        object.selector.object_type,
-        object.selector.parameter,
-        object.selector.variant
-    ))
+    if show_ids {
+        painter.text(
+            egui::pos2(rect.center().x, rect.bottom() - 12.0),
+            egui::Align2::CENTER_CENTER,
+            format!(
+                "${:02X}/${:02X}",
+                object.selector.object_type, object.selector.parameter
+            ),
+            egui::FontId::monospace(9.0),
+            egui::Color32::WHITE,
+        );
+    }
+    let description = object.description.as_deref().unwrap_or("custom OSC object");
+    if show_ids {
+        response.on_hover_text(format!(
+            "{description}\nObject ${:02X}, parameter ${:02X}, variant {}",
+            object.selector.object_type, object.selector.parameter, object.selector.variant
+        ))
+    } else {
+        response.on_hover_text(description)
+    }
 }
 
 fn draw_fitted_custom_object_preview(
@@ -10436,6 +10491,7 @@ fn draw_object_catalog_entry(
     handler_map: &[u8; 64],
     definitions: &lm_render::StandardObjectDefinitionSet,
     selected: bool,
+    show_ids: bool,
 ) -> egui::Response {
     let (rect, response) = ui.allocate_exact_size(egui::vec2(62.0, 62.0), egui::Sense::click());
     let painter = ui.painter_at(rect);
@@ -10444,7 +10500,8 @@ fn draw_object_catalog_entry(
         rect.min + egui::vec2(3.0, 3.0),
         rect.max - egui::vec2(3.0, 15.0),
     );
-    if let Some(tiles) = object_catalog_tiles(command, handler_map, definitions) {
+    let tiles = object_catalog_tiles(command, handler_map, definitions);
+    if let Some(tiles) = tiles.as_ref() {
         draw_fitted_object_catalog_preview(
             &painter,
             map16_texture,
@@ -10454,7 +10511,7 @@ fn draw_object_catalog_entry(
             &tiles,
             16.0,
         );
-    } else {
+    } else if show_ids {
         painter.text(
             preview_rect.center(),
             egui::Align2::CENTER_CENTER,
@@ -10462,15 +10519,30 @@ fn draw_object_catalog_entry(
             egui::FontId::monospace(12.0),
             egui::Color32::LIGHT_BLUE,
         );
+    } else {
+        draw_catalog_preview_unavailable(&painter, preview_rect);
     }
-    painter.text(
-        egui::pos2(rect.center().x, rect.bottom() - 7.0),
-        egui::Align2::CENTER_CENTER,
-        format!("{command:02X}"),
-        egui::FontId::monospace(10.0),
-        egui::Color32::WHITE,
-    );
-    response.on_hover_text(format!("Standard object ${command:02X}"))
+    if show_ids {
+        painter.text(
+            egui::pos2(rect.center().x, rect.bottom() - 7.0),
+            egui::Align2::CENTER_CENTER,
+            format!("{command:02X}"),
+            egui::FontId::monospace(10.0),
+            egui::Color32::WHITE,
+        );
+    }
+    if show_ids {
+        let size = tiles
+            .as_deref()
+            .and_then(object_catalog_dimensions)
+            .map_or_else(
+                || "size unavailable".to_owned(),
+                |(width, height)| format!("{width}x{height} tiles"),
+            );
+        response.on_hover_text(format!("Standard object ${command:02X}\nSize: {size}"))
+    } else {
+        response
+    }
 }
 
 fn draw_extended_object_catalog_entry(
@@ -10482,6 +10554,7 @@ fn draw_extended_object_catalog_entry(
     handler_map: &[u8; 64],
     definitions: &lm_render::StandardObjectDefinitionSet,
     selected: bool,
+    show_ids: bool,
 ) -> egui::Response {
     let (rect, response) = ui.allocate_exact_size(egui::vec2(62.0, 62.0), egui::Sense::click());
     let painter = ui.painter_at(rect);
@@ -10492,7 +10565,8 @@ fn draw_extended_object_catalog_entry(
     );
     let record = ObjectRecord::new(vec![0, 0, selector])
         .expect("extended catalog selectors always encode three-byte objects");
-    if let Some(tiles) = object_catalog_record_tiles(&record, handler_map, definitions) {
+    let tiles = object_catalog_record_tiles(&record, handler_map, definitions);
+    if let Some(tiles) = tiles.as_ref() {
         draw_fitted_object_catalog_preview(
             &painter,
             map16_texture,
@@ -10502,7 +10576,7 @@ fn draw_extended_object_catalog_entry(
             &tiles,
             16.0,
         );
-    } else {
+    } else if show_ids {
         painter.text(
             preview_rect.center(),
             egui::Align2::CENTER_CENTER,
@@ -10510,15 +10584,30 @@ fn draw_extended_object_catalog_entry(
             egui::FontId::monospace(12.0),
             egui::Color32::LIGHT_BLUE,
         );
+    } else {
+        draw_catalog_preview_unavailable(&painter, preview_rect);
     }
-    painter.text(
-        egui::pos2(rect.center().x, rect.bottom() - 7.0),
-        egui::Align2::CENTER_CENTER,
-        format!("{selector:02X}"),
-        egui::FontId::monospace(10.0),
-        egui::Color32::WHITE,
-    );
-    response.on_hover_text(format!("Extended object ${selector:02X}"))
+    if show_ids {
+        painter.text(
+            egui::pos2(rect.center().x, rect.bottom() - 7.0),
+            egui::Align2::CENTER_CENTER,
+            format!("{selector:02X}"),
+            egui::FontId::monospace(10.0),
+            egui::Color32::WHITE,
+        );
+    }
+    if show_ids {
+        let size = tiles
+            .as_deref()
+            .and_then(object_catalog_dimensions)
+            .map_or_else(
+                || "size unavailable".to_owned(),
+                |(width, height)| format!("{width}x{height} tiles"),
+            );
+        response.on_hover_text(format!("Extended object ${selector:02X}\nSize: {size}"))
+    } else {
+        response
+    }
 }
 
 fn draw_catalog_background(painter: &egui::Painter, rect: egui::Rect, selected: bool) {
@@ -10580,6 +10669,14 @@ fn object_catalog_tiles(
     .ordinary_record()
     .ok()?;
     object_catalog_record_tiles(&record, handler_map, definitions)
+}
+
+fn object_catalog_dimensions(tiles: &[(usize, usize, u16)]) -> Option<(usize, usize)> {
+    let min_x = tiles.iter().map(|(x, _, _)| *x).min()?;
+    let max_x = tiles.iter().map(|(x, _, _)| *x).max()?;
+    let min_y = tiles.iter().map(|(_, y, _)| *y).min()?;
+    let max_y = tiles.iter().map(|(_, y, _)| *y).max()?;
+    Some((max_x - min_x + 1, max_y - min_y + 1))
 }
 
 fn object_catalog_record_tiles(
@@ -10851,6 +10948,7 @@ fn draw_custom_sprite_catalog_entry(
     parts: Option<&[lm_render::StandardSpritePreviewTile]>,
     external_parts: Option<&[lm_render::RemappedCustomSpritePreviewTile]>,
     external_textures: &HashMap<lm_render::RemappedCustomSpritePreviewTile, egui::TextureHandle>,
+    show_ids: bool,
 ) -> egui::Response {
     let (rect, response) = ui.allocate_exact_size(egui::vec2(78.0, 70.0), egui::Sense::click());
     let painter = ui.painter_at(rect);
@@ -10881,7 +10979,7 @@ fn draw_custom_sprite_catalog_entry(
             external_textures,
             1.0,
         );
-    } else {
+    } else if show_ids {
         painter.text(
             preview_rect.center(),
             egui::Align2::CENTER_CENTER,
@@ -10889,27 +10987,35 @@ fn draw_custom_sprite_catalog_entry(
             egui::FontId::monospace(12.0),
             egui::Color32::LIGHT_RED,
         );
+    } else {
+        draw_catalog_preview_unavailable(&painter, preview_rect);
     }
-    painter.text(
-        egui::pos2(rect.center().x, rect.bottom() - 12.0),
-        egui::Align2::CENTER_CENTER,
-        format!(
-            "${:02X} · E{}",
-            sprite.selector.sprite_number, sprite.selector.extra_bits
-        ),
-        egui::FontId::monospace(9.0),
-        egui::Color32::WHITE,
-    );
+    if show_ids {
+        painter.text(
+            egui::pos2(rect.center().x, rect.bottom() - 12.0),
+            egui::Align2::CENTER_CENTER,
+            format!(
+                "${:02X} · E{}",
+                sprite.selector.sprite_number, sprite.selector.extra_bits
+            ),
+            egui::FontId::monospace(9.0),
+            egui::Color32::WHITE,
+        );
+    }
     let description = sprite.description.as_deref().unwrap_or("custom SSC sprite");
-    response.on_hover_text(format!(
-        "{description}\nSprite ${:02X}, extra bits {}, record length {}",
-        sprite.selector.sprite_number,
-        sprite.selector.extra_bits,
-        sprite
-            .selector
-            .record_length
-            .map_or_else(|| "default".into(), |length| length.to_string())
-    ))
+    if show_ids {
+        response.on_hover_text(format!(
+            "{description}\nSprite ${:02X}, extra bits {}, record length {}",
+            sprite.selector.sprite_number,
+            sprite.selector.extra_bits,
+            sprite
+                .selector
+                .record_length
+                .map_or_else(|| "default".into(), |length| length.to_string())
+        ))
+    } else {
+        response.on_hover_text(description)
+    }
 }
 
 fn draw_fitted_external_sprite_catalog_preview(
@@ -10961,6 +11067,7 @@ fn draw_sprite_catalog_entry(
     sprite_number: u8,
     mode: lm_render::StandardSpritePreviewMode,
     selected: bool,
+    show_ids: bool,
 ) -> egui::Response {
     let (rect, response) = ui.allocate_exact_size(egui::vec2(62.0, 62.0), egui::Sense::click());
     let painter = ui.painter_at(rect);
@@ -10990,7 +11097,7 @@ fn draw_sprite_catalog_entry(
             egui::FontId::monospace(9.0),
             egui::Color32::GRAY,
         );
-    } else {
+    } else if show_ids {
         painter.text(
             preview_rect.center(),
             egui::Align2::CENTER_CENTER,
@@ -10998,18 +11105,26 @@ fn draw_sprite_catalog_entry(
             egui::FontId::monospace(12.0),
             egui::Color32::LIGHT_RED,
         );
+    } else {
+        draw_catalog_preview_unavailable(&painter, preview_rect);
     }
-    painter.text(
-        egui::pos2(rect.center().x, rect.bottom() - 7.0),
-        egui::Align2::CENTER_CENTER,
-        format!("{sprite_number:02X}"),
-        egui::FontId::monospace(10.0),
-        egui::Color32::WHITE,
-    );
+    if show_ids {
+        painter.text(
+            egui::pos2(rect.center().x, rect.bottom() - 7.0),
+            egui::Align2::CENTER_CENTER,
+            format!("{sprite_number:02X}"),
+            egui::FontId::monospace(10.0),
+            egui::Color32::WHITE,
+        );
+    }
     let source = lm_render::lunar_magic_standard_sprite_preview_source(sprite_number);
-    response.on_hover_text(format!(
-        "Standard sprite ${sprite_number:02X}\nPreview source: {source:?}"
-    ))
+    if show_ids {
+        response.on_hover_text(format!(
+            "Standard sprite ${sprite_number:02X}\nPreview source: {source:?}"
+        ))
+    } else {
+        response
+    }
 }
 
 fn draw_fitted_sprite_catalog_preview(
@@ -23770,5 +23885,14 @@ mod tests {
         assert_eq!(editor.canvas_entity_selection, None);
         assert_eq!(editor.placement_mode, Some(CanvasPlacementMode::Object));
         assert_eq!(editor.object_form.parameter, 0x25);
+    }
+
+    #[test]
+    fn add_editor_object_size_uses_the_rendered_tile_bounds() {
+        assert_eq!(object_catalog_dimensions(&[]), None);
+        assert_eq!(
+            object_catalog_dimensions(&[(4, 7, 0x100), (6, 8, 0x101), (5, 9, 0x102)]),
+            Some((3, 3))
+        );
     }
 }

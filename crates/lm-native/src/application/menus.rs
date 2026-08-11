@@ -547,6 +547,13 @@ impl NativeApplication {
             {
                 self.set_auto_deselect_on_editor_select(auto_deselect);
             }
+            let mut show_ids = self.show_add_editor_ids.unwrap_or(true);
+            if ui
+                .checkbox(&mut show_ids, "Show ID in Add Object/Sprite Editors")
+                .changed()
+            {
+                self.set_show_add_editor_ids(show_ids);
+            }
             let locale = self.app.localization().map_or_else(
                 || self.menu_text(UiTextKey::ToolsBuiltInEnglish),
                 |catalog| catalog.locale().into(),

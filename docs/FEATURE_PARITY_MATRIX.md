@@ -1059,6 +1059,18 @@ Ordinary canvas selection remains unchanged. Focused toggle, persistence, select
 partition tests pass. The authenticated partition is now **280 routed / 37 pending**. The aggregate
 remains 59/65 because the configuration row is still Partial.
 
+Toolbar coverage update (2026-08-10, Add-editor IDs): authenticated
+`LM_OPTIONS_SPRITE_OBJECT_ID` `$24BE` now reproduces central dispatch case `$89` and the
+CHM-defined `Show ID in Add Object/Sprite Editors` behavior. Lunar Magic's initialized image byte
+at `$005E76FB` establishes the original default-on state. The persisted native toggle is available
+from Tools and the original internal-toolbar route; it controls IDs in standard, extended, OSC,
+standard-sprite, existing-sprite, and SSC catalog presentations, and exposes rendered standard/
+extended object bounds as width-by-height tile information while enabled. Hiding the setting also
+removes ID fallback glyphs and ID-bearing tooltips rather than merely hiding the bottom caption.
+Focused default, toggle, persistence, rendered-bounds, and complete command-partition tests pass.
+The authenticated partition is now **281 routed / 36 pending**. The aggregate remains 59/65
+because the configuration row is still Partial.
+
 Toolbar coverage update (2026-08-10, Open Level Number): `LM_FILE_OPEN_LEVEL` `$238E` now opens
 the native equivalent of original dialog resource `1000`. It uses the authenticated title,
 `Level Number (0-1FF)` label, OK/Cancel controls, and original-language resource overrides; seeds

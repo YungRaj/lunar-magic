@@ -201,6 +201,7 @@ pub(crate) struct NativeApplication {
     live_emulator: crate::live_emulator::LiveEmulator,
     integrated_emulator_options: IntegratedEmulatorOptions,
     auto_deselect_on_editor_select: bool,
+    show_add_editor_ids: Option<bool>,
     overworld_editor: OverworldEditor,
     path_editor: PathEditor,
     metadata_editor: MetadataEditor,
@@ -281,6 +282,7 @@ impl NativeApplication {
     const ANIMATION_RATE_STORAGE_KEY: &'static str = "lunar_magic_rust.animation_rate.v1";
     const INTEGRATED_EMULATOR_STORAGE_KEY: &'static str = "lunar_magic_rust.integrated_emulator.v1";
     const AUTO_DESELECT_STORAGE_KEY: &'static str = "lunar_magic_rust.auto_deselect.v1";
+    const SHOW_ADD_EDITOR_IDS_STORAGE_KEY: &'static str = "lunar_magic_rust.show_add_editor_ids.v1";
 
     pub(crate) fn from_startup(
         initialized: Result<crate::startup::InitializedNative, String>,
@@ -581,6 +583,16 @@ impl NativeApplication {
                 Err(error) => {
                     self.effects.error =
                         Some(format!("cannot load auto-deselect preference: {error}"));
+                }
+            }
+        }
+        if let Some(encoded) = storage.get_string(Self::SHOW_ADD_EDITOR_IDS_STORAGE_KEY) {
+            match decode_show_add_editor_ids_preference(&encoded) {
+                Ok(enabled) => self.show_add_editor_ids = Some(enabled),
+                Err(error) => {
+                    self.effects.error = Some(format!(
+                        "cannot load Add Object/Sprite ID preference: {error}"
+                    ));
                 }
             }
         }
@@ -948,6 +960,10 @@ impl eframe::App for NativeApplication {
             Self::AUTO_DESELECT_STORAGE_KEY,
             encode_auto_deselect_preference(self.auto_deselect_on_editor_select),
         );
+        storage.set_string(
+            Self::SHOW_ADD_EDITOR_IDS_STORAGE_KEY,
+            encode_show_add_editor_ids_preference(self.show_add_editor_ids.unwrap_or(true)),
+        );
         match encode_external_tools_preference(self.app.external_tools()) {
             Ok(encoded) => storage.set_string(Self::EXTERNAL_TOOLS_STORAGE_KEY, encoded),
             Err(error) => {
@@ -988,6 +1004,8 @@ impl eframe::App for NativeApplication {
                 );
             self.vanilla_level_editor
                 .set_auto_deselect_on_editor_select(self.auto_deselect_on_editor_select);
+            self.vanilla_level_editor
+                .set_show_add_editor_ids(self.show_add_editor_ids.unwrap_or(true));
             if vanilla_level
                 && let Some(command) = self.vanilla_level_editor.show(
                     ui,
@@ -1204,6 +1222,18 @@ fn decode_auto_deselect_preference(value: &str) -> Result<bool, String> {
         "enabled" => Ok(true),
         "disabled" => Ok(false),
         _ => Err("unknown auto-deselect preference version".into()),
+    }
+}
+
+fn encode_show_add_editor_ids_preference(enabled: bool) -> String {
+    if enabled { "shown" } else { "hidden" }.to_owned()
+}
+
+fn decode_show_add_editor_ids_preference(value: &str) -> Result<bool, String> {
+    match value {
+        "shown" => Ok(true),
+        "hidden" => Ok(false),
+        _ => Err("unknown Add Object/Sprite ID preference version".into()),
     }
 }
 
@@ -1723,6 +1753,23 @@ mod preference_tests {
             assert_eq!(reopened.auto_deselect_on_editor_select, expected);
         }
         assert!(decode_auto_deselect_preference("true").is_err());
+    }
+
+    #[test]
+    fn native_save_and_reopen_persist_add_editor_id_visibility() {
+        for expected in [false, true] {
+            let mut source = NativeApplication {
+                show_add_editor_ids: Some(expected),
+                ..NativeApplication::default()
+            };
+            let mut storage = MemoryStorage::default();
+            eframe::App::save(&mut source, &mut storage);
+
+            let mut reopened = NativeApplication::default();
+            reopened.load_persistent_preferences(Some(&storage));
+            assert_eq!(reopened.show_add_editor_ids, Some(expected));
+        }
+        assert!(decode_show_add_editor_ids_preference("enabled").is_err());
     }
 
     #[test]
