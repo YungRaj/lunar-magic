@@ -214,7 +214,10 @@ impl EffectState {
             }
             return;
         };
-        match self.rom_loader.start(request_id, path) {
+        match self
+            .rom_loader
+            .start(request_id, path, app.silently_add_copier_header())
+        {
             Ok(()) => {}
             Err(error) => {
                 let _ = app.cancel_open(request_id);
@@ -224,7 +227,10 @@ impl EffectState {
     }
 
     fn load_rom_at(&mut self, app: &mut AppState, request_id: u64, path: PathBuf) {
-        if let Err(error) = self.rom_loader.start(request_id, path) {
+        if let Err(error) =
+            self.rom_loader
+                .start(request_id, path, app.silently_add_copier_header())
+        {
             let _ = app.cancel_open(request_id);
             self.error = Some(error);
         }
@@ -236,6 +242,12 @@ impl EffectState {
         context: &egui::Context,
         completion: RomLoadCompletion,
     ) {
+        if completion.cancelled {
+            if let Err(error) = app.cancel_open(completion.request_id) {
+                self.error = Some(error.to_string());
+            }
+            return;
+        }
         match completion.result {
             Ok(prepared) => {
                 let result = app.complete_prepared_open(
@@ -449,6 +461,7 @@ mod tests {
                 request_id,
                 path: path.clone(),
                 result: AppState::prepare_open(test_rom()).map_err(|error| error.to_string()),
+                cancelled: false,
             },
         );
 
@@ -468,6 +481,7 @@ mod tests {
                 request_id,
                 path: "invalid.smc".into(),
                 result: Err("invalid prepared ROM".into()),
+                cancelled: false,
             },
         );
 
@@ -481,6 +495,28 @@ mod tests {
                 .unwrap()
                 .contains("invalid prepared ROM")
         );
+    }
+
+    #[test]
+    fn declining_missing_header_cancels_without_reporting_an_error() {
+        let mut app = AppState::default();
+        let request_id = open_request(&mut app);
+        let mut state = EffectState::default();
+        state.complete_rom_load(
+            &mut app,
+            &egui::Context::default(),
+            RomLoadCompletion {
+                request_id,
+                path: "headerless.smc".into(),
+                result: Err("ROM open cancelled".into()),
+                cancelled: true,
+            },
+        );
+
+        assert!(app.project().is_none());
+        assert!(state.error.is_none());
+        let replacement_request = open_request(&mut app);
+        app.cancel_open(replacement_request).unwrap();
     }
 
     #[test]
@@ -528,6 +564,7 @@ mod tests {
                 request_id,
                 path: path.clone(),
                 result: AppState::prepare_open(test_rom()).map_err(|error| error.to_string()),
+                cancelled: false,
             },
         );
 

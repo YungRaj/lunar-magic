@@ -487,6 +487,17 @@ impl NativeApplication {
                 }
                 .into();
             }
+            UserToolbarNativeAction::SilentlyAddHeader => {
+                let enabled = !self.silently_add_copier_header.unwrap_or(true);
+                self.silently_add_copier_header = Some(enabled);
+                self.app.set_silently_add_copier_header(enabled);
+                self.app.status = if enabled {
+                    "Enabled silent copier-header addition"
+                } else {
+                    "Disabled silent copier-header addition"
+                }
+                .into();
+            }
             UserToolbarNativeAction::VramPatchOptions => {
                 self.vram_patch_options_dialog.open(&self.app);
             }
@@ -1711,6 +1722,7 @@ enum UserToolbarNativeAction {
     AutoSetScreens,
     AllowFragmentation,
     MaintainChecksum,
+    SilentlyAddHeader,
     VramPatchOptions,
     GraphicsCompressionOptions,
     GeneralOptions,
@@ -1818,6 +1830,7 @@ fn user_toolbar_native_action(name: &str) -> Option<UserToolbarNativeAction> {
         "LM_OPTIONS_AUTO_SCREENS" => UserToolbarNativeAction::AutoSetScreens,
         "LM_OPTIONS_ALLOW_FRAGMENT" => UserToolbarNativeAction::AllowFragmentation,
         "LM_OPTIONS_MAINTAIN_CHECKSUM" => UserToolbarNativeAction::MaintainChecksum,
+        "LM_OPTIONS_AUTO_HEADER" => UserToolbarNativeAction::SilentlyAddHeader,
         "LM_OPTIONS_VRAM" => UserToolbarNativeAction::VramPatchOptions,
         "LM_OPTIONS_COMPRESSION" => UserToolbarNativeAction::GraphicsCompressionOptions,
         "LM_OPTIONS_GENERAL" => UserToolbarNativeAction::GeneralOptions,
@@ -2864,7 +2877,7 @@ mod user_toolbar_tests {
                     || user_toolbar_native_action(entry.name).is_some()
             })
             .collect::<Vec<_>>();
-        assert_eq!(supported.len(), 291);
+        assert_eq!(supported.len(), 292);
         assert!(
             supported
                 .iter()
@@ -3273,6 +3286,29 @@ mod user_toolbar_tests {
     }
 
     #[test]
+    fn silently_add_header_command_toggles_the_original_default_on_option() {
+        let mut native = NativeApplication::default();
+        assert_eq!(native.silently_add_copier_header, None);
+        assert!(native.app.silently_add_copier_header());
+        assert_eq!(
+            user_toolbar_native_action("LM_OPTIONS_AUTO_HEADER"),
+            Some(UserToolbarNativeAction::SilentlyAddHeader)
+        );
+        native.apply_user_toolbar_native_action(
+            &egui::Context::default(),
+            UserToolbarNativeAction::SilentlyAddHeader,
+        );
+        assert_eq!(native.silently_add_copier_header, Some(false));
+        assert!(!native.app.silently_add_copier_header());
+        native.apply_user_toolbar_native_action(
+            &egui::Context::default(),
+            UserToolbarNativeAction::SilentlyAddHeader,
+        );
+        assert_eq!(native.silently_add_copier_header, Some(true));
+        assert!(native.app.silently_add_copier_header());
+    }
+
+    #[test]
     fn recent_menu_route_opens_at_the_pointer_and_escape_dismisses_it() {
         let mut native = NativeApplication::default();
         let context = egui::Context::default();
@@ -3455,7 +3491,7 @@ mod user_toolbar_tests {
                     && user_toolbar_native_action(entry.name).is_none()
             })
             .collect::<Vec<_>>();
-        assert_eq!(unsupported.len(), 26);
+        assert_eq!(unsupported.len(), 25);
         if std::env::var_os("LM_DIAGNOSTIC_UNSUPPORTED_TOOLBAR_COMMANDS").is_some() {
             for entry in unsupported {
                 eprintln!(

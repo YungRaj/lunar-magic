@@ -5890,6 +5890,17 @@ option changes checksum maintenance without weakening transaction validation, se
 or undo history. Authenticated native command coverage is now 291 of 317 named slots, leaving 26
 pending.
 
+## Silently Add Header to ROM (`$24C6`)
+
+The authenticated internal table maps `LM_OPTIONS_AUTO_HEADER` to dispatch byte `$69`. Lunar
+Magic's 3.63 help makes the lifecycle boundary explicit: a missing `$200` copier header is required,
+the enabled option adds it silently during open, and the disabled option asks on each open. Rust's
+ROM-loader worker now detects headerless supported images, synthesizes the recovered size/map-mode
+header, re-reads and compares the selected file before replacement, publishes it atomically, and
+installs only the resulting headered prepared project. The confirmation path retains the same
+worker and publication boundary; Cancel or a changed source publishes neither a file nor a project.
+Authenticated native command coverage is now 292 of 317 named slots, leaving 25 pending.
+
 ## Deprecated Select FG/BG commands (`$2473/$2474`)
 
 Both authenticated central dispatch bytes are `$DF`, while the Lunar Magic 3.63 command switch

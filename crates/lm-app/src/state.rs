@@ -70,6 +70,7 @@ pub struct AppState {
     pub(crate) level_navigation: LevelNavigationHistory,
     undo_history: UndoHistoryPreference,
     maintain_checksum: Option<bool>,
+    silently_add_copier_header: Option<bool>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -771,6 +772,15 @@ impl AppState {
     #[must_use]
     pub fn maintain_checksum(&self) -> bool {
         self.maintain_checksum.unwrap_or(true)
+    }
+
+    pub fn set_silently_add_copier_header(&mut self, enabled: bool) {
+        self.silently_add_copier_header = Some(enabled);
+    }
+
+    #[must_use]
+    pub fn silently_add_copier_header(&self) -> bool {
+        self.silently_add_copier_header.unwrap_or(true)
     }
 
     pub const DEFAULT_UNDO_SNAPSHOT_LIMIT: usize = 33;

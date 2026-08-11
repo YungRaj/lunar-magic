@@ -4926,6 +4926,16 @@ updating the ROM checksum after data insertion and notes the save-speed tradeoff
 This is distinct from checksum-compensation regions used by particular expansion/install formats:
 it controls publication of the internal-header checksum/complement bytes after an editor mutation.
 
+## Silently Add Header option
+
+Command `$24C6` (`LM_OPTIONS_AUTO_HEADER`) resolves through the authenticated internal dispatch table
+to byte `$69`. The 3.63 CHM topic `option_general.htm#option_add_header` says the enabled state adds a
+missing `$200` copier header automatically during ROM open; disabling it prompts every time instead.
+The registry serializer deliberately preserves `Options` bit 2 while rebuilding the other mapped
+bits, matching this separately consumed persisted open-policy flag. The actual header bytes remain
+bound to `AddCopierHeaderToRomFile` at `$0044E300`: size-derived first word, map-mode-derived bytes
+2–3, fixed `AA BB 04`, and zero fill.
+
 ## Dedicated overworld animation-options runtime
 
 Lunar Magic 3.63 installs the per-map overworld animation-option storage through the dedicated

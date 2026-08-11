@@ -1215,6 +1215,17 @@ preference persists through save/reopen and applies immediately. Focused split-w
 preference, and command-partition tests pass. The authenticated partition is now **291 routed / 26
 pending**. The aggregate remains 59/65 because the configuration row is still Partial.
 
+Toolbar coverage update (2026-08-11, silent copier-header addition): authenticated
+`LM_OPTIONS_AUTO_HEADER` `$24C6` now reproduces the original default-on persisted option. The 3.63
+help specifies that opening a headerless ROM either adds the required `$200`-byte header silently or,
+when disabled, prompts on every open. Rust now detects this before project publication, synthesizes
+the already-authenticated Lunar Magic header for the detected size/map mode, compare-checks the
+source again, atomically replaces the regular ROM file, and only then installs the prepared project.
+The disabled path exposes Add Header/Cancel; cancellation leaves both disk and application state
+unchanged. Focused silent, prompted, source-race, persistence, route, and command-partition tests
+pass. The authenticated partition is now **292 routed / 25 pending**. The aggregate remains 59/65
+because the configuration row is still Partial.
+
 Toolbar coverage update (2026-08-10, Open Level Number): `LM_FILE_OPEN_LEVEL` `$238E` now opens
 the native equivalent of original dialog resource `1000`. It uses the authenticated title,
 `Level Number (0-1FF)` label, OK/Cancel controls, and original-language resource overrides; seeds
