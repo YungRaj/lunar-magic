@@ -122,9 +122,16 @@ impl LiveEmulator {
             .and(self.source_level.zip(self.source_revision))
     }
 
-    pub(crate) fn canvas_frame(&self) -> Option<(egui::TextureId, [usize; 2])> {
-        self.running.as_ref()?;
-        Some((self.texture.as_ref()?.id(), self.frame_size?))
+    pub(crate) fn canvas_frame(
+        &self,
+        pause_translucent: bool,
+    ) -> Option<(egui::TextureId, [usize; 2], bool)> {
+        let running = self.running.as_ref()?;
+        Some((
+            self.texture.as_ref()?.id(),
+            self.frame_size?,
+            frame_is_translucent(pause_translucent, running.pause),
+        ))
     }
 
     /// Stops a live session only when there is no longer an open level/project context.
@@ -511,6 +518,10 @@ impl LiveEmulator {
             }
         }
     }
+}
+
+fn frame_is_translucent(enabled: bool, pause: EmulatorPauseMode) -> bool {
+    enabled && pause != EmulatorPauseMode::Running
 }
 
 fn install_frame(
@@ -974,5 +985,13 @@ mod tests {
             updated_input_pause(Some(deadline), false, now + Duration::from_millis(100)),
             (None, false)
         );
+    }
+
+    #[test]
+    fn translucent_option_tints_every_pause_mode_but_never_running_frames() {
+        assert!(!frame_is_translucent(false, EmulatorPauseMode::HardPaused));
+        assert!(!frame_is_translucent(true, EmulatorPauseMode::Running));
+        assert!(frame_is_translucent(true, EmulatorPauseMode::SoftPaused));
+        assert!(frame_is_translucent(true, EmulatorPauseMode::HardPaused));
     }
 }

@@ -455,6 +455,47 @@ impl NativeApplication {
                     self.effects.error = Some(error);
                 }
             }
+            UserToolbarNativeAction::LiveEmulatorUseF4 => {
+                self.integrated_emulator_options.use_f4 = !self.integrated_emulator_options.use_f4;
+                self.app.status = if self.integrated_emulator_options.use_f4 {
+                    "F4 changed to internal emulator."
+                } else {
+                    "F4 changed to emulator."
+                }
+                .into();
+            }
+            UserToolbarNativeAction::LiveEmulatorSelectedTiles => {
+                let enabled = !self.integrated_emulator_options.draw_selected_tiles;
+                self.integrated_emulator_options.draw_selected_tiles = enabled;
+                self.vanilla_level_editor
+                    .set_draw_selection_over_live(enabled);
+                self.app.status = if enabled {
+                    "Draw selected tiles over internal emulator."
+                } else {
+                    "Don't draw selected tiles over internal emulator."
+                }
+                .into();
+            }
+            UserToolbarNativeAction::LiveEmulatorPauseTranslucent => {
+                self.integrated_emulator_options.pause_translucent =
+                    !self.integrated_emulator_options.pause_translucent;
+                self.app.status = if self.integrated_emulator_options.pause_translucent {
+                    "Draw internal emulator transparent for all pauses."
+                } else {
+                    "Don't draw internal emulator transparent for all pauses."
+                }
+                .into();
+            }
+            UserToolbarNativeAction::LiveEmulatorStopLevelChange => {
+                self.integrated_emulator_options.stop_on_level_change =
+                    !self.integrated_emulator_options.stop_on_level_change;
+                self.app.status = if self.integrated_emulator_options.stop_on_level_change {
+                    "Internal emulator will stop on level change."
+                } else {
+                    "Internal emulator will not stop on level change."
+                }
+                .into();
+            }
             UserToolbarNativeAction::DeleteLevel => {
                 self.level_deletion_dialog.open(&self.app);
             }
@@ -920,6 +961,23 @@ impl NativeApplication {
             // shortcut whenever at least one user-toolbar assignment matches.
             for (index, button) in matching {
                 self.activate_user_toolbar_button(context, index, &button);
+            }
+            return;
+        }
+        let original_f4 = ShortcutGesture {
+            modifiers: ShortcutModifiers::default(),
+            key: ShortcutKey::Function(4),
+        };
+        if gestures.contains(&original_f4) {
+            if self.integrated_emulator_options.use_f4 {
+                self.begin_live_emulator_test();
+            } else {
+                let configured = configured_snes_emulator_tool_id(self.app.external_tools());
+                if let Some(id) = configured {
+                    self.dispatch(context, Command::TestRomInEmulator(id));
+                } else {
+                    self.begin_direct_emulator_test();
+                }
             }
             return;
         }
@@ -1403,6 +1461,10 @@ enum UserToolbarNativeAction {
     LiveEmulatorPause,
     LiveEmulatorMute,
     LiveEmulatorFrameAdvance,
+    LiveEmulatorUseF4,
+    LiveEmulatorSelectedTiles,
+    LiveEmulatorPauseTranslucent,
+    LiveEmulatorStopLevelChange,
     DeleteLevel,
     DeleteMultipleLevels,
     ClearOriginalLevelArea,
@@ -1488,7 +1550,15 @@ fn user_toolbar_native_action(name: &str) -> Option<UserToolbarNativeAction> {
         "LM_FILE_INT_EMULATOR_UNLOAD" => UserToolbarNativeAction::LiveEmulatorStop,
         "LM_FILE_INT_EMULATOR_PAUSE" => UserToolbarNativeAction::LiveEmulatorPause,
         "LM_FILE_INT_EMULATOR_MUTE" => UserToolbarNativeAction::LiveEmulatorMute,
+        "LM_FILE_INT_EMULATOR_USE_F4" => UserToolbarNativeAction::LiveEmulatorUseF4,
+        "LM_FILE_INT_EMULATOR_TILES" => UserToolbarNativeAction::LiveEmulatorSelectedTiles,
         "LM_FILE_INT_EMULATOR_FRAME_ADVANCE" => UserToolbarNativeAction::LiveEmulatorFrameAdvance,
+        "LM_FILE_INT_EMULATOR_PAUSE_TRANSLUCENT" => {
+            UserToolbarNativeAction::LiveEmulatorPauseTranslucent
+        }
+        "LM_FILE_INT_EMULATOR_STOP_LEVEL_CHANGE" => {
+            UserToolbarNativeAction::LiveEmulatorStopLevelChange
+        }
         "LM_FILE_DELETE_LEVEL" => UserToolbarNativeAction::DeleteLevel,
         "LM_FILE_DELETE_MULT_LEVELS" => UserToolbarNativeAction::DeleteMultipleLevels,
         "LM_FILE_CLEAR_OLD_LEVELS" => UserToolbarNativeAction::ClearOriginalLevelArea,
@@ -2073,8 +2143,24 @@ mod user_toolbar_tests {
                 UserToolbarNativeAction::LiveEmulatorMute,
             ),
             (
+                "LM_FILE_INT_EMULATOR_USE_F4",
+                UserToolbarNativeAction::LiveEmulatorUseF4,
+            ),
+            (
+                "LM_FILE_INT_EMULATOR_TILES",
+                UserToolbarNativeAction::LiveEmulatorSelectedTiles,
+            ),
+            (
                 "LM_FILE_INT_EMULATOR_FRAME_ADVANCE",
                 UserToolbarNativeAction::LiveEmulatorFrameAdvance,
+            ),
+            (
+                "LM_FILE_INT_EMULATOR_PAUSE_TRANSLUCENT",
+                UserToolbarNativeAction::LiveEmulatorPauseTranslucent,
+            ),
+            (
+                "LM_FILE_INT_EMULATOR_STOP_LEVEL_CHANGE",
+                UserToolbarNativeAction::LiveEmulatorStopLevelChange,
             ),
             ("LM_VIEW_ADD_OBJECT", UserToolbarNativeAction::PlaceObject),
             ("LM_VIEW_OBJECT", UserToolbarNativeAction::PlaceObject),
@@ -2494,7 +2580,7 @@ mod user_toolbar_tests {
                     || user_toolbar_native_action(entry.name).is_some()
             })
             .collect::<Vec<_>>();
-        assert_eq!(supported.len(), 269);
+        assert_eq!(supported.len(), 273);
         assert!(
             supported
                 .iter()
@@ -2550,6 +2636,42 @@ mod user_toolbar_tests {
         assert_eq!(after.rom_bytes, before.rom_bytes);
         assert!(!native.level_access_restriction_dialog.is_open());
         assert!(native.effects.error.is_none());
+    }
+
+    #[test]
+    fn integrated_emulator_option_commands_toggle_exact_state_and_status() {
+        let mut native = NativeApplication::default();
+        assert!(!native.integrated_emulator_options.use_f4);
+        assert!(native.integrated_emulator_options.draw_selected_tiles);
+        assert!(!native.integrated_emulator_options.pause_translucent);
+        assert!(!native.integrated_emulator_options.stop_on_level_change);
+
+        for (action, status) in [
+            (
+                UserToolbarNativeAction::LiveEmulatorUseF4,
+                "F4 changed to internal emulator.",
+            ),
+            (
+                UserToolbarNativeAction::LiveEmulatorSelectedTiles,
+                "Don't draw selected tiles over internal emulator.",
+            ),
+            (
+                UserToolbarNativeAction::LiveEmulatorPauseTranslucent,
+                "Draw internal emulator transparent for all pauses.",
+            ),
+            (
+                UserToolbarNativeAction::LiveEmulatorStopLevelChange,
+                "Internal emulator will stop on level change.",
+            ),
+        ] {
+            native.apply_user_toolbar_native_action(&egui::Context::default(), action);
+            assert_eq!(native.app.status, status);
+        }
+        assert!(native.integrated_emulator_options.use_f4);
+        assert!(!native.integrated_emulator_options.draw_selected_tiles);
+        assert!(!native.vanilla_level_editor.draw_selection_over_live());
+        assert!(native.integrated_emulator_options.pause_translucent);
+        assert!(native.integrated_emulator_options.stop_on_level_change);
     }
 
     #[test]
@@ -2636,7 +2758,7 @@ mod user_toolbar_tests {
                     && user_toolbar_native_action(entry.name).is_none()
             })
             .collect::<Vec<_>>();
-        assert_eq!(unsupported.len(), 48);
+        assert_eq!(unsupported.len(), 44);
         if std::env::var_os("LM_DIAGNOSTIC_UNSUPPORTED_TOOLBAR_COMMANDS").is_some() {
             for entry in unsupported {
                 eprintln!(

@@ -121,6 +121,25 @@ pub(crate) struct LevelViewVisibility {
     pub screen_overlay: LevelScreenOverlay,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct IntegratedEmulatorOptions {
+    use_f4: bool,
+    draw_selected_tiles: bool,
+    pause_translucent: bool,
+    stop_on_level_change: bool,
+}
+
+impl Default for IntegratedEmulatorOptions {
+    fn default() -> Self {
+        Self {
+            use_f4: false,
+            draw_selected_tiles: true,
+            pause_translucent: false,
+            stop_on_level_change: false,
+        }
+    }
+}
+
 impl Default for LevelViewVisibility {
     fn default() -> Self {
         Self {
@@ -178,6 +197,7 @@ pub(crate) struct NativeApplication {
     level_usage_dialog: LevelUsageDialog,
     rom_user_area_scan_dialog: RomUserAreaScanDialog,
     live_emulator: crate::live_emulator::LiveEmulator,
+    integrated_emulator_options: IntegratedEmulatorOptions,
     overworld_editor: OverworldEditor,
     path_editor: PathEditor,
     metadata_editor: MetadataEditor,
@@ -256,6 +276,7 @@ impl NativeApplication {
     const JOINED_GRAPHICS_STORAGE_KEY: &'static str = "lunar_magic_rust.joined_graphics.v1";
     const EXTERNAL_TOOLS_STORAGE_KEY: &'static str = "lunar_magic_rust.external_tools.v1";
     const ANIMATION_RATE_STORAGE_KEY: &'static str = "lunar_magic_rust.animation_rate.v1";
+    const INTEGRATED_EMULATOR_STORAGE_KEY: &'static str = "lunar_magic_rust.integrated_emulator.v1";
 
     pub(crate) fn from_startup(
         initialized: Result<crate::startup::InitializedNative, String>,
@@ -540,6 +561,16 @@ impl NativeApplication {
                 }
             }
         }
+        if let Some(encoded) = storage.get_string(Self::INTEGRATED_EMULATOR_STORAGE_KEY) {
+            match decode_integrated_emulator_options(&encoded) {
+                Ok(options) => self.integrated_emulator_options = options,
+                Err(error) => {
+                    self.effects.error = Some(format!(
+                        "cannot load integrated-emulator preferences: {error}"
+                    ));
+                }
+            }
+        }
         if let Some(encoded) = storage.get_string(Self::JOINED_GRAPHICS_STORAGE_KEY) {
             match decode_joined_graphics_preference(&encoded) {
                 Ok(joined) => self.joined_graphics_files = joined,
@@ -802,7 +833,15 @@ impl NativeApplication {
             if let (Some(source), Some(target)) =
                 (self.live_emulator.source_context(), live_context)
             {
-                let synchronization = if source.1 != target.1 {
+                let synchronization = if should_stop_integrated_emulator_on_level_change(
+                    self.integrated_emulator_options,
+                    source,
+                    target,
+                ) {
+                    self.live_emulator.stop();
+                    self.app.status = "Internal emulator stopped on level change.".into();
+                    Ok(())
+                } else if source.1 != target.1 {
                     self.app
                         .controller_snapshot()
                         .map_err(|error| error.to_string())
@@ -888,6 +927,10 @@ impl eframe::App for NativeApplication {
             Self::ANIMATION_RATE_STORAGE_KEY,
             crate::animation_rate::encode_preference(self.animation_rate),
         );
+        storage.set_string(
+            Self::INTEGRATED_EMULATOR_STORAGE_KEY,
+            encode_integrated_emulator_options(self.integrated_emulator_options),
+        );
         match encode_external_tools_preference(self.app.external_tools()) {
             Ok(encoded) => storage.set_string(Self::EXTERNAL_TOOLS_STORAGE_KEY, encoded),
             Err(error) => {
@@ -919,7 +962,13 @@ impl eframe::App for NativeApplication {
         egui::CentralPanel::default().show(context, |ui| {
             let vanilla_level = VanillaLevelEditor::handles(&self.app);
             let vanilla_graphics = VanillaGraphicsEditor::handles(&self.app);
-            let live_frame = self.live_emulator.canvas_frame();
+            let live_frame = self
+                .live_emulator
+                .canvas_frame(self.integrated_emulator_options.pause_translucent);
+            self.vanilla_level_editor
+                .initialize_draw_selection_over_live(
+                    self.integrated_emulator_options.draw_selected_tiles,
+                );
             if vanilla_level
                 && let Some(command) = self.vanilla_level_editor.show(
                     ui,
@@ -996,6 +1045,8 @@ impl eframe::App for NativeApplication {
                 editor_view::show(ui, self.app.mode);
             }
         });
+        self.integrated_emulator_options.draw_selected_tiles =
+            self.vanilla_level_editor.draw_selection_over_live();
         self.show_confirmation(context);
         if let Some((level, command)) = self.level_deletion_dialog.show(context, &self.app)
             && self.try_dispatch(context, command)
@@ -1122,6 +1173,42 @@ fn decode_joined_graphics_preference(value: &str) -> Result<bool, String> {
         "separate" => Ok(false),
         _ => Err("unknown joined-GFX preference version".into()),
     }
+}
+
+fn encode_integrated_emulator_options(options: IntegratedEmulatorOptions) -> String {
+    let bits = u8::from(options.use_f4)
+        | (u8::from(options.draw_selected_tiles) << 1)
+        | (u8::from(options.pause_translucent) << 2)
+        | (u8::from(options.stop_on_level_change) << 3);
+    format!("v1:{bits:02x}")
+}
+
+fn should_stop_integrated_emulator_on_level_change(
+    options: IntegratedEmulatorOptions,
+    source: (u16, u64),
+    target: (u16, u64),
+) -> bool {
+    options.stop_on_level_change && source.0 != target.0
+}
+
+fn decode_integrated_emulator_options(value: &str) -> Result<IntegratedEmulatorOptions, String> {
+    let encoded = value
+        .strip_prefix("v1:")
+        .ok_or_else(|| "unknown integrated-emulator preference version".to_owned())?;
+    if encoded.len() != 2 {
+        return Err("invalid integrated-emulator preference length".into());
+    }
+    let bits = u8::from_str_radix(encoded, 16)
+        .map_err(|_| "invalid integrated-emulator preference bits".to_owned())?;
+    if bits & !0x0f != 0 {
+        return Err("unknown integrated-emulator preference bits".into());
+    }
+    Ok(IntegratedEmulatorOptions {
+        use_f4: bits & 1 != 0,
+        draw_selected_tiles: bits & 2 != 0,
+        pause_translucent: bits & 4 != 0,
+        stop_on_level_change: bits & 8 != 0,
+    })
 }
 
 fn encode_toolbar_preference(config: &ToolbarConfig) -> String {
@@ -1570,6 +1657,26 @@ mod preference_tests {
     }
 
     #[test]
+    fn native_save_and_reopen_persist_integrated_emulator_options() {
+        let expected = IntegratedEmulatorOptions {
+            use_f4: true,
+            draw_selected_tiles: false,
+            pause_translucent: true,
+            stop_on_level_change: true,
+        };
+        let mut source = NativeApplication {
+            integrated_emulator_options: expected,
+            ..NativeApplication::default()
+        };
+        let mut storage = MemoryStorage::default();
+        eframe::App::save(&mut source, &mut storage);
+
+        let mut reopened = NativeApplication::default();
+        reopened.load_persistent_preferences(Some(&storage));
+        assert_eq!(reopened.integrated_emulator_options, expected);
+    }
+
+    #[test]
     fn malformed_native_tool_preference_is_authoritative_and_failure_atomic() {
         let original = vec![configured_tool()];
         let mut application = NativeApplication::default();
@@ -1651,6 +1758,46 @@ mod preference_tests {
         assert!(!decode_joined_graphics_preference("separate").unwrap());
         assert!(decode_joined_graphics_preference("joined").unwrap());
         assert!(decode_joined_graphics_preference("true").is_err());
+    }
+
+    #[test]
+    fn integrated_emulator_preferences_round_trip_all_original_toggles() {
+        let options = IntegratedEmulatorOptions {
+            use_f4: true,
+            draw_selected_tiles: false,
+            pause_translucent: true,
+            stop_on_level_change: true,
+        };
+        assert_eq!(encode_integrated_emulator_options(options), "v1:0d");
+        assert_eq!(
+            decode_integrated_emulator_options("v1:0d").unwrap(),
+            options
+        );
+        assert!(decode_integrated_emulator_options("v2:0d").is_err());
+        assert!(decode_integrated_emulator_options("v1:10").is_err());
+    }
+
+    #[test]
+    fn integrated_emulator_stop_option_includes_simultaneous_revision_changes() {
+        let options = IntegratedEmulatorOptions {
+            stop_on_level_change: true,
+            ..IntegratedEmulatorOptions::default()
+        };
+        assert!(should_stop_integrated_emulator_on_level_change(
+            options,
+            (0x105, 7),
+            (0x106, 7)
+        ));
+        assert!(!should_stop_integrated_emulator_on_level_change(
+            options,
+            (0x105, 7),
+            (0x105, 7)
+        ));
+        assert!(should_stop_integrated_emulator_on_level_change(
+            options,
+            (0x105, 7),
+            (0x106, 8)
+        ));
     }
 
     #[test]

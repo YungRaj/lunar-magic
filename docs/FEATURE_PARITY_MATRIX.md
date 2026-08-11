@@ -1003,6 +1003,25 @@ revision and complete ROM bytes, no dialog, and no error. The authenticated part
 **269 routed / 48 pending**. The aggregate remains 59/65 because the configuration row is still
 Partial.
 
+Toolbar coverage update (2026-08-10, integrated-emulator options): authenticated commands
+`LM_FILE_INT_EMULATOR_USE_F4` `$23CC`, `LM_FILE_INT_EMULATOR_TILES` `$23CD`,
+`LM_FILE_INT_EMULATOR_PAUSE_TRANSLUCENT` `$23CF`, and
+`LM_FILE_INT_EMULATOR_STOP_LEVEL_CHANGE` `$23D0` now reproduce recovered dispatcher cases
+`$31/$32/$34/$35`. The persisted native option model switches unmodified F4 between configured
+external and internal emulation after user-toolbar precedence, shares selected-tile overlay state
+with the canvas control, applies half alpha to every paused live frame but not running frames, and
+stops rather than switches a running session on level changes, including simultaneous edits, when requested. Focused tests
+bind routes, defaults, exact status text, persistence, opacity, canvas ownership, and revision-aware
+level transitions. The authenticated partition is now **273 routed / 44 pending**. The aggregate
+remains 59/65 because the configuration row is still Partial. The Windows cross-build and complete
+native gate pass 1,043 tests with 13 explicit external-fixture ignores. A fresh vanilla-ROM audit
+captures all 512 level slots and emits a 513-line manifest; normal level `$105`, vertical level
+`$108`, and the unusual `$02D` test level were compared with retained Lunar Magic full-level
+exports. `$02D` authentically spells `DEAD` with yellow blocks and numbered invisible-1-Up markers;
+an isolated build of the last verified commit reproduces the current viewport, ruling out a new
+renderer regression from this command family. The retained semantic manifest remains byte-identical
+at SHA-256 `254a1a050d12785973241910e26d8b7917a5cb5e2a56602a330fc6cbd833c04d`.
+
 Toolbar coverage update (2026-08-10, Open Level Number): `LM_FILE_OPEN_LEVEL` `$238E` now opens
 the native equivalent of original dialog resource `1000`. It uses the authenticated title,
 `Level Number (0-1FF)` label, OK/Cancel controls, and original-language resource overrides; seeds

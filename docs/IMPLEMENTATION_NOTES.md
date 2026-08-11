@@ -5813,3 +5813,19 @@ with a typed no-op instead of aliasing `$23A5` to the active, irreversible restr
 `$23A4`. The focused native test requires complete history and ROM-byte stability and proves no
 dialog or error is produced. Authenticated native command coverage is now 269 of 317 named slots,
 leaving 48 pending.
+
+## Integrated emulator option commands (`$23CC/$23CD/$23CF/$23D0`)
+
+The central dispatch bytes at `$0049899F` map the five-command run to cases `$31..$35`; case `$33`
+is the already-routed frame advance, leaving four option toggles. Rust now retains all four exact
+behaviors in a persisted option model. User-toolbar shortcuts still take precedence over the
+original unmodified F4 action. The selected-tile option and visible canvas toggle share one state,
+paused internal-emulator frames receive the recovered half-alpha treatment, and level changes
+stop or switch the live session according to the recovered option. Focused state, route,
+save/reopen, opacity, and transition tests raise authenticated native command coverage to 273 of
+317 named slots, leaving 44 pending. The Windows cross-build and complete native gate pass 1,043
+tests with 13 explicit fixture ignores. A fresh 512-slot vanilla capture audit produces all images
+and its 513-line manifest; normal, vertical, and `$02D` test-level samples match retained original
+content. The isolated `c20496c` build reproduces `$02D`'s same viewport, and the retained semantic
+manifest remains byte-identical at SHA-256
+`254a1a050d12785973241910e26d8b7917a5cb5e2a56602a330fc6cbd833c04d`.

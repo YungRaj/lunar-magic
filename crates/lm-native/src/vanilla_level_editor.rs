@@ -714,7 +714,7 @@ impl VanillaLevelEditor {
         external_asset_revision: u64,
         custom_objects: Option<&lm_level::OscResolvedTable>,
         custom_map16: Option<&lm_app::NativeMap16SidecarDocument>,
-        live_frame: Option<(egui::TextureId, [usize; 2])>,
+        live_frame: Option<(egui::TextureId, [usize; 2], bool)>,
         toolbar_images: &MainToolbarImageSet,
         animation_rate: crate::animation_rate::AnimationRate,
     ) -> Option<Command> {
@@ -997,8 +997,16 @@ impl VanillaLevelEditor {
         self.snes_viewport.unwrap_or(true)
     }
 
-    fn draw_selection_over_live(&self) -> bool {
+    pub(crate) fn draw_selection_over_live(&self) -> bool {
         self.draw_selection_over_live.unwrap_or(true)
+    }
+
+    pub(crate) fn set_draw_selection_over_live(&mut self, enabled: bool) {
+        self.draw_selection_over_live = Some(enabled);
+    }
+
+    pub(crate) fn initialize_draw_selection_over_live(&mut self, enabled: bool) {
+        self.draw_selection_over_live.get_or_insert(enabled);
     }
 
     fn show_commit_controls(
@@ -2479,7 +2487,7 @@ impl VanillaLevelEditor {
         external_assets: &lm_graphics::ExternalSpriteAssets,
         custom_objects: Option<&lm_level::OscResolvedTable>,
         custom_map16: Option<&lm_app::NativeMap16SidecarDocument>,
-        live_frame: Option<(egui::TextureId, [usize; 2])>,
+        live_frame: Option<(egui::TextureId, [usize; 2], bool)>,
         toolbar_images: &MainToolbarImageSet,
         animation_rate: crate::animation_rate::AnimationRate,
     ) {
@@ -2717,13 +2725,13 @@ impl VanillaLevelEditor {
                     custom_objects,
                     custom_map16,
                 );
-                if snes_viewport && let Some((texture, size)) = live_frame {
+                if snes_viewport && let Some((texture, size, translucent)) = live_frame {
                     let live_rect = live_frame_rect(rect, size, cell);
                     painter.image(
                         texture,
                         live_rect,
                         egui::Rect::from_min_max(egui::Pos2::ZERO, egui::pos2(1.0, 1.0)),
-                        egui::Color32::WHITE,
+                        live_frame_tint(translucent),
                     );
                     if self.draw_selection_over_live() {
                         self.paint_selection_over_live_frame(
@@ -12046,6 +12054,14 @@ const fn overlay_opacity(translucent: bool) -> f32 {
     if translucent { 0.5 } else { 1.0 }
 }
 
+fn live_frame_tint(translucent: bool) -> egui::Color32 {
+    if translucent {
+        egui::Color32::from_white_alpha(128)
+    } else {
+        egui::Color32::WHITE
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 fn draw_layer3_editor_or_viewport(
     painter: &egui::Painter,
@@ -20257,6 +20273,12 @@ mod tests {
     }
 
     #[test]
+    fn paused_live_frame_option_applies_the_original_half_alpha_tint() {
+        assert_eq!(live_frame_tint(false), egui::Color32::WHITE);
+        assert_eq!(live_frame_tint(true), egui::Color32::from_white_alpha(128));
+    }
+
+    #[test]
     fn one_snes_screen_fills_the_available_canvas_pane_and_preserves_zoom() {
         for (available, zoom, expected) in [
             (egui::vec2(800.0, 600.0), 100, 50.0),
@@ -20296,8 +20318,12 @@ mod tests {
     fn live_frame_selection_overlay_defaults_on_and_retains_an_explicit_choice() {
         let mut editor = VanillaLevelEditor::default();
         assert!(editor.draw_selection_over_live());
-        editor.draw_selection_over_live = Some(false);
+        editor.initialize_draw_selection_over_live(false);
         assert!(!editor.draw_selection_over_live());
+        editor.initialize_draw_selection_over_live(true);
+        assert!(!editor.draw_selection_over_live());
+        editor.set_draw_selection_over_live(true);
+        assert!(editor.draw_selection_over_live());
     }
 
     #[test]
