@@ -1411,3 +1411,13 @@ The follow-up strict detector verifies every fixed location plus the dynamically
 owner and exact speed-runtime payload. Corruption probes independently alter the map-mode byte,
 both hooks, trampoline, marker, and runtime; all are rejected. Installation/reopen and byte-exact
 Undo classify as `Installed` and `Absent` respectively. The focused FastROM suite passes 6/6.
+
+## ROM-scoped Use FastROM command (2026-08-11)
+
+Authenticated internal command `$24CC` now routes through the native toolbar partition into one
+revision-checked application transaction. The retained level-save ROM transitions marker bytes
+`00 00 00 -> 42 42 00 -> 00 42 00`, preserving the irreversible history lock while leaving the
+speed-patch marker untouched. Duplicate state is a no-op, stale revisions reject, two Undo steps
+restore each prior semantic state and the final physical ROM byte-for-byte, and checksum repair is
+part of each metadata save. Focused application tests pass 2/2 and the exhaustive native command
+partition passes at 314/317, leaving `$24CD`, `$24D3`, and `$24D6` pending.

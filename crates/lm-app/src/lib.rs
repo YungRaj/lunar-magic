@@ -22,6 +22,7 @@ mod exanimation_slot_options_controller;
 mod expanded_settings_controller;
 mod expanded_settings_document_controller;
 mod external_tools;
+mod fastrom_state;
 pub mod file_persistence;
 mod frontend_config;
 mod frontend_state;

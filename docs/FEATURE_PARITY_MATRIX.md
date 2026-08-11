@@ -1301,9 +1301,13 @@ standard-object and installed extended-object fallbacks are bound to the recover
 branches. Disabled mode retains bytes losslessly; enabled corrections share one staged Undo
 boundary and surface the original fatal-error count wording. The exhaustive sprite renderer has no
 unsafe indirect display-node dispatch and covers all 256 IDs. Synthetic malformed-layout and
-all-512 pristine no-correction tests bind the consumer. The remaining commands are FastROM
-use/patch, prefer-past-2-MiB, and SA-1 RAM remap. The aggregate remains 59/65 because the configuration row
-is still Partial.
+all-512 pristine no-correction tests bind the consumer. `LM_OPTIONS_USE_FASTROM` `$24CC` now
+routes to a ROM-scoped, revision-checked metadata transaction: enabling sets current marker 6 and
+the permanent ever-enabled lock at marker 7; disabling clears only marker 6; marker 8 remains
+reserved for the separate irreversible speed patch. Save/reopen, idempotence, stale revision,
+two-step Undo, and byte-exact restoration tests pass. The authenticated partition is now
+**314 routed / 3 pending**. The remaining commands are FastROM patch, prefer-past-2-MiB, and SA-1
+RAM remap. The aggregate remains 59/65 because the configuration row is still Partial.
 
 Toolbar coverage update (2026-08-11, current per-ROM VRAM patch options): authenticated
 `LM_OPTIONS_VRAM` `$24E8` now reproduces the live 3.63 `Change VRAM Patch Options` workflow and

@@ -1040,6 +1040,9 @@ impl AppState {
             Command::ReplaceLunarMagicRomMetadata { rev, metadata } => {
                 self.replace_lunar_magic_rom_metadata(rev, &metadata)?
             }
+            Command::SetUseFastRomAddressing { rev, enabled } => {
+                self.set_use_fastrom_addressing(rev, enabled)?
+            }
             Command::ReplaceNativeSecondaryExits { rev, table } => {
                 self.replace_native_secondary_exits(rev, &table)?
             }

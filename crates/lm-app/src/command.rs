@@ -206,6 +206,11 @@ pub enum Command {
         rev: u64,
         metadata: Box<LunarMagicRomMetadata>,
     },
+    /// Selects whether newly saved LoROM pointers use FastROM mirrors for this ROM.
+    SetUseFastRomAddressing {
+        rev: u64,
+        enabled: bool,
+    },
     /// Replaces Lunar Magic's complete native expanded secondary-exit table.
     ReplaceNativeSecondaryExits {
         rev: u64,

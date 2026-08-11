@@ -696,6 +696,29 @@ impl NativeApplication {
                 }
                 .into();
             }
+            UserToolbarNativeAction::UseFastRomAddressing => {
+                let enabled = self
+                    .app
+                    .project()
+                    .and_then(|project| {
+                        project
+                            .load_lunar_magic_rom_metadata(
+                                lm_profile::smw_us_v1_lunar_magic_metadata_layout(),
+                            )
+                            .ok()
+                            .flatten()
+                    })
+                    .is_some_and(|metadata| metadata.use_fastrom_addressing());
+                if let Ok(snapshot) = self.app.controller_snapshot() {
+                    self.dispatch(
+                        context,
+                        Command::SetUseFastRomAddressing {
+                            rev: snapshot.revision,
+                            enabled: !enabled,
+                        },
+                    );
+                }
+            }
             UserToolbarNativeAction::GraphicsCompressionOptions => {
                 self.graphics_migration_dialog.open(&self.app);
             }
@@ -2020,6 +2043,7 @@ enum UserToolbarNativeAction {
     SavePrompt,
     MouseGestures,
     SaveMouseGestures,
+    UseFastRomAddressing,
     InstallVramPatch,
     VramPatchOptions,
     GraphicsCompressionOptions,
@@ -2150,6 +2174,7 @@ fn user_toolbar_native_action(name: &str) -> Option<UserToolbarNativeAction> {
         "LM_OPTIONS_SAVE_PROMPT" => UserToolbarNativeAction::SavePrompt,
         "LM_OPTIONS_MOUSE_GESTURES" => UserToolbarNativeAction::MouseGestures,
         "LM_OPTIONS_SAVE_GESTURES" => UserToolbarNativeAction::SaveMouseGestures,
+        "LM_OPTIONS_USE_FASTROM" => UserToolbarNativeAction::UseFastRomAddressing,
         "LM_OPTIONS_INSTALL_VRAM" => UserToolbarNativeAction::InstallVramPatch,
         "LM_OPTIONS_VRAM" => UserToolbarNativeAction::VramPatchOptions,
         "LM_OPTIONS_COMPRESSION" => UserToolbarNativeAction::GraphicsCompressionOptions,
@@ -3215,11 +3240,15 @@ mod user_toolbar_tests {
                     || user_toolbar_native_action(entry.name).is_some()
             })
             .collect::<Vec<_>>();
-        assert_eq!(supported.len(), 313);
+        assert_eq!(supported.len(), 314);
         assert!(
             supported
                 .iter()
                 .all(|entry| { lm_app::user_toolbar_internal_command(entry.name).is_some() })
+        );
+        assert_eq!(
+            user_toolbar_native_action("LM_OPTIONS_USE_FASTROM"),
+            Some(UserToolbarNativeAction::UseFastRomAddressing)
         );
     }
 
