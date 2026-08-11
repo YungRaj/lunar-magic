@@ -189,6 +189,7 @@ pub use expanded_settings_install::{
     smw_us_v1_expanded_settings_installation_plan_with_overworld_settings,
     smw_us_v1_gfx_expanded_settings_installation_plan,
     smw_us_v1_sa1_expanded_settings_installation_plan,
+    smw_us_v1_sa1_expanded_settings_installation_plan_with_ram_remap,
 };
 pub use expanded_settings_runtime::{
     ExpandedSettingsEntryContinuation, ExpandedSettingsRelocation,
@@ -311,6 +312,7 @@ pub use lfix3_runtime::{
 pub use lunar_magic_metadata::{
     SMW_US_V1_LM_ATTRIBUTION_OFFSET, SMW_US_V1_LM_FEATURE_RECORD_OFFSET,
     SMW_US_V1_LM_VRAM_VERSION_OFFSET, smw_us_v1_lunar_magic_metadata_layout,
+    smw_us_v1_lunar_magic_metadata_layout_for_mapper,
 };
 pub use map16_runtime_install::{
     SmwUsV1Map16LegacyMigrationBuildError, SmwUsV1Map16RuntimeDetectError,

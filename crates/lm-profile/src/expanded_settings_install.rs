@@ -237,13 +237,25 @@ pub fn smw_us_v1_expanded_settings_installation_plan_for_rom_with_overworld_sett
 /// Propagates the same generated-runtime and relocation validation as the LoROM constructor.
 pub fn smw_us_v1_sa1_expanded_settings_installation_plan()
 -> Result<RelocatablePatchPlan, ExpandedSettingsInstallPlanError> {
-    const SA1_RUNTIME_BYTES: &[(usize, u8, u8)] = &[
+    smw_us_v1_sa1_expanded_settings_installation_plan_with_ram_remap(true)
+}
+
+/// Builds the SA-1 expanded-settings prerequisite while honoring ROM feature bit 17.
+///
+/// The two mapper adaptations are unconditional. The fifteen IRAM high-byte relocations and
+/// `$3B $EB` runtime operand are emitted only when RAM remapping is enabled, matching
+/// `InstallExpandedLevelHeaderRuntime` and its relocation helpers.
+pub fn smw_us_v1_sa1_expanded_settings_installation_plan_with_ram_remap(
+    ram_remap: bool,
+) -> Result<RelocatablePatchPlan, ExpandedSettingsInstallPlanError> {
+    const SA1_ALWAYS_RUNTIME_BYTES: &[(usize, u8, u8)] =
+        &[(0x07f9f7, 0x18, 0x60), (0x07fbd6, 0x18, 0x38)];
+    const SA1_RAM_REMAP_RUNTIME_BYTES: &[(usize, u8, u8)] = &[
         (0x07f192, 0x01, 0x61),
         (0x07f7a3, 0x01, 0x61),
         (0x07f82f, 0x19, 0x79),
         (0x07f9c7, 0x13, 0x73),
         (0x07f9e2, 0x01, 0x61),
-        (0x07f9f7, 0x18, 0x60),
         (0x07faf2, 0x1f, 0x7f),
         (0x07faf5, 0x1f, 0x7f),
         (0x07fafc, 0x01, 0x61),
@@ -253,7 +265,6 @@ pub fn smw_us_v1_sa1_expanded_settings_installation_plan()
         (0x07fb48, 0x08, 0x68),
         (0x07fb4b, 0x0d, 0x6d),
         (0x07fb4e, 0x1f, 0x7f),
-        (0x07fbd6, 0x18, 0x38),
         (0x07fc9b, 0x07, 0x67),
         (0x07fd90, 0x14, 0x74),
         (0x07fddf, 0x14, 0x74),
@@ -271,7 +282,13 @@ pub fn smw_us_v1_sa1_expanded_settings_installation_plan()
             fixup.encoding = canonical_mapper_fixup(fixup.encoding);
         }
     }
-    for &(offset, expected, replacement) in SA1_RUNTIME_BYTES {
+    let runtime_bytes = SA1_ALWAYS_RUNTIME_BYTES.iter().chain(
+        ram_remap
+            .then_some(SA1_RAM_REMAP_RUNTIME_BYTES)
+            .into_iter()
+            .flatten(),
+    );
+    for &(offset, expected, replacement) in runtime_bytes {
         let write = plan
             .writes
             .iter_mut()
@@ -962,6 +979,50 @@ mod tests {
         )
         .unwrap();
         (after, RomImage::from_bytes(before).unwrap())
+    }
+
+    fn fixed_replacement_byte(plan: &RelocatablePatchPlan, offset: usize) -> u8 {
+        let write = plan
+            .writes
+            .iter()
+            .find(|write| write.offset <= offset && offset < write.offset + write.replacement.len())
+            .unwrap();
+        write.replacement[offset - write.offset]
+    }
+
+    #[test]
+    fn sa1_ram_remap_controls_exactly_fifteen_iram_operands_and_one_word() {
+        const CONDITIONAL: &[(usize, u8, u8)] = &[
+            (0x07f192, 0x01, 0x61),
+            (0x07f7a3, 0x01, 0x61),
+            (0x07f82f, 0x19, 0x79),
+            (0x07f9c7, 0x13, 0x73),
+            (0x07f9e2, 0x01, 0x61),
+            (0x07faf2, 0x1f, 0x7f),
+            (0x07faf5, 0x1f, 0x7f),
+            (0x07fafc, 0x01, 0x61),
+            (0x07fb20, 0x80, 0x3b),
+            (0x07fb21, 0x21, 0xeb),
+            (0x07fb45, 0x07, 0x67),
+            (0x07fb48, 0x08, 0x68),
+            (0x07fb4b, 0x0d, 0x6d),
+            (0x07fb4e, 0x1f, 0x7f),
+            (0x07fc9b, 0x07, 0x67),
+            (0x07fd90, 0x14, 0x74),
+            (0x07fddf, 0x14, 0x74),
+        ];
+        let disabled =
+            smw_us_v1_sa1_expanded_settings_installation_plan_with_ram_remap(false).unwrap();
+        let enabled =
+            smw_us_v1_sa1_expanded_settings_installation_plan_with_ram_remap(true).unwrap();
+        for &(offset, original, remapped) in CONDITIONAL {
+            assert_eq!(fixed_replacement_byte(&disabled, offset), original);
+            assert_eq!(fixed_replacement_byte(&enabled, offset), remapped);
+        }
+        for (offset, replacement) in [(0x07f9f7, 0x60), (0x07fbd6, 0x38)] {
+            assert_eq!(fixed_replacement_byte(&disabled, offset), replacement);
+            assert_eq!(fixed_replacement_byte(&enabled, offset), replacement);
+        }
     }
 
     #[test]

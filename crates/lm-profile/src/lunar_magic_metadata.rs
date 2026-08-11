@@ -9,8 +9,15 @@ pub const SMW_US_V1_LM_FEATURE_RECORD_OFFSET: usize = 0x0007_ffe7;
 
 #[must_use]
 pub const fn smw_us_v1_lunar_magic_metadata_layout() -> LunarMagicRomMetadataLayout {
+    smw_us_v1_lunar_magic_metadata_layout_for_mapper(Mapper::LoRom)
+}
+
+#[must_use]
+pub const fn smw_us_v1_lunar_magic_metadata_layout_for_mapper(
+    mapper: Mapper,
+) -> LunarMagicRomMetadataLayout {
     LunarMagicRomMetadataLayout {
-        mapper: Mapper::LoRom,
+        mapper,
         attribution: SMW_US_V1_LM_ATTRIBUTION_OFFSET,
         vram_version: SMW_US_V1_LM_VRAM_VERSION_OFFSET,
         feature_record: SMW_US_V1_LM_FEATURE_RECORD_OFFSET,

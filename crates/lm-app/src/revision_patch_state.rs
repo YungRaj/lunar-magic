@@ -179,7 +179,15 @@ impl AppState {
             return Err(AppError::ExpandedSettingsIdentityMismatch);
         }
         if identity.mapper == Mapper::Sa1 {
-            let plan = lm_profile::smw_us_v1_sa1_expanded_settings_installation_plan()?;
+            let ram_remap = project
+                .load_lunar_magic_rom_metadata(
+                    lm_profile::smw_us_v1_lunar_magic_metadata_layout_for_mapper(Mapper::Sa1),
+                )?
+                .is_some_and(|metadata| metadata.sa1_ram_remap());
+            let plan =
+                lm_profile::smw_us_v1_sa1_expanded_settings_installation_plan_with_ram_remap(
+                    ram_remap,
+                )?;
             project.install_relocatable_patch(&plan)?;
         } else {
             let plan =

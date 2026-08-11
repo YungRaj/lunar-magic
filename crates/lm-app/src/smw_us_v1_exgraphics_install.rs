@@ -8,7 +8,7 @@ use lm_profile::{
     smw_us_v1_exgraphics_pointer_in_rom, smw_us_v1_expanded_exanimation_runtime_installation_plan,
     smw_us_v1_gfx_expanded_settings_installation_plan,
     smw_us_v1_sa1_exgraphics_runtime_installation_plan,
-    smw_us_v1_sa1_expanded_settings_installation_plan,
+    smw_us_v1_sa1_expanded_settings_installation_plan_with_ram_remap,
 };
 use lm_project::{
     GraphicsCompression, GraphicsRomLayout, LevelPointerTable, PatchFixup, PatchFixupEncoding,
@@ -126,7 +126,13 @@ fn prepare_smw_us_v1_exgraphics_install_with_mode(
                     .map_err(|error| error.to_string())?;
             }
             let settings = if mapper == Mapper::Sa1 {
-                smw_us_v1_sa1_expanded_settings_installation_plan()
+                let ram_remap = project
+                    .load_lunar_magic_rom_metadata(
+                        lm_profile::smw_us_v1_lunar_magic_metadata_layout_for_mapper(Mapper::Sa1),
+                    )
+                    .map_err(|error| error.to_string())?
+                    .is_some_and(|metadata| metadata.sa1_ram_remap());
+                smw_us_v1_sa1_expanded_settings_installation_plan_with_ram_remap(ram_remap)
             } else {
                 smw_us_v1_gfx_expanded_settings_installation_plan()
             }
