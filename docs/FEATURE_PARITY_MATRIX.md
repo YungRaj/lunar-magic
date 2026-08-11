@@ -411,7 +411,14 @@ standalone boss-sequence editor likewise hashes and recovers its complete seven-
 ordinary detected pristine installation or installed update, requiring exact reopen without changing
 the live project. `staged_pristine_boss_sequence_is_recovered_as_complete_table` and
 `staged_installed_boss_sequence_update_is_recovered_exactly` cover both persistence routes and prove
-that already-committed messages survive an installed staged recovery.
+that already-committed messages survive an installed staged recovery. The standalone 8,192-entry
+secondary-exit editor now hashes every staged field and reuses the ordinary pristine Lfix3 install or
+authenticated installed-table update operation on its isolated recovery clone. Exact full-table
+reopen, clean live state, namespace boundary `$1FFF`, prior installed-entry preservation, and safe
+invalid-field rejection are covered by
+`staged_pristine_secondary_exits_recover_the_complete_installed_table`,
+`staged_installed_secondary_exit_update_preserves_prior_entries`, and
+`invalid_staged_secondary_exit_is_reported_without_panicking_recovery_generation`.
 
 ## Workflow ledger
 

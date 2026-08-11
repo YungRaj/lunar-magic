@@ -4,7 +4,7 @@ use lm_profile::{
     SMW_US_V1_CHECKSUM_FIELD, smw_us_v1_builtin_secondary_exit_installation_plan_from_source,
     smw_us_v1_secondary_exit_allocation_policy, smw_us_v1_secondary_exit_locator,
 };
-use lm_project::SecondaryExitStorage;
+use lm_project::{Project, SecondaryExitStorage};
 use lm_rom::{Mapper, Region, SupportedGame};
 
 impl AppState {
@@ -22,45 +22,8 @@ impl AppState {
         self.require_no_pending_save()?;
         self.ensure_project_revision_capacity()?;
         let project = self.project.as_mut().ok_or(AppError::NoProject)?;
-        let identity = project.identity.as_ref().ok_or(AppError::NoProject)?;
-        if identity.game != SupportedGame::SuperMarioWorld
-            || identity.region != Region::NorthAmerica
-            || identity.revision != 0
-            || identity.mapper != Mapper::LoRom
-        {
-            return Err(AppError::SecondaryExitIdentityMismatch);
-        }
-        let locator = smw_us_v1_secondary_exit_locator();
-        let loaded = project.load_secondary_exit_table_detected(locator)?;
-        if matches!(loaded.storage, SecondaryExitStorage::Installed { .. })
-            && lm_profile::detect_smw_us_v1_current_lfix3_runtime(project.rom.logical_bytes())?
-                .is_none()
-        {
-            return Err(AppError::SecondaryExitLfix3AuthenticationMissing);
-        }
-        if loaded.table == *table
-            && matches!(loaded.storage, SecondaryExitStorage::Installed { .. })
-        {
+        if !save_native_secondary_exits_to_project(project, table)? {
             return Ok(Vec::new());
-        }
-        match loaded.storage {
-            SecondaryExitStorage::Pristine => {
-                project.install_relocatable_patch(
-                    &smw_us_v1_builtin_secondary_exit_installation_plan_from_source(
-                        &loaded.table,
-                        table,
-                    )?,
-                )?;
-            }
-            SecondaryExitStorage::Installed { .. } => {
-                project.save_installed_secondary_exit_table(
-                    table,
-                    locator,
-                    &smw_us_v1_secondary_exit_allocation_policy(project.rom.logical_len()),
-                    SMW_US_V1_CHECKSUM_FIELD,
-                    0xff,
-                )?;
-            }
         }
         self.advance_project_revision()?;
         let description = "Replace native secondary-exit table".to_owned();
@@ -71,6 +34,55 @@ impl AppState {
             revision: self.project_revision,
         }])
     }
+}
+
+/// Applies the native secondary-exit persistence route used by the application command.
+///
+/// Returns `true` when the project changed. An already-installed identical table is a no-op;
+/// pristine storage still installs the recovered runtime even when its initial table is unchanged.
+pub fn save_native_secondary_exits_to_project(
+    project: &mut Project,
+    table: &SecondaryExitTable,
+) -> Result<bool, AppError> {
+    let identity = project.identity.as_ref().ok_or(AppError::NoProject)?;
+    if identity.game != SupportedGame::SuperMarioWorld
+        || identity.region != Region::NorthAmerica
+        || identity.revision != 0
+        || identity.mapper != Mapper::LoRom
+    {
+        return Err(AppError::SecondaryExitIdentityMismatch);
+    }
+    let locator = smw_us_v1_secondary_exit_locator();
+    let loaded = project.load_secondary_exit_table_detected(locator)?;
+    if matches!(loaded.storage, SecondaryExitStorage::Installed { .. })
+        && lm_profile::detect_smw_us_v1_current_lfix3_runtime(project.rom.logical_bytes())?
+            .is_none()
+    {
+        return Err(AppError::SecondaryExitLfix3AuthenticationMissing);
+    }
+    if loaded.table == *table && matches!(loaded.storage, SecondaryExitStorage::Installed { .. }) {
+        return Ok(false);
+    }
+    match loaded.storage {
+        SecondaryExitStorage::Pristine => {
+            project.install_relocatable_patch(
+                &smw_us_v1_builtin_secondary_exit_installation_plan_from_source(
+                    &loaded.table,
+                    table,
+                )?,
+            )?;
+        }
+        SecondaryExitStorage::Installed { .. } => {
+            project.save_installed_secondary_exit_table(
+                table,
+                locator,
+                &smw_us_v1_secondary_exit_allocation_policy(project.rom.logical_len()),
+                SMW_US_V1_CHECKSUM_FIELD,
+                0xff,
+            )?;
+        }
+    }
+    Ok(true)
 }
 
 #[cfg(test)]

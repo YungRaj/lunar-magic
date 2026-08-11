@@ -28,6 +28,65 @@ pub(crate) struct RomSecondaryExitEditor {
 }
 
 impl RomSecondaryExitEditor {
+    pub(crate) fn staged_recovery_generation(&self, app: &AppState) -> Option<u64> {
+        let workspace = self.workspace.as_ref()?;
+        (workspace.table != workspace.original).then(|| {
+            let content_revision = workspace
+                .table
+                .entries
+                .iter()
+                .flat_map(|entry| {
+                    let destination = entry.destination_level.to_le_bytes();
+                    [
+                        destination[0],
+                        destination[1],
+                        entry.position_and_method,
+                        entry.screen,
+                        entry.x,
+                        entry.y,
+                        entry.destination_flags,
+                        entry.x_and_overworld_flags,
+                        entry.additional_flags,
+                    ]
+                })
+                .fold(0x5345_434f_4e44_4152_u64, |revision, byte| {
+                    revision.rotate_left(5) ^ u64::from(byte)
+                });
+            app.project_revision().wrapping_mul(0xa24b_aed4_963e_e407)
+                ^ workspace.revision.rotate_left(31)
+                ^ content_revision
+        })
+    }
+
+    pub(crate) fn staged_recovery_snapshot(
+        &self,
+        app: &AppState,
+    ) -> Result<Option<lm_app::RecoverySnapshot>, String> {
+        let workspace = self
+            .workspace
+            .as_ref()
+            .ok_or_else(|| "secondary-exit workspace is closed".to_owned())?;
+        if workspace.revision != app.project_revision() {
+            return Err("stale secondary-exit workspace cannot be recovered".into());
+        }
+        if workspace.table == workspace.original {
+            return Ok(app.recovery_snapshot());
+        }
+        let mut staged = app.project().ok_or("open a supported ROM first")?.clone();
+        lm_app::save_native_secondary_exits_to_project(&mut staged, &workspace.table)
+            .map_err(|error| error.to_string())?;
+        if staged
+            .load_secondary_exit_table_detected(smw_us_v1_secondary_exit_locator())
+            .map_err(|error| error.to_string())?
+            .table
+            != workspace.table
+        {
+            return Err("recovered secondary-exit table did not reopen exactly".into());
+        }
+        app.recovery_snapshot_with_current_rom(staged.save_snapshot(), app.current_level())
+            .map_err(|error| error.to_string())
+    }
+
     pub(crate) fn is_open(&self) -> bool {
         self.workspace.is_some()
     }
@@ -403,6 +462,101 @@ mod tests {
         app.dispatch(command).unwrap();
         assert_eq!(app.project_revision(), 1);
         assert!(editor.prepare_commit(1).is_err());
+    }
+
+    #[test]
+    fn staged_pristine_secondary_exits_recover_the_complete_installed_table() {
+        let (app, mut editor) = opened_app_and_editor();
+        editor.index = "1FFF".into();
+        editor.loaded_index = None;
+        editor.load_selected();
+        editor.form.destination = "0105".into();
+        editor.form.position = "02".into();
+        editor.form.screen = "1F".into();
+        editor.form.x = "0A".into();
+        editor.form.y = "07".into();
+        editor.form.destination_flags = "03".into();
+        editor.form.x_flags = "80".into();
+        editor.form.additional = "01".into();
+        editor.apply_selected().unwrap();
+
+        assert!(editor.staged_recovery_generation(&app).is_some());
+        let recovery = editor.staged_recovery_snapshot(&app).unwrap().unwrap();
+        assert_eq!(app.capabilities().project, lm_app::ProjectStatus::OpenClean);
+        assert_eq!(app.project().unwrap().history.undo_len(), 0);
+
+        let mut reopened = AppState::default();
+        reopened.load_recovery(recovery).unwrap();
+        let loaded = reopened
+            .project()
+            .unwrap()
+            .load_secondary_exit_table_detected(smw_us_v1_secondary_exit_locator())
+            .unwrap();
+        assert!(matches!(
+            loaded.storage,
+            lm_project::SecondaryExitStorage::Installed { .. }
+        ));
+        assert_eq!(loaded.table.entries[0x1fff].destination_level, 0x105);
+        assert_eq!(loaded.table.entries[0x1fff].screen, 0x1f);
+        assert_eq!(loaded.table.entries[0x1fff].additional_flags, 1);
+    }
+
+    #[test]
+    fn staged_installed_secondary_exit_update_preserves_prior_entries() {
+        let mut installer = AppState::default();
+        installer
+            .load_rom(crate::test_support::pristine_smw_us_rom_bytes())
+            .unwrap();
+        let mut table = installer
+            .project()
+            .unwrap()
+            .load_secondary_exit_table_detected(smw_us_v1_secondary_exit_locator())
+            .unwrap()
+            .table;
+        table.entries[0x123].destination_level = 0x105;
+        installer
+            .dispatch(Command::ReplaceNativeSecondaryExits {
+                rev: 0,
+                table: Box::new(table),
+            })
+            .unwrap();
+        let mut app = AppState::default();
+        app.load_rom(installer.project().unwrap().save_snapshot())
+            .unwrap();
+        let mut editor = RomSecondaryExitEditor::default();
+        editor.open(&app);
+        editor.index = "1FFE".into();
+        editor.loaded_index = None;
+        editor.load_selected();
+        editor.form.destination = "0106".into();
+        editor.form.additional = "01".into();
+        editor.apply_selected().unwrap();
+
+        let recovery = editor.staged_recovery_snapshot(&app).unwrap().unwrap();
+        assert_eq!(app.capabilities().project, lm_app::ProjectStatus::OpenClean);
+        let mut reopened = AppState::default();
+        reopened.load_recovery(recovery).unwrap();
+        let table = reopened
+            .project()
+            .unwrap()
+            .load_secondary_exit_table_detected(smw_us_v1_secondary_exit_locator())
+            .unwrap()
+            .table;
+        assert_eq!(table.entries[0x123].destination_level, 0x105);
+        assert_eq!(table.entries[0x1ffe].destination_level, 0x106);
+        assert_eq!(table.entries[0x1ffe].additional_flags, 1);
+    }
+
+    #[test]
+    fn invalid_staged_secondary_exit_is_reported_without_panicking_recovery_generation() {
+        let (app, mut editor) = opened_app_and_editor();
+        editor.form.y = "08".into();
+        editor.apply_selected().unwrap();
+
+        assert!(editor.staged_recovery_generation(&app).is_some());
+        assert!(editor.staged_recovery_snapshot(&app).is_err());
+        assert_eq!(app.capabilities().project, lm_app::ProjectStatus::OpenClean);
+        assert_eq!(app.project().unwrap().history.undo_len(), 0);
     }
 
     #[test]

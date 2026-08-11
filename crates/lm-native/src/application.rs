@@ -1781,6 +1781,9 @@ impl eframe::App for NativeApplication {
         let boss_sequence_recovery_revision = self
             .rom_boss_sequence_editor
             .staged_recovery_generation(&self.app);
+        let secondary_exit_recovery_revision = self
+            .rom_secondary_exit_editor
+            .staged_recovery_generation(&self.app);
         let level_assets_recovery_revision = self
             .rom_level_assets_editor
             .staged_recovery_generation(&self.app);
@@ -1803,6 +1806,7 @@ impl eframe::App for NativeApplication {
             shared_palette_recovery_revision,
             overworld_message_recovery_revision,
             boss_sequence_recovery_revision,
+            secondary_exit_recovery_revision,
             level_assets_recovery_revision,
             overworld_recovery_revision,
         ]
@@ -1827,12 +1831,14 @@ impl eframe::App for NativeApplication {
                         + usize::from(overworld_message_recovery_revision.is_some())
                         + usize::from(boss_sequence_recovery_revision.is_some());
                 let staged_editors =
+                    staged_editors + usize::from(secondary_exit_recovery_revision.is_some());
+                let staged_editors =
                     staged_editors + usize::from(level_assets_recovery_revision.is_some());
                 let staged_editors =
                     staged_editors + usize::from(overworld_recovery_revision.is_some());
                 if staged_editors > 1 {
                     return Err(
-                        "cannot compose simultaneous staged level, level-assets, expanded settings, legacy graphics bypass, title recording, shared palette, overworld/boss messages, graphics, ExAnimation, title/credits tilemap, palette, Map16, or overworld recovery yet".into(),
+                        "cannot compose simultaneous staged level, level-assets, expanded settings, legacy graphics bypass, title recording, shared palette, overworld/boss messages, secondary exits, graphics, ExAnimation, title/credits tilemap, palette, Map16, or overworld recovery yet".into(),
                     );
                 }
                 if palette_recovery_revision.is_some() {
@@ -1871,6 +1877,9 @@ impl eframe::App for NativeApplication {
                         .staged_recovery_snapshot(&self.app)
                 } else if boss_sequence_recovery_revision.is_some() {
                     self.rom_boss_sequence_editor
+                        .staged_recovery_snapshot(&self.app)
+                } else if secondary_exit_recovery_revision.is_some() {
+                    self.rom_secondary_exit_editor
                         .staged_recovery_snapshot(&self.app)
                 } else if level_assets_recovery_revision.is_some() {
                     self.rom_level_assets_editor

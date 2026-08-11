@@ -6450,3 +6450,16 @@ live project clean and history-free.
 Focused tests recover a changed final tile through the pristine installation path and preserve a
 previously committed message while recovering a distinct staged message through the installed path.
 All five boss-sequence editor tests and all 237 renderer tests pass.
+
+## Crash recovery includes the complete staged secondary-exit table
+
+The standalone secondary-exit editor now contributes a content-sensitive generation across all
+8,192 entries and every uncompressed public field. Recovery invokes the same shared persistence
+operation as ordinary commit: pristine ROMs install the recovered Lfix3 runtime and complete table,
+while authenticated installed ROMs update or reallocate their native planes. Both routes require an
+exact complete-table reopen on an isolated clone and leave the live project clean and history-free.
+
+Focused tests cover a field-complete edit at the `$1FFF` namespace boundary, installed recovery that
+preserves an independently committed earlier entry, and invalid staged fields that report recovery
+failure without panicking or mutating live state. All eight secondary-exit editor tests and both
+application persistence tests pass; the renderer remains green at 237/237.

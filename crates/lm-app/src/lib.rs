@@ -353,6 +353,7 @@ pub use current_level_palette_transfer::{
 pub use profile_controller::{ProfileControllerError, RevisionProfileControllers};
 pub use recent_documents::{RecentDocuments, RecentDocumentsError};
 pub use recovery::RecoverySnapshot;
+pub use secondary_exit_state::save_native_secondary_exits_to_project;
 pub use revision_profile::{
     DirectTableAudit, PointerTableAudit, RevisionAllocationError, RevisionProfile,
     RevisionProfileAudit, RevisionProfileAuditError, RevisionProfileError,
