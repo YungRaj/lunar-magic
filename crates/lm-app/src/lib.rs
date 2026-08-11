@@ -40,6 +40,7 @@ mod level_deletion_state;
 mod level_navigation;
 mod level_usage;
 mod level_usage_scan;
+mod legacy_graphics_bypass_transfer;
 mod legacy_graphics_bypass_workspace;
 mod localization;
 mod lunar_magic_metadata_state;
@@ -225,6 +226,9 @@ pub use level_usage_scan::{
     LevelUsageScanDiagnostic, LevelUsageScanError, LevelUsageScanOptions, LevelUsageScanProgress,
     LevelUsageScanResult, LevelUsageScanStage, scan_builtin_smw_us_v1_level_usage,
     scan_smw_us_v1_level_usage,
+};
+pub use legacy_graphics_bypass_transfer::{
+    export_legacy_graphics_bypass_list, prepare_legacy_graphics_bypass_list_import,
 };
 pub use legacy_graphics_bypass_workspace::{
     LegacyGraphicsBypassWorkspace, LegacyGraphicsBypassWorkspaceError,

@@ -188,6 +188,13 @@ impl NativeApplication {
 
     pub(super) fn show_project_operations(&mut self, context: &egui::Context) {
         self.toolbar_graphics_transfer.show(context);
+        if let Some(command) = self
+            .legacy_graphics_bypass_transfer
+            .show(context, &self.app)
+            && self.try_dispatch(context, command)
+        {
+            self.renderer.invalidate();
+        }
         if let Some(command) = self.current_level_palette_transfer.show(context, &self.app)
             && self.try_dispatch(context, command)
         {

@@ -198,6 +198,25 @@ impl NativeApplication {
                     self.effects.error = Some(error);
                 }
             }
+            for (key, action) in [
+                (
+                    UiTextKey::FileExtractOldBypassList,
+                    crate::legacy_graphics_bypass_transfer::LegacyGraphicsBypassTransferAction::Extract,
+                ),
+                (
+                    UiTextKey::FileInsertOldBypassList,
+                    crate::legacy_graphics_bypass_transfer::LegacyGraphicsBypassTransferAction::Insert,
+                ),
+            ] {
+                if ui
+                    .add_enabled(enabled, egui::Button::new(self.menu_text(key)))
+                    .clicked()
+                {
+                    ui.close_menu();
+                    self.legacy_graphics_bypass_transfer
+                        .start(&self.app, action);
+                }
+            }
             if ui
                 .add_enabled(
                     enabled,

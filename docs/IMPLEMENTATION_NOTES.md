@@ -5732,3 +5732,20 @@ identical logical results. The Windows cross-build and complete 1,028-test nativ
 512 pristine levels materialize, and the 513-line renderer manifest retains SHA-256
 `254a1a050d12785973241910e26d8b7917a5cb5e2a56602a330fc6cbd833c04d`. Authenticated native
 command coverage is now 262 of 317 named table slots, leaving 55 pending.
+
+## Old ExGFX bypass-list transfer (`$239B` / `$239C`)
+
+The bundled 3.63 Help identifies these commands as transfer of the old FG/BG/SP assignment table,
+not transfer of ExGFX binary files. A retained live Wine extraction is exactly `$400` bytes and its
+SHA-256 matches the same complete range at physical `$07F400` in the loaded copier-headered ROM.
+Rust therefore exports the exact stored table to the original default `Bypass.lst` name and accepts
+only an exact `$400`-byte import.
+
+Insertion preserves all 256 rows, including the dialog-inaccessible `$FF` row. On a pristine ROM it
+installs the recovered expanded-settings prerequisite before replacing the table, then repairs the
+checksum and verifies semantic reopen. Installation, any required ROM expansion, replacement, and
+checksum repair are published as one revision-bound mutation and therefore one application Undo.
+Headered and headerless tests require identical logical results and exact physical Undo. Native
+file reads and writes remain bounded and nonblocking; both the normal File menu and authenticated
+toolbar routes share them. Authenticated native command coverage is now 264 of 317 named table
+slots, leaving 53 pending.

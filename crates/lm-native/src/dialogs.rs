@@ -56,6 +56,21 @@ pub(crate) fn choose_save_path() -> Option<PathBuf> {
         .save_file()
 }
 
+pub(crate) fn choose_bypass_list_document() -> Option<PathBuf> {
+    rfd::FileDialog::new()
+        .set_title("Insert Old Bypass List to ROM")
+        .add_filter("Lunar Magic bypass list", &["lst"])
+        .pick_file()
+}
+
+pub(crate) fn choose_bypass_list_save_path() -> Option<PathBuf> {
+    rfd::FileDialog::new()
+        .set_title("Extract Old Bypass List from ROM")
+        .add_filter("Lunar Magic bypass list", &["lst"])
+        .set_file_name("Bypass.lst")
+        .save_file()
+}
+
 pub(crate) fn choose_revision_profile() -> Option<PathBuf> {
     rfd::FileDialog::new()
         .add_filter("Lunar Magic revision profile", &["lmrev"])

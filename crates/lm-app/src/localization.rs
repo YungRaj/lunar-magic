@@ -20,8 +20,8 @@ const MAX_LOCALE_BYTES: usize = 64;
 const MAX_TEXT_BYTES: usize = 4096;
 const MAX_DIALOG_TEXT_ENTRIES: usize = 4096;
 const LEGACY_CHROME_KEY_COUNT: usize = 19;
-const PREVIOUS_COMPLETE_KEY_COUNT: usize = 184;
-const EARLIER_COMPLETE_KEY_COUNT: usize = 183;
+const PREVIOUS_COMPLETE_KEY_COUNT: usize = 199;
+const EARLIER_COMPLETE_KEY_COUNTS: [usize; 2] = [183, 184];
 const MAX_ENCODED_BYTES: usize = MAGIC.len()
     + 2
     + MAX_LOCALE_BYTES
@@ -1049,6 +1049,8 @@ pub enum UiTextKey {
     FileOpenLevelAddress,
     FileScanRom,
     FileOpenLevelFile,
+    FileExtractOldBypassList,
+    FileInsertOldBypassList,
 }
 
 impl UiTextKey {
@@ -1112,6 +1114,8 @@ impl UiTextKey {
             Self::FileOpenLevelAddress => "Open Level From Address…",
             Self::FileScanRom => "Scan ROM…",
             Self::FileOpenLevelFile => "Open Level From File…",
+            Self::FileExtractOldBypassList => "Extract Old Bypass List from ROM…",
+            Self::FileInsertOldBypassList => "Insert Old Bypass List to ROM…",
             Self::ToolsLanguageFormat => "Language ({locale})",
             Self::ToolsInstallLanguage => "Install Language Catalog…",
             Self::ToolsUseBuiltInEnglish => "Use Built-in English",
@@ -1293,7 +1297,7 @@ impl UiTextKey {
         }
     }
 
-    pub const ALL: [Self; 199] = [
+    pub const ALL: [Self; 201] = [
         Self::AppTitle,
         Self::FileOpen,
         Self::FileSave,
@@ -1493,6 +1497,8 @@ impl UiTextKey {
         Self::FileOpenLevelAddress,
         Self::FileScanRom,
         Self::FileOpenLevelFile,
+        Self::FileExtractOldBypassList,
+        Self::FileInsertOldBypassList,
     ];
 
     fn from_byte(value: u8) -> Option<Self> {
@@ -1810,7 +1816,7 @@ impl LocalizationCatalog {
         let count = usize::from(reader.u16()?);
         if count != UiTextKey::ALL.len()
             && count != PREVIOUS_COMPLETE_KEY_COUNT
-            && count != EARLIER_COMPLETE_KEY_COUNT
+            && !EARLIER_COMPLETE_KEY_COUNTS.contains(&count)
             && count != LEGACY_CHROME_KEY_COUNT
         {
             return Err(LocalizationError::WrongEntryCount(count));
@@ -2783,7 +2789,10 @@ mod tests {
 
     #[test]
     fn previous_complete_catalogs_append_new_keys_with_english_fallback() {
-        for count in [EARLIER_COMPLETE_KEY_COUNT, PREVIOUS_COMPLETE_KEY_COUNT] {
+        for count in EARLIER_COMPLETE_KEY_COUNTS
+            .into_iter()
+            .chain([PREVIOUS_COMPLETE_KEY_COUNT])
+        {
             let mut bytes = MAGIC.to_vec();
             write_string(&mut bytes, "es-MX", MAX_LOCALE_BYTES).unwrap();
             bytes.extend_from_slice(&(count as u16).to_le_bytes());
@@ -2796,7 +2805,15 @@ mod tests {
             assert_eq!(upgraded.text(UiTextKey::CommonApply), "viejo-CommonApply");
             assert_eq!(
                 upgraded.text(UiTextKey::ToolsLiveEmulator),
-                "Live ROM Test (Libretro)…"
+                if count > UiTextKey::ToolsLiveEmulator as usize {
+                    "viejo-ToolsLiveEmulator"
+                } else {
+                    "Live ROM Test (Libretro)…"
+                }
+            );
+            assert_eq!(
+                upgraded.text(UiTextKey::FileExtractOldBypassList),
+                "Extract Old Bypass List from ROM…"
             );
             assert_eq!(
                 LocalizationCatalog::decode(&upgraded.encode().unwrap()).unwrap(),

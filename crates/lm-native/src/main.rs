@@ -40,6 +40,7 @@ mod ips_create_dialog;
 mod ips_patch_dialog;
 mod layer3_editor;
 mod layer3_editor_form;
+mod legacy_graphics_bypass_transfer;
 mod level_access_restriction_dialog;
 mod level_deletion_dialog;
 mod level_editor;

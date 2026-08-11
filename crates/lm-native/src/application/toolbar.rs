@@ -677,6 +677,10 @@ impl NativeApplication {
                     self.effects.error = Some(error);
                 }
             }
+            UserToolbarNativeAction::LegacyGraphicsBypassTransfer(action) => {
+                self.legacy_graphics_bypass_transfer
+                    .start(&self.app, action);
+            }
         }
     }
 
@@ -1410,6 +1414,9 @@ enum UserToolbarNativeAction {
     ExportLevelBitmapDirectory,
     SharedPaletteTransfer(crate::rom_shared_palette_editor::SharedPaletteTransferAction),
     CurrentLevelPaletteTransfer(crate::current_level_palette_transfer::CurrentLevelPaletteAction),
+    LegacyGraphicsBypassTransfer(
+        crate::legacy_graphics_bypass_transfer::LegacyGraphicsBypassTransferAction,
+    ),
     ExtractGraphics(QuickGraphicsExtraction),
     QuickExtractGraphics(QuickGraphicsExtraction),
     QuickInsertGraphics(QuickGraphicsInsertion),
@@ -1567,6 +1574,12 @@ fn user_toolbar_native_action(name: &str) -> Option<UserToolbarNativeAction> {
         "LM_FILE_INSERT_EXGFX" => {
             UserToolbarNativeAction::OrdinaryInsertGraphics(GraphicsInsertionFamily::ExGraphics)
         }
+        "LM_FILE_EXTRACT_EXGFX_LIST" => UserToolbarNativeAction::LegacyGraphicsBypassTransfer(
+            crate::legacy_graphics_bypass_transfer::LegacyGraphicsBypassTransferAction::Extract,
+        ),
+        "LM_FILE_INSERT_EXGFX_LIST" => UserToolbarNativeAction::LegacyGraphicsBypassTransfer(
+            crate::legacy_graphics_bypass_transfer::LegacyGraphicsBypassTransferAction::Insert,
+        ),
         _ => return None,
     })
 }
@@ -2149,6 +2162,18 @@ mod user_toolbar_tests {
                     GraphicsInsertionFamily::ExGraphics,
                 ),
             ),
+            (
+                "LM_FILE_EXTRACT_EXGFX_LIST",
+                UserToolbarNativeAction::LegacyGraphicsBypassTransfer(
+                    crate::legacy_graphics_bypass_transfer::LegacyGraphicsBypassTransferAction::Extract,
+                ),
+            ),
+            (
+                "LM_FILE_INSERT_EXGFX_LIST",
+                UserToolbarNativeAction::LegacyGraphicsBypassTransfer(
+                    crate::legacy_graphics_bypass_transfer::LegacyGraphicsBypassTransferAction::Insert,
+                ),
+            ),
         ] {
             assert_eq!(user_toolbar_native_action(name), Some(action));
         }
@@ -2407,7 +2432,7 @@ mod user_toolbar_tests {
                     || user_toolbar_native_action(entry.name).is_some()
             })
             .collect::<Vec<_>>();
-        assert_eq!(supported.len(), 262);
+        assert_eq!(supported.len(), 264);
         assert!(
             supported
                 .iter()
@@ -2510,7 +2535,7 @@ mod user_toolbar_tests {
                     && user_toolbar_native_action(entry.name).is_none()
             })
             .collect::<Vec<_>>();
-        assert_eq!(unsupported.len(), 55);
+        assert_eq!(unsupported.len(), 53);
         if std::env::var_os("LM_DIAGNOSTIC_UNSUPPORTED_TOOLBAR_COMMANDS").is_some() {
             for entry in unsupported {
                 eprintln!(

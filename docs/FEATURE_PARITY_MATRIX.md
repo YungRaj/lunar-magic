@@ -955,6 +955,14 @@ ignores; and the 513-line renderer manifest retains SHA-256
 partition is now **258 routed / 59 pending**. The aggregate remains 59/65 because the
 configuration row is still Partial.
 
+Toolbar coverage update (2026-08-10, old ExGFX bypass list): authenticated
+`LM_FILE_EXTRACT_EXGFX_LIST` `$239B` and `LM_FILE_INSERT_EXGFX_LIST` `$239C` now transfer the exact
+legacy `$400`-byte `Bypass.lst` table rather than aliasing ordinary ExGFX file transfer. Bundled-help,
+Ghidra, and live-Wine evidence bind the format and prerequisite behavior. Pristine import installs
+expanded settings, replaces all 256 rows, repairs the checksum, reopens semantically, and undoes as
+one atomic operation across both copier-header forms. The authenticated partition is now **264
+routed / 53 pending**. The aggregate remains 59/65 because the configuration row is still Partial.
+
 Toolbar coverage update (2026-08-10, Open Level Number): `LM_FILE_OPEN_LEVEL` `$238E` now opens
 the native equivalent of original dialog resource `1000`. It uses the authenticated title,
 `Level Number (0-1FF)` label, OK/Cancel controls, and original-language resource overrides; seeds
