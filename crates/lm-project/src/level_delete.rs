@@ -19,6 +19,22 @@ pub struct DeletedLevelStreams {
 /// Result of deleting every pointer-backed asset modeled by [`NativeLevelAssetsLayout`].
 pub type DeletedNativeLevelAssets = DeletedLevelStreams;
 
+const ORIGINAL_LEVEL_CLEAR_MARKER_OFFSET: usize = 0x30258;
+const ORIGINAL_LEVEL_CLEAR_MARKER_PAYLOAD: &[u8; 32] = b"Free Area DO NOT ERASE THIS TAG!";
+const ORIGINAL_LEVEL_CLEAR_METADATA_OFFSET: usize = 0x7efc2;
+const ORIGINAL_LEVEL_CLEAR_METADATA_LEN: usize = 0x6f;
+const ORIGINAL_LEVEL_CLEAR_TEST_SPRITE_LOW_BYTES: [(usize, u8); 2] =
+    [(0x2da7f, 0x6d), (0x2da83, 0xe7)];
+const ORIGINAL_LEVEL_PROTECTED_BLOCKS: [(usize, usize); 7] = [
+    (0x3495c, 0x35000),
+    (0x3697d, 0x36cc9),
+    (0x37531, 0x380c3),
+    (0x3a171, 0x3a600),
+    (0x3c21e, 0x3c300),
+    (0x3d7dd, 0x3d8be),
+    (0x3e765, 0x40000),
+];
+
 #[derive(Debug)]
 pub enum DeleteLevelStreamsError {
     Level(LevelLoadError),
@@ -66,6 +82,83 @@ impl From<crate::TransactionError> for DeleteLevelStreamsError {
 }
 
 impl Project {
+    /// Clears Lunar Magic's authenticated original SMW level-data area while protecting the
+    /// seven fixed runtime/data islands with exact RATS owners.
+    ///
+    /// The marker owner at `$30258` makes the operation idempotent. The gaps, owner headers, clear
+    /// metadata, and checksum are one Undo step. Protected payload bytes are never rewritten.
+    pub fn clear_original_level_data_area(
+        &mut self,
+        description: impl Into<String>,
+        checksum_field: usize,
+    ) -> Result<bool, DeleteLevelStreamsError> {
+        let marker = rats_owner_bytes(ORIGINAL_LEVEL_CLEAR_MARKER_PAYLOAD.len())?;
+        let marker_end = ORIGINAL_LEVEL_CLEAR_MARKER_OFFSET
+            + marker.len()
+            + ORIGINAL_LEVEL_CLEAR_MARKER_PAYLOAD.len();
+        if self
+            .rom
+            .read(ORIGINAL_LEVEL_CLEAR_MARKER_OFFSET, marker.len())?
+            == marker
+            && self.rom.read(
+                ORIGINAL_LEVEL_CLEAR_MARKER_OFFSET + marker.len(),
+                ORIGINAL_LEVEL_CLEAR_MARKER_PAYLOAD.len(),
+            )? == ORIGINAL_LEVEL_CLEAR_MARKER_PAYLOAD
+        {
+            return Ok(false);
+        }
+
+        let mut writes = vec![
+            RomWrite {
+                offset: ORIGINAL_LEVEL_CLEAR_TEST_SPRITE_LOW_BYTES[0].0,
+                bytes: vec![ORIGINAL_LEVEL_CLEAR_TEST_SPRITE_LOW_BYTES[0].1],
+            },
+            RomWrite {
+                offset: ORIGINAL_LEVEL_CLEAR_TEST_SPRITE_LOW_BYTES[1].0,
+                bytes: vec![ORIGINAL_LEVEL_CLEAR_TEST_SPRITE_LOW_BYTES[1].1],
+            },
+            RomWrite {
+                offset: 0x30253,
+                bytes: vec![0; ORIGINAL_LEVEL_CLEAR_MARKER_OFFSET - 0x30253],
+            },
+            RomWrite {
+                offset: ORIGINAL_LEVEL_CLEAR_MARKER_OFFSET,
+                bytes: [marker, ORIGINAL_LEVEL_CLEAR_MARKER_PAYLOAD.to_vec()].concat(),
+            },
+        ];
+        let mut cursor = marker_end;
+        for &(header_offset, end) in &ORIGINAL_LEVEL_PROTECTED_BLOCKS {
+            writes.push(RomWrite {
+                offset: cursor,
+                bytes: vec![0; header_offset - cursor],
+            });
+            let payload_len = end - header_offset - 8;
+            writes.push(RomWrite {
+                offset: header_offset,
+                bytes: rats_owner_bytes(payload_len)?,
+            });
+            cursor = end;
+        }
+        let mut metadata = vec![0; ORIGINAL_LEVEL_CLEAR_METADATA_LEN];
+        metadata[0] = 0xaa;
+        writes.push(RomWrite {
+            offset: ORIGINAL_LEVEL_CLEAR_METADATA_OFFSET,
+            bytes: metadata,
+        });
+
+        let mut staged = self.rom.clone();
+        for write in &writes {
+            staged.write(write.offset, &write.bytes)?;
+        }
+        let checksum = compute_snes_checksum(staged.logical_bytes(), checksum_field)?;
+        writes.push(RomWrite {
+            offset: checksum_field,
+            bytes: checksum.encoded().to_vec(),
+        });
+        self.apply_writes(description, &writes)?;
+        Ok(true)
+    }
+
     /// Replaces one level's object and sprite streams with original-area test streams.
     ///
     /// Tagged displaced streams are erased only when no other object or sprite table entry still
@@ -179,9 +272,10 @@ impl Project {
     ///
     /// # Errors
     ///
-    /// Rejects invalid table shapes or slots, a target not stored in the expanded area, a
-    /// replacement core stream outside the original area, malformed tagged ownership, unsafe
-    /// shared-bank sprite replacement, checksum failures, and atomic transaction failures.
+    /// Rejects invalid table shapes or slots, a replacement core stream outside the original
+    /// area, malformed tagged ownership, unsafe shared-bank sprite replacement, checksum failures,
+    /// and atomic transaction failures. Original-area targets are redirected without attempting
+    /// payload reclamation; this is required by Lunar Magic's multi-level unmodified/all modes.
     pub fn delete_native_level_assets_to_original_source(
         &mut self,
         description: impl Into<String>,
@@ -219,14 +313,6 @@ impl Project {
             }
         }
         let old_layer1 = layout.level.layer1.read_snes_pointer(&self.rom, level)?;
-        let old_layer1_offset = snes_to_pc(layout.level.mapper, old_layer1.get())?;
-        if old_layer1_offset < ORIGINAL_AREA_LEN {
-            return Err(DeleteLevelStreamsError::LevelNotExpanded {
-                level,
-                layer1_offset: old_layer1_offset,
-            });
-        }
-
         let contiguous = contiguous_asset_tables(layout, layer2);
         let mut candidates = Vec::new();
         candidates.push(old_layer1);
@@ -387,6 +473,18 @@ impl Project {
             Err(error) => Err(error.into()),
         }
     }
+}
+
+fn rats_owner_bytes(payload_len: usize) -> Result<Vec<u8>, DeleteLevelStreamsError> {
+    let encoded_len = payload_len
+        .checked_sub(1)
+        .and_then(|value| u16::try_from(value).ok())
+        .ok_or(DeleteLevelStreamsError::DirectTableLayout)?;
+    let complement = !encoded_len;
+    let mut bytes = b"STAR".to_vec();
+    bytes.extend_from_slice(&encoded_len.to_le_bytes());
+    bytes.extend_from_slice(&complement.to_le_bytes());
+    Ok(bytes)
 }
 
 fn contiguous_asset_tables(
@@ -814,5 +912,79 @@ mod tests {
         assert_eq!(project.history.undo_len(), 1);
         assert!(project.history.undo(&mut project.rom).unwrap());
         assert_eq!(project.rom.logical_bytes(), before);
+    }
+
+    #[test]
+    fn original_level_area_clear_matches_the_recovered_gap_and_owner_layout() {
+        let bytes = vec![0x5a; 0x10_0000];
+        let protected_before =
+            ORIGINAL_LEVEL_PROTECTED_BLOCKS.map(|(start, end)| bytes[start + 8..end].to_vec());
+        let mut project = Project::new(RomImage::from_bytes(bytes.clone()).unwrap());
+        assert!(
+            project
+                .clear_original_level_data_area("clear original level area", CHECKSUM)
+                .unwrap()
+        );
+
+        assert_eq!(project.rom.read(0x30253, 5).unwrap(), [0; 5]);
+        let marker = parse_at(
+            project.rom.logical_bytes(),
+            ORIGINAL_LEVEL_CLEAR_MARKER_OFFSET,
+        )
+        .unwrap();
+        assert_eq!(
+            project
+                .rom
+                .read(marker.payload.start, marker.payload.len())
+                .unwrap(),
+            ORIGINAL_LEVEL_CLEAR_MARKER_PAYLOAD
+        );
+        let mut cursor = marker.full_range().end;
+        for (index, &(start, end)) in ORIGINAL_LEVEL_PROTECTED_BLOCKS.iter().enumerate() {
+            assert!(
+                project
+                    .rom
+                    .read(cursor, start - cursor)
+                    .unwrap()
+                    .iter()
+                    .all(|&byte| byte == 0)
+            );
+            let owner = parse_at(project.rom.logical_bytes(), start).unwrap();
+            assert_eq!(owner.full_range(), start..end);
+            assert_eq!(
+                project
+                    .rom
+                    .read(owner.payload.start, owner.payload.len())
+                    .unwrap(),
+                protected_before[index]
+            );
+            cursor = end;
+        }
+        let metadata = project
+            .rom
+            .read(
+                ORIGINAL_LEVEL_CLEAR_METADATA_OFFSET,
+                ORIGINAL_LEVEL_CLEAR_METADATA_LEN,
+            )
+            .unwrap();
+        assert_eq!(metadata[0], 0xaa);
+        assert!(metadata[1..].iter().all(|&byte| byte == 0));
+        assert_eq!(
+            SnesChecksum::decode(project.rom.logical_bytes(), CHECKSUM).unwrap(),
+            compute_snes_checksum(project.rom.logical_bytes(), CHECKSUM).unwrap()
+        );
+        assert_eq!(project.history.undo_len(), 1);
+
+        let cleared = project.rom.logical_bytes().to_vec();
+        assert!(
+            !project
+                .clear_original_level_data_area("clear again", CHECKSUM)
+                .unwrap()
+        );
+        assert_eq!(project.history.undo_len(), 1);
+        assert!(project.history.undo(&mut project.rom).unwrap());
+        assert_eq!(project.rom.logical_bytes(), bytes);
+        assert!(project.history.redo(&mut project.rom).unwrap());
+        assert_eq!(project.rom.logical_bytes(), cleared);
     }
 }

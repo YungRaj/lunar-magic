@@ -144,6 +144,33 @@ impl NativeApplication {
                 ui.close_menu();
                 self.level_deletion_dialog.open(&self.app);
             }
+            if ui
+                .add_enabled(
+                    enabled && !self.multiple_level_deletion_dialog.is_open(),
+                    egui::Button::new(self.menu_text(UiTextKey::FileDeleteMultipleLevels)),
+                )
+                .clicked()
+            {
+                ui.close_menu();
+                if let Err(error) = self.multiple_level_deletion_dialog.open(&self.app) {
+                    self.effects.error = Some(error);
+                }
+            }
+            if ui
+                .add_enabled(
+                    enabled && !self.multiple_level_deletion_dialog.is_open(),
+                    egui::Button::new(self.menu_text(UiTextKey::FileClearOriginalLevelArea)),
+                )
+                .clicked()
+            {
+                ui.close_menu();
+                if let Err(error) = self
+                    .multiple_level_deletion_dialog
+                    .open_clear_original_level_area(&self.app)
+                {
+                    self.effects.error = Some(error);
+                }
+            }
             for (label, command) in [
                 (self.menu_text(UiTextKey::FileSave), Command::Save),
                 (self.menu_text(UiTextKey::FileSaveAs), Command::SaveAs),

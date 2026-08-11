@@ -5492,8 +5492,9 @@ authenticated `LM_FILE_DELETE_LEVEL` toolbar command, and publishes notification
 successful physical ROM persistence. Failed or cancelled saves retain the pending notification;
 returning to a clean baseline without persistence clears it. The live `-DeleteLevels -LevelList 0`
 oracle matches all modeled pointers and
-direct records; Lunar Magic's two zero-filled `$1FE` reservation tags are retained as an explicit
-allocator-bookkeeping difference rather than being misrepresented as live level data. This route
+direct records. The later multi-level parity pass also reproduces Lunar Magic's two zero-filled
+`$1FE` secondary-exit reservation owners, their first-fit relocation, null-tail removal, and
+checksum-compensation bytes, closing the earlier allocator-bookkeeping difference. This route
 raises authenticated native user-toolbar coverage to 200 table slots.
 ## Legacy standard-GFX bypass lists (`$2520` / `$2521`)
 
@@ -5760,3 +5761,27 @@ and final close. The retained live central-dispatcher capture corrects the activ
 The historically named `$23A5` slot is deliberately not aliased without equivalent dispatcher
 evidence. Authenticated native command coverage is now 265 of 317 named table slots, leaving 52
 pending.
+
+## Multi-level deletion and original-area clearing (`$23C3` / `$23A9`)
+
+The native File menu and authenticated toolbar routes expose the original modified, unmodified,
+and all-level categories plus the conditional clear-original-area option. Category discovery reads
+all 512 Layer 1 pointers and partitions original versus expanded PC storage exactly. Input levels
+are bounded, sorted, and deduplicated before any mutation; every redirect, reclaimed owner,
+secondary-exit rewrite, clear-area write, checksum adjustment, and final save is one application
+revision and one Undo step.
+
+Deletion now reproduces Lunar Magic's secondary-exit allocation side effect rather than retaining a
+known bookkeeping difference. Partial modified deletion forcibly republishes even semantically-zero
+variable planes with the installed `$1FE` length into newly reclaimed first-fit holes. Deleting all
+unmodified slots or all slots publishes the null-tail form and zero-erases both old owners. The
+stored checksum is preserved by zeroing `$07EFC0..$07F09F`, then filling full `$FF` bytes and one
+remainder byte in ascending order until the original checksum is restored.
+
+The optional clear operation zeroes the recovered original-level gaps, installs a 32-byte
+`Free Area DO NOT ERASE THIS TAG!` marker and seven exact protected RATS owners, preserves every
+protected payload, changes the hardcoded test-sprite low word from `$C3EE` to `$E76D`, clears the
+expanded secondary-exit tail, writes the `$AA` clear metadata, and is idempotent while its marker is
+intact. Complete physical-image hashes match five live Lunar Magic 3.63 command-line oracles,
+including an explicit mixed `0,1` list. Authenticated native command coverage is now 267 of 317
+named table slots, leaving 50 pending.

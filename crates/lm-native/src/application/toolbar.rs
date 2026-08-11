@@ -457,6 +457,19 @@ impl NativeApplication {
             UserToolbarNativeAction::DeleteLevel => {
                 self.level_deletion_dialog.open(&self.app);
             }
+            UserToolbarNativeAction::DeleteMultipleLevels => {
+                if let Err(error) = self.multiple_level_deletion_dialog.open(&self.app) {
+                    self.effects.error = Some(error);
+                }
+            }
+            UserToolbarNativeAction::ClearOriginalLevelArea => {
+                if let Err(error) = self
+                    .multiple_level_deletion_dialog
+                    .open_clear_original_level_area(&self.app)
+                {
+                    self.effects.error = Some(error);
+                }
+            }
             UserToolbarNativeAction::OpenSecondaryEntrances => {
                 self.rom_secondary_exit_editor.open(&self.app);
             }
@@ -1381,6 +1394,8 @@ enum UserToolbarNativeAction {
     LiveEmulatorMute,
     LiveEmulatorFrameAdvance,
     DeleteLevel,
+    DeleteMultipleLevels,
+    ClearOriginalLevelArea,
     OpenSecondaryEntrances,
     OpenScreenExitAtPointer,
     FollowScreenExitAtPointer,
@@ -1458,6 +1473,8 @@ fn user_toolbar_native_action(name: &str) -> Option<UserToolbarNativeAction> {
         "LM_FILE_INT_EMULATOR_MUTE" => UserToolbarNativeAction::LiveEmulatorMute,
         "LM_FILE_INT_EMULATOR_FRAME_ADVANCE" => UserToolbarNativeAction::LiveEmulatorFrameAdvance,
         "LM_FILE_DELETE_LEVEL" => UserToolbarNativeAction::DeleteLevel,
+        "LM_FILE_DELETE_MULT_LEVELS" => UserToolbarNativeAction::DeleteMultipleLevels,
+        "LM_FILE_CLEAR_OLD_LEVELS" => UserToolbarNativeAction::ClearOriginalLevelArea,
         "LM_LEVEL_ENTRANCE2" => UserToolbarNativeAction::OpenSecondaryEntrances,
         "LM_MOUSE_EDIT_SCREEN_EXIT" => UserToolbarNativeAction::OpenScreenExitAtPointer,
         "LM_MOUSE_SCREEN_EXIT" => UserToolbarNativeAction::FollowScreenExitAtPointer,
@@ -1896,6 +1913,14 @@ mod user_toolbar_tests {
         assert_eq!(
             user_toolbar_native_action("LM_FILE_ENCRYPT_LEVELS"),
             Some(UserToolbarNativeAction::RestrictLevelAccess)
+        );
+        assert_eq!(
+            user_toolbar_native_action("LM_FILE_DELETE_MULT_LEVELS"),
+            Some(UserToolbarNativeAction::DeleteMultipleLevels)
+        );
+        assert_eq!(
+            user_toolbar_native_action("LM_FILE_CLEAR_OLD_LEVELS"),
+            Some(UserToolbarNativeAction::ClearOriginalLevelArea)
         );
         assert_eq!(
             user_toolbar_native_action("LM_OPTIONS_RESTORE"),
@@ -2443,7 +2468,7 @@ mod user_toolbar_tests {
                     || user_toolbar_native_action(entry.name).is_some()
             })
             .collect::<Vec<_>>();
-        assert_eq!(supported.len(), 265);
+        assert_eq!(supported.len(), 267);
         assert!(
             supported
                 .iter()
@@ -2566,7 +2591,7 @@ mod user_toolbar_tests {
                     && user_toolbar_native_action(entry.name).is_none()
             })
             .collect::<Vec<_>>();
-        assert_eq!(unsupported.len(), 52);
+        assert_eq!(unsupported.len(), 50);
         if std::env::var_os("LM_DIAGNOSTIC_UNSUPPORTED_TOOLBAR_COMMANDS").is_some() {
             for entry in unsupported {
                 eprintln!(

@@ -215,6 +215,7 @@ pub use layer3_document_controller::{
 };
 pub use legacy_mwl_transfer::{legacy_mwl_sidecar_paths, publish_legacy_mwl_bundle_new};
 pub use level_controller::{LevelController, LevelControllerError, NativeLevelEdit};
+pub use level_deletion_state::LevelDeletionPartition;
 pub use level_navigation::{
     LevelNavigationDirection, LevelViewState, LevelViewport, LevelViewportError,
 };

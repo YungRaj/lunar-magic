@@ -25,6 +25,7 @@ use crate::{
     legacy_graphics_bypass_transfer::LegacyGraphicsBypassTransfer,
     level_access_restriction_dialog::LevelAccessRestrictionDialog,
     level_deletion_dialog::LevelDeletionDialog,
+    multiple_level_deletion_dialog::MultipleLevelDeletionDialog,
     level_editor::LevelEditor,
     level_usage_dialog::LevelUsageDialog,
     map16_editor::Map16Editor,
@@ -173,6 +174,7 @@ pub(crate) struct NativeApplication {
     level_editor: LevelEditor,
     level_access_restriction_dialog: LevelAccessRestrictionDialog,
     level_deletion_dialog: LevelDeletionDialog,
+    multiple_level_deletion_dialog: MultipleLevelDeletionDialog,
     level_usage_dialog: LevelUsageDialog,
     rom_user_area_scan_dialog: RomUserAreaScanDialog,
     live_emulator: crate::live_emulator::LiveEmulator,
@@ -1001,6 +1003,18 @@ impl eframe::App for NativeApplication {
             self.renderer.invalidate();
             self.vanilla_level_editor.invalidate_graphics_preview();
             self.mark_user_toolbar_level_deleted(level);
+            self.dispatch(context, Command::Save);
+        }
+        if let Some(request) = self
+            .multiple_level_deletion_dialog
+            .show(context, &self.app)
+            && self.try_dispatch(context, request.command)
+        {
+            self.renderer.invalidate();
+            self.vanilla_level_editor.invalidate_graphics_preview();
+            for level in request.levels {
+                self.mark_user_toolbar_level_deleted(level);
+            }
             self.dispatch(context, Command::Save);
         }
         self.about_dialog.show(context, self.app.localization());

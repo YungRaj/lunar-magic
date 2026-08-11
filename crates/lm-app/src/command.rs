@@ -50,6 +50,12 @@ pub enum Command {
     DeleteCurrentLevel {
         rev: u64,
     },
+    /// Deletes a validated set of standard levels as one revision and one Undo step.
+    DeleteLevels {
+        rev: u64,
+        levels: Vec<u16>,
+        clear_original_level_area: bool,
+    },
     /// Commits serializer-produced ROM writes as one project history entry.
     CommitRomWrites {
         expected_revision: u64,

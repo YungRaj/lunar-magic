@@ -972,6 +972,16 @@ oracle binds `$23A4`; historical `$23A5` remains pending rather than being guess
 The authenticated partition is now **265 routed / 52 pending**. The aggregate remains 59/65
 because the configuration row is still Partial.
 
+Toolbar coverage update (2026-08-10, multi-level deletion and original-area clear): authenticated
+`LM_FILE_DELETE_MULT_LEVELS` `$23C3` and `LM_FILE_CLEAR_OLD_LEVELS` `$23A9` now open typed native
+workflows backed by one atomic batch transaction. Modified, unmodified, all, unmodified-plus-clear,
+and explicit mixed selection produce complete physical-ROM SHA-256 equality with Lunar Magic 3.63.
+The transaction redirects every modeled asset, compacts or clears expanded secondary exits with the
+original owner lengths, reproduces the exact original-area protected tags and test-sprite pointer,
+preserves the stored checksum through the recovered compensation run, reopens, and undoes exactly.
+The authenticated partition is now **267 routed / 50 pending**. The aggregate remains 59/65 because
+the configuration row is still Partial.
+
 Toolbar coverage update (2026-08-10, Open Level Number): `LM_FILE_OPEN_LEVEL` `$238E` now opens
 the native equivalent of original dialog resource `1000`. It uses the authenticated title,
 `Level Number (0-1FF)` label, OK/Cancel controls, and original-language resource overrides; seeds

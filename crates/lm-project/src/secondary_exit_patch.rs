@@ -139,16 +139,73 @@ impl Project {
         checksum_field: usize,
         erase_fill: u8,
     ) -> Result<bool, SecondaryExitPatchError> {
+        self.save_installed_secondary_exit_table_inner(
+            table,
+            locator,
+            allocation,
+            checksum_field,
+            erase_fill,
+            false,
+        )
+    }
+
+    /// Republishes an installed table even when its semantic records are unchanged.
+    ///
+    /// Lunar Magic's level-deletion coordinator uses this compaction path after reclaiming level
+    /// payloads, so the owned variable planes migrate into the newly available first-fit holes.
+    pub fn repack_installed_secondary_exit_table(
+        &mut self,
+        table: &SecondaryExitTable,
+        locator: SecondaryExitPatchLocator,
+        allocation: &AllocationPolicy,
+        checksum_field: usize,
+        erase_fill: u8,
+    ) -> Result<bool, SecondaryExitPatchError> {
+        self.save_installed_secondary_exit_table_inner(
+            table,
+            locator,
+            allocation,
+            checksum_field,
+            erase_fill,
+            true,
+        )
+    }
+
+    fn save_installed_secondary_exit_table_inner(
+        &mut self,
+        table: &SecondaryExitTable,
+        locator: SecondaryExitPatchLocator,
+        allocation: &AllocationPolicy,
+        checksum_field: usize,
+        erase_fill: u8,
+        force_repack: bool,
+    ) -> Result<bool, SecondaryExitPatchError> {
         let loaded = self.load_secondary_exit_table_detected(locator)?;
-        if &loaded.table == table {
+        if &loaded.table == table && !force_repack {
             return Ok(false);
         }
-        let SecondaryExitStorage::Installed { tagged_planes, .. } = loaded.storage else {
+        let SecondaryExitStorage::Installed {
+            tagged_planes,
+            used_len: installed_used_len,
+            ..
+        } = loaded.storage
+        else {
             return Err(SecondaryExitPatchError::InstallationRequired);
         };
         let encoded = table.encode()?;
-        let used_len = used_plane_len(&encoded);
-        let fixed_prefix = usize::from(used_len <= 0x200) * 4;
+        let complete_used_len = used_plane_len(&encoded);
+        let fixed_prefix = usize::from(complete_used_len <= 0x200) * 4;
+        let used_len = if fixed_prefix == 4 {
+            let semantic_used_len =
+                used_plane_len_in_planes(&encoded, 4..SecondaryExitTable::PLANE_COUNT);
+            if force_repack {
+                semantic_used_len.max(installed_used_len)
+            } else {
+                semantic_used_len
+            }
+        } else {
+            complete_used_len
+        };
         let original = self.rom.logical_bytes().to_vec();
         let mut staged = original.clone();
         {
@@ -330,10 +387,15 @@ fn fixed_bytes_match(actual: &[u8], expected: &[u8], mutable: &[std::ops::Range<
 }
 
 fn used_plane_len(encoded: &[u8]) -> usize {
+    used_plane_len_in_planes(encoded, 0..SecondaryExitTable::PLANE_COUNT)
+}
+
+fn used_plane_len_in_planes(encoded: &[u8], planes: std::ops::Range<usize>) -> usize {
     (0..SecondaryExitTable::ENTRY_COUNT)
         .rev()
         .find(|index| {
-            (0..SecondaryExitTable::PLANE_COUNT)
+            planes
+                .clone()
                 .any(|plane| encoded[plane * SecondaryExitTable::ENTRY_COUNT + index] != 0)
         })
         .map_or(0, |index| index + 1)

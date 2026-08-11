@@ -926,6 +926,11 @@ impl AppState {
             Command::InstallRevisionProfile(profile) => self.install_revision_profile(*profile)?,
             Command::ClearRevisionProfile => self.clear_revision_profile()?,
             Command::DeleteCurrentLevel { rev } => self.delete_current_level(rev)?,
+            Command::DeleteLevels {
+                rev,
+                levels,
+                clear_original_level_area,
+            } => self.delete_levels(rev, &levels, clear_original_level_area)?,
             Command::CommitRomWrites {
                 expected_revision,
                 description,

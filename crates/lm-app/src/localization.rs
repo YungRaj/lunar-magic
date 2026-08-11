@@ -20,8 +20,8 @@ const MAX_LOCALE_BYTES: usize = 64;
 const MAX_TEXT_BYTES: usize = 4096;
 const MAX_DIALOG_TEXT_ENTRIES: usize = 4096;
 const LEGACY_CHROME_KEY_COUNT: usize = 19;
-const PREVIOUS_COMPLETE_KEY_COUNT: usize = 199;
-const EARLIER_COMPLETE_KEY_COUNTS: [usize; 2] = [183, 184];
+const PREVIOUS_COMPLETE_KEY_COUNT: usize = 201;
+const EARLIER_COMPLETE_KEY_COUNTS: [usize; 3] = [183, 184, 199];
 const MAX_ENCODED_BYTES: usize = MAGIC.len()
     + 2
     + MAX_LOCALE_BYTES
@@ -1051,6 +1051,16 @@ pub enum UiTextKey {
     FileOpenLevelFile,
     FileExtractOldBypassList,
     FileInsertOldBypassList,
+    FileDeleteMultipleLevels,
+    DeleteMultipleLevelsWindowTitle,
+    DeleteMultipleLevelsDescription,
+    DeleteMultipleLevelsModified,
+    DeleteMultipleLevelsUnmodified,
+    DeleteMultipleLevelsAll,
+    DeleteMultipleLevelsClearOriginal,
+    DeleteMultipleLevelsDependencyWarning,
+    FileClearOriginalLevelArea,
+    ClearOriginalLevelAreaDescription,
 }
 
 impl UiTextKey {
@@ -1294,10 +1304,26 @@ impl UiTextKey {
                 "Delete level {level} from the expanded ROM area and replace it with the original test level?"
             }
             Self::CommonDelete => "Delete",
+            Self::FileDeleteMultipleLevels => "Delete Multiple Levels from ROM…",
+            Self::DeleteMultipleLevelsWindowTitle => "Delete Multiple Levels from ROM",
+            Self::DeleteMultipleLevelsDescription => {
+                "Deleted levels are replaced with the test level in the original ROM area."
+            }
+            Self::DeleteMultipleLevelsModified => "Modified levels",
+            Self::DeleteMultipleLevelsUnmodified => "Unmodified levels",
+            Self::DeleteMultipleLevelsAll => "All levels",
+            Self::DeleteMultipleLevelsClearOriginal => "Clear Original Level Data Area",
+            Self::DeleteMultipleLevelsDependencyWarning => {
+                "Check dependencies before deleting: 000/100 bonus games, C8/1C8 Yoshi Wing, C5 intro, C7 title screen, and 104 Yoshi's House are used by the game."
+            }
+            Self::FileClearOriginalLevelArea => "Clear Original Level Data Area…",
+            Self::ClearOriginalLevelAreaDescription => {
+                "This will resave levels that have not been modified into the expanded ROM area, then clear the original level-data area for reuse."
+            }
         }
     }
 
-    pub const ALL: [Self; 201] = [
+    pub const ALL: [Self; 211] = [
         Self::AppTitle,
         Self::FileOpen,
         Self::FileSave,
@@ -1499,6 +1525,16 @@ impl UiTextKey {
         Self::FileOpenLevelFile,
         Self::FileExtractOldBypassList,
         Self::FileInsertOldBypassList,
+        Self::FileDeleteMultipleLevels,
+        Self::DeleteMultipleLevelsWindowTitle,
+        Self::DeleteMultipleLevelsDescription,
+        Self::DeleteMultipleLevelsModified,
+        Self::DeleteMultipleLevelsUnmodified,
+        Self::DeleteMultipleLevelsAll,
+        Self::DeleteMultipleLevelsClearOriginal,
+        Self::DeleteMultipleLevelsDependencyWarning,
+        Self::FileClearOriginalLevelArea,
+        Self::ClearOriginalLevelAreaDescription,
     ];
 
     fn from_byte(value: u8) -> Option<Self> {
@@ -2813,7 +2849,15 @@ mod tests {
             );
             assert_eq!(
                 upgraded.text(UiTextKey::FileExtractOldBypassList),
-                "Extract Old Bypass List from ROM…"
+                if count > UiTextKey::FileExtractOldBypassList as usize {
+                    "viejo-FileExtractOldBypassList"
+                } else {
+                    "Extract Old Bypass List from ROM…"
+                }
+            );
+            assert_eq!(
+                upgraded.text(UiTextKey::FileDeleteMultipleLevels),
+                "Delete Multiple Levels from ROM…"
             );
             assert_eq!(
                 LocalizationCatalog::decode(&upgraded.encode().unwrap()).unwrap(),
