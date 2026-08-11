@@ -442,6 +442,11 @@ impl NativeApplication {
             UserToolbarNativeAction::CountSpritesOnSave => {
                 self.set_count_sprites_on_save(!self.count_sprites_on_save.unwrap_or(true));
             }
+            UserToolbarNativeAction::CheckObjectPlacementOnSave => {
+                self.set_check_object_placement_on_save(
+                    !self.check_object_placement_on_save.unwrap_or(true),
+                );
+            }
             UserToolbarNativeAction::WarnVerticalFireballBuoyancy => {
                 self.set_warn_vertical_fireball_buoyancy(
                     !self.warn_vertical_fireball_buoyancy.unwrap_or(true),
@@ -1225,6 +1230,18 @@ impl NativeApplication {
         .into();
     }
 
+    pub(super) fn set_check_object_placement_on_save(&mut self, enabled: bool) {
+        self.check_object_placement_on_save = Some(enabled);
+        self.vanilla_level_editor
+            .set_check_object_placement_on_save(enabled);
+        self.app.status = if enabled {
+            "Enabled object-placement warning on level save"
+        } else {
+            "Disabled object-placement warning on level save"
+        }
+        .into();
+    }
+
     pub(super) fn set_warn_vertical_fireball_buoyancy(&mut self, enabled: bool) {
         self.warn_vertical_fireball_buoyancy = Some(enabled);
         self.vanilla_level_editor
@@ -1765,6 +1782,7 @@ enum UserToolbarNativeAction {
     RememberWindowSize,
     ScanExitsOnSave,
     CountSpritesOnSave,
+    CheckObjectPlacementOnSave,
     WarnVerticalFireballBuoyancy,
     GfxBypassListDialogs,
     JoinedGraphicsFiles,
@@ -1877,6 +1895,7 @@ fn user_toolbar_native_action(name: &str) -> Option<UserToolbarNativeAction> {
         "LM_OPTIONS_WINDOW_SIZE" => UserToolbarNativeAction::RememberWindowSize,
         "LM_OPTIONS_SCAN_EXITS" => UserToolbarNativeAction::ScanExitsOnSave,
         "LM_OPTIONS_SCAN_SPRITES" => UserToolbarNativeAction::CountSpritesOnSave,
+        "LM_OPTIONS_WARN_OBJECT" => UserToolbarNativeAction::CheckObjectPlacementOnSave,
         "LM_OPTIONS_WARN_SPRITE_33" => UserToolbarNativeAction::WarnVerticalFireballBuoyancy,
         "LM_OPTIONS_INSTALL_VRAM" => UserToolbarNativeAction::GfxBypassListDialogs,
         "LM_OPTIONS_ATTACH_FILES" => UserToolbarNativeAction::JoinedGraphicsFiles,
@@ -2933,7 +2952,7 @@ mod user_toolbar_tests {
                     || user_toolbar_native_action(entry.name).is_some()
             })
             .collect::<Vec<_>>();
-        assert_eq!(supported.len(), 296);
+        assert_eq!(supported.len(), 297);
         assert!(
             supported
                 .iter()
@@ -3231,6 +3250,34 @@ mod user_toolbar_tests {
             UserToolbarNativeAction::WarnVerticalFireballBuoyancy,
         );
         assert_eq!(native.warn_vertical_fireball_buoyancy, Some(true));
+    }
+
+    #[test]
+    fn object_placement_warning_command_toggles_the_original_default_on_preference() {
+        let mut native = NativeApplication::default();
+        assert_eq!(native.check_object_placement_on_save, None);
+        assert_eq!(
+            user_toolbar_native_action("LM_OPTIONS_WARN_OBJECT"),
+            Some(UserToolbarNativeAction::CheckObjectPlacementOnSave)
+        );
+        native.apply_user_toolbar_native_action(
+            &egui::Context::default(),
+            UserToolbarNativeAction::CheckObjectPlacementOnSave,
+        );
+        assert_eq!(native.check_object_placement_on_save, Some(false));
+        assert_eq!(
+            native.app.status,
+            "Disabled object-placement warning on level save"
+        );
+        native.apply_user_toolbar_native_action(
+            &egui::Context::default(),
+            UserToolbarNativeAction::CheckObjectPlacementOnSave,
+        );
+        assert_eq!(native.check_object_placement_on_save, Some(true));
+        assert_eq!(
+            native.app.status,
+            "Enabled object-placement warning on level save"
+        );
     }
 
     #[test]
@@ -3630,7 +3677,7 @@ mod user_toolbar_tests {
                     && user_toolbar_native_action(entry.name).is_none()
             })
             .collect::<Vec<_>>();
-        assert_eq!(unsupported.len(), 21);
+        assert_eq!(unsupported.len(), 20);
         if std::env::var_os("LM_DIAGNOSTIC_UNSUPPORTED_TOOLBAR_COMMANDS").is_some() {
             for entry in unsupported {
                 eprintln!(

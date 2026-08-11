@@ -4006,6 +4006,7 @@ fn set_rendered_cell(
     {
         // Lunar Magic sets its renderer bounds flags and keeps the cells already written by the
         // object. Vanilla levels rely on this clipping at vertical plane edges.
+        cache.mark_after_last_boundary();
         return Ok(());
     }
     cache.set(layout, x, y, tile)?;
@@ -4037,22 +4038,27 @@ fn set_placement_cell_signed(
 ) -> Result<(), StandardObjectRenderError> {
     let (x, y) = if layout.vertical {
         let Some(x) = usize::from(placement.minor).checked_add_signed(major_offset) else {
+            cache.mark_before_first_boundary();
             return Ok(());
         };
         let Some(y) = usize::from(placement.major).checked_add_signed(minor_offset) else {
+            cache.mark_before_first_boundary();
             return Ok(());
         };
         (x, y)
     } else {
         let Some(x) = usize::from(placement.major).checked_add_signed(major_offset) else {
+            cache.mark_before_first_boundary();
             return Ok(());
         };
         let Some(y) = usize::from(placement.minor).checked_add_signed(minor_offset) else {
+            cache.mark_before_first_boundary();
             return Ok(());
         };
         (x, y)
     };
     if x >= layout.width || y >= layout.height {
+        cache.mark_after_last_boundary();
         return Ok(());
     }
     set_rendered_cell(cache, layout, x, y, tile)
@@ -7964,6 +7970,31 @@ mod tests {
             cache.cells()[NativeLevelMap16Cache::cell_index(layout, 1, 4)],
             u16::MAX
         );
+    }
+
+    #[test]
+    fn clipped_object_paints_retain_lunar_magics_two_bounds_flags() {
+        let layout = NativeLevelMap16Layout {
+            width: 32,
+            height: 16,
+            page_stride: 0x1b0,
+            base_cell: 0,
+            vertical: false,
+        };
+        let placement = lm_level::NativeObjectPlacement {
+            record_index: 0,
+            screen: 0,
+            major: 0,
+            minor: 0,
+            major_span: 1,
+            minor_span: 1,
+        };
+        let mut cache = NativeLevelMap16Cache::filled(0x25);
+        set_placement_cell_signed(&mut cache, layout, placement, -1, 0, 0x100).unwrap();
+        assert_eq!(cache.bounds_flags(), 1);
+        set_placement_cell_signed(&mut cache, layout, placement, 32, 0, 0x101).unwrap();
+        assert_eq!(cache.bounds_flags(), 3);
+        assert!(cache.writes().is_empty());
     }
 
     #[test]

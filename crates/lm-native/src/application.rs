@@ -214,6 +214,7 @@ pub(crate) struct NativeApplication {
     remember_window_size: Option<bool>,
     scan_exits_on_save: Option<bool>,
     count_sprites_on_save: Option<bool>,
+    check_object_placement_on_save: Option<bool>,
     warn_vertical_fireball_buoyancy: Option<bool>,
     gfx_bypass_list_dialogs: Option<bool>,
     overworld_editor: OverworldEditor,
@@ -312,6 +313,8 @@ impl NativeApplication {
     const SCAN_EXITS_ON_SAVE_STORAGE_KEY: &'static str = "lunar_magic_rust.scan_exits_on_save.v1";
     const COUNT_SPRITES_ON_SAVE_STORAGE_KEY: &'static str =
         "lunar_magic_rust.count_sprites_on_save.v1";
+    const CHECK_OBJECT_PLACEMENT_STORAGE_KEY: &'static str =
+        "lunar_magic_rust.check_object_placement_on_save.v1";
     const WARN_VERTICAL_FIREBALL_STORAGE_KEY: &'static str =
         "lunar_magic_rust.warn_vertical_fireball_buoyancy.v1";
     const GFX_BYPASS_LIST_DIALOGS_STORAGE_KEY: &'static str =
@@ -662,6 +665,12 @@ impl NativeApplication {
                     self.effects.error =
                         Some(format!("cannot load sprite-count preference: {error}"));
                 }
+            }
+        }
+        if let Some(encoded) = storage.get_string(Self::CHECK_OBJECT_PLACEMENT_STORAGE_KEY) {
+            match decode_enabled_preference(&encoded, "object-placement save warning") {
+                Ok(enabled) => self.check_object_placement_on_save = Some(enabled),
+                Err(error) => self.effects.error = Some(error),
             }
         }
         if let Some(encoded) = storage.get_string(Self::WARN_VERTICAL_FIREBALL_STORAGE_KEY) {
@@ -1170,6 +1179,10 @@ impl eframe::App for NativeApplication {
             encode_count_sprites_on_save_preference(self.count_sprites_on_save.unwrap_or(true)),
         );
         storage.set_string(
+            Self::CHECK_OBJECT_PLACEMENT_STORAGE_KEY,
+            encode_enabled_preference(self.check_object_placement_on_save.unwrap_or(true)),
+        );
+        storage.set_string(
             Self::WARN_VERTICAL_FIREBALL_STORAGE_KEY,
             encode_enabled_preference(self.warn_vertical_fireball_buoyancy.unwrap_or(true)),
         );
@@ -1234,6 +1247,10 @@ impl eframe::App for NativeApplication {
                 .set_scan_exits_on_save(self.scan_exits_on_save.unwrap_or(true));
             self.vanilla_level_editor
                 .set_count_sprites_on_save(self.count_sprites_on_save.unwrap_or(true));
+            self.vanilla_level_editor
+                .set_check_object_placement_on_save(
+                    self.check_object_placement_on_save.unwrap_or(true),
+                );
             self.vanilla_level_editor
                 .set_warn_vertical_fireball_buoyancy(
                     self.warn_vertical_fireball_buoyancy.unwrap_or(true),
@@ -2288,6 +2305,22 @@ mod preference_tests {
             let mut reopened = NativeApplication::default();
             reopened.load_persistent_preferences(Some(&storage));
             assert_eq!(reopened.warn_vertical_fireball_buoyancy, Some(expected));
+        }
+    }
+
+    #[test]
+    fn native_save_and_reopen_persist_object_placement_warning() {
+        for expected in [false, true] {
+            let mut source = NativeApplication {
+                check_object_placement_on_save: Some(expected),
+                ..NativeApplication::default()
+            };
+            let mut storage = MemoryStorage::default();
+            eframe::App::save(&mut source, &mut storage);
+
+            let mut reopened = NativeApplication::default();
+            reopened.load_persistent_preferences(Some(&storage));
+            assert_eq!(reopened.check_object_placement_on_save, Some(expected));
         }
     }
 

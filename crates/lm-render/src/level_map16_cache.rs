@@ -18,6 +18,7 @@ pub struct NativeLevelMap16Cache {
     cells: Vec<u16>,
     written: Vec<bool>,
     writes: Vec<NativeLevelMap16Write>,
+    bounds_flags: u8,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -56,6 +57,7 @@ impl NativeLevelMap16Cache {
             cells: vec![tile; LEVEL_MAP16_CACHE_CELLS],
             written: vec![false; LEVEL_MAP16_CACHE_CELLS],
             writes: Vec::new(),
+            bounds_flags: 0,
         }
     }
 
@@ -75,6 +77,7 @@ impl NativeLevelMap16Cache {
                 .collect(),
             written: vec![false; LEVEL_MAP16_CACHE_CELLS],
             writes: Vec::new(),
+            bounds_flags: 0,
         })
     }
 
@@ -91,6 +94,23 @@ impl NativeLevelMap16Cache {
         &self.cells
     }
 
+    /// Matches Lunar Magic's renderer-side placement diagnostic: bit 0 means a tile was painted
+    /// before the first top/left edge, and bit 1 means one was painted beyond the last
+    /// bottom/right edge. Clipped cells remain absent from the cache just as they do in Lunar
+    /// Magic; this state only records why they were clipped.
+    #[must_use]
+    pub const fn bounds_flags(&self) -> u8 {
+        self.bounds_flags
+    }
+
+    pub(crate) fn mark_before_first_boundary(&mut self) {
+        self.bounds_flags |= 1;
+    }
+
+    pub(crate) fn mark_after_last_boundary(&mut self) {
+        self.bounds_flags |= 2;
+    }
+
     /// Returns every explicit cache write in execution order.
     #[must_use]
     pub fn writes(&self) -> &[NativeLevelMap16Write] {
@@ -103,6 +123,7 @@ impl NativeLevelMap16Cache {
     /// each stream independently and merging only written cells reproduces that partition without
     /// allowing either renderer's blank initialization to erase the other layer.
     pub fn overlay_written_cells(&mut self, source: &Self) {
+        self.bounds_flags |= source.bounds_flags;
         for index in 0..LEVEL_MAP16_CACHE_CELLS {
             if source.written[index] {
                 self.cells[index] = source.cells[index];

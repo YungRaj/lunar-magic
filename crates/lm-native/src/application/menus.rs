@@ -575,6 +575,26 @@ impl NativeApplication {
             {
                 self.set_count_sprites_on_save(count_sprites);
             }
+            let mut check_object_placement = self.check_object_placement_on_save.unwrap_or(true);
+            if ui
+                .checkbox(
+                    &mut check_object_placement,
+                    "Check Object Placement on Save to ROM",
+                )
+                .changed()
+            {
+                self.set_check_object_placement_on_save(check_object_placement);
+            }
+            let mut warn_vertical_fireball = self.warn_vertical_fireball_buoyancy.unwrap_or(true);
+            if ui
+                .checkbox(
+                    &mut warn_vertical_fireball,
+                    "Check if Vertical Fireball has Buoyancy",
+                )
+                .changed()
+            {
+                self.set_warn_vertical_fireball_buoyancy(warn_vertical_fireball);
+            }
             let locale = self.app.localization().map_or_else(
                 || self.menu_text(UiTextKey::ToolsBuiltInEnglish),
                 |catalog| catalog.locale().into(),

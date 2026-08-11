@@ -975,6 +975,16 @@ intent. Focused detection, both-buoyancy-bit, continuation, cancellation, toggle
 command-partition tests pass. The authenticated partition is now **296 routed / 21 pending**. The
 aggregate remains 59/65 because the configuration row is still Partial.
 
+Toolbar coverage update (2026-08-11, unsafe object-placement warning): authenticated
+`LM_OPTIONS_WARN_OBJECT` `$24D4` now routes the original default-on, persisted save check. Actual
+standard/extended/Direct-Map16 rendering records Lunar Magic's separate before-first and after-last
+clipping flags without changing cache pixels, and the save pipeline combines Layer 1 with
+object-backed Layer 2. The warning retains the exact prepared command through Save Anyway, aborts
+all deferred save continuations on Cancel, and precedes the already-routed vertical-fireball gate.
+Focused renderer-flag, staged-level, continuation, cancellation, toggle, persistence, and command-
+partition tests pass. The authenticated partition is now **297 routed / 20 pending**. The aggregate
+remains 59/65 because the configuration row is still Partial.
+
 Toolbar coverage update (2026-08-10, old ExGFX bypass list): authenticated
 `LM_FILE_EXTRACT_EXGFX_LIST` `$239B` and `LM_FILE_INSERT_EXGFX_LIST` `$239C` now transfer the exact
 legacy `$400`-byte `Bypass.lst` table rather than aliasing ordinary ExGFX file transfer. Bundled-help,

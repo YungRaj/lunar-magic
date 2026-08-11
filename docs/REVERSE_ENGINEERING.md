@@ -4978,6 +4978,19 @@ presence byte and tests `(sprite_header & $C0) == 0`, so either buoyancy choice 
 interactive branch appends the option guidance and “Save the level anyway?” prompt; No and Cancel
 return the abort result to the enclosing save transaction.
 
+## Unsafe object-placement save check
+
+Command `$24D4` (`LM_OPTIONS_WARN_OBJECT`) resolves through the command-byte table at
+`$00498AA7` to central dispatcher case `$9D`, which toggles `$005E7AE5`. The PE initializes that
+byte to one, and `SynchronizeApplicationSettingsRegistry` stores it in `Options` bit 19.
+`SaveLevelToRom` reads it at `$004832FC` and calls
+`ReportOutOfBoundsObjectPlacementWarning` at `$0048BD50` after sprite counting and before the
+vertical-fireball check. The helper reads `g_dwLevelObjectRenderBoundsFlags`: bit 0 selects the
+“top or left side of the first” warning, while a nonzero value without bit 0 selects “bottom or
+right side of the last.” Its interactive branch asks whether to save anyway, and No or Cancel
+aborts the enclosing transaction. The 3.63 help independently identifies this as the unsafe SNES
+RAM-placement check and says disabling the option suppresses the save warning.
+
 ## Dedicated overworld animation-options runtime
 
 Lunar Magic 3.63 installs the per-map overworld animation-option storage through the dedicated

@@ -5941,6 +5941,19 @@ clear. Save Anyway releases the exact prepared commit; Cancel also clears deferr
 editor-transition, and expansion intent. Disabling the persisted option bypasses only this warning.
 Authenticated native command coverage is now 296 of 317 named slots, leaving 21 pending.
 
+## Object-placement save warning (`$24D4`)
+
+The authenticated command maps `LM_OPTIONS_WARN_OBJECT` to dispatcher case `$9D`, toggling
+default-on byte `$005E7AE5`; registry synchronization stores it in `Options` bit 19. Lunar Magic's
+`SaveLevelToRom` runs `ReportOutOfBoundsObjectPlacementWarning` after the sprite-count check and
+before the vertical-fireball check. Rust now retains the renderer's two clipping flags while
+leaving its pixels unchanged: bit 0 records a paint before the first top/left edge and bit 1 records
+a paint beyond the last bottom/right edge. Layer 1 and object-backed Layer 2 contribute to one
+save-time result. The persisted Tools option gates the original-shaped Save Anyway/Cancel dialog;
+acceptance continues to the vertical-fireball check and cancellation clears deferred navigation,
+editor transition, and expansion intent. Authenticated native command coverage is now 297 of 317
+named slots, leaving 20 pending.
+
 ## Deprecated Select FG/BG commands (`$2473/$2474`)
 
 Both authenticated central dispatch bytes are `$DF`, while the Lunar Magic 3.63 command switch

@@ -485,6 +485,12 @@ struct SpriteCountSaveWarning {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
+struct ObjectPlacementSaveWarning {
+    bounds_flags: u8,
+    command: Command,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
 struct VerticalFireballSaveWarning {
     command: Command,
 }
@@ -577,6 +583,7 @@ pub(crate) struct VanillaLevelEditor {
     invalid_exit_scan_result: Option<InvalidExitScanResult>,
     invalid_exit_save_warning: Option<InvalidExitSaveWarning>,
     sprite_count_save_warning: Option<SpriteCountSaveWarning>,
+    object_placement_save_warning: Option<ObjectPlacementSaveWarning>,
     vertical_fireball_save_warning: Option<VerticalFireballSaveWarning>,
     game_preview: Option<bool>,
     snes_viewport: Option<bool>,
@@ -591,6 +598,7 @@ pub(crate) struct VanillaLevelEditor {
     background_cursor_highlight: Option<bool>,
     scan_exits_on_save: Option<bool>,
     count_sprites_on_save: Option<bool>,
+    check_object_placement_on_save: Option<bool>,
     warn_vertical_fireball_buoyancy: Option<bool>,
     auto_set_screens: Option<bool>,
     allow_fragmentation: Option<bool>,
@@ -698,6 +706,13 @@ impl VanillaLevelEditor {
 
     pub(crate) fn set_count_sprites_on_save(&mut self, enabled: bool) {
         self.count_sprites_on_save = Some(enabled);
+    }
+
+    pub(crate) fn set_check_object_placement_on_save(&mut self, enabled: bool) {
+        self.check_object_placement_on_save = Some(enabled);
+        if !enabled {
+            self.object_placement_save_warning = None;
+        }
     }
 
     pub(crate) fn set_warn_vertical_fireball_buoyancy(&mut self, enabled: bool) {
@@ -863,7 +878,14 @@ impl VanillaLevelEditor {
                 Err(error) => self.error = Some(error),
             }
         }
-        if let Some(command) = self.show_sprite_count_save_warning(ui.ctx())
+        if let Some(command) = self.show_sprite_count_save_warning(ui.ctx()) {
+            match self.request_object_placement_before_save(command) {
+                Ok(Some(command)) => return Some(command),
+                Ok(None) => {}
+                Err(error) => self.error = Some(error),
+            }
+        }
+        if let Some(command) = self.show_object_placement_save_warning(ui.ctx())
             && let Some(command) = self.request_vertical_fireball_before_save(command)
         {
             return Some(command);
@@ -2119,6 +2141,7 @@ impl VanillaLevelEditor {
         self.invalid_exit_scan_result = None;
         self.invalid_exit_save_warning = None;
         self.sprite_count_save_warning = None;
+        self.object_placement_save_warning = None;
         self.vertical_fireball_save_warning = None;
         self.pending_layer2_mode_reset = None;
         self.canvas_entity_selection = None;
@@ -2324,6 +2347,7 @@ impl VanillaLevelEditor {
         self.invalid_exit_scan_result = None;
         self.invalid_exit_save_warning = None;
         self.sprite_count_save_warning = None;
+        self.object_placement_save_warning = None;
         self.vertical_fireball_save_warning = None;
         self.entrance_controller = None;
         self.secondary_exits = None;
@@ -3358,7 +3382,7 @@ impl VanillaLevelEditor {
         command: Command,
     ) -> Result<Option<Command>, String> {
         if !self.count_sprites_on_save.unwrap_or(true) {
-            return Ok(self.request_vertical_fireball_before_save(command));
+            return self.request_object_placement_before_save(command);
         }
         let controller = self
             .controller
@@ -3371,10 +3395,124 @@ impl VanillaLevelEditor {
         );
         Ok(
             match self.gate_sprite_count_save_result(count, limit, command) {
-                Some(command) => self.request_vertical_fireball_before_save(command),
+                Some(command) => self.request_object_placement_before_save(command)?,
                 None => None,
             },
         )
+    }
+
+    fn scan_object_placement_bounds(&self) -> Result<u8, String> {
+        let controller = self
+            .controller
+            .as_ref()
+            .ok_or_else(|| "the current level is unavailable".to_owned())?;
+        let handler_map = self
+            .active_standard_object_handler_map()
+            .ok_or_else(|| "the active standard-object handler map is unavailable".to_owned())?;
+        let vertical = controller.level().layer1.header.is_vertical();
+        let major_tiles = (u16::from(controller.level().layer1.header.last_screen()) + 1) * 16;
+        let minor_tiles = level_minor_tile_limit(vertical);
+        let layout = lm_render::NativeLevelMap16Layout {
+            width: usize::from(if vertical { minor_tiles } else { major_tiles }),
+            height: usize::from(if vertical { major_tiles } else { minor_tiles }),
+            page_stride: 0x1b0,
+            base_cell: 0,
+            vertical,
+        };
+        let mut definitions = lm_render::StandardObjectDefinitionSet::empty();
+        lm_render::install_lunar_magic_shared_extended_objects(&mut definitions)
+            .map_err(|error| error.to_string())?;
+        lm_render::install_lunar_magic_tileset_extended_objects(
+            &mut definitions,
+            controller.level().layer1.header.object_tileset(),
+        )
+        .map_err(|error| error.to_string())?;
+        lm_render::install_lunar_magic_shared_standard_objects(&mut definitions)
+            .map_err(|error| error.to_string())?;
+        let layer2 = controller.layer2().and_then(|layer| match layer {
+            lm_level::NativeLayer2Data::Objects(data) => Some(&data.objects),
+            lm_level::NativeLayer2Data::Tilemap(_) => None,
+        });
+        let visual_layer1 = visual_level_object_stream(&controller.level().layer1.objects.records);
+        let mut bounds_flags = 0;
+        for stream in std::iter::once(&visual_layer1).chain(layer2) {
+            if stream.records.is_empty() {
+                continue;
+            }
+            let report = lm_render::render_mapped_standard_object_stream(
+                stream,
+                &definitions,
+                handler_map,
+                layout,
+                VANILLA_EMPTY_MAP16_TILE,
+            )
+            .map_err(|error| error.to_string())?;
+            bounds_flags |= report.cache.bounds_flags();
+        }
+        Ok(bounds_flags)
+    }
+
+    fn request_object_placement_before_save(
+        &mut self,
+        command: Command,
+    ) -> Result<Option<Command>, String> {
+        if !self.check_object_placement_on_save.unwrap_or(true) {
+            return Ok(self.request_vertical_fireball_before_save(command));
+        }
+        let bounds_flags = self.scan_object_placement_bounds()?;
+        if bounds_flags == 0 {
+            return Ok(self.request_vertical_fireball_before_save(command));
+        }
+        self.object_placement_save_warning = Some(ObjectPlacementSaveWarning {
+            bounds_flags,
+            command,
+        });
+        Ok(None)
+    }
+
+    fn resolve_object_placement_save_warning(&mut self, save_anyway: bool) -> Option<Command> {
+        let warning = self.object_placement_save_warning.take()?;
+        if save_anyway {
+            return Some(warning.command);
+        }
+        self.screen_exit_follow_after_save = None;
+        self.editor_transition_after_save = None;
+        self.pending_expansion_commit = None;
+        None
+    }
+
+    fn show_object_placement_save_warning(&mut self, context: &egui::Context) -> Option<Command> {
+        let warning = self.object_placement_save_warning.clone()?;
+        let edge = if warning.bounds_flags & 1 != 0 {
+            "top or left side of the first"
+        } else {
+            "bottom or right side of the last"
+        };
+        let mut save_anyway = false;
+        let mut cancel = false;
+        egui::Window::new("Check Object Placement on Save to ROM")
+            .collapsible(false)
+            .resizable(false)
+            .show(context, |ui| {
+                ui.label(format!("There is at least 1 object that is placing tiles beyond the {edge} screen in the level. This can corrupt SNES RAM during gameplay."));
+                ui.label("To disable this warning, turn off “Check Object Placement on Save to ROM” in Tools.");
+                ui.label("Save the level anyway?");
+                ui.horizontal(|ui| {
+                    if ui.button("Save Anyway").clicked() {
+                        save_anyway = true;
+                    }
+                    if ui.button("Cancel").clicked() {
+                        cancel = true;
+                    }
+                });
+            });
+        if save_anyway {
+            return self.resolve_object_placement_save_warning(true);
+        }
+        if cancel {
+            return self.resolve_object_placement_save_warning(false);
+        }
+        None
     }
 
     fn gate_sprite_count_save_result(
@@ -16130,6 +16268,7 @@ mod tests {
                     auto_set_screens: Some(false),
                     scan_exits_on_save: Some(false),
                     count_sprites_on_save: Some(false),
+                    check_object_placement_on_save: Some(false),
                     ..VanillaLevelEditor::default()
                 },
             )
@@ -16195,6 +16334,7 @@ mod tests {
             auto_set_screens: Some(false),
             scan_exits_on_save: Some(false),
             count_sprites_on_save: Some(false),
+            check_object_placement_on_save: Some(false),
             ..VanillaLevelEditor::default()
         };
         assert!(editor.request_save_prompt_transition(transition.clone()));
@@ -21273,6 +21413,98 @@ mod tests {
     }
 
     #[test]
+    fn object_placement_warning_uses_actual_renderer_clipping_and_preserves_intent() {
+        let command = Command::SelectLevel(0x106);
+        let mut warning_only = VanillaLevelEditor {
+            object_placement_save_warning: Some(ObjectPlacementSaveWarning {
+                bounds_flags: 2,
+                command: command.clone(),
+            }),
+            ..VanillaLevelEditor::default()
+        };
+        assert_eq!(
+            warning_only.resolve_object_placement_save_warning(true),
+            Some(command.clone())
+        );
+        warning_only.screen_exit_follow_after_save = Some(PendingScreenExitFollowSave {
+            destination: 0x106,
+            final_revision: 1,
+            intermediate_revision: None,
+        });
+        warning_only.object_placement_save_warning = Some(ObjectPlacementSaveWarning {
+            bounds_flags: 1,
+            command: command.clone(),
+        });
+        assert_eq!(
+            warning_only.resolve_object_placement_save_warning(false),
+            None
+        );
+        assert!(warning_only.screen_exit_follow_after_save.is_none());
+
+        let mut app = AppState::default();
+        app.load_rom(crate::test_support::pristine_smw_us_rom_bytes())
+            .unwrap();
+        app.dispatch(Command::SelectLevel(0x105)).unwrap();
+        let snapshot = app.controller_snapshot().unwrap();
+        let key = EditorKey {
+            revision: snapshot.revision,
+            level: 0x105,
+            sprite_lengths_signature: ssc_sprite_lengths_signature(None),
+        };
+        let mut editor = VanillaLevelEditor::default();
+        editor.load(&snapshot, key, None);
+        assert_eq!(editor.scan_object_placement_bounds().unwrap(), 0);
+        let last_screen = u16::from(
+            editor
+                .controller
+                .as_ref()
+                .unwrap()
+                .level()
+                .layer1
+                .header
+                .last_screen(),
+        );
+        editor
+            .controller
+            .as_mut()
+            .unwrap()
+            .apply_edits(&[NativeLevelEdit::Objects(vec![
+                ObjectEdit::InsertOrdinaryAtPosition {
+                    record: ObjectRecord::direct_map16_rectangle(0x100, 16, 1).unwrap(),
+                    screen: last_screen,
+                    coordinates: lm_level::ObjectCoordinateNibbles {
+                        first: 0x0f,
+                        second: 0x04,
+                    },
+                    perpendicular_high: false,
+                },
+            ])])
+            .unwrap();
+        assert_eq!(editor.scan_object_placement_bounds().unwrap() & 2, 2);
+        assert_eq!(
+            editor
+                .request_object_placement_before_save(command.clone())
+                .unwrap(),
+            None
+        );
+        assert_eq!(
+            editor.object_placement_save_warning,
+            Some(ObjectPlacementSaveWarning {
+                bounds_flags: 2,
+                command: command.clone(),
+            })
+        );
+        editor.set_check_object_placement_on_save(false);
+        editor.set_warn_vertical_fireball_buoyancy(false);
+        assert_eq!(
+            editor
+                .request_object_placement_before_save(command.clone())
+                .unwrap(),
+            Some(command)
+        );
+    }
+
+    #[test]
     fn vertical_fireball_save_warning_preserves_save_or_abort_intent() {
         let command = Command::CommitRomWrites {
             expected_revision: 7,
@@ -21376,6 +21608,8 @@ mod tests {
         let mut editor = VanillaLevelEditor::default();
         editor.set_scan_exits_on_save(false);
         editor.set_count_sprites_on_save(false);
+        editor.set_check_object_placement_on_save(false);
+        editor.set_warn_vertical_fireball_buoyancy(false);
         assert_eq!(
             editor
                 .request_exit_scan_before_save(&snapshot, None, command.clone())
