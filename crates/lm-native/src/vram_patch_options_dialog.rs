@@ -33,10 +33,20 @@ pub(crate) struct VramPatchOptionsDialog {
 }
 
 impl VramPatchOptionsDialog {
-    pub(crate) fn open(&mut self, app: &AppState) {
+    pub(crate) fn open(
+        &mut self,
+        app: &AppState,
+        pending: Option<VramPatchSelection>,
+    ) {
         match detect(app) {
             Ok(state) => {
-                self.model = Some(dialog_model(&state));
+                let mut model = dialog_model(&state);
+                if let Some(selection) = pending
+                    && selection_enabled(&model, selection)
+                {
+                    model.selected = selection;
+                }
+                self.model = Some(model);
                 self.error = None;
                 self.open = true;
             }
@@ -134,6 +144,26 @@ impl VramPatchOptionsDialog {
 
     pub(crate) fn take_pending(&mut self) -> Option<VramPatchSelection> {
         self.pending.take()
+    }
+}
+
+pub(crate) fn effective_selection(app: &AppState) -> Option<VramPatchSelection> {
+    match detect(app).ok()? {
+        SmwUsV1VramPatchState::Absent => Some(VramPatchSelection::Normal),
+        SmwUsV1VramPatchState::Installed { version, .. } => Some(match version {
+            2 => VramPatchSelection::Hd16x9,
+            3 => VramPatchSelection::Hd21x9,
+            _ => VramPatchSelection::Normal,
+        }),
+        SmwUsV1VramPatchState::Unknown { .. } => None,
+    }
+}
+
+const fn selection_enabled(model: &VramPatchDialogModel, selection: VramPatchSelection) -> bool {
+    match selection {
+        VramPatchSelection::None => model.none_enabled,
+        VramPatchSelection::Normal => model.normal_enabled,
+        VramPatchSelection::Hd16x9 | VramPatchSelection::Hd21x9 => model.hd_enabled,
     }
 }
 
@@ -332,6 +362,24 @@ mod tests {
                 recognized: true,
             }
         );
+    }
+
+    #[test]
+    fn pristine_rom_defaults_the_save_runtime_on_and_dialog_retains_a_pending_toggle() {
+        let mut app = AppState::default();
+        app.load_rom(vanilla_bytes()).unwrap();
+        assert_eq!(effective_selection(&app), Some(VramPatchSelection::Normal));
+
+        let mut dialog = VramPatchOptionsDialog::default();
+        dialog.open(&app, Some(VramPatchSelection::None));
+        assert_eq!(dialog.model.unwrap().selected, VramPatchSelection::None);
+    }
+
+    #[test]
+    fn unknown_runtime_has_no_automatic_save_selection() {
+        let mut app = AppState::default();
+        app.load_rom(old_or_unknown_runtime_bytes(false)).unwrap();
+        assert_eq!(effective_selection(&app), None);
     }
 
     #[test]

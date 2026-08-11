@@ -667,7 +667,31 @@ impl NativeApplication {
                 .into();
             }
             UserToolbarNativeAction::VramPatchOptions => {
-                self.vram_patch_options_dialog.open(&self.app);
+                self.vram_patch_options_dialog
+                    .open(&self.app, self.pending_vram_patch_selection);
+            }
+            UserToolbarNativeAction::InstallVramPatch => {
+                let current = self.pending_vram_patch_selection.or_else(|| {
+                    crate::vram_patch_options_dialog::effective_selection(&self.app)
+                });
+                let enabled = !matches!(
+                    current,
+                    Some(crate::vram_patch_options_dialog::VramPatchSelection::Normal)
+                        | Some(crate::vram_patch_options_dialog::VramPatchSelection::Hd16x9)
+                        | Some(crate::vram_patch_options_dialog::VramPatchSelection::Hd21x9)
+                );
+                self.pending_vram_patch_selection = Some(if enabled {
+                    crate::vram_patch_options_dialog::VramPatchSelection::Normal
+                } else {
+                    crate::vram_patch_options_dialog::VramPatchSelection::None
+                });
+                self.vram_patch_selection_initialized = true;
+                self.app.status = if enabled {
+                    "Enabled VRAM patch installation on the next level save"
+                } else {
+                    "Disabled VRAM patch installation for the next level save"
+                }
+                .into();
             }
             UserToolbarNativeAction::GraphicsCompressionOptions => {
                 self.graphics_migration_dialog.open(&self.app);
@@ -1981,6 +2005,7 @@ enum UserToolbarNativeAction {
     SavePrompt,
     MouseGestures,
     SaveMouseGestures,
+    InstallVramPatch,
     VramPatchOptions,
     GraphicsCompressionOptions,
     GeneralOptions,
@@ -2109,6 +2134,7 @@ fn user_toolbar_native_action(name: &str) -> Option<UserToolbarNativeAction> {
         "LM_OPTIONS_SAVE_PROMPT" => UserToolbarNativeAction::SavePrompt,
         "LM_OPTIONS_MOUSE_GESTURES" => UserToolbarNativeAction::MouseGestures,
         "LM_OPTIONS_SAVE_GESTURES" => UserToolbarNativeAction::SaveMouseGestures,
+        "LM_OPTIONS_INSTALL_VRAM" => UserToolbarNativeAction::InstallVramPatch,
         "LM_OPTIONS_VRAM" => UserToolbarNativeAction::VramPatchOptions,
         "LM_OPTIONS_COMPRESSION" => UserToolbarNativeAction::GraphicsCompressionOptions,
         "LM_OPTIONS_GENERAL" => UserToolbarNativeAction::GeneralOptions,
@@ -3173,7 +3199,7 @@ mod user_toolbar_tests {
                     || user_toolbar_native_action(entry.name).is_some()
             })
             .collect::<Vec<_>>();
-        assert_eq!(supported.len(), 311);
+        assert_eq!(supported.len(), 312);
         assert!(
             supported
                 .iter()
@@ -3820,8 +3846,34 @@ mod user_toolbar_tests {
     }
 
     #[test]
-    fn historical_install_vram_name_is_not_the_gfx_bypass_dialog_preference() {
-        assert_eq!(user_toolbar_native_action("LM_OPTIONS_INSTALL_VRAM"), None);
+    fn historical_install_vram_name_toggles_the_next_save_patch_state() {
+        assert_eq!(
+            user_toolbar_native_action("LM_OPTIONS_INSTALL_VRAM"),
+            Some(UserToolbarNativeAction::InstallVramPatch)
+        );
+        let mut native = NativeApplication::default();
+        native
+            .app
+            .load_rom(crate::test_support::pristine_smw_us_rom_bytes())
+            .unwrap();
+        assert_eq!(native.pending_vram_patch_selection, None);
+
+        native.apply_user_toolbar_native_action(
+            &egui::Context::default(),
+            UserToolbarNativeAction::InstallVramPatch,
+        );
+        assert_eq!(
+            native.pending_vram_patch_selection,
+            Some(crate::vram_patch_options_dialog::VramPatchSelection::None)
+        );
+        native.apply_user_toolbar_native_action(
+            &egui::Context::default(),
+            UserToolbarNativeAction::InstallVramPatch,
+        );
+        assert_eq!(
+            native.pending_vram_patch_selection,
+            Some(crate::vram_patch_options_dialog::VramPatchSelection::Normal)
+        );
     }
 
     #[test]
@@ -4244,7 +4296,7 @@ mod user_toolbar_tests {
                     && user_toolbar_native_action(entry.name).is_none()
             })
             .collect::<Vec<_>>();
-        assert_eq!(unsupported.len(), 6);
+        assert_eq!(unsupported.len(), 5);
         if std::env::var_os("LM_DIAGNOSTIC_UNSUPPORTED_TOOLBAR_COMMANDS").is_some() {
             for entry in unsupported {
                 eprintln!(

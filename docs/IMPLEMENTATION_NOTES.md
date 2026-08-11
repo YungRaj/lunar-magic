@@ -5560,6 +5560,24 @@ The corrected full native gate passes 1,150 tests with 13 explicit fixture ignor
 235/235, the all-512 traversal, byte-identical 513-line manifest, and i686 cross-build remain
 green.
 
+## Historical Install VRAM option (`$24C4`)
+
+The selector-$8E route is the direct checked state for the same per-ROM runtime configured by the
+newer `$24E8` dialog. `ValidateAndInitializeOpenedRom` reads `$0060905E`, replaces vanilla `$FF`
+with 1, and stores its nonzero predicate in `$005E7AE3`. `SaveLevelToRom` gates the complete
+`CheckVramPatchSignatureByte` / install / compatibility / replacement sequence and its Layer-3
+support runtimes on that byte. The disabled branch skips installation without attempting to remove
+an existing runtime. The byte also selects the original 0x54-versus-0x80 sprite warning limit and
+the expanded-stream `$FF` escape path.
+
+Rust now derives an automatic next-save choice from authenticated ROM state: pristine selects
+Normal, recognized installed versions retain their selection, and unknown runtimes receive no
+automatic mutation. The historical toolbar command toggles Normal versus None, while the full
+options dialog opens on any pending compatible choice. A level save composes the default or
+explicit choice into the existing revision-bound installation transaction; close/reload clears the
+temporary override, and reopen redetects the installed runtime. Command coverage advances to
+312/317, leaving five pending ROM options.
+
 ## Per-level music bypass (`$2522`)
 
 Port-8089 recovery maps byte-table selector `$AC` to resource `$0400` and dialog procedure

@@ -287,6 +287,7 @@ pub(crate) struct NativeApplication {
     graphics_migration_dialog: GraphicsMigrationDialog,
     vram_patch_options_dialog: VramPatchOptionsDialog,
     pending_vram_patch_selection: Option<crate::vram_patch_options_dialog::VramPatchSelection>,
+    vram_patch_selection_initialized: bool,
     ips_create_dialog: IpsCreateDialog,
     ips_patch_dialog: IpsPatchDialog,
     copier_header_dialog: CopierHeaderDialog,
@@ -899,6 +900,7 @@ impl NativeApplication {
             Ok(effects) => {
                 if clears_deferred_vram {
                     self.pending_vram_patch_selection = None;
+                    self.vram_patch_selection_initialized = false;
                 }
                 self.effects.handle(&mut self.app, context, effects);
                 true
@@ -1473,8 +1475,14 @@ impl eframe::App for NativeApplication {
                 .set_mouse_gestures(self.mouse_gestures.unwrap_or(true));
             self.vanilla_level_editor
                 .set_convert_berry_gfx_tile(self.convert_berry_gfx_tile.unwrap_or(true));
+            if !self.vram_patch_selection_initialized && self.app.project().is_some() {
+                self.pending_vram_patch_selection =
+                    crate::vram_patch_options_dialog::effective_selection(&self.app);
+                self.vram_patch_selection_initialized = true;
+            }
+            let effective_vram_patch_selection = self.pending_vram_patch_selection;
             self.vanilla_level_editor
-                .set_deferred_rom_option_save(self.pending_vram_patch_selection.is_some());
+                .set_deferred_rom_option_save(effective_vram_patch_selection.is_some());
             self.rom_legacy_fg_bg_bypass_editor
                 .set_use_list_dialog(self.gfx_bypass_list_dialogs.unwrap_or(true));
             self.rom_legacy_sprite_bypass_editor
@@ -1507,7 +1515,7 @@ impl eframe::App for NativeApplication {
                     Command::CommitRomWrites { .. } | Command::CommitRomMutation { .. }
                 );
                 let command = if level_commit {
-                    if let Some(selection) = self.pending_vram_patch_selection {
+                    if let Some(selection) = effective_vram_patch_selection {
                         let snapshot = match self.app.controller_snapshot() {
                             Ok(snapshot) => snapshot,
                             Err(error) => {
@@ -1554,7 +1562,6 @@ impl eframe::App for NativeApplication {
                 };
                 if self.try_dispatch(context, command) {
                     if level_commit {
-                        self.pending_vram_patch_selection = None;
                         self.mark_user_toolbar_save_notification(
                             lm_app::LunarMagicNotificationKind::SaveLevel,
                         );

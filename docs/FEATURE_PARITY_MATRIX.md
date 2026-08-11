@@ -1286,6 +1286,19 @@ route has been returned to the pending partition. The authenticated partition th
 aggregate remains 59/65 because the configuration row is still Partial. Actual VRAM patch
 selection remains owned by `LM_OPTIONS_VRAM` `$24E8` and is tracked separately.
 
+Toolbar coverage update (2026-08-11, historical Install VRAM toggle): targeted Ghidra recovery
+now closes that pending route. ROM initialization reads the metadata VRAM-version byte at
+`$0060905E`, converts vanilla `$FF` to default version 1, and initializes `$005E7AE3` from whether
+that value is nonzero. Save checks the same byte before installing or upgrading the authenticated
+VRAM and Layer-3 runtimes; its false branch performs no removal. Rust now defaults a pristine ROM
+to Normal on the next level save, routes `LM_OPTIONS_INSTALL_VRAM` `$24C4` as the direct checked
+toggle, shares pending state with the existing `$24E8` options dialog, retains recognized installed
+versions, and leaves unknown runtimes untouched. Focused default, toggle, dialog, install,
+replacement, unknown-runtime, save/reopen, and Undo tests pass. The authenticated partition is now
+**312 routed / 5 pending**; the remaining commands are FastROM use/patch, prefer-past-2-MiB,
+correct-fatal-errors, and SA-1 RAM remap. The aggregate remains 59/65 because the configuration row
+is still Partial.
+
 Toolbar coverage update (2026-08-11, current per-ROM VRAM patch options): authenticated
 `LM_OPTIONS_VRAM` `$24E8` now reproduces the live 3.63 `Change VRAM Patch Options` workflow and
 its next-level-save boundary. Resource `$1FD` supplies the exact `$3390`-byte Normal runtime plus

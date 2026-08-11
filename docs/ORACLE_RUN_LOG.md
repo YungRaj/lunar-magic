@@ -1316,3 +1316,18 @@ because the newly evidenced command replaces one false positive; six commands re
 The corrected full native gate passes 1,150 tests with 13 explicit fixture ignores; renderer
 235/235, the all-512 traversal, byte-identical 513-line manifest, and i686 cross-build remain
 green.
+
+## Historical Install VRAM toggle recovery (2026-08-11)
+
+Live port-8098 disassembly at `ValidateAndInitializeOpenedRom` `$0047CABE..$0047CAD7` proves that
+metadata byte `$0060905E` is normalized from `$FF` to 1 and converted to checked-state byte
+`$005E7AE3`. `SaveLevelToRom` `$004843E9..$0048445C` proves enabled state installs an absent
+runtime, replaces a recognized old generation, and installs/upgrades the associated Layer-3
+runtimes; disabled state jumps over that block and does not uninstall. Independent xrefs prove the
+0x54/0x80 sprite-count threshold and expanded `$FF` sprite-stream escape consumers.
+
+Rust routes `LM_OPTIONS_INSTALL_VRAM` `$24C4` to that shared next-save state and preserves the
+separate `LM_OPTIONS_VRAM` `$24E8` dialog. Eight focused runtime-option tests and the direct route
+test pass. The complete native gate passes 1,152 tests with 13 explicit fixture ignores, including
+all 512 pristine levels, and the renderer suite passes 235/235. Authenticated command coverage is
+now 312/317 with five pending.

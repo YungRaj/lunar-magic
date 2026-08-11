@@ -295,6 +295,7 @@ impl NativeApplication {
         self.vram_patch_options_dialog.show(context);
         if let Some(selection) = self.vram_patch_options_dialog.take_pending() {
             self.pending_vram_patch_selection = Some(selection);
+            self.vram_patch_selection_initialized = true;
             self.app.status = match selection {
                 crate::vram_patch_options_dialog::VramPatchSelection::None => {
                     "VRAM patch will remain uninstalled on the next level save."
