@@ -6516,3 +6516,16 @@ Focused tests recover independent edits at entries 0 and 23 across all three pla
 installation, then preserve a committed entry 0 while recovering entry 23 through installed storage.
 All four special-event editor tests, the application install/update/two-Undo test, and all 237
 renderer tests pass.
+
+## Crash recovery includes the complete staged overworld event-number map
+
+The standalone event-number editor now contributes a content-sensitive generation over the exact
+native stored length and every stored mapping byte. Recovery invokes the same detected persistence
+as ordinary commit, preserving the vanilla `$60`-byte representation until high events require the
+installed 256-byte map, then requiring exact reopen on an isolated clone. The live project remains
+clean and history-free.
+
+Focused tests recover mappings at `$00` and `$FF` while growing pristine storage to all 256 bytes,
+then preserve a committed low mapping while recovering a staged `$FF` update through installed
+storage. All four event-number editor tests, the application semantic/Undo test, and all 237 renderer
+tests pass.

@@ -437,7 +437,11 @@ special-event editor now hashes and recovers all 24 source, destination, and dir
 through ordinary pristine two-runtime installation or installed update/reallocation.
 `staged_pristine_special_events_recover_all_three_complete_planes` and
 `staged_installed_special_event_update_preserves_prior_record` prove exact three-plane reopen, clean
-live state, boundary entry 23, and preservation of a previously committed event.
+live state, boundary entry 23, and preservation of a previously committed event. The standalone
+event-number editor now hashes the exact retained stored length and every mapping byte, recovering
+through ordinary detected persistence. `staged_pristine_event_number_map_recovers_full_256_byte_storage`
+and `staged_installed_event_number_update_preserves_prior_mapping` prove vanilla `$60`-byte growth to
+the complete 256-byte map, exact reopen, clean live state, and preservation of committed mappings.
 
 ## Workflow ledger
 

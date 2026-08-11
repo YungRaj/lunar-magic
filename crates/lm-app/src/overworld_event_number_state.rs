@@ -1,6 +1,7 @@
 use crate::{AppError, AppState, FrontendEffect};
 use lm_overworld::EventNumberMap;
 use lm_profile::{SMW_US_V1_CHECKSUM_FIELD, smw_us_v1_overworld_event_number_map_locator};
+use lm_project::Project;
 use lm_rom::{Mapper, Region, SupportedGame};
 
 impl AppState {
@@ -18,28 +19,9 @@ impl AppState {
         self.require_no_pending_save()?;
         self.ensure_project_revision_capacity()?;
         let project = self.project.as_mut().ok_or(AppError::NoProject)?;
-        let identity = project.identity.as_ref().ok_or(AppError::NoProject)?;
-        if identity.game != SupportedGame::SuperMarioWorld
-            || identity.region != Region::NorthAmerica
-            || identity.revision != 0
-            || identity.mapper != Mapper::LoRom
-        {
-            return Err(AppError::NativeOverworldEventMapIdentityMismatch);
-        }
-        if project
-            .load_overworld_event_number_map_detected(
-                smw_us_v1_overworld_event_number_map_locator(),
-            )?
-            .map
-            == *map
-        {
+        if !save_native_overworld_event_number_map_to_project(project, map)? {
             return Ok(Vec::new());
         }
-        project.save_overworld_event_number_map_detected(
-            map,
-            smw_us_v1_overworld_event_number_map_locator(),
-            SMW_US_V1_CHECKSUM_FIELD,
-        )?;
         self.advance_project_revision()?;
         let description = "Replace native SMW overworld event-number map".to_owned();
         self.status.clone_from(&description);
@@ -49,6 +31,34 @@ impl AppState {
             revision: self.project_revision,
         }])
     }
+}
+
+/// Applies the detected native event-number mapping persistence used by the application command.
+pub fn save_native_overworld_event_number_map_to_project(
+    project: &mut Project,
+    map: &EventNumberMap,
+) -> Result<bool, AppError> {
+    let identity = project.identity.as_ref().ok_or(AppError::NoProject)?;
+    if identity.game != SupportedGame::SuperMarioWorld
+        || identity.region != Region::NorthAmerica
+        || identity.revision != 0
+        || identity.mapper != Mapper::LoRom
+    {
+        return Err(AppError::NativeOverworldEventMapIdentityMismatch);
+    }
+    if project
+        .load_overworld_event_number_map_detected(smw_us_v1_overworld_event_number_map_locator())?
+        .map
+        == *map
+    {
+        return Ok(false);
+    }
+    project.save_overworld_event_number_map_detected(
+        map,
+        smw_us_v1_overworld_event_number_map_locator(),
+        SMW_US_V1_CHECKSUM_FIELD,
+    )?;
+    Ok(true)
 }
 
 #[cfg(test)]

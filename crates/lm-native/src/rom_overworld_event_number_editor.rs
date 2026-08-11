@@ -27,6 +27,43 @@ pub(crate) struct RomOverworldEventNumberEditor {
 }
 
 impl RomOverworldEventNumberEditor {
+    pub(crate) fn staged_recovery_generation(&self, app: &AppState) -> Option<u64> {
+        let workspace = self.workspace.as_ref()?;
+        if workspace.current == workspace.original {
+            return None;
+        }
+        let content_revision = workspace.current.encode().iter().fold(
+            0x4556_454e_544e_554d_u64 ^ workspace.current.stored_len() as u64,
+            |revision, byte| revision.rotate_left(5) ^ u64::from(*byte),
+        );
+        Some(
+            app.project_revision().wrapping_mul(0xa24b_aed4_963e_e407)
+                ^ workspace.revision.rotate_left(31)
+                ^ content_revision,
+        )
+    }
+
+    pub(crate) fn staged_recovery_snapshot(
+        &self,
+        app: &AppState,
+    ) -> Result<Option<lm_app::RecoverySnapshot>, String> {
+        let workspace = self
+            .workspace
+            .as_ref()
+            .ok_or_else(|| "event-number workspace is closed".to_owned())?;
+        if workspace.revision != app.project_revision() {
+            return Err("stale event-number workspace cannot be recovered".into());
+        }
+        if workspace.current == workspace.original {
+            return Ok(app.recovery_snapshot());
+        }
+        let mut staged = app.project().ok_or("open a supported ROM first")?.clone();
+        lm_app::save_native_overworld_event_number_map_to_project(&mut staged, &workspace.current)
+            .map_err(|error| error.to_string())?;
+        app.recovery_snapshot_with_current_rom(staged.save_snapshot(), app.current_level())
+            .map_err(|error| error.to_string())
+    }
+
     pub(crate) fn is_open(&self) -> bool {
         self.workspace.is_some()
     }
@@ -292,5 +329,78 @@ mod tests {
         assert!(editor.prepare_commit(1).is_err());
         assert!(!editor.request_close(false));
         assert!(editor.is_open());
+    }
+
+    #[test]
+    fn staged_pristine_event_number_map_recovers_full_256_byte_storage() {
+        let app = pristine_app();
+        let mut editor = RomOverworldEventNumberEditor::default();
+        editor.open(&app);
+        editor.mapped = "21".into();
+        editor.apply_selected().unwrap();
+        editor.event = "FF".into();
+        editor.loaded_event = None;
+        editor.load_selected().unwrap();
+        editor.mapped = "7E".into();
+        editor.apply_selected().unwrap();
+
+        assert!(editor.staged_recovery_generation(&app).is_some());
+        let recovery = editor.staged_recovery_snapshot(&app).unwrap().unwrap();
+        assert_eq!(app.capabilities().project, lm_app::ProjectStatus::OpenClean);
+        assert_eq!(app.project().unwrap().history.undo_len(), 0);
+        let mut reopened = AppState::default();
+        reopened.load_recovery(recovery).unwrap();
+        let map =
+            reopened
+                .project()
+                .unwrap()
+                .load_overworld_event_number_map_detected(
+                    smw_us_v1_overworld_event_number_map_locator(),
+                )
+                .unwrap()
+                .map;
+        assert_eq!(map.stored_len(), EventNumberMap::ENTRY_COUNT);
+        assert_eq!(map.get(0), 0x21);
+        assert_eq!(map.get(0xff), 0x7e);
+    }
+
+    #[test]
+    fn staged_installed_event_number_update_preserves_prior_mapping() {
+        let mut installer = pristine_app();
+        let mut first = RomOverworldEventNumberEditor::default();
+        first.open(&installer);
+        first.mapped = "34".into();
+        first.apply_selected().unwrap();
+        installer
+            .dispatch(first.prepare_commit(0).unwrap().unwrap())
+            .unwrap();
+
+        let mut app = AppState::default();
+        app.load_rom(installer.project().unwrap().save_snapshot())
+            .unwrap();
+        let mut editor = RomOverworldEventNumberEditor::default();
+        editor.open(&app);
+        editor.event = "FF".into();
+        editor.loaded_event = None;
+        editor.load_selected().unwrap();
+        editor.mapped = "A5".into();
+        editor.apply_selected().unwrap();
+
+        let recovery = editor.staged_recovery_snapshot(&app).unwrap().unwrap();
+        assert_eq!(app.capabilities().project, lm_app::ProjectStatus::OpenClean);
+        let mut reopened = AppState::default();
+        reopened.load_recovery(recovery).unwrap();
+        let map =
+            reopened
+                .project()
+                .unwrap()
+                .load_overworld_event_number_map_detected(
+                    smw_us_v1_overworld_event_number_map_locator(),
+                )
+                .unwrap()
+                .map;
+        assert_eq!(map.stored_len(), EventNumberMap::ENTRY_COUNT);
+        assert_eq!(map.get(0), 0x34);
+        assert_eq!(map.get(0xff), 0xa5);
     }
 }
