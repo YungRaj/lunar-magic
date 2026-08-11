@@ -1191,6 +1191,15 @@ no-ROM no-op boundary. The renderer gate passes 235/235; the complete native gat
 tests with 13 explicit external-fixture ignores and materializes all 512 pristine levels; the
 Windows i686 cross-check passes.
 
+## Background-editor ownership recovery (2026-08-11)
+
+Ghidra command-table entry `$26B5 -> $D7` toggles `$00E278C8` and emits the exact owned/not-owned
+statuses. Its five references bind the complete surface: `SynchronizeApplicationSettingsRegistry`
+loads and saves it at `Options2` bit 22, `ShowLevelBackgroundEditorWindow` passes either the main
+window or null owner only while creating the modeless dialog, and the command handler mutates it.
+The existing-window path merely restores and activates the same HWND, authenticating the restart
+qualification. Rust focused command/default/status and both-value save/reopen tests pass.
+
 ## Context-sensitive custom collection append (2026-08-11)
 
 Ghidra command-table byte `$D3` maps both `LM_KEY_ADD_CSPRITE` and `LM_KEY_ADD_CUSTOM` at `$26AF`.

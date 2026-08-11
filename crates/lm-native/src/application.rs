@@ -223,6 +223,7 @@ pub(crate) struct NativeApplication {
     auto_deselect_on_editor_select: bool,
     show_add_editor_ids: Option<bool>,
     background_cursor_highlight: Option<bool>,
+    background_editor_owned: Option<bool>,
     remember_window_size: Option<bool>,
     scan_exits_on_save: Option<bool>,
     count_sprites_on_save: Option<bool>,
@@ -321,6 +322,8 @@ impl NativeApplication {
     const SHOW_ADD_EDITOR_IDS_STORAGE_KEY: &'static str = "lunar_magic_rust.show_add_editor_ids.v1";
     const BACKGROUND_CURSOR_STORAGE_KEY: &'static str =
         "lunar_magic_rust.background_cursor_highlight.v1";
+    const BACKGROUND_EDITOR_OWNED_STORAGE_KEY: &'static str =
+        "lunar_magic_rust.background_editor_owned.v1";
     const REMEMBER_WINDOW_SIZE_STORAGE_KEY: &'static str =
         "lunar_magic_rust.remember_window_size.v1";
     const SCAN_EXITS_ON_SAVE_STORAGE_KEY: &'static str = "lunar_magic_rust.scan_exits_on_save.v1";
@@ -656,6 +659,12 @@ impl NativeApplication {
                     self.effects.error =
                         Some(format!("cannot load background-cursor preference: {error}"));
                 }
+            }
+        }
+        if let Some(encoded) = storage.get_string(Self::BACKGROUND_EDITOR_OWNED_STORAGE_KEY) {
+            match decode_enabled_preference(&encoded, "background-editor ownership") {
+                Ok(enabled) => self.background_editor_owned = Some(enabled),
+                Err(error) => self.effects.error = Some(error),
             }
         }
         if let Some(encoded) = storage.get_string(Self::REMEMBER_WINDOW_SIZE_STORAGE_KEY) {
@@ -1306,6 +1315,10 @@ impl eframe::App for NativeApplication {
         storage.set_string(
             Self::BACKGROUND_CURSOR_STORAGE_KEY,
             encode_background_cursor_preference(self.background_cursor_highlight.unwrap_or(true)),
+        );
+        storage.set_string(
+            Self::BACKGROUND_EDITOR_OWNED_STORAGE_KEY,
+            encode_enabled_preference(self.background_editor_owned.unwrap_or(false)),
         );
         storage.set_string(
             Self::REMEMBER_WINDOW_SIZE_STORAGE_KEY,
@@ -2402,6 +2415,22 @@ mod preference_tests {
             assert_eq!(reopened.background_cursor_highlight, Some(expected));
         }
         assert!(decode_background_cursor_preference("enabled").is_err());
+    }
+
+    #[test]
+    fn native_save_and_reopen_persist_background_editor_ownership() {
+        for expected in [false, true] {
+            let mut source = NativeApplication {
+                background_editor_owned: Some(expected),
+                ..NativeApplication::default()
+            };
+            let mut storage = MemoryStorage::default();
+            eframe::App::save(&mut source, &mut storage);
+
+            let mut reopened = NativeApplication::default();
+            reopened.load_persistent_preferences(Some(&storage));
+            assert_eq!(reopened.background_editor_owned, Some(expected));
+        }
     }
 
     #[test]

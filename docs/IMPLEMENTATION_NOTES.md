@@ -6024,6 +6024,18 @@ session-only state, invalidates the Layer 3 cache, produces exact 512- or 1024-p
 uses the live texture extent for editor repetition and game-viewport wrapping. Normal mode remains
 unchanged. Authenticated native command coverage is now 304 of 317 named slots, leaving 13 pending.
 
+## Background-editor ownership preference (`$26B5`)
+
+Selector `$D7` toggles persisted byte `$00E278C8`, stored as `Options2` bit 22. The only runtime
+consumer is `ShowLevelBackgroundEditorWindow`: a false value supplies no owner when the modeless
+background editor is first created, while true supplies the main window; reopening an existing
+editor only restores, updates, and activates it, which explains both original statuses' “may
+require restart” suffix. Rust persists the same default-off choice and exact status text. Its
+background workspace is structurally hosted by the main native editor rather than a detached OS
+window, so the owned lifecycle (main close, focus restoration, and no orphan window) is inherent;
+the preference remains available for original-configuration compatibility. Authenticated native
+command coverage is now 305 of 317 named slots, leaving 12 pending.
+
 ## Complete responsive game viewport
 
 The native level editor no longer uses cover scaling for its 256×224 game viewport. Cover scaling

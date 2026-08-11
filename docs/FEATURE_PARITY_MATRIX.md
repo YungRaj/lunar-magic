@@ -964,6 +964,14 @@ Normal 8x8 rendering remains unchanged. The authenticated partition is now
 **304 routed / 13 pending**. The aggregate remains 59/65 because the configuration row is still
 Partial.
 
+Toolbar coverage update (2026-08-11, background-editor ownership): authenticated
+`LM_KEY_BGEDIT_ONTOP` `$26B5` now toggles the original default-off ownership preference, persists
+both values, and emits the exact restart-qualified statuses. Ghidra proves `Options2` bit 22 is
+consulted only when the original modeless background window is created; the Rust background
+workspace is already structurally owned by its one native root, so close/focus ownership cannot
+leave an orphan child. The authenticated partition is now **305 routed / 12 pending**. The
+aggregate remains 59/65 because the configuration row is still Partial.
+
 Toolbar coverage update (2026-08-10, selection editors): `LM_EDIT_PROPERTIES` `$2468` now toggles
 an independent modeless properties window, while `LM_EDIT_EDIT_MANUAL` `$2469` opens (and repeated
 activation reuses) the manual editor dialog. Both follow the live Layer 1, object-backed Layer 2,

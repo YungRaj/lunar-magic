@@ -481,6 +481,9 @@ impl NativeApplication {
                     self.renderer.invalidate();
                 }
             }
+            UserToolbarNativeAction::BackgroundEditorOwned => {
+                self.set_background_editor_owned(!self.background_editor_owned.unwrap_or(false));
+            }
             UserToolbarNativeAction::WarnVerticalFireballBuoyancy => {
                 self.set_warn_vertical_fireball_buoyancy(
                     !self.warn_vertical_fireball_buoyancy.unwrap_or(true),
@@ -1244,6 +1247,16 @@ impl NativeApplication {
         .into();
     }
 
+    pub(super) fn set_background_editor_owned(&mut self, enabled: bool) {
+        self.background_editor_owned = Some(enabled);
+        self.app.status = if enabled {
+            "BG window owned by main window. (may require restart)"
+        } else {
+            "BG window not owned by main window (default, may require restart)."
+        }
+        .into();
+    }
+
     pub(super) fn set_remember_window_size(&mut self, enabled: bool) {
         self.remember_window_size = Some(enabled);
         self.app.status = if enabled {
@@ -1861,6 +1874,7 @@ enum UserToolbarNativeAction {
     AppendCustomCollection,
     TwoBppViewMode,
     Layer3SixteenBySixteenMode,
+    BackgroundEditorOwned,
     WarnVerticalFireballBuoyancy,
     GfxBypassListDialogs,
     JoinedGraphicsFiles,
@@ -1982,6 +1996,7 @@ fn user_toolbar_native_action(name: &str) -> Option<UserToolbarNativeAction> {
         }
         "LM_KEY_2BPP_MODE" => UserToolbarNativeAction::TwoBppViewMode,
         "LM_KEY_LAYER3_16X16_MODE" => UserToolbarNativeAction::Layer3SixteenBySixteenMode,
+        "LM_KEY_BGEDIT_ONTOP" => UserToolbarNativeAction::BackgroundEditorOwned,
         "LM_OPTIONS_WARN_SPRITE_33" => UserToolbarNativeAction::WarnVerticalFireballBuoyancy,
         "LM_OPTIONS_INSTALL_VRAM" => UserToolbarNativeAction::GfxBypassListDialogs,
         "LM_OPTIONS_ATTACH_FILES" => UserToolbarNativeAction::JoinedGraphicsFiles,
@@ -3038,7 +3053,7 @@ mod user_toolbar_tests {
                     || user_toolbar_native_action(entry.name).is_some()
             })
             .collect::<Vec<_>>();
-        assert_eq!(supported.len(), 304);
+        assert_eq!(supported.len(), 305);
         assert!(
             supported
                 .iter()
@@ -3227,6 +3242,34 @@ mod user_toolbar_tests {
         assert_eq!(
             native.app.status,
             "Enabled background-editor mouse highlight"
+        );
+    }
+
+    #[test]
+    fn background_editor_owner_command_toggles_exact_default_and_status() {
+        let mut native = NativeApplication::default();
+        assert_eq!(native.background_editor_owned, None);
+        assert_eq!(
+            user_toolbar_native_action("LM_KEY_BGEDIT_ONTOP"),
+            Some(UserToolbarNativeAction::BackgroundEditorOwned)
+        );
+        native.apply_user_toolbar_native_action(
+            &egui::Context::default(),
+            UserToolbarNativeAction::BackgroundEditorOwned,
+        );
+        assert_eq!(native.background_editor_owned, Some(true));
+        assert_eq!(
+            native.app.status,
+            "BG window owned by main window. (may require restart)"
+        );
+        native.apply_user_toolbar_native_action(
+            &egui::Context::default(),
+            UserToolbarNativeAction::BackgroundEditorOwned,
+        );
+        assert_eq!(native.background_editor_owned, Some(false));
+        assert_eq!(
+            native.app.status,
+            "BG window not owned by main window (default, may require restart)."
         );
     }
 
@@ -3934,7 +3977,7 @@ mod user_toolbar_tests {
                     && user_toolbar_native_action(entry.name).is_none()
             })
             .collect::<Vec<_>>();
-        assert_eq!(unsupported.len(), 13);
+        assert_eq!(unsupported.len(), 12);
         if std::env::var_os("LM_DIAGNOSTIC_UNSUPPORTED_TOOLBAR_COMMANDS").is_some() {
             for entry in unsupported {
                 eprintln!(
