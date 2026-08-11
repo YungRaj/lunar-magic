@@ -447,6 +447,11 @@ recovers through ordinary fixed-to-installed or detected installed persistence.
 `staged_pristine_reveal_growth_recovers_complete_expanded_table` proves 112-to-200-record growth and
 `staged_installed_reveal_update_preserves_existing_expanded_records` proves a later staged edit
 retains the pre-existing expanded tail record after recovery and reopen.
+The standalone event-tilemap editor now hashes and recovers all 6,144 bytes across its three planes
+through ordinary pristine LZ2 installation or detected installed LZ2/LZ3 update.
+`staged_pristine_event_tilemaps_recover_all_three_complete_planes` proves both tile boundaries and
+all planes; `staged_installed_event_tilemap_update_preserves_prior_planes` proves recovery retains a
+previously committed primary-plane edit while adding a staged secondary-tail update.
 
 ## Workflow ledger
 

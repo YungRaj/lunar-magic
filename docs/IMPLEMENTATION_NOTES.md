@@ -6541,3 +6541,17 @@ prior records. Exact semantic reopen is required and the live project stays clea
 Focused tests recover a pristine 112-to-200-record growth with a staged tail record, then preserve
 that installed tail while recovering an independent edit to record zero. All four event-reveal
 editor tests pass.
+
+## Crash recovery includes all staged overworld event-tilemap planes
+
+The standalone event-tilemap editor now contributes a content-sensitive generation over every byte
+in the 4,096-byte primary low/high stream and 2,048-byte secondary high plane. Recovery clones the
+current project and uses the ordinary detected persistence path: pristine zero workspaces install
+the native LZ2 runtime, while installed LZ2/LZ3 streams update or reallocate under the same bounded
+policy. Both paths require an exact semantic reopen and leave the live project clean and
+history-free.
+
+Focused tests recover edits at both tile boundaries across all three planes through pristine
+installation, then preserve a previously installed primary-plane edit while recovering a staged
+secondary-tail update. All four event-tilemap editor tests, the application install/update/Undo
+test, and all 237 renderer tests pass.

@@ -37,6 +37,47 @@ pub(crate) struct RomOverworldEventTilemapEditor {
 }
 
 impl RomOverworldEventTilemapEditor {
+    pub(crate) fn staged_recovery_generation(&self, app: &AppState) -> Option<u64> {
+        let workspace = self.workspace.as_ref()?;
+        if workspace.current == workspace.original {
+            return None;
+        }
+        let content_revision = workspace
+            .current
+            .primary_bytes()
+            .iter()
+            .chain(workspace.current.secondary_high_bytes())
+            .fold(0x4556_5449_4c45_4d50_u64, |revision, byte| {
+                revision.rotate_left(5) ^ u64::from(*byte)
+            });
+        Some(
+            app.project_revision().wrapping_mul(0xa24b_aed4_963e_e407)
+                ^ workspace.revision.rotate_left(31)
+                ^ content_revision,
+        )
+    }
+
+    pub(crate) fn staged_recovery_snapshot(
+        &self,
+        app: &AppState,
+    ) -> Result<Option<lm_app::RecoverySnapshot>, String> {
+        let workspace = self
+            .workspace
+            .as_ref()
+            .ok_or_else(|| "event-tilemap workspace is closed".to_owned())?;
+        if workspace.revision != app.project_revision() {
+            return Err("stale event-tilemap workspace cannot be recovered".into());
+        }
+        if workspace.current == workspace.original {
+            return Ok(app.recovery_snapshot());
+        }
+        let mut staged = app.project().ok_or("open a supported ROM first")?.clone();
+        lm_app::save_native_overworld_event_tilemaps_to_project(&mut staged, &workspace.current)
+            .map_err(|error| error.to_string())?;
+        app.recovery_snapshot_with_current_rom(staged.save_snapshot(), app.current_level())
+            .map_err(|error| error.to_string())
+    }
+
     pub(crate) fn is_open(&self) -> bool {
         self.workspace.is_some()
     }
@@ -354,5 +395,78 @@ mod tests {
         assert!(editor.prepare_commit(5).is_err());
         assert!(!editor.request_close(true));
         assert!(editor.is_open());
+    }
+
+    #[test]
+    fn staged_pristine_event_tilemaps_recover_all_three_complete_planes() {
+        let mut app = AppState::default();
+        app.load_rom(crate::test_support::pristine_smw_us_rom_bytes())
+            .unwrap();
+        let mut editor = RomOverworldEventTilemapEditor::default();
+        editor.open(&app);
+        for (tile, plane, value) in [
+            ("000", Plane::PrimaryLow, "12"),
+            ("7FF", Plane::PrimaryHigh, "A5"),
+            ("7FF", Plane::SecondaryHigh, "5A"),
+        ] {
+            editor.tile = tile.into();
+            editor.plane = plane;
+            editor.loaded = None;
+            editor.load_selected().unwrap();
+            editor.value = value.into();
+            editor.apply_selected().unwrap();
+        }
+
+        assert!(editor.staged_recovery_generation(&app).is_some());
+        let recovery = editor.staged_recovery_snapshot(&app).unwrap().unwrap();
+        assert_eq!(app.capabilities().project, lm_app::ProjectStatus::OpenClean);
+        assert_eq!(app.project().unwrap().history.undo_len(), 0);
+        let mut reopened = AppState::default();
+        reopened.load_recovery(recovery).unwrap();
+        let buffers = load_smw_us_v1_event_tilemaps(reopened.project().unwrap())
+            .unwrap()
+            .buffers;
+        assert_eq!(buffers.primary_bytes()[0], 0x12);
+        assert_eq!(buffers.primary_bytes()[0xfff], 0xa5);
+        assert_eq!(buffers.secondary_high_bytes()[0x7ff], 0x5a);
+    }
+
+    #[test]
+    fn staged_installed_event_tilemap_update_preserves_prior_planes() {
+        let mut installer = AppState::default();
+        installer
+            .load_rom(crate::test_support::pristine_smw_us_rom_bytes())
+            .unwrap();
+        let mut first = RomOverworldEventTilemapEditor::default();
+        first.open(&installer);
+        first.tile = "000".into();
+        first.plane = Plane::PrimaryLow;
+        first.load_selected().unwrap();
+        first.value = "34".into();
+        first.apply_selected().unwrap();
+        installer
+            .dispatch(first.prepare_commit(0).unwrap().unwrap())
+            .unwrap();
+
+        let mut app = AppState::default();
+        app.load_rom(installer.project().unwrap().save_snapshot())
+            .unwrap();
+        let mut editor = RomOverworldEventTilemapEditor::default();
+        editor.open(&app);
+        editor.tile = "7FF".into();
+        editor.plane = Plane::SecondaryHigh;
+        editor.loaded = None;
+        editor.load_selected().unwrap();
+        editor.value = "C7".into();
+        editor.apply_selected().unwrap();
+
+        let recovery = editor.staged_recovery_snapshot(&app).unwrap().unwrap();
+        let mut reopened = AppState::default();
+        reopened.load_recovery(recovery).unwrap();
+        let buffers = load_smw_us_v1_event_tilemaps(reopened.project().unwrap())
+            .unwrap()
+            .buffers;
+        assert_eq!(buffers.primary_bytes()[0], 0x34);
+        assert_eq!(buffers.secondary_high_bytes()[0x7ff], 0xc7);
     }
 }
