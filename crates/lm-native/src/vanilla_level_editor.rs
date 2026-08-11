@@ -5,9 +5,9 @@ use lm_app::{
 };
 use lm_level::{
     CustomMusicError, CustomMusicTrack, CustomTimeError, CustomTimeSettings,
-    Layer1VerticalScrollMode, LegacyHeaderEdit, NativeSpriteRecordFields, ObjectCoordinateNibbles,
-    ObjectEdit, ObjectRecord, SecondaryExitTable, SeparateMidwayEntrance, SpriteLengthTable,
-    SpriteToken,
+    Layer1VerticalScrollMode, LegacyHeaderEdit, LevelScreenExtentMode, NativeSpriteRecordFields,
+    ObjectCoordinateNibbles, ObjectEdit, ObjectRecord, SecondaryExitTable, SeparateMidwayEntrance,
+    SpriteLengthTable, SpriteToken, native_level_screen_count,
 };
 use lm_project::LevelSaveOptions;
 use lm_project::{Project, VanillaMainEntrance};
@@ -556,6 +556,7 @@ pub(crate) struct VanillaLevelEditor {
     background_cursor_highlight: Option<bool>,
     scan_exits_on_save: Option<bool>,
     count_sprites_on_save: Option<bool>,
+    auto_set_screens: Option<bool>,
     deferred_rom_option_save: bool,
     paste_target: Option<EntityPasteTarget>,
     pending_layer2_mode_reset: Option<HeaderForm>,
@@ -1082,6 +1083,10 @@ impl VanillaLevelEditor {
         self.deferred_rom_option_save = enabled;
     }
 
+    pub(crate) fn set_auto_set_screens(&mut self, enabled: bool) {
+        self.auto_set_screens = Some(enabled);
+    }
+
     pub(crate) fn initialize_draw_selection_over_live(&mut self, enabled: bool) {
         self.draw_selection_over_live.get_or_insert(enabled);
     }
@@ -1133,11 +1138,12 @@ impl VanillaLevelEditor {
             )
             .clicked()
         {
-            return match prepare_commit(
+            return match prepare_commit_with_auto_screen(
                 self.controller
                     .as_ref()
                     .expect("controller presence checked above"),
                 snapshot,
+                self.auto_set_screens.unwrap_or(true) && self.raw_layer1_pc_address.is_none(),
             ) {
                 Ok(command) => {
                     match self.request_exit_scan_before_save(snapshot, custom_dsc, command) {
@@ -15187,6 +15193,33 @@ fn prepare_commit(
     controller: &LevelController,
     snapshot: &lm_app::ControllerSnapshot,
 ) -> Result<Command, String> {
+    prepare_commit_with_auto_screen(controller, snapshot, false)
+}
+
+fn prepare_commit_with_auto_screen(
+    controller: &LevelController,
+    snapshot: &lm_app::ControllerSnapshot,
+    auto_set_screens: bool,
+) -> Result<Command, String> {
+    let mut auto_controller;
+    let controller = if auto_set_screens {
+        auto_controller = controller.clone();
+        let screen_count = native_level_screen_count(
+            &controller.level().layer1.objects,
+            &controller.level().sprites,
+            LevelScreenExtentMode::Auto,
+        );
+        auto_controller
+            .apply_edits(
+                &[NativeLevelEdit::LegacyHeader(LegacyHeaderEdit::LastScreen(
+                    screen_count - 1,
+                ))],
+            )
+            .map_err(|error| error.to_string())?;
+        &auto_controller
+    } else {
+        controller
+    };
     let image =
         RomImage::from_bytes(snapshot.rom_bytes.clone()).map_err(|error| error.to_string())?;
     let logical_len = image.logical_len();
@@ -15601,6 +15634,63 @@ mod tests {
         assert_eq!(reopened.level().layer1.objects.records.len(), baseline + 1);
         assert_eq!(reopened.level().sprites.tokens.len(), sprite_baseline + 1);
         assert_eq!(app.project().unwrap().rom.logical_len(), 0x10_0000);
+    }
+
+    #[test]
+    fn auto_screen_save_recomputes_visible_extent_while_disabled_mode_preserves_header() {
+        for (auto_set_screens, expected_manual) in [(true, false), (false, true)] {
+            let mut app = AppState::default();
+            app.load_rom(crate::test_support::pristine_smw_us_rom_bytes())
+                .unwrap();
+            app.dispatch(Command::SelectLevel(0x105)).unwrap();
+            let pristine = app.controller_snapshot().unwrap();
+            app.dispatch(Command::ExpandRom(RomExpansionCommand {
+                expected_revision: pristine.revision,
+                mapper: Mapper::LoRom,
+                target_logical_len: 0x10_0000,
+                fill: 0xff,
+                checksum_field: 0x7fdc,
+            }))
+            .unwrap();
+            let expanded = app.controller_snapshot().unwrap();
+            let mut controller = LevelController::decode(
+                &expanded,
+                lm_profile::smw_us_v1_vanilla_level_layout(),
+                &SpriteLengthTable::standard(),
+            )
+            .unwrap();
+            let automatic_last_screen = native_level_screen_count(
+                &controller.level().layer1.objects,
+                &controller.level().sprites,
+                LevelScreenExtentMode::Auto,
+            ) - 1;
+            let manual_last_screen = if automatic_last_screen == 31 { 30 } else { 31 };
+            controller
+                .apply_edits(
+                    &[NativeLevelEdit::LegacyHeader(LegacyHeaderEdit::LastScreen(
+                        manual_last_screen,
+                    ))],
+                )
+                .unwrap();
+
+            let command =
+                prepare_commit_with_auto_screen(&controller, &expanded, auto_set_screens).unwrap();
+            app.dispatch(command).unwrap();
+            let reopened = LevelController::decode(
+                &app.controller_snapshot().unwrap(),
+                lm_profile::smw_us_v1_vanilla_level_layout(),
+                &SpriteLengthTable::standard(),
+            )
+            .unwrap();
+            assert_eq!(
+                reopened.level().layer1.header.last_screen(),
+                if expected_manual {
+                    manual_last_screen
+                } else {
+                    automatic_last_screen
+                }
+            );
+        }
     }
 
     #[test]

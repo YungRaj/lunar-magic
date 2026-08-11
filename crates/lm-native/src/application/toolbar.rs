@@ -454,6 +454,17 @@ impl NativeApplication {
                 }
                 .into();
             }
+            UserToolbarNativeAction::AutoSetScreens => {
+                let enabled = !self.auto_set_screens.unwrap_or(true);
+                self.auto_set_screens = Some(enabled);
+                self.vanilla_level_editor.set_auto_set_screens(enabled);
+                self.app.status = if enabled {
+                    "Enabled automatic level screen extent"
+                } else {
+                    "Disabled automatic level screen extent"
+                }
+                .into();
+            }
             UserToolbarNativeAction::VramPatchOptions => {
                 self.vram_patch_options_dialog.open(&self.app);
             }
@@ -1675,6 +1686,7 @@ enum UserToolbarNativeAction {
     CountSpritesOnSave,
     GfxBypassListDialogs,
     JoinedGraphicsFiles,
+    AutoSetScreens,
     VramPatchOptions,
     GraphicsCompressionOptions,
     GeneralOptions,
@@ -1779,6 +1791,7 @@ fn user_toolbar_native_action(name: &str) -> Option<UserToolbarNativeAction> {
         "LM_OPTIONS_SCAN_SPRITES" => UserToolbarNativeAction::CountSpritesOnSave,
         "LM_OPTIONS_INSTALL_VRAM" => UserToolbarNativeAction::GfxBypassListDialogs,
         "LM_OPTIONS_ATTACH_FILES" => UserToolbarNativeAction::JoinedGraphicsFiles,
+        "LM_OPTIONS_AUTO_SCREENS" => UserToolbarNativeAction::AutoSetScreens,
         "LM_OPTIONS_VRAM" => UserToolbarNativeAction::VramPatchOptions,
         "LM_OPTIONS_COMPRESSION" => UserToolbarNativeAction::GraphicsCompressionOptions,
         "LM_OPTIONS_GENERAL" => UserToolbarNativeAction::GeneralOptions,
@@ -2825,7 +2838,7 @@ mod user_toolbar_tests {
                     || user_toolbar_native_action(entry.name).is_some()
             })
             .collect::<Vec<_>>();
-        assert_eq!(supported.len(), 288);
+        assert_eq!(supported.len(), 289);
         assert!(
             supported
                 .iter()
@@ -3155,6 +3168,28 @@ mod user_toolbar_tests {
     }
 
     #[test]
+    fn auto_screens_command_toggles_the_original_default_on_session_option() {
+        let mut native = NativeApplication::default();
+        assert_eq!(native.auto_set_screens, None);
+        assert_eq!(
+            user_toolbar_native_action("LM_OPTIONS_AUTO_SCREENS"),
+            Some(UserToolbarNativeAction::AutoSetScreens)
+        );
+        native.apply_user_toolbar_native_action(
+            &egui::Context::default(),
+            UserToolbarNativeAction::AutoSetScreens,
+        );
+        assert_eq!(native.auto_set_screens, Some(false));
+        assert_eq!(native.app.status, "Disabled automatic level screen extent");
+        native.apply_user_toolbar_native_action(
+            &egui::Context::default(),
+            UserToolbarNativeAction::AutoSetScreens,
+        );
+        assert_eq!(native.auto_set_screens, Some(true));
+        assert_eq!(native.app.status, "Enabled automatic level screen extent");
+    }
+
+    #[test]
     fn recent_menu_route_opens_at_the_pointer_and_escape_dismisses_it() {
         let mut native = NativeApplication::default();
         let context = egui::Context::default();
@@ -3337,7 +3372,7 @@ mod user_toolbar_tests {
                     && user_toolbar_native_action(entry.name).is_none()
             })
             .collect::<Vec<_>>();
-        assert_eq!(unsupported.len(), 29);
+        assert_eq!(unsupported.len(), 28);
         if std::env::var_os("LM_DIAGNOSTIC_UNSUPPORTED_TOOLBAR_COMMANDS").is_some() {
             for entry in unsupported {
                 eprintln!(

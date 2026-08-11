@@ -1151,3 +1151,11 @@ and `102e18d35723e74b5f2d652d6802f711daba4b583be759c9107e8e5bc7c32611`.
 Independent game-preview offsets `$0` and `$8` were also distinct. The 38-test authenticated
 user-toolbar suite then passed with `LM_OPTIONS_ATTACH_FILES` routed to the existing persisted
 joined-GFX mode and the complete partition at 288 routed / 29 pending.
+
+The adjacent `LM_OPTIONS_AUTO_SCREENS` `$24BC` route was then recovered as dispatcher case `$87`.
+The live byte `$005E76F9` was one at startup; Ghidra's registry serializer does not load or save it,
+matching a session-only default. A focused end-to-end test expands pristine level `$105`, stages a
+deliberately different Last Screen value, saves once with the option enabled and once disabled, and
+semantically reopens the ROM. Enabled mode matches the highest visible object/sprite screen;
+disabled mode retains the manual five-bit header. Both focused auto-screen tests and all 39
+authenticated toolbar tests pass; the partition is 289 routed / 28 pending.

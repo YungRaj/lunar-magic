@@ -5849,6 +5849,19 @@ horizontal assumptions from corrupting vertical audits. Explicit row/column orig
 Lunar Magic reference manifest override the generic offset. This repairs the audit evidence path;
 it does not alter ordinary interactive camera or scroll state.
 
+## Auto-Set Number of Screens (`$24BC`)
+
+The command table maps `LM_OPTIONS_AUTO_SCREENS` to dispatcher case `$87`, which toggles
+`$005E76F9`. Unlike the adjacent checksum and joined-file flags, registry synchronization does not
+serialize this byte; Rust consequently retains it as a default-on process-session option. Before an
+ordinary built-in level commit, the editor clones its staged controller and replaces Last Screen
+with the highest visible Layer 1 object or sprite screen through the shared
+`LevelScreenExtentMode::Auto` model. The disabled path commits the staged header unchanged. The
+temporary clone keeps auto-normalization inside the same checked save mutation without rewriting
+the interactive Undo stack. Raw-address Layer 1 saves deliberately bypass the rule because they do
+not represent an ordinary level-header workflow. Authenticated native command coverage is now 289
+of 317 named slots, leaving 28 pending.
+
 ## Deprecated Select FG/BG commands (`$2473/$2474`)
 
 Both authenticated central dispatch bytes are `$DF`, while the Lunar Magic 3.63 command switch

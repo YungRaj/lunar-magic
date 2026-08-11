@@ -1180,6 +1180,18 @@ vanilla level `$105` editor captures at offsets `$0` and `$8` have distinct SHA-
 independent game-preview captures. All 234 renderer tests and the exhaustive 512-level built-in asset
 materialization gate pass.
 
+Toolbar coverage update (2026-08-11, automatic screen extent): `LM_OPTIONS_AUTO_SCREENS` `$24BC`
+now reproduces central dispatcher case `$87` and its default-on, session-only behavior. The original
+help defines the save rule as the highest visible Layer 1 object or sprite; control-only screen tails
+do not count. Rust applies the shared native extent model immediately before an ordinary level save,
+after all staged object and sprite edits. Disabling the option preserves the manually edited
+five-bit Last Screen header exactly. Raw-address Layer 1 editing remains outside this ordinary-level
+header behavior. The live default byte at `$005E76F9` is one, and its omission from
+`SynchronizeApplicationSettingsRegistry` confirms that it is not persisted. Focused toggle,
+auto-versus-manual save/reopen, and complete command-partition tests pass. The authenticated
+partition is now **289 routed / 28 pending**. The aggregate remains 59/65 because the configuration
+row is still Partial.
+
 Toolbar coverage update (2026-08-10, Open Level Number): `LM_FILE_OPEN_LEVEL` `$238E` now opens
 the native equivalent of original dialog resource `1000`. It uses the authenticated title,
 `Level Number (0-1FF)` label, OK/Cancel controls, and original-language resource overrides; seeds

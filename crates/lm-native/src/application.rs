@@ -185,6 +185,7 @@ pub(crate) struct NativeApplication {
     level_text: String,
     special_world_passed: bool,
     joined_graphics_files: bool,
+    auto_set_screens: Option<bool>,
     level_view_visibility: LevelViewVisibility,
     renderer: NativeRenderState,
     vanilla_graphics_editor: VanillaGraphicsEditor,
@@ -1105,6 +1106,8 @@ impl eframe::App for NativeApplication {
                 .set_scan_exits_on_save(self.scan_exits_on_save.unwrap_or(true));
             self.vanilla_level_editor
                 .set_count_sprites_on_save(self.count_sprites_on_save.unwrap_or(true));
+            self.vanilla_level_editor
+                .set_auto_set_screens(self.auto_set_screens.unwrap_or(true));
             self.vanilla_level_editor
                 .set_deferred_rom_option_save(self.pending_vram_patch_selection.is_some());
             self.rom_legacy_fg_bg_bypass_editor
