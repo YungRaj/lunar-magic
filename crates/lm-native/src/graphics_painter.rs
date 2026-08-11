@@ -222,7 +222,7 @@ impl GraphicsTileGrid {
         })
     }
 
-    fn apply_f8(&mut self, modifiers: egui::Modifiers) -> Option<&'static str> {
+    pub(crate) fn apply_f8(&mut self, modifiers: egui::Modifiers) -> Option<&'static str> {
         if modifiers.ctrl && modifiers.alt {
             self.color = match self.color {
                 GraphicsTileGridColor::White => GraphicsTileGridColor::Black,

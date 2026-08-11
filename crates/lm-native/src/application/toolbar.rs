@@ -453,6 +453,14 @@ impl NativeApplication {
             UserToolbarNativeAction::ConvertBerryGfxTile => {
                 self.set_convert_berry_gfx_tile(!self.convert_berry_gfx_tile.unwrap_or(true));
             }
+            UserToolbarNativeAction::GraphicsGridColor => {
+                let status = if self.app.revision_profile().is_some() {
+                    self.rom_graphics_editor.toggle_grid_color()
+                } else {
+                    self.vanilla_graphics_editor.toggle_grid_color()
+                };
+                self.app.status = status.into();
+            }
             UserToolbarNativeAction::WarnVerticalFireballBuoyancy => {
                 self.set_warn_vertical_fireball_buoyancy(
                     !self.warn_vertical_fireball_buoyancy.unwrap_or(true),
@@ -1817,6 +1825,7 @@ enum UserToolbarNativeAction {
     CheckObjectPlacementOnSave,
     WarnIpsSiblingOnSave,
     ConvertBerryGfxTile,
+    GraphicsGridColor,
     WarnVerticalFireballBuoyancy,
     GfxBypassListDialogs,
     JoinedGraphicsFiles,
@@ -1932,6 +1941,7 @@ fn user_toolbar_native_action(name: &str) -> Option<UserToolbarNativeAction> {
         "LM_OPTIONS_WARN_OBJECT" => UserToolbarNativeAction::CheckObjectPlacementOnSave,
         "LM_OPTIONS_WARN_IPS" => UserToolbarNativeAction::WarnIpsSiblingOnSave,
         "LM_OPTIONS_CONVERT_BERRY" => UserToolbarNativeAction::ConvertBerryGfxTile,
+        "LM_KEY_GRID_COLOR" => UserToolbarNativeAction::GraphicsGridColor,
         "LM_OPTIONS_WARN_SPRITE_33" => UserToolbarNativeAction::WarnVerticalFireballBuoyancy,
         "LM_OPTIONS_INSTALL_VRAM" => UserToolbarNativeAction::GfxBypassListDialogs,
         "LM_OPTIONS_ATTACH_FILES" => UserToolbarNativeAction::JoinedGraphicsFiles,
@@ -2988,7 +2998,7 @@ mod user_toolbar_tests {
                     || user_toolbar_native_action(entry.name).is_some()
             })
             .collect::<Vec<_>>();
-        assert_eq!(supported.len(), 299);
+        assert_eq!(supported.len(), 300);
         assert!(
             supported
                 .iter()
@@ -3364,6 +3374,25 @@ mod user_toolbar_tests {
         );
         assert_eq!(native.convert_berry_gfx_tile, Some(true));
         assert_eq!(native.app.status, "Enabled berry GFX tile conversion");
+    }
+
+    #[test]
+    fn graphics_grid_color_command_matches_the_ctrl_alt_f8_cycle() {
+        let mut native = NativeApplication::default();
+        assert_eq!(
+            user_toolbar_native_action("LM_KEY_GRID_COLOR"),
+            Some(UserToolbarNativeAction::GraphicsGridColor)
+        );
+        native.apply_user_toolbar_native_action(
+            &egui::Context::default(),
+            UserToolbarNativeAction::GraphicsGridColor,
+        );
+        assert_eq!(native.app.status, "Tile grid color 2.");
+        native.apply_user_toolbar_native_action(
+            &egui::Context::default(),
+            UserToolbarNativeAction::GraphicsGridColor,
+        );
+        assert_eq!(native.app.status, "Tile grid color 1.");
     }
 
     #[test]
@@ -3763,7 +3792,7 @@ mod user_toolbar_tests {
                     && user_toolbar_native_action(entry.name).is_none()
             })
             .collect::<Vec<_>>();
-        assert_eq!(unsupported.len(), 18);
+        assert_eq!(unsupported.len(), 17);
         if std::env::var_os("LM_DIAGNOSTIC_UNSUPPORTED_TOOLBAR_COMMANDS").is_some() {
             for entry in unsupported {
                 eprintln!(

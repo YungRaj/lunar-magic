@@ -921,11 +921,12 @@ warns for an existing non-directory sibling; directories and absent/unreadable p
 The same boundary protects Save selected from dirty document-transition confirmation. Save Anyway
 releases exactly one deferred save, while Cancel preserves dirty state and cancels a pending Open
 target. Focused path-shape, pre-dispatch, toggle, persistence, and command-partition tests pass. The
-authenticated partition is now **299 routed / 18 pending**. `LM_OPTIONS_CONVERT_BERRY` is routed
+authenticated partition is now **300 routed / 17 pending**. `LM_OPTIONS_CONVERT_BERRY` is routed
 through the default-on persisted General Options toggle and the exact GFX `$01/$17/$31`
 all-or-nothing high-plane synthesis used by live graphics caches and separate/joined standard
-extraction and insertion. The
-aggregate remains 59/65 because
+extraction and insertion. The authenticated `LM_KEY_GRID_COLOR` command also reaches the active
+pristine or installed 8×8 editor's exact Ctrl+Alt+F8 white/black cycle without changing grid
+visibility. The aggregate remains 59/65 because
 the configuration row is still Partial.
 
 Toolbar coverage update (2026-08-10, selection editors): `LM_EDIT_PROPERTIES` `$2468` now toggles

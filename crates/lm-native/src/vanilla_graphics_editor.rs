@@ -67,6 +67,16 @@ pub(crate) struct VanillaGraphicsEditor {
 }
 
 impl VanillaGraphicsEditor {
+    pub(crate) fn toggle_grid_color(&mut self) -> &'static str {
+        self.tile_grid
+            .apply_f8(egui::Modifiers {
+                ctrl: true,
+                alt: true,
+                ..egui::Modifiers::NONE
+            })
+            .expect("Ctrl+Alt+F8 always reports the selected grid color")
+    }
+
     pub(crate) fn handles(app: &AppState) -> bool {
         app.revision_profile().is_none()
             && app.controller_snapshot().is_ok_and(|snapshot| {

@@ -135,6 +135,16 @@ pub(crate) struct RomGraphicsEditor {
 }
 
 impl RomGraphicsEditor {
+    pub(crate) fn toggle_grid_color(&mut self) -> &'static str {
+        self.tile_grid
+            .apply_f8(egui::Modifiers {
+                ctrl: true,
+                alt: true,
+                ..egui::Modifiers::NONE
+            })
+            .expect("Ctrl+Alt+F8 always reports the selected grid color")
+    }
+
     pub(crate) fn set_convert_berry_gfx_tile(&mut self, enabled: bool) {
         self.convert_berry_gfx_tile = Some(enabled);
     }
