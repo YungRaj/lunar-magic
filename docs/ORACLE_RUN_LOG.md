@@ -1331,3 +1331,23 @@ separate `LM_OPTIONS_VRAM` `$24E8` dialog. Eight focused runtime-option tests an
 test pass. The complete native gate passes 1,152 tests with 13 explicit fixture ignores, including
 all 512 pristine levels, and the renderer suite passes 235/235. Authenticated command coverage is
 now 312/317 with five pending.
+
+## Correct Fatal Errors recovery (2026-08-11)
+
+Static PE disassembly (used after the read-only Ghidra buffer became unavailable) confirms
+`LM_OPTIONS_CORRECT_FATAL_ERRORS` `$24D5 -> $9E`, byte `$005E76EA`, default one, and `Options` bit
+0. Corrected file-offset-to-VA mapping (`.text` raw/RVA `$1000`, image base `$00400000`) resolves
+the object consumers at `$0042F218/$0042F544/$0042FE49/$00433FDD/$004350BD`, the two report gates
+at `$0046978E/$0046980F`, registry load/save at `$0049B4EB/$0049B7B3`, and sprite correction at
+`$004C3A00`. The object branches rewrite invalid bytes to valid selectors (including ordinary
+fallback `$10`); the sprite branch clears an invalid display-node selector before redispatch.
+
+Rust now performs one explicit, atomic staged object correction pass under the persisted
+default-on preference and displays the original fatal-error title/count wording. The exhaustive
+typed sprite renderer has no unsafe indirect node dispatch and covers every ID. Focused toggle,
+persistence, correction, and command-partition tests pass. The renderer suite passes 237/237,
+including a separate all-512 no-correction audit; the native suite passes 1,155 tests with 13
+explicit fixture ignores and its own full 512-level materialization gate; the regenerated
+513-line manifest remains SHA-256
+`254a1a050d12785973241910e26d8b7917a5cb5e2a56602a330fc6cbd833c04d`; and the i686 Windows check
+passes. The authenticated partition is 313/317 with four pending commands.

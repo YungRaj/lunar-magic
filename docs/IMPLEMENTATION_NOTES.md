@@ -6082,6 +6082,26 @@ session-only state, invalidates the Layer 3 cache, produces exact 512- or 1024-p
 uses the live texture extent for editor repetition and game-viewport wrapping. Normal mode remains
 unchanged. Authenticated native command coverage is now 304 of 317 named slots, leaving 13 pending.
 
+## Correct-fatal-errors option (`$24D5`)
+
+The authenticated command maps to selector `$9E`, toggles default-on byte `$005E76EA`, and is
+stored as `Options` bit 0. The object renderer reads the byte at `$0042F218`, `$0042F544`,
+`$0042FE49`, `$00433FDD`, and `$004350BD`: invalid dispatch states increment the shared fatal
+counter and, while enabled, rewrite the mutable layout record to a safe parameter or ordinary
+object `$10`. `RebuildAndValidateLevelObjectLayout` and `RebuildAndValidateSpriteLayout` report
+the resulting counts with the original `Fatal Error Detected!` strings. The sprite compositor's
+corresponding `$004C3A00` branch clears the invalid display-node selector before redispatch; Rust's
+typed sprite renderer has no indirect function-pointer state and already defines all 256 IDs.
+
+Rust persists the same default-on preference, exposes it in Options and through
+`LM_OPTIONS_CORRECT_FATAL_ERRORS`, and runs an explicit correction pass when a level is decoded.
+The pass leaves viewing lossless when disabled, chooses only installed definitions, applies all
+replacements through one staged controller/Undo boundary, and reports the exact corrected record
+count. A synthetic malformed-handler test proves both standard and extended fallbacks; an
+independent all-512 pristine audit proves no vanilla record is changed. Native preference,
+toggle, command-partition, complete-suite, renderer, manifest, and i686 gates pass. Authenticated
+command coverage is now 313/317 with four pending.
+
 ## Background-editor ownership preference (`$26B5`)
 
 Selector `$D7` toggles persisted byte `$00E278C8`, stored as `Options2` bit 22. The only runtime

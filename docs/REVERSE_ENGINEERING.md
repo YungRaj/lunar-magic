@@ -5102,3 +5102,21 @@ Layer 2, and the sprite stream, preserving a single aggregate history boundary.
 The adjacent command-table byte for `LM_KEY_DUMP_DATA` `$26B2` is `$DF`. The handler switch has
 cases only through `$DE`, so this historical name deliberately returns through the successful
 default path without UI, file output, ROM mutation, or editor-state mutation.
+
+## Correct fatal level-layout errors
+
+`LM_OPTIONS_CORRECT_FATAL_ERRORS` `$24D5` selects command case `$9E`, which toggles byte
+`$005E76EA`. `SynchronizeApplicationSettingsRegistry` reads and writes it as `Options` bit 0; the
+PE initializer sets it to one. `RebuildAndValidateLevelObjectLayout` `$00469740` and
+`RebuildAndValidateSpriteLayout` `$00469800` call the two render/rebuild pipelines and use their
+nonzero return value as the singular/plural fatal-error count.
+
+The corrected object-xref VAs are `$0042F218`, `$0042F544`, `$0042FE49`, `$00433FDD`, and
+`$004350BD` (raw file offsets must add image base `$00400000`, not `$00400C00`). Each increments
+the shared error counter before testing the option. Enabled branches rewrite the mutable record or
+dispatcher state to a valid value and redispatch; the general unknown standard-object branch at
+`$00433FDD` writes object `$10`. Disabled branches retain the native fallback path. Sprite helper
+`$004C3A00` similarly increments its error counter, clears byte `+$12` in the invalid linked
+display node when enabled, and jumps through the corrected node callback; disabled mode renders
+the nonfatal fallback directly. Thus the option controls real in-memory correction, not merely
+whether the final warning dialog is shown.

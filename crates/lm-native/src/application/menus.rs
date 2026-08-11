@@ -585,6 +585,16 @@ impl NativeApplication {
             {
                 self.set_check_object_placement_on_save(check_object_placement);
             }
+            let mut correct_fatal_errors = self.correct_fatal_errors.unwrap_or(true);
+            if ui
+                .checkbox(
+                    &mut correct_fatal_errors,
+                    "Correct Fatal Errors in Level Data",
+                )
+                .changed()
+            {
+                self.set_correct_fatal_errors(correct_fatal_errors);
+            }
             let mut warn_vertical_fireball = self.warn_vertical_fireball_buoyancy.unwrap_or(true);
             if ui
                 .checkbox(

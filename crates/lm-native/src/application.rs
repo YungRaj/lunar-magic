@@ -232,6 +232,7 @@ pub(crate) struct NativeApplication {
     scan_exits_on_save: Option<bool>,
     count_sprites_on_save: Option<bool>,
     check_object_placement_on_save: Option<bool>,
+    correct_fatal_errors: Option<bool>,
     warn_vertical_fireball_buoyancy: Option<bool>,
     gfx_bypass_list_dialogs: Option<bool>,
     overworld_editor: OverworldEditor,
@@ -336,6 +337,8 @@ impl NativeApplication {
         "lunar_magic_rust.count_sprites_on_save.v1";
     const CHECK_OBJECT_PLACEMENT_STORAGE_KEY: &'static str =
         "lunar_magic_rust.check_object_placement_on_save.v1";
+    const CORRECT_FATAL_ERRORS_STORAGE_KEY: &'static str =
+        "lunar_magic_rust.correct_fatal_errors.v1";
     const WARN_VERTICAL_FIREBALL_STORAGE_KEY: &'static str =
         "lunar_magic_rust.warn_vertical_fireball_buoyancy.v1";
     const WARN_IPS_SIBLING_STORAGE_KEY: &'static str =
@@ -701,6 +704,12 @@ impl NativeApplication {
         if let Some(encoded) = storage.get_string(Self::CHECK_OBJECT_PLACEMENT_STORAGE_KEY) {
             match decode_enabled_preference(&encoded, "object-placement save warning") {
                 Ok(enabled) => self.check_object_placement_on_save = Some(enabled),
+                Err(error) => self.effects.error = Some(error),
+            }
+        }
+        if let Some(encoded) = storage.get_string(Self::CORRECT_FATAL_ERRORS_STORAGE_KEY) {
+            match decode_enabled_preference(&encoded, "fatal level-layout correction") {
+                Ok(enabled) => self.correct_fatal_errors = Some(enabled),
                 Err(error) => self.effects.error = Some(error),
             }
         }
@@ -1387,6 +1396,10 @@ impl eframe::App for NativeApplication {
             encode_enabled_preference(self.check_object_placement_on_save.unwrap_or(true)),
         );
         storage.set_string(
+            Self::CORRECT_FATAL_ERRORS_STORAGE_KEY,
+            encode_enabled_preference(self.correct_fatal_errors.unwrap_or(true)),
+        );
+        storage.set_string(
             Self::WARN_VERTICAL_FIREBALL_STORAGE_KEY,
             encode_enabled_preference(self.warn_vertical_fireball_buoyancy.unwrap_or(true)),
         );
@@ -1463,6 +1476,8 @@ impl eframe::App for NativeApplication {
                 .set_check_object_placement_on_save(
                     self.check_object_placement_on_save.unwrap_or(true),
                 );
+            self.vanilla_level_editor
+                .set_correct_fatal_errors(self.correct_fatal_errors.unwrap_or(true));
             self.vanilla_level_editor
                 .set_warn_vertical_fireball_buoyancy(
                     self.warn_vertical_fireball_buoyancy.unwrap_or(true),
@@ -2596,6 +2611,22 @@ mod preference_tests {
             let mut reopened = NativeApplication::default();
             reopened.load_persistent_preferences(Some(&storage));
             assert_eq!(reopened.check_object_placement_on_save, Some(expected));
+        }
+    }
+
+    #[test]
+    fn native_save_and_reopen_persist_fatal_error_correction() {
+        for expected in [false, true] {
+            let mut source = NativeApplication {
+                correct_fatal_errors: Some(expected),
+                ..NativeApplication::default()
+            };
+            let mut storage = MemoryStorage::default();
+            eframe::App::save(&mut source, &mut storage);
+
+            let mut reopened = NativeApplication::default();
+            reopened.load_persistent_preferences(Some(&storage));
+            assert_eq!(reopened.correct_fatal_errors, Some(expected));
         }
     }
 

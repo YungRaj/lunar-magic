@@ -490,6 +490,9 @@ impl NativeApplication {
                     !self.check_object_placement_on_save.unwrap_or(true),
                 );
             }
+            UserToolbarNativeAction::CorrectFatalErrors => {
+                self.set_correct_fatal_errors(!self.correct_fatal_errors.unwrap_or(true));
+            }
             UserToolbarNativeAction::WarnIpsSiblingOnSave => {
                 self.set_warn_ips_sibling_on_save(!self.warn_ips_sibling_on_save.unwrap_or(true));
             }
@@ -1415,6 +1418,17 @@ impl NativeApplication {
         .into();
     }
 
+    pub(super) fn set_correct_fatal_errors(&mut self, enabled: bool) {
+        self.correct_fatal_errors = Some(enabled);
+        self.vanilla_level_editor.set_correct_fatal_errors(enabled);
+        self.app.status = if enabled {
+            "Enabled correction of fatal level-layout errors"
+        } else {
+            "Disabled correction of fatal level-layout errors"
+        }
+        .into();
+    }
+
     pub(super) fn set_warn_ips_sibling_on_save(&mut self, enabled: bool) {
         self.warn_ips_sibling_on_save = Some(enabled);
         if !enabled {
@@ -1983,6 +1997,7 @@ enum UserToolbarNativeAction {
     ScanExitsOnSave,
     CountSpritesOnSave,
     CheckObjectPlacementOnSave,
+    CorrectFatalErrors,
     WarnIpsSiblingOnSave,
     ConvertBerryGfxTile,
     Install4bppOnGraphicsInsertion,
@@ -2109,6 +2124,7 @@ fn user_toolbar_native_action(name: &str) -> Option<UserToolbarNativeAction> {
         "LM_OPTIONS_SCAN_EXITS" => UserToolbarNativeAction::ScanExitsOnSave,
         "LM_OPTIONS_SCAN_SPRITES" => UserToolbarNativeAction::CountSpritesOnSave,
         "LM_OPTIONS_WARN_OBJECT" => UserToolbarNativeAction::CheckObjectPlacementOnSave,
+        "LM_OPTIONS_CORRECT_FATAL_ERRORS" => UserToolbarNativeAction::CorrectFatalErrors,
         "LM_OPTIONS_WARN_IPS" => UserToolbarNativeAction::WarnIpsSiblingOnSave,
         "LM_OPTIONS_CONVERT_BERRY" => UserToolbarNativeAction::ConvertBerryGfxTile,
         "LM_OPTIONS_4BPP_PATCH" => UserToolbarNativeAction::Install4bppOnGraphicsInsertion,
@@ -3199,7 +3215,7 @@ mod user_toolbar_tests {
                     || user_toolbar_native_action(entry.name).is_some()
             })
             .collect::<Vec<_>>();
-        assert_eq!(supported.len(), 312);
+        assert_eq!(supported.len(), 313);
         assert!(
             supported
                 .iter()
@@ -3877,6 +3893,30 @@ mod user_toolbar_tests {
     }
 
     #[test]
+    fn correct_fatal_errors_command_toggles_the_default_on_preference() {
+        assert_eq!(
+            user_toolbar_native_action("LM_OPTIONS_CORRECT_FATAL_ERRORS"),
+            Some(UserToolbarNativeAction::CorrectFatalErrors)
+        );
+        let mut native = NativeApplication::default();
+        assert_eq!(native.correct_fatal_errors, None);
+
+        native.apply_user_toolbar_native_action(
+            &egui::Context::default(),
+            UserToolbarNativeAction::CorrectFatalErrors,
+        );
+        assert_eq!(native.correct_fatal_errors, Some(false));
+        assert!(native.app.status.contains("Disabled correction"));
+
+        native.apply_user_toolbar_native_action(
+            &egui::Context::default(),
+            UserToolbarNativeAction::CorrectFatalErrors,
+        );
+        assert_eq!(native.correct_fatal_errors, Some(true));
+        assert!(native.app.status.contains("Enabled correction"));
+    }
+
+    #[test]
     fn other_super_bypass_command_toggles_the_persisted_dialog_style() {
         let mut native = NativeApplication::default();
         assert_eq!(native.gfx_bypass_list_dialogs, None);
@@ -4296,7 +4336,7 @@ mod user_toolbar_tests {
                     && user_toolbar_native_action(entry.name).is_none()
             })
             .collect::<Vec<_>>();
-        assert_eq!(unsupported.len(), 5);
+        assert_eq!(unsupported.len(), 4);
         if std::env::var_os("LM_DIAGNOSTIC_UNSUPPORTED_TOOLBAR_COMMANDS").is_some() {
             for entry in unsupported {
                 eprintln!(

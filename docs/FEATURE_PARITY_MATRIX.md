@@ -1295,8 +1295,14 @@ to Normal on the next level save, routes `LM_OPTIONS_INSTALL_VRAM` `$24C4` as th
 toggle, shares pending state with the existing `$24E8` options dialog, retains recognized installed
 versions, and leaves unknown runtimes untouched. Focused default, toggle, dialog, install,
 replacement, unknown-runtime, save/reopen, and Undo tests pass. The authenticated partition is now
-**312 routed / 5 pending**; the remaining commands are FastROM use/patch, prefer-past-2-MiB,
-correct-fatal-errors, and SA-1 RAM remap. The aggregate remains 59/65 because the configuration row
+**313 routed / 4 pending**. `LM_OPTIONS_CORRECT_FATAL_ERRORS` `$24D5` now persists its original
+default-on `Options` bit-0 state and drives an atomic level-layout correction pass whose safe `$10`
+standard-object and installed extended-object fallbacks are bound to the recovered native rewrite
+branches. Disabled mode retains bytes losslessly; enabled corrections share one staged Undo
+boundary and surface the original fatal-error count wording. The exhaustive sprite renderer has no
+unsafe indirect display-node dispatch and covers all 256 IDs. Synthetic malformed-layout and
+all-512 pristine no-correction tests bind the consumer. The remaining commands are FastROM
+use/patch, prefer-past-2-MiB, and SA-1 RAM remap. The aggregate remains 59/65 because the configuration row
 is still Partial.
 
 Toolbar coverage update (2026-08-11, current per-ROM VRAM patch options): authenticated

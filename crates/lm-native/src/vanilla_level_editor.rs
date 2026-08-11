@@ -596,6 +596,7 @@ pub(crate) struct VanillaLevelEditor {
     sprite_count_save_warning: Option<SpriteCountSaveWarning>,
     object_placement_save_warning: Option<ObjectPlacementSaveWarning>,
     vertical_fireball_save_warning: Option<VerticalFireballSaveWarning>,
+    fatal_error_corrections: usize,
     game_preview: Option<bool>,
     snes_viewport: Option<bool>,
     draw_selection_over_live: Option<bool>,
@@ -610,6 +611,7 @@ pub(crate) struct VanillaLevelEditor {
     scan_exits_on_save: Option<bool>,
     count_sprites_on_save: Option<bool>,
     check_object_placement_on_save: Option<bool>,
+    correct_fatal_errors: Option<bool>,
     warn_vertical_fireball_buoyancy: Option<bool>,
     auto_set_screens: Option<bool>,
     allow_fragmentation: Option<bool>,
@@ -725,6 +727,10 @@ impl VanillaLevelEditor {
         if !enabled {
             self.object_placement_save_warning = None;
         }
+    }
+
+    pub(crate) fn set_correct_fatal_errors(&mut self, enabled: bool) {
+        self.correct_fatal_errors = Some(enabled);
     }
 
     pub(crate) fn set_warn_vertical_fireball_buoyancy(&mut self, enabled: bool) {
@@ -1727,6 +1733,20 @@ impl VanillaLevelEditor {
         if let Some(error) = &self.error {
             ui.colored_label(egui::Color32::RED, error);
         }
+        if self.fatal_error_corrections != 0 {
+            ui.colored_label(
+                egui::Color32::YELLOW,
+                format!(
+                    "Fatal Error Detected! Corrected {} fatal error{} in the Level Layout Data.",
+                    self.fatal_error_corrections,
+                    if self.fatal_error_corrections == 1 {
+                        ""
+                    } else {
+                        "s"
+                    }
+                ),
+            );
+        }
         ui.horizontal_wrapped(|ui| {
             if ui.button("Stage header changes").clicked() {
                 let controller = self
@@ -2205,7 +2225,7 @@ impl VanillaLevelEditor {
             layer2_layout,
             &sprite_lengths,
         ) {
-            Ok(controller) => {
+            Ok(mut controller) => {
                 let mut entrance_layout = lm_profile::smw_us_v1_vanilla_entrance_layout();
                 entrance_layout.mapper = snapshot.identity.mapper;
                 let entrance_error = match VanillaEntranceController::decode_with_midway(
@@ -2280,6 +2300,25 @@ impl VanillaLevelEditor {
                 self.standard_object_map = editor_project.as_ref().ok().and_then(|project| {
                     lm_profile::load_smw_us_v1_standard_object_definition_map(&project.rom).ok()
                 });
+                self.fatal_error_corrections = 0;
+                let mut correction_error = None;
+                if self.correct_fatal_errors.unwrap_or(true)
+                    && let Some(map) = self.standard_object_map.as_ref()
+                {
+                    match fatal_object_correction_edits(&controller, map) {
+                        Ok(edits) if !edits.is_empty() => {
+                            let correction_count = edits.len();
+                            match controller.apply_edits(&[NativeLevelEdit::Objects(edits)]) {
+                                Ok(()) => {
+                                    self.fatal_error_corrections = correction_count;
+                                }
+                                Err(error) => correction_error = Some(error.to_string()),
+                            }
+                        }
+                        Ok(_) => {}
+                        Err(error) => correction_error = Some(error),
+                    }
+                }
                 self.shared_vanilla_background = editor_project
                     .as_ref()
                     .ok()
@@ -2335,7 +2374,7 @@ impl VanillaLevelEditor {
                     controller.level().sprites.tokens.first(),
                 );
                 self.controller = Some(controller);
-                self.error = entrance_error.or(secondary_exit_error);
+                self.error = correction_error.or(entrance_error).or(secondary_exit_error);
             }
             Err(error) => {
                 self.controller = None;
@@ -2368,6 +2407,7 @@ impl VanillaLevelEditor {
         self.sprite_count_save_warning = None;
         self.object_placement_save_warning = None;
         self.vertical_fireball_save_warning = None;
+        self.fatal_error_corrections = 0;
         self.entrance_controller = None;
         self.secondary_exits = None;
         self.secondary_exit_references = None;
@@ -13631,6 +13671,51 @@ const fn level_minor_tile_limit(vertical: bool) -> u16 {
     }
 }
 
+fn fatal_object_correction_edits(
+    controller: &LevelController,
+    map: &lm_profile::SmwUsV1StandardObjectDefinitionMap,
+) -> Result<Vec<ObjectEdit>, String> {
+    let tileset = controller.level().layer1.header.object_tileset();
+    let family = match lm_profile::smw_us_v1_object_family(tileset) {
+        lm_profile::VanillaObjectFamily::Normal => 0,
+        lm_profile::VanillaObjectFamily::Castle => 1,
+        lm_profile::VanillaObjectFamily::Rope => 2,
+        lm_profile::VanillaObjectFamily::Underground => 3,
+        lm_profile::VanillaObjectFamily::GhostHouse => 4,
+    };
+    let handler_map = map
+        .family(family)
+        .ok_or_else(|| "fatal-error correction has no active object family".to_owned())?;
+    let mut definitions = lm_render::StandardObjectDefinitionSet::empty();
+    lm_render::install_lunar_magic_shared_extended_objects(&mut definitions)
+        .map_err(|error| error.to_string())?;
+    lm_render::install_lunar_magic_tileset_extended_objects(&mut definitions, tileset)
+        .map_err(|error| error.to_string())?;
+    lm_render::install_lunar_magic_shared_standard_objects(&mut definitions)
+        .map_err(|error| error.to_string())?;
+    Ok(lm_render::lunar_magic_fatal_object_corrections(
+        &controller.level().layer1.objects,
+        &definitions,
+        handler_map,
+    )
+    .into_iter()
+    .map(|correction| {
+        let record = &controller.level().layer1.objects.records[correction.record_index];
+        if record.command_id() == correction.command_id {
+            ObjectEdit::SetParameter {
+                index: correction.record_index,
+                parameter: correction.parameter,
+            }
+        } else {
+            ObjectEdit::SetCommandId {
+                index: correction.record_index,
+                command_id: correction.command_id,
+            }
+        }
+    })
+    .collect())
+}
+
 #[derive(Clone, Copy)]
 struct OrderedObjectDraw<'a> {
     texture: &'a egui::TextureHandle,
@@ -18586,6 +18671,10 @@ mod tests {
                 scope.spawn(move || {
                     let mut app = AppState::default();
                     app.load_rom(bytes.as_ref().clone()).unwrap();
+                    let definition_map = lm_profile::load_smw_us_v1_standard_object_definition_map(
+                        &app.project().unwrap().rom,
+                    )
+                    .unwrap();
                     for level in (worker..0x200).step_by(8) {
                         app.dispatch(Command::SelectLevel(level)).unwrap();
                         let snapshot = app.controller_snapshot().unwrap();
@@ -18597,6 +18686,12 @@ mod tests {
                             &lm_level::SpriteLengthTable::standard(),
                         )
                         .unwrap_or_else(|error| panic!("level ${level:03X} model failed: {error}"));
+                        assert!(
+                            fatal_object_correction_edits(&controller, &definition_map)
+                                .unwrap()
+                                .is_empty(),
+                            "pristine level ${level:03X} must not need fatal correction"
+                        );
                         crate::vanilla_map16_preview::render(
                             snapshot.rom_bytes,
                             level,
@@ -18611,6 +18706,88 @@ mod tests {
                 });
             }
         });
+    }
+
+    #[test]
+    fn fatal_object_correction_is_one_staged_undo_boundary() {
+        let mut bytes = crate::test_support::pristine_smw_us_rom_bytes();
+        let mut source_app = AppState::default();
+        source_app.load_rom(bytes.clone()).unwrap();
+        source_app.dispatch(Command::SelectLevel(0x105)).unwrap();
+        let source_snapshot = source_app.controller_snapshot().unwrap();
+        let source = LevelController::decode(
+            &source_snapshot,
+            lm_profile::smw_us_v1_vanilla_level_layout(),
+            &SpriteLengthTable::standard(),
+        )
+        .unwrap();
+        let (record_index, command) = source
+            .level()
+            .layer1
+            .objects
+            .records
+            .iter()
+            .enumerate()
+            .find_map(|(index, record)| {
+                (record.encoded().len() == 3
+                    && record.command_id() != 0
+                    && record.command_id() != 0x10)
+                    .then_some((index, record.command_id()))
+            })
+            .expect("pristine level 105 has an ordinary three-byte object");
+        let family = match lm_profile::smw_us_v1_object_family(
+            source.level().layer1.header.object_tileset(),
+        ) {
+            lm_profile::VanillaObjectFamily::Normal => 0,
+            lm_profile::VanillaObjectFamily::Castle => 1,
+            lm_profile::VanillaObjectFamily::Rope => 2,
+            lm_profile::VanillaObjectFamily::Underground => 3,
+            lm_profile::VanillaObjectFamily::GhostHouse => 4,
+        };
+        let table_offsets = [0x6a455, 0x6c19a, 0x6cd9a, 0x6d99a, 0x6e89a];
+        let pointer = table_offsets[family] + (usize::from(command) - 1) * 3;
+        bytes[pointer..pointer + 3].copy_from_slice(&[1, 2, 3]);
+
+        let mut app = AppState::default();
+        app.load_rom(bytes).unwrap();
+        app.dispatch(Command::SelectLevel(0x105)).unwrap();
+        let snapshot = app.controller_snapshot().unwrap();
+        let mut controller = LevelController::decode(
+            &snapshot,
+            lm_profile::smw_us_v1_vanilla_level_layout(),
+            &SpriteLengthTable::standard(),
+        )
+        .unwrap();
+        let map = lm_profile::load_smw_us_v1_standard_object_definition_map(
+            &app.project().unwrap().rom,
+        )
+        .unwrap();
+        let edits = fatal_object_correction_edits(&controller, &map).unwrap();
+        assert!(!edits.is_empty());
+        assert!(edits.iter().any(|edit| {
+            matches!(
+                edit,
+                ObjectEdit::SetCommandId {
+                    index,
+                    command_id: 0x10
+                } if *index == record_index
+            )
+        }));
+
+        controller
+            .apply_edits(&[NativeLevelEdit::Objects(edits)])
+            .unwrap();
+        assert_eq!(
+            controller.level().layer1.objects.records[record_index].command_id(),
+            0x10
+        );
+        assert!(controller.is_modified());
+        controller.undo();
+        assert_eq!(
+            controller.level().layer1.objects.records[record_index].command_id(),
+            command
+        );
+        assert!(!controller.is_modified());
     }
 
     #[test]

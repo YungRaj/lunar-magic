@@ -401,6 +401,67 @@ pub struct StandardObjectPaintedCell {
     pub tile: u16,
 }
 
+/// One non-fatal replacement selected for an object record that the native renderer cannot
+/// dispatch. Lunar Magic performs these replacements in its mutable level-layout buffer before
+/// reporting the number of corrected fatal errors.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct FatalObjectCorrection {
+    pub record_index: usize,
+    pub command_id: u8,
+    pub parameter: u8,
+}
+
+/// Finds object records whose recovered handler or extended-object definition cannot be rendered
+/// and selects Lunar Magic's safe ordinary-object fallback (`$10`) or the first installed
+/// extended-object definition. The caller owns the atomic edit/Undo boundary.
+///
+/// This is deliberately separate from rendering: merely viewing a malformed level must not hide
+/// that its bytes were corrected, and disabling the option must leave the stream lossless.
+#[must_use]
+pub fn lunar_magic_fatal_object_corrections(
+    stream: &ObjectStream,
+    definitions: &StandardObjectDefinitionSet,
+    handler_map: &[u8; 64],
+) -> Vec<FatalObjectCorrection> {
+    let safe_standard = definitions.handler_definition(0x10).is_some();
+    let safe_extended =
+        (4..=u8::MAX).find(|parameter| definitions.extended_definition(*parameter).is_some());
+    stream
+        .records
+        .iter()
+        .enumerate()
+        .filter_map(|(record_index, record)| {
+            let command = record.command_id();
+            let valid = if command == 0 {
+                record.parameter() <= 3
+                    || definitions
+                        .extended_definition(record.parameter())
+                        .is_some()
+            } else {
+                handler_map
+                    .get(usize::from(command))
+                    .and_then(|handler| definitions.handler_definition(*handler))
+                    .is_some()
+            };
+            if valid {
+                None
+            } else if command == 0 {
+                safe_extended.map(|parameter| FatalObjectCorrection {
+                    record_index,
+                    command_id: 0,
+                    parameter,
+                })
+            } else {
+                safe_standard.then_some(FatalObjectCorrection {
+                    record_index,
+                    command_id: 0x10,
+                    parameter: record.parameter(),
+                })
+            }
+        })
+        .collect()
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct LunarMagicSwitchViewState {
     pub green: bool,
@@ -5133,6 +5194,67 @@ mod tests {
             page_stride: 0x1b0,
             base_cell: 0,
             vertical: false,
+        }
+    }
+
+    #[test]
+    fn fatal_correction_pass_is_explicit_and_selects_renderable_fallbacks() {
+        let mut definitions = StandardObjectDefinitionSet::empty();
+        install_lunar_magic_shared_extended_objects(&mut definitions).unwrap();
+        install_lunar_magic_shared_standard_objects(&mut definitions).unwrap();
+        let mut handler_map = [0_u8; 64];
+        handler_map[1] = u8::MAX;
+        let stream = ObjectStream {
+            records: vec![
+                ObjectRecord::new(vec![0, 0x10, 0x44]).unwrap(),
+                ObjectRecord::new(vec![0, 0, 0xff]).unwrap(),
+                ObjectRecord::new(vec![0, 0, 0]).unwrap(),
+            ],
+        };
+
+        let corrections = lunar_magic_fatal_object_corrections(&stream, &definitions, &handler_map);
+
+        assert_eq!(corrections.len(), 2);
+        assert_eq!(corrections[0].record_index, 0);
+        assert_eq!(corrections[0].command_id, 0x10);
+        assert_eq!(corrections[0].parameter, 0x44);
+        assert_eq!(corrections[1].record_index, 1);
+        assert_eq!(corrections[1].command_id, 0);
+        assert!(
+            definitions
+                .extended_definition(corrections[1].parameter)
+                .is_some()
+        );
+    }
+
+    #[test]
+    fn every_pristine_level_is_already_free_of_fatal_object_corrections() {
+        let image = RomImage::from_bytes(pristine_smw_us_rom_bytes()).unwrap();
+        let definition_map = load_smw_us_v1_standard_object_definition_map(&image).unwrap();
+        let project = lm_project::Project::new(image);
+        let layout = lm_profile::smw_us_v1_vanilla_level_layout();
+        let lengths = lm_level::SpriteLengthTable::standard();
+
+        for slot in 0..0x200 {
+            let level = project.load_level_slot(slot, layout, &lengths).unwrap();
+            let tileset = level.layer1.header.object_tileset();
+            let family = match lm_profile::smw_us_v1_object_family(tileset) {
+                lm_profile::VanillaObjectFamily::Normal => 0,
+                lm_profile::VanillaObjectFamily::Castle => 1,
+                lm_profile::VanillaObjectFamily::Rope => 2,
+                lm_profile::VanillaObjectFamily::Underground => 3,
+                lm_profile::VanillaObjectFamily::GhostHouse => 4,
+            };
+            let mut definitions = StandardObjectDefinitionSet::empty();
+            install_lunar_magic_shared_extended_objects(&mut definitions).unwrap();
+            install_lunar_magic_tileset_extended_objects(&mut definitions, tileset).unwrap();
+            install_lunar_magic_shared_standard_objects(&mut definitions).unwrap();
+            let corrections = lunar_magic_fatal_object_corrections(
+                &level.layer1.objects,
+                &definitions,
+                definition_map.family(family).unwrap(),
+            );
+            assert!(corrections.is_empty(), "level ${slot:03X}");
         }
     }
 
