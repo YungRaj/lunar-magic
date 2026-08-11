@@ -80,10 +80,19 @@ impl Workspace {
         search_start: &str,
         search_end: &str,
     ) -> Result<ExAnimationSaveOptions, String> {
+        self.save_options_for_image(search_start, search_end, &self.image)
+    }
+
+    pub(super) fn save_options_for_image(
+        &self,
+        search_start: &str,
+        search_end: &str,
+        image: &RomImage,
+    ) -> Result<ExAnimationSaveOptions, String> {
         let range = parse_search_range(search_start, search_end)?;
         let allocation = self
             .profile
-            .allocation_policy_for_rom(range, &self.image, self.internal_header)
+            .allocation_policy_for_rom(range, image, self.internal_header)
             .map_err(|error| error.to_string())?;
         Ok(ExAnimationSaveOptions {
             allocation,

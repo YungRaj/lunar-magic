@@ -42,6 +42,35 @@ pub(crate) struct RomExAnimationEditor {
 }
 
 impl RomExAnimationEditor {
+    pub(crate) fn stage_recovery_on_project(
+        &self,
+        app: &AppState,
+        staged: &mut lm_project::Project,
+    ) -> Result<u16, String> {
+        let workspace = self
+            .workspace
+            .as_ref()
+            .ok_or("ExAnimation workspace is closed")?;
+        if !workspace.any_modified() {
+            return Err("ExAnimation workspace has no active staged recovery edit".into());
+        }
+        if !workspace.controller.is_modified() {
+            return Err("inactive ExAnimation recovery domain is unexpectedly modified".into());
+        }
+        if workspace.controller.revision() != app.project_revision() {
+            return Err(
+                "ExAnimation recovery controller was prepared from a stale revision".into(),
+            );
+        }
+        let options =
+            workspace.save_options_for_image(&self.search_start, &self.search_end, &staged.rom)?;
+        workspace
+            .controller
+            .save_to_project(staged, &options)
+            .map_err(|error| error.to_string())?;
+        Ok(workspace.slot)
+    }
+
     pub(crate) fn staged_recovery_mutation(
         &self,
         app: &AppState,
@@ -568,6 +597,22 @@ mod tests {
         };
 
         assert!(editor.staged_recovery_generation(&app).is_some());
+        let mut staged = app.project().unwrap().clone();
+        assert_eq!(
+            editor.stage_recovery_on_project(&app, &mut staged).unwrap(),
+            0
+        );
+        assert_eq!(
+            staged
+                .load_exanimation(
+                    0,
+                    profile.exanimation,
+                    &profile.exanimation_double_size_modes,
+                )
+                .unwrap()
+                .setting,
+            replacement
+        );
         let recovery = editor.staged_recovery_snapshot(&app).unwrap().unwrap();
         assert_eq!(app.capabilities().project, lm_app::ProjectStatus::OpenClean);
         assert_eq!(app.project().unwrap().history.undo_len(), 0);

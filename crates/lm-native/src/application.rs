@@ -2044,22 +2044,21 @@ impl eframe::App for NativeApplication {
                     && graphics_recovery_revision.is_some()
                     && exanimation_recovery_revision.is_some()
                 {
-                    let (graphics, graphics_level) = self
+                    let mut staged = self
+                        .app
+                        .project()
+                        .ok_or("open a supported ROM first")?
+                        .clone();
+                    let graphics_level = self
                         .rom_graphics_editor
-                        .staged_recovery_mutation(&self.app)?
-                        .ok_or("staged graphics mutation disappeared")?;
-                    let (exanimation, exanimation_level) = self
+                        .stage_recovery_on_project(&self.app, &mut staged)?;
+                    let exanimation_level = self
                         .rom_exanimation_editor
-                        .staged_recovery_mutation(&self.app)?
-                        .ok_or("staged ExAnimation mutation disappeared")?;
+                        .stage_recovery_on_project(&self.app, &mut staged)?;
                     let level = graphics_level.or(Some(exanimation_level));
                     return self
                         .app
-                        .recovery_snapshot_with_graphics_family(
-                            &graphics,
-                            &exanimation,
-                            level,
-                        )
+                        .recovery_snapshot_with_current_rom(staged.save_snapshot(), level)
                         .map_err(|error| error.to_string());
                 }
                 if staged_editors > 1 {

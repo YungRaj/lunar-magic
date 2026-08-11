@@ -1,9 +1,28 @@
 use super::{GraphicsController, GraphicsControllerError};
 use crate::PreparedRomCommit;
-use lm_project::{GraphicsSaveOptions, Project, RatsOwnershipManifest, RomMutation};
+use lm_project::{
+    GraphicsSaveOptions, PayloadSaveResult, Project, RatsOwnershipManifest, RomMutation,
+};
 use lm_rom::RomImage;
 
 impl GraphicsController {
+    /// Saves the controller's edited semantic graphics into an already evolving staging project.
+    pub fn save_to_project(
+        &self,
+        project: &mut Project,
+        options: &GraphicsSaveOptions,
+    ) -> Result<PayloadSaveResult, GraphicsControllerError> {
+        project
+            .save_graphics_file_with_checksum(
+                self.file_number,
+                &self.graphics,
+                self.layout,
+                self.checksum_field_offset,
+                options,
+            )
+            .map_err(GraphicsControllerError::Io)
+    }
+
     /// Compresses and allocates the edited file on a private project, repairs its checksum, and
     /// returns one compact revision-bound commit.
     ///

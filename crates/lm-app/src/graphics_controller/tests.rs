@@ -1,8 +1,11 @@
 use super::*;
-use crate::{AppError, AppState, Command, FrontendEffect};
-use lm_graphics::{GraphicsTileOwner, IndexedTile};
+use crate::{
+    AppError, AppState, Command, ExAnimationController, ExAnimationControllerEdit, FrontendEffect,
+};
+use lm_graphics::{CompactExAnimation, GraphicsTileOwner, IndexedTile};
 use lm_project::{
-    GraphicsCompression, GraphicsSaveOptions, LevelPointerTable, Project, RatsOwnershipManifest,
+    ExAnimationRomLayout, ExAnimationSaveOptions, GraphicsCompression, GraphicsSaveOptions,
+    LevelPointerTable, Project, RatsOwnershipManifest,
 };
 use lm_rats::{AllocationPolicy, ProtectedRange};
 use lm_rom::RomImage;
@@ -86,6 +89,157 @@ fn graphics_snapshot() -> crate::ControllerSnapshot {
     app.load_rom(test_rom()).unwrap();
     app.dispatch(Command::ShowGraphics(2)).unwrap();
     app.controller_snapshot().unwrap()
+}
+
+#[test]
+fn semantic_graphics_and_exanimation_saves_share_one_growing_staging_project() {
+    const MODES: [bool; 256] = [false; 256];
+    let graphics_layout = layout();
+    let exanimation_layout = ExAnimationRomLayout {
+        mapper: Mapper::LoRom,
+        pointers: LevelPointerTable {
+            offset: 0x300,
+            entries: 2,
+            stride: 3,
+        },
+        maximum_records: 32,
+        maximum_encoded_len: 0x4000,
+    };
+    let animation = CompactExAnimation {
+        setting: 1,
+        header_value: 0x1234,
+        trigger_mask: 0,
+        trigger_values: [0; 16],
+        records: Vec::new(),
+    };
+    let mut bytes = vec![0xff; 0x8000];
+    bytes[0x7fc0..0x7fd5].copy_from_slice(b"SUPER MARIOWORLD     ");
+    bytes[0x7fd5] = 0x20;
+    bytes[0x7fd9] = 1;
+    bytes[0x7fdb] = 0;
+    let initial_policy = AllocationPolicy {
+        search: 0x1000..0x7000,
+        bank_size: Some(0x8000),
+        fill_bytes: vec![0xff],
+        protected: vec![
+            ProtectedRange(0x200..0x20c),
+            ProtectedRange(0x300..0x306),
+            ProtectedRange(0x7fdc..0x7fe0),
+        ],
+    };
+    let mut source = Project::new(RomImage::from_bytes(bytes).unwrap());
+    source
+        .save_graphics_file(
+            2,
+            &graphics(),
+            graphics_layout,
+            &GraphicsSaveOptions {
+                allocation: initial_policy.clone(),
+                previous_block: None,
+                reuse_identical: true,
+                erase_fill: 0xff,
+            },
+        )
+        .unwrap();
+    source
+        .save_exanimation_with_checksum(
+            1,
+            &animation,
+            exanimation_layout,
+            &MODES,
+            0x7fdc,
+            &ExAnimationSaveOptions {
+                allocation: initial_policy,
+                previous_block: None,
+                reuse_identical: true,
+                erase_fill: 0xff,
+            },
+        )
+        .unwrap();
+
+    let mut app = AppState::default();
+    app.load_rom(source.save_snapshot()).unwrap();
+    app.dispatch(Command::ShowGraphics(2)).unwrap();
+    let mut graphics_controller = GraphicsController::decode(
+        &app.controller_snapshot().unwrap(),
+        graphics_layout,
+        GraphicsOwnership::editable(graphics().tiles.len()),
+    )
+    .unwrap();
+    graphics_controller
+        .apply_edits(&[GraphicsControllerEdit::ReplaceRange {
+            start: 1,
+            tiles: vec![IndexedTile::new([13; 64])],
+        }])
+        .unwrap();
+    app.dispatch(Command::ShowExAnimation(1)).unwrap();
+    let mut exanimation_controller = ExAnimationController::decode(
+        &app.controller_snapshot().unwrap(),
+        exanimation_layout,
+        &MODES,
+    )
+    .unwrap();
+    exanimation_controller
+        .apply_edits(&[ExAnimationControllerEdit::SetSetting(7)])
+        .unwrap();
+
+    let baseline = app.project().unwrap().save_snapshot();
+    let mut staged = app.project().unwrap().clone();
+    let growth_policy = AllocationPolicy {
+        search: 0x8000..0x18000,
+        bank_size: Some(0x8000),
+        fill_bytes: vec![0xff],
+        protected: vec![
+            ProtectedRange(0x200..0x20c),
+            ProtectedRange(0x300..0x306),
+            ProtectedRange(0x7fdc..0x7fe0),
+        ],
+    };
+    let graphics_result = graphics_controller
+        .save_to_project(
+            &mut staged,
+            &GraphicsSaveOptions {
+                allocation: growth_policy.clone(),
+                previous_block: None,
+                reuse_identical: true,
+                erase_fill: 0xff,
+            },
+        )
+        .unwrap();
+    let exanimation_result = exanimation_controller
+        .save_to_project(
+            &mut staged,
+            &ExAnimationSaveOptions {
+                allocation: growth_policy,
+                previous_block: None,
+                reuse_identical: true,
+                erase_fill: 0xff,
+            },
+        )
+        .unwrap();
+
+    assert!(staged.rom.logical_len() > baseline.len());
+    assert!(
+        graphics_result.block.full_range().end <= exanimation_result.block.full_range().start
+            || exanimation_result.block.full_range().end
+                <= graphics_result.block.full_range().start
+    );
+    assert_eq!(
+        staged.load_graphics_file(2, graphics_layout).unwrap(),
+        *graphics_controller.graphics()
+    );
+    assert_eq!(
+        staged
+            .load_exanimation(1, exanimation_layout, &MODES)
+            .unwrap(),
+        *exanimation_controller.animation()
+    );
+    assert_eq!(app.project().unwrap().save_snapshot(), baseline);
+    let logical = staged.rom.logical_bytes();
+    assert_eq!(
+        lm_rom::SnesChecksum::decode(logical, 0x7fdc).unwrap(),
+        lm_rom::compute_snes_checksum(logical, 0x7fdc).unwrap()
+    );
 }
 
 #[test]
