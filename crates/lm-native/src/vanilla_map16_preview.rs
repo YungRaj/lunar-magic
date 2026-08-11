@@ -206,6 +206,22 @@ pub(crate) fn load_pristine_internal_graphics_cache(
     header: LegacyLevelHeader,
     special_world_passed: bool,
 ) -> Result<VanillaInternalGraphicsCache, String> {
+    load_pristine_internal_graphics_cache_with_berry_conversion(
+        rom_bytes,
+        level,
+        header,
+        special_world_passed,
+        true,
+    )
+}
+
+pub(crate) fn load_pristine_internal_graphics_cache_with_berry_conversion(
+    rom_bytes: Vec<u8>,
+    level: u16,
+    header: LegacyLevelHeader,
+    special_world_passed: bool,
+    convert_berry_gfx_tile: bool,
+) -> Result<VanillaInternalGraphicsCache, String> {
     let rom = RomImage::from_bytes(rom_bytes).map_err(|error| error.to_string())?;
     let project = Project::new(rom);
     let blank = IndexedTile::new([0; IndexedTile::PIXEL_COUNT]);
@@ -216,7 +232,8 @@ pub(crate) fn load_pristine_internal_graphics_cache(
         usize::from(header.object_tileset()),
     )
     .map_err(|error| error.to_string())?;
-    let foreground_slots = load_layer1_sprite_graphics_slots(&project, foreground_files)?;
+    let foreground_slots =
+        load_layer1_sprite_graphics_slots(&project, foreground_files, convert_berry_gfx_tile)?;
     let mut foreground = materialize_layer1_sprite_vram(&foreground_slots);
     apply_vanilla_common_animation_frame(&project, &mut foreground, 0, header.object_tileset())?;
     cache[INTERNAL_FOREGROUND_START..INTERNAL_FOREGROUND_START + foreground.len()]
@@ -230,7 +247,8 @@ pub(crate) fn load_pristine_internal_graphics_cache(
     if special_world_passed {
         sprite_files[1] = 0x31;
     }
-    let sprite_slots = load_layer1_sprite_graphics_slots(&project, sprite_files)?;
+    let sprite_slots =
+        load_layer1_sprite_graphics_slots(&project, sprite_files, convert_berry_gfx_tile)?;
     let sprites = materialize_layer1_sprite_vram(&sprite_slots);
     cache[INTERNAL_SPRITE_START..INTERNAL_SPRITE_START + sprites.len()].clone_from_slice(&sprites);
 
@@ -314,6 +332,24 @@ pub(crate) fn load_profiled_internal_graphics_cache(
     special_world_passed: bool,
     external_sprite_assets: Option<&lm_graphics::ExternalSpriteAssets>,
 ) -> Result<VanillaInternalGraphicsCache, String> {
+    load_profiled_internal_graphics_cache_with_berry_conversion(
+        image,
+        profile,
+        level,
+        special_world_passed,
+        external_sprite_assets,
+        true,
+    )
+}
+
+pub(crate) fn load_profiled_internal_graphics_cache_with_berry_conversion(
+    image: RomImage,
+    profile: &RevisionProfile,
+    level: u16,
+    special_world_passed: bool,
+    external_sprite_assets: Option<&lm_graphics::ExternalSpriteAssets>,
+    convert_berry_gfx_tile: bool,
+) -> Result<VanillaInternalGraphicsCache, String> {
     let project = Project::new(image.clone());
     let level_layout = profile
         .level_layout_for_rom(&image)
@@ -377,10 +413,19 @@ pub(crate) fn load_profiled_internal_graphics_cache(
     if special_world_passed && sprite_files.len() >= 2 {
         sprite_files[1] = 0x31;
     }
-    let mut foreground =
-        load_profiled_graphics_slots(&project, profile.graphics, &foreground_files)?;
+    let mut foreground = load_profiled_graphics_slots(
+        &project,
+        profile.graphics,
+        &foreground_files,
+        convert_berry_gfx_tile,
+    )?;
     foreground.resize_with(6 * LAYER1_SPRITE_SLOT_TILES, || blank.clone());
-    let mut sprites = load_profiled_graphics_slots(&project, profile.graphics, &sprite_files)?;
+    let mut sprites = load_profiled_graphics_slots(
+        &project,
+        profile.graphics,
+        &sprite_files,
+        convert_berry_gfx_tile,
+    )?;
     sprites.resize_with(4 * LAYER1_SPRITE_SLOT_TILES, || blank.clone());
     let foreground_len = foreground.len().min(INTERNAL_SPRITE_START);
     cache[..foreground_len].clone_from_slice(&foreground[..foreground_len]);
@@ -533,10 +578,12 @@ fn load_profiled_graphics_slots(
     project: &Project,
     layout: lm_project::GraphicsRomLayout,
     files: &[usize],
+    convert_berry_gfx_tile: bool,
 ) -> Result<Vec<IndexedTile>, String> {
     let mut tiles = Vec::with_capacity(files.len() * LAYER1_SPRITE_SLOT_TILES);
     for (slot, file) in files.iter().copied().enumerate() {
-        let file = u16::try_from(file)
+        let file_number = file;
+        let file = u16::try_from(file_number)
             .map_err(|_| format!("graphics slot {slot} file {file:X} exceeds $FFFF"))?;
         let mut loaded = project
             .load_super_graphics_file(file, layout)
@@ -544,6 +591,9 @@ fn load_profiled_graphics_slots(
                 format!("cannot load graphics slot {slot} file GFX{file:02X}: {error}")
             })?
             .tiles;
+        if convert_berry_gfx_tile && matches!(file_number, 0x01 | 0x17 | 0x31) {
+            synthesize_berry_tile_high_plane(&mut loaded);
+        }
         loaded.resize_with(LAYER1_SPRITE_SLOT_TILES, || {
             IndexedTile::new([0; IndexedTile::PIXEL_COUNT])
         });
@@ -652,6 +702,31 @@ pub(crate) fn render_with_animation_view_state_and_background_bank(
     background_bank: u8,
     background_tilemap: Option<Vec<u16>>,
 ) -> Result<VanillaMap16Preview, String> {
+    render_with_animation_view_state_background_bank_and_berry_conversion(
+        rom_bytes,
+        level,
+        header,
+        game_runtime,
+        special_world_passed,
+        animation_view_state,
+        background_bank,
+        background_tilemap,
+        true,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn render_with_animation_view_state_background_bank_and_berry_conversion(
+    rom_bytes: Vec<u8>,
+    level: u16,
+    header: LegacyLevelHeader,
+    game_runtime: bool,
+    special_world_passed: bool,
+    animation_view_state: VanillaAnimationViewState,
+    background_bank: u8,
+    background_tilemap: Option<Vec<u16>>,
+    convert_berry_gfx_tile: bool,
+) -> Result<VanillaMap16Preview, String> {
     render_with_editor_palette_phase_and_animation_view_state(
         rom_bytes,
         level,
@@ -662,6 +737,7 @@ pub(crate) fn render_with_animation_view_state_and_background_bank(
         animation_view_state,
         background_bank,
         background_tilemap,
+        convert_berry_gfx_tile,
     )
 }
 
@@ -683,6 +759,7 @@ pub(crate) fn render_with_editor_palette_phase(
         VanillaAnimationViewState::default(),
         0,
         None,
+        true,
     )
 }
 
@@ -697,6 +774,7 @@ fn render_with_editor_palette_phase_and_animation_view_state(
     animation_view_state: VanillaAnimationViewState,
     background_bank: u8,
     background_tilemap: Option<Vec<u16>>,
+    convert_berry_gfx_tile: bool,
 ) -> Result<VanillaMap16Preview, String> {
     if editor_palette_phase >= 8 {
         return Err(format!(
@@ -714,11 +792,15 @@ fn render_with_editor_palette_phase_and_animation_view_state(
     let graphics_files =
         lm_profile::smw_us_v1_object_tileset_graphics_files(&project.rom, usize::from(tileset))
             .map_err(|error| error.to_string())?;
-    let graphics_slots = load_layer1_sprite_graphics_slots(&project, graphics_files)?;
+    let graphics_slots =
+        load_layer1_sprite_graphics_slots(&project, graphics_files, convert_berry_gfx_tile)?;
     let base_foreground_graphics = materialize_layer1_sprite_vram(&graphics_slots);
     let background_graphics_files = game_graphics_files(level, header, graphics_files);
-    let background_graphics_slots =
-        load_layer1_sprite_graphics_slots(&project, background_graphics_files)?;
+    let background_graphics_slots = load_layer1_sprite_graphics_slots(
+        &project,
+        background_graphics_files,
+        convert_berry_gfx_tile,
+    )?;
     let base_background_graphics = materialize_layer1_sprite_vram(&background_graphics_slots);
     let map16 = lm_profile::load_smw_us_v1_level_map16_base(&project.rom, usize::from(tileset))
         .map_err(|error| error.to_string())?;
@@ -767,7 +849,8 @@ fn render_with_editor_palette_phase_and_animation_view_state(
         // working slot whenever the non-persistent editor-view flag at $00E278DF is enabled.
         sprite_graphics_files[1] = 0x31;
     }
-    let sprite_graphics = load_layer1_sprite_graphics_slots(&project, sprite_graphics_files)?;
+    let sprite_graphics =
+        load_layer1_sprite_graphics_slots(&project, sprite_graphics_files, convert_berry_gfx_tile)?;
     // The pristine ROM stores ordinary SNES 16-bit tilemap words here. Lunar Magic expands
     // those words into a wider internal descriptor while loading them, but the native renderer
     // consumes `Subtile`'s SNES layout directly. Feeding the widened-and-truncated representation
@@ -2041,7 +2124,7 @@ pub(crate) fn render_rom_map16_page(
         usize::from(header.object_tileset()),
     )
     .map_err(|error| error.to_string())?;
-    let graphics_slots = load_layer1_sprite_graphics_slots(&project, graphics_files)?;
+    let graphics_slots = load_layer1_sprite_graphics_slots(&project, graphics_files, true)?;
     let graphics = materialize_layer1_sprite_vram(&graphics_slots);
     let palette = lm_profile::compose_smw_us_v1_level_palette(
         &project,
@@ -2141,6 +2224,7 @@ fn load_layer3_tiles_from_settings(
 fn load_layer1_sprite_graphics_slots(
     project: &Project,
     files: [usize; 4],
+    convert_berry_gfx_tile: bool,
 ) -> Result<Vec<Vec<IndexedTile>>, String> {
     files
         .into_iter()
@@ -2164,6 +2248,9 @@ fn load_layer1_sprite_graphics_slots(
                     )
                 },
             )?;
+            if convert_berry_gfx_tile && matches!(file, 0x01 | 0x17 | 0x31) {
+                synthesize_berry_tile_high_plane(&mut tiles);
+            }
             if tiles.len() > LAYER1_SPRITE_SLOT_TILES {
                 return Err(format!(
                     "GFX{file:02X} contains {} tiles, exceeding its {LAYER1_SPRITE_SLOT_TILES}-tile VRAM slot",
@@ -2176,6 +2263,30 @@ fn load_layer1_sprite_graphics_slots(
             Ok(tiles)
         })
         .collect()
+}
+
+fn synthesize_berry_tile_high_plane(tiles: &mut [IndexedTile]) {
+    if [0usize, 1, 0x10, 0x11].into_iter().any(|tile_index| {
+        tiles
+            .get(tile_index)
+            .is_some_and(|tile| tile.pixels().iter().any(|pixel| pixel & 0x08 != 0))
+    }) {
+        return;
+    }
+    for tile_index in [0usize, 1, 0x10, 0x11] {
+        let Some(tile) = tiles.get_mut(tile_index) else {
+            return;
+        };
+        let converted = std::array::from_fn(|index| {
+            let pixel = tile.pixels()[index];
+            if pixel & 0x07 == 0 {
+                pixel
+            } else {
+                pixel | 0x08
+            }
+        });
+        *tile = IndexedTile::new(converted);
+    }
 }
 
 const fn vanilla_graphics_bitplanes(decoded_len: usize) -> Option<u8> {
@@ -2339,6 +2450,22 @@ mod tests {
 
     fn tile_is_blank(tile: &IndexedTile) -> bool {
         tile.pixels().iter().all(|&pixel| pixel == 0)
+    }
+
+    #[test]
+    fn berry_high_plane_conversion_matches_the_recovered_all_or_nothing_rule() {
+        let mut tiles = vec![IndexedTile::new([1; 64]); 0x12];
+        synthesize_berry_tile_high_plane(&mut tiles);
+        for index in [0usize, 1, 0x10, 0x11] {
+            assert!(tiles[index].pixels().iter().all(|pixel| *pixel == 9));
+        }
+        assert!(tiles[2].pixels().iter().all(|pixel| *pixel == 1));
+
+        let mut guarded = vec![IndexedTile::new([1; 64]); 0x12];
+        guarded[1] = IndexedTile::new([8; 64]);
+        synthesize_berry_tile_high_plane(&mut guarded);
+        assert!(guarded[0].pixels().iter().all(|pixel| *pixel == 1));
+        assert!(guarded[1].pixels().iter().all(|pixel| *pixel == 8));
     }
 
     #[test]
@@ -3196,9 +3323,25 @@ mod tests {
             .unwrap();
         let mut special = lm_graphics::decode_planar_tiles(&special, 3).unwrap();
         special.resize_with(128, || IndexedTile::new([0; IndexedTile::PIXEL_COUNT]));
+        let unconverted = special.clone();
+        synthesize_berry_tile_high_plane(&mut special);
 
         assert_eq!(preview.sprite_graphics_files[1], 0x31);
         assert_eq!(&preview.sprite_tiles[128..256], special.as_slice());
+
+        let disabled = render_with_animation_view_state_background_bank_and_berry_conversion(
+            project.rom.as_file_bytes().to_vec(),
+            0x105,
+            level.layer1.header,
+            false,
+            true,
+            VanillaAnimationViewState::default(),
+            0,
+            None,
+            false,
+        )
+        .unwrap();
+        assert_eq!(&disabled.sprite_tiles[128..256], unconverted.as_slice());
     }
 
     #[test]
@@ -3267,7 +3410,7 @@ mod tests {
             usize::from(level.layer1.header.object_tileset()),
         )
         .unwrap();
-        let slots = load_layer1_sprite_graphics_slots(&project, files).unwrap();
+        let slots = load_layer1_sprite_graphics_slots(&project, files, true).unwrap();
         let mut tiles = materialize_layer1_sprite_vram(&slots);
         if let Ok(tile) = std::env::var("LM_TRACE_MAP16_TILE") {
             let tile = usize::from_str_radix(&tile, 16).unwrap();
@@ -3318,7 +3461,7 @@ mod tests {
                 usize::from(level.layer1.header.sprite_tileset()),
             )
             .unwrap();
-            let sprite_slots = load_layer1_sprite_graphics_slots(&project, files).unwrap();
+            let sprite_slots = load_layer1_sprite_graphics_slots(&project, files, true).unwrap();
             let sprite_tiles = materialize_layer1_sprite_vram(&sprite_slots);
             for cache_tile_offset in [0, 0x200, 0x400] {
                 let differing = sprite_tiles

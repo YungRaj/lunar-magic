@@ -63,6 +63,7 @@ pub(crate) struct VanillaGraphicsEditor {
     internal_cache_unlocked: bool,
     internal_cache_level: Option<u16>,
     internal_cache_special_world: bool,
+    internal_cache_convert_berry: bool,
 }
 
 impl VanillaGraphicsEditor {
@@ -79,6 +80,7 @@ impl VanillaGraphicsEditor {
         app: &AppState,
         special_world_passed: bool,
         joined_graphics_files: &mut bool,
+        convert_berry_gfx_tile: bool,
     ) -> Option<Command> {
         take_graphics_refresh_shortcut(ui);
         if let Some(result) = self.graphics_batch.show(ui.ctx()) {
@@ -105,9 +107,20 @@ impl VanillaGraphicsEditor {
             slot,
         };
         if self.key != Some(key) {
-            self.load(&snapshot, key, app.current_level(), special_world_passed);
+            self.load(
+                &snapshot,
+                key,
+                app.current_level(),
+                special_world_passed,
+                convert_berry_gfx_tile,
+            );
         }
-        self.refresh_internal_cache(&snapshot, app.current_level(), special_world_passed);
+        self.refresh_internal_cache(
+            &snapshot,
+            app.current_level(),
+            special_world_passed,
+            convert_berry_gfx_tile,
+        );
         let file_work_running = self.graphics_batch.is_running();
         let pasted = ui.input(|input| {
             input.events.iter().find_map(|event| match event {
@@ -350,6 +363,7 @@ impl VanillaGraphicsEditor {
         key: EditorKey,
         level: Option<u16>,
         special_world_passed: bool,
+        convert_berry_gfx_tile: bool,
     ) {
         match GraphicsController::decode_editable(
             snapshot,
@@ -377,17 +391,19 @@ impl VanillaGraphicsEditor {
                             &lm_level::SpriteLengthTable::standard(),
                         )
                         .ok()?;
-                    crate::vanilla_map16_preview::load_pristine_internal_graphics_cache(
+                    crate::vanilla_map16_preview::load_pristine_internal_graphics_cache_with_berry_conversion(
                         snapshot.rom_bytes.clone(),
                         level,
                         loaded.layer1.header,
                         special_world_passed,
+                        convert_berry_gfx_tile,
                     )
                     .ok()
                 });
                 self.internal_cache_unlocked = false;
                 self.internal_cache_level = level;
                 self.internal_cache_special_world = special_world_passed;
+                self.internal_cache_convert_berry = convert_berry_gfx_tile;
             }
             Err(error) => {
                 self.controller = None;
@@ -407,14 +423,17 @@ impl VanillaGraphicsEditor {
         snapshot: &lm_app::ControllerSnapshot,
         level: Option<u16>,
         special_world_passed: bool,
+        convert_berry_gfx_tile: bool,
     ) {
         if self.internal_cache_level == level
             && self.internal_cache_special_world == special_world_passed
+            && self.internal_cache_convert_berry == convert_berry_gfx_tile
         {
             return;
         }
         self.internal_cache_level = level;
         self.internal_cache_special_world = special_world_passed;
+        self.internal_cache_convert_berry = convert_berry_gfx_tile;
         self.internal_cache = level.and_then(|level| {
             let image = RomImage::from_bytes(snapshot.rom_bytes.clone()).ok()?;
             let project = lm_project::Project::new(image);
@@ -425,11 +444,12 @@ impl VanillaGraphicsEditor {
                     &lm_level::SpriteLengthTable::standard(),
                 )
                 .ok()?;
-            crate::vanilla_map16_preview::load_pristine_internal_graphics_cache(
+            crate::vanilla_map16_preview::load_pristine_internal_graphics_cache_with_berry_conversion(
                 snapshot.rom_bytes.clone(),
                 level,
                 loaded.layer1.header,
                 special_world_passed,
+                convert_berry_gfx_tile,
             )
             .ok()
         });
@@ -932,6 +952,7 @@ fn pristine_level_graphics_batch_source(
         family: "level",
         exgraphics_names: false,
         encoding: graphics_batch::GraphicsBatchEncoding::Decoded4Bpp,
+        convert_berry_gfx_tile: true,
         raw_4bpp_overrides,
         file_layouts: Vec::new(),
     })
@@ -1019,7 +1040,7 @@ mod tests {
             slot: 0x14,
         };
         let mut editor = VanillaGraphicsEditor::default();
-        editor.load(&snapshot, key, Some(0x105), false);
+        editor.load(&snapshot, key, Some(0x105), false, true);
 
         assert_eq!(editor.key, Some(key));
         assert!(!editor.internal_cache_unlocked);
@@ -1330,12 +1351,12 @@ mod tests {
             slot: 0x14,
         };
         let mut editor = VanillaGraphicsEditor::default();
-        editor.load(&snapshot, key, Some(0x105), false);
+        editor.load(&snapshot, key, Some(0x105), false, true);
         let changed = IndexedTile::new([0x0a; IndexedTile::PIXEL_COUNT]);
         assert!(editor.apply_tile_at(0, changed.clone()));
         let ordinary_sp2 = editor.internal_cache.as_ref().unwrap().tiles[0x480..0x500].to_vec();
 
-        editor.refresh_internal_cache(&snapshot, Some(0x105), true);
+        editor.refresh_internal_cache(&snapshot, Some(0x105), true, true);
         assert_eq!(
             editor.controller.as_ref().unwrap().graphics().tiles[0],
             changed

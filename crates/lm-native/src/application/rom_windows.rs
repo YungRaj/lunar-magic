@@ -173,6 +173,7 @@ impl NativeApplication {
             &self.app,
             self.special_world_passed,
             &mut self.joined_graphics_files,
+            self.convert_berry_gfx_tile.unwrap_or(true),
         );
         if let Some(command) = command
             && self.try_dispatch(context, command)

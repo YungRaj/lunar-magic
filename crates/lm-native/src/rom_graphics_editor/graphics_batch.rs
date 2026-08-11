@@ -18,6 +18,8 @@ pub(crate) struct GraphicsBatchSource {
     /// Uses Lunar Magic's `ExGFX` namespace even for reserved files `$60` through `$63`.
     pub(crate) exgraphics_names: bool,
     pub(crate) encoding: GraphicsBatchEncoding,
+    /// Mirrors Lunar Magic's default-on "Convert Berry GFX Tile" option.
+    pub(crate) convert_berry_gfx_tile: bool,
     pub(crate) raw_4bpp_overrides: Vec<(usize, Vec<u8>)>,
     /// Per-file `(slot, layout)` mappings for non-tabular sources; empty uses `slots` and `layout`.
     pub(crate) file_layouts: Vec<(usize, GraphicsRomLayout)>,
@@ -350,7 +352,11 @@ fn export_batch(
                                 graphics_file_name(file_number, source.exgraphics_names)
                             )
                         })?;
-                    lunar_magic_standard_export_bytes(file_number, native)?
+                    lunar_magic_standard_export_bytes(
+                        file_number,
+                        native,
+                        source.convert_berry_gfx_tile,
+                    )?
                 }
             }
         };
@@ -510,6 +516,7 @@ fn patch_joined_graphics_file(
 fn lunar_magic_standard_export_bytes(
     file_number: usize,
     native: Vec<u8>,
+    convert_berry_gfx_tile: bool,
 ) -> Result<Vec<u8>, String> {
     let expands_to_editable_4bpp = matches!(
         file_number,
@@ -529,9 +536,7 @@ fn lunar_magic_standard_export_bytes(
         lm_graphics::encode_planar_tiles(&tiles, 4)
             .map_err(|error| format!("GFX{file_number:02X}: {error}"))?
     };
-    if matches!(file_number, 0x01 | 0x17 | 0x31) {
-        synthesize_missing_fourth_graphics_bitplane(&mut editable);
-    }
+    convert_berry_file_bytes(file_number, &mut editable, convert_berry_gfx_tile);
     match file_number {
         0x08 => synthesize_selected_tiles(
             &mut editable,
@@ -544,6 +549,12 @@ fn lunar_magic_standard_export_bytes(
         _ => {}
     }
     Ok(editable)
+}
+
+pub(super) fn convert_berry_file_bytes(file_number: usize, bytes: &mut [u8], enabled: bool) {
+    if enabled && matches!(file_number, 0x01 | 0x17 | 0x31) {
+        synthesize_missing_fourth_graphics_bitplane(bytes);
+    }
 }
 
 fn synthesize_selected_tiles(bytes: &mut [u8], tiles: &[usize]) {
@@ -687,6 +698,7 @@ mod tests {
                 family: "standard",
                 exgraphics_names: false,
                 encoding: GraphicsBatchEncoding::Native,
+                convert_berry_gfx_tile: true,
                 raw_4bpp_overrides: Vec::new(),
                 file_layouts: Vec::new(),
             },
@@ -1064,6 +1076,7 @@ mod tests {
             family: "extended",
             exgraphics_names: true,
             encoding: GraphicsBatchEncoding::Native,
+            convert_berry_gfx_tile: true,
             raw_4bpp_overrides: Vec::new(),
             file_layouts: Vec::new(),
         };
@@ -1131,6 +1144,7 @@ mod tests {
             family: "level",
             exgraphics_names: false,
             encoding: GraphicsBatchEncoding::Decoded4Bpp,
+            convert_berry_gfx_tile: true,
             raw_4bpp_overrides: Vec::new(),
             file_layouts: Vec::new(),
         };
@@ -1153,34 +1167,65 @@ mod tests {
         let native = lm_graphics::encode_planar_tiles(&tiles, 3).unwrap();
         let expected = lm_graphics::encode_planar_tiles(&tiles, 4).unwrap();
         assert_eq!(
-            lunar_magic_standard_export_bytes(0x00, native.clone()).unwrap(),
+            lunar_magic_standard_export_bytes(0x00, native.clone(), true).unwrap(),
             expected
         );
         assert_eq!(
-            lunar_magic_standard_export_bytes(0x27, native.clone()).unwrap(),
+            lunar_magic_standard_export_bytes(0x27, native.clone(), true).unwrap(),
             native
         );
         for file_number in [0x2c, 0x2e, 0x30, 0x33] {
             assert_eq!(
-                lunar_magic_standard_export_bytes(file_number, native.clone()).unwrap(),
+                lunar_magic_standard_export_bytes(file_number, native.clone(), true).unwrap(),
                 expected,
                 "GFX{file_number:02X}"
             );
         }
         assert_eq!(
-            lunar_magic_standard_export_bytes(0x31, native.clone())
+            lunar_magic_standard_export_bytes(0x31, native.clone(), true)
                 .unwrap()
                 .len(),
             expected.len()
         );
         for file_number in [0x27, 0x2b, 0x2f, 0x32] {
             assert_eq!(
-                lunar_magic_standard_export_bytes(file_number, native.clone()).unwrap(),
+                lunar_magic_standard_export_bytes(file_number, native.clone(), true).unwrap(),
                 native,
                 "GFX{file_number:02X}"
             );
         }
-        assert!(lunar_magic_standard_export_bytes(0x00, vec![0; 17]).is_err());
+        assert!(lunar_magic_standard_export_bytes(0x00, vec![0; 17], true).is_err());
+    }
+
+    #[test]
+    fn berry_conversion_is_default_on_scoped_and_disableable() {
+        let tiles = vec![IndexedTile::new([1; 64]); 128];
+        let native = lm_graphics::encode_planar_tiles(&tiles, 3).unwrap();
+        let enabled = lunar_magic_standard_export_bytes(0x01, native.clone(), true).unwrap();
+        let disabled = lunar_magic_standard_export_bytes(0x01, native.clone(), false).unwrap();
+        let unrelated = lunar_magic_standard_export_bytes(0x02, native, true).unwrap();
+        let enabled = lm_graphics::decode_planar_tiles(&enabled, 4).unwrap();
+        let disabled = lm_graphics::decode_planar_tiles(&disabled, 4).unwrap();
+        let unrelated = lm_graphics::decode_planar_tiles(&unrelated, 4).unwrap();
+        for tile in [0usize, 1, 0x10, 0x11] {
+            assert!(enabled[tile].pixels().iter().all(|pixel| *pixel == 9));
+            assert!(disabled[tile].pixels().iter().all(|pixel| *pixel == 1));
+            assert!(unrelated[tile].pixels().iter().all(|pixel| *pixel == 1));
+        }
+        assert!(enabled[2].pixels().iter().all(|pixel| *pixel == 1));
+    }
+
+    #[test]
+    fn berry_conversion_skips_the_complete_group_if_any_high_plane_bit_exists() {
+        let mut tiles = vec![IndexedTile::new([1; 64]); 128];
+        let mut mixed = [1; 64];
+        mixed[7] = 8;
+        tiles[0x10] = IndexedTile::new(mixed);
+        let native = lm_graphics::encode_planar_tiles(&tiles, 4).unwrap();
+        assert_eq!(
+            lunar_magic_standard_export_bytes(0x31, native.clone(), true).unwrap(),
+            native
+        );
     }
 
     #[test]
@@ -1203,7 +1248,7 @@ mod tests {
             let native = project
                 .load_decompressed_graphics_file(slot, layout)
                 .unwrap();
-            let actual = lunar_magic_standard_export_bytes(file_number, native).unwrap();
+            let actual = lunar_magic_standard_export_bytes(file_number, native, true).unwrap();
             let expected = fs::read(directory.join(format!("GFX{file_number:02X}.bin"))).unwrap();
             assert_eq!(actual, expected, "GFX{file_number:02X}");
         }

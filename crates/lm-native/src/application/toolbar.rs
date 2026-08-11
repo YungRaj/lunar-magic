@@ -450,6 +450,9 @@ impl NativeApplication {
             UserToolbarNativeAction::WarnIpsSiblingOnSave => {
                 self.set_warn_ips_sibling_on_save(!self.warn_ips_sibling_on_save.unwrap_or(true));
             }
+            UserToolbarNativeAction::ConvertBerryGfxTile => {
+                self.set_convert_berry_gfx_tile(!self.convert_berry_gfx_tile.unwrap_or(true));
+            }
             UserToolbarNativeAction::WarnVerticalFireballBuoyancy => {
                 self.set_warn_vertical_fireball_buoyancy(
                     !self.warn_vertical_fireball_buoyancy.unwrap_or(true),
@@ -1258,6 +1261,19 @@ impl NativeApplication {
         .into();
     }
 
+    pub(super) fn set_convert_berry_gfx_tile(&mut self, enabled: bool) {
+        self.convert_berry_gfx_tile = Some(enabled);
+        self.vanilla_level_editor
+            .set_convert_berry_gfx_tile(enabled);
+        self.rom_graphics_editor.set_convert_berry_gfx_tile(enabled);
+        self.app.status = if enabled {
+            "Enabled berry GFX tile conversion"
+        } else {
+            "Disabled berry GFX tile conversion"
+        }
+        .into();
+    }
+
     pub(super) fn set_warn_vertical_fireball_buoyancy(&mut self, enabled: bool) {
         self.warn_vertical_fireball_buoyancy = Some(enabled);
         self.vanilla_level_editor
@@ -1800,6 +1816,7 @@ enum UserToolbarNativeAction {
     CountSpritesOnSave,
     CheckObjectPlacementOnSave,
     WarnIpsSiblingOnSave,
+    ConvertBerryGfxTile,
     WarnVerticalFireballBuoyancy,
     GfxBypassListDialogs,
     JoinedGraphicsFiles,
@@ -1914,6 +1931,7 @@ fn user_toolbar_native_action(name: &str) -> Option<UserToolbarNativeAction> {
         "LM_OPTIONS_SCAN_SPRITES" => UserToolbarNativeAction::CountSpritesOnSave,
         "LM_OPTIONS_WARN_OBJECT" => UserToolbarNativeAction::CheckObjectPlacementOnSave,
         "LM_OPTIONS_WARN_IPS" => UserToolbarNativeAction::WarnIpsSiblingOnSave,
+        "LM_OPTIONS_CONVERT_BERRY" => UserToolbarNativeAction::ConvertBerryGfxTile,
         "LM_OPTIONS_WARN_SPRITE_33" => UserToolbarNativeAction::WarnVerticalFireballBuoyancy,
         "LM_OPTIONS_INSTALL_VRAM" => UserToolbarNativeAction::GfxBypassListDialogs,
         "LM_OPTIONS_ATTACH_FILES" => UserToolbarNativeAction::JoinedGraphicsFiles,
@@ -2970,7 +2988,7 @@ mod user_toolbar_tests {
                     || user_toolbar_native_action(entry.name).is_some()
             })
             .collect::<Vec<_>>();
-        assert_eq!(supported.len(), 298);
+        assert_eq!(supported.len(), 299);
         assert!(
             supported
                 .iter()
@@ -3324,6 +3342,28 @@ mod user_toolbar_tests {
             native.app.status,
             "Enabled same-name IPS warning on ROM save"
         );
+    }
+
+    #[test]
+    fn berry_conversion_command_toggles_the_original_default_on_preference() {
+        let mut native = NativeApplication::default();
+        assert_eq!(native.convert_berry_gfx_tile, None);
+        assert_eq!(
+            user_toolbar_native_action("LM_OPTIONS_CONVERT_BERRY"),
+            Some(UserToolbarNativeAction::ConvertBerryGfxTile)
+        );
+        native.apply_user_toolbar_native_action(
+            &egui::Context::default(),
+            UserToolbarNativeAction::ConvertBerryGfxTile,
+        );
+        assert_eq!(native.convert_berry_gfx_tile, Some(false));
+        assert_eq!(native.app.status, "Disabled berry GFX tile conversion");
+        native.apply_user_toolbar_native_action(
+            &egui::Context::default(),
+            UserToolbarNativeAction::ConvertBerryGfxTile,
+        );
+        assert_eq!(native.convert_berry_gfx_tile, Some(true));
+        assert_eq!(native.app.status, "Enabled berry GFX tile conversion");
     }
 
     #[test]
@@ -3723,7 +3763,7 @@ mod user_toolbar_tests {
                     && user_toolbar_native_action(entry.name).is_none()
             })
             .collect::<Vec<_>>();
-        assert_eq!(unsupported.len(), 19);
+        assert_eq!(unsupported.len(), 18);
         if std::env::var_os("LM_DIAGNOSTIC_UNSUPPORTED_TOOLBAR_COMMANDS").is_some() {
             for entry in unsupported {
                 eprintln!(

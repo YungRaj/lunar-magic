@@ -5964,7 +5964,14 @@ patch automatically. Rust now performs the same check before creating any ordina
 request, including Save chosen from a dirty close/open/reload confirmation. Save Anyway releases
 the exact deferred save once; Cancel leaves the dirty project in memory and cancels a deferred open
 path. The persisted Tools option bypasses only this companion-file warning. Authenticated native
-command coverage is now 298 of 317 named slots, leaving 19 pending.
+command coverage is now 299 of 317 named slots, leaving 18 pending. `LM_OPTIONS_CONVERT_BERRY`
+(`$24D0`) reproduces Lunar Magic 3.63's default-on `Options` bit 10. The native menu, authenticated
+toolbar route, and persisted preference share one toggle. Enabled graphics loads and standard GFX
+exports and separate/joined standard-GFX insertions synthesize bitplane 3 only for GFX `$01`, `$17`, and `$31`, only for tiles `$00`, `$01`,
+`$10`, and `$11`, and skip the complete group when any sampled high-plane bit already exists.
+Disabling the option preserves the unconverted 3bpp indices in the live editor cache, exported
+files, and insertion input; changing it invalidates the active level preview rather than retaining
+stale pixels.
 
 ## Deprecated Select FG/BG commands (`$2473/$2474`)
 

@@ -199,6 +199,7 @@ pub(crate) struct NativeApplication {
     mouse_gestures: Option<bool>,
     save_mouse_gestures: Option<bool>,
     warn_ips_sibling_on_save: Option<bool>,
+    convert_berry_gfx_tile: Option<bool>,
     ips_sibling_save_warning: Option<IpsSiblingSaveIntent>,
     ips_sibling_save_authorized: bool,
     level_view_visibility: LevelViewVisibility,
@@ -328,6 +329,8 @@ impl NativeApplication {
         "lunar_magic_rust.warn_vertical_fireball_buoyancy.v1";
     const WARN_IPS_SIBLING_STORAGE_KEY: &'static str =
         "lunar_magic_rust.warn_ips_sibling_on_save.v1";
+    const CONVERT_BERRY_GFX_STORAGE_KEY: &'static str =
+        "lunar_magic_rust.convert_berry_gfx_tile.v1";
     const GFX_BYPASS_LIST_DIALOGS_STORAGE_KEY: &'static str =
         "lunar_magic_rust.gfx_bypass_list_dialogs.v1";
 
@@ -693,6 +696,12 @@ impl NativeApplication {
         if let Some(encoded) = storage.get_string(Self::WARN_IPS_SIBLING_STORAGE_KEY) {
             match decode_enabled_preference(&encoded, "same-name IPS save warning") {
                 Ok(enabled) => self.warn_ips_sibling_on_save = Some(enabled),
+                Err(error) => self.effects.error = Some(error),
+            }
+        }
+        if let Some(encoded) = storage.get_string(Self::CONVERT_BERRY_GFX_STORAGE_KEY) {
+            match decode_enabled_preference(&encoded, "berry GFX tile conversion") {
+                Ok(enabled) => self.convert_berry_gfx_tile = Some(enabled),
                 Err(error) => self.effects.error = Some(error),
             }
         }
@@ -1294,6 +1303,10 @@ impl eframe::App for NativeApplication {
             encode_enabled_preference(self.warn_ips_sibling_on_save.unwrap_or(true)),
         );
         storage.set_string(
+            Self::CONVERT_BERRY_GFX_STORAGE_KEY,
+            encode_enabled_preference(self.convert_berry_gfx_tile.unwrap_or(true)),
+        );
+        storage.set_string(
             Self::GFX_BYPASS_LIST_DIALOGS_STORAGE_KEY,
             encode_gfx_bypass_list_dialogs_preference(self.gfx_bypass_list_dialogs.unwrap_or(true)),
         );
@@ -1368,6 +1381,8 @@ impl eframe::App for NativeApplication {
                 .set_allow_fragmentation(self.allow_fragmentation.unwrap_or(true));
             self.vanilla_level_editor
                 .set_mouse_gestures(self.mouse_gestures.unwrap_or(true));
+            self.vanilla_level_editor
+                .set_convert_berry_gfx_tile(self.convert_berry_gfx_tile.unwrap_or(true));
             self.vanilla_level_editor
                 .set_deferred_rom_option_save(self.pending_vram_patch_selection.is_some());
             self.rom_legacy_fg_bg_bypass_editor
@@ -1466,6 +1481,7 @@ impl eframe::App for NativeApplication {
                     &self.app,
                     self.special_world_passed,
                     &mut self.joined_graphics_files,
+                    self.convert_berry_gfx_tile.unwrap_or(true),
                 )
             {
                 self.dispatch(context, command);
@@ -2453,6 +2469,22 @@ mod preference_tests {
             let mut reopened = NativeApplication::default();
             reopened.load_persistent_preferences(Some(&storage));
             assert_eq!(reopened.warn_ips_sibling_on_save, Some(expected));
+        }
+    }
+
+    #[test]
+    fn native_save_and_reopen_persist_berry_gfx_conversion() {
+        for expected in [false, true] {
+            let mut source = NativeApplication {
+                convert_berry_gfx_tile: Some(expected),
+                ..NativeApplication::default()
+            };
+            let mut storage = MemoryStorage::default();
+            eframe::App::save(&mut source, &mut storage);
+
+            let mut reopened = NativeApplication::default();
+            reopened.load_persistent_preferences(Some(&storage));
+            assert_eq!(reopened.convert_berry_gfx_tile, Some(expected));
         }
     }
 

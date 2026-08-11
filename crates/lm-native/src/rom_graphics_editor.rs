@@ -58,6 +58,7 @@ struct Workspace {
     internal_cache: Option<crate::vanilla_map16_preview::VanillaInternalGraphicsCache>,
     internal_cache_error: Option<String>,
     internal_cache_special_world: bool,
+    internal_cache_convert_berry: bool,
     external_sprite_assets: lm_graphics::ExternalSpriteAssets,
 }
 
@@ -130,9 +131,14 @@ pub(crate) struct RomGraphicsEditor {
     external_editor: external_edit::ExternalGraphicsEditor,
     external_tool_id: Option<String>,
     internal_cache_unlocked: bool,
+    convert_berry_gfx_tile: Option<bool>,
 }
 
 impl RomGraphicsEditor {
+    pub(crate) fn set_convert_berry_gfx_tile(&mut self, enabled: bool) {
+        self.convert_berry_gfx_tile = Some(enabled);
+    }
+
     pub(crate) fn open_ordinary_import(
         &mut self,
         app: &AppState,
@@ -184,7 +190,8 @@ impl RomGraphicsEditor {
         if modified_controller(self.workspace.as_ref()) {
             return Err("commit or discard staged graphics edits before inserting GFX".into());
         }
-        let (source, target) = quick_graphics_import_source(app, action, joined_standard)?;
+        let (mut source, target) = quick_graphics_import_source(app, action, joined_standard)?;
+        source.convert_berry_gfx_tile = self.convert_berry_gfx_tile.unwrap_or(true);
         self.start_graphics_import_or_warn(source, target);
         if let Some(error) = self.error.take() {
             return Err(error);
@@ -209,10 +216,12 @@ impl RomGraphicsEditor {
         if modified_controller(self.workspace.as_ref()) {
             return Err("commit or discard staged graphics edits before inserting GFX".into());
         }
-        let (standard_source, standard_target) =
+        let (mut standard_source, standard_target) =
             quick_graphics_import_source(app, QuickGraphicsInsertion::Standard, joined_standard)?;
-        let (extended_source, extended_target) =
+        standard_source.convert_berry_gfx_tile = self.convert_berry_gfx_tile.unwrap_or(true);
+        let (mut extended_source, extended_target) =
             quick_graphics_import_source(app, QuickGraphicsInsertion::ExGraphics, joined_standard)?;
+        extended_source.convert_berry_gfx_tile = self.convert_berry_gfx_tile.unwrap_or(true);
         let pending = PendingGraphicsFormatWarning {
             source: standard_source,
             target: standard_target,
@@ -239,20 +248,23 @@ impl RomGraphicsEditor {
         };
         if workspace.level == level
             && workspace.internal_cache_special_world == special_world_passed
+            && workspace.internal_cache_convert_berry == self.convert_berry_gfx_tile.unwrap_or(true)
         {
             return;
         }
         workspace.level = level;
         workspace.internal_cache_special_world = special_world_passed;
+        workspace.internal_cache_convert_berry = self.convert_berry_gfx_tile.unwrap_or(true);
         let result = level
             .ok_or_else(|| "no active level is available".to_owned())
             .and_then(|level| {
-                crate::vanilla_map16_preview::load_profiled_internal_graphics_cache(
+                crate::vanilla_map16_preview::load_profiled_internal_graphics_cache_with_berry_conversion(
                     workspace.image.clone(),
                     &workspace.profile,
                     level,
                     special_world_passed,
                     Some(&workspace.external_sprite_assets),
+                    self.convert_berry_gfx_tile.unwrap_or(true),
                 )
             });
         match result {
@@ -307,7 +319,9 @@ impl RomGraphicsEditor {
         app: &AppState,
         special_world_passed: bool,
         joined_graphics_files: &mut bool,
+        convert_berry_gfx_tile: bool,
     ) -> (bool, Option<Command>) {
+        self.convert_berry_gfx_tile = Some(convert_berry_gfx_tile);
         let revision = app.project_revision();
         if let Some(result) = self.loader.show(context) {
             self.finish_load(result, revision);
@@ -1101,6 +1115,7 @@ impl RomGraphicsEditor {
             family: "level",
             exgraphics_names: false,
             encoding: graphics_batch::GraphicsBatchEncoding::Decoded4Bpp,
+            convert_berry_gfx_tile: true,
             raw_4bpp_overrides,
             file_layouts: Vec::new(),
         };
@@ -1719,7 +1734,7 @@ impl RomGraphicsEditor {
         let Some(directory) = crate::dialogs::choose_graphics_directory() else {
             return;
         };
-        let source = match standard_graphics_batch_source(
+        let mut source = match standard_graphics_batch_source(
             workspace.image.clone(),
             workspace.profile.graphics,
             pristine_special_graphics(&workspace.profile),
@@ -1730,6 +1745,7 @@ impl RomGraphicsEditor {
                 return;
             }
         };
+        source.convert_berry_gfx_tile = self.convert_berry_gfx_tile.unwrap_or(true);
         match self.graphics_batch.start(source, directory) {
             Ok(()) => self.io_status = None,
             Err(error) => self.error = Some(error),
@@ -1774,6 +1790,7 @@ impl RomGraphicsEditor {
             smw_us_v1_exgraphics: false,
             exgraphics_names: false,
             ordinary_options: None,
+            convert_berry_gfx_tile: self.convert_berry_gfx_tile.unwrap_or(true),
         };
         self.start_graphics_import_or_warn(
             source,
@@ -1804,6 +1821,7 @@ impl RomGraphicsEditor {
             family: "standard",
             exgraphics_names: false,
             encoding,
+            convert_berry_gfx_tile: true,
             raw_4bpp_overrides: Vec::new(),
             file_layouts,
         };
@@ -1851,6 +1869,7 @@ impl RomGraphicsEditor {
             smw_us_v1_exgraphics: false,
             exgraphics_names: false,
             ordinary_options: None,
+            convert_berry_gfx_tile: self.convert_berry_gfx_tile.unwrap_or(true),
         };
         self.start_graphics_import_or_warn(
             source,
@@ -1880,6 +1899,7 @@ impl RomGraphicsEditor {
             family: "special",
             exgraphics_names: false,
             encoding: graphics_batch::GraphicsBatchEncoding::Native,
+            convert_berry_gfx_tile: true,
             raw_4bpp_overrides: Vec::new(),
             file_layouts: vec![(0, layouts.gfx33), (0, layouts.gfx32)],
         };
@@ -1925,6 +1945,7 @@ impl RomGraphicsEditor {
             smw_us_v1_exgraphics: false,
             exgraphics_names: false,
             ordinary_options: None,
+            convert_berry_gfx_tile: self.convert_berry_gfx_tile.unwrap_or(true),
         };
         match self.graphics_import.start(source, directory) {
             Ok(()) => self.io_status = None,
@@ -1996,6 +2017,7 @@ impl RomGraphicsEditor {
             smw_us_v1_exgraphics: supports_native_exgraphics(&workspace.profile, &workspace.image),
             exgraphics_names: true,
             ordinary_options: None,
+            convert_berry_gfx_tile: self.convert_berry_gfx_tile.unwrap_or(true),
         };
         match self.graphics_import.start(source, directory) {
             Ok(()) => self.io_status = None,
@@ -2060,6 +2082,7 @@ impl RomGraphicsEditor {
             GraphicsInsertionFamily::ExGraphics => QuickGraphicsInsertion::ExGraphics,
         };
         let (mut source, target) = quick_graphics_import_source(app, action, joined_standard)?;
+        source.convert_berry_gfx_tile = self.convert_berry_gfx_tile.unwrap_or(true);
         let has_4bpp = lm_profile::has_smw_us_v1_4bpp_graphics_prerequisite(&source.image);
         if request.family == GraphicsInsertionFamily::ExGraphics && request.use_4bpp && !has_4bpp {
             return Err("insert regular GFX as 4bpp before 4bpp ExGFX insertion".into());
@@ -2276,6 +2299,7 @@ fn quick_graphics_import_source(
                 smw_us_v1_exgraphics: false,
                 exgraphics_names: false,
                 ordinary_options: None,
+                convert_berry_gfx_tile: true,
             };
             let target = if joined_standard {
                 PendingGraphicsFormatWarningTarget::Joined(
@@ -2313,6 +2337,7 @@ fn quick_graphics_import_source(
                     smw_us_v1_exgraphics: native_exgraphics,
                     exgraphics_names: true,
                     ordinary_options: None,
+                    convert_berry_gfx_tile: true,
                 },
                 PendingGraphicsFormatWarningTarget::Directory(directory),
             ))
@@ -2424,6 +2449,7 @@ pub(crate) fn standard_graphics_batch_source(
         family: "standard",
         exgraphics_names: false,
         encoding,
+        convert_berry_gfx_tile: true,
         raw_4bpp_overrides: Vec::new(),
         file_layouts,
     })
@@ -2448,6 +2474,7 @@ pub(crate) fn exgraphics_batch_source(
         family: "extended",
         exgraphics_names: true,
         encoding: graphics_batch::GraphicsBatchEncoding::Native,
+        convert_berry_gfx_tile: true,
         raw_4bpp_overrides: Vec::new(),
         file_layouts: Vec::new(),
     })
@@ -2515,6 +2542,7 @@ fn native_smw_us_v1_exgraphics_batch_source(
         family: "extended",
         exgraphics_names: true,
         encoding: graphics_batch::GraphicsBatchEncoding::Native,
+        convert_berry_gfx_tile: true,
         raw_4bpp_overrides: files,
         file_layouts: Vec::new(),
     })

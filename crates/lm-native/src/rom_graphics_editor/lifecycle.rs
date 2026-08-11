@@ -261,6 +261,7 @@ fn decode_loaded(
         internal_cache,
         internal_cache_error,
         internal_cache_special_world: false,
+        internal_cache_convert_berry: true,
         external_sprite_assets,
     })
 }

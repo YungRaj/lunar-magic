@@ -534,6 +534,7 @@ pub(crate) struct VanillaLevelEditor {
     dragging_sprite: Option<usize>,
     secondary_duplicate_drag: bool,
     mouse_gestures: Option<bool>,
+    convert_berry_gfx_tile: Option<bool>,
     mouse_gesture_start: Option<LevelMouseGestureStart>,
     pending_canvas_command: Option<Command>,
     pending_mouse_gesture_command: Option<Command>,
@@ -1174,6 +1175,13 @@ impl VanillaLevelEditor {
         self.mouse_gestures = Some(enabled);
         if !enabled {
             self.mouse_gesture_start = None;
+        }
+    }
+
+    pub(crate) fn set_convert_berry_gfx_tile(&mut self, enabled: bool) {
+        if self.convert_berry_gfx_tile != Some(enabled) {
+            self.convert_berry_gfx_tile = Some(enabled);
+            self.key = None;
         }
     }
 
@@ -2543,7 +2551,7 @@ impl VanillaLevelEditor {
         self.foreground_texture = None;
         self.map16_summary = None;
         self.map16_error = None;
-        match crate::vanilla_map16_preview::render_with_animation_view_state_and_background_bank(
+        match crate::vanilla_map16_preview::render_with_animation_view_state_background_bank_and_berry_conversion(
             snapshot.rom_bytes.clone(),
             level,
             self.controller
@@ -2558,6 +2566,7 @@ impl VanillaLevelEditor {
             },
             background_bank,
             background_tilemap,
+            self.convert_berry_gfx_tile.unwrap_or(true),
         ) {
             Ok(preview) => {
                 let background_planes = (!preview.animated_background_plane_images.is_empty())

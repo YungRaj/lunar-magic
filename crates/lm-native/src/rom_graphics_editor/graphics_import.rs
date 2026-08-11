@@ -26,6 +26,7 @@ pub(super) struct GraphicsImportSource {
     /// Uses Lunar Magic's `ExGFX` namespace even for reserved files `$60` through `$63`.
     pub(super) exgraphics_names: bool,
     pub(super) ordinary_options: Option<OrdinaryGraphicsImportOptions>,
+    pub(super) convert_berry_gfx_tile: bool,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -367,6 +368,12 @@ fn prepare_import(
                     &description,
                 )
                 .map_err(|error| format!("{description}: {error}"))?;
+                let mut bytes = bytes;
+                super::graphics_batch::convert_berry_file_bytes(
+                    file_number,
+                    &mut bytes,
+                    source.convert_berry_gfx_tile && source.smw_us_v1_standard_install,
+                );
                 files.push(bytes);
                 completed.fetch_add(1, Ordering::Relaxed);
             }
@@ -468,8 +475,11 @@ fn prepare_import(
                 .checked_mul(total)
                 .and_then(|value| u64::try_from(value).ok())
                 .ok_or("AllGFX.bin read bound overflow")?;
-            let joined = crate::dialogs::read_regular_bounded(path, maximum, "AllGFX.bin")
+            let mut joined = crate::dialogs::read_regular_bounded(path, maximum, "AllGFX.bin")
                 .map_err(|error| format!("AllGFX.bin: {error}"))?;
+            if source.convert_berry_gfx_tile && source.smw_us_v1_standard_install {
+                convert_joined_berry_files(&source, &mut joined)?;
+            }
             completed.store(total, Ordering::Relaxed);
             if cancelled.load(Ordering::Relaxed) {
                 return Ok(None);
@@ -525,6 +535,63 @@ fn prepare_import(
         return Ok(Some(prepared));
     }
     combine_expansion_commit(original_image, prepared_image, prepared).map(Some)
+}
+
+fn convert_joined_berry_files(
+    source: &GraphicsImportSource,
+    joined: &mut [u8],
+) -> Result<(), String> {
+    let project = lm_project::Project::new(source.image.clone());
+    let includes_special = source.smw_us_v1_special
+        || source
+            .file_numbers
+            .iter()
+            .any(|number| matches!(number, 0x32 | 0x33));
+    let special = includes_special
+        .then(|| lm_profile::smw_us_v1_special_graphics_layouts(&source.image))
+        .transpose()
+        .map_err(|error| format!("cannot resolve joined special GFX layout: {error}"))?;
+    let mut cursor = 0usize;
+    for (&slot, &file_number) in source.slots.iter().zip(&source.file_numbers) {
+        let (load_slot, layout) = match (file_number, special) {
+            (0x32, Some(layouts)) => (0, layouts.gfx32),
+            (0x33, Some(layouts)) => (0, layouts.gfx33),
+            _ => (slot, source.layout),
+        };
+        let native_len = project
+            .load_decompressed_graphics_file(load_slot, layout)
+            .map_err(|error| {
+                format!("GFX{file_number:02X}: cannot authenticate joined size: {error}")
+            })?
+            .len();
+        let editable_len = if matches!(file_number, 0x00..=0x26 | 0x2c..=0x2e | 0x30..=0x31 | 0x33)
+            && native_len != 0x1000
+        {
+            native_len
+                .checked_div(24)
+                .and_then(|tiles| tiles.checked_mul(32))
+                .ok_or_else(|| {
+                    format!("GFX{file_number:02X}: invalid packed 3bpp size {native_len:#X}")
+                })?
+        } else {
+            native_len
+        };
+        let end = cursor
+            .checked_add(editable_len)
+            .ok_or_else(|| "joined GFX offset overflow".to_owned())?;
+        let file = joined.get_mut(cursor..end).ok_or_else(|| {
+            format!("AllGFX.bin ends before GFX{file_number:02X} at {cursor:#X}..{end:#X}")
+        })?;
+        super::graphics_batch::convert_berry_file_bytes(file_number, file, true);
+        cursor = end;
+    }
+    if cursor != joined.len() {
+        return Err(format!(
+            "AllGFX.bin has {:#X} bytes after the authenticated {cursor:#X}-byte file set",
+            joined.len() - cursor
+        ));
+    }
+    Ok(())
 }
 
 fn combine_expansion_commit(
@@ -648,7 +715,7 @@ mod tests {
     use super::{
         GraphicsImportSource, GraphicsImportTarget, GraphicsImportWorker,
         OrdinaryGraphicsImportOptions, RunningImport, apply_ordinary_options,
-        combine_expansion_commit, enumerate_exgraphics_files,
+        combine_expansion_commit, convert_joined_berry_files, enumerate_exgraphics_files,
     };
     use lm_graphics::{GraphicsFile4bpp, IndexedTile};
     use lm_project::{
@@ -726,6 +793,7 @@ mod tests {
             smw_us_v1_exgraphics: false,
             exgraphics_names,
             ordinary_options: None,
+            convert_berry_gfx_tile: true,
         }
     }
 
@@ -743,6 +811,24 @@ mod tests {
         };
         running.request_cancel();
         assert!(cancelled.load(Ordering::Relaxed));
+    }
+
+    #[test]
+    fn joined_standard_import_applies_the_same_optional_berry_conversion() {
+        let image = RomImage::from_bytes(crate::test_support::pristine_smw_us_rom_bytes()).unwrap();
+        let mut source = generic_source(image, vec![1], "standard", false);
+        source.layout = lm_profile::smw_us_v1_vanilla_graphics_layout();
+        source.file_numbers = vec![1];
+        source.slots = vec![1];
+        source.smw_us_v1_standard_install = true;
+        let tiles = vec![lm_graphics::IndexedTile::new([1; 64]); 128];
+        let mut joined = lm_graphics::encode_planar_tiles(&tiles, 4).unwrap();
+        convert_joined_berry_files(&source, &mut joined).unwrap();
+        let converted = lm_graphics::decode_planar_tiles(&joined, 4).unwrap();
+        for tile in [0usize, 1, 0x10, 0x11] {
+            assert!(converted[tile].pixels().iter().all(|pixel| *pixel == 9));
+        }
+        assert!(converted[2].pixels().iter().all(|pixel| *pixel == 1));
     }
 
     #[test]

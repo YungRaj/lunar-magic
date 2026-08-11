@@ -602,6 +602,13 @@ impl NativeApplication {
             {
                 self.set_warn_ips_sibling_on_save(warn_ips_sibling);
             }
+            let mut convert_berry = self.convert_berry_gfx_tile.unwrap_or(true);
+            if ui
+                .checkbox(&mut convert_berry, "Convert Berry GFX Tile")
+                .changed()
+            {
+                self.set_convert_berry_gfx_tile(convert_berry);
+            }
             let locale = self.app.localization().map_or_else(
                 || self.menu_text(UiTextKey::ToolsBuiltInEnglish),
                 |catalog| catalog.locale().into(),
