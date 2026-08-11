@@ -538,6 +538,7 @@ pub(crate) struct VanillaLevelEditor {
     canvas_entity_selection: Option<CanvasEntitySelection>,
     auto_deselect_on_editor_select: bool,
     show_add_editor_ids: Option<bool>,
+    background_cursor_highlight: Option<bool>,
     paste_target: Option<EntityPasteTarget>,
     pending_layer2_mode_reset: Option<HeaderForm>,
     error: Option<String>,
@@ -629,6 +630,10 @@ impl VanillaLevelEditor {
 
     pub(crate) fn set_show_add_editor_ids(&mut self, enabled: bool) {
         self.show_add_editor_ids = Some(enabled);
+    }
+
+    pub(crate) fn set_background_cursor_highlight(&mut self, enabled: bool) {
+        self.background_cursor_highlight = Some(enabled);
     }
 
     pub(crate) fn editor_selector_selected(&mut self) {
@@ -1211,6 +1216,24 @@ impl VanillaLevelEditor {
                         selected,
                         0.0,
                         egui::Stroke::new(1.0_f32, egui::Color32::YELLOW),
+                        egui::StrokeKind::Inside,
+                    );
+                }
+                if let Some((x, y)) = layer2_hovered_canvas_cell(
+                    response.hover_pos(),
+                    image_rect,
+                    cell,
+                    self.background_cursor_highlight.unwrap_or(true),
+                    layer2_tilemap_editable(self.shared_vanilla_background),
+                ) {
+                    let hovered = egui::Rect::from_min_size(
+                        image_rect.min + egui::vec2(x as f32 * cell, y as f32 * cell),
+                        egui::vec2(cell, cell),
+                    );
+                    painter.rect_stroke(
+                        hovered,
+                        0.0,
+                        egui::Stroke::new(1.0_f32, egui::Color32::WHITE),
                         egui::StrokeKind::Inside,
                     );
                 }
@@ -11831,6 +11854,19 @@ fn layer2_tile_at_canvas_position(
     }
     #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
     lm_level::native_layer2_tilemap_index(x as usize, y as usize)
+}
+
+fn layer2_hovered_canvas_cell(
+    position: Option<egui::Pos2>,
+    canvas: egui::Rect,
+    cell: f32,
+    highlight_enabled: bool,
+    editing_enabled: bool,
+) -> Option<(usize, usize)> {
+    if !highlight_enabled || !editing_enabled {
+        return None;
+    }
+    layer2_tile_at_canvas_position(position?, canvas, cell).and_then(layer2_canvas_coordinates)
 }
 
 fn layer2_canvas_coordinates(index: usize) -> Option<(usize, usize)> {
@@ -23893,6 +23929,28 @@ mod tests {
         assert_eq!(
             object_catalog_dimensions(&[(4, 7, 0x100), (6, 8, 0x101), (5, 9, 0x102)]),
             Some((3, 3))
+        );
+    }
+
+    #[test]
+    fn background_hover_highlight_requires_the_option_and_an_editable_canvas() {
+        let canvas = egui::Rect::from_min_size(egui::pos2(10.0, 20.0), egui::vec2(320.0, 320.0));
+        let pointer = Some(egui::pos2(35.0, 65.0));
+        assert_eq!(
+            layer2_hovered_canvas_cell(pointer, canvas, 10.0, true, true),
+            Some((2, 4))
+        );
+        assert_eq!(
+            layer2_hovered_canvas_cell(pointer, canvas, 10.0, false, true),
+            None
+        );
+        assert_eq!(
+            layer2_hovered_canvas_cell(pointer, canvas, 10.0, true, false),
+            None
+        );
+        assert_eq!(
+            layer2_hovered_canvas_cell(Some(egui::pos2(400.0, 400.0)), canvas, 10.0, true, true),
+            None
         );
     }
 }

@@ -1071,6 +1071,20 @@ Focused default, toggle, persistence, rendered-bounds, and complete command-part
 The authenticated partition is now **281 routed / 36 pending**. The aggregate remains 59/65
 because the configuration row is still Partial.
 
+Toolbar coverage update (2026-08-10, background cursor): authenticated historical command
+`LM_OPTIONS_BG_CURSOR` `$24BF` now reproduces central dispatch case `$8A`. The initialized image
+byte at `$005E7AD8` proves the default-on state; `SynchronizeApplicationSettingsRegistry` proves
+it is persisted as bit 8 of `Options`; and recovered functions
+`UpdateLevelBackgroundHoverSelectionCell` and `UpdateLevelLayerHoverHighlight` prove that the
+secondary single-cell highlight is drawn only when the option and background modification are
+both enabled. Lunar Magic 3.20 removed the visible menu entry but retained the internal command,
+so Rust exposes it through the authenticated toolbar route rather than adding a non-3.63 menu.
+The native 32x32 background canvas now follows that exact enablement boundary and keeps its white
+hover cell distinct from the yellow committed selection. Focused default, toggle, persistence,
+coordinate, editability, and command-partition tests pass. The authenticated partition is now
+**282 routed / 35 pending**. The aggregate remains 59/65 because the configuration row is still
+Partial.
+
 Toolbar coverage update (2026-08-10, Open Level Number): `LM_FILE_OPEN_LEVEL` `$238E` now opens
 the native equivalent of original dialog resource `1000`. It uses the authenticated title,
 `Level Number (0-1FF)` label, OK/Cancel controls, and original-language resource overrides; seeds

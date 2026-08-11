@@ -202,6 +202,7 @@ pub(crate) struct NativeApplication {
     integrated_emulator_options: IntegratedEmulatorOptions,
     auto_deselect_on_editor_select: bool,
     show_add_editor_ids: Option<bool>,
+    background_cursor_highlight: Option<bool>,
     overworld_editor: OverworldEditor,
     path_editor: PathEditor,
     metadata_editor: MetadataEditor,
@@ -283,6 +284,8 @@ impl NativeApplication {
     const INTEGRATED_EMULATOR_STORAGE_KEY: &'static str = "lunar_magic_rust.integrated_emulator.v1";
     const AUTO_DESELECT_STORAGE_KEY: &'static str = "lunar_magic_rust.auto_deselect.v1";
     const SHOW_ADD_EDITOR_IDS_STORAGE_KEY: &'static str = "lunar_magic_rust.show_add_editor_ids.v1";
+    const BACKGROUND_CURSOR_STORAGE_KEY: &'static str =
+        "lunar_magic_rust.background_cursor_highlight.v1";
 
     pub(crate) fn from_startup(
         initialized: Result<crate::startup::InitializedNative, String>,
@@ -593,6 +596,15 @@ impl NativeApplication {
                     self.effects.error = Some(format!(
                         "cannot load Add Object/Sprite ID preference: {error}"
                     ));
+                }
+            }
+        }
+        if let Some(encoded) = storage.get_string(Self::BACKGROUND_CURSOR_STORAGE_KEY) {
+            match decode_background_cursor_preference(&encoded) {
+                Ok(enabled) => self.background_cursor_highlight = Some(enabled),
+                Err(error) => {
+                    self.effects.error =
+                        Some(format!("cannot load background-cursor preference: {error}"));
                 }
             }
         }
@@ -964,6 +976,10 @@ impl eframe::App for NativeApplication {
             Self::SHOW_ADD_EDITOR_IDS_STORAGE_KEY,
             encode_show_add_editor_ids_preference(self.show_add_editor_ids.unwrap_or(true)),
         );
+        storage.set_string(
+            Self::BACKGROUND_CURSOR_STORAGE_KEY,
+            encode_background_cursor_preference(self.background_cursor_highlight.unwrap_or(true)),
+        );
         match encode_external_tools_preference(self.app.external_tools()) {
             Ok(encoded) => storage.set_string(Self::EXTERNAL_TOOLS_STORAGE_KEY, encoded),
             Err(error) => {
@@ -1006,6 +1022,8 @@ impl eframe::App for NativeApplication {
                 .set_auto_deselect_on_editor_select(self.auto_deselect_on_editor_select);
             self.vanilla_level_editor
                 .set_show_add_editor_ids(self.show_add_editor_ids.unwrap_or(true));
+            self.vanilla_level_editor
+                .set_background_cursor_highlight(self.background_cursor_highlight.unwrap_or(true));
             if vanilla_level
                 && let Some(command) = self.vanilla_level_editor.show(
                     ui,
@@ -1234,6 +1252,18 @@ fn decode_show_add_editor_ids_preference(value: &str) -> Result<bool, String> {
         "shown" => Ok(true),
         "hidden" => Ok(false),
         _ => Err("unknown Add Object/Sprite ID preference version".into()),
+    }
+}
+
+fn encode_background_cursor_preference(enabled: bool) -> String {
+    if enabled { "highlighted" } else { "plain" }.to_owned()
+}
+
+fn decode_background_cursor_preference(value: &str) -> Result<bool, String> {
+    match value {
+        "highlighted" => Ok(true),
+        "plain" => Ok(false),
+        _ => Err("unknown background-cursor preference version".into()),
     }
 }
 
@@ -1770,6 +1800,23 @@ mod preference_tests {
             assert_eq!(reopened.show_add_editor_ids, Some(expected));
         }
         assert!(decode_show_add_editor_ids_preference("enabled").is_err());
+    }
+
+    #[test]
+    fn native_save_and_reopen_persist_background_cursor_highlight() {
+        for expected in [false, true] {
+            let mut source = NativeApplication {
+                background_cursor_highlight: Some(expected),
+                ..NativeApplication::default()
+            };
+            let mut storage = MemoryStorage::default();
+            eframe::App::save(&mut source, &mut storage);
+
+            let mut reopened = NativeApplication::default();
+            reopened.load_persistent_preferences(Some(&storage));
+            assert_eq!(reopened.background_cursor_highlight, Some(expected));
+        }
+        assert!(decode_background_cursor_preference("enabled").is_err());
     }
 
     #[test]

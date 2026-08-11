@@ -428,6 +428,11 @@ impl NativeApplication {
             UserToolbarNativeAction::ShowAddEditorIds => {
                 self.set_show_add_editor_ids(!self.show_add_editor_ids.unwrap_or(true));
             }
+            UserToolbarNativeAction::BackgroundCursorHighlight => {
+                self.set_background_cursor_highlight(
+                    !self.background_cursor_highlight.unwrap_or(true),
+                );
+            }
             UserToolbarNativeAction::GraphicsCompressionOptions => {
                 self.graphics_migration_dialog.open(&self.app);
             }
@@ -1072,6 +1077,18 @@ impl NativeApplication {
         .into();
     }
 
+    pub(super) fn set_background_cursor_highlight(&mut self, enabled: bool) {
+        self.background_cursor_highlight = Some(enabled);
+        self.vanilla_level_editor
+            .set_background_cursor_highlight(enabled);
+        self.app.status = if enabled {
+            "Enabled background-editor mouse highlight"
+        } else {
+            "Disabled background-editor mouse highlight"
+        }
+        .into();
+    }
+
     fn activate_user_toolbar_recent_path(
         &mut self,
         context: &egui::Context,
@@ -1582,6 +1599,7 @@ enum UserToolbarNativeAction {
     DeprecatedOptionsNoOp,
     AutoDeselectOnEditorSelect,
     ShowAddEditorIds,
+    BackgroundCursorHighlight,
     GraphicsCompressionOptions,
     GeneralOptions,
     RestoreOptions,
@@ -1679,6 +1697,7 @@ fn user_toolbar_native_action(name: &str) -> Option<UserToolbarNativeAction> {
         }
         "LM_OPTIONS_AUTO_DESELECT" => UserToolbarNativeAction::AutoDeselectOnEditorSelect,
         "LM_OPTIONS_SPRITE_OBJECT_ID" => UserToolbarNativeAction::ShowAddEditorIds,
+        "LM_OPTIONS_BG_CURSOR" => UserToolbarNativeAction::BackgroundCursorHighlight,
         "LM_OPTIONS_COMPRESSION" => UserToolbarNativeAction::GraphicsCompressionOptions,
         "LM_OPTIONS_GENERAL" => UserToolbarNativeAction::GeneralOptions,
         "LM_OPTIONS_RESTORE" => UserToolbarNativeAction::RestoreOptions,
@@ -2721,7 +2740,7 @@ mod user_toolbar_tests {
                     || user_toolbar_native_action(entry.name).is_some()
             })
             .collect::<Vec<_>>();
-        assert_eq!(supported.len(), 281);
+        assert_eq!(supported.len(), 282);
         assert!(
             supported
                 .iter()
@@ -2882,6 +2901,34 @@ mod user_toolbar_tests {
         assert_eq!(
             native.app.status,
             "Showing IDs and object sizes in Add Object/Sprite editors"
+        );
+    }
+
+    #[test]
+    fn background_cursor_command_toggles_the_original_default_on_preference() {
+        let mut native = NativeApplication::default();
+        assert_eq!(native.background_cursor_highlight, None);
+        assert_eq!(
+            user_toolbar_native_action("LM_OPTIONS_BG_CURSOR"),
+            Some(UserToolbarNativeAction::BackgroundCursorHighlight)
+        );
+        native.apply_user_toolbar_native_action(
+            &egui::Context::default(),
+            UserToolbarNativeAction::BackgroundCursorHighlight,
+        );
+        assert_eq!(native.background_cursor_highlight, Some(false));
+        assert_eq!(
+            native.app.status,
+            "Disabled background-editor mouse highlight"
+        );
+        native.apply_user_toolbar_native_action(
+            &egui::Context::default(),
+            UserToolbarNativeAction::BackgroundCursorHighlight,
+        );
+        assert_eq!(native.background_cursor_highlight, Some(true));
+        assert_eq!(
+            native.app.status,
+            "Enabled background-editor mouse highlight"
         );
     }
 
@@ -3068,7 +3115,7 @@ mod user_toolbar_tests {
                     && user_toolbar_native_action(entry.name).is_none()
             })
             .collect::<Vec<_>>();
-        assert_eq!(unsupported.len(), 36);
+        assert_eq!(unsupported.len(), 35);
         if std::env::var_os("LM_DIAGNOSTIC_UNSUPPORTED_TOOLBAR_COMMANDS").is_some() {
             for entry in unsupported {
                 eprintln!(
