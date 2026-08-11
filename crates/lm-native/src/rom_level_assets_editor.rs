@@ -4568,7 +4568,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires the retained pristine SMW-US ROM fixture"]
     fn retained_legacy_assignments_materialize_fixed_preview_slots() {
         let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
         let bytes = std::fs::read(root.join("sysLMRestore/smwOrig.smc")).unwrap();
@@ -5629,7 +5628,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires the retained Lunar Magic-created SMW-US ROM fixture"]
     fn retained_level_zero_object_stream_materializes_nonblank_cells() {
         let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
         let bytes = std::fs::read(

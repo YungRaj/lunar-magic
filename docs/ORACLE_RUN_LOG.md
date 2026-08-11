@@ -1485,3 +1485,11 @@ entries; the public iterator correctly excludes the sentinel. The corrected exha
 as does the complete native suite: 1,157 active tests, 13 explicit external-fixture ignores, and
 the all-512-level built-in render-asset materialization audit. Toolbar customization remains
 Partial for dialog/variant fidelity, not for internal-command reachability.
+
+## Retained level-assets fixtures activated (2026-08-11)
+
+The retained pristine `sysLMRestore/smwOrig.smc` and Lunar Magic-created
+`exanimation-install-positive/after.smc` inputs are available, so their legacy assignment/VRAM and
+nonblank object/sprite placement tests are no longer ignored. Both focused tests pass. The complete
+native suite then passes 1,160 active tests with 11 explicit external-fixture/device ignores; its
+all-512-level built-in render-asset materialization audit also passes.

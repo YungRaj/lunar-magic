@@ -6224,3 +6224,15 @@ native suite passes 1,157 active tests with 13 explicit fixture ignores, includi
 level render-asset materializations. This closes named-command reachability while leaving the
 Configuration/Toolbar row Partial for original customization-dialog interaction and platform
 variants.
+
+## Retained level-assets render fixtures promoted to default gates
+
+Two native level-assets tests were still marked ignored even though their exact retained inputs
+are present in the repository workspace. `retained_legacy_assignments_materialize_fixed_preview_slots`
+now runs by default against `sysLMRestore/smwOrig.smc`, proving the four foreground/background and
+four sprite assignments materialize into the expected fixed VRAM slots. The
+`retained_level_zero_object_stream_materializes_nonblank_cells` gate now runs by default against
+the Lunar Magic-created ExAnimation installation fixture, proving its object stream and sprite
+stream produce nonblank preview placements without diagnostics. The complete native suite passes
+1,160 active tests with 11 explicit external-fixture/device ignores, including the 512-level
+materialization audit.
