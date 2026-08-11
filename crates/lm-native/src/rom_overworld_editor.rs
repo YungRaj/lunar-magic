@@ -33,6 +33,13 @@ enum Panel {
     NativeSprites,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct PendingEditorTransitionSave {
+    transition: Command,
+    final_revision: u64,
+    intermediate_command: Option<Command>,
+}
+
 #[cfg(test)]
 mod overworld_sprite_gesture_oracle_tests {
     use std::{fs, path::PathBuf};
@@ -301,9 +308,155 @@ pub(crate) struct RomOverworldEditor {
     transfer_loader: DocumentLoader,
     transfer_persistence: crate::persistence_worker::PersistenceWorker,
     transfer_kind: Option<transfer::TransferKind>,
+    editor_transition_prompt: Option<Command>,
+    editor_transition_after_save: Option<PendingEditorTransitionSave>,
+    authorized_editor_transition: Option<Command>,
 }
 
 impl RomOverworldEditor {
+    pub(crate) fn request_save_prompt_transition(&mut self, command: Command) -> bool {
+        if self.authorized_editor_transition.as_ref() == Some(&command) {
+            self.authorized_editor_transition = None;
+            return false;
+        }
+        if !self.has_staged_changes() {
+            return false;
+        }
+        self.editor_transition_prompt = Some(command);
+        true
+    }
+
+    fn has_staged_changes(&self) -> bool {
+        self.workspace.as_ref().is_some_and(|workspace| {
+            workspace.controller.is_modified()
+                || workspace.native_sprites.is_modified()
+                || workspace.assets.animation_options != workspace.baseline_animation_options
+        }) || self
+            .main_layer2_workspace
+            .as_ref()
+            .is_some_and(|workspace| {
+                workspace.controller.is_modified() || workspace.paths != workspace.original_paths
+            })
+    }
+
+    fn prepare_transition_commits(&self, revision: u64) -> Result<Vec<Command>, String> {
+        if self.workspace.is_some() {
+            return self.prepare_commit().map(|command| vec![command]);
+        }
+        let workspace = self
+            .main_layer2_workspace
+            .as_ref()
+            .ok_or("overworld workspace is closed")?;
+        let terrain = workspace.controller.is_modified();
+        let paths = workspace.paths != workspace.original_paths;
+        match (terrain, paths) {
+            (true, false) => self
+                .prepare_main_layer2_commit()
+                .map(|command| vec![command]),
+            (false, true) => Ok(vec![Command::ReplaceNativeOverworldPathLinks {
+                rev: workspace.controller.revision(),
+                table: Box::new(workspace.paths.clone()),
+            }]),
+            (true, true) => Ok(vec![
+                self.prepare_main_layer2_commit()?,
+                Command::ReplaceNativeOverworldPathLinks {
+                    rev: revision.checked_add(1).ok_or("project revision overflow")?,
+                    table: Box::new(workspace.paths.clone()),
+                },
+            ]),
+            (false, false) => Err("the overworld has no staged changes".into()),
+        }
+    }
+
+    fn take_editor_transition_after_save(&mut self, revision: u64) -> Option<Command> {
+        let pending = self.editor_transition_after_save.as_mut()?;
+        if let Some(command) = pending.intermediate_command.take() {
+            if revision.checked_add(1) == Some(pending.final_revision) {
+                return Some(command);
+            }
+            self.editor_transition_after_save = None;
+            return None;
+        }
+        if revision == pending.final_revision {
+            let command = pending.transition.clone();
+            self.editor_transition_after_save = None;
+            self.authorized_editor_transition = Some(command.clone());
+            return Some(command);
+        }
+        if revision > pending.final_revision {
+            self.editor_transition_after_save = None;
+        }
+        None
+    }
+
+    fn show_editor_transition_confirmation(
+        &mut self,
+        context: &egui::Context,
+        revision: u64,
+    ) -> Option<Command> {
+        self.editor_transition_prompt.as_ref()?;
+        let mut choice = None;
+        egui::Window::new("Save overworld to ROM?")
+            .collapsible(false)
+            .resizable(false)
+            .show(context, |ui| {
+                ui.label("The overworld has staged changes. Save before continuing?");
+                ui.horizontal(|ui| {
+                    if ui.button("Save").clicked() {
+                        choice = Some(0_u8);
+                    }
+                    if ui.button("Discard").clicked() {
+                        choice = Some(1);
+                    }
+                    if ui.button("Cancel").clicked() {
+                        choice = Some(2);
+                    }
+                });
+            });
+        self.resolve_editor_transition_choice(choice, revision)
+    }
+
+    fn resolve_editor_transition_choice(
+        &mut self,
+        choice: Option<u8>,
+        revision: u64,
+    ) -> Option<Command> {
+        let transition = self.editor_transition_prompt.clone()?;
+        match choice {
+            Some(0) => match self.prepare_transition_commits(revision) {
+                Ok(mut commands) => {
+                    let Some(expected) = revision.checked_add(commands.len() as u64) else {
+                        self.error = Some("project revision overflow".into());
+                        return None;
+                    };
+                    let command = commands.remove(0);
+                    self.editor_transition_prompt = None;
+                    self.editor_transition_after_save = Some(PendingEditorTransitionSave {
+                        transition,
+                        final_revision: expected,
+                        intermediate_command: commands.pop(),
+                    });
+                    Some(command)
+                }
+                Err(error) => {
+                    self.error = Some(error);
+                    None
+                }
+            },
+            Some(1) => {
+                self.editor_transition_prompt = None;
+                self.clear();
+                self.authorized_editor_transition = Some(transition.clone());
+                Some(transition)
+            }
+            Some(2) => {
+                self.editor_transition_prompt = None;
+                None
+            }
+            _ => None,
+        }
+    }
+
     fn main_layer2_contents(&mut self, ui: &mut egui::Ui, revision: u64) -> Option<Command> {
         let workspace = self.main_layer2_workspace.as_ref()?;
         let stale = workspace.controller.revision() != revision;
@@ -604,6 +757,9 @@ impl RomOverworldEditor {
         context: &egui::Context,
         revision: u64,
     ) -> (bool, Option<Command>) {
+        if let Some(command) = self.take_editor_transition_after_save(revision) {
+            return (false, Some(command));
+        }
         self.poll_transfer_file_io(context, revision);
         if let Some(result) = self.loader.show(context) {
             self.finish_ownership_load(result, revision);
@@ -651,6 +807,9 @@ impl RomOverworldEditor {
                 });
         }
         let approved = self.close_confirmation(context);
+        if command.is_none() {
+            command = self.show_editor_transition_confirmation(context, revision);
+        }
         self.show_error(context);
         (approved, command)
     }

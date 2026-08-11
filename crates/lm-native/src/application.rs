@@ -189,6 +189,7 @@ pub(crate) struct NativeApplication {
     allow_fragmentation: Option<bool>,
     maintain_checksum: Option<bool>,
     silently_add_copier_header: Option<bool>,
+    save_prompt: Option<bool>,
     level_view_visibility: LevelViewVisibility,
     renderer: NativeRenderState,
     vanilla_graphics_editor: VanillaGraphicsEditor,
@@ -293,6 +294,7 @@ impl NativeApplication {
     const ALLOW_FRAGMENTATION_STORAGE_KEY: &'static str = "lunar_magic_rust.allow_fragmentation.v1";
     const MAINTAIN_CHECKSUM_STORAGE_KEY: &'static str = "lunar_magic_rust.maintain_checksum.v1";
     const SILENTLY_ADD_HEADER_STORAGE_KEY: &'static str = "lunar_magic_rust.silently_add_header.v1";
+    const SAVE_PROMPT_STORAGE_KEY: &'static str = "lunar_magic_rust.save_prompt.v1";
     const EXTERNAL_TOOLS_STORAGE_KEY: &'static str = "lunar_magic_rust.external_tools.v1";
     const ANIMATION_RATE_STORAGE_KEY: &'static str = "lunar_magic_rust.animation_rate.v1";
     const INTEGRATED_EMULATOR_STORAGE_KEY: &'static str = "lunar_magic_rust.integrated_emulator.v1";
@@ -699,6 +701,15 @@ impl NativeApplication {
                 }
             }
         }
+        if let Some(encoded) = storage.get_string(Self::SAVE_PROMPT_STORAGE_KEY) {
+            match decode_save_prompt_preference(&encoded) {
+                Ok(enabled) => self.save_prompt = Some(enabled),
+                Err(error) => {
+                    self.effects.error =
+                        Some(format!("cannot load save-prompt preference: {error}"));
+                }
+            }
+        }
         if let Some(encoded) = storage.get_string(Self::EXTERNAL_TOOLS_STORAGE_KEY) {
             match decode_external_tools_preference(&encoded).and_then(|config| {
                 self.app
@@ -747,6 +758,24 @@ impl NativeApplication {
     ///
     /// ROM editor windows use this acknowledgement before discarding their staged controller.
     fn try_dispatch(&mut self, context: &egui::Context, command: Command) -> bool {
+        if self.save_prompt.unwrap_or(true)
+            && command_leaves_staged_level(&self.app, &command)
+            && self
+                .vanilla_level_editor
+                .request_save_prompt_transition(command.clone())
+        {
+            self.app.status = "Waiting for staged level save choice".into();
+            return true;
+        }
+        if self.save_prompt.unwrap_or(true)
+            && command_leaves_staged_overworld(&self.app, &command)
+            && self
+                .rom_overworld_editor
+                .request_save_prompt_transition(command.clone())
+        {
+            self.app.status = "Waiting for staged overworld save choice".into();
+            return true;
+        }
         let clears_deferred_vram = matches!(
             &command,
             Command::Open | Command::Reload | Command::Close | Command::Quit
@@ -1060,6 +1089,10 @@ impl eframe::App for NativeApplication {
         storage.set_string(
             Self::SILENTLY_ADD_HEADER_STORAGE_KEY,
             encode_silently_add_header_preference(self.silently_add_copier_header.unwrap_or(true)),
+        );
+        storage.set_string(
+            Self::SAVE_PROMPT_STORAGE_KEY,
+            encode_save_prompt_preference(self.save_prompt.unwrap_or(true)),
         );
         storage.set_string(
             Self::ANIMATION_RATE_STORAGE_KEY,
@@ -1431,6 +1464,58 @@ fn decode_silently_add_header_preference(value: &str) -> Result<bool, String> {
         "disabled" => Ok(false),
         _ => Err("unknown ROM-header preference version".into()),
     }
+}
+
+fn encode_save_prompt_preference(enabled: bool) -> String {
+    if enabled { "enabled" } else { "disabled" }.to_owned()
+}
+
+fn decode_save_prompt_preference(value: &str) -> Result<bool, String> {
+    match value {
+        "enabled" => Ok(true),
+        "disabled" => Ok(false),
+        _ => Err("unknown save-prompt preference version".into()),
+    }
+}
+
+fn command_leaves_staged_level(app: &lm_app::AppState, command: &Command) -> bool {
+    let lm_app::EditorMode::Level(current) = app.mode else {
+        return false;
+    };
+    match command {
+        Command::SelectLevel(level) => *level != current,
+        Command::NavigateLevel(_)
+        | Command::Open
+        | Command::Reload
+        | Command::Close
+        | Command::Quit
+        | Command::ShowOverworld
+        | Command::ShowMap16
+        | Command::ShowGraphics(_)
+        | Command::ShowPalette(_)
+        | Command::ShowExAnimation(_)
+        | Command::ShowLayer3(_) => true,
+        _ => false,
+    }
+}
+
+fn command_leaves_staged_overworld(app: &lm_app::AppState, command: &Command) -> bool {
+    if app.mode != lm_app::EditorMode::Overworld {
+        return false;
+    }
+    matches!(
+        command,
+        Command::Open
+            | Command::Reload
+            | Command::Close
+            | Command::Quit
+            | Command::SelectLevel(_)
+            | Command::ShowMap16
+            | Command::ShowGraphics(_)
+            | Command::ShowPalette(_)
+            | Command::ShowExAnimation(_)
+            | Command::ShowLayer3(_)
+    )
 }
 
 fn encode_auto_deselect_preference(enabled: bool) -> String {
@@ -2299,6 +2384,15 @@ mod preference_tests {
         assert!(decode_silently_add_header_preference("enabled").unwrap());
         assert!(!decode_silently_add_header_preference("disabled").unwrap());
         assert!(decode_silently_add_header_preference("true").is_err());
+    }
+
+    #[test]
+    fn save_prompt_preference_round_trips_both_original_modes() {
+        assert_eq!(encode_save_prompt_preference(true), "enabled");
+        assert_eq!(encode_save_prompt_preference(false), "disabled");
+        assert!(decode_save_prompt_preference("enabled").unwrap());
+        assert!(!decode_save_prompt_preference("disabled").unwrap());
+        assert!(decode_save_prompt_preference("true").is_err());
     }
 
     #[test]

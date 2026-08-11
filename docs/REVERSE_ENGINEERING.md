@@ -4936,6 +4936,19 @@ bits, matching this separately consumed persisted open-policy flag. The actual h
 bound to `AddCopierHeaderToRomFile` at `$0044E300`: size-derived first word, map-mode-derived bytes
 2–3, fixed `AA BB 04`, and zero fill.
 
+## Save Prompt option
+
+Command `$24C7` (`LM_OPTIONS_SAVE_PROMPT`) is the next authenticated internal-table entry and maps
+to dispatch byte `$6A`. Lunar Magic 3.63's `option_general.htm#option_save_prompt` defines its
+observable boundary: attempting to open another level or ROM with modified current-level or
+overworld state prompts to save or cancel, and experienced users may disable the warning. This is
+a staged-editor transition policy, not the ordinary project-file dirty confirmation. The Rust
+implementation consequently holds the exact requested navigation/document command outside central
+dispatch until Save/Discard resolves, and verifies the expected commit revision before releasing
+it. Focused tests cover level state, complete and profile-free overworld state, combined playable
+terrain plus route-link saves, cancellation, one-use discard authorization, persistence, and the
+authenticated command partition.
+
 ## Dedicated overworld animation-options runtime
 
 Lunar Magic 3.63 installs the per-map overworld animation-option storage through the dedicated

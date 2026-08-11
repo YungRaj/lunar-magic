@@ -446,6 +446,13 @@ struct PendingScreenExitFollowSave {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
+struct PendingEditorTransitionSave {
+    command: Command,
+    final_revision: u64,
+    intermediate_revision: Option<u64>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
 struct InvalidExitScanResult {
     screens: Vec<u8>,
 }
@@ -540,6 +547,9 @@ pub(crate) struct VanillaLevelEditor {
     last_canvas_native_position: Option<(i32, i32)>,
     screen_exit_follow_prompt: Option<u16>,
     screen_exit_follow_after_save: Option<PendingScreenExitFollowSave>,
+    editor_transition_prompt: Option<Command>,
+    editor_transition_after_save: Option<PendingEditorTransitionSave>,
+    authorized_editor_transition: Option<Command>,
     invalid_exit_scan_result: Option<InvalidExitScanResult>,
     invalid_exit_save_warning: Option<InvalidExitSaveWarning>,
     sprite_count_save_warning: Option<SpriteCountSaveWarning>,
@@ -792,6 +802,9 @@ impl VanillaLevelEditor {
         if let Some(command) = self.take_screen_exit_follow_after_save(&snapshot) {
             return Some(command);
         }
+        if let Some(command) = self.take_editor_transition_after_save(&snapshot) {
+            return Some(command);
+        }
         match self.take_pending_expansion_commit(&snapshot) {
             Ok(Some(command)) => {
                 if let Some(pending) = &mut self.screen_exit_follow_after_save {
@@ -826,6 +839,11 @@ impl VanillaLevelEditor {
                 Ok(None) => {}
                 Err(error) => self.error = Some(error),
             }
+        }
+        if let Some(command) =
+            self.show_editor_transition_confirmation(ui.ctx(), &snapshot, custom_dsc)
+        {
+            return Some(command);
         }
         if self.external_asset_revision != external_asset_revision {
             self.external_asset_revision = external_asset_revision;
@@ -1090,6 +1108,22 @@ impl VanillaLevelEditor {
 
     pub(crate) fn set_allow_fragmentation(&mut self, enabled: bool) {
         self.allow_fragmentation = Some(enabled);
+    }
+
+    pub(crate) fn request_save_prompt_transition(&mut self, command: Command) -> bool {
+        if self.authorized_editor_transition.as_ref() == Some(&command) {
+            self.authorized_editor_transition = None;
+            return false;
+        }
+        if !self
+            .controller
+            .as_ref()
+            .is_some_and(LevelController::is_modified)
+        {
+            return false;
+        }
+        self.editor_transition_prompt = Some(command);
+        true
     }
 
     fn allow_fragmentation(&self) -> bool {
@@ -3275,6 +3309,7 @@ impl VanillaLevelEditor {
             Some(warning.command)
         } else {
             self.screen_exit_follow_after_save = None;
+            self.editor_transition_after_save = None;
             self.pending_expansion_commit = None;
             None
         }
@@ -3331,6 +3366,7 @@ impl VanillaLevelEditor {
             Some(warning.command)
         } else {
             self.screen_exit_follow_after_save = None;
+            self.editor_transition_after_save = None;
             self.pending_expansion_commit = None;
             None
         }
@@ -3423,6 +3459,125 @@ impl VanillaLevelEditor {
         self.screen_exit_follow_after_save = None;
         self.pending_expansion_commit = None;
         None
+    }
+
+    fn take_editor_transition_after_save(
+        &mut self,
+        snapshot: &lm_app::ControllerSnapshot,
+    ) -> Option<Command> {
+        let pending = self.editor_transition_after_save.as_ref()?;
+        if snapshot.revision == pending.final_revision {
+            let command = self
+                .editor_transition_after_save
+                .take()
+                .map(|pending| pending.command)?;
+            self.authorized_editor_transition = Some(command.clone());
+            return Some(command);
+        }
+        if pending.intermediate_revision == Some(snapshot.revision)
+            && self.pending_expansion_commit.is_some()
+        {
+            return None;
+        }
+        self.editor_transition_after_save = None;
+        self.pending_expansion_commit = None;
+        None
+    }
+
+    fn show_editor_transition_confirmation(
+        &mut self,
+        context: &egui::Context,
+        snapshot: &lm_app::ControllerSnapshot,
+        custom_dsc: Option<&lm_level::DscResolvedTable>,
+    ) -> Option<Command> {
+        self.editor_transition_prompt.as_ref()?;
+        let mut choice = None;
+        egui::Window::new("Save level to ROM?")
+            .collapsible(false)
+            .resizable(false)
+            .show(context, |ui| {
+                ui.label("The current level has staged changes. Save before continuing?");
+                ui.horizontal(|ui| {
+                    if ui.button("Save").clicked() {
+                        choice = Some(0_u8);
+                    }
+                    if ui.button("Discard").clicked() {
+                        choice = Some(1);
+                    }
+                    if ui.button("Cancel").clicked() {
+                        choice = Some(2);
+                    }
+                });
+            });
+        self.resolve_editor_transition_choice(choice, snapshot, custom_dsc)
+    }
+
+    fn resolve_editor_transition_choice(
+        &mut self,
+        choice: Option<u8>,
+        snapshot: &lm_app::ControllerSnapshot,
+        custom_dsc: Option<&lm_level::DscResolvedTable>,
+    ) -> Option<Command> {
+        let transition = self.editor_transition_prompt.clone()?;
+        match choice {
+            Some(0) => {
+                let controller = self.controller.as_ref()?.clone();
+                let expanded = RomImage::from_bytes(snapshot.rom_bytes.clone())
+                    .is_ok_and(|image| image.logical_len() > 0x80_000);
+                let relocation_needed =
+                    controller.layer1_is_modified() || controller.layer2_is_modified();
+                let expansion = !expanded && relocation_needed;
+                let steps = if expansion { 2 } else { 1 };
+                let Some(final_revision) = snapshot.revision.checked_add(steps) else {
+                    self.error = Some("project revision overflow".into());
+                    return None;
+                };
+                self.editor_transition_prompt = None;
+                self.editor_transition_after_save = Some(PendingEditorTransitionSave {
+                    command: transition,
+                    final_revision,
+                    intermediate_revision: expansion.then(|| snapshot.revision + 1),
+                });
+                if expansion {
+                    self.pending_expansion_commit = Some(controller.clone());
+                    Some(Command::ExpandRom(RomExpansionCommand {
+                        expected_revision: snapshot.revision,
+                        mapper: snapshot.identity.mapper,
+                        target_logical_len: 0x10_0000,
+                        fill: 0xff,
+                        checksum_field: snapshot.identity.internal_header_offset + 0x1c,
+                    }))
+                } else {
+                    match prepare_commit_with_auto_screen(
+                        &controller,
+                        snapshot,
+                        self.auto_set_screens.unwrap_or(true)
+                            && self.raw_layer1_pc_address.is_none(),
+                    )
+                    .and_then(|command| {
+                        self.request_exit_scan_before_save(snapshot, custom_dsc, command)
+                    }) {
+                        Ok(command) => command,
+                        Err(error) => {
+                            self.editor_transition_after_save = None;
+                            self.error = Some(error);
+                            None
+                        }
+                    }
+                }
+            }
+            Some(1) => {
+                self.editor_transition_prompt = None;
+                self.key = None;
+                self.authorized_editor_transition = Some(transition.clone());
+                Some(transition)
+            }
+            Some(2) => {
+                self.editor_transition_prompt = None;
+                None
+            }
+            _ => None,
+        }
     }
 
     fn show_screen_exit_follow_confirmation(
@@ -15688,6 +15843,72 @@ mod tests {
         assert_eq!(reopened.level().layer1.objects.records.len(), baseline + 1);
         assert_eq!(reopened.level().sprites.tokens.len(), sprite_baseline + 1);
         assert_eq!(app.project().unwrap().rom.logical_len(), 0x10_0000);
+    }
+
+    #[test]
+    fn staged_level_transition_prompt_saves_discards_or_cancels_without_losing_intent() {
+        fn staged_editor() -> (AppState, VanillaLevelEditor) {
+            let mut app = AppState::default();
+            app.load_rom(crate::test_support::pristine_smw_us_rom_bytes())
+                .unwrap();
+            app.dispatch(Command::SelectLevel(0x105)).unwrap();
+            let snapshot = app.controller_snapshot().unwrap();
+            let mut controller = LevelController::decode(
+                &snapshot,
+                lm_profile::smw_us_v1_vanilla_level_layout(),
+                &SpriteLengthTable::standard(),
+            )
+            .unwrap();
+            let header = controller.level().sprites.header ^ 1;
+            controller
+                .apply_edits(&[NativeLevelEdit::SetSpriteHeader(header)])
+                .unwrap();
+            (
+                app,
+                VanillaLevelEditor {
+                    controller: Some(controller),
+                    auto_set_screens: Some(false),
+                    scan_exits_on_save: Some(false),
+                    count_sprites_on_save: Some(false),
+                    ..VanillaLevelEditor::default()
+                },
+            )
+        }
+
+        let transition = Command::SelectLevel(0x106);
+
+        let (app, mut cancel) = staged_editor();
+        let snapshot = app.controller_snapshot().unwrap();
+        assert!(cancel.request_save_prompt_transition(transition.clone()));
+        assert_eq!(
+            cancel.resolve_editor_transition_choice(Some(2), &snapshot, None),
+            None
+        );
+        assert!(cancel.controller.as_ref().unwrap().is_modified());
+        assert!(cancel.editor_transition_prompt.is_none());
+
+        let (app, mut discard) = staged_editor();
+        let snapshot = app.controller_snapshot().unwrap();
+        assert!(discard.request_save_prompt_transition(transition.clone()));
+        assert_eq!(
+            discard.resolve_editor_transition_choice(Some(1), &snapshot, None),
+            Some(transition.clone())
+        );
+        assert!(!discard.request_save_prompt_transition(transition.clone()));
+
+        let (mut app, mut save) = staged_editor();
+        let snapshot = app.controller_snapshot().unwrap();
+        assert!(save.request_save_prompt_transition(transition.clone()));
+        let commit = save
+            .resolve_editor_transition_choice(Some(0), &snapshot, None)
+            .expect("Save must emit the staged level commit");
+        app.dispatch(commit).unwrap();
+        let saved = app.controller_snapshot().unwrap();
+        assert_eq!(
+            save.take_editor_transition_after_save(&saved),
+            Some(transition.clone())
+        );
+        assert!(!save.request_save_prompt_transition(transition));
     }
 
     #[test]

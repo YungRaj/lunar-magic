@@ -257,7 +257,7 @@ impl RomOverworldEditor {
         }
     }
 
-    fn clear(&mut self) {
+    pub(super) fn clear(&mut self) {
         self.workspace = None;
         self.main_layer2_workspace = None;
         self.pending_open = None;
@@ -1055,6 +1055,89 @@ mod tests {
             );
         }
         assert_eq!(logical_results[0], logical_results[1]);
+    }
+
+    #[test]
+    fn staged_overworld_transition_prompt_saves_discards_or_cancels_route_edits() {
+        fn staged_editor() -> (lm_app::AppState, super::RomOverworldEditor) {
+            let fixture = Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../..")
+                .join("oracle-work/lm363/pristine-us/overworld-transfer-positive/after.smc");
+            let mut app = lm_app::AppState::default();
+            app.load_rom(fs::read(fixture).unwrap()).unwrap();
+            app.dispatch(lm_app::Command::ShowOverworld).unwrap();
+            let mut workspace =
+                decode_main_layer2_workspace(app.controller_snapshot().unwrap()).unwrap();
+            workspace.paths.links[0].destination.x ^= 1;
+            let mut editor = super::RomOverworldEditor::default();
+            editor.main_layer2_workspace = Some(workspace);
+            (app, editor)
+        }
+
+        let transition = lm_app::Command::SelectLevel(0x105);
+
+        let (app, mut cancel) = staged_editor();
+        assert!(cancel.request_save_prompt_transition(transition.clone()));
+        assert_eq!(
+            cancel.resolve_editor_transition_choice(Some(2), app.project_revision()),
+            None
+        );
+        assert!(cancel.has_staged_changes());
+
+        let (app, mut discard) = staged_editor();
+        assert!(discard.request_save_prompt_transition(transition.clone()));
+        assert_eq!(
+            discard.resolve_editor_transition_choice(Some(1), app.project_revision()),
+            Some(transition.clone())
+        );
+        assert!(!discard.is_open());
+        assert!(!discard.request_save_prompt_transition(transition.clone()));
+
+        let (mut app, mut save) = staged_editor();
+        let revision = app.project_revision();
+        assert!(save.request_save_prompt_transition(transition.clone()));
+        let commit = save
+            .resolve_editor_transition_choice(Some(0), revision)
+            .expect("Save must emit the staged route commit");
+        app.dispatch(commit).unwrap();
+        save.commit_succeeded();
+        assert_eq!(
+            save.take_editor_transition_after_save(app.project_revision()),
+            Some(transition.clone())
+        );
+        assert!(!save.request_save_prompt_transition(transition));
+
+        let (mut app, mut combined) = staged_editor();
+        let workspace = combined.main_layer2_workspace.as_mut().unwrap();
+        let original = workspace.controller.layer().tile(12, 9).unwrap();
+        workspace
+            .controller
+            .apply_edits(&[lm_app::OverworldControllerEdit::SetLayerTile {
+                layer: lm_app::OverworldLayerId::Layer2,
+                x: 12,
+                y: 9,
+                tile: original ^ 1,
+            }])
+            .unwrap();
+        combined.search_start = "E0000".into();
+        combined.search_end = "F0000".into();
+        let transition = lm_app::Command::SelectLevel(0x106);
+        let revision = app.project_revision();
+        assert!(combined.request_save_prompt_transition(transition.clone()));
+        let terrain_commit = combined
+            .resolve_editor_transition_choice(Some(0), revision)
+            .expect("combined save must emit terrain first");
+        app.dispatch(terrain_commit).unwrap();
+        combined.commit_succeeded();
+        let path_commit = combined
+            .take_editor_transition_after_save(app.project_revision())
+            .expect("combined save must emit route links second");
+        app.dispatch(path_commit).unwrap();
+        combined.commit_succeeded();
+        assert_eq!(
+            combined.take_editor_transition_after_save(app.project_revision()),
+            Some(transition)
+        );
     }
 
     #[test]

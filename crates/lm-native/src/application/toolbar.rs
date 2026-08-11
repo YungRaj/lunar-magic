@@ -498,6 +498,16 @@ impl NativeApplication {
                 }
                 .into();
             }
+            UserToolbarNativeAction::SavePrompt => {
+                let enabled = !self.save_prompt.unwrap_or(true);
+                self.save_prompt = Some(enabled);
+                self.app.status = if enabled {
+                    "Enabled staged editor save prompts"
+                } else {
+                    "Disabled staged editor save prompts"
+                }
+                .into();
+            }
             UserToolbarNativeAction::VramPatchOptions => {
                 self.vram_patch_options_dialog.open(&self.app);
             }
@@ -1723,6 +1733,7 @@ enum UserToolbarNativeAction {
     AllowFragmentation,
     MaintainChecksum,
     SilentlyAddHeader,
+    SavePrompt,
     VramPatchOptions,
     GraphicsCompressionOptions,
     GeneralOptions,
@@ -1831,6 +1842,7 @@ fn user_toolbar_native_action(name: &str) -> Option<UserToolbarNativeAction> {
         "LM_OPTIONS_ALLOW_FRAGMENT" => UserToolbarNativeAction::AllowFragmentation,
         "LM_OPTIONS_MAINTAIN_CHECKSUM" => UserToolbarNativeAction::MaintainChecksum,
         "LM_OPTIONS_AUTO_HEADER" => UserToolbarNativeAction::SilentlyAddHeader,
+        "LM_OPTIONS_SAVE_PROMPT" => UserToolbarNativeAction::SavePrompt,
         "LM_OPTIONS_VRAM" => UserToolbarNativeAction::VramPatchOptions,
         "LM_OPTIONS_COMPRESSION" => UserToolbarNativeAction::GraphicsCompressionOptions,
         "LM_OPTIONS_GENERAL" => UserToolbarNativeAction::GeneralOptions,
@@ -2877,7 +2889,7 @@ mod user_toolbar_tests {
                     || user_toolbar_native_action(entry.name).is_some()
             })
             .collect::<Vec<_>>();
-        assert_eq!(supported.len(), 292);
+        assert_eq!(supported.len(), 293);
         assert!(
             supported
                 .iter()
@@ -3309,6 +3321,28 @@ mod user_toolbar_tests {
     }
 
     #[test]
+    fn save_prompt_command_toggles_the_original_default_on_option() {
+        let mut native = NativeApplication::default();
+        assert_eq!(native.save_prompt, None);
+        assert_eq!(
+            user_toolbar_native_action("LM_OPTIONS_SAVE_PROMPT"),
+            Some(UserToolbarNativeAction::SavePrompt)
+        );
+        native.apply_user_toolbar_native_action(
+            &egui::Context::default(),
+            UserToolbarNativeAction::SavePrompt,
+        );
+        assert_eq!(native.save_prompt, Some(false));
+        assert_eq!(native.app.status, "Disabled staged editor save prompts");
+        native.apply_user_toolbar_native_action(
+            &egui::Context::default(),
+            UserToolbarNativeAction::SavePrompt,
+        );
+        assert_eq!(native.save_prompt, Some(true));
+        assert_eq!(native.app.status, "Enabled staged editor save prompts");
+    }
+
+    #[test]
     fn recent_menu_route_opens_at_the_pointer_and_escape_dismisses_it() {
         let mut native = NativeApplication::default();
         let context = egui::Context::default();
@@ -3491,7 +3525,7 @@ mod user_toolbar_tests {
                     && user_toolbar_native_action(entry.name).is_none()
             })
             .collect::<Vec<_>>();
-        assert_eq!(unsupported.len(), 25);
+        assert_eq!(unsupported.len(), 24);
         if std::env::var_os("LM_DIAGNOSTIC_UNSUPPORTED_TOOLBAR_COMMANDS").is_some() {
             for entry in unsupported {
                 eprintln!(

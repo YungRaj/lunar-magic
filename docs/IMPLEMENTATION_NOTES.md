@@ -5901,6 +5901,18 @@ installs only the resulting headered prepared project. The confirmation path ret
 worker and publication boundary; Cancel or a changed source publishes neither a file nor a project.
 Authenticated native command coverage is now 292 of 317 named slots, leaving 25 pending.
 
+## Save Prompt (`$24C7`)
+
+The authenticated command table maps `LM_OPTIONS_SAVE_PROMPT` to dispatch byte `$6A`, immediately
+after the silent-header option. The Lunar Magic 3.63 help defines a default-on transition guard for
+an unsaved current level or overworld when another level or ROM is opened. Rust persists the same
+toggle and guards every editor-mode/document transition before dispatch. Save retains the requested
+command and releases it only after the staged commit reaches its expected project revision; level
+relocation may therefore span expansion plus commit, while built-in overworld terrain and route
+links may span two ordered commits. Discard grants a one-use authorization for the exact command,
+and Cancel leaves both the project and staged controller untouched. Authenticated native command
+coverage is now 293 of 317 named slots, leaving 24 pending.
+
 ## Deprecated Select FG/BG commands (`$2473/$2474`)
 
 Both authenticated central dispatch bytes are `$DF`, while the Lunar Magic 3.63 command switch

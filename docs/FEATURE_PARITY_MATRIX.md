@@ -1226,6 +1226,19 @@ unchanged. Focused silent, prompted, source-race, persistence, route, and comman
 pass. The authenticated partition is now **292 routed / 25 pending**. The aggregate remains 59/65
 because the configuration row is still Partial.
 
+Toolbar coverage update (2026-08-11, staged editor Save Prompt): authenticated
+`LM_OPTIONS_SAVE_PROMPT` `$24C7` now routes the original default-on warning option. Lunar Magic
+3.63's `option_general.htm#option_save_prompt` contract covers opening another level or ROM while
+the current level or overworld is modified. Rust now intercepts those transitions before changing
+editor mode and presents Save/Discard/Cancel. Level Save defers the exact requested transition
+until the checked commit and any required ROM-expansion revision complete. The native overworld
+path covers complete-workspace edits, playable Layer 2 terrain, route links, and the combined
+terrain-plus-route case as two ordered revision-bound commits. Discard authorizes exactly the
+original transition once; Cancel retains staged state. Disabling the persisted option restores
+the original expert workflow without a prompt. Focused preference, route, level, overworld,
+combined-domain, and command-partition tests pass. The authenticated partition is now **293 routed
+/ 24 pending**. The aggregate remains 59/65 because the configuration row is still Partial.
+
 Toolbar coverage update (2026-08-10, Open Level Number): `LM_FILE_OPEN_LEVEL` `$238E` now opens
 the native equivalent of original dialog resource `1000`. It uses the authenticated title,
 `Level Number (0-1FF)` label, OK/Cancel controls, and original-language resource overrides; seeds
