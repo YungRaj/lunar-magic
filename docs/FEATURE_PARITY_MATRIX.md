@@ -442,6 +442,11 @@ event-number editor now hashes the exact retained stored length and every mappin
 through ordinary detected persistence. `staged_pristine_event_number_map_recovers_full_256_byte_storage`
 and `staged_installed_event_number_update_preserves_prior_mapping` prove vanilla `$60`-byte growth to
 the complete 256-byte map, exact reopen, clean live state, and preservation of committed mappings.
+The standalone event-reveal editor now hashes the record count and every mixed-endian pair, then
+recovers through ordinary fixed-to-installed or detected installed persistence.
+`staged_pristine_reveal_growth_recovers_complete_expanded_table` proves 112-to-200-record growth and
+`staged_installed_reveal_update_preserves_existing_expanded_records` proves a later staged edit
+retains the pre-existing expanded tail record after recovery and reopen.
 
 ## Workflow ledger
 

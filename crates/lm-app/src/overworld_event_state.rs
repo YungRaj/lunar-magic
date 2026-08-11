@@ -4,6 +4,7 @@ use lm_profile::{
     SMW_US_V1_CHECKSUM_FIELD, smw_us_v1_overworld_event_allocation_policy,
     smw_us_v1_overworld_event_reveal_locator,
 };
+use lm_project::Project;
 use lm_rom::{Mapper, Region, SupportedGame};
 
 impl AppState {
@@ -21,28 +22,9 @@ impl AppState {
         self.require_no_pending_save()?;
         self.ensure_project_revision_capacity()?;
         let project = self.project.as_mut().ok_or(AppError::NoProject)?;
-        let identity = project.identity.as_ref().ok_or(AppError::NoProject)?;
-        if identity.game != SupportedGame::SuperMarioWorld
-            || identity.region != Region::NorthAmerica
-            || identity.revision != 0
-            || identity.mapper != Mapper::LoRom
-        {
-            return Err(AppError::NativeOverworldEventIdentityMismatch);
-        }
-        if project
-            .load_overworld_event_reveals_detected(smw_us_v1_overworld_event_reveal_locator())?
-            .table
-            == *table
-        {
+        if !save_native_overworld_event_reveals_to_project(project, table)? {
             return Ok(Vec::new());
         }
-        project.save_overworld_event_reveals_detected(
-            table,
-            smw_us_v1_overworld_event_reveal_locator(),
-            &smw_us_v1_overworld_event_allocation_policy(),
-            SMW_US_V1_CHECKSUM_FIELD,
-            0xff,
-        )?;
         self.advance_project_revision()?;
         let description = "Replace native SMW overworld event reveals".to_owned();
         self.status.clone_from(&description);
@@ -52,6 +34,37 @@ impl AppState {
             revision: self.project_revision,
         }])
     }
+}
+
+/// Saves a native SMW-US overworld event-reveal table through the same detected-storage path used
+/// by the ordinary application command. Returns `false` when the detected table is already exact.
+pub fn save_native_overworld_event_reveals_to_project(
+    project: &mut Project,
+    table: &EventRevealTable,
+) -> Result<bool, AppError> {
+    let identity = project.identity.as_ref().ok_or(AppError::NoProject)?;
+    if identity.game != SupportedGame::SuperMarioWorld
+        || identity.region != Region::NorthAmerica
+        || identity.revision != 0
+        || identity.mapper != Mapper::LoRom
+    {
+        return Err(AppError::NativeOverworldEventIdentityMismatch);
+    }
+    if project
+        .load_overworld_event_reveals_detected(smw_us_v1_overworld_event_reveal_locator())?
+        .table
+        == *table
+    {
+        return Ok(false);
+    }
+    project.save_overworld_event_reveals_detected(
+        table,
+        smw_us_v1_overworld_event_reveal_locator(),
+        &smw_us_v1_overworld_event_allocation_policy(),
+        SMW_US_V1_CHECKSUM_FIELD,
+        0xff,
+    )?;
+    Ok(true)
 }
 
 #[cfg(test)]

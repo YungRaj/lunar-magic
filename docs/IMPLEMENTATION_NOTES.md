@@ -6529,3 +6529,15 @@ Focused tests recover mappings at `$00` and `$FF` while growing pristine storage
 then preserve a committed low mapping while recovering a staged `$FF` update through installed
 storage. All four event-number editor tests, the application semantic/Undo test, and all 237 renderer
 tests pass.
+
+## Crash recovery includes staged overworld event-reveal tables
+
+The standalone event-reveal editor now contributes a content-sensitive generation over the record
+count and every mixed-endian source/destination pair. Recovery clones the current project and uses
+the same detected-storage persistence as ordinary commit: pristine fixed storage can grow into an
+installed table, while existing transferred-source or expanded storage updates without losing
+prior records. Exact semantic reopen is required and the live project stays clean and history-free.
+
+Focused tests recover a pristine 112-to-200-record growth with a staged tail record, then preserve
+that installed tail while recovering an independent edit to record zero. All four event-reveal
+editor tests pass.

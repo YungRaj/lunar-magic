@@ -29,6 +29,47 @@ pub(crate) struct RomOverworldEventRevealEditor {
 }
 
 impl RomOverworldEventRevealEditor {
+    pub(crate) fn staged_recovery_generation(&self, app: &AppState) -> Option<u64> {
+        let workspace = self.workspace.as_ref()?;
+        if workspace.current == workspace.original {
+            return None;
+        }
+        let content_revision = workspace.current.entries.iter().fold(
+            0x4556_454e_5452_564c_u64 ^ workspace.current.entries.len() as u64,
+            |revision, entry| {
+                revision.rotate_left(7)
+                    ^ u64::from(entry.source_tile)
+                    ^ u64::from(entry.destination_tile).rotate_left(19)
+            },
+        );
+        Some(
+            app.project_revision().wrapping_mul(0xa24b_aed4_963e_e407)
+                ^ workspace.revision.rotate_left(31)
+                ^ content_revision,
+        )
+    }
+
+    pub(crate) fn staged_recovery_snapshot(
+        &self,
+        app: &AppState,
+    ) -> Result<Option<lm_app::RecoverySnapshot>, String> {
+        let workspace = self
+            .workspace
+            .as_ref()
+            .ok_or_else(|| "event-reveal workspace is closed".to_owned())?;
+        if workspace.revision != app.project_revision() {
+            return Err("stale event-reveal workspace cannot be recovered".into());
+        }
+        if workspace.current == workspace.original {
+            return Ok(app.recovery_snapshot());
+        }
+        let mut staged = app.project().ok_or("open a supported ROM first")?.clone();
+        lm_app::save_native_overworld_event_reveals_to_project(&mut staged, &workspace.current)
+            .map_err(|error| error.to_string())?;
+        app.recovery_snapshot_with_current_rom(staged.save_snapshot(), app.current_level())
+            .map_err(|error| error.to_string())
+    }
+
     pub(crate) fn is_open(&self) -> bool {
         self.workspace.is_some()
     }
@@ -358,5 +399,83 @@ mod tests {
         assert!(editor.prepare_commit(3).is_err());
         assert!(!editor.request_close(true));
         assert!(editor.is_open());
+    }
+
+    #[test]
+    fn staged_pristine_reveal_growth_recovers_complete_expanded_table() {
+        let original = crate::test_support::pristine_smw_us_rom_bytes();
+        let mut app = AppState::default();
+        app.load_rom(original).unwrap();
+        let mut editor = RomOverworldEventRevealEditor::default();
+        editor.open(&app);
+        editor.count = "C8".into();
+        editor.resize().unwrap();
+        editor.index = "C7".into();
+        editor.load_selected().unwrap();
+        editor.source = "7FF".into();
+        editor.destination = "ABCD".into();
+        editor.apply_selected().unwrap();
+
+        assert!(editor.staged_recovery_generation(&app).is_some());
+        let recovery = editor.staged_recovery_snapshot(&app).unwrap().unwrap();
+        assert_eq!(app.capabilities().project, lm_app::ProjectStatus::OpenClean);
+        assert_eq!(app.project().unwrap().history.undo_len(), 0);
+        let mut reopened = AppState::default();
+        reopened.load_recovery(recovery).unwrap();
+        let table = &reopened
+            .project()
+            .unwrap()
+            .load_overworld_event_reveals_detected(smw_us_v1_overworld_event_reveal_locator())
+            .unwrap()
+            .table;
+        assert_eq!(table.entries.len(), 200);
+        assert_eq!(table.entries[199].source_tile, 0x7ff);
+        assert_eq!(table.entries[199].destination_tile, 0xabcd);
+    }
+
+    #[test]
+    fn staged_installed_reveal_update_preserves_existing_expanded_records() {
+        let mut installer = AppState::default();
+        installer
+            .load_rom(crate::test_support::pristine_smw_us_rom_bytes())
+            .unwrap();
+        let mut first = RomOverworldEventRevealEditor::default();
+        first.open(&installer);
+        first.count = "C8".into();
+        first.resize().unwrap();
+        first.index = "C7".into();
+        first.load_selected().unwrap();
+        first.source = "700".into();
+        first.destination = "A000".into();
+        first.apply_selected().unwrap();
+        installer
+            .dispatch(first.prepare_commit(0).unwrap().unwrap())
+            .unwrap();
+
+        let mut app = AppState::default();
+        app.load_rom(installer.project().unwrap().save_snapshot())
+            .unwrap();
+        let mut editor = RomOverworldEventRevealEditor::default();
+        editor.open(&app);
+        editor.index = "00".into();
+        editor.load_selected().unwrap();
+        editor.source = "321".into();
+        editor.destination = "BEEF".into();
+        editor.apply_selected().unwrap();
+
+        let recovery = editor.staged_recovery_snapshot(&app).unwrap().unwrap();
+        let mut reopened = AppState::default();
+        reopened.load_recovery(recovery).unwrap();
+        let table = &reopened
+            .project()
+            .unwrap()
+            .load_overworld_event_reveals_detected(smw_us_v1_overworld_event_reveal_locator())
+            .unwrap()
+            .table;
+        assert_eq!(table.entries.len(), 200);
+        assert_eq!(table.entries[0].source_tile, 0x321);
+        assert_eq!(table.entries[0].destination_tile, 0xbeef);
+        assert_eq!(table.entries[199].source_tile, 0x700);
+        assert_eq!(table.entries[199].destination_tile, 0xa000);
     }
 }

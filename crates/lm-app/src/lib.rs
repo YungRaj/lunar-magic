@@ -335,6 +335,7 @@ pub use overworld_document_controller::{
 };
 pub use overworld_edit_batch::OverworldEditBatchError;
 pub use overworld_event_number_state::save_native_overworld_event_number_map_to_project;
+pub use overworld_event_state::save_native_overworld_event_reveals_to_project;
 pub use overworld_level_name_state::save_native_overworld_level_names_to_project;
 pub use overworld_metadata_controller::{
     OverworldMetadataController, OverworldMetadataControllerError, OverworldMetadataSaveSnapshot,
