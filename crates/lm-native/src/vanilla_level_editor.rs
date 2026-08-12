@@ -1324,6 +1324,28 @@ impl VanillaLevelEditor {
             .map_err(|error| error.to_string())
     }
 
+    pub(crate) fn staged_recovery_mutation(
+        &self,
+        app: &AppState,
+    ) -> Result<Option<(lm_project::RomMutation, u16)>, String> {
+        let Some(controller) = self.controller.as_ref() else {
+            return Ok(None);
+        };
+        if !controller.is_modified() {
+            return Ok(None);
+        }
+        let snapshot = app
+            .controller_snapshot()
+            .map_err(|error| error.to_string())?;
+        let level = u16::try_from(controller.level().number)
+            .map_err(|_| "level recovery number is out of range".to_owned())?;
+        let mutation = recovery_mutation_from_command(
+            prepare_commit(controller, &snapshot)?,
+            snapshot.revision,
+        )?;
+        Ok(Some((mutation, level)))
+    }
+
     pub(crate) fn recovery_generation(&self, app: &AppState) -> Option<u64> {
         if let Some(controller) = self.controller.as_ref()
             && controller.is_modified()

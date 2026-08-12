@@ -2120,6 +2120,35 @@ impl eframe::App for NativeApplication {
                         .map_err(|error| error.to_string());
                 }
                 if staged_editors == 2
+                    && level_recovery_revision.is_some()
+                    && level_assets_recovery_revision.is_some()
+                {
+                    let (level_mutation, level) = self
+                        .vanilla_level_editor
+                        .staged_recovery_mutation(&self.app)?
+                        .ok_or("staged primary-level recovery mutation disappeared")?;
+                    let (assets_mutation, assets_level, level_streams_modified) = self
+                        .rom_level_assets_editor
+                        .staged_recovery_mutation(&self.app)?
+                        .ok_or("staged aggregate level-assets mutation disappeared")?;
+                    if level != assets_level {
+                        return Err("staged level editors target different levels".into());
+                    }
+                    if level_streams_modified {
+                        return Err(
+                            "both staged level editors changed Layer 1, Layer 2, or sprites".into(),
+                        );
+                    }
+                    return self
+                        .app
+                        .recovery_snapshot_with_level_and_assets(
+                            &level_mutation,
+                            &assets_mutation,
+                            level,
+                        )
+                        .map_err(|error| error.to_string());
+                }
+                if staged_editors == 2
                     && title_tilemap_recovery_revision.is_some()
                     && credits_tilemap_recovery_revision.is_some()
                 {

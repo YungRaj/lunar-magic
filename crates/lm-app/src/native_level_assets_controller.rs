@@ -9,11 +9,11 @@ use lm_graphics::{
     PaletteInterchangeFile, PaletteOwnership,
 };
 use lm_level::{
-    level_mode_layer2_storage, native_level_screen_count, ExpandedLevelSettingsError,
-    HeaderValueError, Layer2Storage, LegacyHeaderEdit, LevelEditError, LevelObjectData,
-    LevelScreenExtentMode, MwlLayer2Descriptor, NativeLayer2Data, NativeLayer2RemapError,
-    NativeLayer2RemapProgram, NativeSpriteEncodingError, ObjectEdit, ObjectEditError,
-    SpriteLengthTable, SpriteStreamError, NATIVE_LAYER2_TILEMAP_LEN,
+    ExpandedLevelSettingsError, HeaderValueError, Layer2Storage, LegacyHeaderEdit, LevelEditError,
+    LevelObjectData, LevelScreenExtentMode, MwlLayer2Descriptor, NATIVE_LAYER2_TILEMAP_LEN,
+    NativeLayer2Data, NativeLayer2RemapError, NativeLayer2RemapProgram, NativeSpriteEncodingError,
+    ObjectEdit, ObjectEditError, SpriteLengthTable, SpriteStreamError, level_mode_layer2_storage,
+    native_level_screen_count,
 };
 use lm_project::{
     InstalledExAnimationFeatureRomLayout, InstalledLayout, LevelLayer2IoError,
@@ -502,6 +502,16 @@ impl NativeLevelAssetsController {
             || self.layer2 != self.baseline_layer2
             || self.layer2_descriptor != self.baseline_layer2_descriptor
             || self.lfix3_fields != self.baseline_lfix3_fields
+    }
+
+    /// Reports whether the aggregate workspace changed a domain also owned by the primary level
+    /// editor. Recovery coordinators use this to distinguish safely composable asset-only work
+    /// from competing Layer 1, Layer 2, or sprite edits.
+    #[must_use]
+    pub fn level_streams_modified(&self) -> bool {
+        self.assets.level != self.baseline.level
+            || self.layer2 != self.baseline_layer2
+            || self.layer2_descriptor != self.baseline_layer2_descriptor
     }
 
     #[must_use]

@@ -337,6 +337,38 @@ impl AppState {
         self.recovery_snapshot_with_current_rom(staged.save_snapshot(), level)
     }
 
+    /// Composes primary-level and aggregate asset-only mutations prepared from one exact ROM.
+    /// Growth is rejected because independently planned allocations cannot be safely rebased.
+    pub fn recovery_snapshot_with_level_and_assets(
+        &self,
+        level: &lm_project::RomMutation,
+        assets: &lm_project::RomMutation,
+        selected_level: u16,
+    ) -> Result<Option<RecoverySnapshot>, AppError> {
+        const CHECKSUM_FIELD: usize = 0x7fdc;
+        if !level.appended.is_empty() || !assets.appended.is_empty() {
+            return Err(AppError::Recovery(
+                "simultaneous level/assets recovery cannot rebase growing allocations".into(),
+            ));
+        }
+        if level.expected_len != assets.expected_len || level.mapper != assets.mapper {
+            return Err(AppError::Recovery(
+                "simultaneous level/assets mutations do not share one ROM baseline".into(),
+            ));
+        }
+        reject_conflicting_mutation_writes(level, assets, CHECKSUM_FIELD)?;
+        let project = self.project.as_ref().ok_or(AppError::NoProject)?;
+        let mut staged = project.clone();
+        staged
+            .apply_mutation("Stage primary level for crash recovery", level)
+            .map_err(|error| AppError::Recovery(error.to_string()))?;
+        staged
+            .apply_mutation("Stage aggregate level assets for crash recovery", assets)
+            .map_err(|error| AppError::Recovery(error.to_string()))?;
+        staged.rom.update_snes_checksum(CHECKSUM_FIELD)?;
+        self.recovery_snapshot_with_current_rom(staged.save_snapshot(), Some(selected_level))
+    }
+
     /// Restores a recovery record as an unnamed, dirty project.
     ///
     /// The original path is deliberately not restored. The first explicit save therefore uses
@@ -412,6 +444,49 @@ mod tests {
         assert!(error.contains("combined shared-hook runtime"), "{error}");
         assert_eq!(app.project().unwrap().save_snapshot(), baseline);
         assert_eq!(app.project().unwrap().history.undo_len(), 0);
+    }
+
+    #[test]
+    fn level_and_asset_mutations_compose_disjoint_writes_and_reject_growth() {
+        let mut app = AppState::default();
+        app.load_rom(crate::test_support::pristine_smw_us_rom_bytes())
+            .unwrap();
+        let baseline = app.project().unwrap().rom.logical_bytes().to_vec();
+        let mut level_bytes = baseline.clone();
+        level_bytes[0x1000] ^= 0x11;
+        let mut asset_bytes = baseline.clone();
+        asset_bytes[0x2000] ^= 0x22;
+        let level =
+            lm_project::RomMutation::between(lm_rom::Mapper::LoRom, &baseline, &level_bytes)
+                .unwrap();
+        let assets =
+            lm_project::RomMutation::between(lm_rom::Mapper::LoRom, &baseline, &asset_bytes)
+                .unwrap();
+        let recovery = app
+            .recovery_snapshot_with_level_and_assets(&level, &assets, 0x105)
+            .unwrap()
+            .unwrap();
+        let mut reopened = AppState::default();
+        reopened.load_recovery(recovery).unwrap();
+        assert_eq!(
+            reopened.project().unwrap().rom.logical_bytes()[0x1000],
+            level_bytes[0x1000]
+        );
+        assert_eq!(
+            reopened.project().unwrap().rom.logical_bytes()[0x2000],
+            asset_bytes[0x2000]
+        );
+
+        let mut grown = baseline.clone();
+        grown.extend_from_slice(&[0xff; 16]);
+        let growth =
+            lm_project::RomMutation::between(lm_rom::Mapper::LoRom, &baseline, &grown).unwrap();
+        assert!(
+            app.recovery_snapshot_with_level_and_assets(&level, &growth, 0x105)
+                .unwrap_err()
+                .to_string()
+                .contains("cannot rebase growing allocations")
+        );
     }
 
     #[test]

@@ -1188,6 +1188,13 @@ table can join the same recovery clone. Terrain, paths, and warps persist in det
 reopen together without touching live bytes/history. Focused exact-reopen and 237 renderer tests
 pass. The broader Release gaps keep the row Partial and aggregate parity at 60/65.
 
+Primary/aggregate level recovery update (2026-08-11): same-level primary-editor changes now
+compose with aggregate asset-only edits when their revision-bound mutations are same-size and
+disjoint. Aggregate Layer 1/Layer 2/sprite changes, different target levels, conflicting writes,
+and independent growth reject explicitly. This closes the safe non-allocating boundary without
+claiming a nonexistent allocation rebase; focused composition, native compilation, and 237 renderer
+tests pass. Release remains Partial and aggregate parity remains 60/65.
+
 Toolbar coverage update (2026-08-11, GFX display override): authenticated `LM_KEY_GFX_OVERRIDE`
 `$26B8` now opens the original session-only two-row hexadecimal dialog. Eight Layer 1/2 and eight
 Layer 3 slots default to `$7F` (use the real level assignment); explicit `$000..=$FFF` values

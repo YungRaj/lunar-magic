@@ -638,6 +638,36 @@ pub(crate) struct RomLevelAssetsEditor {
 }
 
 impl RomLevelAssetsEditor {
+    pub(crate) fn staged_recovery_mutation(
+        &self,
+        app: &AppState,
+    ) -> Result<Option<(lm_project::RomMutation, u16, bool)>, String> {
+        let workspace = self
+            .workspace
+            .as_ref()
+            .ok_or("level-assets workspace is closed")?;
+        if !workspace.controller.is_modified() {
+            return Ok(None);
+        }
+        let command = self.prepare_commit()?;
+        let Command::CommitRomMutation {
+            expected_revision,
+            mutation,
+            ..
+        } = command
+        else {
+            return Err("level-assets recovery expected one prepared ROM mutation".into());
+        };
+        if expected_revision != app.project_revision() {
+            return Err("level-assets recovery mutation was prepared from a stale revision".into());
+        }
+        Ok(Some((
+            mutation,
+            workspace.source_slot,
+            workspace.controller.level_streams_modified(),
+        )))
+    }
+
     pub(crate) fn toolbar_truncate_beyond_mode_limit(&mut self) -> Option<(usize, usize, usize)> {
         let workspace = self.workspace.as_mut()?;
         let mode = lm_profile::smw_us_v1_level_mode(

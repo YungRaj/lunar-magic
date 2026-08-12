@@ -6953,3 +6953,12 @@ then path installation/update, then warp installation/update on one evolving clo
 `terrain_mutation_path_and_warp_tables_recover_on_one_evolving_project` gate proves all three
 domains reopen together while the live ROM and history remain unchanged. Native compilation and
 all 237 renderer tests pass.
+
+Primary/aggregate level recovery update (2026-08-11): the coordinator can now combine a staged
+primary level edit with aggregate level-assets work when both target the same level, the aggregate
+controller did not change Layer 1/Layer 2/sprites, both mutations share one physical baseline, do
+not grow the ROM, and have no conflicting writes outside the recomputed checksum. The aggregate
+controller exposes an explicit `level_streams_modified` ownership predicate; overlap and allocation
+growth reject visibly instead of restoring stale level streams or merging independently planned
+allocations. `level_and_asset_mutations_compose_disjoint_writes_and_reject_growth` covers successful
+composition and the growth boundary. Native compilation and the 237-test renderer gate pass.
