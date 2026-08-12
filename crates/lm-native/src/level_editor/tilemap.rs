@@ -43,7 +43,11 @@ impl LevelEditor {
         });
     }
 
-    pub(super) fn side_panel(&mut self, ui: &mut egui::Ui) {
+    pub(super) fn side_panel(
+        &mut self,
+        ui: &mut egui::Ui,
+        catalog: Option<&lm_app::LocalizationCatalog>,
+    ) {
         ui.heading("Tilemap");
         ui.label(format!(
             "Coordinate {}, {}",
@@ -71,6 +75,7 @@ impl LevelEditor {
             ui,
             document.controller.value(),
             document.controller.revision(),
+            catalog,
         );
         if let Some(result) = result {
             match result {

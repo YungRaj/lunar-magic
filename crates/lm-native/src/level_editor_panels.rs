@@ -6,6 +6,7 @@ use crate::{
 };
 use eframe::egui;
 use lm_app::CompleteLevelDocumentEdit;
+use lm_app::LocalizationCatalog;
 use lm_level::{
     CompleteLevelFile, LevelAuxiliaryEdit, LevelLayer, ObjectEdit, SequenceEdit, SpriteEdit,
 };
@@ -58,6 +59,7 @@ impl LevelPanelState {
         ui: &mut egui::Ui,
         level: &CompleteLevelFile,
         revision: u64,
+        catalog: Option<&LocalizationCatalog>,
     ) -> Option<Result<Vec<CompleteLevelDocumentEdit>, String>> {
         ui.horizontal(|ui| {
             ui.selectable_value(&mut self.panel, Panel::Header, "Header");
@@ -73,7 +75,7 @@ impl LevelPanelState {
             Panel::Objects => self.show_objects(ui, level, revision),
             Panel::Sprites => self.show_sprites(ui, level, revision),
             Panel::Entrances => self.show_entrances(ui, level, revision),
-            Panel::Auxiliary => self.auxiliary.show(ui, level, revision),
+            Panel::Auxiliary => self.auxiliary.show(ui, level, revision, catalog),
             Panel::Advanced => self.advanced.show(ui, level, revision),
         }
     }

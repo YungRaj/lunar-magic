@@ -8009,3 +8009,13 @@ button captions across the shell and tilemap module. Native compilation, the foc
 localization 28/28 active cases (one provenance ignore), and renderer 237/237 pass. Other unaudited
 frontend modules and the retained translated language-DLL gesture keep Localization Partial;
 aggregate parity remains 60/65.
+
+Localization coverage update (2026-08-12, complete-level auxiliary panel): twenty-six appended
+`LevelAux*` identities cover screen-exit, secondary-exit, and Map16-override tabs; all index
+sliders; encoded/destination/position/screen/coordinate/flag and six Map16 fields; and the complete
+append/replace/remove/upsert action family. The live catalog now routes from the application through
+the portable complete-level shell and panel stack to this shared child without global state. A
+complete panel audit rejects literal button, label, slider, and `Button` captions and requires
+every family identity. Native compilation, the focused audit, localization 28/28 active cases (one
+provenance ignore), and renderer 237/237 pass. Other unaudited frontend modules and the retained
+translated language-DLL gesture keep Localization Partial; aggregate parity remains 60/65.

@@ -31,7 +31,7 @@ impl NativeApplication {
         {
             self.request_quit(context);
         }
-        if self.level_editor.show(context) {
+        if self.level_editor.show(context, self.app.localization()) {
             self.request_quit(context);
         }
         if self

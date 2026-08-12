@@ -92,7 +92,11 @@ impl LevelEditor {
         false
     }
 
-    pub(crate) fn show(&mut self, context: &egui::Context) -> bool {
+    pub(crate) fn show(
+        &mut self,
+        context: &egui::Context,
+        catalog: Option<&lm_app::LocalizationCatalog>,
+    ) -> bool {
         if let Some(result) = self.loader.show(context) {
             match result.and_then(document_io::decode_loaded) {
                 Ok(pending) => self.pending_open = Some(pending),
@@ -110,7 +114,7 @@ impl LevelEditor {
             self.load_tile();
             egui::Window::new("Portable Complete Level Editor")
                 .default_size([1000.0, 700.0])
-                .show(context, |ui| self.contents(ui));
+                .show(context, |ui| self.contents(ui, catalog));
         }
         let approved = self.show_close_confirmation(context);
         self.show_error(context);
@@ -174,12 +178,12 @@ impl LevelEditor {
         }
     }
 
-    fn contents(&mut self, ui: &mut egui::Ui) {
+    fn contents(&mut self, ui: &mut egui::Ui, catalog: Option<&lm_app::LocalizationCatalog>) {
         self.toolbar(ui);
         ui.separator();
         ui.columns(2, |columns| {
             self.level_view(&mut columns[0]);
-            self.side_panel(&mut columns[1]);
+            self.side_panel(&mut columns[1], catalog);
         });
     }
 
