@@ -253,10 +253,12 @@ impl NativeApplication {
         }
         show_project_operation!(self, context, rom_expansion_dialog);
         let ips_workflow_active = self.ips_create_dialog.has_open_workflow();
-        if let Some(action) =
-            self.level_access_restriction_dialog
-                .show(context, &self.app, ips_workflow_active)
-        {
+        if let Some(action) = self.level_access_restriction_dialog.show(
+            context,
+            &self.app,
+            ips_workflow_active,
+            self.app.localization(),
+        ) {
             match action {
                 LevelAccessRestrictionAction::Restrict(command) => {
                     if self.try_dispatch(context, command) {

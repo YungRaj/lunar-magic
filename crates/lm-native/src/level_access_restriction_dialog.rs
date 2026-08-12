@@ -1,7 +1,9 @@
 use eframe::egui;
-use lm_app::{AppState, Command};
+use lm_app::{AppState, Command, LocalizationCatalog};
 use lm_project::LevelAccessRestrictionKeys;
 use std::time::{SystemTime, UNIX_EPOCH};
+
+const ORIGINAL_DIALOG_ID: u16 = 0x03ff;
 
 #[derive(Default)]
 pub(crate) struct LevelAccessRestrictionDialog {
@@ -51,6 +53,7 @@ impl LevelAccessRestrictionDialog {
         context: &egui::Context,
         app: &AppState,
         ips_workflow_active: bool,
+        catalog: Option<&LocalizationCatalog>,
     ) -> Option<LevelAccessRestrictionAction> {
         let mut action = None;
         if self.stage == RestrictionStage::WaitForIps && !ips_workflow_active {
@@ -63,24 +66,35 @@ impl LevelAccessRestrictionDialog {
             action = Some(LevelAccessRestrictionAction::CreateRestorePoint);
         }
         if self.open && self.stage == RestrictionStage::Configure {
-            egui::Window::new("Restrict Level Access by Lunar Magic (Version 1.1)")
+            egui::Window::new(restriction_dialog_title(catalog))
                 .collapsible(false)
                 .resizable(false)
                 .show(context, |ui| {
-                    ui.label(
+                    ui.label(restriction_dialog_text(
+                        catalog,
+                        0x68,
                         "This is a relatively weak form of protection. It only prevents casual \
                          examination of your levels.",
-                    );
+                    ));
                     ui.colored_label(
                         egui::Color32::YELLOW,
-                        "This operation is permanent in Lunar Magic. Keep an unmodified backup.",
+                        restriction_dialog_text(
+                            catalog,
+                            0x67,
+                            "This operation is permanent in Lunar Magic. Keep an unmodified \
+                             backup.",
+                        ),
                     );
                     ui.label(
                         "After restriction, performing additional editing operations on the \
                          locked ROM is not recommended.",
                     );
                     ui.separator();
-                    ui.label("ROM Title (21 char Max, ASCII)");
+                    ui.label(restriction_dialog_text(
+                        catalog,
+                        0x66,
+                        "ROM Title (21 char Max, ASCII)",
+                    ));
                     ui.add(
                         egui::TextEdit::singleline(&mut self.title)
                             .char_limit(21)
@@ -91,13 +105,16 @@ impl LevelAccessRestrictionDialog {
                         "I understand that the original tool cannot reverse this operation.",
                     );
                     ui.horizontal(|ui| {
-                        if ui.button("Cancel").clicked() {
+                        if ui
+                            .button(restriction_dialog_text(catalog, 2, "Cancel"))
+                            .clicked()
+                        {
                             self.open = false;
                         }
                         if ui
                             .add_enabled(
                                 self.acknowledged,
-                                egui::Button::new("Restrict Level Access"),
+                                egui::Button::new(restriction_dialog_text(catalog, 1, "OK")),
                             )
                             .clicked()
                         {
@@ -252,6 +269,24 @@ impl LevelAccessRestrictionDialog {
     }
 }
 
+fn restriction_dialog_title(catalog: Option<&LocalizationCatalog>) -> String {
+    catalog
+        .and_then(|catalog| catalog.original_dialog_title(ORIGINAL_DIALOG_ID))
+        .unwrap_or("Restrict Level Access by Lunar Magic (Version 1.1)")
+        .to_owned()
+}
+
+fn restriction_dialog_text(
+    catalog: Option<&LocalizationCatalog>,
+    control_id: u32,
+    fallback: &str,
+) -> String {
+    catalog
+        .and_then(|catalog| catalog.original_dialog_control_text(ORIGINAL_DIALOG_ID, control_id))
+        .unwrap_or(fallback)
+        .to_owned()
+}
+
 fn fresh_keys() -> LevelAccessRestrictionKeys {
     let duration = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -273,6 +308,7 @@ fn fresh_keys() -> LevelAccessRestrictionKeys {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use lm_app::{OriginalDialogTextKey, UiTextKey};
 
     #[test]
     fn fresh_material_respects_lunar_magics_seven_bit_first_key() {
@@ -304,7 +340,7 @@ mod tests {
         dialog.stage = RestrictionStage::Persisting;
         let context = egui::Context::default();
         let app = AppState::default();
-        let _action = dialog.show(&context, &app, false);
+        let _action = dialog.show(&context, &app, false, None);
         assert_eq!(dialog.stage, RestrictionStage::Configure);
     }
 
@@ -326,5 +362,65 @@ mod tests {
         assert_eq!(dialog.stage, RestrictionStage::CreateRestorePoint);
         dialog.restore_point_completed();
         assert_eq!(dialog.stage, RestrictionStage::OfferIps);
+    }
+
+    #[test]
+    fn original_restriction_template_localizes_every_matching_native_caption() {
+        let catalog = LocalizationCatalog::new(
+            "fr-test",
+            UiTextKey::ALL.map(|key| (key, key.english().to_owned())),
+        )
+        .unwrap()
+        .with_original_dialog_texts([
+            (
+                OriginalDialogTextKey {
+                    dialog_id: ORIGINAL_DIALOG_ID,
+                    item_index: u16::MAX,
+                    control_id: u32::MAX,
+                },
+                "Restreindre l’accès aux niveaux".into(),
+            ),
+            (
+                OriginalDialogTextKey {
+                    dialog_id: ORIGINAL_DIALOG_ID,
+                    item_index: 1,
+                    control_id: 0x66,
+                },
+                "Titre ROM (21 caractères ASCII)".into(),
+            ),
+            (
+                OriginalDialogTextKey {
+                    dialog_id: ORIGINAL_DIALOG_ID,
+                    item_index: 2,
+                    control_id: 1,
+                },
+                "Valider".into(),
+            ),
+        ])
+        .unwrap();
+
+        assert_eq!(
+            restriction_dialog_title(Some(&catalog)),
+            "Restreindre l’accès aux niveaux"
+        );
+        assert_eq!(
+            restriction_dialog_text(Some(&catalog), 0x66, "fallback"),
+            "Titre ROM (21 caractères ASCII)"
+        );
+        assert_eq!(restriction_dialog_text(Some(&catalog), 1, "OK"), "Valider");
+        assert_eq!(
+            restriction_dialog_text(Some(&catalog), 2, "Cancel"),
+            "Cancel"
+        );
+        assert_eq!(
+            restriction_dialog_title(None),
+            "Restrict Level Access by Lunar Magic (Version 1.1)"
+        );
+
+        let reopened = LocalizationCatalog::decode(&catalog.encode().unwrap()).unwrap();
+        assert_eq!(
+            restriction_dialog_title(Some(&reopened)),
+            "Restreindre l’accès aux niveaux"
+        );
     }
 }

@@ -6754,3 +6754,14 @@ keeps its distinct object wording and deliberately does not misapply the sprite 
 Unicode catalogs and canonical encode/decode tests bind both forms through the same catalog used by
 the running application. Localization remains `Partial` pending the remaining mapped native forms
 and a retained live third-party language-DLL Wine gesture.
+
+## Original level-access restriction template
+
+The native restriction configuration now consumes Lunar Magic 3.63 dialog resource `$03FF` for
+its title, both original permanence/weak-protection notices, 21-character ASCII ROM-title label,
+and OK/Cancel controls. The additional explicit acknowledgement remains a Rust safety guard, while
+the original captions flow from the active application catalog into the real restriction workflow.
+Each missing template field falls back independently, and a Unicode catalog encode/decode test
+proves the resource survives persisted configuration before application. The irreversible mutation,
+restore-point policy, IPS offer, persistence, and close sequencing are unchanged. Localization
+remains `Partial` pending the remaining mapped native forms and retained live language-DLL evidence.
