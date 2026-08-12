@@ -6851,3 +6851,8 @@ details remain native explanatory text rather than being falsely attributed to a
 the executable proves these phrases are option controls, not standalone warning resources.
 The same four catalog entries now label their live Tools-menu checkboxes, so selection, persistence,
 and the resulting warning all present one translated option identity.
+Five additional live Tools controls now consume their byte-authenticated `$041F` entries:
+Remember Window Size `$2294`, Show ID in Add Object/Sprite Editors `$2296`, Auto-Deselect on Editor
+Select `$2298`, Convert Berry GFX Tile `$22A5`, and Check if ROMFileName.ips Exists `$22AC`.
+“Correct Fatal Errors in Level Data” remains native English because that exact phrase is absent from
+the original resource; no unrelated control is reused as localization evidence.

@@ -556,22 +556,25 @@ impl NativeApplication {
                 }
             });
             let mut auto_deselect = self.auto_deselect_on_editor_select;
+            let auto_deselect_label =
+                self.original_general_option_text(0x2298, "Auto-Deselect on Editor Select");
             if ui
-                .checkbox(&mut auto_deselect, "Auto-Deselect on Editor Select")
+                .checkbox(&mut auto_deselect, auto_deselect_label)
                 .changed()
             {
                 self.set_auto_deselect_on_editor_select(auto_deselect);
             }
             let mut show_ids = self.show_add_editor_ids.unwrap_or(true);
-            if ui
-                .checkbox(&mut show_ids, "Show ID in Add Object/Sprite Editors")
-                .changed()
-            {
+            let show_ids_label =
+                self.original_general_option_text(0x2296, "Show ID in Add Object/Sprite Editors");
+            if ui.checkbox(&mut show_ids, show_ids_label).changed() {
                 self.set_show_add_editor_ids(show_ids);
             }
             let mut remember_window_size = self.remember_window_size.unwrap_or(true);
+            let remember_window_size_label =
+                self.original_general_option_text(0x2294, "Remember Window Size");
             if ui
-                .checkbox(&mut remember_window_size, "Remember Window Size")
+                .checkbox(&mut remember_window_size, remember_window_size_label)
                 .changed()
             {
                 self.set_remember_window_size(remember_window_size);
@@ -620,15 +623,19 @@ impl NativeApplication {
                 self.set_warn_vertical_fireball_buoyancy(warn_vertical_fireball);
             }
             let mut warn_ips_sibling = self.warn_ips_sibling_on_save.unwrap_or(true);
+            let warn_ips_sibling_label =
+                self.original_general_option_text(0x22ac, "Check if ROMFileName.ips Exists");
             if ui
-                .checkbox(&mut warn_ips_sibling, "Check if ROMFileName.ips Exists")
+                .checkbox(&mut warn_ips_sibling, warn_ips_sibling_label)
                 .changed()
             {
                 self.set_warn_ips_sibling_on_save(warn_ips_sibling);
             }
             let mut convert_berry = self.convert_berry_gfx_tile.unwrap_or(true);
+            let convert_berry_label =
+                self.original_general_option_text(0x22a5, "Convert Berry GFX Tile");
             if ui
-                .checkbox(&mut convert_berry, "Convert Berry GFX Tile")
+                .checkbox(&mut convert_berry, convert_berry_label)
                 .changed()
             {
                 self.set_convert_berry_gfx_tile(convert_berry);
