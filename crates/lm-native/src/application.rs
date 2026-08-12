@@ -231,6 +231,7 @@ pub(crate) struct NativeApplication {
     remember_window_size: Option<bool>,
     allow_control_wheel_zoom: Option<bool>,
     rom_file_name_in_title: Option<bool>,
+    pause_animation_when_inactive: Option<bool>,
     scan_exits_on_save: Option<bool>,
     count_sprites_on_save: Option<bool>,
     check_object_placement_on_save: Option<bool>,
@@ -326,6 +327,7 @@ impl NativeApplication {
             remember_window_size: self.remember_window_size.unwrap_or(true),
             allow_control_wheel_zoom: self.allow_control_wheel_zoom.unwrap_or(true),
             rom_file_name_in_title: self.rom_file_name_in_title.unwrap_or(true),
+            pause_animation_when_inactive: self.pause_animation_when_inactive.unwrap_or(true),
             show_add_editor_ids: self.show_add_editor_ids.unwrap_or(true),
             auto_deselect: self.auto_deselect_on_editor_select,
             correct_fatal_errors: self.correct_fatal_errors.unwrap_or(true),
@@ -361,6 +363,7 @@ impl NativeApplication {
         self.set_remember_window_size(options.remember_window_size);
         self.allow_control_wheel_zoom = Some(options.allow_control_wheel_zoom);
         self.rom_file_name_in_title = Some(options.rom_file_name_in_title);
+        self.pause_animation_when_inactive = Some(options.pause_animation_when_inactive);
         self.set_show_add_editor_ids(options.show_add_editor_ids);
         self.set_auto_deselect_on_editor_select(options.auto_deselect);
         self.set_correct_fatal_errors(options.correct_fatal_errors);
@@ -400,6 +403,8 @@ impl NativeApplication {
         "lunar_magic_rust.allow_control_wheel_zoom.v1";
     const ROM_FILE_NAME_IN_TITLE_STORAGE_KEY: &'static str =
         "lunar_magic_rust.rom_file_name_in_title.v1";
+    const PAUSE_ANIMATION_WHEN_INACTIVE_STORAGE_KEY: &'static str =
+        "lunar_magic_rust.pause_animation_when_inactive.v1";
     const SCAN_EXITS_ON_SAVE_STORAGE_KEY: &'static str = "lunar_magic_rust.scan_exits_on_save.v1";
     const COUNT_SPRITES_ON_SAVE_STORAGE_KEY: &'static str =
         "lunar_magic_rust.count_sprites_on_save.v1";
@@ -763,6 +768,12 @@ impl NativeApplication {
         if let Some(encoded) = storage.get_string(Self::ROM_FILE_NAME_IN_TITLE_STORAGE_KEY) {
             match decode_enabled_preference(&encoded, "ROM filename in title") {
                 Ok(enabled) => self.rom_file_name_in_title = Some(enabled),
+                Err(error) => self.effects.error = Some(error),
+            }
+        }
+        if let Some(encoded) = storage.get_string(Self::PAUSE_ANIMATION_WHEN_INACTIVE_STORAGE_KEY) {
+            match decode_enabled_preference(&encoded, "pause animation when inactive") {
+                Ok(enabled) => self.pause_animation_when_inactive = Some(enabled),
                 Err(error) => self.effects.error = Some(error),
             }
         }
@@ -1493,6 +1504,10 @@ impl eframe::App for NativeApplication {
             encode_enabled_preference(self.rom_file_name_in_title.unwrap_or(true)),
         );
         storage.set_string(
+            Self::PAUSE_ANIMATION_WHEN_INACTIVE_STORAGE_KEY,
+            encode_enabled_preference(self.pause_animation_when_inactive.unwrap_or(true)),
+        );
+        storage.set_string(
             Self::SCAN_EXITS_ON_SAVE_STORAGE_KEY,
             encode_scan_exits_on_save_preference(self.scan_exits_on_save.unwrap_or(true)),
         );
@@ -1556,6 +1571,11 @@ impl eframe::App for NativeApplication {
             self.request_quit(context);
         }
         self.prepare_frame(context);
+        let active = context.input(|input| input.viewport().focused.unwrap_or(true));
+        self.vanilla_level_editor.set_application_animation_state(
+            active,
+            self.pause_animation_when_inactive.unwrap_or(true),
+        );
         self.show_crash_recovery(context);
         egui::TopBottomPanel::top("menu").show(context, |ui| self.menu_bar(context, ui));
         egui::TopBottomPanel::top("toolbar").show(context, |ui| self.toolbar(context, ui));

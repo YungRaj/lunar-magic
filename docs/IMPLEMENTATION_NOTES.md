@@ -6883,3 +6883,6 @@ route. Disabling it suppresses only modified-wheel zoom; explicit zoom controls 
 The `$229F` ROM File Name in Main Window Title Bar choice is likewise staged and persisted. When
 enabled, the localized application title appends only the current ROM's final path component; when
 disabled or no ROM is open, the base localized title remains unchanged.
+The `$229E` Pause Animation When Inactive preference contributes an independent focus reason to
+the existing continuity-preserving animation clock. Losing focus freezes the exact phase and
+regaining it resumes without a wall-clock jump; manual pause retains precedence.

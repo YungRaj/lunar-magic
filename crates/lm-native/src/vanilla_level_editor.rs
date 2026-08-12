@@ -585,6 +585,9 @@ pub(crate) struct VanillaLevelEditor {
     animation_last_wall_seconds: f64,
     animation_time_offset_seconds: f64,
     animation_frozen_seconds: f64,
+    application_active: Option<bool>,
+    pause_animation_when_inactive: Option<bool>,
+    animation_effectively_playing: Option<bool>,
     switch_view_state: lm_render::LunarMagicSwitchViewState,
     conditional_view_state: lm_render::LunarMagicConditionalViewState,
     exanimation_trigger_view_state: ExAnimationTriggerViewState,
@@ -5723,9 +5726,27 @@ impl VanillaLevelEditor {
         self.animation_playing.unwrap_or(true)
     }
 
+    pub(crate) fn set_application_animation_state(&mut self, active: bool, pause: bool) {
+        self.application_active = Some(active);
+        self.pause_animation_when_inactive = Some(pause);
+    }
+
     fn animation_seconds(&mut self, wall_seconds: f64) -> f64 {
+        let playing = self.animation_playing()
+            && (!self.pause_animation_when_inactive.unwrap_or(true)
+                || self.application_active.unwrap_or(true));
+        if let Some(previous) = self.animation_effectively_playing
+            && previous != playing
+        {
+            if playing {
+                self.animation_time_offset_seconds = self.animation_frozen_seconds - wall_seconds;
+            } else {
+                self.animation_frozen_seconds = wall_seconds + self.animation_time_offset_seconds;
+            }
+        }
+        self.animation_effectively_playing = Some(playing);
         self.animation_last_wall_seconds = wall_seconds;
-        if self.animation_playing() {
+        if playing {
             wall_seconds + self.animation_time_offset_seconds
         } else {
             self.animation_frozen_seconds
@@ -19039,10 +19060,9 @@ mod tests {
             &SpriteLengthTable::standard(),
         )
         .unwrap();
-        let map = lm_profile::load_smw_us_v1_standard_object_definition_map(
-            &app.project().unwrap().rom,
-        )
-        .unwrap();
+        let map =
+            lm_profile::load_smw_us_v1_standard_object_definition_map(&app.project().unwrap().rom)
+                .unwrap();
         let edits = fatal_object_correction_edits(&controller, &map).unwrap();
         assert!(!edits.is_empty());
         assert!(edits.iter().any(|edit| {
