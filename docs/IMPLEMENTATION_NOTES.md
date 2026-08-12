@@ -7370,6 +7370,17 @@ regions without touching the live project; localization passes 28/28 and rendere
 native forms and live language-DLL evidence keep Localization Partial; aggregate parity remains
 60/65.
 
+Localization coverage update (2026-08-11, legacy standard-GFX bypass): nineteen appended
+`LegacyBypass*` keys cover the shared FG/BG and sprite form's domain titles, enablement, native
+255-row combo and historical regular-field modes, fallback/stale guidance, stage/commit/status,
+close confirmation, and error lifecycle. `FG1`–`FG3`, `SP1`–`SP4`, and row assignments remain
+technical data; transaction descriptions deliberately remain stable English history identifiers
+rather than locale-dependent UI text. Both application call sites pass the active catalog. The
+complete-family audit and semantic/recovery suite pass 7/7, including independent domain staging,
+one-Undo combined commit, merged recovery, and exact 400-byte table transfer; localization passes
+28/28 and renderer 237/237. Other native forms and retained live language-DLL evidence keep
+Localization Partial; aggregate parity remains 60/65.
+
 Localization coverage update (2026-08-11, installed expanded settings): thirty typed extension
 keys cover the complete profile-backed editor surface—exact record guidance, Layer 3 semantic
 controls, ten bypass assignments, sprite-boundary behavior, sixteen raw words, staging/commit,

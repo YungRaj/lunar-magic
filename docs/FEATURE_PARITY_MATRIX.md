@@ -796,6 +796,15 @@ remain data. The complete source audit plus retained-LM-3.63 semantic workflow p
 localization model 28/28, and renderer 237/237. Other native forms and retained live language-DLL
 evidence keep Localization Partial; aggregate parity remains 60/65.
 
+Localization coverage update (2026-08-11, legacy standard-GFX bypass): nineteen appended typed
+keys cover both original-style FG/BG and sprite bypass editors through one shared form: domain
+titles, 255-row selector/edit-field modes, level enablement, zero-row fallback, stale state,
+stage/commit status, unsaved confirmation, and error lifecycle. Technical slot identifiers and row
+hexadecimal assignments remain data, while Undo/recovery descriptions remain stable and
+locale-independent. The focused semantic/recovery and source-audit suite passes 7/7, localization
+model 28/28, and renderer 237/237. Other native forms and retained live language-DLL evidence keep
+Localization Partial; aggregate parity remains 60/65.
+
 Converted catalogs now preserve the complete safely decoded literal dialog inventory in a bounded,
 optional `LMDLG001` extension keyed by dialog ID, exact item position, and 32-bit control ID.
 Historical catalogs without the extension remain byte-identical, duplicate control IDs survive by

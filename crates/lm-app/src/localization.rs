@@ -2356,10 +2356,29 @@ pub enum ExtendedUiTextKey {
     RomMetadataDiscard,
     RomMetadataErrorTitle,
     RomMetadataOk,
+    LegacyBypassFgBgTitle,
+    LegacyBypassSpriteTitle,
+    LegacyBypassDescription,
+    LegacyBypassEnable,
+    LegacyBypassListRow,
+    LegacyBypassRegularRow,
+    LegacyBypassRegularNotice,
+    LegacyBypassZeroFallback,
+    LegacyBypassStaleNotice,
+    LegacyBypassStage,
+    LegacyBypassCommit,
+    LegacyBypassStaged,
+    LegacyBypassUnchanged,
+    LegacyBypassDiscardTitle,
+    LegacyBypassUnsavedNotice,
+    LegacyBypassCancel,
+    LegacyBypassDiscard,
+    LegacyBypassErrorTitle,
+    LegacyBypassOk,
 }
 
 impl ExtendedUiTextKey {
-    pub const ALL: [Self; 655] = [
+    pub const ALL: [Self; 674] = [
         Self::TilemapTitleScreenName,
         Self::TilemapCreditsName,
         Self::TilemapEditorTitleFormat,
@@ -3015,6 +3034,25 @@ impl ExtendedUiTextKey {
         Self::RomMetadataDiscard,
         Self::RomMetadataErrorTitle,
         Self::RomMetadataOk,
+        Self::LegacyBypassFgBgTitle,
+        Self::LegacyBypassSpriteTitle,
+        Self::LegacyBypassDescription,
+        Self::LegacyBypassEnable,
+        Self::LegacyBypassListRow,
+        Self::LegacyBypassRegularRow,
+        Self::LegacyBypassRegularNotice,
+        Self::LegacyBypassZeroFallback,
+        Self::LegacyBypassStaleNotice,
+        Self::LegacyBypassStage,
+        Self::LegacyBypassCommit,
+        Self::LegacyBypassStaged,
+        Self::LegacyBypassUnchanged,
+        Self::LegacyBypassDiscardTitle,
+        Self::LegacyBypassUnsavedNotice,
+        Self::LegacyBypassCancel,
+        Self::LegacyBypassDiscard,
+        Self::LegacyBypassErrorTitle,
+        Self::LegacyBypassOk,
     ];
 
     #[must_use]
@@ -3925,6 +3963,35 @@ impl ExtendedUiTextKey {
             Self::RomMetadataDiscard => "Discard",
             Self::RomMetadataErrorTitle => "Lunar Magic metadata editor error",
             Self::RomMetadataOk => "OK",
+            Self::LegacyBypassFgBgTitle => "Standard FG/BG GFX Bypass",
+            Self::LegacyBypassSpriteTitle => "Standard Sprite GFX Bypass",
+            Self::LegacyBypassDescription => {
+                "Recovered Lunar Magic standard-GFX list: 255 selectable rows."
+            }
+            Self::LegacyBypassEnable => "Enable bypass for this level",
+            Self::LegacyBypassListRow => "GFX bypass list row",
+            Self::LegacyBypassRegularRow => "List row",
+            Self::LegacyBypassRegularNotice => {
+                "Alternate regular edit-field dialog enabled by the historical Options preference."
+            }
+            Self::LegacyBypassZeroFallback => {
+                "A zero-filled selected row falls back to the level's normal tileset assignment."
+            }
+            Self::LegacyBypassStaleNotice => {
+                "The ROM changed after this editor opened. Close and reopen before committing."
+            }
+            Self::LegacyBypassStage => "Stage row and level selection",
+            Self::LegacyBypassCommit => "Commit to ROM",
+            Self::LegacyBypassStaged => "Staged",
+            Self::LegacyBypassUnchanged => "Unchanged",
+            Self::LegacyBypassDiscardTitle => "Discard staged GFX bypass changes?",
+            Self::LegacyBypassUnsavedNotice => {
+                "These list or level-selection changes have not been committed."
+            }
+            Self::LegacyBypassCancel => "Cancel",
+            Self::LegacyBypassDiscard => "Discard",
+            Self::LegacyBypassErrorTitle => "Standard GFX bypass error",
+            Self::LegacyBypassOk => "OK",
         }
     }
 

@@ -1,5 +1,7 @@
 use eframe::egui;
-use lm_app::{AppState, Command, LegacyGraphicsBypassWorkspace};
+use lm_app::{
+    AppState, Command, ExtendedUiTextKey, LegacyGraphicsBypassWorkspace, LocalizationCatalog,
+};
 use lm_level::{LegacyGraphicsAssignment, LegacyGraphicsBypassSelectors};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -9,10 +11,17 @@ pub(crate) enum LegacyGraphicsBypassDomain {
 }
 
 impl LegacyGraphicsBypassDomain {
-    fn title(self) -> &'static str {
+    fn technical_title(self) -> &'static str {
         match self {
             Self::ForegroundBackground => "Standard FG/BG GFX Bypass",
             Self::Sprites => "Standard Sprite GFX Bypass",
+        }
+    }
+
+    fn title_key(self) -> ExtendedUiTextKey {
+        match self {
+            Self::ForegroundBackground => ExtendedUiTextKey::LegacyBypassFgBgTitle,
+            Self::Sprites => ExtendedUiTextKey::LegacyBypassSpriteTitle,
         }
     }
 
@@ -96,7 +105,7 @@ impl RomLegacyGraphicsBypassEditor {
             return Ok(app.recovery_snapshot());
         }
         let prepared = workspace
-            .prepare_commit(format!("Recover staged {}", self.domain.title()))
+            .prepare_commit(format!("Recover staged {}", self.domain.technical_title()))
             .map_err(|error| error.to_string())?;
         if prepared.expected_revision != app.project_revision() {
             return Err(
@@ -200,30 +209,41 @@ impl RomLegacyGraphicsBypassEditor {
         &mut self,
         context: &egui::Context,
         project_revision: u64,
+        catalog: Option<&LocalizationCatalog>,
     ) -> (bool, Option<Command>) {
         let mut command = None;
         if self.workspace.is_some() {
-            egui::Window::new(self.domain.title())
+            egui::Window::new(text(catalog, self.domain.title_key()))
                 .collapsible(false)
                 .resizable(false)
-                .show(context, |ui| command = self.contents(ui, project_revision));
+                .show(context, |ui| {
+                    command = self.contents(ui, project_revision, catalog)
+                });
         }
-        let approved = self.close_confirmation(context);
-        self.show_error(context);
+        let approved = self.close_confirmation(context, catalog);
+        self.show_error(context, catalog);
         (approved, command)
     }
 
-    fn contents(&mut self, ui: &mut egui::Ui, project_revision: u64) -> Option<Command> {
+    fn contents(
+        &mut self,
+        ui: &mut egui::Ui,
+        project_revision: u64,
+        catalog: Option<&LocalizationCatalog>,
+    ) -> Option<Command> {
         let stale = self
             .workspace
             .as_ref()
             .is_some_and(|workspace| workspace.revision() != project_revision);
-        ui.label("Recovered Lunar Magic standard-GFX list: 255 selectable rows.");
-        ui.checkbox(&mut self.enabled, "Enable bypass for this level");
+        ui.label(text(catalog, ExtendedUiTextKey::LegacyBypassDescription));
+        ui.checkbox(
+            &mut self.enabled,
+            text(catalog, ExtendedUiTextKey::LegacyBypassEnable),
+        );
 
         let previous_row = self.row;
         if self.use_list_dialog {
-            egui::ComboBox::from_label("GFX bypass list row")
+            egui::ComboBox::from_label(text(catalog, ExtendedUiTextKey::LegacyBypassListRow))
                 .selected_text(self.row_label(self.row))
                 .show_ui(ui, |ui| {
                     for row in 0_u8..=0xfe {
@@ -233,16 +253,14 @@ impl RomLegacyGraphicsBypassEditor {
                 });
         } else {
             ui.horizontal(|ui| {
-                ui.label("List row");
+                ui.label(text(catalog, ExtendedUiTextKey::LegacyBypassRegularRow));
                 ui.add(
                     egui::DragValue::new(&mut self.row)
                         .hexadecimal(2, false, true)
                         .range(0..=0xfe),
                 );
             });
-            ui.small(
-                "Alternate regular edit-field dialog enabled by the historical Options preference.",
-            );
+            ui.small(text(catalog, ExtendedUiTextKey::LegacyBypassRegularNotice));
         }
         if self.row != previous_row {
             self.load_row();
@@ -264,18 +282,21 @@ impl RomLegacyGraphicsBypassEditor {
                 ui.end_row();
             }
         });
-        ui.small("A zero-filled selected row falls back to the level's normal tileset assignment.");
+        ui.small(text(catalog, ExtendedUiTextKey::LegacyBypassZeroFallback));
         if stale {
             ui.colored_label(
                 egui::Color32::YELLOW,
-                "The ROM changed after this editor opened. Close and reopen before committing.",
+                text(catalog, ExtendedUiTextKey::LegacyBypassStaleNotice),
             );
         }
 
         let mut command = None;
         ui.horizontal(|ui| {
             if ui
-                .add_enabled(!stale, egui::Button::new("Stage row and level selection"))
+                .add_enabled(
+                    !stale,
+                    egui::Button::new(text(catalog, ExtendedUiTextKey::LegacyBypassStage)),
+                )
                 .clicked()
             {
                 self.stage();
@@ -285,12 +306,22 @@ impl RomLegacyGraphicsBypassEditor {
                 .as_ref()
                 .is_some_and(LegacyGraphicsBypassWorkspace::is_modified);
             if ui
-                .add_enabled(modified && !stale, egui::Button::new("Commit to ROM"))
+                .add_enabled(
+                    modified && !stale,
+                    egui::Button::new(text(catalog, ExtendedUiTextKey::LegacyBypassCommit)),
+                )
                 .clicked()
             {
                 command = self.prepare_commit();
             }
-            ui.label(if modified { "Staged" } else { "Unchanged" });
+            ui.label(text(
+                catalog,
+                if modified {
+                    ExtendedUiTextKey::LegacyBypassStaged
+                } else {
+                    ExtendedUiTextKey::LegacyBypassUnchanged
+                },
+            ));
         });
         command
     }
@@ -341,7 +372,7 @@ impl RomLegacyGraphicsBypassEditor {
 
     fn prepare_commit(&mut self) -> Option<Command> {
         let workspace = self.workspace.as_ref()?;
-        match workspace.prepare_commit(format!("Edit {}", self.domain.title())) {
+        match workspace.prepare_commit(format!("Edit {}", self.domain.technical_title())) {
             Ok(prepared) => Some(prepared.into_command()),
             Err(error) => {
                 self.error = Some(error.to_string());
@@ -350,21 +381,31 @@ impl RomLegacyGraphicsBypassEditor {
         }
     }
 
-    fn close_confirmation(&mut self, context: &egui::Context) -> bool {
+    fn close_confirmation(
+        &mut self,
+        context: &egui::Context,
+        catalog: Option<&LocalizationCatalog>,
+    ) -> bool {
         let Some(pending) = self.pending_close else {
             return false;
         };
         let mut approved = false;
-        egui::Window::new("Discard staged GFX bypass changes?")
+        egui::Window::new(text(catalog, ExtendedUiTextKey::LegacyBypassDiscardTitle))
             .collapsible(false)
             .resizable(false)
             .show(context, |ui| {
-                ui.label("These list or level-selection changes have not been committed.");
+                ui.label(text(catalog, ExtendedUiTextKey::LegacyBypassUnsavedNotice));
                 ui.horizontal(|ui| {
-                    if ui.button("Cancel").clicked() {
+                    if ui
+                        .button(text(catalog, ExtendedUiTextKey::LegacyBypassCancel))
+                        .clicked()
+                    {
                         self.pending_close = None;
                     }
-                    if ui.button("Discard").clicked() {
+                    if ui
+                        .button(text(catalog, ExtendedUiTextKey::LegacyBypassDiscard))
+                        .clicked()
+                    {
                         self.clear();
                         approved = pending == PendingClose::Application;
                     }
@@ -373,14 +414,20 @@ impl RomLegacyGraphicsBypassEditor {
         approved
     }
 
-    fn show_error(&mut self, context: &egui::Context) {
+    fn show_error(&mut self, context: &egui::Context, catalog: Option<&LocalizationCatalog>) {
         if let Some(error) = self.error.clone() {
-            egui::Window::new("Standard GFX bypass error").show(context, |ui| {
-                ui.label(error);
-                if ui.button("OK").clicked() {
-                    self.error = None;
-                }
-            });
+            egui::Window::new(text(catalog, ExtendedUiTextKey::LegacyBypassErrorTitle)).show(
+                context,
+                |ui| {
+                    ui.label(error);
+                    if ui
+                        .button(text(catalog, ExtendedUiTextKey::LegacyBypassOk))
+                        .clicked()
+                    {
+                        self.error = None;
+                    }
+                },
+            );
         }
     }
 
@@ -394,10 +441,32 @@ impl RomLegacyGraphicsBypassEditor {
     }
 }
 
+fn text(catalog: Option<&LocalizationCatalog>, key: ExtendedUiTextKey) -> String {
+    crate::frontend_ui::extended_localized_text(catalog, key)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use lm_app::Command;
+
+    #[test]
+    fn complete_legacy_bypass_form_uses_every_typed_key() {
+        let source = include_str!("rom_legacy_graphics_bypass_editor.rs");
+        for key in ExtendedUiTextKey::ALL
+            .into_iter()
+            .filter(|key| format!("{key:?}").starts_with("LegacyBypass"))
+        {
+            assert!(source.contains(&format!("ExtendedUiTextKey::{key:?}")));
+        }
+        for bypass in [
+            "ui.checkbox(&mut self.enabled, \"Enable bypass for this level\")",
+            "Button::new(\"Stage row and level selection\")",
+            "Window::new(\"Discard staged GFX bypass changes?\")",
+        ] {
+            assert!(!source.contains(bypass));
+        }
+    }
 
     #[test]
     fn staged_legacy_graphics_bypass_is_recovered_without_committing_live_project() {

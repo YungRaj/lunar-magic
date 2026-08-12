@@ -58,8 +58,34 @@ impl NativeApplication {
         if quit {
             self.request_quit(context);
         }
-        show_rom_editor!(self, context, rom_legacy_fg_bg_bypass_editor);
-        show_rom_editor!(self, context, rom_legacy_sprite_bypass_editor);
+        for sprite_domain in [false, true] {
+            let (quit, command) = if sprite_domain {
+                self.rom_legacy_sprite_bypass_editor.show(
+                    context,
+                    self.app.project_revision(),
+                    self.app.localization(),
+                )
+            } else {
+                self.rom_legacy_fg_bg_bypass_editor.show(
+                    context,
+                    self.app.project_revision(),
+                    self.app.localization(),
+                )
+            };
+            if let Some(command) = command
+                && self.try_dispatch(context, command)
+            {
+                if sprite_domain {
+                    self.rom_legacy_sprite_bypass_editor.commit_succeeded();
+                } else {
+                    self.rom_legacy_fg_bg_bypass_editor.commit_succeeded();
+                }
+                self.renderer.invalidate();
+            }
+            if quit {
+                self.request_quit(context);
+            }
+        }
         let (quit, command) = self.rom_lunar_magic_metadata_editor.show(
             context,
             self.app.project_revision(),
