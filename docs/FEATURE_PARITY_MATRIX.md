@@ -730,6 +730,14 @@ size gates, confirmation routing, and commit acknowledgement remain proven. Expa
 localization model 28/28, and renderer 237/237 pass. Localization remains Partial for other native
 forms; aggregate parity remains 60/65.
 
+Localization coverage update (2026-08-11, installed expanded settings): the complete ROM-backed
+32-byte record editor now uses thirty typed extension keys for Layer 3 file/length/destination and
+expanded mode, all ten Super GFX Bypass slots, sprite-boundary interaction, all sixteen exact raw
+words, stale and staged states, commit, discard confirmation, and errors. Semantic staging,
+commit/reopen/checksum/undo, stale rejection, and crash recovery remain proven. Focused editor 3/3,
+localization model 28/28, and renderer 237/237 pass. Broader mapper/runtime variant evidence still
+keeps the patch row Partial; aggregate parity remains 60/65.
+
 Converted catalogs now preserve the complete safely decoded literal dialog inventory in a bounded,
 optional `LMDLG001` extension keyed by dialog ID, exact item position, and 32-bit control ID.
 Historical catalogs without the extension remain byte-identical, duplicate control IDs survive by

@@ -44,7 +44,20 @@ macro_rules! show_project_operation {
 
 impl NativeApplication {
     pub(super) fn show_rom_editors(&mut self, context: &egui::Context) {
-        show_rom_editor!(self, context, rom_expanded_settings_editor);
+        let (quit, command) = self.rom_expanded_settings_editor.show(
+            context,
+            self.app.project_revision(),
+            self.app.localization(),
+        );
+        if let Some(command) = command
+            && self.try_dispatch(context, command)
+        {
+            self.rom_expanded_settings_editor.commit_succeeded();
+            self.renderer.invalidate();
+        }
+        if quit {
+            self.request_quit(context);
+        }
         show_rom_editor!(self, context, rom_legacy_fg_bg_bypass_editor);
         show_rom_editor!(self, context, rom_legacy_sprite_bypass_editor);
         show_rom_editor!(self, context, rom_lunar_magic_metadata_editor);

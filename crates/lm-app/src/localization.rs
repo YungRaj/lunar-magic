@@ -2155,10 +2155,40 @@ pub enum ExtendedUiTextKey {
     RomExpansionExpandRom,
     RomExpansionErrorTitle,
     RomExpansionOk,
+    RomExpandedSettingsTitle,
+    RomExpandedSettingsRecordNotice,
+    RomExpandedSettingsStaleNotice,
+    RomExpandedSettingsLayer3Heading,
+    RomExpandedSettingsLayer3Enable,
+    RomExpandedSettingsGfxFile,
+    RomExpandedSettingsLengthSelector,
+    RomExpandedSettingsDestinationSelector,
+    RomExpandedSettingsStageLayer3,
+    RomExpandedSettingsExpandedMode,
+    RomExpandedSettingsExpandedModeNotice,
+    RomExpandedSettingsStageExpandedMode,
+    RomExpandedSettingsBypassHeading,
+    RomExpandedSettingsBypassEnable,
+    RomExpandedSettingsStageBypass,
+    RomExpandedSettingsBoundaryHeading,
+    RomExpandedSettingsBoundaryAir,
+    RomExpandedSettingsStageBoundary,
+    RomExpandedSettingsWordsHeading,
+    RomExpandedSettingsWord,
+    RomExpandedSettingsStageWords,
+    RomExpandedSettingsCommit,
+    RomExpandedSettingsStaged,
+    RomExpandedSettingsUnchanged,
+    RomExpandedSettingsDiscardTitle,
+    RomExpandedSettingsUnsavedNotice,
+    RomExpandedSettingsCancel,
+    RomExpandedSettingsDiscard,
+    RomExpandedSettingsErrorTitle,
+    RomExpandedSettingsOk,
 }
 
 impl ExtendedUiTextKey {
-    pub const ALL: [Self; 454] = [
+    pub const ALL: [Self; 484] = [
         Self::TilemapTitleScreenName,
         Self::TilemapCreditsName,
         Self::TilemapEditorTitleFormat,
@@ -2613,6 +2643,36 @@ impl ExtendedUiTextKey {
         Self::RomExpansionExpandRom,
         Self::RomExpansionErrorTitle,
         Self::RomExpansionOk,
+        Self::RomExpandedSettingsTitle,
+        Self::RomExpandedSettingsRecordNotice,
+        Self::RomExpandedSettingsStaleNotice,
+        Self::RomExpandedSettingsLayer3Heading,
+        Self::RomExpandedSettingsLayer3Enable,
+        Self::RomExpandedSettingsGfxFile,
+        Self::RomExpandedSettingsLengthSelector,
+        Self::RomExpandedSettingsDestinationSelector,
+        Self::RomExpandedSettingsStageLayer3,
+        Self::RomExpandedSettingsExpandedMode,
+        Self::RomExpandedSettingsExpandedModeNotice,
+        Self::RomExpandedSettingsStageExpandedMode,
+        Self::RomExpandedSettingsBypassHeading,
+        Self::RomExpandedSettingsBypassEnable,
+        Self::RomExpandedSettingsStageBypass,
+        Self::RomExpandedSettingsBoundaryHeading,
+        Self::RomExpandedSettingsBoundaryAir,
+        Self::RomExpandedSettingsStageBoundary,
+        Self::RomExpandedSettingsWordsHeading,
+        Self::RomExpandedSettingsWord,
+        Self::RomExpandedSettingsStageWords,
+        Self::RomExpandedSettingsCommit,
+        Self::RomExpandedSettingsStaged,
+        Self::RomExpandedSettingsUnchanged,
+        Self::RomExpandedSettingsDiscardTitle,
+        Self::RomExpandedSettingsUnsavedNotice,
+        Self::RomExpandedSettingsCancel,
+        Self::RomExpandedSettingsDiscard,
+        Self::RomExpandedSettingsErrorTitle,
+        Self::RomExpandedSettingsOk,
     ];
 
     #[must_use]
@@ -3242,6 +3302,46 @@ impl ExtendedUiTextKey {
             Self::RomExpansionExpandRom => "Expand ROM",
             Self::RomExpansionErrorTitle => "ROM expansion error",
             Self::RomExpansionOk => "OK",
+            Self::RomExpandedSettingsTitle => "ROM Expanded Settings",
+            Self::RomExpandedSettingsRecordNotice => {
+                "Exact installed 32-byte record; unknown words remain lossless."
+            }
+            Self::RomExpandedSettingsStaleNotice => {
+                "The ROM changed after this editor was opened. Close and reopen it before committing."
+            }
+            Self::RomExpandedSettingsLayer3Heading => "Custom Layer 3 tilemap graphics",
+            Self::RomExpandedSettingsLayer3Enable => "Enable custom Layer 3 tilemap",
+            Self::RomExpandedSettingsGfxFile => "GFX/ExGFX file",
+            Self::RomExpandedSettingsLengthSelector => "Length selector",
+            Self::RomExpandedSettingsDestinationSelector => "Destination selector",
+            Self::RomExpandedSettingsStageLayer3 => "Stage Layer 3 settings",
+            Self::RomExpandedSettingsExpandedMode => "Expanded mode",
+            Self::RomExpandedSettingsExpandedModeNotice => {
+                "Exact 32-bit mode packed from the high nibbles of words 8–F."
+            }
+            Self::RomExpandedSettingsStageExpandedMode => "Stage Layer 3 expanded mode",
+            Self::RomExpandedSettingsBypassHeading => "Super GFX Bypass",
+            Self::RomExpandedSettingsBypassEnable => "Use per-level GFX/ExGFX files",
+            Self::RomExpandedSettingsStageBypass => "Stage Super GFX bypass",
+            Self::RomExpandedSettingsBoundaryHeading => "Sprite boundary interaction",
+            Self::RomExpandedSettingsBoundaryAir => {
+                "Sprites beyond level boundaries interact with air instead of water"
+            }
+            Self::RomExpandedSettingsStageBoundary => "Stage sprite boundary interaction",
+            Self::RomExpandedSettingsWordsHeading => "All sixteen exact native words",
+            Self::RomExpandedSettingsWord => "Word {index}",
+            Self::RomExpandedSettingsStageWords => "Stage all words",
+            Self::RomExpandedSettingsCommit => "Commit to ROM",
+            Self::RomExpandedSettingsStaged => "Staged",
+            Self::RomExpandedSettingsUnchanged => "Unchanged",
+            Self::RomExpandedSettingsDiscardTitle => "Discard staged ROM settings?",
+            Self::RomExpandedSettingsUnsavedNotice => {
+                "These staged settings have not been committed to the ROM."
+            }
+            Self::RomExpandedSettingsCancel => "Cancel",
+            Self::RomExpandedSettingsDiscard => "Discard",
+            Self::RomExpandedSettingsErrorTitle => "ROM expanded-settings error",
+            Self::RomExpandedSettingsOk => "OK",
         }
     }
 

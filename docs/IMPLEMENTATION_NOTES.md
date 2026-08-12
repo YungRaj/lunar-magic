@@ -7311,3 +7311,12 @@ requires every `RomExpansion*` key and rejects literal window/action regressions
 eligibility, confirmation, and lifecycle evidence passes in the expansion suite (9/9), alongside
 localization model 28/28 and renderer 237/237. Localization remains Partial for other native forms;
 aggregate parity remains 60/65.
+
+Localization coverage update (2026-08-11, installed expanded settings): thirty typed extension
+keys cover the complete profile-backed editor surface—exact record guidance, Layer 3 semantic
+controls, ten bypass assignments, sprite-boundary behavior, sixteen raw words, staging/commit,
+discard, stale, and error states. A source audit requires every `RomExpandedSettings*` key and
+rejects representative literal regressions. Semantic commit/reopen/checksum/Undo plus staged crash
+recovery pass in the focused suite (3/3); localization model 28/28 and renderer 237/237 also pass.
+The broader runtime-patch row remains Partial for its documented mapper/identity variants, leaving
+aggregate parity at 60/65.

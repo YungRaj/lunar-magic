@@ -1,6 +1,9 @@
 use crate::expanded_settings_editor_form::ExpandedSettingsForm;
 use eframe::egui;
-use lm_app::{AppState, Command, ExpandedSettingsController, RevisionProfileControllers};
+use lm_app::{
+    AppState, Command, ExpandedSettingsController, ExtendedUiTextKey, LocalizationCatalog,
+    RevisionProfileControllers,
+};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum PendingClose {
@@ -152,65 +155,106 @@ impl RomExpandedSettingsEditor {
         &mut self,
         context: &egui::Context,
         project_revision: u64,
+        catalog: Option<&LocalizationCatalog>,
     ) -> (bool, Option<Command>) {
         let mut command = None;
         if self.controller.is_some() {
-            egui::Window::new("ROM Expanded Settings")
+            egui::Window::new(text(catalog, ExtendedUiTextKey::RomExpandedSettingsTitle))
                 .default_size([470.0, 580.0])
                 .show(context, |ui| {
-                    command = self.contents(ui, project_revision);
+                    command = self.contents(ui, project_revision, catalog);
                 });
         }
-        let approved = self.close_confirmation(context);
-        self.show_error(context);
+        let approved = self.close_confirmation(context, catalog);
+        self.show_error(context, catalog);
         (approved, command)
     }
 
-    fn contents(&mut self, ui: &mut egui::Ui, project_revision: u64) -> Option<Command> {
+    fn contents(
+        &mut self,
+        ui: &mut egui::Ui,
+        project_revision: u64,
+        catalog: Option<&LocalizationCatalog>,
+    ) -> Option<Command> {
         let controller = self.controller.as_ref()?;
         let stale = controller.revision() != project_revision;
-        ui.label("Exact installed 32-byte record; unknown words remain lossless.");
+        ui.label(text(
+            catalog,
+            ExtendedUiTextKey::RomExpandedSettingsRecordNotice,
+        ));
         if stale {
-            ui.colored_label(egui::Color32::YELLOW, "The ROM changed after this editor was opened. Close and reopen it before committing.");
+            ui.colored_label(
+                egui::Color32::YELLOW,
+                text(catalog, ExtendedUiTextKey::RomExpandedSettingsStaleNotice),
+            );
         }
-        ui.heading("Custom Layer 3 tilemap graphics");
+        ui.heading(text(
+            catalog,
+            ExtendedUiTextKey::RomExpandedSettingsLayer3Heading,
+        ));
         ui.checkbox(
             &mut self.form.layer3_enabled,
-            "Enable custom Layer 3 tilemap",
+            text(catalog, ExtendedUiTextKey::RomExpandedSettingsLayer3Enable),
         );
         ui.horizontal(|ui| {
-            ui.label("GFX/ExGFX file");
+            ui.label(text(catalog, ExtendedUiTextKey::RomExpandedSettingsGfxFile));
             ui.text_edit_singleline(&mut self.form.layer3_file);
         });
         ui.add(
-            egui::Slider::new(&mut self.form.layer3_length_selector, 0..=3).text("Length selector"),
+            egui::Slider::new(&mut self.form.layer3_length_selector, 0..=3).text(text(
+                catalog,
+                ExtendedUiTextKey::RomExpandedSettingsLengthSelector,
+            )),
         );
         ui.add(
-            egui::Slider::new(&mut self.form.layer3_offset_selector, 0..=3)
-                .text("Destination selector"),
+            egui::Slider::new(&mut self.form.layer3_offset_selector, 0..=3).text(text(
+                catalog,
+                ExtendedUiTextKey::RomExpandedSettingsDestinationSelector,
+            )),
         );
         if ui
-            .add_enabled(!stale, egui::Button::new("Stage Layer 3 settings"))
+            .add_enabled(
+                !stale,
+                egui::Button::new(text(
+                    catalog,
+                    ExtendedUiTextKey::RomExpandedSettingsStageLayer3,
+                )),
+            )
             .clicked()
         {
             self.stage_edits(project_revision, self.form.layer3_edits());
         }
         ui.horizontal(|ui| {
-            ui.label("Expanded mode");
+            ui.label(text(
+                catalog,
+                ExtendedUiTextKey::RomExpandedSettingsExpandedMode,
+            ));
             ui.text_edit_singleline(&mut self.form.layer3_expanded_mode);
         });
-        ui.small("Exact 32-bit mode packed from the high nibbles of words 8–F.");
+        ui.small(text(
+            catalog,
+            ExtendedUiTextKey::RomExpandedSettingsExpandedModeNotice,
+        ));
         if ui
-            .add_enabled(!stale, egui::Button::new("Stage Layer 3 expanded mode"))
+            .add_enabled(
+                !stale,
+                egui::Button::new(text(
+                    catalog,
+                    ExtendedUiTextKey::RomExpandedSettingsStageExpandedMode,
+                )),
+            )
             .clicked()
         {
             self.stage_edits(project_revision, self.form.layer3_expanded_mode_edits());
         }
         ui.separator();
-        ui.heading("Super GFX Bypass");
+        ui.heading(text(
+            catalog,
+            ExtendedUiTextKey::RomExpandedSettingsBypassHeading,
+        ));
         ui.checkbox(
             &mut self.form.bypass_enabled,
-            "Use per-level GFX/ExGFX files",
+            text(catalog, ExtendedUiTextKey::RomExpandedSettingsBypassEnable),
         );
         egui::Grid::new("rom-expanded-settings-super-gfx")
             .num_columns(4)
@@ -242,33 +286,51 @@ impl RomExpandedSettingsEditor {
                 }
             });
         if ui
-            .add_enabled(!stale, egui::Button::new("Stage Super GFX bypass"))
+            .add_enabled(
+                !stale,
+                egui::Button::new(text(
+                    catalog,
+                    ExtendedUiTextKey::RomExpandedSettingsStageBypass,
+                )),
+            )
             .clicked()
         {
             self.stage_edits(project_revision, self.form.super_graphics_bypass_edits());
         }
         ui.separator();
-        ui.heading("Sprite boundary interaction");
+        ui.heading(text(
+            catalog,
+            ExtendedUiTextKey::RomExpandedSettingsBoundaryHeading,
+        ));
         ui.checkbox(
             &mut self.form.sprites_beyond_boundaries_use_air,
-            "Sprites beyond level boundaries interact with air instead of water",
+            text(catalog, ExtendedUiTextKey::RomExpandedSettingsBoundaryAir),
         );
         if ui
             .add_enabled(
                 !stale,
-                egui::Button::new("Stage sprite boundary interaction"),
+                egui::Button::new(text(
+                    catalog,
+                    ExtendedUiTextKey::RomExpandedSettingsStageBoundary,
+                )),
             )
             .clicked()
         {
             self.stage_edits(project_revision, self.form.sprite_boundary_edits());
         }
         ui.separator();
-        ui.label("All sixteen exact native words");
+        ui.label(text(
+            catalog,
+            ExtendedUiTextKey::RomExpandedSettingsWordsHeading,
+        ));
         egui::Grid::new("rom-expanded-settings-words")
             .striped(true)
             .show(ui, |ui| {
                 for (index, word) in self.form.words.iter_mut().enumerate() {
-                    ui.label(format!("Word {index:X}"));
+                    ui.label(
+                        text(catalog, ExtendedUiTextKey::RomExpandedSettingsWord)
+                            .replace("{index}", &format!("{index:X}")),
+                    );
                     ui.text_edit_singleline(word);
                     ui.end_row();
                 }
@@ -276,7 +338,13 @@ impl RomExpandedSettingsEditor {
         let mut result = None;
         ui.horizontal(|ui| {
             if ui
-                .add_enabled(!stale, egui::Button::new("Stage all words"))
+                .add_enabled(
+                    !stale,
+                    egui::Button::new(text(
+                        catalog,
+                        ExtendedUiTextKey::RomExpandedSettingsStageWords,
+                    )),
+                )
                 .clicked()
             {
                 self.stage_edits(project_revision, self.form.edits());
@@ -286,7 +354,10 @@ impl RomExpandedSettingsEditor {
                 .as_ref()
                 .is_some_and(ExpandedSettingsController::is_modified);
             if ui
-                .add_enabled(modified && !stale, egui::Button::new("Commit to ROM"))
+                .add_enabled(
+                    modified && !stale,
+                    egui::Button::new(text(catalog, ExtendedUiTextKey::RomExpandedSettingsCommit)),
+                )
                 .clicked()
             {
                 if let Some(controller) = self.controller.as_ref() {
@@ -298,7 +369,14 @@ impl RomExpandedSettingsEditor {
                     self.error = Some("expanded-settings workspace is closed".into());
                 }
             }
-            ui.label(if modified { "Staged" } else { "Unchanged" });
+            ui.label(text(
+                catalog,
+                if modified {
+                    ExtendedUiTextKey::RomExpandedSettingsStaged
+                } else {
+                    ExtendedUiTextKey::RomExpandedSettingsUnchanged
+                },
+            ));
         });
         result
     }
@@ -326,34 +404,57 @@ impl RomExpandedSettingsEditor {
         }
     }
 
-    fn close_confirmation(&mut self, context: &egui::Context) -> bool {
+    fn close_confirmation(
+        &mut self,
+        context: &egui::Context,
+        catalog: Option<&LocalizationCatalog>,
+    ) -> bool {
         let Some(pending) = self.pending_close else {
             return false;
         };
         let mut approved = false;
-        egui::Window::new("Discard staged ROM settings?")
-            .collapsible(false)
-            .resizable(false)
-            .show(context, |ui| {
-                ui.label("These staged settings have not been committed to the ROM.");
-                ui.horizontal(|ui| {
-                    if ui.button("Cancel").clicked() {
-                        self.pending_close = None;
-                    }
-                    if ui.button("Discard").clicked() {
-                        self.clear();
-                        approved = pending == PendingClose::Application;
-                    }
-                });
+        egui::Window::new(text(
+            catalog,
+            ExtendedUiTextKey::RomExpandedSettingsDiscardTitle,
+        ))
+        .collapsible(false)
+        .resizable(false)
+        .show(context, |ui| {
+            ui.label(text(
+                catalog,
+                ExtendedUiTextKey::RomExpandedSettingsUnsavedNotice,
+            ));
+            ui.horizontal(|ui| {
+                if ui
+                    .button(text(catalog, ExtendedUiTextKey::RomExpandedSettingsCancel))
+                    .clicked()
+                {
+                    self.pending_close = None;
+                }
+                if ui
+                    .button(text(catalog, ExtendedUiTextKey::RomExpandedSettingsDiscard))
+                    .clicked()
+                {
+                    self.clear();
+                    approved = pending == PendingClose::Application;
+                }
             });
+        });
         approved
     }
 
-    fn show_error(&mut self, context: &egui::Context) {
+    fn show_error(&mut self, context: &egui::Context, catalog: Option<&LocalizationCatalog>) {
         if let Some(error) = self.error.clone() {
-            egui::Window::new("ROM expanded-settings error").show(context, |ui| {
+            egui::Window::new(text(
+                catalog,
+                ExtendedUiTextKey::RomExpandedSettingsErrorTitle,
+            ))
+            .show(context, |ui| {
                 ui.label(error);
-                if ui.button("OK").clicked() {
+                if ui
+                    .button(text(catalog, ExtendedUiTextKey::RomExpandedSettingsOk))
+                    .clicked()
+                {
                     self.error = None;
                 }
             });
@@ -370,12 +471,36 @@ impl RomExpandedSettingsEditor {
     }
 }
 
+fn text(catalog: Option<&LocalizationCatalog>, key: ExtendedUiTextKey) -> String {
+    crate::frontend_ui::extended_localized_text(catalog, key)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use lm_level::{ExpandedLevelHeader, SuperGraphicsBypass};
     use lm_project::ExpandedLevelSettingsLayout;
     use lm_rom::{Mapper, SnesChecksum, compute_snes_checksum};
+
+    #[test]
+    fn complete_rom_expanded_settings_surface_uses_every_typed_key() {
+        let source = include_str!("rom_expanded_settings_editor.rs");
+        for key in ExtendedUiTextKey::ALL
+            .into_iter()
+            .filter(|key| format!("{key:?}").starts_with("RomExpandedSettings"))
+        {
+            assert!(source.contains(&format!("ExtendedUiTextKey::{key:?}")));
+        }
+        for bypass in [
+            "egui::Window::new(\"ROM Expanded Settings\")",
+            "ui.heading(\"Custom Layer 3 tilemap graphics\")",
+            "egui::Button::new(\"Stage Super GFX bypass\")",
+            "egui::Button::new(\"Commit to ROM\")",
+            "egui::Window::new(\"Discard staged ROM settings?\")",
+        ] {
+            assert!(!source.contains(bypass));
+        }
+    }
 
     #[test]
     fn staged_expanded_settings_are_recovered_without_committing_live_project() {
