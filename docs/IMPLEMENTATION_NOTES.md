@@ -7909,3 +7909,13 @@ small-text, and `Button` captions. The focused audit passes, localization passes
 (one provenance ignore), native compilation passes, and renderer remains 237/237. Terrain, route,
 tile, custom-sprite, save-transition, and aggregate commit controls remain; Localization and
 aggregate parity remain Partial and 60/65 respectively.
+
+Localization coverage update (2026-08-12, playable overworld terrain and route links): thirty-two
+appended `RomOverworld*` identities now cover stale state, playable-map description, allocation,
+terrain commit/staged state, terrain-versus-route edit guards, complete route-link navigation and
+field labels, all four localized direction choices, one-way behavior, canvas semantics, route
+reload/apply/commit, and packed Layer 2 tile-word editing. The existing `PathEditorDirection*`
+vocabulary is reused for choices rather than duplicated. The overworld family key audit passes,
+localization passes 28/28 active cases (one provenance ignore), native compilation passes, and
+renderer remains 237/237. Custom sprite, general tile/preview, save-transition, and aggregate commit
+controls remain; Localization and aggregate parity remain Partial and 60/65 respectively.

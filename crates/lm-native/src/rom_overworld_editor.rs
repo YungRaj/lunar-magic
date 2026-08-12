@@ -557,7 +557,12 @@ impl RomOverworldEditor {
         }
     }
 
-    fn main_layer2_contents(&mut self, ui: &mut egui::Ui, revision: u64) -> Option<Command> {
+    fn main_layer2_contents(
+        &mut self,
+        ui: &mut egui::Ui,
+        revision: u64,
+        catalog: Option<&LocalizationCatalog>,
+    ) -> Option<Command> {
         let workspace = self.main_layer2_workspace.as_ref()?;
         let stale = workspace.controller.revision() != revision;
         let shape = CompleteOverworldShape {
@@ -573,22 +578,22 @@ impl RomOverworldEditor {
         if stale {
             ui.colored_label(
                 egui::Color32::YELLOW,
-                "The ROM changed; reopen before editing or committing.",
+                ow_text(catalog, Key::RomOverworldStaleNotice),
             );
         }
         let paths_modified = self
             .main_layer2_workspace
             .as_ref()
             .is_some_and(|workspace| workspace.paths != workspace.original_paths);
-        ui.label("Gameplay-consumed SMW US main-map Layer 2 (128x64 tiles)");
+        ui.label(ow_text(catalog, Key::RomOverworldPlayableMapNotice));
         self.layer = 1;
         self.world_canvas(ui, shape, stale || paths_modified);
-        self.main_layer2_tile_controls(ui, shape, stale || paths_modified);
+        self.main_layer2_tile_controls(ui, shape, stale || paths_modified, catalog);
         ui.separator();
         ui.horizontal(|ui| {
-            ui.label("Allocation logical PC hex");
+            ui.label(ow_text(catalog, Key::RomOverworldAllocation));
             ui.text_edit_singleline(&mut self.search_start);
-            ui.label("..");
+            ui.label(ow_text(catalog, Key::RomOverworldRangeSeparator));
             ui.text_edit_singleline(&mut self.search_end);
         });
         let modified = self
@@ -598,7 +603,7 @@ impl RomOverworldEditor {
         if ui
             .add_enabled(
                 modified && !paths_modified && !stale,
-                egui::Button::new("Commit playable Layer 2 map"),
+                egui::Button::new(ow_text(catalog, Key::RomOverworldCommitPlayable)),
             )
             .clicked()
         {
@@ -607,16 +612,19 @@ impl RomOverworldEditor {
                 Err(error) => self.error = Some(error),
             }
         }
-        ui.label(if modified {
-            "Staged playable map changes"
-        } else {
-            "No staged map changes"
-        });
+        ui.label(ow_text(
+            catalog,
+            if modified {
+                Key::RomOverworldPlayableStaged
+            } else {
+                Key::RomOverworldPlayableUnmodified
+            },
+        ));
         if paths_modified {
-            ui.small("Commit or discard the staged route-link edit before changing terrain.");
+            ui.small(ow_text(catalog, Key::RomOverworldRouteBlocksTerrain));
         }
         ui.separator();
-        if let Some(path_command) = self.main_path_link_controls(ui, stale, modified) {
+        if let Some(path_command) = self.main_path_link_controls(ui, stale, modified, catalog) {
             return Some(path_command);
         }
         None
@@ -627,6 +635,7 @@ impl RomOverworldEditor {
         ui: &mut egui::Ui,
         stale: bool,
         terrain_modified: bool,
+        catalog: Option<&LocalizationCatalog>,
     ) -> Option<Command> {
         let path_count = self
             .main_layer2_workspace
@@ -637,57 +646,99 @@ impl RomOverworldEditor {
             .as_ref()
             .is_some_and(|workspace| workspace.paths != workspace.original_paths);
         let mut command = None;
-        ui.collapsing("Gameplay route links", |ui| {
-            ui.label("Native source/destination endpoints and engine target bytes (hexadecimal).");
-            ui.small(
-                "Route tools use the left plane for submap 00. On the right shared submap sheet, \n+                 enter submap 01-06 first; a click retains that endpoint's submap ID.",
-            );
+        ui.collapsing(ow_text(catalog, Key::RomOverworldRouteTitle), |ui| {
+            ui.label(ow_text(catalog, Key::RomOverworldRouteNotice));
+            ui.small(ow_text(catalog, Key::RomOverworldRouteCanvasNotice));
             if path_count == 0 {
-                ui.label("No gameplay route links are installed.");
+                ui.label(ow_text(catalog, Key::RomOverworldRouteUnavailable));
                 return;
             }
             let previous = self.main_path.index;
-            ui.add(egui::Slider::new(&mut self.main_path.index, 0..=path_count - 1).text("Link"));
+            ui.add(
+                egui::Slider::new(&mut self.main_path.index, 0..=path_count - 1)
+                    .text(ow_text(catalog, Key::RomOverworldRouteLink)),
+            );
             if self.main_path.index != previous {
                 self.load_main_path_link();
             }
             egui::Grid::new("playable-overworld-path-link-form")
                 .striped(true)
                 .show(ui, |ui| {
-                    path_form_row(ui, "Source X", &mut self.main_path.source_x);
-                    path_form_row(ui, "Source Y", &mut self.main_path.source_y);
-                    path_form_row(ui, "Source submap", &mut self.main_path.source_submap);
-                    path_form_row(ui, "Destination X", &mut self.main_path.destination_x);
-                    path_form_row(ui, "Destination Y", &mut self.main_path.destination_y);
                     path_form_row(
                         ui,
-                        "Destination submap",
+                        &ow_text(catalog, Key::RomOverworldRouteSourceX),
+                        &mut self.main_path.source_x,
+                    );
+                    path_form_row(
+                        ui,
+                        &ow_text(catalog, Key::RomOverworldRouteSourceY),
+                        &mut self.main_path.source_y,
+                    );
+                    path_form_row(
+                        ui,
+                        &ow_text(catalog, Key::RomOverworldRouteSourceSubmap),
+                        &mut self.main_path.source_submap,
+                    );
+                    path_form_row(
+                        ui,
+                        &ow_text(catalog, Key::RomOverworldRouteDestinationX),
+                        &mut self.main_path.destination_x,
+                    );
+                    path_form_row(
+                        ui,
+                        &ow_text(catalog, Key::RomOverworldRouteDestinationY),
+                        &mut self.main_path.destination_y,
+                    );
+                    path_form_row(
+                        ui,
+                        &ow_text(catalog, Key::RomOverworldRouteDestinationSubmap),
                         &mut self.main_path.destination_submap,
                     );
-                    path_form_row(ui, "Target X tile", &mut self.main_path.target_x);
-                    path_form_row(ui, "Target Y tile", &mut self.main_path.target_y);
+                    path_form_row(
+                        ui,
+                        &ow_text(catalog, Key::RomOverworldRouteTargetX),
+                        &mut self.main_path.target_x,
+                    );
+                    path_form_row(
+                        ui,
+                        &ow_text(catalog, Key::RomOverworldRouteTargetY),
+                        &mut self.main_path.target_y,
+                    );
                 });
             let previous_direction = self.main_path.direction;
             ui.horizontal(|ui| {
-                ui.label("Direction");
+                ui.label(ow_text(catalog, Key::RomOverworldRouteDirection));
                 egui::ComboBox::from_id_salt("playable-overworld-path-direction")
                     .selected_text(match self.main_path.direction {
-                        OverworldPathDirection::Up => "Up",
-                        OverworldPathDirection::Down => "Down",
-                        OverworldPathDirection::Left => "Left",
-                        OverworldPathDirection::Right => "Right",
+                        OverworldPathDirection::Up => ow_text(catalog, Key::PathEditorDirectionUp),
+                        OverworldPathDirection::Down => {
+                            ow_text(catalog, Key::PathEditorDirectionDown)
+                        }
+                        OverworldPathDirection::Left => {
+                            ow_text(catalog, Key::PathEditorDirectionLeft)
+                        }
+                        OverworldPathDirection::Right => {
+                            ow_text(catalog, Key::PathEditorDirectionRight)
+                        }
                     })
                     .show_ui(ui, |ui| {
                         for (direction, label) in [
-                            (OverworldPathDirection::Up, "Up"),
-                            (OverworldPathDirection::Down, "Down"),
-                            (OverworldPathDirection::Left, "Left"),
-                            (OverworldPathDirection::Right, "Right"),
+                            (OverworldPathDirection::Up, Key::PathEditorDirectionUp),
+                            (OverworldPathDirection::Down, Key::PathEditorDirectionDown),
+                            (OverworldPathDirection::Left, Key::PathEditorDirectionLeft),
+                            (OverworldPathDirection::Right, Key::PathEditorDirectionRight),
                         ] {
-                            ui.selectable_value(&mut self.main_path.direction, direction, label);
+                            ui.selectable_value(
+                                &mut self.main_path.direction,
+                                direction,
+                                ow_text(catalog, label),
+                            );
                         }
                     });
-                ui.checkbox(&mut self.main_path.one_way, "One-way (no return endpoint)");
+                ui.checkbox(
+                    &mut self.main_path.one_way,
+                    ow_text(catalog, Key::RomOverworldRouteOneWay),
+                );
             });
             if self.main_path.direction != previous_direction
                 && let Err(error) = self.main_path.reorient_from(previous_direction)
@@ -695,15 +746,18 @@ impl RomOverworldEditor {
                 self.main_path.direction = previous_direction;
                 self.error = Some(error);
             }
-            ui.small("Canvas route tools use Lunar Magic's Up, Down, Left, Right order and exact edge offsets.");
+            ui.small(ow_text(catalog, Key::RomOverworldRouteOrderNotice));
             ui.horizontal(|ui| {
-                if ui.button("Reload link").clicked() {
+                if ui
+                    .button(ow_text(catalog, Key::RomOverworldRouteReload))
+                    .clicked()
+                {
                     self.load_main_path_link();
                 }
                 if ui
                     .add_enabled(
                         !stale && !terrain_modified,
-                        egui::Button::new("Apply route link"),
+                        egui::Button::new(ow_text(catalog, Key::RomOverworldRouteApply)),
                     )
                     .clicked()
                     && let Err(error) = self.apply_main_path_link()
@@ -713,7 +767,7 @@ impl RomOverworldEditor {
                 if ui
                     .add_enabled(
                         paths_modified && !stale && !terrain_modified,
-                        egui::Button::new("Commit route links"),
+                        egui::Button::new(ow_text(catalog, Key::RomOverworldRouteCommit)),
                     )
                     .clicked()
                     && let Some(workspace) = self.main_layer2_workspace.as_ref()
@@ -725,9 +779,9 @@ impl RomOverworldEditor {
                 }
             });
             if terrain_modified {
-                ui.small("Commit or discard the staged terrain edit before changing route links.");
+                ui.small(ow_text(catalog, Key::RomOverworldTerrainBlocksRoute));
             } else if paths_modified {
-                ui.small("Staged gameplay route changes");
+                ui.small(ow_text(catalog, Key::RomOverworldRouteStaged));
             }
         });
         command
@@ -767,9 +821,10 @@ impl RomOverworldEditor {
         ui: &mut egui::Ui,
         shape: CompleteOverworldShape,
         stale: bool,
+        catalog: Option<&LocalizationCatalog>,
     ) {
         let old_selection = (self.x, self.y);
-        ui.label("Layer 2 packed 8x8 tilemap");
+        ui.label(ow_text(catalog, Key::RomOverworldLayer2Tilemap));
         ui.add(egui::Slider::new(&mut self.x, 0..=shape.width.saturating_sub(1)).text("X"));
         ui.add(egui::Slider::new(&mut self.y, 0..=shape.height.saturating_sub(1)).text("Y"));
         if old_selection != (self.x, self.y) {
@@ -778,12 +833,15 @@ impl RomOverworldEditor {
             self.load_main_layer2_tile();
         }
         ui.horizontal(|ui| {
-            ui.label("SNES tilemap word");
+            ui.label(ow_text(catalog, Key::RomOverworldTileWord));
             ui.text_edit_singleline(&mut self.tile);
         });
         self.direct_tile_picker(ui);
         if ui
-            .add_enabled(!stale, egui::Button::new("Apply layer tile"))
+            .add_enabled(
+                !stale,
+                egui::Button::new(ow_text(catalog, Key::RomOverworldApplyLayerTile)),
+            )
             .clicked()
         {
             match level_editor_forms::parse_hex_u16(&self.tile, "overworld tile") {
@@ -902,7 +960,7 @@ impl RomOverworldEditor {
                 .default_size([820.0, 720.0])
                 .vscroll(true)
                 .show(context, |ui| {
-                    if let Some(ui_command) = self.main_layer2_contents(ui, revision) {
+                    if let Some(ui_command) = self.main_layer2_contents(ui, revision, catalog) {
                         command = Some(ui_command);
                     }
                 });

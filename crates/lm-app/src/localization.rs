@@ -2270,6 +2270,38 @@ pub enum ExtendedUiTextKey {
     RomOverworldImportAnimation,
     RomOverworldExportAnimation,
     RomOverworldAnimationTransferNotice,
+    RomOverworldStaleNotice,
+    RomOverworldPlayableMapNotice,
+    RomOverworldAllocation,
+    RomOverworldRangeSeparator,
+    RomOverworldCommitPlayable,
+    RomOverworldPlayableStaged,
+    RomOverworldPlayableUnmodified,
+    RomOverworldRouteBlocksTerrain,
+    RomOverworldRouteTitle,
+    RomOverworldRouteNotice,
+    RomOverworldRouteCanvasNotice,
+    RomOverworldRouteUnavailable,
+    RomOverworldRouteLink,
+    RomOverworldRouteSourceX,
+    RomOverworldRouteSourceY,
+    RomOverworldRouteSourceSubmap,
+    RomOverworldRouteDestinationX,
+    RomOverworldRouteDestinationY,
+    RomOverworldRouteDestinationSubmap,
+    RomOverworldRouteTargetX,
+    RomOverworldRouteTargetY,
+    RomOverworldRouteDirection,
+    RomOverworldRouteOneWay,
+    RomOverworldRouteOrderNotice,
+    RomOverworldRouteReload,
+    RomOverworldRouteApply,
+    RomOverworldRouteCommit,
+    RomOverworldTerrainBlocksRoute,
+    RomOverworldRouteStaged,
+    RomOverworldLayer2Tilemap,
+    RomOverworldTileWord,
+    RomOverworldApplyLayerTile,
     ExAnimationDocumentTitle,
     ExAnimationDocumentOpenTitle,
     ExAnimationDocumentMaximumRecords,
@@ -3432,7 +3464,7 @@ pub enum ExtendedUiTextKey {
 }
 
 impl ExtendedUiTextKey {
-    pub const ALL: [Self; 1728] = [
+    pub const ALL: [Self; 1760] = [
         Self::MwlDocumentEditorTitle,
         Self::MwlDocumentVersionFormat,
         Self::MwlDocumentFlagsHex,
@@ -4002,6 +4034,38 @@ impl ExtendedUiTextKey {
         Self::RomOverworldImportAnimation,
         Self::RomOverworldExportAnimation,
         Self::RomOverworldAnimationTransferNotice,
+        Self::RomOverworldStaleNotice,
+        Self::RomOverworldPlayableMapNotice,
+        Self::RomOverworldAllocation,
+        Self::RomOverworldRangeSeparator,
+        Self::RomOverworldCommitPlayable,
+        Self::RomOverworldPlayableStaged,
+        Self::RomOverworldPlayableUnmodified,
+        Self::RomOverworldRouteBlocksTerrain,
+        Self::RomOverworldRouteTitle,
+        Self::RomOverworldRouteNotice,
+        Self::RomOverworldRouteCanvasNotice,
+        Self::RomOverworldRouteUnavailable,
+        Self::RomOverworldRouteLink,
+        Self::RomOverworldRouteSourceX,
+        Self::RomOverworldRouteSourceY,
+        Self::RomOverworldRouteSourceSubmap,
+        Self::RomOverworldRouteDestinationX,
+        Self::RomOverworldRouteDestinationY,
+        Self::RomOverworldRouteDestinationSubmap,
+        Self::RomOverworldRouteTargetX,
+        Self::RomOverworldRouteTargetY,
+        Self::RomOverworldRouteDirection,
+        Self::RomOverworldRouteOneWay,
+        Self::RomOverworldRouteOrderNotice,
+        Self::RomOverworldRouteReload,
+        Self::RomOverworldRouteApply,
+        Self::RomOverworldRouteCommit,
+        Self::RomOverworldTerrainBlocksRoute,
+        Self::RomOverworldRouteStaged,
+        Self::RomOverworldLayer2Tilemap,
+        Self::RomOverworldTileWord,
+        Self::RomOverworldApplyLayerTile,
         Self::ExAnimationDocumentTitle,
         Self::ExAnimationDocumentOpenTitle,
         Self::ExAnimationDocumentMaximumRecords,
@@ -5879,6 +5943,52 @@ impl ExtendedUiTextKey {
             Self::RomOverworldAnimationTransferNotice => {
                 "Animation transfer changes only the active overworld animation domain."
             }
+            Self::RomOverworldStaleNotice => {
+                "The ROM changed; reopen before editing or committing."
+            }
+            Self::RomOverworldPlayableMapNotice => {
+                "Gameplay-consumed SMW US main-map Layer 2 (128x64 tiles)"
+            }
+            Self::RomOverworldAllocation => "Allocation logical PC hex",
+            Self::RomOverworldRangeSeparator => "..",
+            Self::RomOverworldCommitPlayable => "Commit playable Layer 2 map",
+            Self::RomOverworldPlayableStaged => "Staged playable map changes",
+            Self::RomOverworldPlayableUnmodified => "No staged map changes",
+            Self::RomOverworldRouteBlocksTerrain => {
+                "Commit or discard the staged route-link edit before changing terrain."
+            }
+            Self::RomOverworldRouteTitle => "Gameplay route links",
+            Self::RomOverworldRouteNotice => {
+                "Native source/destination endpoints and engine target bytes (hexadecimal)."
+            }
+            Self::RomOverworldRouteCanvasNotice => {
+                "Route tools use the left plane for submap 00. On the right shared submap sheet, enter submap 01-06 first; a click retains that endpoint's submap ID."
+            }
+            Self::RomOverworldRouteUnavailable => "No gameplay route links are installed.",
+            Self::RomOverworldRouteLink => "Link",
+            Self::RomOverworldRouteSourceX => "Source X",
+            Self::RomOverworldRouteSourceY => "Source Y",
+            Self::RomOverworldRouteSourceSubmap => "Source submap",
+            Self::RomOverworldRouteDestinationX => "Destination X",
+            Self::RomOverworldRouteDestinationY => "Destination Y",
+            Self::RomOverworldRouteDestinationSubmap => "Destination submap",
+            Self::RomOverworldRouteTargetX => "Target X tile",
+            Self::RomOverworldRouteTargetY => "Target Y tile",
+            Self::RomOverworldRouteDirection => "Direction",
+            Self::RomOverworldRouteOneWay => "One-way (no return endpoint)",
+            Self::RomOverworldRouteOrderNotice => {
+                "Canvas route tools use Lunar Magic's Up, Down, Left, Right order and exact edge offsets."
+            }
+            Self::RomOverworldRouteReload => "Reload link",
+            Self::RomOverworldRouteApply => "Apply route link",
+            Self::RomOverworldRouteCommit => "Commit route links",
+            Self::RomOverworldTerrainBlocksRoute => {
+                "Commit or discard the staged terrain edit before changing route links."
+            }
+            Self::RomOverworldRouteStaged => "Staged gameplay route changes",
+            Self::RomOverworldLayer2Tilemap => "Layer 2 packed 8x8 tilemap",
+            Self::RomOverworldTileWord => "SNES tilemap word",
+            Self::RomOverworldApplyLayerTile => "Apply layer tile",
             Self::ExAnimationDocumentTitle => "Portable ExAnimation Editor",
             Self::ExAnimationDocumentOpenTitle => "Open ExAnimation",
             Self::ExAnimationDocumentMaximumRecords => {
