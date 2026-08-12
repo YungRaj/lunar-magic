@@ -13,7 +13,10 @@ impl NativeApplication {
                 Err(error) => self.external_tool_config_editor.rejected(error.to_string()),
             }
         }
-        if self.palette_editor.show(context, &self.main_toolbar_images) {
+        if self
+            .palette_editor
+            .show(context, &self.main_toolbar_images, self.app.localization())
+        {
             self.request_quit(context);
         }
         if self.graphics_editor.show(context, self.app.localization()) {

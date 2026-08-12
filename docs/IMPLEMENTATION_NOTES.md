@@ -7117,6 +7117,15 @@ cases (one provenance ignore), native compile passes, and renderer passes 237/23
 forms and retained live language-DLL evidence keep Localization Partial; aggregate parity remains
 60/65.
 
+Localization coverage update (2026-08-12, portable palette document): thirteen appended
+`PaletteDocument*` identities cover window/lifecycle text, undo/redo/save icon tooltips, document
+state, and exact selected-color summaries. Identical copy/paste color actions reuse the verified
+aggregate palette identities. Color indices and BGR555 words remain exact substitutions; the grid's
+single two-space caption is explicitly audited as a painted swatch rather than language text. Both
+whole-surface audits pass, localization passes 28/28 active cases (one provenance ignore), native
+compile passes, and renderer passes 237/237. Other native forms and retained live language-DLL
+evidence keep Localization Partial; aggregate parity remains 60/65.
+
 Localization coverage update (2026-08-12, custom-object library): twenty-seven appended
 `CustomObject*` keys cover synchronized entry count/search/navigation, multi-object group bytes,
 Unicode descriptions, typed object copy/paste, replace/remove/insert/move, UTF-8 BOM and LF/CRLF

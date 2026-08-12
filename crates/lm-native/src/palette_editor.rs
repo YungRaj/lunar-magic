@@ -5,7 +5,9 @@ use crate::{
     user_toolbar_images::{MainToolbarImageSet, OriginalToolbarAction, OriginalToolbarImages},
 };
 use eframe::egui;
-use lm_app::{PaletteControllerEdit, PaletteDocumentController};
+use lm_app::{
+    ExtendedUiTextKey as Key, LocalizationCatalog, PaletteControllerEdit, PaletteDocumentController,
+};
 use lm_graphics::{Bgr555, PaletteChange, PaletteInterchangeFile, PaletteOwnership, Rgb8};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -73,6 +75,7 @@ impl PaletteEditor {
         &mut self,
         context: &egui::Context,
         toolbar_images: &MainToolbarImageSet,
+        catalog: Option<&LocalizationCatalog>,
     ) -> bool {
         if let Some(result) = self.loader.show(context) {
             match result.and_then(|mut loaded| {
@@ -92,22 +95,28 @@ impl PaletteEditor {
         self.poll_save(context);
         let mut quit_approved = false;
         if self.controller.is_some() {
-            egui::Window::new("Portable Palette Editor")
+            egui::Window::new(text(catalog, Key::PaletteDocumentTitle))
                 .default_size([520.0, 420.0])
-                .show(context, |ui| self.contents(ui, toolbar_images));
+                .show(context, |ui| self.contents(ui, toolbar_images, catalog));
         }
         if let Some(pending) = self.pending_close {
-            egui::Window::new("Unsaved palette")
+            egui::Window::new(text(catalog, Key::PaletteDocumentDiscardTitle))
                 .collapsible(false)
                 .resizable(false)
                 .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
                 .show(context, |ui| {
-                    ui.label("Discard unsaved palette changes?");
+                    ui.label(text(catalog, Key::PaletteDocumentDiscardNotice));
                     ui.horizontal(|ui| {
-                        if ui.button("Cancel").clicked() {
+                        if ui
+                            .button(text(catalog, Key::PaletteDocumentCancel))
+                            .clicked()
+                        {
                             self.pending_close = None;
                         }
-                        if ui.button("Discard").clicked() {
+                        if ui
+                            .button(text(catalog, Key::PaletteDocumentDiscard))
+                            .clicked()
+                        {
                             self.controller = None;
                             self.pending_close = None;
                             quit_approved = pending == PendingClose::Application;
@@ -116,12 +125,12 @@ impl PaletteEditor {
                 });
         }
         if let Some(error) = self.error.clone() {
-            egui::Window::new("Palette error")
+            egui::Window::new(text(catalog, Key::PaletteDocumentErrorTitle))
                 .collapsible(false)
                 .resizable(false)
                 .show(context, |ui| {
                     ui.label(error);
-                    if ui.button("OK").clicked() {
+                    if ui.button(text(catalog, Key::PaletteDocumentOk)).clicked() {
                         self.error = None;
                     }
                 });
@@ -129,7 +138,12 @@ impl PaletteEditor {
         quit_approved
     }
 
-    fn contents(&mut self, ui: &mut egui::Ui, toolbar_images: &MainToolbarImageSet) {
+    fn contents(
+        &mut self,
+        ui: &mut egui::Ui,
+        toolbar_images: &MainToolbarImageSet,
+        catalog: Option<&LocalizationCatalog>,
+    ) {
         let save_available = !self.save_worker.is_running();
         let pasted = ui.input(|input| {
             input.events.iter().find_map(|event| match event {
@@ -147,7 +161,7 @@ impl PaletteEditor {
                     ui,
                     OriginalToolbarImages::LevelPalette,
                     OriginalToolbarAction::Undo,
-                    "Undo",
+                    &text(catalog, Key::PaletteDocumentUndo),
                     controller.can_undo(),
                 )
                 .clicked()
@@ -161,7 +175,7 @@ impl PaletteEditor {
                     ui,
                     OriginalToolbarImages::LevelPalette,
                     OriginalToolbarAction::Redo,
-                    "Redo",
+                    &text(catalog, Key::PaletteDocumentRedo),
                     controller.can_redo(),
                 )
                 .clicked()
@@ -175,19 +189,22 @@ impl PaletteEditor {
                     ui,
                     OriginalToolbarImages::LevelPalette,
                     OriginalToolbarAction::Save,
-                    "Save",
+                    &text(catalog, Key::PaletteDocumentSave),
                     save_available,
                 )
                 .clicked()
             {
                 Self::begin_save(controller, &mut self.save_worker, &mut self.error);
             }
-            clipboard_controls(ui, controller, self.selected, &mut self.error);
-            ui.label(if controller.is_modified() {
-                "Modified"
-            } else {
-                "Saved"
-            });
+            clipboard_controls(ui, controller, self.selected, &mut self.error, catalog);
+            ui.label(text(
+                catalog,
+                if controller.is_modified() {
+                    Key::PaletteDocumentModified
+                } else {
+                    Key::PaletteDocumentSaved
+                },
+            ));
         });
         ui.separator();
         let color_count = controller.value().palette.colors.len();
@@ -226,10 +243,11 @@ impl PaletteEditor {
             .copied()
         {
             ui.separator();
-            ui.label(format!(
-                "Color {:03X} — BGR555 {:04X}",
-                self.selected, color.0
-            ));
+            ui.label(
+                text(catalog, Key::PaletteDocumentColorFormat)
+                    .replace("{index}", &format!("{:03X}", self.selected))
+                    .replace("{value}", &format!("{:04X}", color.0)),
+            );
             let rgb = color.to_rgb8();
             let mut value = [rgb.red, rgb.green, rgb.blue];
             if ui.color_edit_button_srgb(&mut value).changed() {
@@ -292,20 +310,30 @@ impl PaletteEditor {
     }
 }
 
+fn text(catalog: Option<&LocalizationCatalog>, key: Key) -> String {
+    crate::frontend_ui::extended_localized_text(catalog, key)
+}
+
 fn clipboard_controls(
     ui: &mut egui::Ui,
     controller: &mut PaletteDocumentController,
     selected: usize,
     error_slot: &mut Option<String>,
+    catalog: Option<&LocalizationCatalog>,
 ) {
-    if ui.button("Copy color").clicked()
+    if ui
+        .button(text(catalog, Key::NativeAssetsPaletteCopyColor))
+        .clicked()
         && let Some(color) = controller.value().palette.colors.get(selected)
     {
         if let Err(error) = native_clipboard::copy_palette_color_to_system(ui.ctx(), *color) {
             *error_slot = Some(error);
         }
     }
-    if ui.button("Paste color").clicked() {
+    if ui
+        .button(text(catalog, Key::NativeAssetsPalettePasteColor))
+        .clicked()
+    {
         match native_clipboard::request_palette_color_paste(ui.ctx()) {
             Ok(Some(color)) => {
                 let color_count = controller.value().palette.colors.len();
@@ -350,6 +378,37 @@ fn apply_color(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn complete_portable_palette_surface_uses_every_document_key() {
+        let source = include_str!("palette_editor.rs");
+        for key in Key::ALL
+            .into_iter()
+            .filter(|key| format!("{key:?}").starts_with("PaletteDocument"))
+        {
+            assert!(
+                source.contains(&format!("Key::{key:?}")),
+                "missing portable palette label {key:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn complete_portable_palette_surface_has_no_literal_widget_text() {
+        let source = include_str!("palette_editor.rs");
+        for literal_widget in [
+            "Window::new(\"",
+            "ui.heading(\"",
+            "ui.label(\"",
+            "ui.button(\"",
+        ] {
+            assert!(
+                !source.contains(literal_widget),
+                "portable palette editor regressed to fixed widget text: {literal_widget}"
+            );
+        }
+        assert_eq!(source.matches("Button::new(\"  \")").count(), 1);
+    }
     use lm_graphics::{Palette, PaletteInterchangeFile};
 
     fn controller() -> PaletteDocumentController {
