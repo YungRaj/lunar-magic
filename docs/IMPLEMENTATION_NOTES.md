@@ -7285,3 +7285,14 @@ literal regressions. Sidecar path/atomic replacement and shortcut evidence plus 
 placement, palette, background index-grid, atomic commit/reopen, and undo evidence pass in the
 focused Map16 suite (70/70); localization model 28/28 and renderer 237/237 also pass. Localization
 remains Partial pending bitmap-converter and other native surfaces; aggregate parity remains 60/65.
+
+Localization coverage update (2026-08-11, Map16 bitmap conversion): forty-three typed extension
+keys now cover the complete bitmap import/conversion UI, including progress, input controls,
+allocation and optimization options, both reduction algorithms, disabled original preference and
+its explanation, eight-row palette availability, synchronized previews, dynamic plan/allocation
+statistics, exhaustion and stale warnings, and final actions. The dedicated source audit requires
+every key and rejects representative literal regressions. Bitmap codec variants, clipboard bounds,
+preview pixels/geometry, option retention, palette rows, request capture, and revision binding pass
+in the focused Map16 suite (71/71); localization model 28/28 and renderer 237/237 also pass. This
+completes typed coverage for the full Map16 editor family. Localization remains Partial for other
+native forms and live original language-DLL evidence; aggregate parity remains 60/65.

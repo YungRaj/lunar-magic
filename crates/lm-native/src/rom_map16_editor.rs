@@ -322,7 +322,7 @@ impl RomMap16Editor {
         active_sidecar: Option<&lm_app::NativeMap16SidecarDocument>,
         catalog: Option<&LocalizationCatalog>,
     ) -> (bool, Option<Command>) {
-        let mut command = self.poll_bitmap_loader(context);
+        let mut command = self.poll_bitmap_loader(context, catalog);
         self.poll_complete_file_io(context);
         self.poll_selected_file_io(context);
         self.poll_legacy_page_io(context);
@@ -358,7 +358,8 @@ impl RomMap16Editor {
                     }
                 });
         }
-        if let Some(import_command) = self.bitmap_import_window(context, project_revision) {
+        if let Some(import_command) = self.bitmap_import_window(context, project_revision, catalog)
+        {
             command = Some(import_command);
         }
         if let Some(snes_command) =
@@ -483,7 +484,7 @@ impl RomMap16Editor {
             project_revision,
             catalog,
         );
-        self.bitmap_import_controls(ui, edit_blocked, project_revision);
+        self.bitmap_import_controls(ui, edit_blocked, project_revision, catalog);
         self.snes_tileset_controls(ui, edit_blocked, project_revision, catalog);
         self.sidecar_export_controls(ui, edit_blocked, project_revision, active_sidecar, catalog);
         self.commit_controls(ui, edit_blocked, project_revision, commit_shortcut, catalog)

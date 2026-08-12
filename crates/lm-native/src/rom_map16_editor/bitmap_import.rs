@@ -1,8 +1,8 @@
 use super::{Command, RomMap16Editor, egui};
 use crate::{dialogs, document_loader::BoundedRead, rom_allocation::parse_search_range};
 use lm_app::{
-    DecodedMap16Bitmap, MAP16_BITMAP_MAX_DIMENSION, MAP16_BITMAP_MAX_PIXELS,
-    MAP16_BITMAP_MAX_PNG_BYTES, NativeMap16BitmapImportSession,
+    DecodedMap16Bitmap, ExtendedUiTextKey, LocalizationCatalog, MAP16_BITMAP_MAX_DIMENSION,
+    MAP16_BITMAP_MAX_PIXELS, MAP16_BITMAP_MAX_PNG_BYTES, NativeMap16BitmapImportSession,
     NativeMap16BitmapImportSessionRequest, decode_map16_bitmap_image,
 };
 use lm_graphics::{
@@ -54,15 +54,25 @@ impl BitmapClipboardLoader {
         Ok(())
     }
 
-    fn show(&mut self, context: &egui::Context) -> Option<Result<DecodedMap16Bitmap, String>> {
+    fn show(
+        &mut self,
+        context: &egui::Context,
+        catalog: Option<&LocalizationCatalog>,
+    ) -> Option<Result<DecodedMap16Bitmap, String>> {
         let completion = self.poll();
         if self.running.is_some() {
-            egui::Window::new("Opening")
-                .collapsible(false)
-                .resizable(false)
-                .show(context, |ui| {
-                    ui.label("Reading clipboard bitmap");
-                });
+            egui::Window::new(super::text(
+                catalog,
+                ExtendedUiTextKey::RomMap16BitmapOpeningTitle,
+            ))
+            .collapsible(false)
+            .resizable(false)
+            .show(context, |ui| {
+                ui.label(super::text(
+                    catalog,
+                    ExtendedUiTextKey::RomMap16BitmapReadingClipboard,
+                ));
+            });
             context.request_repaint_after(std::time::Duration::from_millis(100));
         }
         completion
@@ -87,7 +97,11 @@ impl BitmapClipboardLoader {
 }
 
 impl RomMap16Editor {
-    pub(super) fn poll_bitmap_loader(&mut self, context: &egui::Context) -> Option<Command> {
+    pub(super) fn poll_bitmap_loader(
+        &mut self,
+        context: &egui::Context,
+        catalog: Option<&LocalizationCatalog>,
+    ) -> Option<Command> {
         if let Some(completion) = self.bitmap_loader.show(context) {
             let pending = self.pending_bitmap_import.take();
             match completion.and_then(|loaded| {
@@ -99,7 +113,7 @@ impl RomMap16Editor {
                 Err(error) => self.error = Some(error),
             }
         }
-        if let Some(completion) = self.bitmap_clipboard_loader.show(context) {
+        if let Some(completion) = self.bitmap_clipboard_loader.show(context, catalog) {
             let pending = self.pending_bitmap_import.take();
             match completion.and_then(|bitmap| {
                 let pending = pending.ok_or("clipboard Map16 bitmap request is missing")?;
@@ -163,6 +177,7 @@ impl RomMap16Editor {
         &mut self,
         context: &egui::Context,
         project_revision: u64,
+        catalog: Option<&LocalizationCatalog>,
     ) -> Option<Command> {
         self.bitmap_session.as_ref()?;
         let stale = self
@@ -171,17 +186,17 @@ impl RomMap16Editor {
             .is_none_or(|workspace| workspace.controller.revision() != project_revision);
         let mut accepted = false;
         let mut cancelled = false;
-        egui::Window::new("Import Bitmap as Map16")
+        egui::Window::new(super::text(catalog, ExtendedUiTextKey::RomMap16BitmapTitle))
             .default_width(580.0)
             .collapsible(false)
             .show(context, |ui| {
                 if stale {
                     ui.colored_label(
                         egui::Color32::YELLOW,
-                        "The ROM changed. Reopen the import before committing.",
+                        super::text(catalog, ExtendedUiTextKey::RomMap16BitmapStaleNotice),
                     );
                 }
-                self.bitmap_preview_textures(ui);
+                self.bitmap_preview_textures(ui, catalog);
                 let Some(session) = self.bitmap_session.as_mut() else {
                     return;
                 };
@@ -191,32 +206,44 @@ impl RomMap16Editor {
                     .horizontal_wrapped(|ui| {
                         ui.checkbox(
                             &mut options.graphics.optimize_new_tiles,
-                            "Optimize new 8×8 tiles",
+                            super::text(catalog, ExtendedUiTextKey::RomMap16BitmapOptimize8x8),
                         )
                         .changed()
                             | ui.checkbox(
                                 &mut options.graphics.reuse_existing_tiles,
-                                "Reuse existing tiles",
+                                super::text(catalog, ExtendedUiTextKey::RomMap16BitmapReuse8x8),
                             )
                             .changed()
                             | ui.checkbox(
                                 &mut options.use_reserved_map16_for_blank,
-                                "Use reserved Map16 tile for blank blocks",
+                                super::text(
+                                    catalog,
+                                    ExtendedUiTextKey::RomMap16BitmapReservedBlank,
+                                ),
                             )
                             .changed()
                             | ui.checkbox(
                                 &mut options.deduplicate_map16,
-                                "Optimize 16×16 tiles",
+                                super::text(
+                                    catalog,
+                                    ExtendedUiTextKey::RomMap16BitmapOptimize16x16,
+                                ),
                             )
                             .changed()
-                            | ui.checkbox(&mut options.layer_priority, "Layer priority")
-                                .changed()
+                            | ui.checkbox(
+                                &mut options.layer_priority,
+                                super::text(
+                                    catalog,
+                                    ExtendedUiTextKey::RomMap16BitmapLayerPriority,
+                                ),
+                            )
+                            .changed()
                     })
                     .inner;
                 let blank_toggle_changed = ui
                     .checkbox(
                         &mut use_blank_graphics,
-                        "Use configured 8×8 tile for blank source tiles",
+                        super::text(catalog, ExtendedUiTextKey::RomMap16BitmapConfiguredBlank),
                     )
                     .changed();
                 if blank_toggle_changed {
@@ -224,7 +251,10 @@ impl RomMap16Editor {
                     changed = true;
                 }
                 ui.horizontal_wrapped(|ui| {
-                    ui.label("First 8×8 tile");
+                    ui.label(super::text(
+                        catalog,
+                        ExtendedUiTextKey::RomMap16BitmapFirst8x8,
+                    ));
                     changed |= ui
                         .add(
                             egui::DragValue::new(&mut options.graphics.allocation_start)
@@ -233,7 +263,10 @@ impl RomMap16Editor {
                         )
                         .changed();
                     if let Some(blank_tile) = options.graphics.blank_tile.as_mut() {
-                        ui.label("Blank 8×8 tile");
+                        ui.label(super::text(
+                            catalog,
+                            ExtendedUiTextKey::RomMap16BitmapBlank8x8,
+                        ));
                         changed |= ui
                             .add(
                                 egui::DragValue::new(blank_tile)
@@ -242,7 +275,10 @@ impl RomMap16Editor {
                             )
                             .changed();
                     }
-                    ui.label("First Map16 tile");
+                    ui.label(super::text(
+                        catalog,
+                        ExtendedUiTextKey::RomMap16BitmapFirstMap16,
+                    ));
                     changed |= ui
                         .add(
                             egui::DragValue::new(&mut options.map16_allocation_start)
@@ -250,7 +286,10 @@ impl RomMap16Editor {
                                 .hexadecimal(4, false, true),
                         )
                         .changed();
-                    ui.label("Reserved Map16 tile");
+                    ui.label(super::text(
+                        catalog,
+                        ExtendedUiTextKey::RomMap16BitmapReservedMap16,
+                    ));
                     changed |= ui
                         .add(
                             egui::DragValue::new(&mut options.reserved_map16_tile)
@@ -270,6 +309,7 @@ impl RomMap16Editor {
                         .as_mut()
                         .expect("native bitmap imports always have color options"),
                     &session.preview().inputs().palette,
+                    catalog,
                 );
                 if changed {
                     match session.set_options(options.clone()) {
@@ -281,21 +321,22 @@ impl RomMap16Editor {
                     }
                 }
                 let plan = session.preview().plan();
-                ui.label(format!(
-                    "{} generated colors; {} newly occupied 8×8 tiles",
-                    plan.generated_colors, plan.newly_occupied_tiles
-                ));
+                ui.label(
+                    super::text(catalog, ExtendedUiTextKey::RomMap16BitmapPlan)
+                        .replace("{colors}", &plan.generated_colors.to_string())
+                        .replace("{tiles}", &plan.newly_occupied_tiles.to_string()),
+                );
                 match session.map16_allocation() {
                     Ok(allocation) => {
-                        ui.label(format!(
-                            "{} source blocks placed using {} new 16×16 tiles",
-                            allocation.assignments.len(),
-                            allocation.allocated_definitions
-                        ));
+                        ui.label(
+                            super::text(catalog, ExtendedUiTextKey::RomMap16BitmapAllocation)
+                                .replace("{blocks}", &allocation.assignments.len().to_string())
+                                .replace("{tiles}", &allocation.allocated_definitions.to_string()),
+                        );
                         if allocation.exhausted {
                             ui.colored_label(
                                 egui::Color32::YELLOW,
-                                "Not enough blank 16×16 tiles; only the reported prefix will be imported.",
+                                super::text(catalog, ExtendedUiTextKey::RomMap16BitmapExhausted),
                             );
                         }
                     }
@@ -305,12 +346,24 @@ impl RomMap16Editor {
                 }
                 ui.horizontal(|ui| {
                     if ui
-                        .add_enabled(!stale, egui::Button::new("Import into ROM"))
+                        .add_enabled(
+                            !stale,
+                            egui::Button::new(super::text(
+                                catalog,
+                                ExtendedUiTextKey::RomMap16BitmapImport,
+                            )),
+                        )
                         .clicked()
                     {
                         accepted = true;
                     }
-                    if ui.button("Cancel").clicked() {
+                    if ui
+                        .button(super::text(
+                            catalog,
+                            ExtendedUiTextKey::RomMap16BitmapCancel,
+                        ))
+                        .clicked()
+                    {
                         cancelled = true;
                     }
                 });
@@ -343,7 +396,11 @@ impl RomMap16Editor {
         }
     }
 
-    fn bitmap_preview_textures(&mut self, ui: &mut egui::Ui) {
+    fn bitmap_preview_textures(
+        &mut self,
+        ui: &mut egui::Ui,
+        catalog: Option<&LocalizationCatalog>,
+    ) {
         let Some(session) = self.bitmap_session.as_ref() else {
             return;
         };
@@ -364,13 +421,22 @@ impl RomMap16Editor {
             ));
         }
         ui.horizontal(|ui| {
-            ui.label("Preview zoom");
+            ui.label(super::text(
+                catalog,
+                ExtendedUiTextKey::RomMap16BitmapPreviewZoom,
+            ));
             ui.add(
                 egui::Slider::new(&mut self.bitmap_preview_zoom, 1..=8)
                     .integer()
                     .suffix("×"),
             );
-            if ui.button("Reset pan").clicked() {
+            if ui
+                .button(super::text(
+                    catalog,
+                    ExtendedUiTextKey::RomMap16BitmapResetPan,
+                ))
+                .clicked()
+            {
                 self.bitmap_preview_scroll = egui::Vec2::ZERO;
             }
         });
@@ -378,7 +444,10 @@ impl RomMap16Editor {
         let mut next_scroll = self.bitmap_preview_scroll;
         ui.horizontal(|ui| {
             ui.vertical(|ui| {
-                ui.label("Original");
+                ui.label(super::text(
+                    catalog,
+                    ExtendedUiTextKey::RomMap16BitmapOriginal,
+                ));
                 if let Some(texture) = &self.bitmap_original_texture {
                     let output = egui::ScrollArea::both()
                         .id_salt("map16-bitmap-original-preview")
@@ -400,7 +469,10 @@ impl RomMap16Editor {
                 }
             });
             ui.vertical(|ui| {
-                ui.label("Converted");
+                ui.label(super::text(
+                    catalog,
+                    ExtendedUiTextKey::RomMap16BitmapConverted,
+                ));
                 if let Some(texture) = &self.bitmap_converted_texture {
                     let output = egui::ScrollArea::both()
                         .id_salt("map16-bitmap-converted-preview")
@@ -430,27 +502,46 @@ impl RomMap16Editor {
         ui: &mut egui::Ui,
         stale: bool,
         project_revision: u64,
+        catalog: Option<&LocalizationCatalog>,
     ) {
         ui.separator();
-        ui.heading("Bitmap to Map16");
-        ui.label("The preview level and its real object tileset are used.");
+        ui.heading(super::text(
+            catalog,
+            ExtendedUiTextKey::RomMap16BitmapHeading,
+        ));
+        ui.label(super::text(
+            catalog,
+            ExtendedUiTextKey::RomMap16BitmapLevelNotice,
+        ));
         let busy = self.bitmap_loader.is_running()
             || self.bitmap_clipboard_loader.is_running()
             || self.bitmap_session.is_some();
         ui.add_enabled_ui(!busy, |ui| {
             ui.horizontal_wrapped(|ui| {
-                ui.label("Editable GFX slot 4");
+                ui.label(super::text(
+                    catalog,
+                    ExtendedUiTextKey::RomMap16BitmapGfxSlot4,
+                ));
                 ui.text_edit_singleline(&mut self.bitmap_extra_slot_4);
-                ui.label("slot 5");
+                ui.label(super::text(
+                    catalog,
+                    ExtendedUiTextKey::RomMap16BitmapGfxSlot5,
+                ));
                 ui.text_edit_singleline(&mut self.bitmap_extra_slot_5);
             });
         });
-        ui.small("Enter hexadecimal GFX/ExGFX file numbers. Blank slots cannot store new tiles.");
+        ui.small(super::text(
+            catalog,
+            ExtendedUiTextKey::RomMap16BitmapGfxNotice,
+        ));
         let supported = self.workspace.is_some();
         if ui
             .add_enabled(
                 supported && !stale && !busy,
-                egui::Button::new("Choose PNG/BMP…"),
+                egui::Button::new(super::text(
+                    catalog,
+                    ExtendedUiTextKey::RomMap16BitmapChoose,
+                )),
             )
             .clicked()
             && let Some(path) = dialogs::choose_map16_bitmap()
@@ -473,7 +564,7 @@ impl RomMap16Editor {
         if ui
             .add_enabled(
                 supported && !stale && !busy,
-                egui::Button::new("Paste bitmap from clipboard"),
+                egui::Button::new(super::text(catalog, ExtendedUiTextKey::RomMap16BitmapPaste)),
             )
             .clicked()
         {
@@ -564,43 +655,58 @@ fn bitmap_multi_row_color_options(
     ui: &mut egui::Ui,
     options: &mut BitmapPaletteColorOptions,
     palette: &Palette,
+    catalog: Option<&LocalizationCatalog>,
 ) -> bool {
     let mut changed = false;
     ui.indent("map16-bitmap-multi-row-color-options", |ui| {
         ui.horizontal_wrapped(|ui| {
             changed |= ui
-                .add(egui::Slider::new(&mut options.maximum_colors, 1..=128).text("Maximum colors"))
+                .add(
+                    egui::Slider::new(&mut options.maximum_colors, 1..=128).text(super::text(
+                        catalog,
+                        ExtendedUiTextKey::RomMap16BitmapMaximumColors,
+                    )),
+                )
                 .changed();
             changed |= ui
-                .add(egui::Slider::new(&mut options.priority_level, 1..=4).text("Priority"))
+                .add(
+                    egui::Slider::new(&mut options.priority_level, 1..=4).text(super::text(
+                        catalog,
+                        ExtendedUiTextKey::RomMap16BitmapPriority,
+                    )),
+                )
                 .changed();
             egui::ComboBox::from_id_salt("map16-bitmap-reduction")
                 .selected_text(match options.reduction {
-                    BitmapPaletteReduction::MedianCut => "Median Cut",
-                    BitmapPaletteReduction::Popularity => "Popularity",
+                    BitmapPaletteReduction::MedianCut => {
+                        super::text(catalog, ExtendedUiTextKey::RomMap16BitmapMedianCut)
+                    }
+                    BitmapPaletteReduction::Popularity => {
+                        super::text(catalog, ExtendedUiTextKey::RomMap16BitmapPopularity)
+                    }
                 })
                 .show_ui(ui, |ui| {
                     changed |= ui
                         .selectable_value(
                             &mut options.reduction,
                             BitmapPaletteReduction::MedianCut,
-                            "Median Cut",
+                            super::text(catalog, ExtendedUiTextKey::RomMap16BitmapMedianCut),
                         )
                         .changed();
                     changed |= ui
                         .selectable_value(
                             &mut options.reduction,
                             BitmapPaletteReduction::Popularity,
-                            "Popularity",
+                            super::text(catalog, ExtendedUiTextKey::RomMap16BitmapPopularity),
                         )
                         .changed();
                 });
         });
-        changed |= bitmap_popularity_reduction_options(ui, options);
+        changed |= bitmap_popularity_reduction_options(ui, options, catalog);
         changed |= ui
             .checkbox(
                 &mut options.allow_modifying_unmarked_colors,
-                "Allow modifying colors not marked reserved",
+                super::text(catalog, ExtendedUiTextKey::RomMap16BitmapAllowUnmarked),
             )
             .changed();
         changed |= ui
@@ -608,20 +714,25 @@ fn bitmap_multi_row_color_options(
                 false,
                 egui::Checkbox::new(
                     &mut options.prioritize_exact_palette_matches,
-                    "Prioritize exact existing-palette matches",
+                    super::text(catalog, ExtendedUiTextKey::RomMap16BitmapPrioritizeExact),
                 ),
             )
-            .on_hover_text(
-                "Lunar Magic 3.63 stores this checked preference, but disables its control and has no conversion-path reader",
-            )
+            .on_hover_text(super::text(
+                catalog,
+                ExtendedUiTextKey::RomMap16BitmapPrioritizeExactNotice,
+            ))
             .changed();
         changed |= ui
             .add(
-                egui::Slider::new(&mut options.reusable_color_hue_tolerance, 0..=240)
-                    .text("Reusable-color hue tolerance"),
+                egui::Slider::new(&mut options.reusable_color_hue_tolerance, 0..=240).text(
+                    super::text(catalog, ExtendedUiTextKey::RomMap16BitmapHueTolerance),
+                ),
             )
             .changed();
-        ui.label("Palette entries: F = free, U = reusable, X = reserved");
+        ui.label(super::text(
+            catalog,
+            ExtendedUiTextKey::RomMap16BitmapPaletteLegend,
+        ));
         egui::Grid::new("map16-bitmap-palette-entry-states")
             .spacing([3.0, 3.0])
             .show(ui, |ui| {
@@ -704,6 +815,7 @@ fn set_bitmap_palette_row_state(
 fn bitmap_popularity_reduction_options(
     ui: &mut egui::Ui,
     options: &mut BitmapPaletteColorOptions,
+    catalog: Option<&LocalizationCatalog>,
 ) -> bool {
     let mut changed = false;
     ui.add_enabled_ui(
@@ -712,25 +824,25 @@ fn bitmap_popularity_reduction_options(
             changed |= ui
                 .checkbox(
                     &mut options.prioritize_unique_colors,
-                    "Give higher priority to unique colors",
+                    super::text(catalog, ExtendedUiTextKey::RomMap16BitmapUniqueColors),
                 )
                 .changed();
             changed |= ui
                 .checkbox(
                     &mut options.maintain_detail,
-                    "Maintain detail (assign each bitmap color separately)",
+                    super::text(catalog, ExtendedUiTextKey::RomMap16BitmapMaintainDetail),
                 )
                 .changed();
             changed |= ui
                 .checkbox(
                     &mut options.popularity_reduction_method_1,
-                    "Reduce colors, method 1 (for high-color images)",
+                    super::text(catalog, ExtendedUiTextKey::RomMap16BitmapReduceMethod1),
                 )
                 .changed();
             changed |= ui
                 .checkbox(
                     &mut options.popularity_reduction_method_2,
-                    "Reduce colors, method 2 (for high-color images)",
+                    super::text(catalog, ExtendedUiTextKey::RomMap16BitmapReduceMethod2),
                 )
                 .changed();
         },

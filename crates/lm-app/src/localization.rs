@@ -2080,10 +2080,53 @@ pub enum ExtendedUiTextKey {
     RomMap16SnesPreviewNotice,
     RomMap16SnesApply,
     RomMap16SnesDiscard,
+    RomMap16BitmapOpeningTitle,
+    RomMap16BitmapReadingClipboard,
+    RomMap16BitmapTitle,
+    RomMap16BitmapStaleNotice,
+    RomMap16BitmapOptimize8x8,
+    RomMap16BitmapReuse8x8,
+    RomMap16BitmapReservedBlank,
+    RomMap16BitmapOptimize16x16,
+    RomMap16BitmapLayerPriority,
+    RomMap16BitmapConfiguredBlank,
+    RomMap16BitmapFirst8x8,
+    RomMap16BitmapBlank8x8,
+    RomMap16BitmapFirstMap16,
+    RomMap16BitmapReservedMap16,
+    RomMap16BitmapPlan,
+    RomMap16BitmapAllocation,
+    RomMap16BitmapExhausted,
+    RomMap16BitmapImport,
+    RomMap16BitmapCancel,
+    RomMap16BitmapPreviewZoom,
+    RomMap16BitmapResetPan,
+    RomMap16BitmapOriginal,
+    RomMap16BitmapConverted,
+    RomMap16BitmapHeading,
+    RomMap16BitmapLevelNotice,
+    RomMap16BitmapGfxSlot4,
+    RomMap16BitmapGfxSlot5,
+    RomMap16BitmapGfxNotice,
+    RomMap16BitmapChoose,
+    RomMap16BitmapPaste,
+    RomMap16BitmapMaximumColors,
+    RomMap16BitmapPriority,
+    RomMap16BitmapMedianCut,
+    RomMap16BitmapPopularity,
+    RomMap16BitmapAllowUnmarked,
+    RomMap16BitmapPrioritizeExact,
+    RomMap16BitmapPrioritizeExactNotice,
+    RomMap16BitmapHueTolerance,
+    RomMap16BitmapPaletteLegend,
+    RomMap16BitmapUniqueColors,
+    RomMap16BitmapMaintainDetail,
+    RomMap16BitmapReduceMethod1,
+    RomMap16BitmapReduceMethod2,
 }
 
 impl ExtendedUiTextKey {
-    pub const ALL: [Self; 379] = [
+    pub const ALL: [Self; 422] = [
         Self::TilemapTitleScreenName,
         Self::TilemapCreditsName,
         Self::TilemapEditorTitleFormat,
@@ -2463,6 +2506,49 @@ impl ExtendedUiTextKey {
         Self::RomMap16SnesPreviewNotice,
         Self::RomMap16SnesApply,
         Self::RomMap16SnesDiscard,
+        Self::RomMap16BitmapOpeningTitle,
+        Self::RomMap16BitmapReadingClipboard,
+        Self::RomMap16BitmapTitle,
+        Self::RomMap16BitmapStaleNotice,
+        Self::RomMap16BitmapOptimize8x8,
+        Self::RomMap16BitmapReuse8x8,
+        Self::RomMap16BitmapReservedBlank,
+        Self::RomMap16BitmapOptimize16x16,
+        Self::RomMap16BitmapLayerPriority,
+        Self::RomMap16BitmapConfiguredBlank,
+        Self::RomMap16BitmapFirst8x8,
+        Self::RomMap16BitmapBlank8x8,
+        Self::RomMap16BitmapFirstMap16,
+        Self::RomMap16BitmapReservedMap16,
+        Self::RomMap16BitmapPlan,
+        Self::RomMap16BitmapAllocation,
+        Self::RomMap16BitmapExhausted,
+        Self::RomMap16BitmapImport,
+        Self::RomMap16BitmapCancel,
+        Self::RomMap16BitmapPreviewZoom,
+        Self::RomMap16BitmapResetPan,
+        Self::RomMap16BitmapOriginal,
+        Self::RomMap16BitmapConverted,
+        Self::RomMap16BitmapHeading,
+        Self::RomMap16BitmapLevelNotice,
+        Self::RomMap16BitmapGfxSlot4,
+        Self::RomMap16BitmapGfxSlot5,
+        Self::RomMap16BitmapGfxNotice,
+        Self::RomMap16BitmapChoose,
+        Self::RomMap16BitmapPaste,
+        Self::RomMap16BitmapMaximumColors,
+        Self::RomMap16BitmapPriority,
+        Self::RomMap16BitmapMedianCut,
+        Self::RomMap16BitmapPopularity,
+        Self::RomMap16BitmapAllowUnmarked,
+        Self::RomMap16BitmapPrioritizeExact,
+        Self::RomMap16BitmapPrioritizeExactNotice,
+        Self::RomMap16BitmapHueTolerance,
+        Self::RomMap16BitmapPaletteLegend,
+        Self::RomMap16BitmapUniqueColors,
+        Self::RomMap16BitmapMaintainDetail,
+        Self::RomMap16BitmapReduceMethod1,
+        Self::RomMap16BitmapReduceMethod2,
     ];
 
     #[must_use]
@@ -2979,6 +3065,67 @@ impl ExtendedUiTextKey {
             }
             Self::RomMap16SnesApply => "Apply graphics + palette + Map16",
             Self::RomMap16SnesDiscard => "Discard preview",
+            Self::RomMap16BitmapOpeningTitle => "Opening",
+            Self::RomMap16BitmapReadingClipboard => "Reading clipboard bitmap",
+            Self::RomMap16BitmapTitle => "Import Bitmap as Map16",
+            Self::RomMap16BitmapStaleNotice => {
+                "The ROM changed. Reopen the import before committing."
+            }
+            Self::RomMap16BitmapOptimize8x8 => "Optimize new 8×8 tiles",
+            Self::RomMap16BitmapReuse8x8 => "Reuse existing tiles",
+            Self::RomMap16BitmapReservedBlank => "Use reserved Map16 tile for blank blocks",
+            Self::RomMap16BitmapOptimize16x16 => "Optimize 16×16 tiles",
+            Self::RomMap16BitmapLayerPriority => "Layer priority",
+            Self::RomMap16BitmapConfiguredBlank => "Use configured 8×8 tile for blank source tiles",
+            Self::RomMap16BitmapFirst8x8 => "First 8×8 tile",
+            Self::RomMap16BitmapBlank8x8 => "Blank 8×8 tile",
+            Self::RomMap16BitmapFirstMap16 => "First Map16 tile",
+            Self::RomMap16BitmapReservedMap16 => "Reserved Map16 tile",
+            Self::RomMap16BitmapPlan => {
+                "{colors} generated colors; {tiles} newly occupied 8×8 tiles"
+            }
+            Self::RomMap16BitmapAllocation => {
+                "{blocks} source blocks placed using {tiles} new 16×16 tiles"
+            }
+            Self::RomMap16BitmapExhausted => {
+                "Not enough blank 16×16 tiles; only the reported prefix will be imported."
+            }
+            Self::RomMap16BitmapImport => "Import into ROM",
+            Self::RomMap16BitmapCancel => "Cancel",
+            Self::RomMap16BitmapPreviewZoom => "Preview zoom",
+            Self::RomMap16BitmapResetPan => "Reset pan",
+            Self::RomMap16BitmapOriginal => "Original",
+            Self::RomMap16BitmapConverted => "Converted",
+            Self::RomMap16BitmapHeading => "Bitmap to Map16",
+            Self::RomMap16BitmapLevelNotice => {
+                "The preview level and its real object tileset are used."
+            }
+            Self::RomMap16BitmapGfxSlot4 => "Editable GFX slot 4",
+            Self::RomMap16BitmapGfxSlot5 => "slot 5",
+            Self::RomMap16BitmapGfxNotice => {
+                "Enter hexadecimal GFX/ExGFX file numbers. Blank slots cannot store new tiles."
+            }
+            Self::RomMap16BitmapChoose => "Choose PNG/BMP…",
+            Self::RomMap16BitmapPaste => "Paste bitmap from clipboard",
+            Self::RomMap16BitmapMaximumColors => "Maximum colors",
+            Self::RomMap16BitmapPriority => "Priority",
+            Self::RomMap16BitmapMedianCut => "Median Cut",
+            Self::RomMap16BitmapPopularity => "Popularity",
+            Self::RomMap16BitmapAllowUnmarked => "Allow modifying colors not marked reserved",
+            Self::RomMap16BitmapPrioritizeExact => "Prioritize exact existing-palette matches",
+            Self::RomMap16BitmapPrioritizeExactNotice => {
+                "Lunar Magic 3.63 stores this checked preference, but disables its control and has no conversion-path reader"
+            }
+            Self::RomMap16BitmapHueTolerance => "Reusable-color hue tolerance",
+            Self::RomMap16BitmapPaletteLegend => {
+                "Palette entries: F = free, U = reusable, X = reserved"
+            }
+            Self::RomMap16BitmapUniqueColors => "Give higher priority to unique colors",
+            Self::RomMap16BitmapMaintainDetail => {
+                "Maintain detail (assign each bitmap color separately)"
+            }
+            Self::RomMap16BitmapReduceMethod1 => "Reduce colors, method 1 (for high-color images)",
+            Self::RomMap16BitmapReduceMethod2 => "Reduce colors, method 2 (for high-color images)",
         }
     }
 

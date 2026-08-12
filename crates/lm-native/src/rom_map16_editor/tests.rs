@@ -12,6 +12,7 @@ fn rom_map16_main_and_lifecycle_surfaces_use_every_typed_key() {
             && !name.starts_with("RomMap16Transfer")
             && !name.starts_with("RomMap16Sidecar")
             && !name.starts_with("RomMap16Snes")
+            && !name.starts_with("RomMap16Bitmap")
     }) {
         let needle = format!("ExtendedUiTextKey::{key:?}");
         assert!(sources.iter().any(|source| source.contains(&needle)));
@@ -25,6 +26,27 @@ fn rom_map16_main_and_lifecycle_surfaces_use_every_typed_key() {
         "egui::Window::new(\"ROM Map16 error\")",
     ] {
         assert!(!sources.iter().any(|source| source.contains(bypass)));
+    }
+}
+
+#[test]
+fn rom_map16_bitmap_surface_uses_every_typed_key() {
+    let source = include_str!("bitmap_import.rs");
+    for key in ExtendedUiTextKey::ALL
+        .into_iter()
+        .filter(|key| format!("{key:?}").starts_with("RomMap16Bitmap"))
+    {
+        assert!(source.contains(&format!("ExtendedUiTextKey::{key:?}")));
+    }
+    for bypass in [
+        "egui::Window::new(\"Import Bitmap as Map16\")",
+        "ui.heading(\"Bitmap to Map16\")",
+        "egui::Button::new(\"Choose PNG/BMP…\")",
+        "egui::Button::new(\"Import into ROM\")",
+        ".text(\"Maximum colors\")",
+        "ui.label(\"Palette entries: F = free, U = reusable, X = reserved\")",
+    ] {
+        assert!(!source.contains(bypass));
     }
 }
 

@@ -1959,3 +1959,13 @@ keys. Exact sibling-path publication, authenticated shortcuts, retained preview 
 graphics/palette/Map16 application, reopen, and undo remain proven. Localization model 28/28,
 focused Map16 editor 70/70, and renderer 237/237 pass. Bitmap conversion remains the final Map16
 localization slice; Localization stays Partial and aggregate parity remains 60/65.
+
+Localization coverage update (2026-08-11, Map16 bitmap conversion): the complete bitmap-to-Map16
+surface now uses forty-three typed extension keys for clipboard progress, file/clipboard entry,
+graphics and Map16 allocation controls, blank/reuse/optimization choices, color-reduction methods,
+palette state and compatibility guidance, synchronized original/converted previews, allocation
+diagnostics, revision safety, import, and cancel. BMP/PNG variants, bounded RGBA clipboard decode,
+retained original conversion options, palette-row state, exact preview pixels, and revision-bound
+commit behavior remain proven. Localization model 28/28, focused Map16 editor 71/71, and renderer
+237/237 pass. All Map16 editor subdialogs are now typed; Localization remains Partial for other
+native forms and live original language-DLL evidence, so aggregate parity remains 60/65.
