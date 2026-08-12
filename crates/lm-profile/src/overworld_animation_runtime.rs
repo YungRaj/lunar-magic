@@ -144,28 +144,44 @@ pub fn smw_us_v1_overworld_animation_runtime_template()
     Ok(bytes)
 }
 
-fn low_bank_address(offset: usize) -> Result<u32, SmwUsV1OverworldAnimationRuntimeError> {
-    Ok(pc_to_snes(Mapper::LoRom, offset)
-        .map_err(|_| SmwUsV1OverworldAnimationRuntimeError::FixedAddress)?
-        & 0x7f_ffff)
+fn mapper_rom_offset(mapper: Mapper, smw_lorom_offset: usize) -> usize {
+    if mapper == Mapper::ExLoRom {
+        0x40_0000 + smw_lorom_offset
+    } else {
+        smw_lorom_offset
+    }
 }
 
-fn write_fixed_long(
+fn fixed_address(
+    mapper: Mapper,
+    offset: usize,
+) -> Result<u32, SmwUsV1OverworldAnimationRuntimeError> {
+    let mut address = pc_to_snes(mapper, mapper_rom_offset(mapper, offset))
+        .map_err(|_| SmwUsV1OverworldAnimationRuntimeError::FixedAddress)?;
+    if mapper == Mapper::LoRom {
+        address &= 0x7f_ffff;
+    }
+    Ok(address)
+}
+
+fn write_fixed_long_for_mapper(
     bytes: &mut [u8],
     offset: usize,
     target: usize,
+    mapper: Mapper,
 ) -> Result<(), SmwUsV1OverworldAnimationRuntimeError> {
-    let address = low_bank_address(target)?.to_le_bytes();
+    let address = fixed_address(mapper, target)?.to_le_bytes();
     bytes[offset..offset + 3].copy_from_slice(&address[..3]);
     Ok(())
 }
 
-fn write_fixed_low(
+fn write_fixed_low_for_mapper(
     bytes: &mut [u8],
     offset: usize,
     target: usize,
+    mapper: Mapper,
 ) -> Result<(), SmwUsV1OverworldAnimationRuntimeError> {
-    let address = low_bank_address(target)?.to_le_bytes();
+    let address = fixed_address(mapper, target)?.to_le_bytes();
     bytes[offset..offset + 2].copy_from_slice(&address[..2]);
     Ok(())
 }
@@ -218,10 +234,6 @@ fn relocate_mapper_iram(
     Ok(())
 }
 
-fn runtime_payload() -> Result<PatchPayload, SmwUsV1OverworldAnimationRuntimeError> {
-    runtime_payload_for_mapper(Mapper::LoRom, false)
-}
-
 /// Builds the exact mapper-conditioned overworld-animation payload recovered from
 /// `InstallExAnimationRomPatch` (`$004B2440`). SA-1 applies the eight word and one compact-byte
 /// IRAM conversions before appending the shared `$20` compatibility suffix. ExLoROM applies the
@@ -262,7 +274,7 @@ fn runtime_payload_for_mapper(
         (0x551, HOOK_C_OPERAND + 6),
         (0x555, HOOK_C_OPERAND + 0x43),
     ] {
-        write_fixed_long(&mut bytes, offset, target)?;
+        write_fixed_long_for_mapper(&mut bytes, offset, target, mapper)?;
     }
     for (offset, target) in [
         (0x165, FIXED_ANIMATION_RAM),
@@ -272,7 +284,7 @@ fn runtime_payload_for_mapper(
         (0x4ed, FIXED_HELPER + 0x11),
         (0x548, FIXED_ANIMATION_RAM),
     ] {
-        write_fixed_low(&mut bytes, offset, target)?;
+        write_fixed_low_for_mapper(&mut bytes, offset, target, mapper)?;
     }
 
     let long = pointer_encoding(mapper);
@@ -460,6 +472,7 @@ fn runtime_payload_for_mapper(
 }
 
 fn payload_write(
+    mapper: Mapper,
     offset: usize,
     expected: &[u8],
     opcode: Option<u8>,
@@ -472,14 +485,14 @@ fn payload_write(
         replacement[0] = opcode;
     }
     PatchWrite {
-        offset,
+        offset: mapper_rom_offset(mapper, offset),
         expected: expected.to_vec(),
         replacement,
         fixups: vec![PatchFixup {
             offset: operand_offset,
             target_payload,
             target_addend,
-            encoding: PatchFixupEncoding::Long24LowBank,
+            encoding: pointer_encoding(mapper),
         }],
     }
 }
@@ -487,31 +500,51 @@ fn payload_write(
 /// Constructs Lunar Magic 3.63's exact pristine SMW-US LoROM runtime transaction.
 pub fn smw_us_v1_overworld_animation_runtime_installation_plan()
 -> Result<RelocatablePatchPlan, SmwUsV1OverworldAnimationRuntimeError> {
+    smw_us_v1_overworld_animation_runtime_installation_plan_for_mapper(
+        Mapper::LoRom,
+        AllocationPolicy::lorom(
+            SMW_US_V1_OVERWORLD_ANIMATION_SEARCH_START..SMW_US_V1_OVERWORLD_ANIMATION_SEARCH_END,
+        ),
+        false,
+    )
+}
+
+/// Builds the complete descriptor-routed overworld-animation transaction for the selected mapper.
+pub fn smw_us_v1_overworld_animation_runtime_installation_plan_for_mapper(
+    mapper: Mapper,
+    allocation: AllocationPolicy,
+    mapper_runtime: bool,
+) -> Result<RelocatablePatchPlan, SmwUsV1OverworldAnimationRuntimeError> {
     let mut auxiliary = vec![0; SMW_US_V1_OVERWORLD_ANIMATION_AUXILIARY_LEN];
     for offset in (0..SMW_US_V1_OVERWORLD_ANIMATION_AUXILIARY_LEN).step_by(3) {
         auxiliary[offset] = 0xff;
     }
     let mut writes = vec![
-        payload_write(HOOK_A, &[0xc2, 0x30, 0x64, 0x03], Some(0x22), 0, 0),
-        payload_write(HOOK_B, &[0xc2, 0x10, 0xa9, 0x80], Some(0x22), 0, 0x1f0),
-        payload_write(HOOK_C_OPERAND, &[0xa5, 0x13, 0x29], None, 0, 0x500),
+        payload_write(mapper, HOOK_A, &[0xc2, 0x30, 0x64, 0x03], Some(0x22), 0, 0),
+        payload_write(
+            mapper,
+            HOOK_B,
+            &[0xc2, 0x10, 0xa9, 0x80],
+            Some(0x22),
+            0,
+            0x1f0,
+        ),
+        payload_write(mapper, HOOK_C_OPERAND, &[0xa5, 0x13, 0x29], None, 0, 0x500),
     ];
     writes.extend(MODE_BYTES.into_iter().map(|offset| PatchWrite {
-        offset,
+        offset: mapper_rom_offset(mapper, offset),
         expected: vec![0x13],
         replacement: vec![0x14],
         fixups: Vec::new(),
     }));
     Ok(RelocatablePatchPlan {
-        description: "install SMW US v1 LoROM overworld animation runtime".to_owned(),
-        mapper: Mapper::LoRom,
-        allocation: AllocationPolicy::lorom(
-            SMW_US_V1_OVERWORLD_ANIMATION_SEARCH_START..SMW_US_V1_OVERWORLD_ANIMATION_SEARCH_END,
-        ),
-        checksum_field: SMW_US_V1_CHECKSUM_FIELD,
+        description: format!("install SMW US v1 {mapper:?} overworld animation runtime"),
+        mapper,
+        allocation,
+        checksum_field: mapper_rom_offset(mapper, SMW_US_V1_CHECKSUM_FIELD),
         expansion_fill: 0xff,
         payloads: vec![
-            runtime_payload()?,
+            runtime_payload_for_mapper(mapper, mapper_runtime)?,
             PatchPayload {
                 bytes: auxiliary,
                 fixups: Vec::new(),
@@ -535,15 +568,16 @@ pub struct SmwUsV1OverworldAnimationRuntime {
     pub submap_animations: [Option<RatsBlock>; 7],
 }
 
-fn read_low_bank_pointer(
+fn read_pointer_for_mapper(
     bytes: &[u8],
     offset: usize,
+    mapper: Mapper,
 ) -> Result<usize, SmwUsV1OverworldAnimationRuntimeError> {
     let operand = bytes
         .get(offset..offset + 3)
         .ok_or(SmwUsV1OverworldAnimationRuntimeError::FixedRange { offset })?;
     snes_to_pc(
-        Mapper::LoRom,
+        mapper,
         u32::from_le_bytes([operand[0], operand[1], operand[2], 0]),
     )
     .map_err(SmwUsV1OverworldAnimationRuntimeError::Pointer)
@@ -579,10 +613,11 @@ fn apply_materialized_fixups(
     bytes: &mut [u8],
     fixups: &[PatchFixup],
     blocks: &[RatsBlock],
+    mapper: Mapper,
 ) -> Result<(), SmwUsV1OverworldAnimationRuntimeError> {
     for fixup in fixups {
         let target = blocks[fixup.target_payload].payload.start + fixup.target_addend;
-        let mut encoded = pc_to_snes(Mapper::LoRom, target)
+        let mut encoded = pc_to_snes(mapper, target)
             .map_err(SmwUsV1OverworldAnimationRuntimeError::Pointer)?
             .to_le_bytes();
         if matches!(
@@ -611,62 +646,79 @@ fn apply_materialized_fixups(
 pub fn detect_smw_us_v1_overworld_animation_runtime(
     bytes: &[u8],
 ) -> Result<Option<SmwUsV1OverworldAnimationRuntime>, SmwUsV1OverworldAnimationRuntimeError> {
+    detect_smw_us_v1_overworld_animation_runtime_for_mapper(bytes, Mapper::LoRom, false)
+}
+
+/// Authenticates the complete descriptor-routed runtime family for one explicit mapper variant.
+pub fn detect_smw_us_v1_overworld_animation_runtime_for_mapper(
+    bytes: &[u8],
+    mapper: Mapper,
+    mapper_runtime: bool,
+) -> Result<Option<SmwUsV1OverworldAnimationRuntime>, SmwUsV1OverworldAnimationRuntimeError> {
+    let hook_a = mapper_rom_offset(mapper, HOOK_A);
+    let hook_b = mapper_rom_offset(mapper, HOOK_B);
+    let hook_c = mapper_rom_offset(mapper, HOOK_C_OPERAND);
+    let mode_bytes = MODE_BYTES.map(|offset| mapper_rom_offset(mapper, offset));
     let marker = *bytes
-        .get(HOOK_B)
+        .get(hook_b)
         .ok_or(SmwUsV1OverworldAnimationRuntimeError::FixedRange { offset: HOOK_B })?;
     if marker != 0x22 {
-        if bytes.get(HOOK_A..HOOK_A + 4) == Some(&[0xc2, 0x30, 0x64, 0x03])
-            && bytes.get(HOOK_B..HOOK_B + 4) == Some(&[0xc2, 0x10, 0xa9, 0x80])
-            && bytes.get(HOOK_C_OPERAND..HOOK_C_OPERAND + 3) == Some(&[0xa5, 0x13, 0x29])
-            && MODE_BYTES
+        if bytes.get(hook_a..hook_a + 4) == Some(&[0xc2, 0x30, 0x64, 0x03])
+            && bytes.get(hook_b..hook_b + 4) == Some(&[0xc2, 0x10, 0xa9, 0x80])
+            && bytes.get(hook_c..hook_c + 3) == Some(&[0xa5, 0x13, 0x29])
+            && mode_bytes
                 .iter()
                 .all(|offset| bytes.get(*offset) == Some(&0x13))
         {
             return Ok(None);
         }
-        return Err(SmwUsV1OverworldAnimationRuntimeError::FixedMismatch { offset: HOOK_B });
+        return Err(SmwUsV1OverworldAnimationRuntimeError::FixedMismatch { offset: hook_b });
     }
-    if bytes.get(HOOK_A) != Some(&0x22) {
-        return Err(SmwUsV1OverworldAnimationRuntimeError::FixedMismatch { offset: HOOK_A });
+    if bytes.get(hook_a) != Some(&0x22) {
+        return Err(SmwUsV1OverworldAnimationRuntimeError::FixedMismatch { offset: hook_a });
     }
-    if MODE_BYTES
+    if mode_bytes
         .iter()
         .any(|offset| bytes.get(*offset) != Some(&0x14))
     {
         return Err(SmwUsV1OverworldAnimationRuntimeError::FixedMismatch {
-            offset: MODE_BYTES[0],
+            offset: mode_bytes[0],
         });
     }
 
-    let runtime_target = read_low_bank_pointer(bytes, HOOK_A + 1)?;
+    let runtime_target = read_pointer_for_mapper(bytes, hook_a + 1, mapper)?;
     let runtime = owned_block(
         bytes,
         runtime_target,
-        SMW_US_V1_OVERWORLD_ANIMATION_RUNTIME_LEN,
+        if mapper_runtime {
+            SMW_US_V1_OVERWORLD_ANIMATION_MAPPER_RUNTIME_LEN
+        } else {
+            SMW_US_V1_OVERWORLD_ANIMATION_RUNTIME_LEN
+        },
     )?;
-    let hook_b_target = read_low_bank_pointer(bytes, HOOK_B + 1)?;
-    let hook_c_target = read_low_bank_pointer(bytes, HOOK_C_OPERAND)?;
+    let hook_b_target = read_pointer_for_mapper(bytes, hook_b + 1, mapper)?;
+    let hook_c_target = read_pointer_for_mapper(bytes, hook_c, mapper)?;
     if hook_b_target != runtime.payload.start + 0x1f0
         || hook_c_target != runtime.payload.start + 0x500
     {
-        return Err(SmwUsV1OverworldAnimationRuntimeError::FixedMismatch { offset: HOOK_B });
+        return Err(SmwUsV1OverworldAnimationRuntimeError::FixedMismatch { offset: hook_b });
     }
-    let auxiliary_target = read_low_bank_pointer(bytes, runtime.payload.start + 0xe1)?;
+    let auxiliary_target = read_pointer_for_mapper(bytes, runtime.payload.start + 0xe1, mapper)?;
     let auxiliary = owned_block(
         bytes,
         auxiliary_target,
         SMW_US_V1_OVERWORLD_ANIMATION_AUXILIARY_LEN,
     )?;
-    let options_target = read_low_bank_pointer(bytes, runtime.payload.start + 0x4a)?;
+    let options_target = read_pointer_for_mapper(bytes, runtime.payload.start + 0x4a, mapper)?;
     let options = owned_block(
         bytes,
         options_target,
         SMW_US_V1_OVERWORLD_ANIMATION_OPTIONS_LEN,
     )?;
     let blocks = [runtime.clone(), auxiliary.clone(), options.clone()];
-    let payload = runtime_payload()?;
+    let payload = runtime_payload_for_mapper(mapper, mapper_runtime)?;
     let mut expected_runtime = payload.bytes;
-    apply_materialized_fixups(&mut expected_runtime, &payload.fixups, &blocks)?;
+    apply_materialized_fixups(&mut expected_runtime, &payload.fixups, &blocks, mapper)?;
     if bytes.get(runtime.payload.clone()) != Some(expected_runtime.as_slice()) {
         return Err(SmwUsV1OverworldAnimationRuntimeError::RuntimeMismatch);
     }
@@ -684,7 +736,7 @@ pub fn detect_smw_us_v1_overworld_animation_runtime(
             return Err(SmwUsV1OverworldAnimationRuntimeError::AuxiliarySentinel { submap });
         }
         let address = u32::from_le_bytes([pointer[0], pointer[1], pointer[2], 0]);
-        let target = snes_to_pc(Mapper::LoRom, address).map_err(|source| {
+        let target = snes_to_pc(mapper, address).map_err(|source| {
             SmwUsV1OverworldAnimationRuntimeError::AuxiliaryPointer { submap, source }
         })?;
         let header = target.checked_sub(HEADER_LEN).ok_or(
@@ -821,8 +873,137 @@ mod tests {
     fn mapper_payload_keeps_lorom_ordinary() {
         assert_eq!(
             smw_us_v1_overworld_animation_runtime_payload_for_mapper(Mapper::LoRom, false).unwrap(),
-            runtime_payload().unwrap()
+            runtime_payload_for_mapper(Mapper::LoRom, false).unwrap()
         );
+    }
+
+    #[test]
+    fn mapper_runtime_plans_install_detect_checksum_corruption_and_exact_undo() {
+        let pristine = crate::test_support::pristine_smw_us_rom_bytes();
+        for (mapper, copier_header) in
+            [Mapper::ExLoRom, Mapper::Sa1]
+                .into_iter()
+                .flat_map(|mapper| {
+                    [lm_rom::CopierHeader::Absent, lm_rom::CopierHeader::Present]
+                        .map(|copier_header| (mapper, copier_header))
+                })
+        {
+            let logical = if mapper == Mapper::ExLoRom {
+                let mut converted =
+                    Project::open_supported(RomImage::from_bytes(pristine.clone()).unwrap())
+                        .unwrap();
+                converted.convert_to_64_mbit_exlorom().unwrap();
+                converted.rom.logical_bytes().to_vec()
+            } else {
+                let mut bytes = RomImage::from_bytes(pristine.clone())
+                    .unwrap()
+                    .logical_bytes()
+                    .to_vec();
+                bytes.resize(0x50_0000, 0xff);
+                bytes
+            };
+            let mut image = RomImage::from_bytes(logical).unwrap();
+            image.set_copier_header(copier_header, 0xa5);
+            let original = image.as_file_bytes().to_vec();
+            let original_header = image.copier_header_bytes().map(<[u8]>::to_vec);
+            let mut project = Project::new(image);
+            let allocation = AllocationPolicy {
+                search: if mapper == Mapper::ExLoRom {
+                    0x10_0000..0x40_0000
+                } else {
+                    0x40_0000..0x41_0000
+                },
+                bank_size: Some(0x8000),
+                fill_bytes: vec![0x00, 0xff],
+                protected: Vec::new(),
+            };
+            let plan = smw_us_v1_overworld_animation_runtime_installation_plan_for_mapper(
+                mapper, allocation, true,
+            )
+            .unwrap();
+            let result = project.install_relocatable_patch(&plan).unwrap();
+            assert_eq!(
+                result.blocks[0].payload.len(),
+                SMW_US_V1_OVERWORLD_ANIMATION_MAPPER_RUNTIME_LEN
+            );
+            let detected = detect_smw_us_v1_overworld_animation_runtime_for_mapper(
+                project.rom.logical_bytes(),
+                mapper,
+                true,
+            )
+            .unwrap()
+            .unwrap();
+            assert_eq!(detected.runtime, result.blocks[0]);
+            assert_eq!(detected.auxiliary, result.blocks[1]);
+            assert_eq!(detected.options, result.blocks[2]);
+            assert_eq!(
+                project.rom.copier_header_bytes().map(<[u8]>::to_vec),
+                original_header
+            );
+            assert!(
+                lm_rom::SnesChecksum::decode(
+                    project.rom.logical_bytes(),
+                    mapper_rom_offset(mapper, SMW_US_V1_CHECKSUM_FIELD),
+                )
+                .unwrap()
+                .is_complementary()
+            );
+            let layout = crate::smw_us_v1_overworld_animation_options_layout_for_mapper(mapper);
+            let before_options = project
+                .load_installed_overworld_animation_options(layout)
+                .unwrap();
+            assert!(before_options.runtime_installed);
+            assert_eq!(before_options.feature_bytes, [0; 7]);
+            let changed_features = [0x01, 0x02, 0x04, 0x08, 0x10, 0x20, 0x40];
+            assert!(
+                project
+                    .save_installed_overworld_animation_options(
+                        changed_features,
+                        0xd7,
+                        layout,
+                        mapper_rom_offset(mapper, SMW_US_V1_CHECKSUM_FIELD),
+                    )
+                    .unwrap()
+            );
+            let changed = project
+                .load_installed_overworld_animation_options(layout)
+                .unwrap();
+            assert_eq!(changed.feature_bytes, changed_features);
+            assert_eq!(changed.lightning_disable_mask, 0xd7);
+            assert!(project.undo().unwrap());
+            assert_eq!(
+                project
+                    .load_installed_overworld_animation_options(layout)
+                    .unwrap(),
+                before_options
+            );
+            let installed = project.rom.logical_bytes().to_vec();
+            for offset in [
+                result.blocks[0].payload.start,
+                result.blocks[0].payload.start + MAPPER_SUFFIX_POINTER_OFFSET,
+                mapper_rom_offset(mapper, HOOK_A),
+            ] {
+                let mut corrupt = installed.clone();
+                corrupt[offset] ^= 1;
+                assert!(
+                    detect_smw_us_v1_overworld_animation_runtime_for_mapper(
+                        &corrupt, mapper, true,
+                    )
+                    .is_err(),
+                    "{mapper:?} corruption at {offset:#x} was accepted"
+                );
+            }
+            assert!(project.install_relocatable_patch(&plan).is_err());
+            assert_eq!(project.rom.logical_bytes(), installed);
+            assert!(project.undo().unwrap());
+            assert_eq!(project.rom.as_file_bytes(), original);
+            assert!(project.redo().unwrap());
+            assert_eq!(project.rom.logical_bytes(), installed);
+            assert_eq!(
+                project.rom.copier_header_bytes().map(<[u8]>::to_vec),
+                original_header
+            );
+        }
     }
 
     #[test]

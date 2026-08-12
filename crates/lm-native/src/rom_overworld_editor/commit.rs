@@ -15,8 +15,16 @@ impl RomOverworldEditor {
                     .into(),
             );
         }
-        match lm_profile::detect_smw_us_v1_overworld_animation_runtime(
+        let mapper = workspace.profiled.snapshot.identity.mapper;
+        let mapper_runtime = lm_profile::smw_us_v1_expanded_exanimation_uses_mapper_runtime(
             workspace.image.logical_bytes(),
+            mapper,
+        )
+        .map_err(|error| error.to_string())?;
+        match lm_profile::detect_smw_us_v1_overworld_animation_runtime_for_mapper(
+            workspace.image.logical_bytes(),
+            mapper,
+            mapper_runtime,
         )
         .map_err(|error| error.to_string())?
         {
@@ -27,10 +35,15 @@ impl RomOverworldEditor {
         }
         let before = workspace.image.logical_bytes().to_vec();
         let mut project = Project::new(workspace.image.clone());
+        let allocation = self.overworld_allocation_policy(workspace)?;
         project
             .install_relocatable_patch(
-                &lm_profile::smw_us_v1_overworld_animation_runtime_installation_plan()
-                    .map_err(|error| error.to_string())?,
+                &lm_profile::smw_us_v1_overworld_animation_runtime_installation_plan_for_mapper(
+                    mapper,
+                    allocation,
+                    mapper_runtime,
+                )
+                .map_err(|error| error.to_string())?,
             )
             .map_err(|error| error.to_string())?;
         Ok(lm_app::PreparedRomCommit {
@@ -254,7 +267,7 @@ fn merge_animation_option_mutation(
     project.save_installed_overworld_animation_options(
         features,
         lightning,
-        lm_profile::smw_us_v1_overworld_animation_options_layout(),
+        lm_profile::smw_us_v1_overworld_animation_options_layout_for_mapper(mapper),
         checksum_field,
     )?;
     prepared.description =

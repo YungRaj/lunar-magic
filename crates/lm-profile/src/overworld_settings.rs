@@ -33,23 +33,35 @@ pub const SMW_US_V1_OVERWORLD_LIGHTNING_DISABLE_MASK: usize = 0x27709;
 
 #[must_use]
 pub const fn smw_us_v1_overworld_animation_options_layout() -> OverworldAnimationOptionsRomLayout {
+    smw_us_v1_overworld_animation_options_layout_for_mapper(Mapper::LoRom)
+}
+
+#[must_use]
+pub const fn smw_us_v1_overworld_animation_options_layout_for_mapper(
+    mapper: Mapper,
+) -> OverworldAnimationOptionsRomLayout {
+    let body = if matches!(mapper, Mapper::ExLoRom) {
+        0x40_0000
+    } else {
+        0
+    };
     OverworldAnimationOptionsRomLayout {
         feature_installation: InstalledLayout::Alternatives {
             primary: GatedLayout {
                 marker: InstallationMarker {
-                    offset: SMW_US_V1_OVERWORLD_ANIMATION_RUNTIME_MARKER,
+                    offset: body + SMW_US_V1_OVERWORLD_ANIMATION_RUNTIME_MARKER,
                     expected: 0x22,
                 },
                 layout: ChainedSnesPointerLocator {
-                    mapper: Mapper::LoRom,
-                    first_operand_offset: SMW_US_V1_OVERWORLD_ANIMATION_RUNTIME_OPERAND,
+                    mapper,
+                    first_operand_offset: body + SMW_US_V1_OVERWORLD_ANIMATION_RUNTIME_OPERAND,
                     final_operand_displacement:
                         SMW_US_V1_OVERWORLD_ANIMATION_FEATURE_OPERAND_DISPLACEMENT,
                 },
             },
             fallback: None,
         },
-        lightning_disable_mask_offset: SMW_US_V1_OVERWORLD_LIGHTNING_DISABLE_MASK,
+        lightning_disable_mask_offset: body + SMW_US_V1_OVERWORLD_LIGHTNING_DISABLE_MASK,
     }
 }
 

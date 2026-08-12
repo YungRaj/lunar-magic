@@ -2465,3 +2465,15 @@ proves canonical ExLoROM pointers, `$48AD00` installed-layout reopen, valid chec
 duplicate rejection, one revision, and byte-exact Undo. Existing LoROM generation/allocation and
 SA-1 RAM-remap/framing matrices complete the supported SMW-US revision-0 product. The Patches
 expanded-settings/Layer 3/palette-runtimes row is promoted to Pass and aggregate parity is 61/65.
+
+Overworld mapper-runtime update (2026-08-12): live Ghidra instruction evidence for
+`InstallExAnimationRomPatch` (`$004B2440`), `PatchExLoRomRelocationValue` (`$00441F30`), and the
+surrounding stream operations now drives complete ExLoROM and SA-1 `$C40` payloads. The mapper-aware
+installer and detector relocate fixed hooks through the ExLoROM active body, use canonical mapper
+pointers, authenticate all immutable owners and auxiliary pointers, and expose mapper-routed option
+I/O and allocation protection in the native Overworld editor. The four-case ExLoROM/SA-1 ×
+headered/headerless gate installs, detects, loads and saves all seven option bytes plus lightning,
+repairs checksums, rejects duplicate/corrupt installs, preserves copier bytes, and restores/reapplies
+exact physical images through Undo/Redo. Focused profile tests pass 10/10, native compilation passes,
+and renderer parity remains 237/237. The row remains Partial pending a retained authentic Lunar
+Magic-created mapper-runtime output oracle; aggregate parity remains 61/65.

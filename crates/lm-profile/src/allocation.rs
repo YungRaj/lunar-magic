@@ -226,9 +226,8 @@ impl RevisionProfile {
         if self.game == lm_rom::SupportedGame::SuperMarioWorld
             && self.region == lm_rom::Region::NorthAmerica
             && self.revision == 0
-            && self.mapper == lm_rom::Mapper::LoRom
         {
-            protect_smw_us_v1_overworld_animation_options(&mut policy, rom)?;
+            protect_smw_us_v1_overworld_animation_options(&mut policy, rom, self.mapper)?;
         }
         Ok(policy)
     }
@@ -237,17 +236,20 @@ impl RevisionProfile {
 fn protect_smw_us_v1_overworld_animation_options(
     policy: &mut AllocationPolicy,
     rom: &lm_rom::RomImage,
+    mapper: lm_rom::Mapper,
 ) -> Result<(), RevisionAllocationError> {
-    let layout = crate::smw_us_v1_overworld_animation_options_layout();
+    let layout = crate::smw_us_v1_overworld_animation_options_layout_for_mapper(mapper);
+    let (marker_offset, operand_offset) = match layout.feature_installation {
+        lm_project::InstalledLayout::Alternatives { primary, .. } => {
+            (primary.marker.offset, primary.layout.first_operand_offset)
+        }
+        _ => unreachable!("overworld animation layout always has one authenticated marker"),
+    };
     for (domain, offset, len) in [
-        (
-            "overworld.animation.options.marker",
-            crate::SMW_US_V1_OVERWORLD_ANIMATION_RUNTIME_MARKER,
-            1,
-        ),
+        ("overworld.animation.options.marker", marker_offset, 1),
         (
             "overworld.animation.options.hook_operand",
-            crate::SMW_US_V1_OVERWORLD_ANIMATION_RUNTIME_OPERAND,
+            operand_offset,
             3,
         ),
         (
@@ -791,7 +793,8 @@ mod tests {
             rom.write(offset, &mapped.to_le_bytes()[..3]).unwrap();
         }
         let mut policy = AllocationPolicy::lorom(0x6000..0x7000);
-        protect_smw_us_v1_overworld_animation_options(&mut policy, &rom).unwrap();
+        protect_smw_us_v1_overworld_animation_options(&mut policy, &rom, lm_rom::Mapper::LoRom)
+            .unwrap();
         let locator = layout.feature_installation.resolve(&rom).unwrap().unwrap();
         for range in [
             ProtectedRange(

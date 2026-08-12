@@ -375,11 +375,15 @@ pub use native_map16_transfer::{
     save_smw_us_v1_transferred_map16,
 };
 pub use overworld_animation_runtime::{
-    SMW_US_V1_OVERWORLD_ANIMATION_AUXILIARY_LEN, SMW_US_V1_OVERWORLD_ANIMATION_OPTIONS_LEN,
-    SMW_US_V1_OVERWORLD_ANIMATION_RUNTIME_LEN, SMW_US_V1_OVERWORLD_ANIMATION_SEARCH_END,
-    SMW_US_V1_OVERWORLD_ANIMATION_SEARCH_START, SmwUsV1OverworldAnimationRuntime,
-    SmwUsV1OverworldAnimationRuntimeError, detect_smw_us_v1_overworld_animation_runtime,
+    SMW_US_V1_OVERWORLD_ANIMATION_AUXILIARY_LEN, SMW_US_V1_OVERWORLD_ANIMATION_MAPPER_RUNTIME_LEN,
+    SMW_US_V1_OVERWORLD_ANIMATION_OPTIONS_LEN, SMW_US_V1_OVERWORLD_ANIMATION_RUNTIME_LEN,
+    SMW_US_V1_OVERWORLD_ANIMATION_SEARCH_END, SMW_US_V1_OVERWORLD_ANIMATION_SEARCH_START,
+    SmwUsV1OverworldAnimationRuntime, SmwUsV1OverworldAnimationRuntimeError,
+    detect_smw_us_v1_overworld_animation_runtime,
+    detect_smw_us_v1_overworld_animation_runtime_for_mapper,
     smw_us_v1_overworld_animation_runtime_installation_plan,
+    smw_us_v1_overworld_animation_runtime_installation_plan_for_mapper,
+    smw_us_v1_overworld_animation_runtime_payload_for_mapper,
     smw_us_v1_overworld_animation_runtime_template,
 };
 pub use overworld_boss_sequence::{
@@ -481,7 +485,9 @@ pub use overworld_settings::{
     SmwUsV1OverworldSettingsLoadError, load_smw_us_v1_expanded_level_settings,
     load_smw_us_v1_overworld_layer3_settings, load_smw_us_v1_overworld_settings,
     smw_us_v1_expanded_settings_layout, smw_us_v1_installed_expanded_settings_layout,
-    smw_us_v1_overworld_animation_options_layout, smw_us_v1_overworld_layer3_settings_layout,
+    smw_us_v1_overworld_animation_options_layout,
+    smw_us_v1_overworld_animation_options_layout_for_mapper,
+    smw_us_v1_overworld_layer3_settings_layout,
 };
 pub use overworld_special_event::{
     SMW_US_V1_SPECIAL_EVENT_DESTINATION_OPERAND, SMW_US_V1_SPECIAL_EVENT_DIRECTION_OPERAND,

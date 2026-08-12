@@ -521,16 +521,23 @@ fn decode_overworld_assets(
     let animation_options_layout_supported = profiled.profile.game
         == lm_rom::SupportedGame::SuperMarioWorld
         && profiled.profile.region == lm_rom::Region::NorthAmerica
-        && profiled.profile.revision == 0
-        && profiled.profile.mapper == lm_rom::Mapper::LoRom;
+        && profiled.profile.revision == 0;
     let animation_options = if animation_options_layout_supported {
-        lm_profile::detect_smw_us_v1_overworld_animation_runtime(project.rom.logical_bytes())
-            .map_err(|error| {
-                format!("could not authenticate overworld animation runtime: {error}")
-            })?;
+        let mapper = profiled.snapshot.identity.mapper;
+        let mapper_runtime = lm_profile::smw_us_v1_expanded_exanimation_uses_mapper_runtime(
+            project.rom.logical_bytes(),
+            mapper,
+        )
+        .map_err(|error| error.to_string())?;
+        lm_profile::detect_smw_us_v1_overworld_animation_runtime_for_mapper(
+            project.rom.logical_bytes(),
+            mapper,
+            mapper_runtime,
+        )
+        .map_err(|error| format!("could not authenticate overworld animation runtime: {error}"))?;
         project
             .load_installed_overworld_animation_options(
-                lm_profile::smw_us_v1_overworld_animation_options_layout(),
+                lm_profile::smw_us_v1_overworld_animation_options_layout_for_mapper(mapper),
             )
             .map_err(|error| error.to_string())?
     } else {
