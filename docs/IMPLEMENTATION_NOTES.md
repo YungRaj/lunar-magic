@@ -7339,6 +7339,16 @@ passes 1/1, the shared animation family passes 3/3, localization passes 28/28, a
 passes 237/237. Remaining profile and mapper/runtime variant evidence keeps the overworld animation
 row Partial and aggregate parity at 60/65.
 
+Localization coverage update (2026-08-11, title-screen recording): twenty-nine appended
+`ExtendedUiTextKey` values cover the complete installed-ROM recording form, including movement
+payload state, normalization and commit, temporary recorder install/uninstall guidance, native and
+emulator-state transfer actions, status, unsaved confirmation, and error lifecycle. The application
+host now passes the active catalog into this editor. A dedicated audit requires every
+`TitleRecording*` key and rejects representative literal regressions without translating opaque
+parser or background-I/O errors. The focused family passes 7/7, localization passes 28/28, and the
+renderer passes 237/237. Localization remains Partial for other native forms and retained live
+language-DLL evidence; aggregate parity remains 60/65.
+
 Localization coverage update (2026-08-11, installed expanded settings): thirty typed extension
 keys cover the complete profile-backed editor surface—exact record guidance, Layer 3 semantic
 controls, ten bypass assignments, sprite-boundary behavior, sixteen raw words, staging/commit,

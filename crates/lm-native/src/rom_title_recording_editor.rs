@@ -4,7 +4,7 @@ use crate::{
     persistence_worker::{PersistenceTarget, PersistenceWorker},
 };
 use eframe::egui;
-use lm_app::{AppState, Command};
+use lm_app::{AppState, Command, ExtendedUiTextKey, LocalizationCatalog};
 use lm_profile::smw_us_v1_title_recording_recorder_locator;
 use lm_profile::{
     SMW_US_V1_CHECKSUM_FIELD, SMW_US_V1_TITLE_RECORDING_RECLAIM_FILL,
@@ -185,36 +185,39 @@ impl RomTitleRecordingEditor {
         &mut self,
         context: &egui::Context,
         project_revision: u64,
+        catalog: Option<&LocalizationCatalog>,
     ) -> (bool, Option<Command>) {
         self.poll_file_io(context, project_revision);
         let mut command = None;
         if self.workspace.is_some() {
-            egui::Window::new("ROM Title-Screen Recording")
+            egui::Window::new(text(catalog, ExtendedUiTextKey::TitleRecordingTitle))
                 .default_size([660.0, 520.0])
                 .show(context, |ui| {
-                    command = self.contents(ui, project_revision);
+                    command = self.contents(ui, project_revision, catalog);
                 });
         }
-        let approved = self.close_confirmation(context);
-        self.show_error(context);
+        let approved = self.close_confirmation(context, catalog);
+        self.show_error(context, catalog);
         (approved, command)
     }
 
-    fn contents(&mut self, ui: &mut egui::Ui, project_revision: u64) -> Option<Command> {
+    fn contents(
+        &mut self,
+        ui: &mut egui::Ui,
+        project_revision: u64,
+        catalog: Option<&LocalizationCatalog>,
+    ) -> Option<Command> {
         let workspace = self.workspace.as_mut()?;
         let stale = workspace.revision != project_revision;
         let busy = self.loader.is_running() || self.persistence.is_running();
-        ui.label(
-            "Exact Lunar Magic movement payload. Enter two hexadecimal digits per byte; \
-             whitespace separates bytes and the final byte must be FF.",
-        );
+        ui.label(text(catalog, ExtendedUiTextKey::TitleRecordingDescription));
         if workspace.original.is_none() {
-            ui.label("No playback patch is installed in this ROM.");
+            ui.label(text(catalog, ExtendedUiTextKey::TitleRecordingNoPlayback));
         }
         if stale {
             ui.colored_label(
                 egui::Color32::YELLOW,
-                "The ROM changed after this recording was opened. Reopen before committing.",
+                text(catalog, ExtendedUiTextKey::TitleRecordingStaleNotice),
             );
         }
         ui.add(
@@ -226,13 +229,13 @@ impl RomTitleRecordingEditor {
         let parsed = parse_recording(&workspace.text);
         match &parsed {
             Ok(recording) => {
-                ui.label(format!(
-                    "{} bytes, terminator present",
-                    recording.bytes().len()
-                ));
+                ui.label(
+                    text(catalog, ExtendedUiTextKey::TitleRecordingBytesPresent)
+                        .replace("{count}", &recording.bytes().len().to_string()),
+                );
             }
             Err(error) if workspace.text.trim().is_empty() => {
-                ui.label("Enter a recording payload to install playback.");
+                ui.label(text(catalog, ExtendedUiTextKey::TitleRecordingEnterPayload));
                 let _ = error;
             }
             Err(error) => {
@@ -241,11 +244,20 @@ impl RomTitleRecordingEditor {
         }
         let mut command = None;
         ui.horizontal(|ui| {
-            if ui.button("Minimal payload").clicked() {
+            if ui
+                .button(text(
+                    catalog,
+                    ExtendedUiTextKey::TitleRecordingMinimalPayload,
+                ))
+                .clicked()
+            {
                 workspace.text = "00 00 00 FF".into();
             }
             if ui
-                .add_enabled(parsed.is_ok(), egui::Button::new("Normalize hex"))
+                .add_enabled(
+                    parsed.is_ok(),
+                    egui::Button::new(text(catalog, ExtendedUiTextKey::TitleRecordingNormalizeHex)),
+                )
                 .clicked()
                 && let Ok(recording) = &parsed
             {
@@ -254,7 +266,7 @@ impl RomTitleRecordingEditor {
             if ui
                 .add_enabled(
                     workspace.is_dirty() && !stale && parsed.is_ok(),
-                    egui::Button::new("Commit recording to ROM"),
+                    egui::Button::new(text(catalog, ExtendedUiTextKey::TitleRecordingCommit)),
                 )
                 .clicked()
             {
@@ -263,24 +275,36 @@ impl RomTitleRecordingEditor {
                     Err(error) => self.error = Some(error),
                 }
             }
-            ui.label(if workspace.is_dirty() {
-                "Modified"
-            } else {
-                "Unchanged"
-            });
+            ui.label(text(
+                catalog,
+                if workspace.is_dirty() {
+                    ExtendedUiTextKey::TitleRecordingModified
+                } else {
+                    ExtendedUiTextKey::TitleRecordingUnchanged
+                },
+            ));
         });
         ui.separator();
-        ui.label("Temporary joypad recorder for creating title movements");
+        ui.label(text(
+            catalog,
+            ExtendedUiTextKey::TitleRecordingRecorderHeading,
+        ));
         match &workspace.recorder {
             TitleRecordingRecorderState::Absent => {
                 ui.colored_label(
                     egui::Color32::YELLOW,
-                    "The recorder temporarily repurposes overworld RAM. Install it only while recording a level, then uninstall it before loading or creating overworld save states.",
+                    text(
+                        catalog,
+                        ExtendedUiTextKey::TitleRecordingRecorderAbsentNotice,
+                    ),
                 );
                 if ui
                     .add_enabled(
                         !stale && !busy,
-                        egui::Button::new("Install temporary joypad recorder"),
+                        egui::Button::new(text(
+                            catalog,
+                            ExtendedUiTextKey::TitleRecordingInstallRecorder,
+                        )),
                     )
                     .clicked()
                 {
@@ -292,12 +316,18 @@ impl RomTitleRecordingEditor {
             TitleRecordingRecorderState::Installed { .. } => {
                 ui.colored_label(
                     egui::Color32::LIGHT_RED,
-                    "Recorder installed: create the emulator save state now, then uninstall immediately.",
+                    text(
+                        catalog,
+                        ExtendedUiTextKey::TitleRecordingRecorderInstalledNotice,
+                    ),
                 );
                 if ui
                     .add_enabled(
                         !stale && !busy,
-                        egui::Button::new("Uninstall temporary joypad recorder"),
+                        egui::Button::new(text(
+                            catalog,
+                            ExtendedUiTextKey::TitleRecordingUninstallRecorder,
+                        )),
                     )
                     .clicked()
                 {
@@ -308,10 +338,13 @@ impl RomTitleRecordingEditor {
             }
         }
         ui.separator();
-        ui.label("Recording files and emulator states");
+        ui.label(text(catalog, ExtendedUiTextKey::TitleRecordingFilesHeading));
         ui.horizontal_wrapped(|ui| {
             if ui
-                .add_enabled(!stale && !busy, egui::Button::new("Import .lmtitle…"))
+                .add_enabled(
+                    !stale && !busy,
+                    egui::Button::new(text(catalog, ExtendedUiTextKey::TitleRecordingImportNative)),
+                )
                 .clicked()
                 && let Some(path) = dialogs::choose_native_title_recording()
             {
@@ -325,7 +358,10 @@ impl RomTitleRecordingEditor {
                 );
             }
             if ui
-                .add_enabled(!stale && !busy, egui::Button::new("Import ZSNES state…"))
+                .add_enabled(
+                    !stale && !busy,
+                    egui::Button::new(text(catalog, ExtendedUiTextKey::TitleRecordingImportZsnes)),
+                )
                 .clicked()
                 && let Some(path) = dialogs::choose_zsnes_title_recording_state()
             {
@@ -335,7 +371,10 @@ impl RomTitleRecordingEditor {
                 );
             }
             if ui
-                .add_enabled(!stale && !busy, egui::Button::new("Import Snes9x state…"))
+                .add_enabled(
+                    !stale && !busy,
+                    egui::Button::new(text(catalog, ExtendedUiTextKey::TitleRecordingImportSnes9x)),
+                )
                 .clicked()
                 && let Some(path) = dialogs::choose_snes9x_title_recording_state()
             {
@@ -353,7 +392,7 @@ impl RomTitleRecordingEditor {
             if ui
                 .add_enabled(
                     !stale && !busy && parsed.is_ok(),
-                    egui::Button::new("Export .lmtitle…"),
+                    egui::Button::new(text(catalog, ExtendedUiTextKey::TitleRecordingExportNative)),
                 )
                 .clicked()
                 && let Ok(recording) = &parsed
@@ -364,7 +403,7 @@ impl RomTitleRecordingEditor {
             if ui
                 .add_enabled(
                     !stale && !busy && parsed.is_ok(),
-                    egui::Button::new("Export ZSNES state…"),
+                    egui::Button::new(text(catalog, ExtendedUiTextKey::TitleRecordingExportZsnes)),
                 )
                 .clicked()
                 && let Ok(recording) = &parsed
@@ -377,9 +416,10 @@ impl RomTitleRecordingEditor {
                 );
             }
         });
-        ui.small(
-            "Imports stage the exact movement payload for review; Commit recording to ROM applies it. Exports never modify the ROM.",
-        );
+        ui.small(text(
+            catalog,
+            ExtendedUiTextKey::TitleRecordingTransferNotice,
+        ));
         command
     }
 
@@ -444,21 +484,34 @@ impl RomTitleRecordingEditor {
         }))
     }
 
-    fn close_confirmation(&mut self, context: &egui::Context) -> bool {
+    fn close_confirmation(
+        &mut self,
+        context: &egui::Context,
+        catalog: Option<&LocalizationCatalog>,
+    ) -> bool {
         let Some(pending) = self.pending_close else {
             return false;
         };
         let mut approved = false;
-        egui::Window::new("Discard title-recording changes?")
+        egui::Window::new(text(catalog, ExtendedUiTextKey::TitleRecordingDiscardTitle))
             .collapsible(false)
             .resizable(false)
             .show(context, |ui| {
-                ui.label("The edited recording has not been committed to the ROM.");
+                ui.label(text(
+                    catalog,
+                    ExtendedUiTextKey::TitleRecordingUnsavedNotice,
+                ));
                 ui.horizontal(|ui| {
-                    if ui.button("Cancel").clicked() {
+                    if ui
+                        .button(text(catalog, ExtendedUiTextKey::TitleRecordingCancel))
+                        .clicked()
+                    {
                         self.pending_close = None;
                     }
-                    if ui.button("Discard").clicked() {
+                    if ui
+                        .button(text(catalog, ExtendedUiTextKey::TitleRecordingDiscard))
+                        .clicked()
+                    {
                         self.clear();
                         approved = pending == PendingClose::Application;
                     }
@@ -467,14 +520,20 @@ impl RomTitleRecordingEditor {
         approved
     }
 
-    fn show_error(&mut self, context: &egui::Context) {
+    fn show_error(&mut self, context: &egui::Context, catalog: Option<&LocalizationCatalog>) {
         if let Some(error) = self.error.clone() {
-            egui::Window::new("Title-recording editor error").show(context, |ui| {
-                ui.label(error);
-                if ui.button("OK").clicked() {
-                    self.error = None;
-                }
-            });
+            egui::Window::new(text(catalog, ExtendedUiTextKey::TitleRecordingErrorTitle)).show(
+                context,
+                |ui| {
+                    ui.label(error);
+                    if ui
+                        .button(text(catalog, ExtendedUiTextKey::TitleRecordingOk))
+                        .clicked()
+                    {
+                        self.error = None;
+                    }
+                },
+            );
         }
     }
 
@@ -544,6 +603,10 @@ fn encode_hex(bytes: &[u8]) -> String {
     text
 }
 
+fn text(catalog: Option<&LocalizationCatalog>, key: ExtendedUiTextKey) -> String {
+    crate::frontend_ui::extended_localized_text(catalog, key)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -555,6 +618,32 @@ mod tests {
         app.load_rom(crate::test_support::pristine_smw_us_rom_bytes())
             .unwrap();
         app
+    }
+
+    #[test]
+    fn complete_title_recording_form_uses_every_typed_key() {
+        let source = include_str!("rom_title_recording_editor.rs");
+        for key in ExtendedUiTextKey::ALL
+            .into_iter()
+            .filter(|key| format!("{key:?}").starts_with("TitleRecording"))
+        {
+            assert!(
+                source.contains(&format!("ExtendedUiTextKey::{key:?}")),
+                "title-recording UI does not consume {key:?}"
+            );
+        }
+        for bypass in [
+            "Window::new(\"ROM Title-Screen Recording\")",
+            "ui.button(\"Minimal payload\")",
+            "Button::new(\"Commit recording to ROM\")",
+            "Button::new(\"Import ZSNES state…\")",
+            "Window::new(\"Discard title-recording changes?\")",
+        ] {
+            assert!(
+                !source.contains(bypass),
+                "title-recording UI bypasses typed localization: {bypass}"
+            );
+        }
     }
 
     #[test]

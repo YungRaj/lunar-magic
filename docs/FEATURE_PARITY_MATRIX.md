@@ -771,6 +771,15 @@ controls without allowing either key family to mask omissions in the other. Inst
 1/1, shared animation family 3/3, localization model 28/28, and renderer 237/237 pass. Remaining
 profile/variant evidence keeps the overworld animation row Partial; aggregate parity remains 60/65.
 
+Localization coverage update (2026-08-11, title-screen recording): twenty-nine appended typed keys
+cover the complete native ROM recording workflow: payload guidance and validation state, commit
+state, temporary joypad-recorder lifecycle, native/ZSNES/Snes9x imports, native/ZSNES exports,
+close confirmation, and error acknowledgement. The active catalog is threaded through the ROM
+window host, while opaque parser and file-operation errors remain technical payloads. Title-recording
+workflow and source audit pass 7/7, localization model 28/28, and renderer 237/237. Other native
+forms and retained live language-DLL evidence keep Localization Partial; aggregate parity remains
+60/65.
+
 Converted catalogs now preserve the complete safely decoded literal dialog inventory in a bounded,
 optional `LMDLG001` extension keyed by dialog ID, exact item position, and 32-bit control ID.
 Historical catalogs without the extension remain byte-identical, duplicate control IDs survive by

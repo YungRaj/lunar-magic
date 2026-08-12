@@ -109,7 +109,20 @@ impl NativeApplication {
         if quit {
             self.request_quit(context);
         }
-        show_rom_editor!(self, context, rom_title_recording_editor);
+        let (quit, command) = self.rom_title_recording_editor.show(
+            context,
+            self.app.project_revision(),
+            self.app.localization(),
+        );
+        if let Some(command) = command
+            && self.try_dispatch(context, command)
+        {
+            self.rom_title_recording_editor.commit_succeeded();
+            self.renderer.invalidate();
+        }
+        if quit {
+            self.request_quit(context);
+        }
         for (quit, command, title) in [
             {
                 let (quit, command) = self.rom_title_tilemap_editor.show(

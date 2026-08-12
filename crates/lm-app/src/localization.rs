@@ -2273,10 +2273,39 @@ pub enum ExtendedUiTextKey {
     OverworldAnimationPassed,
     OverworldAnimationEventManualNotice,
     OverworldAnimationNoRecordsNotice,
+    TitleRecordingTitle,
+    TitleRecordingDescription,
+    TitleRecordingNoPlayback,
+    TitleRecordingStaleNotice,
+    TitleRecordingBytesPresent,
+    TitleRecordingEnterPayload,
+    TitleRecordingMinimalPayload,
+    TitleRecordingNormalizeHex,
+    TitleRecordingCommit,
+    TitleRecordingModified,
+    TitleRecordingUnchanged,
+    TitleRecordingRecorderHeading,
+    TitleRecordingRecorderAbsentNotice,
+    TitleRecordingInstallRecorder,
+    TitleRecordingRecorderInstalledNotice,
+    TitleRecordingUninstallRecorder,
+    TitleRecordingFilesHeading,
+    TitleRecordingImportNative,
+    TitleRecordingImportZsnes,
+    TitleRecordingImportSnes9x,
+    TitleRecordingExportNative,
+    TitleRecordingExportZsnes,
+    TitleRecordingTransferNotice,
+    TitleRecordingDiscardTitle,
+    TitleRecordingUnsavedNotice,
+    TitleRecordingCancel,
+    TitleRecordingDiscard,
+    TitleRecordingErrorTitle,
+    TitleRecordingOk,
 }
 
 impl ExtendedUiTextKey {
-    pub const ALL: [Self; 572] = [
+    pub const ALL: [Self; 601] = [
         Self::TilemapTitleScreenName,
         Self::TilemapCreditsName,
         Self::TilemapEditorTitleFormat,
@@ -2849,6 +2878,35 @@ impl ExtendedUiTextKey {
         Self::OverworldAnimationPassed,
         Self::OverworldAnimationEventManualNotice,
         Self::OverworldAnimationNoRecordsNotice,
+        Self::TitleRecordingTitle,
+        Self::TitleRecordingDescription,
+        Self::TitleRecordingNoPlayback,
+        Self::TitleRecordingStaleNotice,
+        Self::TitleRecordingBytesPresent,
+        Self::TitleRecordingEnterPayload,
+        Self::TitleRecordingMinimalPayload,
+        Self::TitleRecordingNormalizeHex,
+        Self::TitleRecordingCommit,
+        Self::TitleRecordingModified,
+        Self::TitleRecordingUnchanged,
+        Self::TitleRecordingRecorderHeading,
+        Self::TitleRecordingRecorderAbsentNotice,
+        Self::TitleRecordingInstallRecorder,
+        Self::TitleRecordingRecorderInstalledNotice,
+        Self::TitleRecordingUninstallRecorder,
+        Self::TitleRecordingFilesHeading,
+        Self::TitleRecordingImportNative,
+        Self::TitleRecordingImportZsnes,
+        Self::TitleRecordingImportSnes9x,
+        Self::TitleRecordingExportNative,
+        Self::TitleRecordingExportZsnes,
+        Self::TitleRecordingTransferNotice,
+        Self::TitleRecordingDiscardTitle,
+        Self::TitleRecordingUnsavedNotice,
+        Self::TitleRecordingCancel,
+        Self::TitleRecordingDiscard,
+        Self::TitleRecordingErrorTitle,
+        Self::TitleRecordingOk,
     ];
 
     #[must_use]
@@ -3642,6 +3700,49 @@ impl ExtendedUiTextKey {
             Self::OverworldAnimationNoRecordsNotice => {
                 "No custom overworld ExAnimation records are installed for this submap."
             }
+            Self::TitleRecordingTitle => "ROM Title-Screen Recording",
+            Self::TitleRecordingDescription => {
+                "Exact Lunar Magic movement payload. Enter two hexadecimal digits per byte; whitespace separates bytes and the final byte must be FF."
+            }
+            Self::TitleRecordingNoPlayback => "No playback patch is installed in this ROM.",
+            Self::TitleRecordingStaleNotice => {
+                "The ROM changed after this recording was opened. Reopen before committing."
+            }
+            Self::TitleRecordingBytesPresent => "{count} bytes, terminator present",
+            Self::TitleRecordingEnterPayload => "Enter a recording payload to install playback.",
+            Self::TitleRecordingMinimalPayload => "Minimal payload",
+            Self::TitleRecordingNormalizeHex => "Normalize hex",
+            Self::TitleRecordingCommit => "Commit recording to ROM",
+            Self::TitleRecordingModified => "Modified",
+            Self::TitleRecordingUnchanged => "Unchanged",
+            Self::TitleRecordingRecorderHeading => {
+                "Temporary joypad recorder for creating title movements"
+            }
+            Self::TitleRecordingRecorderAbsentNotice => {
+                "The recorder temporarily repurposes overworld RAM. Install it only while recording a level, then uninstall it before loading or creating overworld save states."
+            }
+            Self::TitleRecordingInstallRecorder => "Install temporary joypad recorder",
+            Self::TitleRecordingRecorderInstalledNotice => {
+                "Recorder installed: create the emulator save state now, then uninstall immediately."
+            }
+            Self::TitleRecordingUninstallRecorder => "Uninstall temporary joypad recorder",
+            Self::TitleRecordingFilesHeading => "Recording files and emulator states",
+            Self::TitleRecordingImportNative => "Import .lmtitle…",
+            Self::TitleRecordingImportZsnes => "Import ZSNES state…",
+            Self::TitleRecordingImportSnes9x => "Import Snes9x state…",
+            Self::TitleRecordingExportNative => "Export .lmtitle…",
+            Self::TitleRecordingExportZsnes => "Export ZSNES state…",
+            Self::TitleRecordingTransferNotice => {
+                "Imports stage the exact movement payload for review; Commit recording to ROM applies it. Exports never modify the ROM."
+            }
+            Self::TitleRecordingDiscardTitle => "Discard title-recording changes?",
+            Self::TitleRecordingUnsavedNotice => {
+                "The edited recording has not been committed to the ROM."
+            }
+            Self::TitleRecordingCancel => "Cancel",
+            Self::TitleRecordingDiscard => "Discard",
+            Self::TitleRecordingErrorTitle => "Title-recording editor error",
+            Self::TitleRecordingOk => "OK",
         }
     }
 
