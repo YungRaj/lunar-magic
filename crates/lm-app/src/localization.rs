@@ -4119,10 +4119,14 @@ pub enum ExtendedUiTextKey {
     LiveEmulatorAudio,
     LiveEmulatorAudioMuted,
     LiveEmulatorAudioHelp,
+    ProgressOpeningTitle,
+    ProgressReadingFormat,
+    ProgressSavingTitle,
+    ProgressWritingFormat,
 }
 
 impl ExtendedUiTextKey {
-    pub const ALL: [Self; 2418] = [
+    pub const ALL: [Self; 2422] = [
         Self::MwlDocumentEditorTitle,
         Self::MwlDocumentVersionFormat,
         Self::MwlDocumentFlagsHex,
@@ -6541,6 +6545,10 @@ impl ExtendedUiTextKey {
         Self::LiveEmulatorAudio,
         Self::LiveEmulatorAudioMuted,
         Self::LiveEmulatorAudioHelp,
+        Self::ProgressOpeningTitle,
+        Self::ProgressReadingFormat,
+        Self::ProgressSavingTitle,
+        Self::ProgressWritingFormat,
     ];
 
     #[must_use]
@@ -9704,6 +9712,10 @@ impl ExtendedUiTextKey {
             Self::LiveEmulatorAudio => "Audio",
             Self::LiveEmulatorAudioMuted => "Audio muted",
             Self::LiveEmulatorAudioHelp => "Mute or unmute internal emulator audio",
+            Self::ProgressOpeningTitle => "Opening",
+            Self::ProgressReadingFormat => "Reading {description}",
+            Self::ProgressSavingTitle => "Saving",
+            Self::ProgressWritingFormat => "Writing {target}",
         }
     }
 

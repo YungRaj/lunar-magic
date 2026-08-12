@@ -1593,6 +1593,7 @@ impl eframe::App for NativeApplication {
     }
 
     fn update(&mut self, context: &egui::Context, _frame: &mut eframe::Frame) {
+        crate::progress_localization::install(context, self.app.localization());
         self.app
             .set_maintain_checksum(self.maintain_checksum.unwrap_or(true));
         self.app.set_prioritize_allocations_past_2mb(

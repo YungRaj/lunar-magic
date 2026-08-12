@@ -8315,3 +8315,14 @@ source audit rejects the former literals and requires all three identities. The 
 test and localization 28/28 active cases (one provenance ignore) pass, while renderer remains
 237/237. Other native forms and retained live language-DLL evidence keep Localization Partial;
 aggregate parity remains 60/65.
+
+Localization coverage update (2026-08-12, shared document progress): four appended `Progress*`
+extension identities cover Opening/Saving titles and Reading/Writing templates while preserving
+the exact dynamic document descriptions and target paths. The application installs the current
+catalog values into egui's per-context temporary frame data before any editor renders; all 78
+existing shared loader/persistence call sites consume them without global state or worker-API
+coupling, and language changes take effect on the next frame. Standalone contexts retain English
+fallback. Three focused tests prove English fallback, placeholder substitution, translated runtime
+installation, and absence of the former fixed captions in both workers. Localization passes 28/28
+active cases (one provenance ignore), and renderer remains 237/237. Other native forms and retained
+live language-DLL evidence keep Localization Partial; aggregate parity remains 60/65.

@@ -2439,3 +2439,12 @@ active catalog reaches the live window without changing the fixed 256-key byte-c
 The focused native test, localization 28/28 active cases (one provenance ignore), and renderer
 237/237 pass. Other native forms and live translated language-DLL evidence keep Localization
 Partial, so aggregate parity remains 60/65.
+
+Localization coverage update (2026-08-12, shared document progress): four typed `Progress*`
+extension keys replace fixed English across the Opening/Saving titles and Reading/Writing dynamic
+templates used by all 78 shared loader/persistence call sites. Per-egui-context frame data avoids
+global state, updates on the next frame after a language change, and retains English fallback for
+standalone contexts. Three focused tests prove translated installation, fallback, placeholder
+replacement, and worker source boundaries. Localization 28/28 active cases (one provenance ignore)
+and renderer 237/237 pass. Other native forms and live translated language-DLL evidence keep
+Localization Partial, so aggregate parity remains 60/65.

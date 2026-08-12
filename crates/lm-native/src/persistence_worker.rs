@@ -192,11 +192,14 @@ impl PersistenceWorker {
     pub(crate) fn show(&mut self, context: &egui::Context) -> Option<PersistenceCompletion> {
         let completion = self.poll();
         if let Some(running) = &self.running {
-            egui::Window::new("Saving")
+            egui::Window::new(crate::progress_localization::saving_title(context))
                 .collapsible(false)
                 .resizable(false)
                 .show(context, |ui| {
-                    ui.label(format!("Writing {}", running.target.description()));
+                    ui.label(crate::progress_localization::writing(
+                        context,
+                        &running.target.description(),
+                    ));
                 });
             context.request_repaint_after(std::time::Duration::from_millis(100));
         }

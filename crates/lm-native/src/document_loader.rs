@@ -160,11 +160,14 @@ impl DocumentLoader {
     ) -> Option<Result<LoadedDocument, String>> {
         let completion = self.poll();
         if let Some(running) = &self.running {
-            egui::Window::new("Opening")
+            egui::Window::new(crate::progress_localization::opening_title(context))
                 .collapsible(false)
                 .resizable(false)
                 .show(context, |ui| {
-                    ui.label(format!("Reading {}", running.descriptions));
+                    ui.label(crate::progress_localization::reading(
+                        context,
+                        &running.descriptions,
+                    ));
                 });
             context.request_repaint_after(std::time::Duration::from_millis(100));
         }
