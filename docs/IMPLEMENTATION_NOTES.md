@@ -7149,3 +7149,13 @@ every `LevelName*` key. Localization model 28/28, level-name editor 6/6—includ
 across the level-number gap, pristine install/reopen, stale selection safety, and pristine/installed
 maximum-table recovery—and renderer 237/237 pass. Localization stays Partial for remaining forms
 and live original language-DLL evidence; aggregate parity remains 60/65.
+Localization coverage update (2026-08-11, overworld player starts): the complete two-player native
+start editor now uses twenty-six typed extension keys for its window, exact-record/reserved-byte
+descriptions, stale warning, player selector, coordinates, submap selector, seven submap names,
+load/apply/commit actions, staged state, unsaved confirmation, and errors. Shared Cancel/Discard/OK
+remain fixed-prefix entries. A source audit rejects literal widget text and requires every
+`PlayerStart*` key; a translated-catalog test proves both end submap names route through the
+extension while missing entries fall back to English. Localization model 28/28, player-start editor
+5/5—including semantic reopen with reserved bytes, alignment/stale safety, and exact two-player
+recovery—and renderer 237/237 pass. Localization stays Partial for remaining forms and live
+original language-DLL evidence; aggregate parity remains 60/65.

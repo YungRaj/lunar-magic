@@ -1854,3 +1854,11 @@ install/reopen, stale-state rejection, and pristine/installed maximum-table reco
 Localization model 28/28, level-name editor 6/6, and renderer 237/237 pass. Other native forms and
 retained live language-DLL evidence remain open; Localization stays Partial and aggregate parity
 remains 60/65.
+Localization coverage update (2026-08-11, overworld player starts): every visible control in the
+two-player coordinate/submap editor, including all seven submap choices and preserved-byte status,
+now uses twenty-six typed extension keys plus shared fixed-prefix confirmation actions. Source and
+translated-submap tests prevent literal or untranslated selector regressions. Semantic reopen,
+reserved-option preservation, invalid/stale handling, and exact two-player recovery remain green.
+Localization model 28/28, player-start editor 5/5, and renderer 237/237 pass. Other native forms and
+retained live language-DLL evidence remain open; Localization stays Partial and aggregate parity
+remains 60/65.

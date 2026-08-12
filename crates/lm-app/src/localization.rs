@@ -1749,10 +1749,36 @@ pub enum ExtendedUiTextKey {
     LevelNameDiscardTitle,
     LevelNameUnsavedNotice,
     LevelNameErrorTitle,
+    PlayerStartEditorTitle,
+    PlayerStartDescription,
+    PlayerStartReservedFormat,
+    PlayerStartStaleNotice,
+    PlayerStartPlayer,
+    PlayerStartMario,
+    PlayerStartLuigi,
+    PlayerStartLoad,
+    PlayerStartX,
+    PlayerStartY,
+    PlayerStartSubmap,
+    PlayerStartInvalid,
+    PlayerStartMainMap,
+    PlayerStartYoshisIsland,
+    PlayerStartVanillaDome,
+    PlayerStartForestIllusion,
+    PlayerStartValleyBowser,
+    PlayerStartSpecialWorld,
+    PlayerStartStarWorld,
+    PlayerStartApply,
+    PlayerStartCommit,
+    PlayerStartStaged,
+    PlayerStartUnchanged,
+    PlayerStartDiscardTitle,
+    PlayerStartUnsavedNotice,
+    PlayerStartErrorTitle,
 }
 
 impl ExtendedUiTextKey {
-    pub const ALL: [Self; 48] = [
+    pub const ALL: [Self; 74] = [
         Self::TilemapTitleScreenName,
         Self::TilemapCreditsName,
         Self::TilemapEditorTitleFormat,
@@ -1801,6 +1827,32 @@ impl ExtendedUiTextKey {
         Self::LevelNameDiscardTitle,
         Self::LevelNameUnsavedNotice,
         Self::LevelNameErrorTitle,
+        Self::PlayerStartEditorTitle,
+        Self::PlayerStartDescription,
+        Self::PlayerStartReservedFormat,
+        Self::PlayerStartStaleNotice,
+        Self::PlayerStartPlayer,
+        Self::PlayerStartMario,
+        Self::PlayerStartLuigi,
+        Self::PlayerStartLoad,
+        Self::PlayerStartX,
+        Self::PlayerStartY,
+        Self::PlayerStartSubmap,
+        Self::PlayerStartInvalid,
+        Self::PlayerStartMainMap,
+        Self::PlayerStartYoshisIsland,
+        Self::PlayerStartVanillaDome,
+        Self::PlayerStartForestIllusion,
+        Self::PlayerStartValleyBowser,
+        Self::PlayerStartSpecialWorld,
+        Self::PlayerStartStarWorld,
+        Self::PlayerStartApply,
+        Self::PlayerStartCommit,
+        Self::PlayerStartStaged,
+        Self::PlayerStartUnchanged,
+        Self::PlayerStartDiscardTitle,
+        Self::PlayerStartUnsavedNotice,
+        Self::PlayerStartErrorTitle,
     ];
 
     #[must_use]
@@ -1870,6 +1922,38 @@ impl ExtendedUiTextKey {
                 "The staged level names have not been committed to the ROM."
             }
             Self::LevelNameErrorTitle => "Level-name editor error",
+            Self::PlayerStartEditorTitle => "ROM Overworld Player Starts",
+            Self::PlayerStartDescription => {
+                "Exact two-player native start records. Coordinates are hexadecimal."
+            }
+            Self::PlayerStartReservedFormat => "Preserved adjacent option bytes: {bytes}",
+            Self::PlayerStartStaleNotice => {
+                "The ROM changed after these starts were opened. Reopen before committing."
+            }
+            Self::PlayerStartPlayer => "Player",
+            Self::PlayerStartMario => "Mario",
+            Self::PlayerStartLuigi => "Luigi",
+            Self::PlayerStartLoad => "Load",
+            Self::PlayerStartX => "X",
+            Self::PlayerStartY => "Y",
+            Self::PlayerStartSubmap => "Submap",
+            Self::PlayerStartInvalid => "Invalid",
+            Self::PlayerStartMainMap => "Main Map",
+            Self::PlayerStartYoshisIsland => "Yoshi's Island",
+            Self::PlayerStartVanillaDome => "Vanilla Dome",
+            Self::PlayerStartForestIllusion => "Forest of Illusion",
+            Self::PlayerStartValleyBowser => "Valley of Bowser",
+            Self::PlayerStartSpecialWorld => "Special World",
+            Self::PlayerStartStarWorld => "Star World",
+            Self::PlayerStartApply => "Apply player",
+            Self::PlayerStartCommit => "Commit starts to ROM",
+            Self::PlayerStartStaged => "Staged",
+            Self::PlayerStartUnchanged => "Unchanged",
+            Self::PlayerStartDiscardTitle => "Discard player-start changes?",
+            Self::PlayerStartUnsavedNotice => {
+                "The staged start records have not been committed to the ROM."
+            }
+            Self::PlayerStartErrorTitle => "Player-start editor error",
         }
     }
 

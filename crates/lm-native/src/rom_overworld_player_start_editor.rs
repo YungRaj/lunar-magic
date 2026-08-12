@@ -3,7 +3,7 @@ use crate::{
     overworld_editor_forms::SUBMAP_NAMES,
 };
 use eframe::egui;
-use lm_app::{AppState, Command};
+use lm_app::{AppState, Command, ExtendedUiTextKey, LocalizationCatalog, UiTextKey};
 use lm_overworld::{NativeOverworldPlayerStarts, Submap};
 use lm_profile::smw_us_v1_overworld_player_start_layout;
 
@@ -186,41 +186,62 @@ impl RomOverworldPlayerStartEditor {
         &mut self,
         context: &egui::Context,
         project_revision: u64,
+        catalog: Option<&LocalizationCatalog>,
     ) -> (bool, Option<Command>) {
         let mut command = None;
         if self.workspace.is_some() {
-            egui::Window::new("ROM Overworld Player Starts")
+            egui::Window::new(ext(catalog, ExtendedUiTextKey::PlayerStartEditorTitle))
                 .default_size([500.0, 340.0])
-                .show(context, |ui| command = self.contents(ui, project_revision));
+                .show(context, |ui| {
+                    command = self.contents(ui, project_revision, catalog)
+                });
         }
-        let approved = self.close_confirmation(context);
-        self.show_error(context);
+        let approved = self.close_confirmation(context, catalog);
+        self.show_error(context, catalog);
         (approved, command)
     }
 
-    fn contents(&mut self, ui: &mut egui::Ui, project_revision: u64) -> Option<Command> {
+    fn contents(
+        &mut self,
+        ui: &mut egui::Ui,
+        project_revision: u64,
+        catalog: Option<&LocalizationCatalog>,
+    ) -> Option<Command> {
         let workspace = self.workspace.as_ref()?;
         let stale = workspace.revision != project_revision;
         let dirty = workspace.current != workspace.original;
-        ui.label("Exact two-player native start records. Coordinates are hexadecimal.");
-        ui.label(format!(
-            "Preserved adjacent option bytes: {}",
-            format_bytes(&workspace.current.reserved)
-        ));
+        ui.label(ext(catalog, ExtendedUiTextKey::PlayerStartDescription));
+        ui.label(
+            ext(catalog, ExtendedUiTextKey::PlayerStartReservedFormat)
+                .replace("{bytes}", &format_bytes(&workspace.current.reserved)),
+        );
         if stale {
             ui.colored_label(
                 egui::Color32::YELLOW,
-                "The ROM changed after these starts were opened. Reopen before committing.",
+                ext(catalog, ExtendedUiTextKey::PlayerStartStaleNotice),
             );
         }
         ui.horizontal(|ui| {
-            ui.label("Player");
-            if ui.selectable_value(&mut self.player, 0, "Mario").clicked()
-                | ui.selectable_value(&mut self.player, 1, "Luigi").clicked()
+            ui.label(ext(catalog, ExtendedUiTextKey::PlayerStartPlayer));
+            if ui
+                .selectable_value(
+                    &mut self.player,
+                    0,
+                    ext(catalog, ExtendedUiTextKey::PlayerStartMario),
+                )
+                .clicked()
+                | ui.selectable_value(
+                    &mut self.player,
+                    1,
+                    ext(catalog, ExtendedUiTextKey::PlayerStartLuigi),
+                )
+                .clicked()
             {
                 self.loaded_player = None;
             }
-            if ui.button("Load").clicked()
+            if ui
+                .button(ext(catalog, ExtendedUiTextKey::PlayerStartLoad))
+                .clicked()
                 && let Err(error) = self.load_selected()
             {
                 self.error = Some(error);
@@ -229,23 +250,28 @@ impl RomOverworldPlayerStartEditor {
         egui::Grid::new("rom-overworld-player-start-form")
             .striped(true)
             .show(ui, |ui| {
-                ui.label("X");
+                ui.label(ext(catalog, ExtendedUiTextKey::PlayerStartX));
                 ui.text_edit_singleline(&mut self.form.x);
                 ui.end_row();
-                ui.label("Y");
+                ui.label(ext(catalog, ExtendedUiTextKey::PlayerStartY));
                 ui.text_edit_singleline(&mut self.form.y);
                 ui.end_row();
-                ui.label("Submap");
+                ui.label(ext(catalog, ExtendedUiTextKey::PlayerStartSubmap));
                 egui::ComboBox::from_id_salt("rom-player-start-submap")
                     .selected_text(
                         SUBMAP_NAMES
                             .get(self.form.submap)
                             .copied()
-                            .unwrap_or("Invalid"),
+                            .map(|_| submap_name(catalog, self.form.submap))
+                            .unwrap_or_else(|| ext(catalog, ExtendedUiTextKey::PlayerStartInvalid)),
                     )
                     .show_ui(ui, |ui| {
-                        for (index, name) in SUBMAP_NAMES.iter().enumerate() {
-                            ui.selectable_value(&mut self.form.submap, index, *name);
+                        for index in 0..SUBMAP_NAMES.len() {
+                            ui.selectable_value(
+                                &mut self.form.submap,
+                                index,
+                                submap_name(catalog, index),
+                            );
                         }
                     });
                 ui.end_row();
@@ -253,14 +279,20 @@ impl RomOverworldPlayerStartEditor {
         let mut command = None;
         ui.horizontal(|ui| {
             if ui
-                .add_enabled(!stale, egui::Button::new("Apply player"))
+                .add_enabled(
+                    !stale,
+                    egui::Button::new(ext(catalog, ExtendedUiTextKey::PlayerStartApply)),
+                )
                 .clicked()
                 && let Err(error) = self.apply_selected()
             {
                 self.error = Some(error);
             }
             if ui
-                .add_enabled(dirty && !stale, egui::Button::new("Commit starts to ROM"))
+                .add_enabled(
+                    dirty && !stale,
+                    egui::Button::new(ext(catalog, ExtendedUiTextKey::PlayerStartCommit)),
+                )
                 .clicked()
             {
                 match self.prepare_commit(project_revision) {
@@ -268,7 +300,14 @@ impl RomOverworldPlayerStartEditor {
                     Err(error) => self.error = Some(error),
                 }
             }
-            ui.label(if dirty { "Staged" } else { "Unchanged" });
+            ui.label(ext(
+                catalog,
+                if dirty {
+                    ExtendedUiTextKey::PlayerStartStaged
+                } else {
+                    ExtendedUiTextKey::PlayerStartUnchanged
+                },
+            ));
         });
         command
     }
@@ -315,21 +354,37 @@ impl RomOverworldPlayerStartEditor {
         }))
     }
 
-    fn close_confirmation(&mut self, context: &egui::Context) -> bool {
+    fn close_confirmation(
+        &mut self,
+        context: &egui::Context,
+        catalog: Option<&LocalizationCatalog>,
+    ) -> bool {
         let Some(pending) = self.pending_close else {
             return false;
         };
         let mut approved = false;
-        egui::Window::new("Discard player-start changes?")
+        egui::Window::new(ext(catalog, ExtendedUiTextKey::PlayerStartDiscardTitle))
             .collapsible(false)
             .resizable(false)
             .show(context, |ui| {
-                ui.label("The staged start records have not been committed to the ROM.");
+                ui.label(ext(catalog, ExtendedUiTextKey::PlayerStartUnsavedNotice));
                 ui.horizontal(|ui| {
-                    if ui.button("Cancel").clicked() {
+                    if ui
+                        .button(crate::frontend_ui::localized_text(
+                            catalog,
+                            UiTextKey::CommonCancel,
+                        ))
+                        .clicked()
+                    {
                         self.pending_close = None;
                     }
-                    if ui.button("Discard").clicked() {
+                    if ui
+                        .button(crate::frontend_ui::localized_text(
+                            catalog,
+                            UiTextKey::UnsavedDiscard,
+                        ))
+                        .clicked()
+                    {
                         self.clear();
                         approved = pending == PendingClose::Application;
                     }
@@ -338,14 +393,23 @@ impl RomOverworldPlayerStartEditor {
         approved
     }
 
-    fn show_error(&mut self, context: &egui::Context) {
+    fn show_error(&mut self, context: &egui::Context, catalog: Option<&LocalizationCatalog>) {
         if let Some(error) = self.error.clone() {
-            egui::Window::new("Player-start editor error").show(context, |ui| {
-                ui.label(error);
-                if ui.button("OK").clicked() {
-                    self.error = None;
-                }
-            });
+            egui::Window::new(ext(catalog, ExtendedUiTextKey::PlayerStartErrorTitle)).show(
+                context,
+                |ui| {
+                    ui.label(error);
+                    if ui
+                        .button(crate::frontend_ui::localized_text(
+                            catalog,
+                            UiTextKey::CommonOk,
+                        ))
+                        .clicked()
+                    {
+                        self.error = None;
+                    }
+                },
+            );
         }
     }
 
@@ -360,10 +424,69 @@ impl RomOverworldPlayerStartEditor {
     }
 }
 
+fn ext(catalog: Option<&LocalizationCatalog>, key: ExtendedUiTextKey) -> String {
+    crate::frontend_ui::extended_localized_text(catalog, key)
+}
+
+fn submap_name(catalog: Option<&LocalizationCatalog>, index: usize) -> String {
+    let key = [
+        ExtendedUiTextKey::PlayerStartMainMap,
+        ExtendedUiTextKey::PlayerStartYoshisIsland,
+        ExtendedUiTextKey::PlayerStartVanillaDome,
+        ExtendedUiTextKey::PlayerStartForestIllusion,
+        ExtendedUiTextKey::PlayerStartValleyBowser,
+        ExtendedUiTextKey::PlayerStartSpecialWorld,
+        ExtendedUiTextKey::PlayerStartStarWorld,
+    ]
+    .get(index)
+    .copied()
+    .unwrap_or(ExtendedUiTextKey::PlayerStartInvalid);
+    ext(catalog, key)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::path::PathBuf;
+
+    #[test]
+    fn player_start_editor_surface_has_no_literal_widget_text() {
+        let source = include_str!("rom_overworld_player_start_editor.rs");
+        for literal_widget in [
+            "egui::Window::new(\"",
+            "ui.button(\"",
+            "egui::Button::new(\"",
+            "ui.label(\"",
+        ] {
+            assert!(
+                !source.contains(literal_widget),
+                "player-start editor bypasses typed localization with {literal_widget}"
+            );
+        }
+        for key in ExtendedUiTextKey::ALL
+            .into_iter()
+            .filter(|key| format!("{key:?}").starts_with("PlayerStart"))
+        {
+            assert!(source.contains(&format!("ExtendedUiTextKey::{key:?}")));
+        }
+    }
+
+    #[test]
+    fn every_submap_name_uses_the_installed_extension_translation() {
+        let catalog = LocalizationCatalog::new(
+            "zz",
+            UiTextKey::ALL.map(|key| (key, key.english().to_owned())),
+        )
+        .unwrap()
+        .with_extended_ui_texts([
+            (ExtendedUiTextKey::PlayerStartMainMap, "Mapa-0".into()),
+            (ExtendedUiTextKey::PlayerStartStarWorld, "Mapa-6".into()),
+        ])
+        .unwrap();
+        assert_eq!(submap_name(Some(&catalog), 0), "Mapa-0");
+        assert_eq!(submap_name(Some(&catalog), 6), "Mapa-6");
+        assert_eq!(submap_name(None, 3), "Forest of Illusion");
+    }
 
     fn pristine_app() -> AppState {
         let _root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
