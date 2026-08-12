@@ -1775,10 +1775,25 @@ pub enum ExtendedUiTextKey {
     PlayerStartDiscardTitle,
     PlayerStartUnsavedNotice,
     PlayerStartErrorTitle,
+    SpecialEventEditorTitle,
+    SpecialEventDescription,
+    SpecialEventStaleNotice,
+    SpecialEventIndex,
+    SpecialEventSourceTile,
+    SpecialEventDestinationTile,
+    SpecialEventDirection,
+    SpecialEventLoadEntry,
+    SpecialEventApplyEntry,
+    SpecialEventCommit,
+    SpecialEventStaged,
+    SpecialEventUnchanged,
+    SpecialEventDiscardTitle,
+    SpecialEventUnsavedNotice,
+    SpecialEventErrorTitle,
 }
 
 impl ExtendedUiTextKey {
-    pub const ALL: [Self; 74] = [
+    pub const ALL: [Self; 89] = [
         Self::TilemapTitleScreenName,
         Self::TilemapCreditsName,
         Self::TilemapEditorTitleFormat,
@@ -1853,6 +1868,21 @@ impl ExtendedUiTextKey {
         Self::PlayerStartDiscardTitle,
         Self::PlayerStartUnsavedNotice,
         Self::PlayerStartErrorTitle,
+        Self::SpecialEventEditorTitle,
+        Self::SpecialEventDescription,
+        Self::SpecialEventStaleNotice,
+        Self::SpecialEventIndex,
+        Self::SpecialEventSourceTile,
+        Self::SpecialEventDestinationTile,
+        Self::SpecialEventDirection,
+        Self::SpecialEventLoadEntry,
+        Self::SpecialEventApplyEntry,
+        Self::SpecialEventCommit,
+        Self::SpecialEventStaged,
+        Self::SpecialEventUnchanged,
+        Self::SpecialEventDiscardTitle,
+        Self::SpecialEventUnsavedNotice,
+        Self::SpecialEventErrorTitle,
     ];
 
     #[must_use]
@@ -1954,6 +1984,27 @@ impl ExtendedUiTextKey {
                 "The staged start records have not been committed to the ROM."
             }
             Self::PlayerStartErrorTitle => "Player-start editor error",
+            Self::SpecialEventEditorTitle => "ROM Overworld Special Events",
+            Self::SpecialEventDescription => {
+                "All 24 native special-event reveal records. Values are hexadecimal."
+            }
+            Self::SpecialEventStaleNotice => {
+                "The ROM changed after this table was opened. Reopen before committing."
+            }
+            Self::SpecialEventIndex => "Index",
+            Self::SpecialEventSourceTile => "Source tile",
+            Self::SpecialEventDestinationTile => "Destination tile",
+            Self::SpecialEventDirection => "Direction",
+            Self::SpecialEventLoadEntry => "Load entry",
+            Self::SpecialEventApplyEntry => "Apply entry",
+            Self::SpecialEventCommit => "Commit table to ROM",
+            Self::SpecialEventStaged => "Staged",
+            Self::SpecialEventUnchanged => "Unchanged",
+            Self::SpecialEventDiscardTitle => "Discard special-event changes?",
+            Self::SpecialEventUnsavedNotice => {
+                "The staged event table has not been committed to the ROM."
+            }
+            Self::SpecialEventErrorTitle => "Special-event editor error",
         }
     }
 

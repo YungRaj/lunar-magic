@@ -3,7 +3,7 @@ use crate::{
     overworld_editor_forms::RevealForm,
 };
 use eframe::egui;
-use lm_app::{AppState, Command};
+use lm_app::{AppState, Command, ExtendedUiTextKey, LocalizationCatalog, UiTextKey};
 use lm_overworld::SpecialEventRevealTable;
 use lm_profile::smw_us_v1_special_event_reveal_locator;
 
@@ -145,63 +145,107 @@ impl RomOverworldSpecialEventEditor {
         &mut self,
         context: &egui::Context,
         project_revision: u64,
+        catalog: Option<&LocalizationCatalog>,
     ) -> (bool, Option<Command>) {
         let mut command = None;
         if self.workspace.is_some() {
-            egui::Window::new("ROM Overworld Special Events")
+            egui::Window::new(crate::frontend_ui::extended_localized_text(
+                catalog,
+                ExtendedUiTextKey::SpecialEventEditorTitle,
+            ))
                 .default_size([520.0, 340.0])
-                .show(context, |ui| command = self.contents(ui, project_revision));
+                .show(context, |ui| command = self.contents(ui, project_revision, catalog));
         }
-        let approved = self.close_confirmation(context);
-        self.show_error(context);
+        let approved = self.close_confirmation(context, catalog);
+        self.show_error(context, catalog);
         (approved, command)
     }
 
-    fn contents(&mut self, ui: &mut egui::Ui, project_revision: u64) -> Option<Command> {
+    fn contents(
+        &mut self,
+        ui: &mut egui::Ui,
+        project_revision: u64,
+        catalog: Option<&LocalizationCatalog>,
+    ) -> Option<Command> {
         let workspace = self.workspace.as_ref()?;
         let stale = workspace.revision != project_revision;
         let dirty = workspace.current != workspace.original;
-        ui.label("All 24 native special-event reveal records. Values are hexadecimal.");
+        ui.label(crate::frontend_ui::extended_localized_text(
+            catalog,
+            ExtendedUiTextKey::SpecialEventDescription,
+        ));
         if stale {
             ui.colored_label(
                 egui::Color32::YELLOW,
-                "The ROM changed after this table was opened. Reopen before committing.",
+                crate::frontend_ui::extended_localized_text(
+                    catalog,
+                    ExtendedUiTextKey::SpecialEventStaleNotice,
+                ),
             );
         }
         egui::Grid::new("rom-special-event-form")
             .striped(true)
             .show(ui, |ui| {
-                ui.label("Index");
+                ui.label(crate::frontend_ui::extended_localized_text(
+                    catalog,
+                    ExtendedUiTextKey::SpecialEventIndex,
+                ));
                 if ui.text_edit_singleline(&mut self.index).changed() {
                     self.loaded_index = None;
                 }
                 ui.end_row();
-                ui.label("Source tile");
+                ui.label(crate::frontend_ui::extended_localized_text(
+                    catalog,
+                    ExtendedUiTextKey::SpecialEventSourceTile,
+                ));
                 ui.text_edit_singleline(&mut self.reveal.source);
                 ui.end_row();
-                ui.label("Destination tile");
+                ui.label(crate::frontend_ui::extended_localized_text(
+                    catalog,
+                    ExtendedUiTextKey::SpecialEventDestinationTile,
+                ));
                 ui.text_edit_singleline(&mut self.reveal.destination);
                 ui.end_row();
-                ui.label("Direction");
+                ui.label(crate::frontend_ui::extended_localized_text(
+                    catalog,
+                    ExtendedUiTextKey::SpecialEventDirection,
+                ));
                 ui.text_edit_singleline(&mut self.direction);
                 ui.end_row();
             });
         let mut command = None;
         ui.horizontal(|ui| {
-            if ui.button("Load entry").clicked()
+            if ui
+                .button(crate::frontend_ui::extended_localized_text(
+                    catalog,
+                    ExtendedUiTextKey::SpecialEventLoadEntry,
+                ))
+                .clicked()
                 && let Err(error) = self.load_selected()
             {
                 self.error = Some(error);
             }
             if ui
-                .add_enabled(!stale, egui::Button::new("Apply entry"))
+                .add_enabled(
+                    !stale,
+                    egui::Button::new(crate::frontend_ui::extended_localized_text(
+                        catalog,
+                        ExtendedUiTextKey::SpecialEventApplyEntry,
+                    )),
+                )
                 .clicked()
                 && let Err(error) = self.apply_selected()
             {
                 self.error = Some(error);
             }
             if ui
-                .add_enabled(dirty && !stale, egui::Button::new("Commit table to ROM"))
+                .add_enabled(
+                    dirty && !stale,
+                    egui::Button::new(crate::frontend_ui::extended_localized_text(
+                        catalog,
+                        ExtendedUiTextKey::SpecialEventCommit,
+                    )),
+                )
                 .clicked()
             {
                 match self.prepare_commit(project_revision) {
@@ -209,7 +253,14 @@ impl RomOverworldSpecialEventEditor {
                     Err(error) => self.error = Some(error),
                 }
             }
-            ui.label(if dirty { "Staged" } else { "Unchanged" });
+            ui.label(crate::frontend_ui::extended_localized_text(
+                catalog,
+                if dirty {
+                    ExtendedUiTextKey::SpecialEventStaged
+                } else {
+                    ExtendedUiTextKey::SpecialEventUnchanged
+                },
+            ));
         });
         command
     }
@@ -273,21 +324,37 @@ impl RomOverworldSpecialEventEditor {
         }))
     }
 
-    fn close_confirmation(&mut self, context: &egui::Context) -> bool {
+    fn close_confirmation(
+        &mut self,
+        context: &egui::Context,
+        catalog: Option<&LocalizationCatalog>,
+    ) -> bool {
         let Some(pending) = self.pending_close else {
             return false;
         };
         let mut approved = false;
-        egui::Window::new("Discard special-event changes?")
+        egui::Window::new(crate::frontend_ui::extended_localized_text(
+            catalog,
+            ExtendedUiTextKey::SpecialEventDiscardTitle,
+        ))
             .collapsible(false)
             .resizable(false)
             .show(context, |ui| {
-                ui.label("The staged event table has not been committed to the ROM.");
+                ui.label(crate::frontend_ui::extended_localized_text(
+                    catalog,
+                    ExtendedUiTextKey::SpecialEventUnsavedNotice,
+                ));
                 ui.horizontal(|ui| {
-                    if ui.button("Cancel").clicked() {
+                    if ui.button(crate::frontend_ui::localized_text(
+                        catalog,
+                        UiTextKey::CommonCancel,
+                    )).clicked() {
                         self.pending_close = None;
                     }
-                    if ui.button("Discard").clicked() {
+                    if ui.button(crate::frontend_ui::localized_text(
+                        catalog,
+                        UiTextKey::UnsavedDiscard,
+                    )).clicked() {
                         self.clear();
                         approved = pending == PendingClose::Application;
                     }
@@ -296,11 +363,17 @@ impl RomOverworldSpecialEventEditor {
         approved
     }
 
-    fn show_error(&mut self, context: &egui::Context) {
+    fn show_error(&mut self, context: &egui::Context, catalog: Option<&LocalizationCatalog>) {
         if let Some(error) = self.error.clone() {
-            egui::Window::new("Special-event editor error").show(context, |ui| {
+            egui::Window::new(crate::frontend_ui::extended_localized_text(
+                catalog,
+                ExtendedUiTextKey::SpecialEventErrorTitle,
+            )).show(context, |ui| {
                 ui.label(error);
-                if ui.button("OK").clicked() {
+                if ui.button(crate::frontend_ui::localized_text(
+                    catalog,
+                    UiTextKey::CommonOk,
+                )).clicked() {
                     self.error = None;
                 }
             });
@@ -322,6 +395,28 @@ impl RomOverworldSpecialEventEditor {
 mod tests {
     use super::*;
     use std::path::PathBuf;
+
+    #[test]
+    fn special_event_editor_surface_has_no_literal_widget_text() {
+        let source = include_str!("rom_overworld_special_event_editor.rs");
+        for literal_widget in [
+            "egui::Window::new(\"",
+            "ui.button(\"",
+            "egui::Button::new(\"",
+            "ui.label(\"",
+        ] {
+            assert!(
+                !source.contains(literal_widget),
+                "special-event editor bypasses typed localization with {literal_widget}"
+            );
+        }
+        for key in ExtendedUiTextKey::ALL
+            .into_iter()
+            .filter(|key| format!("{key:?}").starts_with("SpecialEvent"))
+        {
+            assert!(source.contains(&format!("ExtendedUiTextKey::{key:?}")));
+        }
+    }
 
     fn pristine_app() -> AppState {
         let _root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");

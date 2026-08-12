@@ -185,12 +185,23 @@ impl NativeApplication {
         if quit {
             self.request_quit(context);
         }
-        show_rom_editor!(
-            self,
+        let (quit, command) = self.rom_overworld_special_event_editor.show(
             context,
-            rom_overworld_special_event_editor,
-            lm_app::LunarMagicNotificationKind::SaveOverworld
+            self.app.project_revision(),
+            self.app.localization(),
         );
+        if let Some(command) = command
+            && self.try_dispatch(context, command)
+        {
+            self.rom_overworld_special_event_editor.commit_succeeded();
+            self.mark_user_toolbar_save_notification(
+                lm_app::LunarMagicNotificationKind::SaveOverworld,
+            );
+            self.renderer.invalidate();
+        }
+        if quit {
+            self.request_quit(context);
+        }
         let (quit, command) = self.rom_level_assets_editor.show(
             context,
             self.app.project_revision(),

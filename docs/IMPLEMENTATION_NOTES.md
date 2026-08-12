@@ -7159,3 +7159,13 @@ extension while missing entries fall back to English. Localization model 28/28, 
 5/5—including semantic reopen with reserved bytes, alignment/stale safety, and exact two-player
 recovery—and renderer 237/237 pass. Localization stays Partial for remaining forms and live
 original language-DLL evidence; aggregate parity remains 60/65.
+
+Localization coverage update (2026-08-11, overworld special-event reveals): the complete 24-record
+special-event editor now uses fifteen typed extension keys for its window, exact-table description,
+stale warning, index/source/destination/direction fields, load/apply/commit actions, staged state,
+unsaved confirmation, and errors. Shared Cancel/Discard/OK retain their fixed-prefix keys. A source
+audit rejects literal widget text and requires every `SpecialEvent*` key. Localization model 28/28,
+special-event editor 5/5—including pristine install and complete three-plane reopen, invalid/stale
+handling, pristine recovery, and installed-table preservation—and renderer 237/237 pass.
+Localization stays Partial for remaining forms and live original language-DLL evidence; aggregate
+parity remains 60/65.
