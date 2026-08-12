@@ -2696,6 +2696,21 @@ pub enum ExtendedUiTextKey {
     OverworldAppearanceLast,
     OverworldAppearanceBase,
     OverworldAppearanceRemoveRange,
+    ApplicationGfxOverrideTitle,
+    ApplicationGfxOverrideLayer12,
+    ApplicationGfxOverrideLayer3,
+    ApplicationGfxOverrideNotice,
+    ApplicationGfxOverrideOk,
+    ApplicationGfxOverrideCancel,
+    ApplicationToolbarBack,
+    ApplicationToolbarForward,
+    ApplicationToolbarLevel,
+    ApplicationRecentEmpty,
+    ApplicationRecentClear,
+    ApplicationRecentClearTitle,
+    ApplicationRecentClearNotice,
+    ApplicationRecentYes,
+    ApplicationRecentNo,
     ExAnimationDocumentTitle,
     ExAnimationDocumentOpenTitle,
     ExAnimationDocumentMaximumRecords,
@@ -3858,7 +3873,7 @@ pub enum ExtendedUiTextKey {
 }
 
 impl ExtendedUiTextKey {
-    pub const ALL: [Self; 2154] = [
+    pub const ALL: [Self; 2169] = [
         Self::MwlDocumentEditorTitle,
         Self::MwlDocumentVersionFormat,
         Self::MwlDocumentFlagsHex,
@@ -4854,6 +4869,21 @@ impl ExtendedUiTextKey {
         Self::OverworldAppearanceLast,
         Self::OverworldAppearanceBase,
         Self::OverworldAppearanceRemoveRange,
+        Self::ApplicationGfxOverrideTitle,
+        Self::ApplicationGfxOverrideLayer12,
+        Self::ApplicationGfxOverrideLayer3,
+        Self::ApplicationGfxOverrideNotice,
+        Self::ApplicationGfxOverrideOk,
+        Self::ApplicationGfxOverrideCancel,
+        Self::ApplicationToolbarBack,
+        Self::ApplicationToolbarForward,
+        Self::ApplicationToolbarLevel,
+        Self::ApplicationRecentEmpty,
+        Self::ApplicationRecentClear,
+        Self::ApplicationRecentClearTitle,
+        Self::ApplicationRecentClearNotice,
+        Self::ApplicationRecentYes,
+        Self::ApplicationRecentNo,
         Self::ExAnimationDocumentTitle,
         Self::ExAnimationDocumentOpenTitle,
         Self::ExAnimationDocumentMaximumRecords,
@@ -7235,6 +7265,25 @@ impl ExtendedUiTextKey {
             Self::OverworldAppearanceLast => "Last",
             Self::OverworldAppearanceBase => "Base",
             Self::OverworldAppearanceRemoveRange => "Remove",
+            Self::ApplicationGfxOverrideTitle => "GFX Display Override (in hex)",
+            Self::ApplicationGfxOverrideLayer12 => "Layer 1/2",
+            Self::ApplicationGfxOverrideLayer3 => "Layer 3",
+            Self::ApplicationGfxOverrideNotice => {
+                "Note that this is for design purposes only.  The ROM is not affected by these settings.  Set a slot to 7F to use the real setting."
+            }
+            Self::ApplicationGfxOverrideOk => "OK",
+            Self::ApplicationGfxOverrideCancel => "Cancel",
+            Self::ApplicationToolbarBack => "Back",
+            Self::ApplicationToolbarForward => "Forward",
+            Self::ApplicationToolbarLevel => "Level",
+            Self::ApplicationRecentEmpty => "Open a Recent File",
+            Self::ApplicationRecentClear => "Clear Recent Files",
+            Self::ApplicationRecentClearTitle => "Clear Recent Files List?",
+            Self::ApplicationRecentClearNotice => {
+                "This will clear your recent files list. Are you sure you want to do this?"
+            }
+            Self::ApplicationRecentYes => "Yes",
+            Self::ApplicationRecentNo => "No",
             Self::ExAnimationDocumentTitle => "Portable ExAnimation Editor",
             Self::ExAnimationDocumentOpenTitle => "Open ExAnimation",
             Self::ExAnimationDocumentMaximumRecords => {

@@ -7079,6 +7079,17 @@ later-edit preservation, history divergence, and request overflow. Localization 
 active cases (one provenance ignore), and renderer passes 237/237. Other native forms and retained
 language-DLL evidence keep Localization Partial; aggregate parity remains 60/65.
 
+Localization coverage update (2026-08-12, application toolbar and recent-file chrome): fifteen
+appended `Application*` identities cover the GFX display-override title, Layer 1/2 and Layer 3
+fields, design-only notice and acknowledgement; default Back/Forward/Level controls; empty and clear
+recent-file actions; and clear-list confirmation. Open/Save/Undo/Redo continue to resolve through
+their existing toolbar path, while user-supplied tooltips and filesystem paths remain data. A
+complete toolbar-module audit rejects literal window, button, label, heading, slider, and `Button`
+captions and requires every family identity. The focused audit passes, localization passes 28/28
+active cases (one provenance ignore), native compilation passes, and renderer remains 237/237.
+Application confirmations, vanilla-level UI/status strings, shared progress windows, and retained
+live language-DLL evidence keep Localization Partial; aggregate parity remains 60/65.
+
 Localization coverage update (2026-08-12, native overworld appearance controls): thirty-nine
 additional `OverworldAppearance*` identities cover native-pair save and dynamic record summary,
 sprite selection, tooltip enablement/text behavior, graphics and palette range tables, display

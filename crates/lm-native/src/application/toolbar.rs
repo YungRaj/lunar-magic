@@ -8,9 +8,9 @@ use crate::{
 };
 use eframe::egui;
 use lm_app::{
-    Command, LevelNavigationDirection, LunarMagicNotification, LunarMagicNotificationKind,
-    ShortcutGesture, ShortcutKey, ShortcutModifiers, ToolInvocation, ToolbarActivation,
-    UserToolbarButton, UserToolbarTarget, user_toolbar_internal_command,
+    Command, ExtendedUiTextKey as Key, LevelNavigationDirection, LunarMagicNotification,
+    LunarMagicNotificationKind, ShortcutGesture, ShortcutKey, ShortcutModifiers, ToolInvocation,
+    ToolbarActivation, UserToolbarButton, UserToolbarTarget, user_toolbar_internal_command,
 };
 
 impl NativeApplication {
@@ -225,22 +225,27 @@ impl NativeApplication {
         let mut open = true;
         let mut apply = false;
         let mut cancel = false;
-        egui::Window::new("GFX Display Override (in hex)")
+        let catalog = self.app.localization();
+        egui::Window::new(text(catalog, Key::ApplicationGfxOverrideTitle))
             .open(&mut open)
             .collapsible(false)
             .show(context, |ui| {
                 ui.horizontal(|ui| {
-                    ui.label("Layer 1/2");
+                    ui.label(text(catalog, Key::ApplicationGfxOverrideLayer12));
                     ui.text_edit_singleline(&mut layer_1_2);
                 });
                 ui.horizontal(|ui| {
-                    ui.label("Layer 3");
+                    ui.label(text(catalog, Key::ApplicationGfxOverrideLayer3));
                     ui.text_edit_singleline(&mut layer_3);
                 });
-                ui.label("Note that this is for design purposes only.  The ROM is not affected by these settings.  Set a slot to 7F to use the real setting.");
+                ui.label(text(catalog, Key::ApplicationGfxOverrideNotice));
                 ui.horizontal(|ui| {
-                    apply = ui.button("OK").clicked();
-                    cancel = ui.button("Cancel").clicked();
+                    apply = ui
+                        .button(text(catalog, Key::ApplicationGfxOverrideOk))
+                        .clicked();
+                    cancel = ui
+                        .button(text(catalog, Key::ApplicationGfxOverrideCancel))
+                        .clicked();
                 });
             });
         if cancel {
@@ -1280,12 +1285,12 @@ impl NativeApplication {
             ui.separator();
             for (label, enabled, direction) in [
                 (
-                    "Back",
+                    text(self.app.localization(), Key::ApplicationToolbarBack),
                     capabilities.navigation.level_back,
                     LevelNavigationDirection::Back,
                 ),
                 (
-                    "Forward",
+                    text(self.app.localization(), Key::ApplicationToolbarForward),
                     capabilities.navigation.level_forward,
                     LevelNavigationDirection::Forward,
                 ),
@@ -1294,7 +1299,7 @@ impl NativeApplication {
                     self.dispatch(context, Command::NavigateLevel(direction));
                 }
             }
-            ui.label("Level");
+            ui.label(text(self.app.localization(), Key::ApplicationToolbarLevel));
             let response = ui.add_sized(
                 [55.0, 22.0],
                 egui::TextEdit::singleline(&mut self.level_text),
@@ -1358,7 +1363,13 @@ impl NativeApplication {
                     egui::Frame::popup(ui.style()).show(ui, |ui| {
                         ui.set_min_width(220.0);
                         if recent.is_empty() {
-                            ui.add_enabled(false, egui::Label::new("Open a Recent File"));
+                            ui.add_enabled(
+                                false,
+                                egui::Label::new(text(
+                                    self.app.localization(),
+                                    Key::ApplicationRecentEmpty,
+                                )),
+                            );
                             return;
                         }
                         for path in &recent {
@@ -1367,7 +1378,9 @@ impl NativeApplication {
                             }
                         }
                         ui.separator();
-                        clear = ui.button("Clear Recent Files").clicked();
+                        clear = ui
+                            .button(text(self.app.localization(), Key::ApplicationRecentClear))
+                            .clicked();
                     });
                 });
             let dismiss = chosen.is_some()
@@ -1558,20 +1571,22 @@ impl NativeApplication {
         if !self.user_toolbar_recent_clear_confirmation {
             return;
         }
-        egui::Window::new("Clear Recent Files List?")
+        let title = text(self.app.localization(), Key::ApplicationRecentClearTitle);
+        let notice = text(self.app.localization(), Key::ApplicationRecentClearNotice);
+        let yes = text(self.app.localization(), Key::ApplicationRecentYes);
+        let no = text(self.app.localization(), Key::ApplicationRecentNo);
+        egui::Window::new(title)
             .id(egui::Id::new("user-toolbar-clear-recent-confirmation"))
             .collapsible(false)
             .resizable(false)
             .anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO)
             .show(context, |ui| {
-                ui.label(
-                    "This will clear your recent files list. Are you sure you want to do this?",
-                );
+                ui.label(&notice);
                 ui.horizontal(|ui| {
-                    if ui.button("Yes").clicked() {
+                    if ui.button(&yes).clicked() {
                         self.clear_user_toolbar_recent_files();
                     }
-                    if ui.button("No").clicked() {
+                    if ui.button(&no).clicked() {
                         self.user_toolbar_recent_clear_confirmation = false;
                     }
                 });
@@ -1585,6 +1600,13 @@ impl NativeApplication {
         self.persist_recent_state();
         self.app.status = "Cleared recent files list".into();
     }
+}
+
+fn text(catalog: Option<&lm_app::LocalizationCatalog>, key: Key) -> String {
+    catalog.map_or_else(
+        || key.english().to_owned(),
+        |catalog| catalog.extended_text(key).to_owned(),
+    )
 }
 
 fn toolbar_button_indexes_with_option(toolbar: &lm_app::UserToolbar, option: &str) -> Vec<usize> {
@@ -2610,6 +2632,33 @@ mod user_toolbar_tests {
     use crate::application::{
         decode_joined_graphics_preference, encode_joined_graphics_preference,
     };
+
+    #[test]
+    fn application_toolbar_has_no_literal_widget_text() {
+        let source = include_str!("toolbar.rs");
+        for literal in [
+            "ui.button(\"",
+            "ui.label(\"",
+            "ui.heading(\"",
+            "Button::new(\"",
+            "Window::new(\"",
+            ".text(\"",
+        ] {
+            assert!(
+                !source.contains(literal),
+                "application toolbar bypasses localization with {literal}"
+            );
+        }
+        for key in Key::ALL
+            .into_iter()
+            .filter(|key| format!("{key:?}").starts_with("Application"))
+        {
+            assert!(
+                source.contains(&format!("Key::{key:?}")),
+                "application toolbar does not consume {key:?}"
+            );
+        }
+    }
 
     #[test]
     fn external_command_line_preserves_quoted_arguments() {
