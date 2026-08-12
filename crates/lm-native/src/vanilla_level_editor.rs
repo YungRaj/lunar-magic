@@ -1,7 +1,7 @@
 use eframe::egui;
 use lm_app::{
-    AppState, Command, EditorMode, LevelController, NativeLevelEdit, RomExpansionCommand,
-    VanillaEntranceController,
+    AppState, Command, EditorMode, LevelController, LocalizationCatalog, NativeLevelEdit,
+    RomExpansionCommand, VanillaEntranceController,
 };
 use lm_level::{
     CustomMusicError, CustomMusicTrack, CustomTimeError, CustomTimeSettings,
@@ -49,6 +49,23 @@ const VANILLA_INITIAL_LAYER2_Y: [u8; 4] = [0x60, 0x90, 0xc0, 0x00];
 // minimizing its centered side bezels while retaining a useful, fixed-width editing column.
 const ROM_LEVEL_TOOL_PANEL_WIDTH: f32 = 530.0;
 const STANDARD_SPRITE_MAX: u8 = 0xed;
+const ORIGINAL_GENERAL_OPTIONS_DIALOG_ID: u16 = 0x041f;
+const ORIGINAL_SCAN_EXITS_CONTROL_ID: u32 = 0x22a9;
+const ORIGINAL_COUNT_SPRITES_CONTROL_ID: u32 = 0x22aa;
+const ORIGINAL_OBJECT_PLACEMENT_CONTROL_ID: u32 = 0x22ab;
+const ORIGINAL_VERTICAL_FIREBALL_CONTROL_ID: u32 = 0x22ad;
+
+fn original_general_option_text<'a>(
+    catalog: Option<&'a LocalizationCatalog>,
+    control_id: u32,
+    fallback: &'a str,
+) -> &'a str {
+    catalog
+        .and_then(|catalog| {
+            catalog.original_dialog_control_text(ORIGINAL_GENERAL_OPTIONS_DIALOG_ID, control_id)
+        })
+        .unwrap_or(fallback)
+}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum LevelToolPanel {
@@ -889,26 +906,28 @@ impl VanillaLevelEditor {
             self.load(&snapshot, key, custom_sprites);
         }
         self.show_invalid_exit_scan_result(ui.ctx());
-        if let Some(command) = self.show_invalid_exit_save_warning(ui.ctx()) {
+        if let Some(command) = self.show_invalid_exit_save_warning(ui.ctx(), app.localization()) {
             match self.request_sprite_count_before_save(&snapshot, command) {
                 Ok(Some(command)) => return Some(command),
                 Ok(None) => {}
                 Err(error) => self.error = Some(error),
             }
         }
-        if let Some(command) = self.show_sprite_count_save_warning(ui.ctx()) {
+        if let Some(command) = self.show_sprite_count_save_warning(ui.ctx(), app.localization()) {
             match self.request_object_placement_before_save(command) {
                 Ok(Some(command)) => return Some(command),
                 Ok(None) => {}
                 Err(error) => self.error = Some(error),
             }
         }
-        if let Some(command) = self.show_object_placement_save_warning(ui.ctx())
+        if let Some(command) = self.show_object_placement_save_warning(ui.ctx(), app.localization())
             && let Some(command) = self.request_vertical_fireball_before_save(command)
         {
             return Some(command);
         }
-        if let Some(command) = self.show_vertical_fireball_save_warning(ui.ctx()) {
+        if let Some(command) =
+            self.show_vertical_fireball_save_warning(ui.ctx(), app.localization())
+        {
             return Some(command);
         }
         if let Some(command) = self.show_screen_exit_follow_confirmation(ui.ctx(), &snapshot) {
@@ -3657,7 +3676,11 @@ impl VanillaLevelEditor {
         None
     }
 
-    fn show_object_placement_save_warning(&mut self, context: &egui::Context) -> Option<Command> {
+    fn show_object_placement_save_warning(
+        &mut self,
+        context: &egui::Context,
+        catalog: Option<&LocalizationCatalog>,
+    ) -> Option<Command> {
         let warning = self.object_placement_save_warning.clone()?;
         let edge = if warning.bounds_flags & 1 != 0 {
             "top or left side of the first"
@@ -3666,12 +3689,17 @@ impl VanillaLevelEditor {
         };
         let mut save_anyway = false;
         let mut cancel = false;
-        egui::Window::new("Check Object Placement on Save to ROM")
+        let option = original_general_option_text(
+            catalog,
+            ORIGINAL_OBJECT_PLACEMENT_CONTROL_ID,
+            "Check Object Placement on Save to ROM",
+        );
+        egui::Window::new(option)
             .collapsible(false)
             .resizable(false)
             .show(context, |ui| {
                 ui.label(format!("There is at least 1 object that is placing tiles beyond the {edge} screen in the level. This can corrupt SNES RAM during gameplay."));
-                ui.label("To disable this warning, turn off “Check Object Placement on Save to ROM” in Tools.");
+                ui.label(format!("To disable this warning, turn off “{option}” in Tools."));
                 ui.label("Save the level anyway?");
                 ui.horizontal(|ui| {
                     if ui.button("Save Anyway").clicked() {
@@ -3720,11 +3748,20 @@ impl VanillaLevelEditor {
         }
     }
 
-    fn show_sprite_count_save_warning(&mut self, context: &egui::Context) -> Option<Command> {
+    fn show_sprite_count_save_warning(
+        &mut self,
+        context: &egui::Context,
+        catalog: Option<&LocalizationCatalog>,
+    ) -> Option<Command> {
         let warning = self.sprite_count_save_warning.clone()?;
         let mut save_anyway = false;
         let mut cancel = false;
-        egui::Window::new("Count Sprites on Save to ROM")
+        let option = original_general_option_text(
+            catalog,
+            ORIGINAL_COUNT_SPRITES_CONTROL_ID,
+            "Count Sprites on Save to ROM",
+        );
+        egui::Window::new(option)
             .collapsible(false)
             .resizable(false)
             .show(context, |ui| {
@@ -3733,7 +3770,7 @@ impl VanillaLevelEditor {
                     warning.count, warning.limit
                 ));
                 ui.label("Exceeding the maximum limit may cause extra sprites to not appear, or the game could freeze or display random sprites when the player reaches the affected screen.");
-                ui.label("To disable this warning, turn off “Count Sprites on Save to ROM” in Tools.");
+                ui.label(format!("To disable this warning, turn off “{option}” in Tools."));
                 ui.label("Save the level anyway?");
                 ui.horizontal(|ui| {
                     if ui.button("Save Anyway").clicked() {
@@ -3778,16 +3815,25 @@ impl VanillaLevelEditor {
         None
     }
 
-    fn show_vertical_fireball_save_warning(&mut self, context: &egui::Context) -> Option<Command> {
+    fn show_vertical_fireball_save_warning(
+        &mut self,
+        context: &egui::Context,
+        catalog: Option<&LocalizationCatalog>,
+    ) -> Option<Command> {
         self.vertical_fireball_save_warning.as_ref()?;
         let mut save_anyway = false;
         let mut cancel = false;
-        egui::Window::new("Check if Vertical Fireball has Buoyancy")
+        let option = original_general_option_text(
+            catalog,
+            ORIGINAL_VERTICAL_FIREBALL_CONTROL_ID,
+            "Check if Vertical Fireball has Buoyancy",
+        );
+        egui::Window::new(option)
             .collapsible(false)
             .resizable(false)
             .show(context, |ui| {
                 ui.label("Sprite 33 (vertical fireball) is used in this level, but sprite buoyancy is not enabled. This will usually cause the game to freeze.");
-                ui.label("To disable this warning, turn off “Check if Vertical Fireball has Buoyancy” in Tools.");
+                ui.label(format!("To disable this warning, turn off “{option}” in Tools."));
                 ui.label("Save the level anyway?");
                 ui.horizontal(|ui| {
                     if ui.button("Save Anyway").clicked() {
@@ -3831,11 +3877,20 @@ impl VanillaLevelEditor {
         }
     }
 
-    fn show_invalid_exit_save_warning(&mut self, context: &egui::Context) -> Option<Command> {
+    fn show_invalid_exit_save_warning(
+        &mut self,
+        context: &egui::Context,
+        catalog: Option<&LocalizationCatalog>,
+    ) -> Option<Command> {
         let warning = self.invalid_exit_save_warning.clone()?;
         let mut save_anyway = false;
         let mut cancel = false;
-        egui::Window::new("Scan Exits on Save to ROM")
+        let option = original_general_option_text(
+            catalog,
+            ORIGINAL_SCAN_EXITS_CONTROL_ID,
+            "Scan Exits on Save to ROM",
+        );
+        egui::Window::new(option)
             .collapsible(false)
             .resizable(false)
             .show(context, |ui| {
@@ -3849,7 +3904,7 @@ impl VanillaLevelEditor {
                         .join(", "),
                 );
                 ui.label("If you do not set an exit destination or remove the exit-enabled objects on these screens, the player could become trapped in an endless bonus game.");
-                ui.label("To disable this warning, turn off “Scan Exits on Save to ROM” in Tools.");
+                ui.label(format!("To disable this warning, turn off “{option}” in Tools."));
                 ui.label("Save the level anyway?");
                 ui.horizontal(|ui| {
                     if ui.button("Save Anyway").clicked() {
@@ -16452,6 +16507,50 @@ fn pristine_sprite_bank_range(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use lm_app::{OriginalDialogTextKey, UiTextKey};
+
+    #[test]
+    fn level_save_warning_titles_use_authenticated_general_option_controls() {
+        let controls = [
+            (ORIGINAL_SCAN_EXITS_CONTROL_ID, "Analyser les sorties"),
+            (ORIGINAL_COUNT_SPRITES_CONTROL_ID, "Compter les sprites"),
+            (
+                ORIGINAL_OBJECT_PLACEMENT_CONTROL_ID,
+                "Vérifier le placement des objets",
+            ),
+            (
+                ORIGINAL_VERTICAL_FIREBALL_CONTROL_ID,
+                "Vérifier la flottabilité des boules de feu",
+            ),
+        ];
+        let catalog = LocalizationCatalog::new(
+            "fr-FR",
+            UiTextKey::ALL.map(|key| (key, key.english().to_owned())),
+        )
+        .unwrap()
+        .with_original_dialog_texts(controls.map(|(control_id, text)| {
+            (
+                OriginalDialogTextKey {
+                    dialog_id: ORIGINAL_GENERAL_OPTIONS_DIALOG_ID,
+                    item_index: 0,
+                    control_id,
+                },
+                text.to_owned(),
+            )
+        }))
+        .unwrap();
+
+        for (control_id, expected) in controls {
+            assert_eq!(
+                original_general_option_text(Some(&catalog), control_id, "fallback"),
+                expected
+            );
+        }
+        assert_eq!(
+            original_general_option_text(None, ORIGINAL_SCAN_EXITS_CONTROL_ID, "fallback"),
+            "fallback"
+        );
+    }
 
     #[test]
     fn authenticated_unreferenced_vanilla_address_opens_as_layer1_only() {

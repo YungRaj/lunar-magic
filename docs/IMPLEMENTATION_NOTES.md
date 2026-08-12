@@ -6842,3 +6842,10 @@ the exact two-choice control. Before launch, replacement mode creates an exact 7
 `yychr.pal` beside the private staged GFX file from the current 256-color SNES palette; blue mode
 does not create that file and lets the tile editor use its blue transparency presentation.
 Cancellation or completion removes the complete private workspace.
+
+The built-in level editor's four pre-save validation prompts now reuse the authenticated General
+Options resource `$041F` labels that name their enabling choices: controls `$22A9` (exit scan),
+`$22AA` (sprite count), `$22AB` (object placement), and `$22AD` (vertical-fireball buoyancy). Those
+localized strings drive both each warning title and its disable-option guidance. Dynamic safety
+details remain native explanatory text rather than being falsely attributed to an original dialog;
+the executable proves these phrases are option controls, not standalone warning resources.
