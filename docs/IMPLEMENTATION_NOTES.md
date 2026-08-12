@@ -7100,6 +7100,14 @@ ignore), native compilation passes, and renderer remains 237/237. Vanilla-level 
 shared progress windows, and retained live language-DLL evidence keep Localization Partial;
 aggregate parity remains 60/65.
 
+Localization coverage update (2026-08-12, vanilla main and midway entrances): sixteen additional
+`VanillaLevel*` identities cover the exact four-plane main entrance, all main and separate-midway
+fields, installed/uninstalled runtime states, runtime installation, staging/reset, and ROM commit.
+The live catalog now flows through the entrance editor while byte ranges, install preparation,
+transactional staging, and commit semantics remain unchanged. A bounded source audit rejects the
+former fixed-English controls. Focused native and localization tests pass, and renderer remains
+237/237. Other vanilla/native forms keep Localization Partial; aggregate parity remains 60/65.
+
 Localization coverage update (2026-08-12, vanilla level header and mode reset): twenty-four
 additional `VanillaLevel*` identities cover object/sprite counts, all ordinary header selectors,
 custom music and time bypass fields, stage/reset actions, and the complete Layer 2 storage-format

@@ -1076,7 +1076,7 @@ impl VanillaLevelEditor {
                                 self.show_header_editor(ui, catalog, object_count, sprite_count);
                                 if self.raw_layer1_pc_address.is_none() && pending_command.is_none()
                                 {
-                                    pending_command = self.show_entrance_editor(ui, level);
+                                    pending_command = self.show_entrance_editor(ui, catalog, level);
                                 }
                             });
                         if self.raw_layer1_pc_address.is_none() {
@@ -2135,81 +2135,133 @@ impl VanillaLevelEditor {
         });
     }
 
-    fn show_entrance_editor(&mut self, ui: &mut egui::Ui, level: u16) -> Option<Command> {
-        ui.collapsing("Main entrance", |ui| {
-            ui.label("Exact four-plane vanilla SMW entrance record.");
-            egui::Grid::new("vanilla-main-entrance").show(ui, |ui| {
-                header_row(ui, "Position", &mut self.entrance_form.position, u8::MAX);
-                let mut layer2_scroll_table = self.entrance_form.position >> 4;
-                ui.label("Layer 2 original scroll preset");
-                if ui
-                    .add(egui::DragValue::new(&mut layer2_scroll_table).range(0..=15))
-                    .changed()
-                {
-                    self.entrance_form.position =
-                        self.entrance_form.position & 0x0f | layer2_scroll_table << 4;
+    fn show_entrance_editor(
+        &mut self,
+        ui: &mut egui::Ui,
+        catalog: Option<&LocalizationCatalog>,
+        level: u16,
+    ) -> Option<Command> {
+        ui.collapsing(
+            vanilla_text(catalog, ExtendedUiTextKey::VanillaLevelMainEntrance),
+            |ui| {
+                ui.label(vanilla_text(
+                    catalog,
+                    ExtendedUiTextKey::VanillaLevelEntranceExactRecord,
+                ));
+                egui::Grid::new("vanilla-main-entrance").show(ui, |ui| {
+                    header_row(
+                        ui,
+                        &vanilla_text(catalog, ExtendedUiTextKey::VanillaLevelPosition),
+                        &mut self.entrance_form.position,
+                        u8::MAX,
+                    );
+                    let mut layer2_scroll_table = self.entrance_form.position >> 4;
+                    ui.label(vanilla_text(
+                        catalog,
+                        ExtendedUiTextKey::VanillaLevelLayer2ScrollPreset,
+                    ));
+                    if ui
+                        .add(egui::DragValue::new(&mut layer2_scroll_table).range(0..=15))
+                        .changed()
+                    {
+                        self.entrance_form.position =
+                            self.entrance_form.position & 0x0f | layer2_scroll_table << 4;
+                    }
+                    ui.end_row();
+                    header_row(
+                        ui,
+                        &vanilla_text(catalog, ExtendedUiTextKey::VanillaLevelVerticalSettings),
+                        &mut self.entrance_form.vertical_settings,
+                        u8::MAX,
+                    );
+                    header_row(
+                        ui,
+                        &vanilla_text(catalog, ExtendedUiTextKey::VanillaLevelScreenMethod),
+                        &mut self.entrance_form.screen_and_method,
+                        u8::MAX,
+                    );
+                    header_row(
+                        ui,
+                        &vanilla_text(catalog, ExtendedUiTextKey::VanillaLevelModeScreen),
+                        &mut self.entrance_form.level_mode_and_screen,
+                        u8::MAX,
+                    );
+                });
+                if let Some(midway) = &mut self.midway_form {
+                    ui.separator();
+                    ui.label(vanilla_text(
+                        catalog,
+                        ExtendedUiTextKey::VanillaLevelMidwayInstalled,
+                    ));
+                    egui::Grid::new("installed-midway-entrance").show(ui, |ui| {
+                        header_row(
+                            ui,
+                            &vanilla_text(catalog, ExtendedUiTextKey::VanillaLevelFlags),
+                            &mut midway.flags,
+                            u8::MAX,
+                        );
+                        header_row(
+                            ui,
+                            &vanilla_text(catalog, ExtendedUiTextKey::VanillaLevelPosition),
+                            &mut midway.position,
+                            u8::MAX,
+                        );
+                        header_row(
+                            ui,
+                            &vanilla_text(catalog, ExtendedUiTextKey::VanillaLevelAdditionalFlags),
+                            &mut midway.additional_flags,
+                            u8::MAX,
+                        );
+                        header_row(
+                            ui,
+                            &vanilla_text(catalog, ExtendedUiTextKey::VanillaLevelHighPosition),
+                            &mut midway.high_position,
+                            u8::MAX,
+                        );
+                    });
+                } else {
+                    ui.label(vanilla_text(
+                        catalog,
+                        ExtendedUiTextKey::VanillaLevelMidwayNotInstalled,
+                    ));
+                    egui::Grid::new("new-midway-entrance").show(ui, |ui| {
+                        header_row(
+                            ui,
+                            &vanilla_text(catalog, ExtendedUiTextKey::VanillaLevelFlags),
+                            &mut self.midway_install_form.flags,
+                            u8::MAX,
+                        );
+                        header_row(
+                            ui,
+                            &vanilla_text(catalog, ExtendedUiTextKey::VanillaLevelPosition),
+                            &mut self.midway_install_form.position,
+                            u8::MAX,
+                        );
+                        header_row(
+                            ui,
+                            &vanilla_text(catalog, ExtendedUiTextKey::VanillaLevelAdditionalFlags),
+                            &mut self.midway_install_form.additional_flags,
+                            u8::MAX,
+                        );
+                        header_row(
+                            ui,
+                            &vanilla_text(catalog, ExtendedUiTextKey::VanillaLevelHighPosition),
+                            &mut self.midway_install_form.high_position,
+                            u8::MAX,
+                        );
+                    });
                 }
-                ui.end_row();
-                header_row(
-                    ui,
-                    "Vertical settings",
-                    &mut self.entrance_form.vertical_settings,
-                    u8::MAX,
-                );
-                header_row(
-                    ui,
-                    "Screen / method",
-                    &mut self.entrance_form.screen_and_method,
-                    u8::MAX,
-                );
-                header_row(
-                    ui,
-                    "Level mode / screen",
-                    &mut self.entrance_form.level_mode_and_screen,
-                    u8::MAX,
-                );
-            });
-            if let Some(midway) = &mut self.midway_form {
-                ui.separator();
-                ui.label("Installed separate midway entrance");
-                egui::Grid::new("installed-midway-entrance").show(ui, |ui| {
-                    header_row(ui, "Flags", &mut midway.flags, u8::MAX);
-                    header_row(ui, "Position", &mut midway.position, u8::MAX);
-                    header_row(
-                        ui,
-                        "Additional flags",
-                        &mut midway.additional_flags,
-                        u8::MAX,
-                    );
-                    header_row(ui, "High position", &mut midway.high_position, u8::MAX);
-                });
-            } else {
-                ui.label("Separate-midway runtime is not installed. Initial values:");
-                egui::Grid::new("new-midway-entrance").show(ui, |ui| {
-                    header_row(ui, "Flags", &mut self.midway_install_form.flags, u8::MAX);
-                    header_row(
-                        ui,
-                        "Position",
-                        &mut self.midway_install_form.position,
-                        u8::MAX,
-                    );
-                    header_row(
-                        ui,
-                        "Additional flags",
-                        &mut self.midway_install_form.additional_flags,
-                        u8::MAX,
-                    );
-                    header_row(
-                        ui,
-                        "High position",
-                        &mut self.midway_install_form.high_position,
-                        u8::MAX,
-                    );
-                });
-            }
-        });
+            },
+        );
         let controller = self.entrance_controller.as_mut()?;
-        if self.midway_form.is_none() && ui.button("Install separate midway runtime").clicked() {
+        if self.midway_form.is_none()
+            && ui
+                .button(vanilla_text(
+                    catalog,
+                    ExtendedUiTextKey::VanillaLevelInstallMidway,
+                ))
+                .clicked()
+        {
             return match controller.prepare_midway_install(self.midway_install_form) {
                 Ok(prepared) => Some(prepared.into_command()),
                 Err(error) => {
@@ -2219,13 +2271,25 @@ impl VanillaLevelEditor {
             };
         }
         ui.horizontal_wrapped(|ui| {
-            if ui.button("Stage entrance fields").clicked() {
+            if ui
+                .button(vanilla_text(
+                    catalog,
+                    ExtendedUiTextKey::VanillaLevelStageEntrance,
+                ))
+                .clicked()
+            {
                 controller.set_entrance(self.entrance_form);
                 if let Some(midway) = self.midway_form {
                     controller.set_midway_entrance(midway);
                 }
             }
-            if ui.button("Reset entrance").clicked() {
+            if ui
+                .button(vanilla_text(
+                    catalog,
+                    ExtendedUiTextKey::VanillaLevelResetEntrance,
+                ))
+                .clicked()
+            {
                 self.entrance_form = controller.entrance();
                 self.midway_form = controller.midway_entrance();
             }
@@ -2233,7 +2297,10 @@ impl VanillaLevelEditor {
         if ui
             .add_enabled(
                 controller.is_modified(),
-                egui::Button::new("Commit entrances to ROM"),
+                egui::Button::new(vanilla_text(
+                    catalog,
+                    ExtendedUiTextKey::VanillaLevelCommitEntrances,
+                )),
             )
             .clicked()
         {
@@ -17402,6 +17469,29 @@ mod tests {
             assert!(
                 !header_editor.contains(literal),
                 "fixed-English header control: {literal}"
+            );
+        }
+        let entrance_editor = source
+            .split("    fn show_entrance_editor(")
+            .nth(1)
+            .unwrap()
+            .split("    fn show_staged_history(")
+            .next()
+            .unwrap();
+        for literal in [
+            "collapsing(\"Main entrance\"",
+            "label(\"Exact four-plane vanilla SMW entrance record.\")",
+            "label(\"Layer 2 original scroll preset\")",
+            "label(\"Installed separate midway entrance\")",
+            "label(\"Separate-midway runtime is not installed",
+            "button(\"Install separate midway runtime\")",
+            "button(\"Stage entrance fields\")",
+            "button(\"Reset entrance\")",
+            "Button::new(\"Commit entrances to ROM\")",
+        ] {
+            assert!(
+                !entrance_editor.contains(literal),
+                "fixed-English entrance control: {literal}"
             );
         }
         let modeless_editors = source

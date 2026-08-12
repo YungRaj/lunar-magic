@@ -3981,10 +3981,26 @@ pub enum ExtendedUiTextKey {
     VanillaLevelResetLayer2Format,
     VanillaLevelResetLayer2Help,
     VanillaLevelResetLayer2Apply,
+    VanillaLevelMainEntrance,
+    VanillaLevelEntranceExactRecord,
+    VanillaLevelPosition,
+    VanillaLevelLayer2ScrollPreset,
+    VanillaLevelVerticalSettings,
+    VanillaLevelScreenMethod,
+    VanillaLevelModeScreen,
+    VanillaLevelMidwayInstalled,
+    VanillaLevelFlags,
+    VanillaLevelAdditionalFlags,
+    VanillaLevelHighPosition,
+    VanillaLevelMidwayNotInstalled,
+    VanillaLevelInstallMidway,
+    VanillaLevelStageEntrance,
+    VanillaLevelResetEntrance,
+    VanillaLevelCommitEntrances,
 }
 
 impl ExtendedUiTextKey {
-    pub const ALL: [Self; 2280] = [
+    pub const ALL: [Self; 2296] = [
         Self::MwlDocumentEditorTitle,
         Self::MwlDocumentVersionFormat,
         Self::MwlDocumentFlagsHex,
@@ -6265,6 +6281,22 @@ impl ExtendedUiTextKey {
         Self::VanillaLevelResetLayer2Format,
         Self::VanillaLevelResetLayer2Help,
         Self::VanillaLevelResetLayer2Apply,
+        Self::VanillaLevelMainEntrance,
+        Self::VanillaLevelEntranceExactRecord,
+        Self::VanillaLevelPosition,
+        Self::VanillaLevelLayer2ScrollPreset,
+        Self::VanillaLevelVerticalSettings,
+        Self::VanillaLevelScreenMethod,
+        Self::VanillaLevelModeScreen,
+        Self::VanillaLevelMidwayInstalled,
+        Self::VanillaLevelFlags,
+        Self::VanillaLevelAdditionalFlags,
+        Self::VanillaLevelHighPosition,
+        Self::VanillaLevelMidwayNotInstalled,
+        Self::VanillaLevelInstallMidway,
+        Self::VanillaLevelStageEntrance,
+        Self::VanillaLevelResetEntrance,
+        Self::VanillaLevelCommitEntrances,
     ];
 
     #[must_use]
@@ -9218,6 +9250,26 @@ impl ExtendedUiTextKey {
                 "Lunar Magic clears the tilemap workspace when entering a tilemap-backed mode. Object-backed data remains available if you switch back before saving."
             }
             Self::VanillaLevelResetLayer2Apply => "Reset Layer 2 and stage changes",
+            Self::VanillaLevelMainEntrance => "Main entrance",
+            Self::VanillaLevelEntranceExactRecord => {
+                "Exact four-plane vanilla SMW entrance record."
+            }
+            Self::VanillaLevelPosition => "Position",
+            Self::VanillaLevelLayer2ScrollPreset => "Layer 2 original scroll preset",
+            Self::VanillaLevelVerticalSettings => "Vertical settings",
+            Self::VanillaLevelScreenMethod => "Screen / method",
+            Self::VanillaLevelModeScreen => "Level mode / screen",
+            Self::VanillaLevelMidwayInstalled => "Installed separate midway entrance",
+            Self::VanillaLevelFlags => "Flags",
+            Self::VanillaLevelAdditionalFlags => "Additional flags",
+            Self::VanillaLevelHighPosition => "High position",
+            Self::VanillaLevelMidwayNotInstalled => {
+                "Separate-midway runtime is not installed. Initial values:"
+            }
+            Self::VanillaLevelInstallMidway => "Install separate midway runtime",
+            Self::VanillaLevelStageEntrance => "Stage entrance fields",
+            Self::VanillaLevelResetEntrance => "Reset entrance",
+            Self::VanillaLevelCommitEntrances => "Commit entrances to ROM",
         }
     }
 
