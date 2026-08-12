@@ -107,6 +107,34 @@ impl RomLegacyGraphicsBypassEditor {
             .map_err(|error| error.to_string())
     }
 
+    pub(crate) fn staged_recovery_snapshot_merged_with(
+        &self,
+        other: &Self,
+        app: &AppState,
+    ) -> Result<Option<lm_app::RecoverySnapshot>, String> {
+        let left = self
+            .workspace
+            .as_ref()
+            .ok_or("legacy graphics-bypass workspace is closed")?;
+        let right = other
+            .workspace
+            .as_ref()
+            .ok_or("legacy graphics-bypass workspace is closed")?;
+        let merged = left
+            .merge_staged(right)
+            .map_err(|error| error.to_string())?;
+        let prepared = merged
+            .prepare_commit("Recover staged standard FG/BG and sprite GFX bypass")
+            .map_err(|error| error.to_string())?;
+        if prepared.expected_revision != app.project_revision() {
+            return Err(
+                "legacy graphics-bypass recovery was prepared from a stale revision".into(),
+            );
+        }
+        app.recovery_snapshot_with_mutation(&prepared.mutation, Some(merged.level()))
+            .map_err(|error| error.to_string())
+    }
+
     pub(crate) fn set_use_list_dialog(&mut self, enabled: bool) {
         self.use_list_dialog = enabled;
     }
@@ -439,6 +467,68 @@ mod tests {
                 .unwrap()
                 .0,
             editor.files
+        );
+    }
+
+    #[test]
+    fn simultaneous_dialog_recovery_reopens_both_selectors_and_rows_without_live_mutation() {
+        let mut installer = AppState::default();
+        installer
+            .load_rom(crate::test_support::pristine_smw_us_rom_bytes())
+            .unwrap();
+        installer
+            .dispatch(Command::InstallSettings { rev: 0 })
+            .unwrap();
+        let installed = installer.project().unwrap().save_snapshot();
+        let mut app = AppState::default();
+        app.load_rom(installed).unwrap();
+        app.dispatch(Command::SelectLevel(0x105)).unwrap();
+        let live_bytes = app.project().unwrap().save_snapshot();
+        let live_undo = app.project().unwrap().history.undo_len();
+
+        let mut foreground =
+            RomLegacyGraphicsBypassEditor::new(LegacyGraphicsBypassDomain::ForegroundBackground);
+        let mut sprites = RomLegacyGraphicsBypassEditor::new(LegacyGraphicsBypassDomain::Sprites);
+        foreground.open(&app).unwrap();
+        sprites.open(&app).unwrap();
+        foreground.enabled = true;
+        foreground.row = 5;
+        foreground.files = [1, 2, 4, 3];
+        foreground.stage();
+        sprites.enabled = true;
+        sprites.row = 7;
+        sprites.files = [0x12, 0x13, 0x14, 0x15];
+        sprites.stage();
+
+        let recovery = foreground
+            .staged_recovery_snapshot_merged_with(&sprites, &app)
+            .unwrap()
+            .unwrap();
+        assert_eq!(app.project().unwrap().save_snapshot(), live_bytes);
+        assert_eq!(app.project().unwrap().history.undo_len(), live_undo);
+
+        let mut reopened = AppState::default();
+        reopened.load_recovery(recovery).unwrap();
+        let recovered =
+            LegacyGraphicsBypassWorkspace::load(&reopened.controller_snapshot().unwrap()).unwrap();
+        assert_eq!(recovered.selectors().foreground_background, Some(5));
+        assert_eq!(recovered.selectors().sprites, Some(7));
+        assert_eq!(recovered.table().entry(5).unwrap().0, [1, 2, 4, 3]);
+        assert_eq!(
+            recovered.table().entry(7).unwrap().0,
+            [0x12, 0x13, 0x14, 0x15]
+        );
+        let image =
+            lm_rom::RomImage::from_bytes(reopened.project().unwrap().save_snapshot()).unwrap();
+        let checksum_field = reopened
+            .controller_snapshot()
+            .unwrap()
+            .identity
+            .internal_header_offset
+            + 0x1c;
+        assert_eq!(
+            lm_rom::SnesChecksum::decode(image.logical_bytes(), checksum_field).unwrap(),
+            lm_rom::compute_snes_checksum(image.logical_bytes(), checksum_field).unwrap()
         );
     }
 

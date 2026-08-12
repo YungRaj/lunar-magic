@@ -19,6 +19,7 @@ pub enum LegacyGraphicsBypassWorkspaceError {
     Allocation(String),
     Mutation(String),
     Verification(String),
+    MergeConflict(String),
 }
 
 impl fmt::Display for LegacyGraphicsBypassWorkspaceError {
@@ -130,6 +131,51 @@ impl LegacyGraphicsBypassWorkspace {
         self.table != self.baseline_table || self.selectors != self.baseline_selectors
     }
 
+    /// Three-way merges two independently opened legacy bypass dialogs that share the same
+    /// physical table and object-stream control. Disjoint edits survive; competing edits to the
+    /// same selector or table row reject instead of silently taking the last writer.
+    pub fn merge_staged(&self, other: &Self) -> Result<Self, LegacyGraphicsBypassWorkspaceError> {
+        if self.revision != other.revision
+            || self.level != other.level
+            || self.source_file_bytes != other.source_file_bytes
+            || self.baseline_table != other.baseline_table
+            || self.baseline_selectors != other.baseline_selectors
+        {
+            return Err(LegacyGraphicsBypassWorkspaceError::MergeConflict(
+                "editors do not share the same revision-bound baseline".into(),
+            ));
+        }
+
+        let mut merged = self.clone();
+        merged.selectors.foreground_background = merge_value(
+            self.baseline_selectors.foreground_background,
+            self.selectors.foreground_background,
+            other.selectors.foreground_background,
+            "foreground/background selector",
+        )?;
+        merged.selectors.sprites = merge_value(
+            self.baseline_selectors.sprites,
+            self.selectors.sprites,
+            other.selectors.sprites,
+            "sprite selector",
+        )?;
+        for row in 0..LegacyGraphicsBypassTable::ENCODED_LEN / 4 {
+            let baseline = self.baseline_table.entry(row).map_err(Self::table_error)?;
+            let left = self.table.entry(row).map_err(Self::table_error)?;
+            let right = other.table.entry(row).map_err(Self::table_error)?;
+            let value = merge_value(baseline, left, right, &format!("table row ${row:02X}"))?;
+            merged
+                .table
+                .set_entry(row, value)
+                .map_err(Self::table_error)?;
+        }
+        Ok(merged)
+    }
+
+    fn table_error(error: LegacyGraphicsBypassTableError) -> LegacyGraphicsBypassWorkspaceError {
+        LegacyGraphicsBypassWorkspaceError::Table(error)
+    }
+
     /// Produces one revision-checked mutation containing the level selector, list row changes,
     /// allocation/repointing when the three-byte control grows Layer 1, and the repaired checksum.
     pub fn prepare_commit(
@@ -205,6 +251,23 @@ impl LegacyGraphicsBypassWorkspace {
             description: description.into(),
             mutation,
         })
+    }
+}
+
+fn merge_value<T: Copy + Eq>(
+    baseline: T,
+    left: T,
+    right: T,
+    label: &str,
+) -> Result<T, LegacyGraphicsBypassWorkspaceError> {
+    match (left == baseline, right == baseline, left == right) {
+        (_, _, true) => Ok(left),
+        (false, true, false) => Ok(left),
+        (true, false, false) => Ok(right),
+        (false, false, false) => Err(LegacyGraphicsBypassWorkspaceError::MergeConflict(format!(
+            "conflicting staged changes to {label}"
+        ))),
+        (true, true, false) => unreachable!("equal baseline values cannot differ"),
     }
 }
 
@@ -286,6 +349,59 @@ mod tests {
     use crate::{AppState, Command};
     use lm_level::LegacyGraphicsAssignment;
     use lm_rom::CopierHeader;
+
+    fn installed_workspace() -> LegacyGraphicsBypassWorkspace {
+        let mut app = AppState::default();
+        app.load_rom(crate::test_support::pristine_smw_us_rom_bytes())
+            .unwrap();
+        app.dispatch(Command::InstallSettings { rev: 0 }).unwrap();
+        app.dispatch(Command::SelectLevel(0x105)).unwrap();
+        LegacyGraphicsBypassWorkspace::load(&app.controller_snapshot().unwrap()).unwrap()
+    }
+
+    #[test]
+    fn independent_dialog_edits_three_way_merge_without_losing_shared_table_rows() {
+        let baseline = installed_workspace();
+        let mut foreground = baseline.clone();
+        let mut sprites = baseline.clone();
+        let mut foreground_selectors = foreground.selectors();
+        foreground_selectors.foreground_background = Some(5);
+        foreground.set_selectors(foreground_selectors);
+        foreground
+            .table_mut()
+            .set_entry(5, LegacyGraphicsAssignment([1, 2, 4, 3]))
+            .unwrap();
+        let mut sprite_selectors = sprites.selectors();
+        sprite_selectors.sprites = Some(7);
+        sprites.set_selectors(sprite_selectors);
+        sprites
+            .table_mut()
+            .set_entry(7, LegacyGraphicsAssignment([0x12, 0x13, 0x14, 0x15]))
+            .unwrap();
+
+        let merged = foreground.merge_staged(&sprites).unwrap();
+        assert_eq!(merged.selectors().foreground_background, Some(5));
+        assert_eq!(merged.selectors().sprites, Some(7));
+        assert_eq!(merged.table().entry(5).unwrap().0, [1, 2, 4, 3]);
+        assert_eq!(merged.table().entry(7).unwrap().0, [0x12, 0x13, 0x14, 0x15]);
+    }
+
+    #[test]
+    fn competing_shared_row_edits_reject_instead_of_last_writer_winning() {
+        let baseline = installed_workspace();
+        let mut left = baseline.clone();
+        let mut right = baseline;
+        left.table_mut()
+            .set_entry(9, LegacyGraphicsAssignment([1, 2, 3, 4]))
+            .unwrap();
+        right
+            .table_mut()
+            .set_entry(9, LegacyGraphicsAssignment([5, 6, 7, 8]))
+            .unwrap();
+
+        let error = left.merge_staged(&right).unwrap_err().to_string();
+        assert!(error.contains("table row $09"), "{error}");
+    }
 
     #[test]
     fn installed_header_variants_commit_table_selector_reopen_and_one_undo() {

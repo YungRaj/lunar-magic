@@ -6906,3 +6906,14 @@ disabled or no ROM is open, the base localized title remains unchanged.
 The `$229E` Pause Animation When Inactive preference contributes an independent focus reason to
 the existing continuity-preserving animation clock. Losing focus freezes the exact phase and
 regaining it resumes without a wall-clock jump; manual pause retains precedence.
+
+Crash-recovery composition update (2026-08-11, legacy standard-GFX bypass): the independently
+open foreground/background and sprite bypass dialogs no longer compete as last writers for their
+shared 256-row physical table and command-`$24` selector record. Recovery performs a three-way
+merge against the exact revision-bound table and selectors: disjoint selector and row edits are
+preserved in one mutation, identical overlap is accepted, and divergent edits to the same semantic
+field reject visibly. `independent_dialog_edits_three_way_merge_without_losing_shared_table_rows`,
+`competing_shared_row_edits_reject_instead_of_last_writer_winning`, and
+`simultaneous_dialog_recovery_reopens_both_selectors_and_rows_without_live_mutation` prove combined
+reopen, checksum validity, and unchanged live ROM/history. The native build passes and the renderer
+gate remains green at 237/237.

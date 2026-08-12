@@ -2221,6 +2221,17 @@ impl eframe::App for NativeApplication {
                         )
                         .map_err(|error| error.to_string());
                 }
+                if staged_editors == 2
+                    && legacy_fg_bg_recovery_revision.is_some()
+                    && legacy_sprite_recovery_revision.is_some()
+                {
+                    return self
+                        .rom_legacy_fg_bg_bypass_editor
+                        .staged_recovery_snapshot_merged_with(
+                            &self.rom_legacy_sprite_bypass_editor,
+                            &self.app,
+                        );
+                }
                 let staged_graphics_family = usize::from(graphics_recovery_revision.is_some())
                     + usize::from(exanimation_recovery_revision.is_some())
                     + usize::from(expanded_settings_recovery_revision.is_some());

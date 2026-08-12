@@ -1148,6 +1148,16 @@ translation, translucent fill, dashed boundaries, and responsive scale. The auth
 partition is now **306 routed / 11 pending**. The aggregate remains 59/65 because the
 configuration row is still Partial.
 
+Crash-recovery evidence update (2026-08-11, paired legacy GFX bypass): the two independently open
+standard FG/BG and sprite dialogs share one physical assignment table and one command-`$24`
+selector record, so sequential last-writer composition would be lossy. The native recovery route
+now performs a three-way merge from their common revision-bound baseline, retains disjoint row and
+selector changes in one checksum-valid snapshot, accepts identical overlap, and rejects divergent
+same-field edits. Focused application and native tests prove both domains reopen exactly while the
+live ROM and Undo history remain unchanged. The Release row remains Partial for the explicitly
+listed installer, update, publication, signing, and remaining recovery gaps; aggregate parity stays
+60/65.
+
 Toolbar coverage update (2026-08-11, GFX display override): authenticated `LM_KEY_GFX_OVERRIDE`
 `$26B8` now opens the original session-only two-row hexadecimal dialog. Eight Layer 1/2 and eight
 Layer 3 slots default to `$7F` (use the real level assignment); explicit `$000..=$FFF` values
