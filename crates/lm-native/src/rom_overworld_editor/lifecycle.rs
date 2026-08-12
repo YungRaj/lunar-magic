@@ -6,7 +6,9 @@ use crate::{
     document_loader::{BoundedRead, LoadedDocument},
     level_editor_forms,
 };
-use lm_app::{PaletteOwnershipFile, RevisionProfileControllers};
+use lm_app::{
+    ExtendedUiTextKey as Key, LocalizationCatalog, PaletteOwnershipFile, RevisionProfileControllers,
+};
 use lm_graphics::{Bgr555, GraphicsFile4bpp, GraphicsInterchangeFile, IndexedTile};
 use lm_level::Map16SetFile;
 use lm_project::Project;
@@ -117,23 +119,33 @@ impl RomOverworldEditor {
         false
     }
 
-    pub(super) fn open_dialog(&mut self, context: &egui::Context) {
+    pub(super) fn open_dialog(
+        &mut self,
+        context: &egui::Context,
+        catalog: Option<&LocalizationCatalog>,
+    ) {
         if self.pending_open.is_none() {
             return;
         }
-        egui::Window::new("Open native overworld")
+        egui::Window::new(super::ow_text(catalog, Key::RomOverworldOpenTitle))
             .collapsible(false)
             .resizable(false)
             .show(context, |ui| {
-                ui.label("Profile overworld slot (hex)");
+                ui.label(super::ow_text(catalog, Key::RomOverworldOpenSlot));
                 if let Some(pending) = self.pending_open.as_mut() {
                     ui.text_edit_singleline(&mut pending.slot);
                 }
                 ui.horizontal(|ui| {
-                    if ui.button("Cancel").clicked() {
+                    if ui
+                        .button(super::ow_text(catalog, Key::RomOverworldCancel))
+                        .clicked()
+                    {
                         self.pending_open = None;
                     }
-                    if ui.button("Open").clicked() {
+                    if ui
+                        .button(super::ow_text(catalog, Key::RomOverworldOpen))
+                        .clicked()
+                    {
                         self.finish_open();
                     }
                 });
@@ -219,25 +231,35 @@ impl RomOverworldEditor {
         }
     }
 
-    pub(super) fn close_confirmation(&mut self, context: &egui::Context) -> bool {
+    pub(super) fn close_confirmation(
+        &mut self,
+        context: &egui::Context,
+        catalog: Option<&LocalizationCatalog>,
+    ) -> bool {
         let Some(pending) = self.pending_close else {
             return false;
         };
         let mut approved = false;
-        egui::Window::new("Discard staged overworld changes?")
+        egui::Window::new(super::ow_text(catalog, Key::RomOverworldDiscardTitle))
             .collapsible(false)
             .resizable(false)
             .show(context, |ui| {
                 ui.label(if self.main_layer2_workspace.is_some() {
-                    "Playable terrain or route-link changes have not been committed."
+                    super::ow_text(catalog, Key::RomOverworldDiscardPlayableNotice)
                 } else {
-                    "Overworld payload or per-map animation-option changes have not been committed."
+                    super::ow_text(catalog, Key::RomOverworldDiscardCompleteNotice)
                 });
                 ui.horizontal(|ui| {
-                    if ui.button("Cancel").clicked() {
+                    if ui
+                        .button(super::ow_text(catalog, Key::RomOverworldCancel))
+                        .clicked()
+                    {
                         self.pending_close = None;
                     }
-                    if ui.button("Discard").clicked() {
+                    if ui
+                        .button(super::ow_text(catalog, Key::RomOverworldDiscard))
+                        .clicked()
+                    {
                         self.clear();
                         approved = pending == PendingClose::Application;
                     }
@@ -246,14 +268,24 @@ impl RomOverworldEditor {
         approved
     }
 
-    pub(super) fn show_error(&mut self, context: &egui::Context) {
+    pub(super) fn show_error(
+        &mut self,
+        context: &egui::Context,
+        catalog: Option<&LocalizationCatalog>,
+    ) {
         if let Some(error) = self.error.clone() {
-            egui::Window::new("ROM overworld error").show(context, |ui| {
-                ui.label(error);
-                if ui.button("OK").clicked() {
-                    self.error = None;
-                }
-            });
+            egui::Window::new(super::ow_text(catalog, Key::RomOverworldErrorTitle)).show(
+                context,
+                |ui| {
+                    ui.label(error);
+                    if ui
+                        .button(super::ow_text(catalog, Key::RomOverworldOk))
+                        .clicked()
+                    {
+                        self.error = None;
+                    }
+                },
+            );
         }
     }
 

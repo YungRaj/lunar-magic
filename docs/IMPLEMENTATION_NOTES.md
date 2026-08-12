@@ -7898,3 +7898,14 @@ passes 28/28 active cases (one provenance ignore), native compilation passes, an
 237/237. This completes catalog routing for the installed-ROM level-assets editor family; retained
 live original language-DLL behavior and other native forms keep Localization Partial and aggregate
 parity at 60/65.
+
+Localization coverage update (2026-08-12, installed-ROM overworld lifecycle and transfers):
+eighteen appended `RomOverworld*` identities cover both installed editor window titles, the
+profile-slot open form, playable-versus-complete dirty-close notices, error acknowledgement,
+complete `.lmow` import/export, animation `.lmexan` import/export, and both transfer-scope notices.
+The live catalog now reaches lifecycle and transfer child modules. Their source audit requires
+every current `RomOverworld*` identity and rejects literal window, heading, label, button,
+small-text, and `Button` captions. The focused audit passes, localization passes 28/28 active cases
+(one provenance ignore), native compilation passes, and renderer remains 237/237. Terrain, route,
+tile, custom-sprite, save-transition, and aggregate commit controls remain; Localization and
+aggregate parity remain Partial and 60/65 respectively.

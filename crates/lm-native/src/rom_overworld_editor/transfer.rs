@@ -1,6 +1,7 @@
 use super::RomOverworldEditor;
 use crate::{dialogs, document_loader::BoundedRead, persistence_worker::PersistenceTarget};
 use eframe::egui;
+use lm_app::{ExtendedUiTextKey as Key, LocalizationCatalog};
 use lm_graphics::CompactExAnimationFile;
 use lm_project::CompleteOverworldFile;
 
@@ -69,11 +70,20 @@ impl RomOverworldEditor {
         }
     }
 
-    pub(super) fn complete_file_controls(&mut self, ui: &mut egui::Ui, stale: bool, revision: u64) {
+    pub(super) fn complete_file_controls(
+        &mut self,
+        ui: &mut egui::Ui,
+        stale: bool,
+        revision: u64,
+        catalog: Option<&LocalizationCatalog>,
+    ) {
         let busy = self.transfer_busy();
         ui.horizontal(|ui| {
             if ui
-                .add_enabled(!stale && !busy, egui::Button::new("Import complete .lmow…"))
+                .add_enabled(
+                    !stale && !busy,
+                    egui::Button::new(super::ow_text(catalog, Key::RomOverworldImportComplete)),
+                )
                 .clicked()
                 && let Some(path) = dialogs::choose_complete_overworld_document()
                 && let Err(error) = self.start_transfer_load(
@@ -88,15 +98,19 @@ impl RomOverworldEditor {
                 self.error = Some(error);
             }
             if ui
-                .add_enabled(!stale && !busy, egui::Button::new("Export complete .lmow…"))
+                .add_enabled(
+                    !stale && !busy,
+                    egui::Button::new(super::ow_text(catalog, Key::RomOverworldExportComplete)),
+                )
                 .clicked()
             {
                 self.start_complete_export(revision);
             }
         });
-        ui.small(
-            "Complete transfer stages or exports all nine modeled overworld domains together.",
-        );
+        ui.small(super::ow_text(
+            catalog,
+            Key::RomOverworldCompleteTransferNotice,
+        ));
     }
 
     pub(super) fn animation_file_controls(
@@ -104,13 +118,14 @@ impl RomOverworldEditor {
         ui: &mut egui::Ui,
         stale: bool,
         revision: u64,
+        catalog: Option<&LocalizationCatalog>,
     ) {
         let busy = self.transfer_busy();
         ui.horizontal(|ui| {
             if ui
                 .add_enabled(
                     !stale && !busy,
-                    egui::Button::new("Import animation .lmexan…"),
+                    egui::Button::new(super::ow_text(catalog, Key::RomOverworldImportAnimation)),
                 )
                 .clicked()
                 && let Some(path) = dialogs::choose_exanimation_document()
@@ -128,14 +143,17 @@ impl RomOverworldEditor {
             if ui
                 .add_enabled(
                     !stale && !busy,
-                    egui::Button::new("Export animation .lmexan…"),
+                    egui::Button::new(super::ow_text(catalog, Key::RomOverworldExportAnimation)),
                 )
                 .clicked()
             {
                 self.start_animation_export(revision);
             }
         });
-        ui.small("Animation transfer changes only the active overworld animation domain.");
+        ui.small(super::ow_text(
+            catalog,
+            Key::RomOverworldAnimationTransferNotice,
+        ));
     }
 
     fn start_transfer_load(&mut self, kind: TransferKind, read: BoundedRead) -> Result<(), String> {

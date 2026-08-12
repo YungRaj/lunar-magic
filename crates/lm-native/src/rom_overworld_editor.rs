@@ -8,9 +8,10 @@ use crate::{
 };
 use eframe::egui;
 use lm_app::{
-    AppState, Command, LocalizationCatalog, NativeCustomOverworldSpriteController,
-    NativeCustomOverworldSpriteEdit, OverworldController, OverworldControllerEdit,
-    OverworldLayerId, ProfiledControllerSnapshot, SmwMainOverworldLayer2Controller,
+    AppState, Command, ExtendedUiTextKey as Key, LocalizationCatalog,
+    NativeCustomOverworldSpriteController, NativeCustomOverworldSpriteEdit, OverworldController,
+    OverworldControllerEdit, OverworldLayerId, ProfiledControllerSnapshot,
+    SmwMainOverworldLayer2Controller,
 };
 use lm_graphics::{Palette, PaletteOwnership};
 use lm_overworld::{
@@ -864,7 +865,7 @@ impl RomOverworldEditor {
         if let Some(result) = self.loader.show(context) {
             self.finish_ownership_load(result, revision);
         }
-        self.open_dialog(context);
+        self.open_dialog(context, catalog);
         let mut command = match self.manifest_loader.show(context, revision) {
             Some(Ok(manifest)) => match self.prepare_commit_owned(&manifest) {
                 Ok(command) => Some(command),
@@ -884,7 +885,7 @@ impl RomOverworldEditor {
             self.load_tile();
             self.refresh_texture(context);
             self.refresh_map16_texture(context);
-            egui::Window::new("ROM Complete Overworld Editor")
+            egui::Window::new(ow_text(catalog, Key::RomOverworldCompleteTitle))
                 .default_size([820.0, 720.0])
                 .vscroll(true)
                 .show(context, |ui| {
@@ -897,7 +898,7 @@ impl RomOverworldEditor {
             self.load_main_layer2_tile();
             self.refresh_main_layer2_texture(context);
             self.refresh_map16_texture(context);
-            egui::Window::new("ROM Playable Main Overworld Layer 2 Editor")
+            egui::Window::new(ow_text(catalog, Key::RomOverworldPlayableTitle))
                 .default_size([820.0, 720.0])
                 .vscroll(true)
                 .show(context, |ui| {
@@ -906,11 +907,11 @@ impl RomOverworldEditor {
                     }
                 });
         }
-        let approved = self.close_confirmation(context);
+        let approved = self.close_confirmation(context, catalog);
         if command.is_none() {
             command = self.show_editor_transition_confirmation(context, revision);
         }
-        self.show_error(context);
+        self.show_error(context, catalog);
         (approved, command)
     }
 }
@@ -1121,7 +1122,7 @@ impl RomOverworldEditor {
                 "Complete-overworld file transfer is active; editing is temporarily disabled.",
             );
         }
-        self.complete_file_controls(ui, stale, revision);
+        self.complete_file_controls(ui, stale, revision, catalog);
         if let Some((appearances, tooltips, map16_bytes)) = native_summary {
             ui.label(format!(
                 "ROM-adjacent native sprite display: {appearances} appearances, {tooltips} tooltips, {map16_bytes} Sprite Map16 bytes"
@@ -1165,7 +1166,7 @@ impl RomOverworldEditor {
             }
             Panel::Animation => {
                 self.animation_preview_controls(ui, &file.data.animation, catalog);
-                self.animation_file_controls(ui, stale, revision);
+                self.animation_file_controls(ui, stale, revision, catalog);
                 runtime_command = self.animation_option_controls(ui, editing_blocked, catalog);
                 self.animation_destination_controls(ui, &animation_ownership.graphics);
                 self.animation.show(
@@ -3309,6 +3310,43 @@ mod canvas_tests {
     use crate::document_loader::BoundedRead;
     use crate::overworld_editor_render;
     use eframe::egui;
+
+    #[test]
+    fn rom_overworld_lifecycle_and_transfer_use_every_typed_key_without_literals() {
+        let sources = [
+            include_str!("rom_overworld_editor.rs"),
+            include_str!("rom_overworld_editor/lifecycle.rs"),
+            include_str!("rom_overworld_editor/transfer.rs"),
+        ]
+        .join("\n");
+        for key in lm_app::ExtendedUiTextKey::ALL
+            .into_iter()
+            .filter(|key| format!("{key:?}").starts_with("RomOverworld"))
+        {
+            assert!(
+                sources.contains(&format!("{key:?}")),
+                "missing ROM overworld label {key:?}"
+            );
+        }
+        for child in [
+            include_str!("rom_overworld_editor/lifecycle.rs"),
+            include_str!("rom_overworld_editor/transfer.rs"),
+        ] {
+            for literal_widget in [
+                "Window::new(\"",
+                "ui.heading(\"",
+                "ui.label(\"",
+                "ui.button(\"",
+                "ui.small(\"",
+                "Button::new(\"",
+            ] {
+                assert!(
+                    !child.contains(literal_widget),
+                    "ROM overworld child surface regressed to fixed widget text: {literal_widget}"
+                );
+            }
+        }
+    }
 
     #[test]
     fn installed_animation_options_and_preview_use_every_typed_key() {

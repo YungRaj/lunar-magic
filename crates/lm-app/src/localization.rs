@@ -2252,6 +2252,24 @@ pub enum ExtendedUiTextKey {
     RomNativeAssetsInspectionNoMap16,
     RomNativeAssetsInspectionSpriteHeading,
     RomNativeAssetsInspectionNoSprite,
+    RomOverworldOpenTitle,
+    RomOverworldOpenSlot,
+    RomOverworldCancel,
+    RomOverworldOpen,
+    RomOverworldDiscardTitle,
+    RomOverworldDiscardPlayableNotice,
+    RomOverworldDiscardCompleteNotice,
+    RomOverworldDiscard,
+    RomOverworldErrorTitle,
+    RomOverworldOk,
+    RomOverworldCompleteTitle,
+    RomOverworldPlayableTitle,
+    RomOverworldImportComplete,
+    RomOverworldExportComplete,
+    RomOverworldCompleteTransferNotice,
+    RomOverworldImportAnimation,
+    RomOverworldExportAnimation,
+    RomOverworldAnimationTransferNotice,
     ExAnimationDocumentTitle,
     ExAnimationDocumentOpenTitle,
     ExAnimationDocumentMaximumRecords,
@@ -3414,7 +3432,7 @@ pub enum ExtendedUiTextKey {
 }
 
 impl ExtendedUiTextKey {
-    pub const ALL: [Self; 1710] = [
+    pub const ALL: [Self; 1728] = [
         Self::MwlDocumentEditorTitle,
         Self::MwlDocumentVersionFormat,
         Self::MwlDocumentFlagsHex,
@@ -3966,6 +3984,24 @@ impl ExtendedUiTextKey {
         Self::RomNativeAssetsInspectionNoMap16,
         Self::RomNativeAssetsInspectionSpriteHeading,
         Self::RomNativeAssetsInspectionNoSprite,
+        Self::RomOverworldOpenTitle,
+        Self::RomOverworldOpenSlot,
+        Self::RomOverworldCancel,
+        Self::RomOverworldOpen,
+        Self::RomOverworldDiscardTitle,
+        Self::RomOverworldDiscardPlayableNotice,
+        Self::RomOverworldDiscardCompleteNotice,
+        Self::RomOverworldDiscard,
+        Self::RomOverworldErrorTitle,
+        Self::RomOverworldOk,
+        Self::RomOverworldCompleteTitle,
+        Self::RomOverworldPlayableTitle,
+        Self::RomOverworldImportComplete,
+        Self::RomOverworldExportComplete,
+        Self::RomOverworldCompleteTransferNotice,
+        Self::RomOverworldImportAnimation,
+        Self::RomOverworldExportAnimation,
+        Self::RomOverworldAnimationTransferNotice,
         Self::ExAnimationDocumentTitle,
         Self::ExAnimationDocumentOpenTitle,
         Self::ExAnimationDocumentMaximumRecords,
@@ -5816,6 +5852,32 @@ impl ExtendedUiTextKey {
             }
             Self::RomNativeAssetsInspectionNoSprite => {
                 "No materialized sprite-preview part overlaps this cell."
+            }
+            Self::RomOverworldOpenTitle => "Open native overworld",
+            Self::RomOverworldOpenSlot => "Profile overworld slot (hex)",
+            Self::RomOverworldCancel => "Cancel",
+            Self::RomOverworldOpen => "Open",
+            Self::RomOverworldDiscardTitle => "Discard staged overworld changes?",
+            Self::RomOverworldDiscardPlayableNotice => {
+                "Playable terrain or route-link changes have not been committed."
+            }
+            Self::RomOverworldDiscardCompleteNotice => {
+                "Overworld payload or per-map animation-option changes have not been committed."
+            }
+            Self::RomOverworldDiscard => "Discard",
+            Self::RomOverworldErrorTitle => "ROM overworld error",
+            Self::RomOverworldOk => "OK",
+            Self::RomOverworldCompleteTitle => "ROM Complete Overworld Editor",
+            Self::RomOverworldPlayableTitle => "ROM Playable Main Overworld Layer 2 Editor",
+            Self::RomOverworldImportComplete => "Import complete .lmow…",
+            Self::RomOverworldExportComplete => "Export complete .lmow…",
+            Self::RomOverworldCompleteTransferNotice => {
+                "Complete transfer stages or exports all nine modeled overworld domains together."
+            }
+            Self::RomOverworldImportAnimation => "Import animation .lmexan…",
+            Self::RomOverworldExportAnimation => "Export animation .lmexan…",
+            Self::RomOverworldAnimationTransferNotice => {
+                "Animation transfer changes only the active overworld animation domain."
             }
             Self::ExAnimationDocumentTitle => "Portable ExAnimation Editor",
             Self::ExAnimationDocumentOpenTitle => "Open ExAnimation",
