@@ -594,7 +594,7 @@ impl RomOverworldEditor {
             .is_some_and(|workspace| workspace.paths != workspace.original_paths);
         ui.label(ow_text(catalog, Key::RomOverworldPlayableMapNotice));
         self.layer = 1;
-        self.world_canvas(ui, shape, stale || paths_modified);
+        self.world_canvas(ui, shape, stale || paths_modified, catalog);
         self.main_layer2_tile_controls(ui, shape, stale || paths_modified, catalog);
         ui.separator();
         ui.horizontal(|ui| {
@@ -843,7 +843,7 @@ impl RomOverworldEditor {
             ui.label(ow_text(catalog, Key::RomOverworldTileWord));
             ui.text_edit_singleline(&mut self.tile);
         });
-        self.direct_tile_picker(ui);
+        self.direct_tile_picker(ui, catalog);
         if ui
             .add_enabled(
                 !stale,
@@ -863,10 +863,13 @@ impl RomOverworldEditor {
         }
     }
 
-    fn direct_tile_picker(&mut self, ui: &mut egui::Ui) {
-        ui.collapsing("Visual 8x8 tile picker", |ui| {
+    fn direct_tile_picker(&mut self, ui: &mut egui::Ui, catalog: Option<&LocalizationCatalog>) {
+        ui.collapsing(ow_text(catalog, Key::RomOverworldDirectTilePicker), |ui| {
             let previous_palette = self.direct_tile_palette;
-            ui.add(egui::Slider::new(&mut self.direct_tile_palette, 0..=7).text("Palette row"));
+            ui.add(
+                egui::Slider::new(&mut self.direct_tile_palette, 0..=7)
+                    .text(ow_text(catalog, Key::RomOverworldPaletteRow)),
+            );
             if previous_palette != self.direct_tile_palette {
                 self.direct_tile_rendered_palette = None;
             }
@@ -885,7 +888,10 @@ impl RomOverworldEditor {
                 self.direct_tile_rendered_palette = Some(self.direct_tile_palette);
             }
             let Some(texture) = self.direct_tile_texture.clone() else {
-                ui.label("The current overworld graphics cannot be previewed.");
+                ui.label(ow_text(
+                    catalog,
+                    Key::RomOverworldGraphicsPreviewUnavailable,
+                ));
                 return;
             };
             let response = ui.add(egui::Image::new(&texture).sense(egui::Sense::click()));
@@ -1193,8 +1199,8 @@ impl RomOverworldEditor {
                 "ROM-adjacent native sprite display: {appearances} appearances, {tooltips} tooltips, {map16_bytes} Sprite Map16 bytes"
             ));
         }
-        self.world_canvas(ui, shape, editing_blocked);
-        self.layer_tile_controls(ui, shape, editing_blocked);
+        self.world_canvas(ui, shape, editing_blocked, catalog);
+        self.layer_tile_controls(ui, shape, editing_blocked, catalog);
         ui.separator();
         let previous_panel = self.panel;
         ui.horizontal(|ui| {
@@ -1249,7 +1255,7 @@ impl RomOverworldEditor {
                 self.animation_preview_controls(ui, &file.data.animation, catalog);
                 self.animation_file_controls(ui, stale, revision, catalog);
                 runtime_command = self.animation_option_controls(ui, editing_blocked, catalog);
-                self.animation_destination_controls(ui, &animation_ownership.graphics);
+                self.animation_destination_controls(ui, &animation_ownership.graphics, catalog);
                 self.animation.show(
                     ui,
                     &file.data.animation,
@@ -1625,11 +1631,20 @@ impl RomOverworldEditor {
         ui: &mut egui::Ui,
         shape: CompleteOverworldShape,
         stale: bool,
+        catalog: Option<&LocalizationCatalog>,
     ) {
         let old_selection = (self.layer, self.x, self.y);
         ui.horizontal(|ui| {
-            ui.selectable_value(&mut self.layer, 0, "Layer 1");
-            ui.selectable_value(&mut self.layer, 1, "Layer 2");
+            ui.selectable_value(
+                &mut self.layer,
+                0,
+                ow_text(catalog, Key::RomOverworldLayer1),
+            );
+            ui.selectable_value(
+                &mut self.layer,
+                1,
+                ow_text(catalog, Key::RomOverworldLayer2),
+            );
         });
         ui.add(egui::Slider::new(&mut self.x, 0..=shape.width.saturating_sub(1)).text("X"));
         ui.add(egui::Slider::new(&mut self.y, 0..=shape.height.saturating_sub(1)).text("Y"));
@@ -1639,12 +1654,15 @@ impl RomOverworldEditor {
             self.load_tile();
         }
         ui.horizontal(|ui| {
-            ui.label("Map16 tile");
+            ui.label(ow_text(catalog, Key::RomOverworldMap16Tile));
             ui.text_edit_singleline(&mut self.tile);
         });
-        self.map16_picker(ui);
+        self.map16_picker(ui, catalog);
         if ui
-            .add_enabled(!stale, egui::Button::new("Apply layer tile"))
+            .add_enabled(
+                !stale,
+                egui::Button::new(ow_text(catalog, Key::RomOverworldApplyLayerTile)),
+            )
             .clicked()
         {
             match level_editor_forms::parse_hex_u16(&self.tile, "overworld tile") {
@@ -1663,72 +1681,80 @@ impl RomOverworldEditor {
         &mut self,
         ui: &mut egui::Ui,
         owners: &[Option<overworld_editor_render::OverworldAnimationOwner>],
+        catalog: Option<&LocalizationCatalog>,
     ) {
-        ui.collapsing("Rendered graphics destinations", |ui| {
-            ui.small(
-                "Ctrl+Shift+click an attributed 8x8 tile to select its last-writing local or global ExAnimation record.",
-            );
-            let Some(texture) = self.animation_graphics_texture.clone() else {
-                ui.label("The current animated graphics cache could not be rendered.");
-                return;
-            };
-            let columns = 16;
-            let rows = owners.len().div_ceil(columns);
-            let native = texture.size_vec2();
-            let width = (native.x * 2.0).min(ui.available_width()).max(native.x);
-            let response = ui.add(
-                egui::Image::new(&texture)
-                    .fit_to_exact_size(egui::vec2(width, width * native.y / native.x))
-                    .sense(egui::Sense::click()),
-            );
-            let pointed = response
-                .hover_pos()
-                .and_then(|position| {
-                    overworld_editor_render::selected_tile(
-                        response.rect,
-                        position,
-                        columns,
-                        rows,
-                    )
-                })
-                .and_then(|(x, y)| y.checked_mul(columns).and_then(|base| base.checked_add(x)));
-            if let Some(index) = pointed {
-                response.clone().on_hover_text(match owners.get(index).copied().flatten() {
-                    Some(owner) => format!(
-                        "Tile {index:03X}: {:?} ExAnimation record {:02X}",
-                        owner.domain, owner.record
-                    ),
-                    None => format!("Tile {index:03X}: no ExAnimation owner"),
-                });
-                if response.clicked()
-                    && let Some(owner) =
-                        overworld_editor_render::ctrl_shift_animation_navigation(
-                            ui.input(|input| input.modifiers),
-                            owners.get(index).copied().flatten(),
+        ui.collapsing(
+            ow_text(catalog, Key::RomOverworldAnimationDestinations),
+            |ui| {
+                ui.small(ow_text(
+                    catalog,
+                    Key::RomOverworldAnimationDestinationNotice,
+                ));
+                let Some(texture) = self.animation_graphics_texture.clone() else {
+                    ui.label(ow_text(catalog, Key::RomOverworldAnimationCacheUnavailable));
+                    return;
+                };
+                let columns = 16;
+                let rows = owners.len().div_ceil(columns);
+                let native = texture.size_vec2();
+                let width = (native.x * 2.0).min(ui.available_width()).max(native.x);
+                let response = ui.add(
+                    egui::Image::new(&texture)
+                        .fit_to_exact_size(egui::vec2(width, width * native.y / native.x))
+                        .sense(egui::Sense::click()),
+                );
+                let pointed = response
+                    .hover_pos()
+                    .and_then(|position| {
+                        overworld_editor_render::selected_tile(
+                            response.rect,
+                            position,
+                            columns,
+                            rows,
                         )
-                {
-                    self.animation.navigate(owner);
+                    })
+                    .and_then(|(x, y)| y.checked_mul(columns).and_then(|base| base.checked_add(x)));
+                if let Some(index) = pointed {
+                    response
+                        .clone()
+                        .on_hover_text(match owners.get(index).copied().flatten() {
+                            Some(owner) => ow_text(catalog, Key::RomOverworldAnimationOwnerFormat)
+                                .replace("{tile}", &format!("{index:03X}"))
+                                .replace("{domain}", &format!("{:?}", owner.domain))
+                                .replace("{record}", &format!("{:02X}", owner.record)),
+                            None => ow_text(catalog, Key::RomOverworldAnimationNoOwnerFormat)
+                                .replace("{tile}", &format!("{index:03X}")),
+                        });
+                    if response.clicked()
+                        && let Some(owner) =
+                            overworld_editor_render::ctrl_shift_animation_navigation(
+                                ui.input(|input| input.modifiers),
+                                owners.get(index).copied().flatten(),
+                            )
+                    {
+                        self.animation.navigate(owner);
+                    }
                 }
-            }
-        });
+            },
+        );
     }
 
-    fn map16_picker(&mut self, ui: &mut egui::Ui) {
+    fn map16_picker(&mut self, ui: &mut egui::Ui, catalog: Option<&LocalizationCatalog>) {
         let page_count = self
             .assets()
             .map_or(0, |assets| assets.map16.set.pages.len());
-        ui.collapsing("Visual Map16 tile picker", |ui| {
+        ui.collapsing(ow_text(catalog, Key::RomOverworldMap16Picker), |ui| {
             let previous_page = self.map16_page;
             ui.add(
                 egui::Slider::new(&mut self.map16_page, 0..=page_count.saturating_sub(1))
-                    .text("Map16 page"),
+                    .text(ow_text(catalog, Key::RomOverworldMap16Page)),
             );
             if previous_page != self.map16_page {
                 self.map16_rendered_key = None;
                 self.refresh_map16_texture(ui.ctx());
             }
             let Some(texture) = self.map16_texture.clone() else {
-                ui.label("This Map16 page cannot be previewed with the current overworld assets.");
+                ui.label(ow_text(catalog, Key::RomOverworldMap16PreviewUnavailable));
                 return;
             };
             let response = ui.add(egui::Image::new(&texture).sense(egui::Sense::click()));
@@ -1762,45 +1788,67 @@ impl RomOverworldEditor {
         });
     }
 
-    fn world_canvas(&mut self, ui: &mut egui::Ui, shape: CompleteOverworldShape, stale: bool) {
+    fn world_canvas(
+        &mut self,
+        ui: &mut egui::Ui,
+        shape: CompleteOverworldShape,
+        stale: bool,
+        catalog: Option<&LocalizationCatalog>,
+    ) {
         let reveal_count = self.workspace.as_ref().map_or(0, |workspace| {
             workspace.controller.data().event_reveals.entries.len()
         });
         if ui
             .add(
                 egui::Slider::new(&mut self.completed_reveals, 0..=reveal_count)
-                    .text("Completed event reveals"),
+                    .text(ow_text(catalog, Key::RomOverworldCompletedReveals)),
             )
             .changed()
         {
             self.rendered_key = None;
         }
         let Some(texture) = self.texture.clone() else {
-            ui.label("Overworld preview unavailable; property editing remains available.");
+            ui.label(ow_text(catalog, Key::RomOverworldPreviewUnavailable));
             return;
         };
         ui.horizontal(|ui| {
-            ui.selectable_value(&mut self.paint_tool, MapPaintTool::Select, "Select");
-            ui.selectable_value(&mut self.paint_tool, MapPaintTool::Brush, "Brush");
-            ui.selectable_value(&mut self.paint_tool, MapPaintTool::Rectangle, "Rectangle");
-            ui.selectable_value(&mut self.paint_tool, MapPaintTool::Fill, "Fill");
+            ui.selectable_value(
+                &mut self.paint_tool,
+                MapPaintTool::Select,
+                ow_text(catalog, Key::RomOverworldToolSelect),
+            );
+            ui.selectable_value(
+                &mut self.paint_tool,
+                MapPaintTool::Brush,
+                ow_text(catalog, Key::RomOverworldToolBrush),
+            );
+            ui.selectable_value(
+                &mut self.paint_tool,
+                MapPaintTool::Rectangle,
+                ow_text(catalog, Key::RomOverworldToolRectangle),
+            );
+            ui.selectable_value(
+                &mut self.paint_tool,
+                MapPaintTool::Fill,
+                ow_text(catalog, Key::RomOverworldToolFill),
+            );
             if self.workspace.is_some() && self.panel == Panel::NativeSprites {
                 ui.selectable_value(
                     &mut self.paint_tool,
                     MapPaintTool::NativeSprite,
-                    "Place/move native sprite",
+                    ow_text(catalog, Key::RomOverworldToolNativeSprite),
                 );
             }
             if self.main_layer2_workspace.is_some() {
                 ui.selectable_value(
                     &mut self.paint_tool,
                     MapPaintTool::RouteSource,
-                    "Set route source",
+                    ow_text(catalog, Key::RomOverworldToolRouteSource),
                 );
                 ui.selectable_value(
                     &mut self.paint_tool,
                     MapPaintTool::RouteDestination,
-                    "Set route destination",
+                    ow_text(catalog, Key::RomOverworldToolRouteDestination),
                 );
             }
         });
@@ -3505,6 +3553,32 @@ mod canvas_tests {
                     "ROM overworld child surface regressed to fixed widget text: {literal_widget}"
                 );
             }
+        }
+        let main = include_str!("rom_overworld_editor.rs");
+        for migrated_literal in [
+            "ui.collapsing(\"Visual 8x8 tile picker\"",
+            ".text(\"Palette row\")",
+            "ui.label(\"The current overworld graphics cannot be previewed.\")",
+            "ui.selectable_value(&mut self.layer, 0, \"Layer 1\")",
+            "ui.selectable_value(&mut self.layer, 1, \"Layer 2\")",
+            "ui.label(\"Map16 tile\")",
+            "Button::new(\"Apply layer tile\")",
+            "ui.collapsing(\"Rendered graphics destinations\"",
+            "ui.collapsing(\"Visual Map16 tile picker\"",
+            ".text(\"Map16 page\")",
+            ".text(\"Completed event reveals\")",
+            "MapPaintTool::Select, \"Select\"",
+            "MapPaintTool::Brush, \"Brush\"",
+            "MapPaintTool::Rectangle, \"Rectangle\"",
+            "MapPaintTool::Fill, \"Fill\"",
+            "MapPaintTool::NativeSprite, \"Place/move native sprite\"",
+            "MapPaintTool::RouteSource, \"Set route source\"",
+            "MapPaintTool::RouteDestination, \"Set route destination\"",
+        ] {
+            assert!(
+                !main.contains(migrated_literal),
+                "ROM overworld main surface regressed to fixed widget text: {migrated_literal}"
+            );
         }
     }
 

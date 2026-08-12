@@ -2337,6 +2337,29 @@ pub enum ExtendedUiTextKey {
     RomOverworldCommitReclaim,
     RomOverworldStaged,
     RomOverworldUnmodified,
+    RomOverworldDirectTilePicker,
+    RomOverworldPaletteRow,
+    RomOverworldGraphicsPreviewUnavailable,
+    RomOverworldLayer1,
+    RomOverworldLayer2,
+    RomOverworldMap16Tile,
+    RomOverworldAnimationDestinations,
+    RomOverworldAnimationDestinationNotice,
+    RomOverworldAnimationCacheUnavailable,
+    RomOverworldAnimationOwnerFormat,
+    RomOverworldAnimationNoOwnerFormat,
+    RomOverworldMap16Picker,
+    RomOverworldMap16Page,
+    RomOverworldMap16PreviewUnavailable,
+    RomOverworldCompletedReveals,
+    RomOverworldPreviewUnavailable,
+    RomOverworldToolSelect,
+    RomOverworldToolBrush,
+    RomOverworldToolRectangle,
+    RomOverworldToolFill,
+    RomOverworldToolNativeSprite,
+    RomOverworldToolRouteSource,
+    RomOverworldToolRouteDestination,
     ExAnimationDocumentTitle,
     ExAnimationDocumentOpenTitle,
     ExAnimationDocumentMaximumRecords,
@@ -3499,7 +3522,7 @@ pub enum ExtendedUiTextKey {
 }
 
 impl ExtendedUiTextKey {
-    pub const ALL: [Self; 1795] = [
+    pub const ALL: [Self; 1818] = [
         Self::MwlDocumentEditorTitle,
         Self::MwlDocumentVersionFormat,
         Self::MwlDocumentFlagsHex,
@@ -4136,6 +4159,29 @@ impl ExtendedUiTextKey {
         Self::RomOverworldCommitReclaim,
         Self::RomOverworldStaged,
         Self::RomOverworldUnmodified,
+        Self::RomOverworldDirectTilePicker,
+        Self::RomOverworldPaletteRow,
+        Self::RomOverworldGraphicsPreviewUnavailable,
+        Self::RomOverworldLayer1,
+        Self::RomOverworldLayer2,
+        Self::RomOverworldMap16Tile,
+        Self::RomOverworldAnimationDestinations,
+        Self::RomOverworldAnimationDestinationNotice,
+        Self::RomOverworldAnimationCacheUnavailable,
+        Self::RomOverworldAnimationOwnerFormat,
+        Self::RomOverworldAnimationNoOwnerFormat,
+        Self::RomOverworldMap16Picker,
+        Self::RomOverworldMap16Page,
+        Self::RomOverworldMap16PreviewUnavailable,
+        Self::RomOverworldCompletedReveals,
+        Self::RomOverworldPreviewUnavailable,
+        Self::RomOverworldToolSelect,
+        Self::RomOverworldToolBrush,
+        Self::RomOverworldToolRectangle,
+        Self::RomOverworldToolFill,
+        Self::RomOverworldToolNativeSprite,
+        Self::RomOverworldToolRouteSource,
+        Self::RomOverworldToolRouteDestination,
         Self::ExAnimationDocumentTitle,
         Self::ExAnimationDocumentOpenTitle,
         Self::ExAnimationDocumentMaximumRecords,
@@ -6102,6 +6148,41 @@ impl ExtendedUiTextKey {
             Self::RomOverworldCommitReclaim => "Commit and reclaim all nine",
             Self::RomOverworldStaged => "Staged overworld changes",
             Self::RomOverworldUnmodified => "No staged changes",
+            Self::RomOverworldDirectTilePicker => "Visual 8x8 tile picker",
+            Self::RomOverworldPaletteRow => "Palette row",
+            Self::RomOverworldGraphicsPreviewUnavailable => {
+                "The current overworld graphics cannot be previewed."
+            }
+            Self::RomOverworldLayer1 => "Layer 1",
+            Self::RomOverworldLayer2 => "Layer 2",
+            Self::RomOverworldMap16Tile => "Map16 tile",
+            Self::RomOverworldAnimationDestinations => "Rendered graphics destinations",
+            Self::RomOverworldAnimationDestinationNotice => {
+                "Ctrl+Shift+click an attributed 8x8 tile to select its last-writing local or global ExAnimation record."
+            }
+            Self::RomOverworldAnimationCacheUnavailable => {
+                "The current animated graphics cache could not be rendered."
+            }
+            Self::RomOverworldAnimationOwnerFormat => {
+                "Tile {tile}: {domain} ExAnimation record {record}"
+            }
+            Self::RomOverworldAnimationNoOwnerFormat => "Tile {tile}: no ExAnimation owner",
+            Self::RomOverworldMap16Picker => "Visual Map16 tile picker",
+            Self::RomOverworldMap16Page => "Map16 page",
+            Self::RomOverworldMap16PreviewUnavailable => {
+                "This Map16 page cannot be previewed with the current overworld assets."
+            }
+            Self::RomOverworldCompletedReveals => "Completed event reveals",
+            Self::RomOverworldPreviewUnavailable => {
+                "Overworld preview unavailable; property editing remains available."
+            }
+            Self::RomOverworldToolSelect => "Select",
+            Self::RomOverworldToolBrush => "Brush",
+            Self::RomOverworldToolRectangle => "Rectangle",
+            Self::RomOverworldToolFill => "Fill",
+            Self::RomOverworldToolNativeSprite => "Place/move native sprite",
+            Self::RomOverworldToolRouteSource => "Set route source",
+            Self::RomOverworldToolRouteDestination => "Set route destination",
             Self::ExAnimationDocumentTitle => "Portable ExAnimation Editor",
             Self::ExAnimationDocumentOpenTitle => "Open ExAnimation",
             Self::ExAnimationDocumentMaximumRecords => {

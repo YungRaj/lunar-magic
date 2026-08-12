@@ -7938,3 +7938,14 @@ key audit passes, localization passes 28/28 active cases (one provenance ignore)
 compilation passes, and renderer remains 237/237. Shared tile/picker, preview-canvas, and animation
 destination controls remain; Localization and aggregate parity remain Partial and 60/65
 respectively.
+
+Localization coverage update (2026-08-12, overworld shared canvas and pickers): twenty-three
+appended `RomOverworld*` identities cover the direct 8x8 picker and palette row, Layer 1/Layer 2
+selection, Map16 tile/page picker, unavailable-preview states, completed-event preview, all seven
+canvas tools, and rendered ExAnimation destination navigation including dynamic owner tooltips.
+The live catalog now reaches these controls in both playable and complete-overworld modes. The
+family audit requires every identity and explicitly rejects reintroduction of the migrated fixed
+widgets in the main module. The focused audit passes, localization passes 28/28 active cases (one
+provenance ignore), native compilation passes, and renderer remains 237/237. Residual animation
+unit/prefix vocabulary and non-widget diagnostics remain to be classified before Localization can
+be promoted; aggregate parity remains 60/65.
