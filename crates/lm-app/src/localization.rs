@@ -3882,10 +3882,30 @@ pub enum ExtendedUiTextKey {
     LegacyBypassTransferDestinationFallback,
     LegacyBypassTransferErrorTitle,
     LegacyBypassTransferOk,
+    VanillaLevelZoomTitle,
+    VanillaLevelZoomIn,
+    VanillaLevelZoomOut,
+    VanillaLevelZoomFilter,
+    VanillaLevelConditionalMap16Title,
+    VanillaLevelConditionalMap16RuntimeFlag,
+    VanillaLevelConditionalMap16AlwaysShow,
+    VanillaLevelConditionalMap16RemoveFlag,
+    VanillaLevelApply,
+    VanillaLevelCancel,
+    VanillaLevelDirectMap16RemapTitle,
+    VanillaLevelHexSourceDestinationPairs,
+    VanillaLevelDirectMap16RemapHelp,
+    VanillaLevelBackgroundMap16BankTitle,
+    VanillaLevelBackgroundMap16BankHelp,
+    VanillaLevelBank,
+    VanillaLevelOk,
+    VanillaLevelBackgroundTileRemapTitle,
+    VanillaLevelBackgroundTileOffset,
+    VanillaLevelBackgroundTileRemapHelp,
 }
 
 impl ExtendedUiTextKey {
-    pub const ALL: [Self; 2181] = [
+    pub const ALL: [Self; 2201] = [
         Self::MwlDocumentEditorTitle,
         Self::MwlDocumentVersionFormat,
         Self::MwlDocumentFlagsHex,
@@ -6067,6 +6087,26 @@ impl ExtendedUiTextKey {
         Self::LegacyBypassTransferDestinationFallback,
         Self::LegacyBypassTransferErrorTitle,
         Self::LegacyBypassTransferOk,
+        Self::VanillaLevelZoomTitle,
+        Self::VanillaLevelZoomIn,
+        Self::VanillaLevelZoomOut,
+        Self::VanillaLevelZoomFilter,
+        Self::VanillaLevelConditionalMap16Title,
+        Self::VanillaLevelConditionalMap16RuntimeFlag,
+        Self::VanillaLevelConditionalMap16AlwaysShow,
+        Self::VanillaLevelConditionalMap16RemoveFlag,
+        Self::VanillaLevelApply,
+        Self::VanillaLevelCancel,
+        Self::VanillaLevelDirectMap16RemapTitle,
+        Self::VanillaLevelHexSourceDestinationPairs,
+        Self::VanillaLevelDirectMap16RemapHelp,
+        Self::VanillaLevelBackgroundMap16BankTitle,
+        Self::VanillaLevelBackgroundMap16BankHelp,
+        Self::VanillaLevelBank,
+        Self::VanillaLevelOk,
+        Self::VanillaLevelBackgroundTileRemapTitle,
+        Self::VanillaLevelBackgroundTileOffset,
+        Self::VanillaLevelBackgroundTileRemapHelp,
     ];
 
     #[must_use]
@@ -8881,6 +8921,36 @@ impl ExtendedUiTextKey {
             Self::LegacyBypassTransferDestinationFallback => "selected destination",
             Self::LegacyBypassTransferErrorTitle => "Old ExGFX Bypass List Error",
             Self::LegacyBypassTransferOk => "OK",
+            Self::VanillaLevelZoomTitle => "Zoom",
+            Self::VanillaLevelZoomIn => "Zoom in",
+            Self::VanillaLevelZoomOut => "Zoom out",
+            Self::VanillaLevelZoomFilter => "Zoom Filter",
+            Self::VanillaLevelConditionalMap16Title => "Conditional Direct Map16 Access",
+            Self::VanillaLevelConditionalMap16RuntimeFlag => {
+                "Runtime flag ($7FC060–$7FC06F bit index)"
+            }
+            Self::VanillaLevelConditionalMap16AlwaysShow => {
+                "Always show objects (flag selects the +$100 tile bank)"
+            }
+            Self::VanillaLevelConditionalMap16RemoveFlag => "Remove flag check",
+            Self::VanillaLevelApply => "Apply",
+            Self::VanillaLevelCancel => "Cancel",
+            Self::VanillaLevelDirectMap16RemapTitle => "Remap Direct Map16 Access",
+            Self::VanillaLevelHexSourceDestinationPairs => "Hexadecimal source/destination pairs",
+            Self::VanillaLevelDirectMap16RemapHelp => {
+                "Use M for a moving destination, +/− for offsets, and R for rectangles."
+            }
+            Self::VanillaLevelBackgroundMap16BankTitle => "Change Background Map16 Bank",
+            Self::VanillaLevelBackgroundMap16BankHelp => {
+                "Select the 4-KiB Map16 bank used by this level's background."
+            }
+            Self::VanillaLevelBank => "Bank",
+            Self::VanillaLevelOk => "OK",
+            Self::VanillaLevelBackgroundTileRemapTitle => "Remap Background Tiles",
+            Self::VanillaLevelBackgroundTileOffset => "Offset to add to every background tile",
+            Self::VanillaLevelBackgroundTileRemapHelp => {
+                "Sources always refer to the original tilemap. Ranges, relative +/− values, moving M destinations, and rectangular R ranges follow Lunar Magic syntax."
+            }
         }
     }
 

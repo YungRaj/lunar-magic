@@ -1,7 +1,7 @@
 use eframe::egui;
 use lm_app::{
-    AppState, Command, EditorMode, LevelController, LocalizationCatalog, NativeLevelEdit,
-    RomExpansionCommand, VanillaEntranceController,
+    AppState, Command, EditorMode, ExtendedUiTextKey, LevelController, LocalizationCatalog,
+    NativeLevelEdit, RomExpansionCommand, VanillaEntranceController,
 };
 use lm_level::{
     CustomMusicError, CustomMusicTrack, CustomTimeError, CustomTimeSettings,
@@ -65,6 +65,10 @@ fn original_general_option_text<'a>(
             catalog.original_dialog_control_text(ORIGINAL_GENERAL_OPTIONS_DIALOG_ID, control_id)
         })
         .unwrap_or(fallback)
+}
+
+fn vanilla_text(catalog: Option<&LocalizationCatalog>, key: ExtendedUiTextKey) -> String {
+    crate::frontend_ui::extended_localized_text(catalog, key)
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -976,11 +980,12 @@ impl VanillaLevelEditor {
                 Err(error) => self.error = Some(error),
             }
         }
-        self.show_zoom_popup(ui.ctx());
-        self.show_conditional_direct_map16_dialog(ui.ctx());
-        self.show_direct_map16_remap_dialog(ui.ctx());
-        self.show_background_map16_bank_dialog(ui.ctx());
-        self.show_background_tile_remap_dialog(ui.ctx());
+        let catalog = app.localization();
+        self.show_zoom_popup(ui.ctx(), catalog);
+        self.show_conditional_direct_map16_dialog(ui.ctx(), catalog);
+        self.show_direct_map16_remap_dialog(ui.ctx(), catalog);
+        self.show_background_map16_bank_dialog(ui.ctx(), catalog);
+        self.show_background_tile_remap_dialog(ui.ctx(), catalog);
         self.show_modeless_entity_edit_windows(ui.ctx());
         let Some(controller) = self.controller.as_ref() else {
             ui.colored_label(
@@ -5295,7 +5300,7 @@ impl VanillaLevelEditor {
         }
     }
 
-    fn show_zoom_popup(&mut self, context: &egui::Context) {
+    fn show_zoom_popup(&mut self, context: &egui::Context, catalog: Option<&LocalizationCatalog>) {
         if !self.zoom_popup_open {
             return;
         }
@@ -5304,36 +5309,51 @@ impl VanillaLevelEditor {
         let mut delta = 0_i16;
         let mut toggle_filter = false;
         let filter_enabled = self.zoom_filter();
-        egui::Window::new("Zoom")
-            .id(egui::Id::new("lunar-magic-level-zoom-popup"))
-            .collapsible(false)
-            .resizable(false)
-            .open(&mut open)
-            .show(context, |ui| {
-                for percent in ROM_LEVEL_CANVAS_ZOOM_MENU {
-                    if ui
-                        .selectable_label(
-                            self.canvas_zoom_percent() == percent,
-                            format!("{percent}%"),
-                        )
-                        .clicked()
-                    {
-                        selected = Some(percent);
-                    }
+        egui::Window::new(vanilla_text(
+            catalog,
+            ExtendedUiTextKey::VanillaLevelZoomTitle,
+        ))
+        .id(egui::Id::new("lunar-magic-level-zoom-popup"))
+        .collapsible(false)
+        .resizable(false)
+        .open(&mut open)
+        .show(context, |ui| {
+            for percent in ROM_LEVEL_CANVAS_ZOOM_MENU {
+                if ui
+                    .selectable_label(self.canvas_zoom_percent() == percent, format!("{percent}%"))
+                    .clicked()
+                {
+                    selected = Some(percent);
                 }
-                ui.separator();
-                if ui.button("Zoom in").clicked() {
-                    delta = i16::try_from(ROM_LEVEL_CANVAS_ZOOM_STEP).unwrap_or(100);
-                }
-                if ui.button("Zoom out").clicked() {
-                    delta = -i16::try_from(ROM_LEVEL_CANVAS_ZOOM_STEP).unwrap_or(100);
-                }
-                ui.separator();
-                let mut filter = filter_enabled;
-                if ui.checkbox(&mut filter, "Zoom Filter").clicked() {
-                    toggle_filter = true;
-                }
-            });
+            }
+            ui.separator();
+            if ui
+                .button(vanilla_text(catalog, ExtendedUiTextKey::VanillaLevelZoomIn))
+                .clicked()
+            {
+                delta = i16::try_from(ROM_LEVEL_CANVAS_ZOOM_STEP).unwrap_or(100);
+            }
+            if ui
+                .button(vanilla_text(
+                    catalog,
+                    ExtendedUiTextKey::VanillaLevelZoomOut,
+                ))
+                .clicked()
+            {
+                delta = -i16::try_from(ROM_LEVEL_CANVAS_ZOOM_STEP).unwrap_or(100);
+            }
+            ui.separator();
+            let mut filter = filter_enabled;
+            if ui
+                .checkbox(
+                    &mut filter,
+                    vanilla_text(catalog, ExtendedUiTextKey::VanillaLevelZoomFilter),
+                )
+                .clicked()
+            {
+                toggle_filter = true;
+            }
+        });
         if let Some(percent) = selected {
             self.toolbar_zoom_set(percent);
             open = false;
@@ -5348,37 +5368,60 @@ impl VanillaLevelEditor {
         self.zoom_popup_open = open;
     }
 
-    fn show_conditional_direct_map16_dialog(&mut self, context: &egui::Context) {
+    fn show_conditional_direct_map16_dialog(
+        &mut self,
+        context: &egui::Context,
+        catalog: Option<&LocalizationCatalog>,
+    ) {
         let Some(mut form) = self.conditional_direct_map16_form.take() else {
             return;
         };
         let mut open = true;
         let mut apply = false;
         let mut cancel = false;
-        egui::Window::new("Conditional Direct Map16 Access")
-            .id(egui::Id::new("conditional-direct-map16-dialog"))
-            .collapsible(false)
-            .resizable(false)
-            .open(&mut open)
-            .show(context, |ui| {
-                ui.label("Runtime flag ($7FC060–$7FC06F bit index)");
-                ui.add_enabled(
-                    !form.remove_flag_check,
-                    egui::TextEdit::singleline(&mut form.flag).desired_width(80.0),
-                );
-                ui.add_enabled(
-                    !form.remove_flag_check,
-                    egui::Checkbox::new(
-                        &mut form.always_show,
-                        "Always show objects (flag selects the +$100 tile bank)",
+        egui::Window::new(vanilla_text(
+            catalog,
+            ExtendedUiTextKey::VanillaLevelConditionalMap16Title,
+        ))
+        .id(egui::Id::new("conditional-direct-map16-dialog"))
+        .collapsible(false)
+        .resizable(false)
+        .open(&mut open)
+        .show(context, |ui| {
+            ui.label(vanilla_text(
+                catalog,
+                ExtendedUiTextKey::VanillaLevelConditionalMap16RuntimeFlag,
+            ));
+            ui.add_enabled(
+                !form.remove_flag_check,
+                egui::TextEdit::singleline(&mut form.flag).desired_width(80.0),
+            );
+            ui.add_enabled(
+                !form.remove_flag_check,
+                egui::Checkbox::new(
+                    &mut form.always_show,
+                    vanilla_text(
+                        catalog,
+                        ExtendedUiTextKey::VanillaLevelConditionalMap16AlwaysShow,
                     ),
-                );
-                ui.checkbox(&mut form.remove_flag_check, "Remove flag check");
-                ui.horizontal(|ui| {
-                    apply = ui.button("Apply").clicked();
-                    cancel = ui.button("Cancel").clicked();
-                });
+                ),
+            );
+            ui.checkbox(
+                &mut form.remove_flag_check,
+                vanilla_text(
+                    catalog,
+                    ExtendedUiTextKey::VanillaLevelConditionalMap16RemoveFlag,
+                ),
+            );
+            ui.horizontal(|ui| {
+                apply = ui
+                    .button(vanilla_text(catalog, ExtendedUiTextKey::VanillaLevelApply))
+                    .clicked();
+                cancel = ui
+                    .button(vanilla_text(catalog, ExtendedUiTextKey::VanillaLevelCancel))
+                    .clicked();
             });
+        });
         if apply {
             match self.apply_conditional_direct_map16_form(&form) {
                 Ok(changed) => {
@@ -5399,31 +5442,48 @@ impl VanillaLevelEditor {
         }
     }
 
-    fn show_direct_map16_remap_dialog(&mut self, context: &egui::Context) {
+    fn show_direct_map16_remap_dialog(
+        &mut self,
+        context: &egui::Context,
+        catalog: Option<&LocalizationCatalog>,
+    ) {
         let Some(mut form) = self.direct_map16_remap_form.take() else {
             return;
         };
         let mut open = true;
         let mut apply = false;
         let mut cancel = false;
-        egui::Window::new("Remap Direct Map16 Access")
-            .id(egui::Id::new("direct-map16-remap-dialog"))
-            .collapsible(false)
-            .default_width(460.0)
-            .open(&mut open)
-            .show(context, |ui| {
-                ui.label("Hexadecimal source/destination pairs");
-                ui.add(
-                    egui::TextEdit::multiline(&mut form.script)
-                        .desired_rows(8)
-                        .hint_text("100-10F,M200\nR300-311,M400\n500,+20"),
-                );
-                ui.small("Use M for a moving destination, +/− for offsets, and R for rectangles.");
-                ui.horizontal(|ui| {
-                    apply = ui.button("Apply").clicked();
-                    cancel = ui.button("Cancel").clicked();
-                });
+        egui::Window::new(vanilla_text(
+            catalog,
+            ExtendedUiTextKey::VanillaLevelDirectMap16RemapTitle,
+        ))
+        .id(egui::Id::new("direct-map16-remap-dialog"))
+        .collapsible(false)
+        .default_width(460.0)
+        .open(&mut open)
+        .show(context, |ui| {
+            ui.label(vanilla_text(
+                catalog,
+                ExtendedUiTextKey::VanillaLevelHexSourceDestinationPairs,
+            ));
+            ui.add(
+                egui::TextEdit::multiline(&mut form.script)
+                    .desired_rows(8)
+                    .hint_text("100-10F,M200\nR300-311,M400\n500,+20"),
+            );
+            ui.small(vanilla_text(
+                catalog,
+                ExtendedUiTextKey::VanillaLevelDirectMap16RemapHelp,
+            ));
+            ui.horizontal(|ui| {
+                apply = ui
+                    .button(vanilla_text(catalog, ExtendedUiTextKey::VanillaLevelApply))
+                    .clicked();
+                cancel = ui
+                    .button(vanilla_text(catalog, ExtendedUiTextKey::VanillaLevelCancel))
+                    .clicked();
             });
+        });
         if apply {
             let result = lm_level::DirectMap16RemapProgram::parse(&form.script)
                 .map_err(|error| error.to_string())
@@ -5459,38 +5519,52 @@ impl VanillaLevelEditor {
         }
     }
 
-    fn show_background_map16_bank_dialog(&mut self, context: &egui::Context) {
+    fn show_background_map16_bank_dialog(
+        &mut self,
+        context: &egui::Context,
+        catalog: Option<&LocalizationCatalog>,
+    ) {
         let Some(mut form) = self.background_map16_bank_form.take() else {
             return;
         };
         let mut open = true;
         let mut apply = false;
         let mut cancel = false;
-        egui::Window::new("Change Background Map16 Bank")
-            .id(egui::Id::new("background-map16-bank-dialog"))
-            .collapsible(false)
-            .resizable(false)
-            .open(&mut open)
-            .show(context, |ui| {
-                ui.label("Select the 4-KiB Map16 bank used by this level's background.");
-                ui.horizontal(|ui| {
-                    ui.label("Bank");
-                    ui.add(
-                        egui::DragValue::new(&mut form.bank)
-                            .range(0..=7)
-                            .hexadecimal(1, false, true),
-                    );
-                    ui.label(format!(
-                        "pages ${:02X}-${:02X}",
-                        0x40 + u16::from(form.bank) * 0x10,
-                        0x4f + u16::from(form.bank) * 0x10
-                    ));
-                });
-                ui.horizontal(|ui| {
-                    apply = ui.button("OK").clicked();
-                    cancel = ui.button("Cancel").clicked();
-                });
+        egui::Window::new(vanilla_text(
+            catalog,
+            ExtendedUiTextKey::VanillaLevelBackgroundMap16BankTitle,
+        ))
+        .id(egui::Id::new("background-map16-bank-dialog"))
+        .collapsible(false)
+        .resizable(false)
+        .open(&mut open)
+        .show(context, |ui| {
+            ui.label(vanilla_text(
+                catalog,
+                ExtendedUiTextKey::VanillaLevelBackgroundMap16BankHelp,
+            ));
+            ui.horizontal(|ui| {
+                ui.label(vanilla_text(catalog, ExtendedUiTextKey::VanillaLevelBank));
+                ui.add(
+                    egui::DragValue::new(&mut form.bank)
+                        .range(0..=7)
+                        .hexadecimal(1, false, true),
+                );
+                ui.label(format!(
+                    "pages ${:02X}-${:02X}",
+                    0x40 + u16::from(form.bank) * 0x10,
+                    0x4f + u16::from(form.bank) * 0x10
+                ));
             });
+            ui.horizontal(|ui| {
+                apply = ui
+                    .button(vanilla_text(catalog, ExtendedUiTextKey::VanillaLevelOk))
+                    .clicked();
+                cancel = ui
+                    .button(vanilla_text(catalog, ExtendedUiTextKey::VanillaLevelCancel))
+                    .clicked();
+            });
+        });
         if apply {
             match self
                 .controller
@@ -5520,42 +5594,59 @@ impl VanillaLevelEditor {
         }
     }
 
-    fn show_background_tile_remap_dialog(&mut self, context: &egui::Context) {
+    fn show_background_tile_remap_dialog(
+        &mut self,
+        context: &egui::Context,
+        catalog: Option<&LocalizationCatalog>,
+    ) {
         let Some(mut form) = self.background_tile_remap_form.take() else {
             return;
         };
         let mut open = true;
         let mut apply = false;
         let mut cancel = false;
-        egui::Window::new("Remap Background Tiles")
-            .id(egui::Id::new("background-tile-remap-dialog"))
-            .collapsible(false)
-            .default_width(500.0)
-            .open(&mut open)
-            .show(context, |ui| {
-                ui.label("Hexadecimal source,destination pairs");
+        egui::Window::new(vanilla_text(
+            catalog,
+            ExtendedUiTextKey::VanillaLevelBackgroundTileRemapTitle,
+        ))
+        .id(egui::Id::new("background-tile-remap-dialog"))
+        .collapsible(false)
+        .default_width(500.0)
+        .open(&mut open)
+        .show(context, |ui| {
+            ui.label(vanilla_text(
+                catalog,
+                ExtendedUiTextKey::VanillaLevelHexSourceDestinationPairs,
+            ));
+            ui.add(
+                egui::TextEdit::multiline(&mut form.script)
+                    .desired_rows(9)
+                    .hint_text("100,25\n100-101,+25\n100-101,M125\nR100-111,M25"),
+            );
+            ui.horizontal(|ui| {
+                ui.label(vanilla_text(
+                    catalog,
+                    ExtendedUiTextKey::VanillaLevelBackgroundTileOffset,
+                ));
                 ui.add(
-                    egui::TextEdit::multiline(&mut form.script)
-                        .desired_rows(9)
-                        .hint_text("100,25\n100-101,+25\n100-101,M125\nR100-111,M25"),
+                    egui::DragValue::new(&mut form.global_offset)
+                        .range(-0x7fff..=0x7fff)
+                        .hexadecimal(4, true, true),
                 );
-                ui.horizontal(|ui| {
-                    ui.label("Offset to add to every background tile");
-                    ui.add(
-                        egui::DragValue::new(&mut form.global_offset)
-                            .range(-0x7fff..=0x7fff)
-                            .hexadecimal(4, true, true),
-                    );
-                });
-                ui.small(
-                    "Sources always refer to the original tilemap. Ranges, relative +/− values, \
-                     moving M destinations, and rectangular R ranges follow Lunar Magic syntax.",
-                );
-                ui.horizontal(|ui| {
-                    apply = ui.button("Apply").clicked();
-                    cancel = ui.button("Cancel").clicked();
-                });
             });
+            ui.small(vanilla_text(
+                catalog,
+                ExtendedUiTextKey::VanillaLevelBackgroundTileRemapHelp,
+            ));
+            ui.horizontal(|ui| {
+                apply = ui
+                    .button(vanilla_text(catalog, ExtendedUiTextKey::VanillaLevelApply))
+                    .clicked();
+                cancel = ui
+                    .button(vanilla_text(catalog, ExtendedUiTextKey::VanillaLevelCancel))
+                    .clicked();
+            });
+        });
         if apply {
             let result = self
                 .controller
@@ -16713,6 +16804,68 @@ fn pristine_sprite_bank_range(
 mod tests {
     use super::*;
     use lm_app::{OriginalDialogTextKey, UiTextKey};
+
+    #[test]
+    fn level_canvas_utility_dialogs_use_every_typed_key_without_fixed_english_controls() {
+        let source = include_str!("vanilla_level_editor.rs");
+        let utility_dialogs = source
+            .split("    fn show_zoom_popup(")
+            .nth(1)
+            .unwrap()
+            .split("    fn show_modeless_entity_edit_windows(")
+            .next()
+            .unwrap();
+        for key in ExtendedUiTextKey::ALL
+            .into_iter()
+            .filter(|key| format!("{key:?}").starts_with("VanillaLevel"))
+        {
+            assert!(
+                source.contains(&format!("ExtendedUiTextKey::{key:?}")),
+                "missing vanilla-level utility label {key:?}"
+            );
+        }
+        for literal in [
+            "Window::new(\"Zoom\")",
+            "button(\"Zoom in\")",
+            "button(\"Zoom out\")",
+            "Window::new(\"Conditional Direct Map16 Access\")",
+            "Window::new(\"Remap Direct Map16 Access\")",
+            "Window::new(\"Change Background Map16 Bank\")",
+            "Window::new(\"Remap Background Tiles\")",
+        ] {
+            assert!(
+                !utility_dialogs.contains(literal),
+                "fixed-English utility-dialog control: {literal}"
+            );
+        }
+
+        let catalog = LocalizationCatalog::new(
+            "fr-FR",
+            UiTextKey::ALL.map(|key| (key, key.english().to_owned())),
+        )
+        .unwrap()
+        .with_extended_ui_texts([
+            (
+                ExtendedUiTextKey::VanillaLevelZoomTitle,
+                "Agrandissement".into(),
+            ),
+            (ExtendedUiTextKey::VanillaLevelApply, "Appliquer".into()),
+            (ExtendedUiTextKey::VanillaLevelCancel, "Annuler".into()),
+        ])
+        .unwrap();
+        assert_eq!(
+            vanilla_text(Some(&catalog), ExtendedUiTextKey::VanillaLevelZoomTitle),
+            "Agrandissement"
+        );
+        assert_eq!(
+            vanilla_text(Some(&catalog), ExtendedUiTextKey::VanillaLevelApply),
+            "Appliquer"
+        );
+        assert_eq!(
+            vanilla_text(None, ExtendedUiTextKey::VanillaLevelCancel),
+            "Cancel"
+        );
+    }
 
     #[test]
     fn level_save_warning_titles_use_authenticated_general_option_controls() {

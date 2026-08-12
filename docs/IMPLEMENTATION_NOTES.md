@@ -8146,3 +8146,14 @@ literal widget captions and requires every family identity. The focused audit pa
 passes 28/28 active cases (one provenance ignore), native compilation passes, and renderer remains
 237/237. Other unaudited frontend modules and retained live language-DLL evidence keep Localization
 Partial; aggregate parity remains 60/65.
+
+Localization coverage update (2026-08-12, vanilla level canvas utility dialogs): twenty appended
+`VanillaLevel*` identities now cover the zoom popup, conditional and remapped Direct Map16 dialogs,
+background Map16 bank selection, and background tile remapping, including titles, actions, field
+labels, and syntax guidance. The live application catalog now flows into all five dialogs with
+independent English fallback. A source-boundary audit requires every family identity, rejects the
+former fixed-English controls within the complete dialog slice, and proves translated lookup plus
+fallback behavior. The focused native audit passes, localization passes 28/28 active cases (one
+provenance ignore), native compilation passes, and renderer remains 237/237. Remaining vanilla
+level-editor controls, other native forms, and retained live language-DLL evidence keep
+Localization Partial; aggregate parity remains 60/65.

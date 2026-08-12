@@ -2307,3 +2307,11 @@ no-shell expansion, cancellation, missing executables, multiple/focused instance
 and private emulator-workspace cleanup; the source audit, localization model, and renderer 237/237
 also pass. Other native forms and retained live language-DLL evidence keep Localization Partial;
 aggregate parity remains 60/65.
+
+Localization coverage update (2026-08-12, vanilla level canvas utility dialogs): twenty typed
+`VanillaLevel*` keys replace fixed English across zoom, conditional/direct Map16 remapping,
+background-bank selection, and background-tile remapping. A complete slice audit requires every
+key and rejects the former literal controls; translated lookup, English fallback, localization
+28/28 active tests (one provenance ignore), native compilation, and renderer 237/237 pass.
+Remaining vanilla editor/native surfaces and live translated language-DLL evidence keep
+Localization Partial, so aggregate parity remains 60/65.
