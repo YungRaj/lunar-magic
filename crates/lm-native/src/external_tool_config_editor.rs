@@ -202,23 +202,35 @@ impl ExternalToolConfigEditor {
                         ui.label(dialog_control_text(catalog, dialog_id, 0x68, "Arguments"));
                         ui.small("One direct process argument per line; use {rom}, {project_dir}, {level_hex}, or {level_dec}.");
                         ui.add(egui::TextEdit::multiline(&mut draft.arguments).desired_rows(4));
-                        ui.checkbox(
-                            &mut draft.use_short_rom_path,
-                            dialog_control_text(
-                                catalog,
-                                dialog_id,
-                                0x67,
-                                "Use Windows 8.3 short path for ROM",
-                            ),
-                        );
                         if dialog_id == ORIGINAL_TILE_EDITOR_DIALOG_ID {
-                            ui.checkbox(
+                            ui.radio_value(
                                 &mut draft.replace_tile_editor_palette,
+                                true,
                                 dialog_control_text(
                                     catalog,
                                     dialog_id,
                                     0x67,
                                     "Replace yychr.pal file with current palette.",
+                                ),
+                            );
+                            ui.radio_value(
+                                &mut draft.replace_tile_editor_palette,
+                                false,
+                                dialog_control_text(
+                                    catalog,
+                                    dialog_id,
+                                    0x6b,
+                                    "Set transparent colors to blue.",
+                                ),
+                            );
+                        } else {
+                            ui.checkbox(
+                                &mut draft.use_short_rom_path,
+                                dialog_control_text(
+                                    catalog,
+                                    dialog_id,
+                                    0x67,
+                                    "Use Windows 8.3 short path for ROM",
                                 ),
                             );
                         }
@@ -383,6 +395,7 @@ mod tests {
     #[test]
     fn tile_editor_profiles_persist_identity_and_select_original_dialog_0409() {
         let draft = ToolDraft::tile_editor(1);
+        assert!(!draft.replace_tile_editor_palette);
         let tool = draft.build();
         let reopened = ToolDraft::from_tool(&tool);
         assert_eq!(
@@ -429,6 +442,22 @@ mod tests {
                 },
                 "Valider".into(),
             ),
+            (
+                OriginalDialogTextKey {
+                    dialog_id: ORIGINAL_TILE_EDITOR_DIALOG_ID,
+                    item_index: 3,
+                    control_id: 0x67,
+                },
+                "Remplacer la palette YY-CHR".into(),
+            ),
+            (
+                OriginalDialogTextKey {
+                    dialog_id: ORIGINAL_TILE_EDITOR_DIALOG_ID,
+                    item_index: 4,
+                    control_id: 0x6b,
+                },
+                "Afficher la transparence en bleu".into(),
+            ),
         ])
         .unwrap();
 
@@ -448,6 +477,19 @@ mod tests {
         assert_eq!(
             dialog_control_text(Some(&catalog), ORIGINAL_TILE_EDITOR_DIALOG_ID, 1, "Apply"),
             "Valider"
+        );
+        assert_eq!(
+            dialog_control_text(
+                Some(&catalog),
+                ORIGINAL_TILE_EDITOR_DIALOG_ID,
+                0x67,
+                "Replace"
+            ),
+            "Remplacer la palette YY-CHR"
+        );
+        assert_eq!(
+            dialog_control_text(Some(&catalog), ORIGINAL_TILE_EDITOR_DIALOG_ID, 0x6b, "Blue"),
+            "Afficher la transparence en bleu"
         );
 
         let reopened = LocalizationCatalog::decode(&catalog.encode().unwrap()).unwrap();

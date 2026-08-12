@@ -6835,7 +6835,10 @@ Identity survives the tool-config encode/decode boundary, and Unicode template t
 selection and fallback. The recovered palette-file replacement option is now a typed capability:
 registry `Options2` bit 25 migrates into the tool, the `$0409` checkbox edits it, and canonical
 `LMTOOLS2` persistence retains it while every prior `LMTOOLS1` file upgrades with the option off.
-Before launch the installed graphics editor creates exact 768-byte RGB24 `yychr.pal` beside the
-private staged GFX file from the current 256-color SNES palette, and cancellation or completion
-removes both together. The original transparent-blue presentation option is not fabricated as a
-process argument; its separate recovered palette-generation behavior remains open.
+The original `$67` “Replace yychr.pal” and `$6B` “Set transparent colors to blue” controls are the
+two mutually exclusive presentations of that same bit: the dialog click handler clears the peer,
+acceptance stores `$67`, and setup derives `$6B` as its inverse. The native form therefore exposes
+the exact two-choice control. Before launch, replacement mode creates an exact 768-byte RGB24
+`yychr.pal` beside the private staged GFX file from the current 256-color SNES palette; blue mode
+does not create that file and lets the tile editor use its blue transparency presentation.
+Cancellation or completion removes the complete private workspace.

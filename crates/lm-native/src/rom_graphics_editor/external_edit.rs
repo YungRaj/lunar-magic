@@ -494,6 +494,28 @@ mod tests {
     }
 
     #[test]
+    fn configured_tile_editor_blue_transparency_mode_leaves_yychr_palette_absent() {
+        let mut editor = ExternalGraphicsEditor::default();
+        let mut tool = configured_tool(&["{graphics}"]);
+        tool.working_directory = None;
+        assert!(!tool.replace_tile_editor_palette);
+        editor
+            .stage_configured(
+                &tool,
+                ToolContext::default(),
+                "GFX00.bin",
+                &[7; 32],
+                None,
+                5,
+            )
+            .unwrap();
+        let directory = editor.pending.as_ref().unwrap().directory.clone();
+        assert!(!directory.join("yychr.pal").exists());
+        editor.cancel_pending().unwrap();
+        assert!(!directory.exists());
+    }
+
+    #[test]
     #[cfg(unix)]
     fn successful_process_reloads_exact_bytes_and_cleans_up() {
         let mut editor = ExternalGraphicsEditor::default();
