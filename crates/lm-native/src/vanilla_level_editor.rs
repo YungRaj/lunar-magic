@@ -965,13 +965,19 @@ impl VanillaLevelEditor {
         let catalog = app.localization();
         self.show_layer2_mode_reset_confirmation(ui.ctx(), catalog);
 
-        ui.heading(format!("Level {level:03X} — built-in SMW editor"));
+        ui.heading(
+            vanilla_text(catalog, ExtendedUiTextKey::VanillaLevelEditorTitleFormat)
+                .replace("{level}", &format!("{level:03X}")),
+        );
         if let Some(address) = self.raw_layer1_pc_address {
             ui.colored_label(
                 egui::Color32::YELLOW,
-                format!(
-                    "Layer 1 loaded from PC address ${address:X}. Sprites, entrances, Layer 2, and background are intentionally not loaded; Save writes Layer 1 to level ${level:03X}."
-                ),
+                vanilla_text(
+                    catalog,
+                    ExtendedUiTextKey::VanillaLevelRawLayer1NoticeFormat,
+                )
+                .replace("{address}", &format!("{address:X}"))
+                .replace("{level}", &format!("{level:03X}")),
             );
         }
         if self.outline_texture.is_none() {
@@ -995,17 +1001,21 @@ impl VanillaLevelEditor {
         let Some(controller) = self.controller.as_ref() else {
             ui.colored_label(
                 egui::Color32::RED,
-                self.error.as_deref().unwrap_or("load failed"),
+                self.error.clone().unwrap_or_else(|| {
+                    vanilla_text(catalog, ExtendedUiTextKey::VanillaLevelLoadFailed)
+                }),
             );
             return None;
         };
-        ui.label("Pristine SMW-US layout detected automatically.");
+        ui.label(vanilla_text(
+            catalog,
+            ExtendedUiTextKey::VanillaLevelPristineLayout,
+        ));
         if let Some(mode) = controller.normalized_reserved_level_mode() {
             ui.colored_label(
                 egui::Color32::YELLOW,
-                format!(
-                    "Mode ${mode:02X} is reserved. Lunar Magic compatibility uses mode $00 instead."
-                ),
+                vanilla_text(catalog, ExtendedUiTextKey::VanillaLevelReservedModeFormat)
+                    .replace("{mode}", &format!("{mode:02X}")),
             );
         }
         ui.separator();
@@ -1019,16 +1029,17 @@ impl VanillaLevelEditor {
         let object_family = lm_profile::smw_us_v1_object_family(object_tileset);
         self.ensure_map16_assets(ui.ctx(), &snapshot, object_tileset, special_world_passed);
         ui.horizontal(|ui| {
-            ui.label(format!(
-                "{} standard-object definitions (tileset {object_tileset:X})",
-                object_family.display_name()
-            ));
+            ui.label(
+                vanilla_text(catalog, ExtendedUiTextKey::VanillaLevelObjectFamilyFormat)
+                    .replace("{family}", object_family.display_name())
+                    .replace("{tileset}", &format!("{object_tileset:X}")),
+            );
             let tools_visible = self.tools_panel_visible();
             if ui
                 .button(if tools_visible {
-                    "Hide tools"
+                    vanilla_text(catalog, ExtendedUiTextKey::VanillaLevelHideTools)
                 } else {
-                    "Show tools"
+                    vanilla_text(catalog, ExtendedUiTextKey::VanillaLevelShowTools)
                 })
                 .clicked()
             {
@@ -1070,31 +1081,33 @@ impl VanillaLevelEditor {
                     .max_width(tool_width)
                     .auto_shrink([false, false])
                     .show(&mut tool_ui, |ui| {
-                        self.show_staged_history(ui);
-                        egui::CollapsingHeader::new("Level and entrance settings")
-                            .id_salt((
-                                "vanilla-level-settings",
-                                self.tool_panel_generations[LevelToolPanel::Settings.index()],
-                            ))
-                            .default_open(requested_tool_panel == Some(LevelToolPanel::Settings))
-                            .show(ui, |ui| {
-                                self.show_header_editor(ui, catalog, object_count, sprite_count);
-                                if self.raw_layer1_pc_address.is_none() && pending_command.is_none()
-                                {
-                                    pending_command = self.show_entrance_editor(ui, catalog, level);
-                                }
-                            });
+                        self.show_staged_history(ui, catalog);
+                        egui::CollapsingHeader::new(vanilla_text(
+                            catalog,
+                            ExtendedUiTextKey::VanillaLevelSettingsSection,
+                        ))
+                        .id_salt((
+                            "vanilla-level-settings",
+                            self.tool_panel_generations[LevelToolPanel::Settings.index()],
+                        ))
+                        .default_open(requested_tool_panel == Some(LevelToolPanel::Settings))
+                        .show(ui, |ui| {
+                            self.show_header_editor(ui, catalog, object_count, sprite_count);
+                            if self.raw_layer1_pc_address.is_none() && pending_command.is_none() {
+                                pending_command = self.show_entrance_editor(ui, catalog, level);
+                            }
+                        });
                         if self.raw_layer1_pc_address.is_none() {
-                            egui::CollapsingHeader::new("Screen exits")
-                                .id_salt((
-                                    "vanilla-screen-exit-table",
-                                    self.tool_panel_generations
-                                        [LevelToolPanel::ScreenExits.index()],
-                                ))
-                                .default_open(
-                                    requested_tool_panel == Some(LevelToolPanel::ScreenExits),
-                                )
-                                .show(ui, |ui| self.show_screen_exit_table_editor(ui, catalog));
+                            egui::CollapsingHeader::new(vanilla_text(
+                                catalog,
+                                ExtendedUiTextKey::VanillaLevelScreenExitsSection,
+                            ))
+                            .id_salt((
+                                "vanilla-screen-exit-table",
+                                self.tool_panel_generations[LevelToolPanel::ScreenExits.index()],
+                            ))
+                            .default_open(requested_tool_panel == Some(LevelToolPanel::ScreenExits))
+                            .show(ui, |ui| self.show_screen_exit_table_editor(ui, catalog));
                             self.show_layer2_editor(
                                 ui,
                                 catalog,
@@ -1104,41 +1117,48 @@ impl VanillaLevelEditor {
                                 requested_tool_panel == Some(LevelToolPanel::Layer2),
                             );
                         }
-                        egui::CollapsingHeader::new("Layer 1 objects")
-                            .id_salt("vanilla-layer1-tools")
-                            .default_open(true)
+                        egui::CollapsingHeader::new(vanilla_text(
+                            catalog,
+                            ExtendedUiTextKey::VanillaLevelLayer1ObjectsSection,
+                        ))
+                        .id_salt("vanilla-layer1-tools")
+                        .default_open(true)
+                        .show(ui, |ui| {
+                            self.object_list(ui);
+                            self.object_editor(
+                                ui,
+                                catalog,
+                                custom_objects,
+                                custom_map16,
+                                toolbar_images,
+                            );
+                        });
+                        if self.raw_layer1_pc_address.is_none() {
+                            egui::CollapsingHeader::new(vanilla_text(
+                                catalog,
+                                ExtendedUiTextKey::VanillaLevelEnemiesSpritesSection,
+                            ))
+                            .id_salt((
+                                "vanilla-sprite-tools",
+                                self.tool_panel_generations[LevelToolPanel::Sprites.index()],
+                            ))
+                            .default_open(requested_tool_panel == Some(LevelToolPanel::Sprites))
                             .show(ui, |ui| {
-                                self.object_list(ui);
-                                self.object_editor(
+                                self.sprite_list(ui, catalog);
+                                self.sprite_editor(
                                     ui,
                                     catalog,
-                                    custom_objects,
+                                    custom_sprites,
+                                    external_assets,
                                     custom_map16,
                                     toolbar_images,
                                 );
                             });
-                        if self.raw_layer1_pc_address.is_none() {
-                            egui::CollapsingHeader::new("Enemies and sprites")
-                                .id_salt((
-                                    "vanilla-sprite-tools",
-                                    self.tool_panel_generations[LevelToolPanel::Sprites.index()],
-                                ))
-                                .default_open(requested_tool_panel == Some(LevelToolPanel::Sprites))
-                                .show(ui, |ui| {
-                                    self.sprite_list(ui, catalog);
-                                    self.sprite_editor(
-                                        ui,
-                                        catalog,
-                                        custom_sprites,
-                                        external_assets,
-                                        custom_map16,
-                                        toolbar_images,
-                                    );
-                                });
                         }
                         self.show_map16_preview(ui, object_tileset);
                         if pending_command.is_none() {
-                            pending_command = self.show_commit_controls(ui, &snapshot, custom_dsc);
+                            pending_command =
+                                self.show_commit_controls(ui, catalog, &snapshot, custom_dsc);
                         }
                     });
                 ui.separator();
@@ -1392,6 +1412,7 @@ impl VanillaLevelEditor {
     fn show_commit_controls(
         &mut self,
         ui: &mut egui::Ui,
+        catalog: Option<&LocalizationCatalog>,
         snapshot: &lm_app::ControllerSnapshot,
         custom_dsc: Option<&lm_level::DscResolvedTable>,
     ) -> Option<Command> {
@@ -1402,8 +1423,17 @@ impl VanillaLevelEditor {
             controller.layer1_is_modified() || controller.layer2_is_modified()
         });
         if !expanded && relocation_needed {
-            ui.label("Layer 1/2 relocation needs one expanded free-space bank.");
-            if ui.button("Expand ROM to 1 MiB").clicked() {
+            ui.label(vanilla_text(
+                catalog,
+                ExtendedUiTextKey::VanillaLevelRelocationNeedsExpansion,
+            ));
+            if ui
+                .button(vanilla_text(
+                    catalog,
+                    ExtendedUiTextKey::VanillaLevelExpandRomOneMib,
+                ))
+                .clicked()
+            {
                 self.pending_expansion_commit = self.controller.clone();
                 return Some(Command::ExpandRom(RomExpansionCommand {
                     expected_revision: snapshot.revision,
@@ -2339,7 +2369,7 @@ impl VanillaLevelEditor {
         None
     }
 
-    fn show_staged_history(&mut self, ui: &mut egui::Ui) {
+    fn show_staged_history(&mut self, ui: &mut egui::Ui, catalog: Option<&LocalizationCatalog>) {
         let Some(controller) = self.controller.as_ref() else {
             return;
         };
@@ -2350,15 +2380,27 @@ impl VanillaLevelEditor {
         let mut redo = false;
         ui.horizontal_wrapped(|ui| {
             undo = ui
-                .add_enabled(can_undo, egui::Button::new("Undo staged edit"))
+                .add_enabled(
+                    can_undo,
+                    egui::Button::new(vanilla_text(
+                        catalog,
+                        ExtendedUiTextKey::VanillaLevelUndoStaged,
+                    )),
+                )
                 .clicked();
             redo = ui
-                .add_enabled(can_redo, egui::Button::new("Redo staged edit"))
+                .add_enabled(
+                    can_redo,
+                    egui::Button::new(vanilla_text(
+                        catalog,
+                        ExtendedUiTextKey::VanillaLevelRedoStaged,
+                    )),
+                )
                 .clicked();
             ui.label(if modified {
-                "ROM has uncommitted level changes"
+                vanilla_text(catalog, ExtendedUiTextKey::VanillaLevelUncommittedStatus)
             } else {
-                "Level matches the opened ROM"
+                vanilla_text(catalog, ExtendedUiTextKey::VanillaLevelMatchesRomStatus)
             });
         });
         if undo || redo {
@@ -17649,6 +17691,48 @@ mod tests {
     #[test]
     fn level_canvas_utility_dialogs_use_every_typed_key_without_fixed_english_controls() {
         let source = include_str!("vanilla_level_editor.rs");
+        let editor_shell = source
+            .split("    pub(crate) fn show(")
+            .nth(1)
+            .unwrap()
+            .split("    fn show_commit_controls(")
+            .next()
+            .unwrap();
+        for literal in [
+            "built-in SMW editor\"",
+            "label(\"Pristine SMW-US layout detected automatically.\")",
+            "\"Hide tools\"",
+            "\"Show tools\"",
+            "CollapsingHeader::new(\"Level and entrance settings\")",
+            "CollapsingHeader::new(\"Screen exits\")",
+            "CollapsingHeader::new(\"Layer 1 objects\")",
+            "CollapsingHeader::new(\"Enemies and sprites\")",
+        ] {
+            assert!(
+                !editor_shell.contains(literal),
+                "fixed-English vanilla editor shell control: {literal}"
+            );
+        }
+        let commit_and_history = source
+            .split("    fn show_commit_controls(")
+            .nth(1)
+            .unwrap()
+            .split("    fn show_header_editor(")
+            .next()
+            .unwrap();
+        for literal in [
+            "label(\"Layer 1/2 relocation needs one expanded free-space bank.\")",
+            "button(\"Expand ROM to 1 MiB\")",
+            "Button::new(\"Undo staged edit\")",
+            "Button::new(\"Redo staged edit\")",
+            "\"ROM has uncommitted level changes\"",
+            "\"Level matches the opened ROM\"",
+        ] {
+            assert!(
+                !commit_and_history.contains(literal),
+                "fixed-English vanilla commit/history control: {literal}"
+            );
+        }
         let utility_dialogs = source
             .split("    fn show_zoom_popup(")
             .nth(1)

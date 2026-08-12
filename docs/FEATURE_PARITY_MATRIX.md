@@ -2413,3 +2413,12 @@ fields. A bounded form audit rejects every former literal caption. The focused n
 localization 28/28 active cases (one provenance ignore), and renderer 237/237 pass. Remaining
 vanilla/native forms and live translated language-DLL evidence keep Localization Partial, so
 aggregate parity remains 60/65.
+
+Localization coverage update (2026-08-12, vanilla editor shell and staged history): eighteen
+typed `VanillaLevel*` keys replace fixed English in the editor title/status, raw and reserved-mode
+notices, object-family summary, tools toggle and parent section headings, staged Undo/Redo state,
+and relocation/expansion controls. Technical failures remain opaque data behind a localized
+fallback. Bounded shell and commit/history audits reject every former literal caption. Native
+compilation, the focused audit, localization 28/28 active cases (one provenance ignore), and
+renderer 237/237 pass. Remaining vanilla/native forms and live translated language-DLL evidence
+keep Localization Partial, so aggregate parity remains 60/65.

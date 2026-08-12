@@ -8284,3 +8284,13 @@ and a bounded audit rejects every former fixed-English caption. The focused nati
 localization 28/28 active cases (one provenance ignore) pass, while renderer remains 237/237.
 Remaining vanilla/native forms and retained live language-DLL evidence keep Localization Partial;
 aggregate parity remains 60/65.
+
+Localization coverage update (2026-08-12, vanilla editor shell and staged history): eighteen
+appended `VanillaLevel*` identities cover the dynamic editor title, raw-Layer-1 and reserved-mode
+notices, pristine-layout status, object-family summary, tool-pane toggle and four parent sections,
+staged Undo/Redo and dirty/clean state, plus relocation guidance and the one-MiB expansion action.
+Technical controller failures remain exact untranslated payloads, with a localized load-failure
+fallback. Bounded shell and commit/history audits reject all former literal captions. Native
+compilation, the focused audit, localization 28/28 active cases (one provenance ignore), and
+renderer 237/237 pass. Remaining vanilla/native forms and retained live language-DLL evidence keep
+Localization Partial; aggregate parity remains 60/65.

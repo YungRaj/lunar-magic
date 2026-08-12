@@ -4073,10 +4073,28 @@ pub enum ExtendedUiTextKey {
     VanillaLevelX,
     VanillaLevelYLowBits,
     VanillaLevelExtraBits,
+    VanillaLevelEditorTitleFormat,
+    VanillaLevelRawLayer1NoticeFormat,
+    VanillaLevelLoadFailed,
+    VanillaLevelPristineLayout,
+    VanillaLevelReservedModeFormat,
+    VanillaLevelObjectFamilyFormat,
+    VanillaLevelHideTools,
+    VanillaLevelShowTools,
+    VanillaLevelSettingsSection,
+    VanillaLevelScreenExitsSection,
+    VanillaLevelLayer1ObjectsSection,
+    VanillaLevelEnemiesSpritesSection,
+    VanillaLevelUndoStaged,
+    VanillaLevelRedoStaged,
+    VanillaLevelUncommittedStatus,
+    VanillaLevelMatchesRomStatus,
+    VanillaLevelRelocationNeedsExpansion,
+    VanillaLevelExpandRomOneMib,
 }
 
 impl ExtendedUiTextKey {
-    pub const ALL: [Self; 2372] = [
+    pub const ALL: [Self; 2390] = [
         Self::MwlDocumentEditorTitle,
         Self::MwlDocumentVersionFormat,
         Self::MwlDocumentFlagsHex,
@@ -6449,6 +6467,24 @@ impl ExtendedUiTextKey {
         Self::VanillaLevelX,
         Self::VanillaLevelYLowBits,
         Self::VanillaLevelExtraBits,
+        Self::VanillaLevelEditorTitleFormat,
+        Self::VanillaLevelRawLayer1NoticeFormat,
+        Self::VanillaLevelLoadFailed,
+        Self::VanillaLevelPristineLayout,
+        Self::VanillaLevelReservedModeFormat,
+        Self::VanillaLevelObjectFamilyFormat,
+        Self::VanillaLevelHideTools,
+        Self::VanillaLevelShowTools,
+        Self::VanillaLevelSettingsSection,
+        Self::VanillaLevelScreenExitsSection,
+        Self::VanillaLevelLayer1ObjectsSection,
+        Self::VanillaLevelEnemiesSpritesSection,
+        Self::VanillaLevelUndoStaged,
+        Self::VanillaLevelRedoStaged,
+        Self::VanillaLevelUncommittedStatus,
+        Self::VanillaLevelMatchesRomStatus,
+        Self::VanillaLevelRelocationNeedsExpansion,
+        Self::VanillaLevelExpandRomOneMib,
     ];
 
     #[must_use]
@@ -9538,6 +9574,32 @@ impl ExtendedUiTextKey {
             Self::VanillaLevelX => "X",
             Self::VanillaLevelYLowBits => "Y (low 5 bits)",
             Self::VanillaLevelExtraBits => "Extra bits",
+            Self::VanillaLevelEditorTitleFormat => "Level {level} — built-in SMW editor",
+            Self::VanillaLevelRawLayer1NoticeFormat => {
+                "Layer 1 loaded from PC address ${address}. Sprites, entrances, Layer 2, and background are intentionally not loaded; Save writes Layer 1 to level ${level}."
+            }
+            Self::VanillaLevelLoadFailed => "load failed",
+            Self::VanillaLevelPristineLayout => "Pristine SMW-US layout detected automatically.",
+            Self::VanillaLevelReservedModeFormat => {
+                "Mode ${mode} is reserved. Lunar Magic compatibility uses mode $00 instead."
+            }
+            Self::VanillaLevelObjectFamilyFormat => {
+                "{family} standard-object definitions (tileset {tileset})"
+            }
+            Self::VanillaLevelHideTools => "Hide tools",
+            Self::VanillaLevelShowTools => "Show tools",
+            Self::VanillaLevelSettingsSection => "Level and entrance settings",
+            Self::VanillaLevelScreenExitsSection => "Screen exits",
+            Self::VanillaLevelLayer1ObjectsSection => "Layer 1 objects",
+            Self::VanillaLevelEnemiesSpritesSection => "Enemies and sprites",
+            Self::VanillaLevelUndoStaged => "Undo staged edit",
+            Self::VanillaLevelRedoStaged => "Redo staged edit",
+            Self::VanillaLevelUncommittedStatus => "ROM has uncommitted level changes",
+            Self::VanillaLevelMatchesRomStatus => "Level matches the opened ROM",
+            Self::VanillaLevelRelocationNeedsExpansion => {
+                "Layer 1/2 relocation needs one expanded free-space bank."
+            }
+            Self::VanillaLevelExpandRomOneMib => "Expand ROM to 1 MiB",
         }
     }
 
