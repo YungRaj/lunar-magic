@@ -1,8 +1,8 @@
 use chrono::{Datelike as _, Timelike as _};
 use eframe::egui;
 use lm_app::{
-    AppState, ControllerSnapshot, LevelUsageScanOptions, LevelUsageScanProgress,
-    LevelUsageTimestamp, LocalizationCatalog, ProfiledControllerSnapshot,
+    AppState, ControllerSnapshot, ExtendedUiTextKey as Key, LevelUsageScanOptions,
+    LevelUsageScanProgress, LevelUsageTimestamp, LocalizationCatalog, ProfiledControllerSnapshot,
 };
 use std::ops::ControlFlow;
 use std::path::PathBuf;
@@ -83,11 +83,11 @@ impl LevelUsageDialog {
     }
 
     pub(crate) fn show(&mut self, context: &egui::Context, catalog: Option<&LocalizationCatalog>) {
-        self.poll();
+        self.poll(catalog);
         self.show_options(context, catalog);
-        self.show_progress(context);
-        self.show_completion(context);
-        self.show_error(context);
+        self.show_progress(context, catalog);
+        self.show_completion(context, catalog);
+        self.show_error(context, catalog);
     }
 
     fn show_options(&mut self, context: &egui::Context, catalog: Option<&LocalizationCatalog>) {
@@ -139,7 +139,10 @@ impl LevelUsageDialog {
                     level_usage_dialog_text(catalog, 0x65, "Analyze Music."),
                 );
                 ui.separator();
-                ui.label(format!("Output: {}", pending.output.display()));
+                ui.label(
+                    text(catalog, Key::LevelUsageOutputFormat)
+                        .replace("{path}", &pending.output.display().to_string()),
+                );
                 ui.horizontal(|ui| {
                     analyze = ui
                         .button(level_usage_dialog_text(catalog, 1, "OK"))
@@ -226,16 +229,19 @@ impl LevelUsageDialog {
         Ok(())
     }
 
-    fn show_progress(&mut self, context: &egui::Context) {
+    fn show_progress(&mut self, context: &egui::Context, catalog: Option<&LocalizationCatalog>) {
         let Some(running) = self.running.as_ref() else {
             return;
         };
         let mut cancel = context.input(|input| input.key_pressed(egui::Key::Escape));
-        egui::Window::new("Analyzing Level Usage")
+        egui::Window::new(text(catalog, Key::LevelUsageProgressTitle))
             .collapsible(false)
             .resizable(false)
             .show(context, |ui| {
-                ui.label(format!("Output: {}", running.output.display()));
+                ui.label(
+                    text(catalog, Key::LevelUsageOutputFormat)
+                        .replace("{path}", &running.output.display().to_string()),
+                );
                 let fraction = if running.progress.total == 0 {
                     0.0
                 } else {
@@ -244,17 +250,19 @@ impl LevelUsageDialog {
                     f32::from(completed) / f32::from(total)
                 };
                 ui.add(
-                    egui::ProgressBar::new(fraction)
-                        .show_percentage()
-                        .text(format!(
-                            "{} / {} levels",
-                            running.progress.completed, running.progress.total
-                        )),
+                    egui::ProgressBar::new(fraction).show_percentage().text(
+                        text(catalog, Key::LevelUsageLevelsFormat)
+                            .replace("{completed}", &running.progress.completed.to_string())
+                            .replace("{total}", &running.progress.total.to_string()),
+                    ),
                 );
                 if let Some(level) = running.progress.current_level {
-                    ui.label(format!("Scanning level {level:03X}…"));
+                    ui.label(
+                        text(catalog, Key::LevelUsageScanningFormat)
+                            .replace("{level}", &format!("{level:03X}")),
+                    );
                 }
-                cancel |= ui.button("Cancel").clicked();
+                cancel |= ui.button(text(catalog, Key::LevelUsageCancel)).clicked();
             });
         if cancel {
             running.cancel.store(true, Ordering::Relaxed);
@@ -262,7 +270,7 @@ impl LevelUsageDialog {
         context.request_repaint_after(std::time::Duration::from_millis(50));
     }
 
-    fn poll(&mut self) {
+    fn poll(&mut self, catalog: Option<&LocalizationCatalog>) {
         let Some(running) = self.running.as_mut() else {
             return;
         };
@@ -279,42 +287,42 @@ impl LevelUsageDialog {
         self.running = None;
         match result {
             Ok(completed) => {
-                self.completed = Some(format!(
-                    "Created {} ({} bytes, {} diagnostics).",
-                    completed.output.display(),
-                    completed.bytes,
-                    completed.diagnostics
-                ));
+                self.completed = Some(
+                    text(catalog, Key::LevelUsageCompleteFormat)
+                        .replace("{path}", &completed.output.display().to_string())
+                        .replace("{bytes}", &completed.bytes.to_string())
+                        .replace("{diagnostics}", &completed.diagnostics.to_string()),
+                );
             }
             Err(error) => self.error = Some(error),
         }
     }
 
-    fn show_completion(&mut self, context: &egui::Context) {
+    fn show_completion(&mut self, context: &egui::Context, catalog: Option<&LocalizationCatalog>) {
         let Some(message) = self.completed.clone() else {
             return;
         };
-        egui::Window::new("Level usage analysis complete")
+        egui::Window::new(text(catalog, Key::LevelUsageCompleteTitle))
             .collapsible(false)
             .resizable(false)
             .show(context, |ui| {
                 ui.label(message);
-                if ui.button("OK").clicked() {
+                if ui.button(text(catalog, Key::LevelUsageOk)).clicked() {
                     self.completed = None;
                 }
             });
     }
 
-    fn show_error(&mut self, context: &egui::Context) {
+    fn show_error(&mut self, context: &egui::Context, catalog: Option<&LocalizationCatalog>) {
         let Some(error) = self.error.clone() else {
             return;
         };
-        egui::Window::new("Level usage analysis error")
+        egui::Window::new(text(catalog, Key::LevelUsageErrorTitle))
             .collapsible(false)
             .resizable(false)
             .show(context, |ui| {
                 ui.colored_label(egui::Color32::RED, error);
-                if ui.button("OK").clicked() {
+                if ui.button(text(catalog, Key::LevelUsageOk)).clicked() {
                     self.error = None;
                 }
             });
@@ -326,6 +334,13 @@ fn level_usage_dialog_title(catalog: Option<&LocalizationCatalog>) -> String {
         .and_then(|catalog| catalog.original_dialog_title(ORIGINAL_DIALOG_ID))
         .unwrap_or("Analyze Resources in Levels")
         .to_owned()
+}
+
+fn text(catalog: Option<&LocalizationCatalog>, key: Key) -> String {
+    catalog.map_or_else(
+        || key.english().to_owned(),
+        |catalog| catalog.extended_text(key).to_owned(),
+    )
 }
 
 fn level_usage_dialog_text(
@@ -414,5 +429,22 @@ mod localization_tests {
             level_usage_dialog_title(Some(&reopened)),
             "Analyser les ressources des niveaux"
         );
+    }
+
+    #[test]
+    fn complete_level_usage_surface_has_no_literal_native_widget_text() {
+        let source = include_str!("level_usage_dialog.rs");
+        for literal in [
+            "egui::Window::new(\"",
+            "ui.button(\"",
+            "ui.label(format!(\"Output:",
+        ] {
+            assert!(
+                !source.contains(literal),
+                "literal level-usage widget text: {literal}"
+            );
+        }
+        assert!(source.contains("level_usage_dialog_text(catalog"));
+        assert!(source.contains("original_dialog_control_text"));
     }
 }

@@ -2259,3 +2259,12 @@ failed-reversion markers, preferences, full/delta/daily archives, original-templ
 and the visible/persisted-text boundary; localization model tests pass and renderer remains
 237/237. Other native forms and retained live language-DLL evidence keep Localization Partial;
 aggregate parity remains 60/65.
+
+Localization coverage update (2026-08-12, level-usage analysis): nine typed extension keys now
+cover output-path presentation, progress title/count/current level, cancellation, completion
+summary, and error lifecycle. The authenticated original dialog `$0425` continues to supply the
+title, Map16/graphics/sprite/music options, subordinate filters, and OK/Cancel when mapped, with
+per-control English fallback. Technical scanner diagnostics and the canonical `LevelAnalysis.txt`
+payload remain untranslated. Both focused localization/source-boundary tests pass, localization
+model tests pass, and renderer remains 237/237. Other native forms and retained live language-DLL
+evidence keep Localization Partial; aggregate parity remains 60/65.

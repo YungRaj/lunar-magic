@@ -1913,6 +1913,15 @@ pub enum ExtendedUiTextKey {
     RestoreAssociatedOne,
     RestoreAssociatedManyFormat,
     RestoreCompleteFormat,
+    LevelUsageOutputFormat,
+    LevelUsageProgressTitle,
+    LevelUsageLevelsFormat,
+    LevelUsageScanningFormat,
+    LevelUsageCancel,
+    LevelUsageCompleteFormat,
+    LevelUsageCompleteTitle,
+    LevelUsageErrorTitle,
+    LevelUsageOk,
     CustomSpriteEditorTitle,
     CustomSpritePlacementsFormat,
     CustomSpritePlacement,
@@ -2982,7 +2991,7 @@ pub enum ExtendedUiTextKey {
 }
 
 impl ExtendedUiTextKey {
-    pub const ALL: [Self; 1278] = [
+    pub const ALL: [Self; 1287] = [
         Self::MwlDocumentEditorTitle,
         Self::MwlDocumentVersionFormat,
         Self::MwlDocumentFlagsHex,
@@ -3195,6 +3204,15 @@ impl ExtendedUiTextKey {
         Self::RestoreAssociatedOne,
         Self::RestoreAssociatedManyFormat,
         Self::RestoreCompleteFormat,
+        Self::LevelUsageOutputFormat,
+        Self::LevelUsageProgressTitle,
+        Self::LevelUsageLevelsFormat,
+        Self::LevelUsageScanningFormat,
+        Self::LevelUsageCancel,
+        Self::LevelUsageCompleteFormat,
+        Self::LevelUsageCompleteTitle,
+        Self::LevelUsageErrorTitle,
+        Self::LevelUsageOk,
         Self::CustomSpriteEditorTitle,
         Self::CustomSpritePlacementsFormat,
         Self::CustomSpritePlacement,
@@ -4504,6 +4522,17 @@ impl ExtendedUiTextKey {
             Self::RestoreCompleteFormat => {
                 "Restored point {id} to {path} ({bytes} bytes{associated})."
             }
+            Self::LevelUsageOutputFormat => "Output: {path}",
+            Self::LevelUsageProgressTitle => "Analyzing Level Usage",
+            Self::LevelUsageLevelsFormat => "{completed} / {total} levels",
+            Self::LevelUsageScanningFormat => "Scanning level {level}…",
+            Self::LevelUsageCancel => "Cancel",
+            Self::LevelUsageCompleteFormat => {
+                "Created {path} ({bytes} bytes, {diagnostics} diagnostics)."
+            }
+            Self::LevelUsageCompleteTitle => "Level usage analysis complete",
+            Self::LevelUsageErrorTitle => "Level usage analysis error",
+            Self::LevelUsageOk => "OK",
             Self::CustomSpriteEditorTitle => "Custom Sprite Placement Editor",
             Self::CustomSpritePlacementsFormat => "Synchronized placements: {count}",
             Self::CustomSpritePlacement => "Placement",
