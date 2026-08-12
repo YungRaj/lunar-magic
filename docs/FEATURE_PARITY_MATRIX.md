@@ -780,6 +780,14 @@ workflow and source audit pass 7/7, localization model 28/28, and renderer 237/2
 forms and retained live language-DLL evidence keep Localization Partial; aggregate parity remains
 60/65.
 
+Localization coverage update (2026-08-11, ROM message editors): thirty appended typed keys cover
+both complete message-table workflows. Shared load/apply/commit/status/close/error actions are
+catalogued once; overworld-specific variable storage, resize bounds, dimensions, reserved tile, and
+boss-specific fixed dimensions retain separate keys. Both application hosts now pass the active
+catalog, and complete source audits reject literal regressions. Overworld-message tests pass 6/6,
+boss-sequence tests pass 6/6, localization model 28/28, and renderer 237/237. Other native forms and
+retained live language-DLL evidence keep Localization Partial; aggregate parity remains 60/65.
+
 Converted catalogs now preserve the complete safely decoded literal dialog inventory in a bounded,
 optional `LMDLG001` extension keyed by dialog ID, exact item position, and 32-bit control ID.
 Historical catalogs without the extension remain byte-identical, duplicate control IDs survive by

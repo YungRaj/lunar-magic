@@ -4,7 +4,7 @@ mod workspace;
 use crate::level_editor_forms::parse_hex_u16;
 use eframe::egui;
 use form::MessageTileForm;
-use lm_app::{AppState, Command};
+use lm_app::{AppState, Command, ExtendedUiTextKey, LocalizationCatalog};
 use workspace::OverworldMessageWorkspace;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -87,40 +87,54 @@ impl RomOverworldMessageEditor {
         &mut self,
         context: &egui::Context,
         project_revision: u64,
+        catalog: Option<&LocalizationCatalog>,
     ) -> (bool, Option<Command>) {
         let mut command = None;
         if self.workspace.is_some() {
-            egui::Window::new("ROM Overworld Messages")
+            egui::Window::new(text(catalog, ExtendedUiTextKey::OverworldMessageTitle))
                 .default_size([560.0, 390.0])
-                .show(context, |ui| command = self.contents(ui, project_revision));
+                .show(context, |ui| {
+                    command = self.contents(ui, project_revision, catalog)
+                });
         }
-        let approved = self.close_confirmation(context);
-        self.show_error(context);
+        let approved = self.close_confirmation(context, catalog);
+        self.show_error(context, catalog);
         (approved, command)
     }
 
-    fn contents(&mut self, ui: &mut egui::Ui, project_revision: u64) -> Option<Command> {
+    fn contents(
+        &mut self,
+        ui: &mut egui::Ui,
+        project_revision: u64,
+        catalog: Option<&LocalizationCatalog>,
+    ) -> Option<Command> {
         let workspace = self.workspace.as_ref()?;
         let stale = workspace.is_stale(project_revision);
         let dirty = workspace.is_dirty();
-        ui.label("Complete variable 8×18 message table. All numeric fields are hexadecimal.");
-        ui.label(format!(
-            "Loaded storage: {}; staged messages: {}",
-            workspace.storage_label(),
-            workspace.len()
+        ui.label(text(
+            catalog,
+            ExtendedUiTextKey::OverworldMessageDescription,
         ));
+        ui.label(
+            text(catalog, ExtendedUiTextKey::OverworldMessageStorageStatus)
+                .replace("{storage}", workspace.storage_label())
+                .replace("{count}", &workspace.len().to_string()),
+        );
         if stale {
             ui.colored_label(
                 egui::Color32::YELLOW,
-                "The ROM changed after these messages were opened. Reopen before committing.",
+                text(catalog, ExtendedUiTextKey::OverworldMessageStaleNotice),
             );
         }
-        self.message_form(ui);
+        self.message_form(ui, catalog);
         ui.horizontal(|ui| {
-            ui.label("Table count (0C2–200, even)");
+            ui.label(text(catalog, ExtendedUiTextKey::OverworldMessageTableCount));
             ui.text_edit_singleline(&mut self.count);
             if ui
-                .add_enabled(!stale, egui::Button::new("Resize table"))
+                .add_enabled(
+                    !stale,
+                    egui::Button::new(text(catalog, ExtendedUiTextKey::OverworldMessageResize)),
+                )
                 .clicked()
                 && let Err(error) = self.resize()
             {
@@ -129,20 +143,28 @@ impl RomOverworldMessageEditor {
         });
         let mut command = None;
         ui.horizontal(|ui| {
-            if ui.button("Load tile").clicked()
+            if ui
+                .button(text(catalog, ExtendedUiTextKey::MessageEditorLoadTile))
+                .clicked()
                 && let Err(error) = self.load_selected()
             {
                 self.error = Some(error);
             }
             if ui
-                .add_enabled(!stale, egui::Button::new("Apply tile"))
+                .add_enabled(
+                    !stale,
+                    egui::Button::new(text(catalog, ExtendedUiTextKey::MessageEditorApplyTile)),
+                )
                 .clicked()
                 && let Err(error) = self.apply_selected()
             {
                 self.error = Some(error);
             }
             if ui
-                .add_enabled(dirty && !stale, egui::Button::new("Commit messages to ROM"))
+                .add_enabled(
+                    dirty && !stale,
+                    egui::Button::new(text(catalog, ExtendedUiTextKey::MessageEditorCommit)),
+                )
                 .clicked()
             {
                 match self.prepare_commit(project_revision) {
@@ -150,31 +172,38 @@ impl RomOverworldMessageEditor {
                     Err(error) => self.error = Some(error),
                 }
             }
-            ui.label(if dirty { "Staged" } else { "Unchanged" });
+            ui.label(text(
+                catalog,
+                if dirty {
+                    ExtendedUiTextKey::MessageEditorStaged
+                } else {
+                    ExtendedUiTextKey::MessageEditorUnchanged
+                },
+            ));
         });
         command
     }
 
-    fn message_form(&mut self, ui: &mut egui::Ui) {
+    fn message_form(&mut self, ui: &mut egui::Ui, catalog: Option<&LocalizationCatalog>) {
         egui::Grid::new("rom-overworld-message-form")
             .striped(true)
             .show(ui, |ui| {
-                ui.label("Message");
+                ui.label(text(catalog, ExtendedUiTextKey::OverworldMessageIndex));
                 if ui.text_edit_singleline(&mut self.form.message).changed() {
                     self.form.selection_changed();
                 }
                 ui.end_row();
-                ui.label("Row (00–07)");
+                ui.label(text(catalog, ExtendedUiTextKey::MessageEditorRow));
                 if ui.text_edit_singleline(&mut self.form.row).changed() {
                     self.form.selection_changed();
                 }
                 ui.end_row();
-                ui.label("Column (00–11)");
+                ui.label(text(catalog, ExtendedUiTextKey::OverworldMessageColumn));
                 if ui.text_edit_singleline(&mut self.form.column).changed() {
                     self.form.selection_changed();
                 }
                 ui.end_row();
-                ui.label("Tile value (FE is reserved)");
+                ui.label(text(catalog, ExtendedUiTextKey::OverworldMessageTileValue));
                 ui.text_edit_singleline(&mut self.form.value);
                 ui.end_row();
             });
@@ -213,37 +242,59 @@ impl RomOverworldMessageEditor {
             .prepare_commit(revision)
     }
 
-    fn close_confirmation(&mut self, context: &egui::Context) -> bool {
+    fn close_confirmation(
+        &mut self,
+        context: &egui::Context,
+        catalog: Option<&LocalizationCatalog>,
+    ) -> bool {
         let Some(pending) = self.pending_close else {
             return false;
         };
         let mut approved = false;
-        egui::Window::new("Discard overworld-message changes?")
-            .collapsible(false)
-            .resizable(false)
-            .show(context, |ui| {
-                ui.label("The staged message table has not been committed to the ROM.");
-                ui.horizontal(|ui| {
-                    if ui.button("Cancel").clicked() {
-                        self.pending_close = None;
-                    }
-                    if ui.button("Discard").clicked() {
-                        self.clear();
-                        approved = pending == PendingClose::Application;
-                    }
-                });
+        egui::Window::new(text(
+            catalog,
+            ExtendedUiTextKey::OverworldMessageDiscardTitle,
+        ))
+        .collapsible(false)
+        .resizable(false)
+        .show(context, |ui| {
+            ui.label(text(
+                catalog,
+                ExtendedUiTextKey::OverworldMessageUnsavedNotice,
+            ));
+            ui.horizontal(|ui| {
+                if ui
+                    .button(text(catalog, ExtendedUiTextKey::MessageEditorCancel))
+                    .clicked()
+                {
+                    self.pending_close = None;
+                }
+                if ui
+                    .button(text(catalog, ExtendedUiTextKey::MessageEditorDiscard))
+                    .clicked()
+                {
+                    self.clear();
+                    approved = pending == PendingClose::Application;
+                }
             });
+        });
         approved
     }
 
-    fn show_error(&mut self, context: &egui::Context) {
+    fn show_error(&mut self, context: &egui::Context, catalog: Option<&LocalizationCatalog>) {
         if let Some(error) = self.error.clone() {
-            egui::Window::new("Overworld-message editor error").show(context, |ui| {
-                ui.label(error);
-                if ui.button("OK").clicked() {
-                    self.error = None;
-                }
-            });
+            egui::Window::new(text(catalog, ExtendedUiTextKey::OverworldMessageErrorTitle)).show(
+                context,
+                |ui| {
+                    ui.label(error);
+                    if ui
+                        .button(text(catalog, ExtendedUiTextKey::MessageEditorOk))
+                        .clicked()
+                    {
+                        self.error = None;
+                    }
+                },
+            );
         }
     }
 
@@ -258,6 +309,10 @@ impl RomOverworldMessageEditor {
     }
 }
 
+fn text(catalog: Option<&LocalizationCatalog>, key: ExtendedUiTextKey) -> String {
+    crate::frontend_ui::extended_localized_text(catalog, key)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -270,6 +325,25 @@ mod tests {
         app.load_rom(crate::test_support::pristine_smw_us_rom_bytes())
             .unwrap();
         app
+    }
+
+    #[test]
+    fn complete_overworld_message_form_uses_every_typed_key() {
+        let source = include_str!("rom_overworld_message_editor.rs");
+        for key in ExtendedUiTextKey::ALL.into_iter().filter(|key| {
+            let name = format!("{key:?}");
+            name.starts_with("OverworldMessage") || name.starts_with("MessageEditor")
+        }) {
+            assert!(source.contains(&format!("ExtendedUiTextKey::{key:?}")));
+        }
+        for bypass in [
+            "Window::new(\"ROM Overworld Messages\")",
+            "Button::new(\"Resize table\")",
+            "ui.button(\"Load tile\")",
+            "Window::new(\"Discard overworld-message changes?\")",
+        ] {
+            assert!(!source.contains(bypass));
+        }
     }
 
     #[test]

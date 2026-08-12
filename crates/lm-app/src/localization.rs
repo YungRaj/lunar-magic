@@ -2302,10 +2302,40 @@ pub enum ExtendedUiTextKey {
     TitleRecordingDiscard,
     TitleRecordingErrorTitle,
     TitleRecordingOk,
+    OverworldMessageTitle,
+    OverworldMessageDescription,
+    OverworldMessageStorageStatus,
+    OverworldMessageStaleNotice,
+    OverworldMessageTableCount,
+    OverworldMessageResize,
+    OverworldMessageIndex,
+    OverworldMessageColumn,
+    OverworldMessageTileValue,
+    OverworldMessageDiscardTitle,
+    OverworldMessageUnsavedNotice,
+    OverworldMessageErrorTitle,
+    BossMessageTitle,
+    BossMessageDescription,
+    BossMessageStaleNotice,
+    BossMessageIndex,
+    BossMessageColumn,
+    BossMessageTileValue,
+    BossMessageDiscardTitle,
+    BossMessageUnsavedNotice,
+    BossMessageErrorTitle,
+    MessageEditorRow,
+    MessageEditorLoadTile,
+    MessageEditorApplyTile,
+    MessageEditorCommit,
+    MessageEditorStaged,
+    MessageEditorUnchanged,
+    MessageEditorCancel,
+    MessageEditorDiscard,
+    MessageEditorOk,
 }
 
 impl ExtendedUiTextKey {
-    pub const ALL: [Self; 601] = [
+    pub const ALL: [Self; 631] = [
         Self::TilemapTitleScreenName,
         Self::TilemapCreditsName,
         Self::TilemapEditorTitleFormat,
@@ -2907,6 +2937,36 @@ impl ExtendedUiTextKey {
         Self::TitleRecordingDiscard,
         Self::TitleRecordingErrorTitle,
         Self::TitleRecordingOk,
+        Self::OverworldMessageTitle,
+        Self::OverworldMessageDescription,
+        Self::OverworldMessageStorageStatus,
+        Self::OverworldMessageStaleNotice,
+        Self::OverworldMessageTableCount,
+        Self::OverworldMessageResize,
+        Self::OverworldMessageIndex,
+        Self::OverworldMessageColumn,
+        Self::OverworldMessageTileValue,
+        Self::OverworldMessageDiscardTitle,
+        Self::OverworldMessageUnsavedNotice,
+        Self::OverworldMessageErrorTitle,
+        Self::BossMessageTitle,
+        Self::BossMessageDescription,
+        Self::BossMessageStaleNotice,
+        Self::BossMessageIndex,
+        Self::BossMessageColumn,
+        Self::BossMessageTileValue,
+        Self::BossMessageDiscardTitle,
+        Self::BossMessageUnsavedNotice,
+        Self::BossMessageErrorTitle,
+        Self::MessageEditorRow,
+        Self::MessageEditorLoadTile,
+        Self::MessageEditorApplyTile,
+        Self::MessageEditorCommit,
+        Self::MessageEditorStaged,
+        Self::MessageEditorUnchanged,
+        Self::MessageEditorCancel,
+        Self::MessageEditorDiscard,
+        Self::MessageEditorOk,
     ];
 
     #[must_use]
@@ -3743,6 +3803,50 @@ impl ExtendedUiTextKey {
             Self::TitleRecordingDiscard => "Discard",
             Self::TitleRecordingErrorTitle => "Title-recording editor error",
             Self::TitleRecordingOk => "OK",
+            Self::OverworldMessageTitle => "ROM Overworld Messages",
+            Self::OverworldMessageDescription => {
+                "Complete variable 8×18 message table. All numeric fields are hexadecimal."
+            }
+            Self::OverworldMessageStorageStatus => {
+                "Loaded storage: {storage}; staged messages: {count}"
+            }
+            Self::OverworldMessageStaleNotice => {
+                "The ROM changed after these messages were opened. Reopen before committing."
+            }
+            Self::OverworldMessageTableCount => "Table count (0C2–200, even)",
+            Self::OverworldMessageResize => "Resize table",
+            Self::OverworldMessageIndex => "Message",
+            Self::OverworldMessageColumn => "Column (00–11)",
+            Self::OverworldMessageTileValue => "Tile value (FE is reserved)",
+            Self::OverworldMessageDiscardTitle => "Discard overworld-message changes?",
+            Self::OverworldMessageUnsavedNotice => {
+                "The staged message table has not been committed to the ROM."
+            }
+            Self::OverworldMessageErrorTitle => "Overworld-message editor error",
+            Self::BossMessageTitle => "ROM Boss-Sequence Messages",
+            Self::BossMessageDescription => {
+                "Seven lossless 24×8 tile-index messages. All fields are hexadecimal."
+            }
+            Self::BossMessageStaleNotice => {
+                "The ROM changed after these messages were opened. Reopen before committing."
+            }
+            Self::BossMessageIndex => "Message (00–06)",
+            Self::BossMessageColumn => "Column (00–17)",
+            Self::BossMessageTileValue => "Tile value",
+            Self::BossMessageDiscardTitle => "Discard boss-message changes?",
+            Self::BossMessageUnsavedNotice => {
+                "The staged boss-sequence messages have not been committed."
+            }
+            Self::BossMessageErrorTitle => "Boss-sequence editor error",
+            Self::MessageEditorRow => "Row (00–07)",
+            Self::MessageEditorLoadTile => "Load tile",
+            Self::MessageEditorApplyTile => "Apply tile",
+            Self::MessageEditorCommit => "Commit messages to ROM",
+            Self::MessageEditorStaged => "Staged",
+            Self::MessageEditorUnchanged => "Unchanged",
+            Self::MessageEditorCancel => "Cancel",
+            Self::MessageEditorDiscard => "Discard",
+            Self::MessageEditorOk => "OK",
         }
     }
 

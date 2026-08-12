@@ -7349,6 +7349,16 @@ parser or background-I/O errors. The focused family passes 7/7, localization pas
 renderer passes 237/237. Localization remains Partial for other native forms and retained live
 language-DLL evidence; aggregate parity remains 60/65.
 
+Localization coverage update (2026-08-11, ROM message editors): thirty appended typed keys cover
+the variable overworld-message table and fixed boss-sequence message table as one native family.
+Shared row/load/apply/commit/status/dialog actions reuse `MessageEditor*`; storage/count/dimension
+and domain-specific lifecycle text remain explicit `OverworldMessage*` and `BossMessage*` keys.
+Both ROM-window call sites thread the active catalog, including the overworld save-notification
+route. Dedicated source audits require each complete key family and reject representative literal
+regressions. Overworld messages pass 6/6, boss messages pass 6/6, localization passes 28/28, and the
+renderer passes 237/237. Other native forms and retained live language-DLL evidence keep
+Localization Partial; aggregate parity remains 60/65.
+
 Localization coverage update (2026-08-11, installed expanded settings): thirty typed extension
 keys cover the complete profile-backed editor surface—exact record guidance, Layer 3 semantic
 controls, ten bypass assignments, sprite-boundary behavior, sixteen raw words, staging/commit,
