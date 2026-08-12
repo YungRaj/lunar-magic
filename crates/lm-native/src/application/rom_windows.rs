@@ -335,7 +335,8 @@ impl NativeApplication {
     }
 
     pub(super) fn show_project_operations(&mut self, context: &egui::Context) {
-        self.toolbar_graphics_transfer.show(context);
+        self.toolbar_graphics_transfer
+            .show(context, self.app.localization());
         if let Some(command) = self
             .legacy_graphics_bypass_transfer
             .show(context, &self.app)

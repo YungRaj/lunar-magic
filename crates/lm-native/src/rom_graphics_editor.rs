@@ -38,7 +38,7 @@ mod graphics_import;
 mod lifecycle;
 mod ownership;
 
-fn text(catalog: Option<&LocalizationCatalog>, key: ExtendedUiTextKey) -> String {
+pub(crate) fn text(catalog: Option<&LocalizationCatalog>, key: ExtendedUiTextKey) -> String {
     crate::frontend_ui::extended_localized_text(catalog, key)
 }
 
@@ -91,9 +91,6 @@ struct PendingGraphicsFormatWarning {
         PendingGraphicsFormatWarningTarget,
     )>,
 }
-
-const GRAPHICS_FORMAT_WARNING_TITLE: &str = "Graphics Format Change Warning!";
-const GRAPHICS_FORMAT_WARNING_BODY: &str = "The GFX are about to be inserted as 4bpp, but any ExGFX already in the ROM are still stored in 3bpp format.  Make sure to re-insert the ExGFX too after this so the program can store them as 4bpp as well (if you don't yet have an external copy of them, you should cancel this and extract the ExGFX first).  Unless for some reason you actually like looking at garbled graphics...\n\nProceed anyway?";
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum QuickGraphicsInsertion {
@@ -453,7 +450,7 @@ impl RomGraphicsEditor {
                 Err(error) => format!("Raw graphics extraction failed: {error}"),
             });
         }
-        if let Some(result) = self.graphics_batch.show(context) {
+        if let Some(result) = self.graphics_batch.show(context, app.localization()) {
             let level_graphics = std::mem::take(&mut self.level_graphics_batch_running);
             self.io_status = Some(if level_graphics {
                 match result {
@@ -490,7 +487,7 @@ impl RomGraphicsEditor {
                 Err(error) => self.error = Some(error),
             }
         }
-        let import_command = match self.graphics_import.show(context) {
+        let import_command = match self.graphics_import.show(context, app.localization()) {
             Some(Ok(Some(commit))) => {
                 self.io_status = Some("GFX directory prepared successfully.".into());
                 Some(commit.into_command())
@@ -520,7 +517,7 @@ impl RomGraphicsEditor {
                 }
                 None => None,
             });
-        self.graphics_format_warning(context);
+        self.graphics_format_warning(context, app.localization());
         self.ordinary_graphics_insertion_dialog(context, app, *joined_graphics_files);
         if self.workspace.is_some() {
             egui::Window::new(text(
@@ -895,6 +892,7 @@ impl RomGraphicsEditor {
                 !stale && !file_work_running,
                 !stale && !file_work_running && app.current_level().is_some(),
                 *joined_graphics_files,
+                app.localization(),
             );
             self.pixel_editor(
                 &mut columns[1],
@@ -969,6 +967,7 @@ impl RomGraphicsEditor {
         edits_enabled: bool,
         level_export_enabled: bool,
         joined_graphics_files: bool,
+        catalog: Option<&LocalizationCatalog>,
     ) {
         let Some(workspace) = &self.workspace else {
             return;
@@ -988,7 +987,10 @@ impl RomGraphicsEditor {
                 );
                 return;
             };
-            ui.small("Internal GFX data — transient working cache; F9 publishes current-level FG/BG/SP slots");
+            ui.small(text(
+                catalog,
+                ExtendedUiTextKey::GraphicsInternalCacheNotice,
+            ));
             &cache.tiles
         } else {
             &workspace.controller.graphics().tiles
@@ -1236,19 +1238,35 @@ impl RomGraphicsEditor {
         };
         let mut accepted = false;
         let mut cancelled = false;
-        egui::Window::new("Save level GFX to Graphics folder?")
-            .collapsible(false)
-            .resizable(false)
-            .anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO)
-            .show(context, |ui| {
-                ui.label("Do you want to save the current level GFX to file,");
-                ui.label("so it can be inserted to the ROM later?");
-                ui.label("Don't do this if you haven't extracted the graphics yet!");
-                ui.horizontal(|ui| {
-                    accepted = ui.button("Yes").clicked();
-                    cancelled = ui.button("No").clicked();
-                });
+        egui::Window::new(text(
+            app.localization(),
+            ExtendedUiTextKey::GraphicsSaveLevelTitle,
+        ))
+        .collapsible(false)
+        .resizable(false)
+        .anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO)
+        .show(context, |ui| {
+            ui.label(text(
+                app.localization(),
+                ExtendedUiTextKey::GraphicsSaveLevelQuestion,
+            ));
+            ui.label(text(
+                app.localization(),
+                ExtendedUiTextKey::GraphicsSaveLevelPurpose,
+            ));
+            ui.label(text(
+                app.localization(),
+                ExtendedUiTextKey::GraphicsSaveLevelWarning,
+            ));
+            ui.horizontal(|ui| {
+                accepted = ui
+                    .button(text(app.localization(), ExtendedUiTextKey::GraphicsYes))
+                    .clicked();
+                cancelled = ui
+                    .button(text(app.localization(), ExtendedUiTextKey::GraphicsNo))
+                    .clicked();
             });
+        });
         if accepted {
             self.pending_level_graphics_export = None;
             self.begin_level_graphics_batch(app, special_world_passed, mode);
@@ -1427,10 +1445,13 @@ impl RomGraphicsEditor {
         });
         let has_tile = selected.is_some();
         if !has_tile {
-            ui.label("No graphics tiles");
+            ui.label(text(catalog, ExtendedUiTextKey::GraphicsNoTiles));
             return;
         }
-        ui.label(format!("Tile {:03X}", self.selected_tile));
+        ui.label(
+            text(catalog, ExtendedUiTextKey::GraphicsTileFormat)
+                .replace("{index}", &format!("{:03X}", self.selected_tile)),
+        );
         let owner = (!diagnostic)
             .then(|| {
                 self.workspace.as_ref().and_then(|workspace| {
@@ -1439,7 +1460,7 @@ impl RomGraphicsEditor {
             })
             .flatten();
         let editable = if diagnostic {
-            ui.label("Internal working-cache tile; edits are transient unless F9 owns its current-level file.");
+            ui.label(text(catalog, ExtendedUiTextKey::GraphicsInternalTileNotice));
             true
         } else {
             ownership::show(ui, owner, catalog)
@@ -1448,7 +1469,7 @@ impl RomGraphicsEditor {
             paste_target_editable(workspace, diagnostic, self.selected_tile)
         });
         let Some(mut tile) = self.edit_tile.clone().or_else(|| selected.cloned()) else {
-            ui.label("No graphics tiles");
+            ui.label(text(catalog, ExtendedUiTextKey::GraphicsNoTiles));
             return;
         };
         let character_shortcut = self.pending_character_shortcut.take();
@@ -1479,14 +1500,20 @@ impl RomGraphicsEditor {
         }
         let mut native_clipboard_tile = None;
         ui.horizontal(|ui| {
-            if ui.button("Copy tile").clicked() {
+            if ui
+                .button(text(catalog, ExtendedUiTextKey::GraphicsCopyTile))
+                .clicked()
+            {
                 if let Err(error) = native_clipboard::copy_graphics_tile_to_system(ui.ctx(), &tile)
                 {
                     self.error = Some(error);
                 }
             }
             if ui
-                .add_enabled(!stale && paste_editable, egui::Button::new("Paste tile"))
+                .add_enabled(
+                    !stale && paste_editable,
+                    egui::Button::new(text(catalog, ExtendedUiTextKey::GraphicsPasteTile)),
+                )
                 .clicked()
             {
                 match native_clipboard::request_graphics_tile_paste(ui.ctx()) {
@@ -2366,21 +2393,29 @@ impl RomGraphicsEditor {
         }
     }
 
-    fn graphics_format_warning(&mut self, context: &egui::Context) {
+    fn graphics_format_warning(
+        &mut self,
+        context: &egui::Context,
+        catalog: Option<&LocalizationCatalog>,
+    ) {
         if self.pending_graphics_format_warning.is_none() {
             return;
         }
         let mut proceed = false;
         let mut cancel = false;
-        egui::Window::new(GRAPHICS_FORMAT_WARNING_TITLE)
+        egui::Window::new(text(catalog, ExtendedUiTextKey::GraphicsFormatWarningTitle))
             .collapsible(false)
             .resizable(false)
             .show(context, |ui| {
                 ui.set_max_width(560.0);
-                ui.label(GRAPHICS_FORMAT_WARNING_BODY);
+                ui.label(text(catalog, ExtendedUiTextKey::GraphicsFormatWarningBody));
                 ui.horizontal(|ui| {
-                    proceed = ui.button("Yes").clicked();
-                    cancel = ui.button("No").clicked()
+                    proceed = ui
+                        .button(text(catalog, ExtendedUiTextKey::GraphicsYes))
+                        .clicked();
+                    cancel = ui
+                        .button(text(catalog, ExtendedUiTextKey::GraphicsNo))
+                        .clicked()
                         || context.input(|input| input.key_pressed(egui::Key::Escape));
                 });
             });
@@ -2910,6 +2945,67 @@ mod tests {
             "egui::Button::new(\"Commit graphics to ROM\")",
         ] {
             assert!(!source.contains(bypass));
+        }
+    }
+
+    #[test]
+    fn graphics_tile_diagnostics_and_confirmations_use_typed_keys() {
+        let source = include_str!("rom_graphics_editor.rs");
+        for key in [
+            ExtendedUiTextKey::GraphicsInternalCacheNotice,
+            ExtendedUiTextKey::GraphicsSaveLevelTitle,
+            ExtendedUiTextKey::GraphicsSaveLevelQuestion,
+            ExtendedUiTextKey::GraphicsSaveLevelPurpose,
+            ExtendedUiTextKey::GraphicsSaveLevelWarning,
+            ExtendedUiTextKey::GraphicsNoTiles,
+            ExtendedUiTextKey::GraphicsTileFormat,
+            ExtendedUiTextKey::GraphicsInternalTileNotice,
+            ExtendedUiTextKey::GraphicsCopyTile,
+            ExtendedUiTextKey::GraphicsPasteTile,
+            ExtendedUiTextKey::GraphicsFormatWarningTitle,
+            ExtendedUiTextKey::GraphicsFormatWarningBody,
+            ExtendedUiTextKey::GraphicsYes,
+            ExtendedUiTextKey::GraphicsNo,
+        ] {
+            assert!(source.contains(&format!("ExtendedUiTextKey::{key:?}")));
+        }
+        for bypass in [
+            "egui::Window::new(\"Save level GFX to Graphics folder?\")",
+            "ui.label(\"No graphics tiles\")",
+            "ui.button(\"Copy tile\")",
+            "egui::Button::new(\"Paste tile\")",
+            "ui.button(\"Yes\")",
+            "ui.button(\"No\")",
+        ] {
+            assert!(!source.contains(bypass));
+        }
+    }
+
+    #[test]
+    fn graphics_batch_and_import_progress_surfaces_use_typed_keys() {
+        let sources = [
+            include_str!("rom_graphics_editor/graphics_batch.rs"),
+            include_str!("rom_graphics_editor/graphics_import.rs"),
+        ];
+        for key in [
+            ExtendedUiTextKey::GraphicsExtractingFormat,
+            ExtendedUiTextKey::GraphicsStagingFormat,
+            ExtendedUiTextKey::GraphicsBatchAtomicNotice,
+            ExtendedUiTextKey::GraphicsCancellingNotice,
+            ExtendedUiTextKey::GraphicsInsertingFormat,
+            ExtendedUiTextKey::GraphicsReadingFormat,
+            ExtendedUiTextKey::GraphicsImportAtomicNotice,
+        ] {
+            let needle = format!("ExtendedUiTextKey::{key:?}");
+            assert!(sources.iter().any(|source| source.contains(&needle)));
+        }
+        for bypass in [
+            "ui.label(\"Files become visible only after the complete set is staged.\")",
+            "ui.label(\"The ROM changes only after the complete set validates.\")",
+            "ui.label(\"Cancelling after the current file…\")",
+            "ui.button(\"Cancel\")",
+        ] {
+            assert!(!sources.iter().any(|source| source.contains(bypass)));
         }
     }
 

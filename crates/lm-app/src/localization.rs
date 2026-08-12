@@ -1952,10 +1952,36 @@ pub enum ExtendedUiTextKey {
     GraphicsCommitReclaim,
     GraphicsStagedChanges,
     GraphicsNoStagedChanges,
+    GraphicsInternalCacheNotice,
+    GraphicsSaveLevelTitle,
+    GraphicsSaveLevelQuestion,
+    GraphicsSaveLevelPurpose,
+    GraphicsSaveLevelWarning,
+    GraphicsNoTiles,
+    GraphicsTileFormat,
+    GraphicsInternalTileNotice,
+    GraphicsCopyTile,
+    GraphicsPasteTile,
+    GraphicsFormatWarningTitle,
+    GraphicsFormatWarningBody,
+    GraphicsYes,
+    GraphicsNo,
+    GraphicsExtractingFormat,
+    GraphicsStagingFormat,
+    GraphicsBatchAtomicNotice,
+    GraphicsCancellingNotice,
+    GraphicsInsertingFormat,
+    GraphicsReadingFormat,
+    GraphicsImportAtomicNotice,
+    GraphicsToolbarGfxCompleteTitle,
+    GraphicsToolbarExGfxCompleteTitle,
+    GraphicsToolbarGfxCompleteFormat,
+    GraphicsToolbarExGfxCompleteFormat,
+    GraphicsToolbarErrorTitle,
 }
 
 impl ExtendedUiTextKey {
-    pub const ALL: [Self; 251] = [
+    pub const ALL: [Self; 277] = [
         Self::TilemapTitleScreenName,
         Self::TilemapCreditsName,
         Self::TilemapEditorTitleFormat,
@@ -2207,6 +2233,32 @@ impl ExtendedUiTextKey {
         Self::GraphicsCommitReclaim,
         Self::GraphicsStagedChanges,
         Self::GraphicsNoStagedChanges,
+        Self::GraphicsInternalCacheNotice,
+        Self::GraphicsSaveLevelTitle,
+        Self::GraphicsSaveLevelQuestion,
+        Self::GraphicsSaveLevelPurpose,
+        Self::GraphicsSaveLevelWarning,
+        Self::GraphicsNoTiles,
+        Self::GraphicsTileFormat,
+        Self::GraphicsInternalTileNotice,
+        Self::GraphicsCopyTile,
+        Self::GraphicsPasteTile,
+        Self::GraphicsFormatWarningTitle,
+        Self::GraphicsFormatWarningBody,
+        Self::GraphicsYes,
+        Self::GraphicsNo,
+        Self::GraphicsExtractingFormat,
+        Self::GraphicsStagingFormat,
+        Self::GraphicsBatchAtomicNotice,
+        Self::GraphicsCancellingNotice,
+        Self::GraphicsInsertingFormat,
+        Self::GraphicsReadingFormat,
+        Self::GraphicsImportAtomicNotice,
+        Self::GraphicsToolbarGfxCompleteTitle,
+        Self::GraphicsToolbarExGfxCompleteTitle,
+        Self::GraphicsToolbarGfxCompleteFormat,
+        Self::GraphicsToolbarExGfxCompleteFormat,
+        Self::GraphicsToolbarErrorTitle,
     ];
 
     #[must_use]
@@ -2551,6 +2603,48 @@ impl ExtendedUiTextKey {
             Self::GraphicsCommitReclaim => "Commit and reclaim",
             Self::GraphicsStagedChanges => "Staged graphics changes",
             Self::GraphicsNoStagedChanges => "No staged changes",
+            Self::GraphicsInternalCacheNotice => {
+                "Internal GFX data — transient working cache; F9 publishes current-level FG/BG/SP slots"
+            }
+            Self::GraphicsSaveLevelTitle => "Save level GFX to Graphics folder?",
+            Self::GraphicsSaveLevelQuestion => "Do you want to save the current level GFX to file,",
+            Self::GraphicsSaveLevelPurpose => "so it can be inserted to the ROM later?",
+            Self::GraphicsSaveLevelWarning => {
+                "Don't do this if you haven't extracted the graphics yet!"
+            }
+            Self::GraphicsNoTiles => "No graphics tiles",
+            Self::GraphicsTileFormat => "Tile {index}",
+            Self::GraphicsInternalTileNotice => {
+                "Internal working-cache tile; edits are transient unless F9 owns its current-level file."
+            }
+            Self::GraphicsCopyTile => "Copy tile",
+            Self::GraphicsPasteTile => "Paste tile",
+            Self::GraphicsFormatWarningTitle => "Graphics Format Change Warning!",
+            Self::GraphicsFormatWarningBody => {
+                "The GFX are about to be inserted as 4bpp, but any ExGFX already in the ROM are still stored in 3bpp format.  Make sure to re-insert the ExGFX too after this so the program can store them as 4bpp as well (if you don't yet have an external copy of them, you should cancel this and extract the ExGFX first).  Unless for some reason you actually like looking at garbled graphics...\n\nProceed anyway?"
+            }
+            Self::GraphicsYes => "Yes",
+            Self::GraphicsNo => "No",
+            Self::GraphicsExtractingFormat => "Extracting {family} GFX",
+            Self::GraphicsStagingFormat => "Staging {path}",
+            Self::GraphicsBatchAtomicNotice => {
+                "Files become visible only after the complete set is staged."
+            }
+            Self::GraphicsCancellingNotice => "Cancelling after the current file…",
+            Self::GraphicsInsertingFormat => "Inserting {family} GFX",
+            Self::GraphicsReadingFormat => "Reading {source}",
+            Self::GraphicsImportAtomicNotice => {
+                "The ROM changes only after the complete set validates."
+            }
+            Self::GraphicsToolbarGfxCompleteTitle => "GFX Extraction Complete!",
+            Self::GraphicsToolbarExGfxCompleteTitle => "ExGFX Extraction Complete!",
+            Self::GraphicsToolbarGfxCompleteFormat => {
+                "All GFX files have been extracted to:\n{path}"
+            }
+            Self::GraphicsToolbarExGfxCompleteFormat => {
+                "{count} ExGFX files have been extracted to:\n{path}"
+            }
+            Self::GraphicsToolbarErrorTitle => "Graphics extraction error",
         }
     }
 

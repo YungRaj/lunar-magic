@@ -1,4 +1,5 @@
 use eframe::egui;
+use lm_app::{ExtendedUiTextKey, LocalizationCatalog, UiTextKey};
 use lm_project::{GraphicsRomLayout, Project};
 use lm_rom::RomImage;
 use std::path::{Path, PathBuf};
@@ -187,29 +188,53 @@ impl GraphicsBatchWorker {
     pub(crate) fn show(
         &mut self,
         context: &egui::Context,
+        catalog: Option<&LocalizationCatalog>,
     ) -> Option<Result<Option<usize>, String>> {
         let completion = self.poll();
         if let Some(running) = &self.running {
             let completed = running.completed.load(Ordering::Relaxed);
             let cancellation_requested = running.cancelled.load(Ordering::Relaxed);
-            egui::Window::new(format!("Extracting {} GFX", running.family))
-                .collapsible(false)
-                .resizable(false)
-                .show(context, |ui| {
-                    ui.label(format!("Staging {}", running.target.path().display()));
-                    ui.add(
-                        egui::ProgressBar::new(completed as f32 / running.total as f32)
-                            .text(format!("{completed} / {}", running.total)),
-                    );
-                    ui.label("Files become visible only after the complete set is staged.");
-                    if cancellation_requested {
-                        ui.label("Cancelling after the current file…");
-                    } else if ui.button("Cancel").clicked()
-                        || context.input(|input| input.key_pressed(egui::Key::Escape))
-                    {
-                        running.request_cancel();
-                    }
-                });
+            egui::Window::new(
+                crate::rom_graphics_editor::text(
+                    catalog,
+                    ExtendedUiTextKey::GraphicsExtractingFormat,
+                )
+                .replace("{family}", running.family),
+            )
+            .collapsible(false)
+            .resizable(false)
+            .show(context, |ui| {
+                ui.label(
+                    crate::rom_graphics_editor::text(
+                        catalog,
+                        ExtendedUiTextKey::GraphicsStagingFormat,
+                    )
+                    .replace("{path}", &running.target.path().display().to_string()),
+                );
+                ui.add(
+                    egui::ProgressBar::new(completed as f32 / running.total as f32)
+                        .text(format!("{completed} / {}", running.total)),
+                );
+                ui.label(crate::rom_graphics_editor::text(
+                    catalog,
+                    ExtendedUiTextKey::GraphicsBatchAtomicNotice,
+                ));
+                if cancellation_requested {
+                    ui.label(crate::rom_graphics_editor::text(
+                        catalog,
+                        ExtendedUiTextKey::GraphicsCancellingNotice,
+                    ));
+                } else if ui
+                    .button(crate::frontend_ui::localized_text(
+                        catalog,
+                        UiTextKey::CommonCancel,
+                    ))
+                    .clicked()
+                    || context.input(|input| input.key_pressed(egui::Key::Escape))
+                {
+                    running.request_cancel();
+                }
+            });
             context.request_repaint_after(std::time::Duration::from_millis(100));
         }
         completion

@@ -1166,6 +1166,15 @@ tamper rejection. The four-platform workflow builds it and the packager binds it
 manifest. Launcher 2/2, updater 11/11, packager 3/3, and renderer 237/237 pass. Native activation
 consent and retained cross-platform release execution remain missing, so Release stays Partial and
 aggregate parity remains 60/65.
+Localization coverage update (2026-08-11, complete Graphics/ExGFX family): tile/cache diagnostics,
+level-GFX and format confirmations, tile clipboard actions, atomic batch extraction/insertion
+progress, cancellation, and toolbar standard/ExGFX completion/error dialogs now join the previously
+localized lifecycle, ownership, external-editor, and complete file-operation surfaces. Toolbar
+completion retains semantic action/count/path state so active-language rendering remains live. A
+direct audit finds no static widget literals across all seven ROM graphics modules. Localization
+model 28/28, ROM graphics 45 active tests with one explicit Wine/original-LM ignore, toolbar transfer
+8/8, and renderer 237/237 pass. Other native forms and retained live language-DLL evidence remain
+open; Localization stays Partial and aggregate parity remains 60/65.
 Localization coverage update (2026-08-11, graphics file operations): thirty-two typed extension
 keys now cover the main window and the complete standard GFX, GFX32/GFX33, ExGFX, AllGFX, raw, and
 current-level extraction/insertion toolbar, plus palette/joined mode, allocation, commit/reclaim,

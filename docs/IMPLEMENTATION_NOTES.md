@@ -7141,6 +7141,18 @@ event-number editor 5/5—including high-event install/reopen, invalid/stale han
 plus installed recovery—and renderer 237/237 pass. Localization stays Partial for remaining forms
 and live original language-DLL evidence; aggregate parity remains 60/65.
 
+Localization coverage update (2026-08-11, complete Graphics/ExGFX family): fourteen additional
+typed keys close tile/cache diagnostics, level-GFX export and 3bpp/4bpp format confirmations, tile
+clipboard actions, and Yes/No controls; seven keys close atomic batch extraction/insertion progress
+and cancellation; five keys close toolbar standard/ExGFX completion and error dialogs using semantic
+action/count/path state rather than pre-rendered English. The shared batch worker receives the active
+catalog from ROM, vanilla, and toolbar entry points. A direct audit now finds no literal window,
+button, label, small-text, combo-label, checkbox-label, or hover text across all seven ROM graphics
+modules. Localization model 28/28, ROM graphics 45 active tests with one explicit Wine/original-LM
+ignore, toolbar transfer 8/8, and renderer 237/237 pass. The complete Graphics/ExGFX UI family is
+catalog-driven; other native forms and retained live language-DLL evidence keep Localization
+Partial and aggregate parity at 60/65.
+
 Localization coverage update (2026-08-11, graphics file operations): thirty-two additional typed
 extension keys now cover the main ROM Graphics window, stale and palette-row state, joined-AllGFX
 mode, configured/direct external-editor actions, raw GFX/ExGFX transfer, current-level FG/BG/SP

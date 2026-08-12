@@ -5,7 +5,7 @@ use crate::{
     },
 };
 use eframe::egui;
-use lm_app::AppState;
+use lm_app::{AppState, ExtendedUiTextKey, LocalizationCatalog, UiTextKey};
 use lm_rom::{Mapper, Region, RomImage, SupportedGame};
 use std::path::{Path, PathBuf};
 
@@ -31,8 +31,9 @@ struct GraphicsExtractionPresentation {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct GraphicsExtractionCompletion {
-    title: &'static str,
-    message: String,
+    action: QuickGraphicsExtraction,
+    count: usize,
+    target: PathBuf,
 }
 
 impl ToolbarGraphicsTransfer {
@@ -72,31 +73,60 @@ impl ToolbarGraphicsTransfer {
         result
     }
 
-    pub(crate) fn show(&mut self, context: &egui::Context) {
-        if let Some(result) = self.worker.show(context) {
+    pub(crate) fn show(&mut self, context: &egui::Context, catalog: Option<&LocalizationCatalog>) {
+        if let Some(result) = self.worker.show(context, catalog) {
             self.complete(result);
         }
         if let Some(completion) = self.completion.clone() {
-            egui::Window::new(completion.title)
+            let (title_key, message_key) = match completion.action {
+                QuickGraphicsExtraction::Standard => (
+                    ExtendedUiTextKey::GraphicsToolbarGfxCompleteTitle,
+                    ExtendedUiTextKey::GraphicsToolbarGfxCompleteFormat,
+                ),
+                QuickGraphicsExtraction::ExGraphics => (
+                    ExtendedUiTextKey::GraphicsToolbarExGfxCompleteTitle,
+                    ExtendedUiTextKey::GraphicsToolbarExGfxCompleteFormat,
+                ),
+            };
+            egui::Window::new(crate::rom_graphics_editor::text(catalog, title_key))
                 .collapsible(false)
                 .resizable(false)
                 .show(context, |ui| {
-                    ui.label(completion.message);
-                    if ui.button("OK").clicked() {
+                    ui.label(
+                        crate::rom_graphics_editor::text(catalog, message_key)
+                            .replace("{count}", &completion.count.to_string())
+                            .replace("{path}", &completion.target.display().to_string()),
+                    );
+                    if ui
+                        .button(crate::frontend_ui::localized_text(
+                            catalog,
+                            UiTextKey::CommonOk,
+                        ))
+                        .clicked()
+                    {
                         self.completion = None;
                     }
                 });
         }
         if let Some(error) = self.error.clone() {
-            egui::Window::new("Graphics extraction error")
-                .collapsible(false)
-                .resizable(false)
-                .show(context, |ui| {
-                    ui.label(error);
-                    if ui.button("OK").clicked() {
-                        self.error = None;
-                    }
-                });
+            egui::Window::new(crate::rom_graphics_editor::text(
+                catalog,
+                ExtendedUiTextKey::GraphicsToolbarErrorTitle,
+            ))
+            .collapsible(false)
+            .resizable(false)
+            .show(context, |ui| {
+                ui.label(error);
+                if ui
+                    .button(crate::frontend_ui::localized_text(
+                        catalog,
+                        UiTextKey::CommonOk,
+                    ))
+                    .clicked()
+                {
+                    self.error = None;
+                }
+            });
         }
     }
 
@@ -105,21 +135,10 @@ impl ToolbarGraphicsTransfer {
         match result {
             Ok(Some(count)) => {
                 if let Some(presentation) = presentation {
-                    self.completion = Some(match presentation.action {
-                        QuickGraphicsExtraction::Standard => GraphicsExtractionCompletion {
-                            title: "GFX Extraction Complete!",
-                            message: format!(
-                                "All GFX files have been extracted to:\n{}",
-                                presentation.target.display()
-                            ),
-                        },
-                        QuickGraphicsExtraction::ExGraphics => GraphicsExtractionCompletion {
-                            title: "ExGFX Extraction Complete!",
-                            message: format!(
-                                "{count} ExGFX files have been extracted to:\n{}",
-                                presentation.target.display()
-                            ),
-                        },
+                    self.completion = Some(GraphicsExtractionCompletion {
+                        action: presentation.action,
+                        count,
+                        target: presentation.target,
                     });
                 }
             }
@@ -320,11 +339,9 @@ mod tests {
         assert_eq!(
             transfer.completion,
             Some(GraphicsExtractionCompletion {
-                title: "GFX Extraction Complete!",
-                message: format!(
-                    "All GFX files have been extracted to:\n{}",
-                    root.path().join("Graphics").display()
-                ),
+                action: QuickGraphicsExtraction::Standard,
+                count: 0x34,
+                target: root.path().join("Graphics"),
             })
         );
     }
@@ -364,8 +381,9 @@ mod tests {
         assert_eq!(
             transfer.completion,
             Some(GraphicsExtractionCompletion {
-                title: "ExGFX Extraction Complete!",
-                message: "17 ExGFX files have been extracted to:\n/project/ExGraphics".into(),
+                action: QuickGraphicsExtraction::ExGraphics,
+                count: 17,
+                target: PathBuf::from("/project/ExGraphics"),
             })
         );
     }

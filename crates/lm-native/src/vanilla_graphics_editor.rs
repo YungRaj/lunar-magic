@@ -93,7 +93,7 @@ impl VanillaGraphicsEditor {
         convert_berry_gfx_tile: bool,
     ) -> Option<Command> {
         take_graphics_refresh_shortcut(ui);
-        if let Some(result) = self.graphics_batch.show(ui.ctx()) {
+        if let Some(result) = self.graphics_batch.show(ui.ctx(), app.localization()) {
             match result {
                 Ok(Some(_)) => self.status.set("Saved FG/BG/SP GFX to files."),
                 Ok(None) => self.status.set("GFX extraction cancelled."),
