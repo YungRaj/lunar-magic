@@ -3955,10 +3955,12 @@ pub enum ExtendedUiTextKey {
     VanillaLevelRemoveSprite,
     VanillaLevelCopyRecord,
     VanillaLevelPasteRecordAfterSelection,
+    VanillaLevelPlaceOnCanvas,
+    VanillaLevelApplyFields,
 }
 
 impl ExtendedUiTextKey {
-    pub const ALL: [Self; 2254] = [
+    pub const ALL: [Self; 2256] = [
         Self::MwlDocumentEditorTitle,
         Self::MwlDocumentVersionFormat,
         Self::MwlDocumentFlagsHex,
@@ -6213,6 +6215,8 @@ impl ExtendedUiTextKey {
         Self::VanillaLevelRemoveSprite,
         Self::VanillaLevelCopyRecord,
         Self::VanillaLevelPasteRecordAfterSelection,
+        Self::VanillaLevelPlaceOnCanvas,
+        Self::VanillaLevelApplyFields,
     ];
 
     #[must_use]
@@ -9136,6 +9140,8 @@ impl ExtendedUiTextKey {
             Self::VanillaLevelRemoveSprite => "Remove sprite",
             Self::VanillaLevelCopyRecord => "Copy record",
             Self::VanillaLevelPasteRecordAfterSelection => "Paste record after selection",
+            Self::VanillaLevelPlaceOnCanvas => "Place on canvas",
+            Self::VanillaLevelApplyFields => "Apply fields",
         }
     }
 

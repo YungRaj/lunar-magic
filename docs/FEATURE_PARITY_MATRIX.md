@@ -1310,6 +1310,13 @@ manifest. Launcher 2/2, updater 11/11, packager 3/3, and renderer 237/237 pass. 
 consent and retained cross-platform release execution remain missing, so Release stays Partial and
 aggregate parity remains 60/65.
 
+Localization coverage update (2026-08-12, vanilla Layer 2 object actions): two new typed keys plus
+shared object-action keys cover placement, insertion, semantic/raw application, removal, ordering,
+copy, and paste for decoded Layer 2 streams. A bounded source audit rejects the former literal
+controls; focused native, localization 28/28 active tests (one provenance ignore), and renderer
+237/237 pass. Other vanilla/native surfaces keep Localization Partial, so aggregate parity remains
+60/65.
+
 Localization coverage update (2026-08-12, vanilla sprite mutation actions): six new typed keys plus
 shared insert/move keys cover header staging, insert, raw/semantic replacement, removal, ordering,
 copy, and paste. A bounded source audit rejects the former literal controls; focused native,

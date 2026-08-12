@@ -1534,7 +1534,12 @@ impl VanillaLevelEditor {
                     self.extended_object_catalog(ui, catalog, custom_map16, true);
                     self.custom_object_catalog(ui, catalog, custom_objects, custom_map16, true);
                     self.object_catalog_preview_area(ui, custom_objects, custom_map16, true);
-                    self.show_layer2_object_editor(ui, &objects.objects.records, custom_objects);
+                    self.show_layer2_object_editor(
+                        ui,
+                        catalog,
+                        &objects.objects.records,
+                        custom_objects,
+                    );
                 }
             });
     }
@@ -1623,6 +1628,7 @@ impl VanillaLevelEditor {
     fn show_layer2_object_editor(
         &mut self,
         ui: &mut egui::Ui,
+        catalog: Option<&LocalizationCatalog>,
         records: &[ObjectRecord],
         custom_objects: Option<&lm_level::OscResolvedTable>,
     ) {
@@ -1671,16 +1677,34 @@ impl VanillaLevelEditor {
             &mut self.layer2_object_form,
         );
         ui.horizontal_wrapped(|ui| {
-            if ui.button("Place on canvas").clicked() {
+            if ui
+                .button(vanilla_text(
+                    catalog,
+                    ExtendedUiTextKey::VanillaLevelPlaceOnCanvas,
+                ))
+                .clicked()
+            {
                 self.placement_mode = Some(CanvasPlacementMode::Layer2Object);
                 self.error = None;
             }
-            if ui.button("Insert after selection").clicked() {
+            if ui
+                .button(vanilla_text(
+                    catalog,
+                    ExtendedUiTextKey::VanillaLevelInsertAfterSelection,
+                ))
+                .clicked()
+            {
                 self.insert_layer2_object_after_selection(records.len());
             }
             let has_selection = self.selected_layer2_object < records.len();
             if ui
-                .add_enabled(has_selection, egui::Button::new("Apply fields"))
+                .add_enabled(
+                    has_selection,
+                    egui::Button::new(vanilla_text(
+                        catalog,
+                        ExtendedUiTextKey::VanillaLevelApplyFields,
+                    )),
+                )
                 .clicked()
             {
                 let edits = object_field_edits(
@@ -1691,7 +1715,13 @@ impl VanillaLevelEditor {
                 self.apply_layer2_object_result(edits);
             }
             if ui
-                .add_enabled(has_selection, egui::Button::new("Apply raw record"))
+                .add_enabled(
+                    has_selection,
+                    egui::Button::new(vanilla_text(
+                        catalog,
+                        ExtendedUiTextKey::VanillaLevelApplyRawRecord,
+                    )),
+                )
                 .clicked()
             {
                 let edit = self.layer2_object_form.raw_record().map(|record| {
@@ -1703,16 +1733,25 @@ impl VanillaLevelEditor {
                 self.apply_layer2_object_result(edit);
             }
             if ui
-                .add_enabled(has_selection, egui::Button::new("Remove object"))
+                .add_enabled(
+                    has_selection,
+                    egui::Button::new(vanilla_text(
+                        catalog,
+                        ExtendedUiTextKey::VanillaLevelRemoveObject,
+                    )),
+                )
                 .clicked()
             {
                 self.apply_layer2_object_result(Ok(vec![ObjectEdit::Remove {
                     index: self.selected_layer2_object,
                 }]));
             }
-            self.layer2_object_move_buttons(ui, records.len());
+            self.layer2_object_move_buttons(ui, catalog, records.len());
             if ui
-                .add_enabled(has_selection, egui::Button::new("Copy"))
+                .add_enabled(
+                    has_selection,
+                    egui::Button::new(vanilla_text(catalog, ExtendedUiTextKey::VanillaLevelCopy)),
+                )
                 .clicked()
                 && let Some(record) = records.get(self.selected_layer2_object)
             {
@@ -1721,7 +1760,13 @@ impl VanillaLevelEditor {
                     Err(error) => self.error = Some(error),
                 }
             }
-            if ui.button("Paste after selection").clicked() {
+            if ui
+                .button(vanilla_text(
+                    catalog,
+                    ExtendedUiTextKey::VanillaLevelPasteAfterSelection,
+                ))
+                .clicked()
+            {
                 self.paste_target = Some(EntityPasteTarget::Layer2Object);
                 ui.ctx()
                     .send_viewport_cmd(egui::ViewportCommand::RequestPaste);
@@ -11132,11 +11177,16 @@ impl VanillaLevelEditor {
         }
     }
 
-    fn layer2_object_move_buttons(&mut self, ui: &mut egui::Ui, record_count: usize) {
+    fn layer2_object_move_buttons(
+        &mut self,
+        ui: &mut egui::Ui,
+        catalog: Option<&LocalizationCatalog>,
+        record_count: usize,
+    ) {
         if ui
             .add_enabled(
                 self.selected_layer2_object > 0,
-                egui::Button::new("Move up"),
+                egui::Button::new(vanilla_text(catalog, ExtendedUiTextKey::VanillaLevelMoveUp)),
             )
             .clicked()
         {
@@ -11145,7 +11195,10 @@ impl VanillaLevelEditor {
         if ui
             .add_enabled(
                 self.selected_layer2_object.saturating_add(1) < record_count,
-                egui::Button::new("Move down"),
+                egui::Button::new(vanilla_text(
+                    catalog,
+                    ExtendedUiTextKey::VanillaLevelMoveDown,
+                )),
             )
             .clicked()
         {
@@ -17211,6 +17264,27 @@ mod tests {
             assert!(
                 !sprite_actions.contains(literal),
                 "fixed-English sprite mutation action: {literal}"
+            );
+        }
+        let layer2_editor = source
+            .split("    fn show_layer2_object_editor(")
+            .nth(1)
+            .unwrap()
+            .split("    fn apply_layer2_object_result(")
+            .next()
+            .unwrap();
+        for literal in [
+            "button(\"Place on canvas\")",
+            "button(\"Insert after selection\")",
+            "Button::new(\"Apply fields\")",
+            "Button::new(\"Apply raw record\")",
+            "Button::new(\"Remove object\")",
+            "Button::new(\"Copy\")",
+            "button(\"Paste after selection\")",
+        ] {
+            assert!(
+                !layer2_editor.contains(literal),
+                "fixed-English Layer 2 object action: {literal}"
             );
         }
         let modeless_editors = source

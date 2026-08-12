@@ -7100,6 +7100,15 @@ ignore), native compilation passes, and renderer remains 237/237. Vanilla-level 
 shared progress windows, and retained live language-DLL evidence keep Localization Partial;
 aggregate parity remains 60/65.
 
+Localization coverage update (2026-08-12, vanilla Layer 2 object actions): two additional
+`VanillaLevel*` identities plus the shared object-action vocabulary cover canvas placement,
+insertion, semantic/raw application, removal, stream ordering, copy, and paste for decoded Layer 2
+object streams. The catalog now flows from the Layer 2 panel into the complete object editor while
+edit ordering, clipboard encoding, and placement semantics remain unchanged. A bounded source audit
+rejects the former fixed-English controls. Focused native and localization tests pass, and renderer
+remains 237/237. Other vanilla/native forms keep Localization Partial; aggregate parity remains
+60/65.
+
 Localization coverage update (2026-08-12, vanilla sprite mutation actions): six additional
 `VanillaLevel*` identities, together with the shared insert and move identities, cover sprite-header
 staging, insertion, raw replacement, semantic-field application, removal, stream ordering,
