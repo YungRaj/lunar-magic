@@ -2361,29 +2361,16 @@ impl VanillaLevelEditor {
                     VanillaMainEntrance::default,
                     VanillaEntranceController::entrance,
                 );
-                self.initial_vertical_scroll_tiles =
-                    visual_smoke_editor_scroll_row().or_else(|| {
-                        (!lm_profile::smw_us_v1_level_mode(
-                            controller.level().layer1.header.level_mode(),
-                        )
-                        .vertical)
-                            .then(|| vanilla_horizontal_entrance_scroll_row(self.entrance_form))
-                    });
-                if self.open_levels_at_main_entrance.unwrap_or(true) {
-                    let mode = lm_profile::smw_us_v1_level_mode(
-                        controller.level().layer1.header.level_mode(),
-                    );
-                    let marker = if mode.vertical {
-                        vertical_primary_entrance_marker_pixels(
-                            self.entrance_form,
-                            mode.alternate_layer_layout,
-                        )
-                    } else {
-                        horizontal_primary_entrance_marker_pixels(self.entrance_form)
-                    };
-                    self.initial_horizontal_scroll_tiles = Some(marker.0 / 16);
-                    self.initial_vertical_scroll_tiles = Some(marker.1 / 16);
-                }
+                let mode =
+                    lm_profile::smw_us_v1_level_mode(controller.level().layer1.header.level_mode());
+                let (horizontal, vertical) = initial_level_scroll_tiles(
+                    self.entrance_form,
+                    mode.vertical,
+                    mode.alternate_layer_layout,
+                    self.open_levels_at_main_entrance.unwrap_or(true),
+                );
+                self.initial_horizontal_scroll_tiles = horizontal;
+                self.initial_vertical_scroll_tiles = visual_smoke_editor_scroll_row().or(vertical);
                 self.preview_camera_major_offset = visual_smoke_camera_offset("MAJOR");
                 self.preview_camera_minor_offset = visual_smoke_camera_offset("MINOR");
                 self.midway_form = self
@@ -12709,6 +12696,26 @@ fn vanilla_horizontal_entrance_scroll_row(entrance: VanillaMainEntrance) -> u16 
         row += 3;
     }
     row
+}
+
+fn initial_level_scroll_tiles(
+    entrance: VanillaMainEntrance,
+    vertical: bool,
+    alternate_vertical_layout: bool,
+    open_at_main_entrance: bool,
+) -> (Option<u16>, Option<u16>) {
+    if !open_at_main_entrance {
+        return (
+            None,
+            (!vertical).then(|| vanilla_horizontal_entrance_scroll_row(entrance)),
+        );
+    }
+    let marker = if vertical {
+        vertical_primary_entrance_marker_pixels(entrance, alternate_vertical_layout)
+    } else {
+        horizontal_primary_entrance_marker_pixels(entrance)
+    };
+    (Some(marker.0 / 16), Some(marker.1 / 16))
 }
 
 /// Returns Lunar Magic's label anchor in level pixels for the ordinary main entrance.
@@ -26314,6 +26321,51 @@ mod tests {
             .collect::<Vec<_>>();
         indexes.sort_unstable();
         assert_eq!(indexes, (0..1024).collect::<Vec<_>>());
+    }
+
+    #[test]
+    fn open_level_at_main_entrance_seeds_both_canvas_axes() {
+        let horizontal = VanillaMainEntrance {
+            position: 0x0b,
+            vertical_settings: 0x04,
+            level_mode_and_screen: 0x07,
+            ..VanillaMainEntrance::default()
+        };
+        let marker = horizontal_primary_entrance_marker_pixels(horizontal);
+        assert_eq!(
+            initial_level_scroll_tiles(horizontal, false, false, true),
+            (Some(marker.0 / 16), Some(marker.1 / 16))
+        );
+
+        let vertical = VanillaMainEntrance {
+            position: 0x06,
+            vertical_settings: 0x02,
+            level_mode_and_screen: 0x25,
+            ..VanillaMainEntrance::default()
+        };
+        let marker = vertical_primary_entrance_marker_pixels(vertical, true);
+        assert_eq!(
+            initial_level_scroll_tiles(vertical, true, true, true),
+            (Some(marker.0 / 16), Some(marker.1 / 16))
+        );
+    }
+
+    #[test]
+    fn disabling_open_at_main_entrance_retains_legacy_scroll_origin() {
+        let entrance = VanillaMainEntrance {
+            position: 0x0f,
+            vertical_settings: 0x04,
+            level_mode_and_screen: 0x07,
+            ..VanillaMainEntrance::default()
+        };
+        assert_eq!(
+            initial_level_scroll_tiles(entrance, false, false, false),
+            (None, Some(vanilla_horizontal_entrance_scroll_row(entrance)))
+        );
+        assert_eq!(
+            initial_level_scroll_tiles(entrance, true, false, false),
+            (None, None)
+        );
     }
 
     #[test]
