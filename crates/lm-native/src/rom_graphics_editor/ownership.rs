@@ -1,36 +1,66 @@
 use eframe::egui;
+use lm_app::{ExtendedUiTextKey, LocalizationCatalog};
 use lm_graphics::GraphicsTileOwner;
 
-pub(super) fn show(ui: &mut egui::Ui, owner: Option<GraphicsTileOwner>) -> bool {
+pub(super) fn show(
+    ui: &mut egui::Ui,
+    owner: Option<GraphicsTileOwner>,
+    catalog: Option<&LocalizationCatalog>,
+) -> bool {
     match owner {
         Some(GraphicsTileOwner::Editable) => {
-            ui.label("Ownership: editable");
+            ui.label(super::text(
+                catalog,
+                ExtendedUiTextKey::GraphicsOwnershipEditable,
+            ));
         }
         Some(GraphicsTileOwner::Fixed) => {
-            ui.label("Ownership: fixed (read-only)");
+            ui.label(super::text(
+                catalog,
+                ExtendedUiTextKey::GraphicsOwnershipFixed,
+            ));
         }
         Some(GraphicsTileOwner::ExAnimation { record }) => {
-            ui.label(format!(
-                "Ownership: ExAnimation record {record:04X} (read-only)"
-            ));
+            ui.label(
+                super::text(
+                    catalog,
+                    ExtendedUiTextKey::GraphicsOwnershipExAnimationFormat,
+                )
+                .replace("{record}", &format!("{record:04X}")),
+            );
         }
         Some(GraphicsTileOwner::OriginalAnimation { slot }) => {
-            ui.label(format!(
-                "Ownership: original animation slot {slot:02X} (read-only)"
-            ));
+            ui.label(
+                super::text(
+                    catalog,
+                    ExtendedUiTextKey::GraphicsOwnershipOriginalAnimationFormat,
+                )
+                .replace("{slot}", &format!("{slot:02X}")),
+            );
         }
         Some(GraphicsTileOwner::LevelExAnimation { slot }) => {
-            ui.label(format!(
-                "Ownership: level ExAnimation slot {slot:02X} (read-only)"
-            ));
+            ui.label(
+                super::text(
+                    catalog,
+                    ExtendedUiTextKey::GraphicsOwnershipLevelExAnimationFormat,
+                )
+                .replace("{slot}", &format!("{slot:02X}")),
+            );
         }
         Some(GraphicsTileOwner::GlobalExAnimation { slot }) => {
-            ui.label(format!(
-                "Ownership: global ExAnimation slot {slot:02X} (read-only)"
-            ));
+            ui.label(
+                super::text(
+                    catalog,
+                    ExtendedUiTextKey::GraphicsOwnershipGlobalExAnimationFormat,
+                )
+                .replace("{slot}", &format!("{slot:02X}")),
+            );
         }
         None => {
-            ui.label("Ownership: invalid (read-only)");
+            ui.label(super::text(
+                catalog,
+                ExtendedUiTextKey::GraphicsOwnershipInvalid,
+            ));
         }
     }
     is_editable(owner)

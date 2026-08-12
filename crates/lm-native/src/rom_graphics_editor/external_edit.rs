@@ -1,4 +1,5 @@
 use eframe::egui;
+use lm_app::{ExtendedUiTextKey, LocalizationCatalog, UiTextKey};
 use lm_app::{ExternalTool, ToolContext, ToolInvocation};
 use lm_graphics::{Palette, RgbChannelExpansion, RgbPaletteFile};
 use std::fs::{self, OpenOptions};
@@ -146,16 +147,26 @@ impl ExternalGraphicsEditor {
     pub(super) fn show(
         &mut self,
         context: &egui::Context,
+        catalog: Option<&LocalizationCatalog>,
     ) -> Option<Result<ExternalEditCompletion, String>> {
         let completion = self.poll();
         if let Some(running) = &self.running {
-            egui::Window::new("External graphics editor running")
-                .collapsible(false)
-                .resizable(false)
-                .show(context, |ui| {
-                    ui.label(format!("Waiting for {}", running.path.display()));
-                    ui.label("The staged file will reload after the editor exits successfully.");
-                });
+            egui::Window::new(super::text(
+                catalog,
+                ExtendedUiTextKey::GraphicsExternalRunningTitle,
+            ))
+            .collapsible(false)
+            .resizable(false)
+            .show(context, |ui| {
+                ui.label(
+                    super::text(catalog, ExtendedUiTextKey::GraphicsExternalWaitingFormat)
+                        .replace("{path}", &running.path.display().to_string()),
+                );
+                ui.label(super::text(
+                    catalog,
+                    ExtendedUiTextKey::GraphicsExternalReloadNotice,
+                ));
+            });
             context.request_repaint_after(std::time::Duration::from_millis(100));
             return completion;
         }
@@ -164,24 +175,46 @@ impl ExternalGraphicsEditor {
         };
         let mut run = false;
         let mut cancel = false;
-        egui::Window::new("Open staged graphics externally?")
-            .collapsible(false)
-            .resizable(true)
-            .show(context, |ui| {
-                ui.label(format!(
-                    "Executable: {}",
-                    pending.invocation.executable.display()
-                ));
-                ui.label(format!("Staged file: {}", pending.path.display()));
-                ui.label("Arguments are passed directly without a command shell:");
-                for (index, argument) in pending.invocation.arguments.iter().enumerate() {
-                    ui.monospace(format!("argument[{index}] = {argument:?}"));
-                }
-                ui.horizontal(|ui| {
-                    cancel = ui.button("Cancel").clicked();
-                    run = ui.button("Run editor").clicked();
-                });
+        egui::Window::new(super::text(
+            catalog,
+            ExtendedUiTextKey::GraphicsExternalConsentTitle,
+        ))
+        .collapsible(false)
+        .resizable(true)
+        .show(context, |ui| {
+            ui.label(
+                super::text(catalog, ExtendedUiTextKey::GraphicsExternalExecutableFormat).replace(
+                    "{path}",
+                    &pending.invocation.executable.display().to_string(),
+                ),
+            );
+            ui.label(
+                super::text(catalog, ExtendedUiTextKey::GraphicsExternalStagedFileFormat)
+                    .replace("{path}", &pending.path.display().to_string()),
+            );
+            ui.label(super::text(
+                catalog,
+                ExtendedUiTextKey::GraphicsExternalArgumentsNotice,
+            ));
+            for (index, argument) in pending.invocation.arguments.iter().enumerate() {
+                ui.monospace(
+                    super::text(catalog, ExtendedUiTextKey::GraphicsExternalArgumentFormat)
+                        .replace("{index}", &index.to_string())
+                        .replace("{argument}", &format!("{argument:?}")),
+                );
+            }
+            ui.horizontal(|ui| {
+                cancel = ui
+                    .button(crate::frontend_ui::localized_text(
+                        catalog,
+                        UiTextKey::CommonCancel,
+                    ))
+                    .clicked();
+                run = ui
+                    .button(super::text(catalog, ExtendedUiTextKey::GraphicsExternalRun))
+                    .clicked();
             });
+        });
         if cancel {
             if let Err(error) = self.cancel_pending() {
                 return Some(Err(error));

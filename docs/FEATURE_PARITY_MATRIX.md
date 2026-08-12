@@ -1183,6 +1183,15 @@ secondary-high reopen, bounds/stale safety, complete three-plane recovery, and i
 preservation remain proven. Localization model 28/28, event-tilemap editor 5/5, and renderer
 237/237 pass. Other native forms and retained live language-DLL evidence remain open; Localization
 stays Partial and aggregate parity remains 60/65.
+Localization coverage update (2026-08-11, graphics lifecycle/ownership/external editing): nineteen
+typed extension keys now cover external-process consent/running state and path/argument templates,
+all seven ownership classifications, plus graphics discard and error handling. Shared fixed-prefix
+confirmation actions remain stable. A three-module audit covers this coherent safety subworkflow.
+Localization model 28/28, graphics editor 42 active tests with one explicit Wine/original-LM ignore,
+and renderer 237/237 pass. Process cleanup/reload, ownership enforcement, standard/ExGFX insertion,
+atomic import, reopen/undo, and recovery remain green. Main-editor, batch-progress, insertion-warning,
+and remaining graphics controls still require catalog wiring; Localization stays Partial and
+aggregate parity remains 60/65.
 Localization coverage update (2026-08-11, overworld global settings): the complete seven-record raw
 and semantic Layer 3 editor now consumes twenty-six typed extension keys, including installed versus
 pristine runtime state, dynamic word/GFX labels, every semantic field, and preservation guidance,

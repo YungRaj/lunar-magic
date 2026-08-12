@@ -1901,10 +1901,29 @@ pub enum ExtendedUiTextKey {
     SharedPaletteDiscardTitle,
     SharedPaletteUnsavedNotice,
     SharedPaletteErrorTitle,
+    GraphicsExternalRunningTitle,
+    GraphicsExternalWaitingFormat,
+    GraphicsExternalReloadNotice,
+    GraphicsExternalConsentTitle,
+    GraphicsExternalExecutableFormat,
+    GraphicsExternalStagedFileFormat,
+    GraphicsExternalArgumentsNotice,
+    GraphicsExternalArgumentFormat,
+    GraphicsExternalRun,
+    GraphicsOwnershipEditable,
+    GraphicsOwnershipFixed,
+    GraphicsOwnershipExAnimationFormat,
+    GraphicsOwnershipOriginalAnimationFormat,
+    GraphicsOwnershipLevelExAnimationFormat,
+    GraphicsOwnershipGlobalExAnimationFormat,
+    GraphicsOwnershipInvalid,
+    GraphicsDiscardTitle,
+    GraphicsUnsavedNotice,
+    GraphicsErrorTitle,
 }
 
 impl ExtendedUiTextKey {
-    pub const ALL: [Self; 200] = [
+    pub const ALL: [Self; 219] = [
         Self::TilemapTitleScreenName,
         Self::TilemapCreditsName,
         Self::TilemapEditorTitleFormat,
@@ -2105,6 +2124,25 @@ impl ExtendedUiTextKey {
         Self::SharedPaletteDiscardTitle,
         Self::SharedPaletteUnsavedNotice,
         Self::SharedPaletteErrorTitle,
+        Self::GraphicsExternalRunningTitle,
+        Self::GraphicsExternalWaitingFormat,
+        Self::GraphicsExternalReloadNotice,
+        Self::GraphicsExternalConsentTitle,
+        Self::GraphicsExternalExecutableFormat,
+        Self::GraphicsExternalStagedFileFormat,
+        Self::GraphicsExternalArgumentsNotice,
+        Self::GraphicsExternalArgumentFormat,
+        Self::GraphicsExternalRun,
+        Self::GraphicsOwnershipEditable,
+        Self::GraphicsOwnershipFixed,
+        Self::GraphicsOwnershipExAnimationFormat,
+        Self::GraphicsOwnershipOriginalAnimationFormat,
+        Self::GraphicsOwnershipLevelExAnimationFormat,
+        Self::GraphicsOwnershipGlobalExAnimationFormat,
+        Self::GraphicsOwnershipInvalid,
+        Self::GraphicsDiscardTitle,
+        Self::GraphicsUnsavedNotice,
+        Self::GraphicsErrorTitle,
     ];
 
     #[must_use]
@@ -2376,6 +2414,37 @@ impl ExtendedUiTextKey {
                 "The staged shared/custom palette has not been committed to the ROM."
             }
             Self::SharedPaletteErrorTitle => "Shared-palette editor error",
+            Self::GraphicsExternalRunningTitle => "External graphics editor running",
+            Self::GraphicsExternalWaitingFormat => "Waiting for {path}",
+            Self::GraphicsExternalReloadNotice => {
+                "The staged file will reload after the editor exits successfully."
+            }
+            Self::GraphicsExternalConsentTitle => "Open staged graphics externally?",
+            Self::GraphicsExternalExecutableFormat => "Executable: {path}",
+            Self::GraphicsExternalStagedFileFormat => "Staged file: {path}",
+            Self::GraphicsExternalArgumentsNotice => {
+                "Arguments are passed directly without a command shell:"
+            }
+            Self::GraphicsExternalArgumentFormat => "argument[{index}] = {argument}",
+            Self::GraphicsExternalRun => "Run editor",
+            Self::GraphicsOwnershipEditable => "Ownership: editable",
+            Self::GraphicsOwnershipFixed => "Ownership: fixed (read-only)",
+            Self::GraphicsOwnershipExAnimationFormat => {
+                "Ownership: ExAnimation record {record} (read-only)"
+            }
+            Self::GraphicsOwnershipOriginalAnimationFormat => {
+                "Ownership: original animation slot {slot} (read-only)"
+            }
+            Self::GraphicsOwnershipLevelExAnimationFormat => {
+                "Ownership: level ExAnimation slot {slot} (read-only)"
+            }
+            Self::GraphicsOwnershipGlobalExAnimationFormat => {
+                "Ownership: global ExAnimation slot {slot} (read-only)"
+            }
+            Self::GraphicsOwnershipInvalid => "Ownership: invalid (read-only)",
+            Self::GraphicsDiscardTitle => "Discard staged graphics changes?",
+            Self::GraphicsUnsavedNotice => "These changes have not been committed to the ROM.",
+            Self::GraphicsErrorTitle => "ROM graphics error",
         }
     }
 

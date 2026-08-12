@@ -25,8 +25,8 @@ use crate::{
 };
 use eframe::egui;
 use lm_app::{
-    AppState, Command, GraphicsController, GraphicsControllerEdit, ProfiledControllerSnapshot,
-    RevisionProfile,
+    AppState, Command, ExtendedUiTextKey, GraphicsController, GraphicsControllerEdit,
+    LocalizationCatalog, ProfiledControllerSnapshot, RevisionProfile,
 };
 use lm_graphics::{
     ExAnimationFeature, GraphicsTileChange, IndexedTile, PaletteInterchangeFile, TileShift,
@@ -37,6 +37,10 @@ mod external_edit;
 mod graphics_import;
 mod lifecycle;
 mod ownership;
+
+fn text(catalog: Option<&LocalizationCatalog>, key: ExtendedUiTextKey) -> String {
+    crate::frontend_ui::extended_localized_text(catalog, key)
+}
 
 const STANDARD_GFX_LIMIT: usize = 0x34;
 const EXGFX_FIRST: usize = 0x80;
@@ -468,7 +472,7 @@ impl RomGraphicsEditor {
                 }
             });
         }
-        if let Some(result) = self.external_editor.show(context) {
+        if let Some(result) = self.external_editor.show(context, app.localization()) {
             match result.and_then(|completion| {
                 ensure_external_edit_revision(completion.expected_revision, revision)?;
                 let workspace = self
@@ -530,8 +534,8 @@ impl RomGraphicsEditor {
                 });
         }
         self.level_graphics_export_confirmation(context, app, special_world_passed);
-        let approved = self.close_confirmation(context);
-        self.show_error(context);
+        let approved = self.close_confirmation(context, app.localization());
+        self.show_error(context, app.localization());
         (approved, command)
     }
 
@@ -1347,7 +1351,7 @@ impl RomGraphicsEditor {
             ui.label("Internal working-cache tile; edits are transient unless F9 owns its current-level file.");
             true
         } else {
-            ownership::show(ui, owner)
+            ownership::show(ui, owner, catalog)
         };
         let paste_editable = self.workspace.as_ref().is_some_and(|workspace| {
             paste_target_editable(workspace, diagnostic, self.selected_tile)
@@ -2725,12 +2729,45 @@ mod tests {
         level_graphics_export::CurrentLevelGraphicsAssignments,
         vanilla_map16_preview::VanillaInternalGraphicsCache,
     };
+    use lm_app::ExtendedUiTextKey;
     use lm_graphics::{Bgr555, GraphicsFile4bpp, GraphicsOwnership, IndexedTile, Palette};
     use lm_project::{
         GraphicsCompression, GraphicsRomLayout, GraphicsSaveOptions, LevelPointerTable,
     };
     use lm_rats::AllocationPolicy;
     use lm_rom::{Mapper, RomImage};
+
+    #[test]
+    fn graphics_lifecycle_external_and_ownership_surface_uses_typed_keys() {
+        let sources = [
+            include_str!("rom_graphics_editor/lifecycle.rs"),
+            include_str!("rom_graphics_editor/external_edit.rs"),
+            include_str!("rom_graphics_editor/ownership.rs"),
+        ];
+        for key in ExtendedUiTextKey::ALL.into_iter().filter(|key| {
+            let name = format!("{key:?}");
+            name.starts_with("GraphicsExternal")
+                || name.starts_with("GraphicsOwnership")
+                || matches!(
+                    key,
+                    ExtendedUiTextKey::GraphicsDiscardTitle
+                        | ExtendedUiTextKey::GraphicsUnsavedNotice
+                        | ExtendedUiTextKey::GraphicsErrorTitle
+                )
+        }) {
+            let needle = format!("ExtendedUiTextKey::{key:?}");
+            assert!(sources.iter().any(|source| source.contains(&needle)));
+        }
+        for bypass in [
+            "egui::Window::new(\"External graphics editor running\")",
+            "egui::Window::new(\"Open staged graphics externally?\")",
+            "egui::Window::new(\"Discard staged graphics changes?\")",
+            "egui::Window::new(\"ROM graphics error\")",
+            "ui.label(\"Ownership: editable\")",
+        ] {
+            assert!(!sources.iter().any(|source| source.contains(bypass)));
+        }
+    }
 
     #[test]
     fn staged_rom_graphics_edit_is_recovered_without_committing_live_project() {

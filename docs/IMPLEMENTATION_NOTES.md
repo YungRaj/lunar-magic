@@ -7141,6 +7141,17 @@ event-number editor 5/5—including high-event install/reopen, invalid/stale han
 plus installed recovery—and renderer 237/237 pass. Localization stays Partial for remaining forms
 and live original language-DLL evidence; aggregate parity remains 60/65.
 
+Localization coverage update (2026-08-11, graphics lifecycle/ownership/external editing): nineteen
+typed extension keys now cover the complete external-process consent and running-state dialogs,
+including executable/staged paths and argument templates; all seven editable/fixed/animation/
+invalid ownership classifications; and the graphics discard/error lifecycle. Shared Cancel,
+Discard, and OK retain fixed-prefix keys. A three-module source audit requires every key and rejects
+literal regressions. Localization model 28/28 and the broad graphics-editor family 42 active tests
+pass with one explicit Wine/original-LM oracle ignore, covering process cleanup/reload, ownership,
+standard and ExGFX insertion, atomic import, reopen/undo, and recovery. Renderer parity remains
+237/237. The main editor, batch progress, insertion warnings, and remaining graphics controls still
+need catalog wiring, so Localization and aggregate parity remain Partial and 60/65 respectively.
+
 Localization coverage update (2026-08-11, shared/custom palettes): the complete main editor and
 `.smwpal` transfer surface now use thirty typed extension keys for the window, dynamic backend/color
 summary, stale state, exact import/export guidance, page/selection templates, raw/RGB channels,
