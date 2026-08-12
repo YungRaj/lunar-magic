@@ -6926,3 +6926,12 @@ complete staged-editor set; each adapter revalidates its source revision before 
 changes both tilemaps, reopens all three exact values with a valid checksum, and proves the live ROM
 and Undo history were not mutated. Both affected editor suites and the native build pass; the
 renderer remains green at 237/237.
+
+Crash-recovery composition update (2026-08-11, fixed-ROM family): installed palette, Map16,
+secondary exits, and Lunar Magic metadata are no longer limited to their two original paired
+branches. The coordinator recognizes any complete two-, three-, or four-editor subset and applies
+the active semantic adapters in deterministic palette/Map16/exits/metadata order on one evolving
+clone. Each adapter retains its revision, ownership, allocation, semantic-reopen, and checksum
+guards. The existing `palette_and_map16_share_one_growing_recovery_project` and
+`secondary_exits_and_metadata_share_one_recovery_project` stress the allocating and fixed-storage
+halves respectively; the native build proves the unified coordinator route.

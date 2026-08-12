@@ -2208,40 +2208,32 @@ impl eframe::App for NativeApplication {
                         )
                         .map_err(|error| error.to_string());
                 }
-                if staged_editors == 2
-                    && palette_recovery_revision.is_some()
-                    && map16_recovery_revision.is_some()
-                {
+                let staged_fixed_rom_family = usize::from(palette_recovery_revision.is_some())
+                    + usize::from(map16_recovery_revision.is_some())
+                    + usize::from(secondary_exit_recovery_revision.is_some())
+                    + usize::from(metadata_recovery_revision.is_some());
+                if staged_editors == staged_fixed_rom_family && staged_fixed_rom_family >= 2 {
                     let mut staged = self
                         .app
                         .project()
                         .ok_or("open a supported ROM first")?
                         .clone();
-                    self.rom_palette_editor
-                        .stage_recovery_on_project(&self.app, &mut staged)?;
-                    self.rom_map16_editor
-                        .stage_recovery_on_project(&self.app, &mut staged)?;
-                    return self
-                        .app
-                        .recovery_snapshot_with_current_rom(
-                            staged.save_snapshot(),
-                            self.app.current_level(),
-                        )
-                        .map_err(|error| error.to_string());
-                }
-                if staged_editors == 2
-                    && secondary_exit_recovery_revision.is_some()
-                    && metadata_recovery_revision.is_some()
-                {
-                    let mut staged = self
-                        .app
-                        .project()
-                        .ok_or("open a supported ROM first")?
-                        .clone();
-                    self.rom_secondary_exit_editor
-                        .stage_recovery_on_project(&self.app, &mut staged)?;
-                    self.rom_lunar_magic_metadata_editor
-                        .stage_recovery_on_project(&self.app, &mut staged)?;
+                    if palette_recovery_revision.is_some() {
+                        self.rom_palette_editor
+                            .stage_recovery_on_project(&self.app, &mut staged)?;
+                    }
+                    if map16_recovery_revision.is_some() {
+                        self.rom_map16_editor
+                            .stage_recovery_on_project(&self.app, &mut staged)?;
+                    }
+                    if secondary_exit_recovery_revision.is_some() {
+                        self.rom_secondary_exit_editor
+                            .stage_recovery_on_project(&self.app, &mut staged)?;
+                    }
+                    if metadata_recovery_revision.is_some() {
+                        self.rom_lunar_magic_metadata_editor
+                            .stage_recovery_on_project(&self.app, &mut staged)?;
+                    }
                     return self
                         .app
                         .recovery_snapshot_with_current_rom(

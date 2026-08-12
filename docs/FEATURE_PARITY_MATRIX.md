@@ -1166,6 +1166,14 @@ all three values, checksum health, and unchanged live ROM/Undo state. The Releas
 Partial for the explicitly listed installer, update, publication, signing, and other recovery gaps;
 aggregate parity remains 60/65.
 
+Crash-recovery evidence update (2026-08-11, fixed-ROM family): palette, Map16, secondary-exit,
+and Lunar Magic metadata staging now accepts every complete two-, three-, or four-editor subset on
+one evolving project clone, superseding the former pair-only coordinator branches. Deterministic
+semantic ordering preserves allocator visibility and exact fixed-table writes; each adapter still
+enforces revision, ownership, reopen, and checksum invariants. Existing growth and retained-LM-3.63
+composition gates cover both halves and the unified native coordinator compiles. The Release row
+and 60/65 aggregate remain unchanged pending its explicitly listed broader gaps.
+
 Toolbar coverage update (2026-08-11, GFX display override): authenticated `LM_KEY_GFX_OVERRIDE`
 `$26B8` now opens the original session-only two-row hexadecimal dialog. Eight Layer 1/2 and eight
 Layer 3 slots default to `$7F` (use the real level assignment); explicit `$000..=$FFF` values
