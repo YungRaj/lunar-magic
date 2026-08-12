@@ -1092,6 +1092,7 @@ impl VanillaLevelEditor {
                                 .show(ui, |ui| self.show_screen_exit_table_editor(ui));
                             self.show_layer2_editor(
                                 ui,
+                                catalog,
                                 custom_objects,
                                 custom_map16,
                                 toolbar_images,
@@ -1105,6 +1106,7 @@ impl VanillaLevelEditor {
                                 self.object_list(ui);
                                 self.object_editor(
                                     ui,
+                                    catalog,
                                     custom_objects,
                                     custom_map16,
                                     toolbar_images,
@@ -1455,6 +1457,7 @@ impl VanillaLevelEditor {
     fn show_layer2_editor(
         &mut self,
         ui: &mut egui::Ui,
+        catalog: Option<&LocalizationCatalog>,
         custom_objects: Option<&lm_level::OscResolvedTable>,
         custom_map16: Option<&lm_app::NativeMap16SidecarDocument>,
         toolbar_images: &MainToolbarImageSet,
@@ -1526,9 +1529,9 @@ impl VanillaLevelEditor {
                         "{} native Layer 2 object records are decoded and rendered.",
                         objects.objects.records.len()
                     ));
-                    self.object_catalog(ui, custom_map16, true);
-                    self.extended_object_catalog(ui, custom_map16, true);
-                    self.custom_object_catalog(ui, custom_objects, custom_map16, true);
+                    self.object_catalog(ui, catalog, custom_map16, true);
+                    self.extended_object_catalog(ui, catalog, custom_map16, true);
+                    self.custom_object_catalog(ui, catalog, custom_objects, custom_map16, true);
                     self.object_catalog_preview_area(ui, custom_objects, custom_map16, true);
                     self.show_layer2_object_editor(ui, &objects.objects.records, custom_objects);
                 }
@@ -9017,6 +9020,7 @@ impl VanillaLevelEditor {
     fn object_editor(
         &mut self,
         ui: &mut egui::Ui,
+        catalog: Option<&LocalizationCatalog>,
         custom_objects: Option<&lm_level::OscResolvedTable>,
         custom_map16: Option<&lm_app::NativeMap16SidecarDocument>,
         toolbar_images: &MainToolbarImageSet,
@@ -9048,9 +9052,9 @@ impl VanillaLevelEditor {
             OriginalToolbarImages::AddObject,
             true,
         );
-        self.object_catalog(ui, custom_map16, false);
-        self.extended_object_catalog(ui, custom_map16, false);
-        self.custom_object_catalog(ui, custom_objects, custom_map16, false);
+        self.object_catalog(ui, catalog, custom_map16, false);
+        self.extended_object_catalog(ui, catalog, custom_map16, false);
+        self.custom_object_catalog(ui, catalog, custom_objects, custom_map16, false);
         self.object_catalog_preview_area(ui, custom_objects, custom_map16, false);
         if let Some((screen, destination_and_flags)) = &mut self.object_form.screen_exit {
             ui.label("Native screen-exit object");
@@ -9372,103 +9376,134 @@ impl VanillaLevelEditor {
     fn object_catalog(
         &mut self,
         ui: &mut egui::Ui,
+        catalog: Option<&LocalizationCatalog>,
         custom_map16: Option<&lm_app::NativeMap16SidecarDocument>,
         layer2: bool,
     ) {
-        egui::CollapsingHeader::new("Add structures and platforms")
-            .id_salt(if layer2 {
-                "vanilla-layer2-standard-object-catalog"
-            } else {
-                "vanilla-standard-object-catalog"
-            })
-            .show(ui, |ui| {
-                ui.horizontal_wrapped(|ui| {
-                    ui.label("Hex filter");
-                    ui.text_edit_singleline(&mut self.object_catalog_filter);
-                    if ui.button("Clear").clicked() {
-                        self.object_catalog_filter.clear();
-                    }
-                });
-                ui.label("Choose a tileset-resolved object, then click its destination tile.");
-                let object_tileset = self.controller.as_ref().map_or(0, |controller| {
-                    controller.level().layer1.header.object_tileset()
-                });
-                let commands = filter_standard_object_catalog_for_graphics(
-                    object_catalog_commands(&self.object_catalog_filter),
-                    self.object_catalog_compatible_only.unwrap_or(false),
-                    self.active_object_family_index(),
-                    object_tileset,
-                    self.map16_summary.map(|summary| summary.foreground_files),
-                );
-                let texture = self.map16_texture.clone();
-                let foreground_texture = self.foreground_texture.clone();
-                let handler_map = self.active_standard_object_handler_map().copied();
-                let Some(handler_map) = handler_map else {
-                    ui.label("The active standard-object handler map is unavailable.");
-                    return;
-                };
-                let Some(mut definitions) = standard_object_definitions() else {
-                    ui.label("The recovered standard-object definitions are unavailable.");
-                    return;
-                };
-                if definitions
-                    .apply_lunar_magic_switch_view_state(self.switch_view_state)
-                    .is_err()
+        egui::CollapsingHeader::new(vanilla_text(
+            catalog,
+            ExtendedUiTextKey::VanillaLevelAddStructures,
+        ))
+        .id_salt(if layer2 {
+            "vanilla-layer2-standard-object-catalog"
+        } else {
+            "vanilla-standard-object-catalog"
+        })
+        .show(ui, |ui| {
+            ui.horizontal_wrapped(|ui| {
+                ui.label(vanilla_text(
+                    catalog,
+                    ExtendedUiTextKey::VanillaLevelHexFilter,
+                ));
+                ui.text_edit_singleline(&mut self.object_catalog_filter);
+                if ui
+                    .button(vanilla_text(catalog, ExtendedUiTextKey::VanillaLevelClear))
+                    .clicked()
                 {
-                    ui.label("The switch-state object previews are unavailable.");
-                    return;
-                }
-                let selected_command = if layer2 {
-                    self.layer2_object_form.command_id
-                } else {
-                    self.object_form.command_id
-                };
-                let preview_icons = self.object_catalog_preview_icons.unwrap_or(true);
-                let vertical_layout = self.object_catalog_vertical_layout.unwrap_or(false);
-                let show_ids = self.show_add_editor_ids.unwrap_or(true);
-                let mut chosen = None;
-                egui::ScrollArea::vertical()
-                    .id_salt(if layer2 {
-                        "vanilla-layer2-standard-object-catalog-scroll"
-                    } else {
-                        "vanilla-standard-object-catalog-scroll"
-                    })
-                    .max_height(280.0)
-                    .show(ui, |ui| {
-                        catalog_entry_layout(ui, vertical_layout, |ui| {
-                            for command in commands {
-                                let response = if preview_icons {
-                                    draw_object_catalog_entry(
-                                        ui,
-                                        texture.as_ref(),
-                                        foreground_texture.as_ref(),
-                                        custom_map16,
-                                        command,
-                                        &handler_map,
-                                        &definitions,
-                                        command == selected_command,
-                                        show_ids,
-                                    )
-                                } else {
-                                    ui.selectable_label(
-                                        command == selected_command,
-                                        if show_ids {
-                                            format!("Standard object ${command:02X}")
-                                        } else {
-                                            "Standard object".to_owned()
-                                        },
-                                    )
-                                };
-                                if response.clicked() {
-                                    chosen = Some(command);
-                                }
-                            }
-                        });
-                    });
-                if let Some(command) = chosen {
-                    self.select_standard_object_from_catalog(command, layer2);
+                    self.object_catalog_filter.clear();
                 }
             });
+            ui.label(vanilla_text(
+                catalog,
+                ExtendedUiTextKey::VanillaLevelChooseStandardObject,
+            ));
+            let object_tileset = self.controller.as_ref().map_or(0, |controller| {
+                controller.level().layer1.header.object_tileset()
+            });
+            let commands = filter_standard_object_catalog_for_graphics(
+                object_catalog_commands(&self.object_catalog_filter),
+                self.object_catalog_compatible_only.unwrap_or(false),
+                self.active_object_family_index(),
+                object_tileset,
+                self.map16_summary.map(|summary| summary.foreground_files),
+            );
+            let texture = self.map16_texture.clone();
+            let foreground_texture = self.foreground_texture.clone();
+            let handler_map = self.active_standard_object_handler_map().copied();
+            let Some(handler_map) = handler_map else {
+                ui.label(vanilla_text(
+                    catalog,
+                    ExtendedUiTextKey::VanillaLevelHandlerMapUnavailable,
+                ));
+                return;
+            };
+            let Some(mut definitions) = standard_object_definitions() else {
+                ui.label(vanilla_text(
+                    catalog,
+                    ExtendedUiTextKey::VanillaLevelStandardDefinitionsUnavailable,
+                ));
+                return;
+            };
+            if definitions
+                .apply_lunar_magic_switch_view_state(self.switch_view_state)
+                .is_err()
+            {
+                ui.label(vanilla_text(
+                    catalog,
+                    ExtendedUiTextKey::VanillaLevelSwitchPreviewsUnavailable,
+                ));
+                return;
+            }
+            let selected_command = if layer2 {
+                self.layer2_object_form.command_id
+            } else {
+                self.object_form.command_id
+            };
+            let preview_icons = self.object_catalog_preview_icons.unwrap_or(true);
+            let vertical_layout = self.object_catalog_vertical_layout.unwrap_or(false);
+            let show_ids = self.show_add_editor_ids.unwrap_or(true);
+            let mut chosen = None;
+            egui::ScrollArea::vertical()
+                .id_salt(if layer2 {
+                    "vanilla-layer2-standard-object-catalog-scroll"
+                } else {
+                    "vanilla-standard-object-catalog-scroll"
+                })
+                .max_height(280.0)
+                .show(ui, |ui| {
+                    catalog_entry_layout(ui, vertical_layout, |ui| {
+                        for command in commands {
+                            let response = if preview_icons {
+                                draw_object_catalog_entry(
+                                    ui,
+                                    texture.as_ref(),
+                                    foreground_texture.as_ref(),
+                                    custom_map16,
+                                    command,
+                                    &handler_map,
+                                    &definitions,
+                                    command == selected_command,
+                                    show_ids,
+                                )
+                            } else {
+                                ui.selectable_label(
+                                    command == selected_command,
+                                    if show_ids {
+                                        format!(
+                                            "{} ${command:02X}",
+                                            vanilla_text(
+                                                catalog,
+                                                ExtendedUiTextKey::VanillaLevelStandardObject
+                                            )
+                                        )
+                                    } else {
+                                        vanilla_text(
+                                            catalog,
+                                            ExtendedUiTextKey::VanillaLevelStandardObject,
+                                        )
+                                    },
+                                )
+                            };
+                            if response.clicked() {
+                                chosen = Some(command);
+                            }
+                        }
+                    });
+                });
+            if let Some(command) = chosen {
+                self.select_standard_object_from_catalog(command, layer2);
+            }
+        });
     }
 
     fn select_standard_object_from_catalog(&mut self, command: u8, layer2: bool) {
@@ -9495,6 +9530,7 @@ impl VanillaLevelEditor {
     fn custom_object_catalog(
         &mut self,
         ui: &mut egui::Ui,
+        catalog: Option<&LocalizationCatalog>,
         custom_objects: Option<&lm_level::OscResolvedTable>,
         custom_map16: Option<&lm_app::NativeMap16SidecarDocument>,
         layer2: bool,
@@ -9502,83 +9538,87 @@ impl VanillaLevelEditor {
         let Some(custom_objects) = custom_objects else {
             return;
         };
-        egui::CollapsingHeader::new("Add custom OSC object visually")
-            .id_salt(if layer2 {
-                "vanilla-layer2-custom-object-catalog"
-            } else {
-                "vanilla-custom-object-catalog"
-            })
-            .show(ui, |ui| {
-                ui.horizontal_wrapped(|ui| {
-                    ui.label("Hex/name filter");
-                    ui.text_edit_singleline(&mut self.custom_object_catalog_filter);
-                    if ui.button("Clear").clicked() {
-                        self.custom_object_catalog_filter.clear();
-                    }
-                });
-                let variant = self.active_object_family_index();
-                let entries = custom_object_catalog_entries(
-                    custom_objects,
-                    variant,
-                    &self.custom_object_catalog_filter,
-                );
-                let map16_texture = self.map16_texture.clone();
-                let foreground_texture = self.foreground_texture.clone();
-                let preview_icons = self.object_catalog_preview_icons.unwrap_or(true);
-                let vertical_layout = self.object_catalog_vertical_layout.unwrap_or(false);
-                let show_ids = self.show_add_editor_ids.unwrap_or(true);
-                let mut chosen = None;
-                egui::ScrollArea::vertical()
-                    .id_salt(if layer2 {
-                        "vanilla-layer2-custom-object-catalog-scroll"
-                    } else {
-                        "vanilla-custom-object-catalog-scroll"
-                    })
-                    .max_height(280.0)
-                    .show(ui, |ui| {
-                        catalog_entry_layout(ui, vertical_layout, |ui| {
-                            for entry in entries {
-                                let response = if preview_icons {
-                                    draw_custom_object_catalog_entry(
-                                        ui,
-                                        map16_texture.as_ref(),
-                                        foreground_texture.as_ref(),
-                                        custom_map16,
-                                        entry,
-                                        show_ids,
-                                    )
-                                } else {
-                                    ui.selectable_label(
-                                        false,
-                                        if show_ids {
-                                            format!(
-                                                "${:02X}/${:02X} {}",
-                                                entry.selector.object_type,
-                                                entry.selector.parameter,
-                                                entry
-                                                    .description
-                                                    .as_deref()
-                                                    .unwrap_or("custom object")
-                                            )
-                                        } else {
-                                            entry
-                                                .description
-                                                .as_deref()
-                                                .unwrap_or("custom object")
-                                                .to_owned()
-                                        },
-                                    )
-                                };
-                                if response.clicked() {
-                                    chosen = Some(entry.selector);
-                                }
-                            }
-                        });
-                    });
-                if let Some(selector) = chosen {
-                    self.select_custom_object_from_catalog(selector, layer2);
+        egui::CollapsingHeader::new(vanilla_text(
+            catalog,
+            ExtendedUiTextKey::VanillaLevelAddCustomOscObject,
+        ))
+        .id_salt(if layer2 {
+            "vanilla-layer2-custom-object-catalog"
+        } else {
+            "vanilla-custom-object-catalog"
+        })
+        .show(ui, |ui| {
+            ui.horizontal_wrapped(|ui| {
+                ui.label(vanilla_text(
+                    catalog,
+                    ExtendedUiTextKey::VanillaLevelHexNameFilter,
+                ));
+                ui.text_edit_singleline(&mut self.custom_object_catalog_filter);
+                if ui
+                    .button(vanilla_text(catalog, ExtendedUiTextKey::VanillaLevelClear))
+                    .clicked()
+                {
+                    self.custom_object_catalog_filter.clear();
                 }
             });
+            let variant = self.active_object_family_index();
+            let entries = custom_object_catalog_entries(
+                custom_objects,
+                variant,
+                &self.custom_object_catalog_filter,
+            );
+            let map16_texture = self.map16_texture.clone();
+            let foreground_texture = self.foreground_texture.clone();
+            let preview_icons = self.object_catalog_preview_icons.unwrap_or(true);
+            let vertical_layout = self.object_catalog_vertical_layout.unwrap_or(false);
+            let show_ids = self.show_add_editor_ids.unwrap_or(true);
+            let mut chosen = None;
+            egui::ScrollArea::vertical()
+                .id_salt(if layer2 {
+                    "vanilla-layer2-custom-object-catalog-scroll"
+                } else {
+                    "vanilla-custom-object-catalog-scroll"
+                })
+                .max_height(280.0)
+                .show(ui, |ui| {
+                    catalog_entry_layout(ui, vertical_layout, |ui| {
+                        for entry in entries {
+                            let fallback =
+                                vanilla_text(catalog, ExtendedUiTextKey::VanillaLevelCustomObject);
+                            let response = if preview_icons {
+                                draw_custom_object_catalog_entry(
+                                    ui,
+                                    map16_texture.as_ref(),
+                                    foreground_texture.as_ref(),
+                                    custom_map16,
+                                    entry,
+                                    show_ids,
+                                )
+                            } else {
+                                ui.selectable_label(
+                                    false,
+                                    if show_ids {
+                                        format!(
+                                            "${:02X}/${:02X} {}",
+                                            entry.selector.object_type,
+                                            entry.selector.parameter,
+                                            entry.description.as_deref().unwrap_or(&fallback)
+                                        )
+                                    } else {
+                                        entry.description.as_deref().unwrap_or(&fallback).to_owned()
+                                    },
+                                )
+                            };
+                            if response.clicked() {
+                                chosen = Some(entry.selector);
+                            }
+                        }
+                    });
+                });
+            if let Some(selector) = chosen {
+                self.select_custom_object_from_catalog(selector, layer2);
+            }
+        });
     }
 
     fn select_custom_object_from_catalog(
@@ -9609,109 +9649,138 @@ impl VanillaLevelEditor {
     fn extended_object_catalog(
         &mut self,
         ui: &mut egui::Ui,
+        catalog: Option<&LocalizationCatalog>,
         custom_map16: Option<&lm_app::NativeMap16SidecarDocument>,
         layer2: bool,
     ) {
-        egui::CollapsingHeader::new("Add blocks, coins, doors, and small objects")
-            .id_salt(if layer2 {
-                "vanilla-layer2-extended-object-catalog"
-            } else {
-                "vanilla-extended-object-catalog"
-            })
-            .show(ui, |ui| {
-                ui.horizontal_wrapped(|ui| {
-                    ui.label("Hex filter");
-                    ui.text_edit_singleline(&mut self.extended_object_catalog_filter);
-                    if ui.button("Clear").clicked() {
-                        self.extended_object_catalog_filter.clear();
-                    }
-                });
-                ui.label(
-                    "Choose a tileset-resolved extended object, then click its destination tile.",
-                );
-                let object_tileset = self.controller.as_ref().map_or(0, |controller| {
-                    controller.level().layer1.header.object_tileset()
-                });
-                let Some(mut definitions) = standard_object_definitions_for_tileset(object_tileset)
-                else {
-                    ui.label("The recovered extended-object definitions are unavailable.");
-                    return;
-                };
-                if definitions
-                    .apply_lunar_magic_switch_view_state(self.switch_view_state)
-                    .is_err()
+        egui::CollapsingHeader::new(vanilla_text(
+            catalog,
+            ExtendedUiTextKey::VanillaLevelAddExtendedObjects,
+        ))
+        .id_salt(if layer2 {
+            "vanilla-layer2-extended-object-catalog"
+        } else {
+            "vanilla-extended-object-catalog"
+        })
+        .show(ui, |ui| {
+            ui.horizontal_wrapped(|ui| {
+                ui.label(vanilla_text(
+                    catalog,
+                    ExtendedUiTextKey::VanillaLevelHexFilter,
+                ));
+                ui.text_edit_singleline(&mut self.extended_object_catalog_filter);
+                if ui
+                    .button(vanilla_text(catalog, ExtendedUiTextKey::VanillaLevelClear))
+                    .clicked()
                 {
-                    ui.label("The switch-state object previews are unavailable.");
-                    return;
-                }
-                let selectors = filter_extended_object_catalog_for_graphics(
-                    extended_object_catalog_selectors(
-                        &definitions,
-                        &self.extended_object_catalog_filter,
-                    ),
-                    self.object_catalog_compatible_only.unwrap_or(false),
-                    object_tileset,
-                    self.map16_summary.map(|summary| summary.foreground_files),
-                );
-                let texture = self.map16_texture.clone();
-                let foreground_texture = self.foreground_texture.clone();
-                let handler_map = self.active_standard_object_handler_map().copied();
-                let Some(handler_map) = handler_map else {
-                    ui.label("The active standard-object handler map is unavailable.");
-                    return;
-                };
-                let selected = if layer2 {
-                    &self.layer2_object_form
-                } else {
-                    &self.object_form
-                };
-                let selected = (selected.command_id, selected.parameter);
-                let preview_icons = self.object_catalog_preview_icons.unwrap_or(true);
-                let vertical_layout = self.object_catalog_vertical_layout.unwrap_or(false);
-                let show_ids = self.show_add_editor_ids.unwrap_or(true);
-                let mut chosen = None;
-                egui::ScrollArea::vertical()
-                    .id_salt(if layer2 {
-                        "vanilla-layer2-extended-object-catalog-scroll"
-                    } else {
-                        "vanilla-extended-object-catalog-scroll"
-                    })
-                    .max_height(280.0)
-                    .show(ui, |ui| {
-                        catalog_entry_layout(ui, vertical_layout, |ui| {
-                            for selector in selectors {
-                                let response = if preview_icons {
-                                    draw_extended_object_catalog_entry(
-                                        ui,
-                                        texture.as_ref(),
-                                        foreground_texture.as_ref(),
-                                        custom_map16,
-                                        selector,
-                                        &handler_map,
-                                        &definitions,
-                                        selected == (0, selector),
-                                        show_ids,
-                                    )
-                                } else {
-                                    ui.selectable_label(
-                                        selected == (0, selector),
-                                        if show_ids {
-                                            format!("Extended object $00/${selector:02X}")
-                                        } else {
-                                            "Extended object".to_owned()
-                                        },
-                                    )
-                                };
-                                if response.clicked() {
-                                    chosen = Some(selector);
-                                }
-                            }
-                        });
-                    });
-                if let Some(selector) = chosen {
-                    self.select_extended_object_from_catalog(selector, layer2);
+                    self.extended_object_catalog_filter.clear();
                 }
             });
+            ui.label(vanilla_text(
+                catalog,
+                ExtendedUiTextKey::VanillaLevelChooseExtendedObject,
+            ));
+            let object_tileset = self.controller.as_ref().map_or(0, |controller| {
+                controller.level().layer1.header.object_tileset()
+            });
+            let Some(mut definitions) = standard_object_definitions_for_tileset(object_tileset)
+            else {
+                ui.label(vanilla_text(
+                    catalog,
+                    ExtendedUiTextKey::VanillaLevelExtendedDefinitionsUnavailable,
+                ));
+                return;
+            };
+            if definitions
+                .apply_lunar_magic_switch_view_state(self.switch_view_state)
+                .is_err()
+            {
+                ui.label(vanilla_text(
+                    catalog,
+                    ExtendedUiTextKey::VanillaLevelSwitchPreviewsUnavailable,
+                ));
+                return;
+            }
+            let selectors = filter_extended_object_catalog_for_graphics(
+                extended_object_catalog_selectors(
+                    &definitions,
+                    &self.extended_object_catalog_filter,
+                ),
+                self.object_catalog_compatible_only.unwrap_or(false),
+                object_tileset,
+                self.map16_summary.map(|summary| summary.foreground_files),
+            );
+            let texture = self.map16_texture.clone();
+            let foreground_texture = self.foreground_texture.clone();
+            let handler_map = self.active_standard_object_handler_map().copied();
+            let Some(handler_map) = handler_map else {
+                ui.label(vanilla_text(
+                    catalog,
+                    ExtendedUiTextKey::VanillaLevelHandlerMapUnavailable,
+                ));
+                return;
+            };
+            let selected = if layer2 {
+                &self.layer2_object_form
+            } else {
+                &self.object_form
+            };
+            let selected = (selected.command_id, selected.parameter);
+            let preview_icons = self.object_catalog_preview_icons.unwrap_or(true);
+            let vertical_layout = self.object_catalog_vertical_layout.unwrap_or(false);
+            let show_ids = self.show_add_editor_ids.unwrap_or(true);
+            let mut chosen = None;
+            egui::ScrollArea::vertical()
+                .id_salt(if layer2 {
+                    "vanilla-layer2-extended-object-catalog-scroll"
+                } else {
+                    "vanilla-extended-object-catalog-scroll"
+                })
+                .max_height(280.0)
+                .show(ui, |ui| {
+                    catalog_entry_layout(ui, vertical_layout, |ui| {
+                        for selector in selectors {
+                            let response = if preview_icons {
+                                draw_extended_object_catalog_entry(
+                                    ui,
+                                    texture.as_ref(),
+                                    foreground_texture.as_ref(),
+                                    custom_map16,
+                                    selector,
+                                    &handler_map,
+                                    &definitions,
+                                    selected == (0, selector),
+                                    show_ids,
+                                )
+                            } else {
+                                ui.selectable_label(
+                                    selected == (0, selector),
+                                    if show_ids {
+                                        format!(
+                                            "{} $00/${selector:02X}",
+                                            vanilla_text(
+                                                catalog,
+                                                ExtendedUiTextKey::VanillaLevelExtendedObject
+                                            )
+                                        )
+                                    } else {
+                                        vanilla_text(
+                                            catalog,
+                                            ExtendedUiTextKey::VanillaLevelExtendedObject,
+                                        )
+                                    },
+                                )
+                            };
+                            if response.clicked() {
+                                chosen = Some(selector);
+                            }
+                        }
+                    });
+                });
+            if let Some(selector) = chosen {
+                self.select_extended_object_from_catalog(selector, layer2);
+            }
+        });
     }
 
     fn select_extended_object_from_catalog(&mut self, selector: u8, layer2: bool) {
@@ -16918,6 +16987,29 @@ mod tests {
             assert!(
                 !utility_dialogs.contains(literal),
                 "fixed-English utility-dialog control: {literal}"
+            );
+        }
+        let placement_catalogs = source
+            .split("    fn object_catalog(")
+            .nth(1)
+            .unwrap()
+            .split("    fn object_action_buttons(")
+            .next()
+            .unwrap();
+        for literal in [
+            "CollapsingHeader::new(\"Add structures and platforms\")",
+            "CollapsingHeader::new(\"Add custom OSC object visually\")",
+            "CollapsingHeader::new(\"Add blocks, coins, doors, and small objects\")",
+            "label(\"Hex filter\")",
+            "label(\"Hex/name filter\")",
+            "button(\"Clear\")",
+            "\"Standard object\".to_owned()",
+            "\"Extended object\".to_owned()",
+            ".unwrap_or(\"custom object\")",
+        ] {
+            assert!(
+                !placement_catalogs.contains(literal),
+                "fixed-English placement-catalog control: {literal}"
             );
         }
         let modeless_editors = source

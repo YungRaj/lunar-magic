@@ -3913,10 +3913,25 @@ pub enum ExtendedUiTextKey {
     VanillaLevelSpriteTokenFormat,
     VanillaLevelApplyCompleteRecord,
     VanillaLevelSelectEntityForManualEdit,
+    VanillaLevelAddStructures,
+    VanillaLevelHexFilter,
+    VanillaLevelHexNameFilter,
+    VanillaLevelClear,
+    VanillaLevelChooseStandardObject,
+    VanillaLevelHandlerMapUnavailable,
+    VanillaLevelStandardDefinitionsUnavailable,
+    VanillaLevelSwitchPreviewsUnavailable,
+    VanillaLevelStandardObject,
+    VanillaLevelAddCustomOscObject,
+    VanillaLevelCustomObject,
+    VanillaLevelAddExtendedObjects,
+    VanillaLevelChooseExtendedObject,
+    VanillaLevelExtendedDefinitionsUnavailable,
+    VanillaLevelExtendedObject,
 }
 
 impl ExtendedUiTextKey {
-    pub const ALL: [Self; 2212] = [
+    pub const ALL: [Self; 2227] = [
         Self::MwlDocumentEditorTitle,
         Self::MwlDocumentVersionFormat,
         Self::MwlDocumentFlagsHex,
@@ -6129,6 +6144,21 @@ impl ExtendedUiTextKey {
         Self::VanillaLevelSpriteTokenFormat,
         Self::VanillaLevelApplyCompleteRecord,
         Self::VanillaLevelSelectEntityForManualEdit,
+        Self::VanillaLevelAddStructures,
+        Self::VanillaLevelHexFilter,
+        Self::VanillaLevelHexNameFilter,
+        Self::VanillaLevelClear,
+        Self::VanillaLevelChooseStandardObject,
+        Self::VanillaLevelHandlerMapUnavailable,
+        Self::VanillaLevelStandardDefinitionsUnavailable,
+        Self::VanillaLevelSwitchPreviewsUnavailable,
+        Self::VanillaLevelStandardObject,
+        Self::VanillaLevelAddCustomOscObject,
+        Self::VanillaLevelCustomObject,
+        Self::VanillaLevelAddExtendedObjects,
+        Self::VanillaLevelChooseExtendedObject,
+        Self::VanillaLevelExtendedDefinitionsUnavailable,
+        Self::VanillaLevelExtendedObject,
     ];
 
     #[must_use]
@@ -8990,6 +9020,33 @@ impl ExtendedUiTextKey {
             Self::VanillaLevelSelectEntityForManualEdit => {
                 "Select one object or sprite to edit it manually."
             }
+            Self::VanillaLevelAddStructures => "Add structures and platforms",
+            Self::VanillaLevelHexFilter => "Hex filter",
+            Self::VanillaLevelHexNameFilter => "Hex/name filter",
+            Self::VanillaLevelClear => "Clear",
+            Self::VanillaLevelChooseStandardObject => {
+                "Choose a tileset-resolved object, then click its destination tile."
+            }
+            Self::VanillaLevelHandlerMapUnavailable => {
+                "The active standard-object handler map is unavailable."
+            }
+            Self::VanillaLevelStandardDefinitionsUnavailable => {
+                "The recovered standard-object definitions are unavailable."
+            }
+            Self::VanillaLevelSwitchPreviewsUnavailable => {
+                "The switch-state object previews are unavailable."
+            }
+            Self::VanillaLevelStandardObject => "Standard object",
+            Self::VanillaLevelAddCustomOscObject => "Add custom OSC object visually",
+            Self::VanillaLevelCustomObject => "custom object",
+            Self::VanillaLevelAddExtendedObjects => "Add blocks, coins, doors, and small objects",
+            Self::VanillaLevelChooseExtendedObject => {
+                "Choose a tileset-resolved extended object, then click its destination tile."
+            }
+            Self::VanillaLevelExtendedDefinitionsUnavailable => {
+                "The recovered extended-object definitions are unavailable."
+            }
+            Self::VanillaLevelExtendedObject => "Extended object",
         }
     }
 

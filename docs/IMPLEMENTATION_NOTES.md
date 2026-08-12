@@ -7190,6 +7190,16 @@ preservation, and divergent history. Localization passes 28/28 active cases (one
 ignore), and renderer passes 237/237. Other native forms and retained language-DLL evidence keep
 Localization Partial; aggregate parity remains 60/65.
 
+Localization coverage update (2026-08-12, vanilla object-placement catalogs): fifteen additional
+`VanillaLevel*` identities cover the shared Layer 1/Layer 2 catalogs for structures and platforms,
+blocks/coins/doors/small extended objects, and custom OSC objects. Filter and clear controls,
+placement guidance, standard/extended/custom text-only names, and all recovered-definition,
+handler-map, and switch-preview unavailable states now use the live catalog. Catalog plumbing is
+shared across both layers and preserves translated custom metadata as authoritative. A bounded
+source audit rejects the former fixed-English palette controls. Focused native and localization
+tests pass, and renderer remains 237/237. Placement mutation actions and other vanilla/native forms
+remain, so Localization stays Partial and aggregate parity remains 60/65.
+
 Localization coverage update (2026-08-12, vanilla modeless entity editors): eleven additional
 `VanillaLevel*` identities cover the Object/Sprite Properties and Edit Manual windows, dynamic
 Layer 1/Layer 2 object and sprite record/token labels, selection guidance, single-selection

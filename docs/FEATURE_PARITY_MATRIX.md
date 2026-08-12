@@ -795,6 +795,14 @@ localization 28/28 active tests (one provenance ignore), and renderer 237/237 pa
 vanilla editor/native forms and live language-DLL evidence keep Localization Partial, so aggregate
 parity remains 60/65.
 
+Localization coverage update (2026-08-12, vanilla object-placement catalogs): fifteen typed
+`VanillaLevel*` keys now cover the shared Layer 1/Layer 2 visual catalogs for structures,
+platforms, blocks, coins, doors, small extended objects, and custom OSC objects. Filters, guidance,
+fallback names, and unavailable states all receive the live catalog; a bounded source audit rejects
+the former literal controls. Focused native, localization 28/28 active tests (one provenance
+ignore), and renderer 237/237 pass. Remaining placement actions and vanilla/native surfaces keep
+Localization Partial, so aggregate parity remains 60/65.
+
 Localization coverage update (2026-08-11, installed overworld animation options and preview):
 twenty-seven additional typed keys cover the installed editor's per-map feature switches, runtime
 installation guidance, preview transport and timer state, trigger controls, event state, and empty
