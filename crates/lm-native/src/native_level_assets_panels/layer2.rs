@@ -1,11 +1,11 @@
 use super::level::object_semantic_fields;
 use super::{
     AggregatePanels, Layer2FillPattern, PasteTarget, PendingSelectionMove, index,
-    move_before_indexes, pasted_text,
+    move_before_indexes, pasted_text, text,
 };
 use crate::{level_editor_forms, native_clipboard};
 use eframe::egui;
-use lm_app::{LocalizationCatalog, NativeLevelAssetsControllerEdit};
+use lm_app::{ExtendedUiTextKey as Key, LocalizationCatalog, NativeLevelAssetsControllerEdit};
 use lm_level::{NativeLayer2Data, ObjectEdit};
 
 fn layer2_tilemap_word(bytes: &[u8], x: usize, y: usize) -> Option<(usize, u16)> {
@@ -326,7 +326,9 @@ impl AggregatePanels {
     ) -> Option<Result<NativeLevelAssetsControllerEdit, String>> {
         match layer2 {
             NativeLayer2Data::Objects(objects) => self.layer2_objects_panel(ui, objects, catalog),
-            NativeLayer2Data::Tilemap(bytes) => self.layer2_tilemap_panel(ui, bytes, descriptor),
+            NativeLayer2Data::Tilemap(bytes) => {
+                self.layer2_tilemap_panel(ui, bytes, descriptor, catalog)
+            }
         }
     }
 
@@ -336,10 +338,10 @@ impl AggregatePanels {
         objects: &lm_level::LevelObjectData,
         catalog: Option<&LocalizationCatalog>,
     ) -> Option<Result<NativeLevelAssetsControllerEdit, String>> {
-        ui.heading(format!(
-            "Layer 2 objects ({})",
-            objects.objects.records.len()
-        ));
+        ui.heading(
+            text(catalog, Key::NativeAssetsLayer2ObjectsFormat)
+                .replace("{count}", &objects.objects.records.len().to_string()),
+        );
         index(
             ui,
             &mut self.layer2_object_index,
@@ -354,11 +356,18 @@ impl AggregatePanels {
         let mut move_object = None;
         let mut copy_error = None;
         ui.horizontal(|ui| {
-            if ui.button("Load").clicked() {
+            if ui
+                .button(text(catalog, Key::NativeLevelDocumentLoadSelected))
+                .clicked()
+            {
                 self.sync_layer2_object_form(objects, true);
             }
-            for (label, value) in [("Insert", 0), ("Replace", 1), ("Remove", 2)] {
-                if ui.button(label).clicked() {
+            for (key, value) in [
+                (Key::NativeLevelDocumentInsert, 0),
+                (Key::NativeLevelDocumentReplace, 1),
+                (Key::NativeLevelDocumentRemove, 2),
+            ] {
+                if ui.button(text(catalog, key)).clicked() {
                     action = Some(value);
                 }
             }
@@ -366,14 +375,17 @@ impl AggregatePanels {
                 .add_enabled(
                     self.layer2_record.object_fields_loaded
                         && self.layer2_object_index < objects.objects.records.len(),
-                    egui::Button::new("Apply object fields"),
+                    egui::Button::new(text(catalog, Key::NativeLevelDocumentApplyObjectFields)),
                 )
                 .clicked()
             {
                 apply_object_fields = true;
             }
             if ui
-                .add_enabled(self.layer2_object_index > 0, egui::Button::new("Move up"))
+                .add_enabled(
+                    self.layer2_object_index > 0,
+                    egui::Button::new(text(catalog, Key::NativeAssetsMoveUp)),
+                )
                 .clicked()
             {
                 move_object = move_before_indexes(
@@ -385,7 +397,7 @@ impl AggregatePanels {
             if ui
                 .add_enabled(
                     self.layer2_object_index.saturating_add(1) < objects.objects.records.len(),
-                    egui::Button::new("Move down"),
+                    egui::Button::new(text(catalog, Key::NativeAssetsMoveDown)),
                 )
                 .clicked()
             {
@@ -398,7 +410,7 @@ impl AggregatePanels {
             if ui
                 .add_enabled(
                     self.layer2_object_index < objects.objects.records.len(),
-                    egui::Button::new("Copy"),
+                    egui::Button::new(text(catalog, Key::NativeLevelDocumentCopy)),
                 )
                 .clicked()
             {
@@ -408,7 +420,10 @@ impl AggregatePanels {
                     Err(error) => copy_error = Some(error),
                 }
             }
-            if ui.button("Paste").clicked() {
+            if ui
+                .button(text(catalog, Key::NativeLevelDocumentPaste))
+                .clicked()
+            {
                 self.paste_target = Some(PasteTarget::Layer2Object);
                 ui.ctx()
                     .send_viewport_cmd(egui::ViewportCommand::RequestPaste);
@@ -488,38 +503,49 @@ impl AggregatePanels {
         ui: &mut egui::Ui,
         bytes: &[u8],
         descriptor: Option<lm_level::MwlLayer2Descriptor>,
+        catalog: Option<&LocalizationCatalog>,
     ) -> Option<Result<NativeLevelAssetsControllerEdit, String>> {
         let words = bytes.len() / 2;
-        ui.heading(format!("Layer 2 tilemap ({words} words)"));
-        if let Some(descriptor) = descriptor {
-            ui.label(format!(
-                "Installed descriptor ${:02X} · active Map16 bank ${:X}",
-                descriptor.raw(),
-                descriptor.active_bank()
-            ));
-        } else {
-            ui.label("Pristine/legacy descriptor · active Map16 bank $0");
-        }
-        ui.label(
-            "Click a Map16 cell, or Shift-click a second cell to select a rectangle. Applying fills \
-             every selected cell with the complete 16-bit tile word.",
+        ui.heading(
+            text(catalog, Key::NativeAssetsLayer2TilemapFormat)
+                .replace("{count}", &words.to_string()),
         );
-        self.layer2_tilemap_grid(ui, bytes);
+        if let Some(descriptor) = descriptor {
+            ui.label(
+                text(catalog, Key::NativeAssetsLayer2InstalledDescriptorFormat)
+                    .replace("{descriptor}", &format!("{:02X}", descriptor.raw()))
+                    .replace("{bank}", &format!("{:X}", descriptor.active_bank())),
+            );
+        } else {
+            ui.label(text(catalog, Key::NativeAssetsLayer2LegacyDescriptor));
+        }
+        ui.label(text(catalog, Key::NativeAssetsLayer2SelectionNotice));
+        self.layer2_tilemap_grid(ui, bytes, catalog);
         let selected_cells =
             layer2_selection_indices(self.layer2_tile_anchor, self.layer2_tile_cursor);
         if let (Some(anchor), Some(cursor)) = (self.layer2_tile_anchor, self.layer2_tile_cursor) {
-            ui.label(format!(
-                "Canvas selection: ({}, {}) to ({}, {}) · {} cell{}",
-                anchor.0,
-                anchor.1,
-                cursor.0,
-                cursor.1,
-                selected_cells.len(),
-                if selected_cells.len() == 1 { "" } else { "s" }
-            ));
+            ui.label(
+                text(catalog, Key::NativeAssetsLayer2SelectionFormat)
+                    .replace("{ax}", &anchor.0.to_string())
+                    .replace("{ay}", &anchor.1.to_string())
+                    .replace("{cx}", &cursor.0.to_string())
+                    .replace("{cy}", &cursor.1.to_string())
+                    .replace("{count}", &selected_cells.len().to_string())
+                    .replace(
+                        "{unit}",
+                        &text(
+                            catalog,
+                            if selected_cells.len() == 1 {
+                                Key::NativeAssetsLayer2SelectionOne
+                            } else {
+                                Key::NativeAssetsLayer2SelectionMany
+                            },
+                        ),
+                    ),
+            );
         }
         ui.horizontal(|ui| {
-            ui.label("Storage index");
+            ui.label(text(catalog, Key::NativeAssetsLayer2StorageIndex));
             if ui
                 .add(
                     egui::DragValue::new(&mut self.layer2_tile_index)
@@ -533,7 +559,7 @@ impl AggregatePanels {
             if ui
                 .add_enabled(
                     self.layer2_tile_anchor.is_some(),
-                    egui::Button::new("Clear canvas selection"),
+                    egui::Button::new(text(catalog, Key::NativeAssetsLayer2ClearSelection)),
                 )
                 .clicked()
             {
@@ -541,41 +567,39 @@ impl AggregatePanels {
                 self.layer2_tile_cursor = None;
             }
         });
-        if let Some(edit) = self.layer2_clipboard_controls(ui, bytes) {
+        if let Some(edit) = self.layer2_clipboard_controls(ui, bytes, catalog) {
             return Some(edit);
         }
-        if let Some(edit) = self.layer2_move_controls(ui, bytes) {
+        if let Some(edit) = self.layer2_move_controls(ui, bytes, catalog) {
             return Some(edit);
         }
-        if let Some(edit) = self.layer2_resize_controls(ui, bytes) {
+        if let Some(edit) = self.layer2_resize_controls(ui, bytes, catalog) {
             return Some(edit);
         }
-        if let Some(edit) = self.layer2_word_controls(ui, bytes, selected_cells.len()) {
+        if let Some(edit) = self.layer2_word_controls(ui, bytes, selected_cells.len(), catalog) {
             return Some(edit);
         }
-        if let Some(edit) = self.layer2_remap_controls(ui) {
+        if let Some(edit) = self.layer2_remap_controls(ui, catalog) {
             return Some(edit);
         }
-        self.layer2_pattern_flood_controls(ui, bytes)
+        self.layer2_pattern_flood_controls(ui, bytes, catalog)
     }
 
     fn layer2_remap_controls(
         &mut self,
         ui: &mut egui::Ui,
+        catalog: Option<&LocalizationCatalog>,
     ) -> Option<Result<NativeLevelAssetsControllerEdit, String>> {
         ui.separator();
-        ui.collapsing("Remap Map16 tiles", |ui| {
-            ui.label(
-                "Enter Lunar Magic source,destination pairs using displayed $8000–$FFFF values. \
-                 Ranges and the +, −, M, and R prefixes are supported.",
-            );
+        ui.collapsing(text(catalog, Key::NativeAssetsLayer2RemapTitle), |ui| {
+            ui.label(text(catalog, Key::NativeAssetsLayer2RemapNotice));
             ui.add(
                 egui::TextEdit::multiline(&mut self.layer2_remap_script)
                     .desired_rows(4)
                     .code_editor(),
             );
             ui.horizontal(|ui| {
-                ui.label("Global offset");
+                ui.label(text(catalog, Key::NativeAssetsLayer2GlobalOffset));
                 ui.add(
                     egui::DragValue::new(&mut self.layer2_remap_offset)
                         .range(-0x7fff..=0x7fff)
@@ -583,19 +607,18 @@ impl AggregatePanels {
                 );
                 ui.checkbox(
                     &mut self.layer2_remap_selection_only,
-                    "Selected rectangle only",
+                    text(catalog, Key::NativeAssetsLayer2SelectionOnly),
                 );
             });
             let has_selection =
                 self.layer2_tile_anchor.is_some() && self.layer2_tile_cursor.is_some();
             let enabled = !self.layer2_remap_selection_only || has_selection;
-            ui.add_enabled(enabled, egui::Button::new("Apply remap"))
-                .on_hover_text(
-                    "Apply the complete program as one undoable edit. Cross-bank mappings persist \
-                     when this ROM profile supplies Lunar Magic's installed descriptor table; \
-                     pristine/legacy layouts reject them before mutation.",
-                )
-                .clicked()
+            ui.add_enabled(
+                enabled,
+                egui::Button::new(text(catalog, Key::NativeAssetsLayer2ApplyRemap)),
+            )
+            .on_hover_text(text(catalog, Key::NativeAssetsLayer2RemapHelp))
+            .clicked()
         })
         .body_returned
         .filter(|clicked| *clicked)
@@ -619,11 +642,14 @@ impl AggregatePanels {
         ui: &mut egui::Ui,
         bytes: &[u8],
         selected_cells: usize,
+        catalog: Option<&LocalizationCatalog>,
     ) -> Option<Result<NativeLevelAssetsControllerEdit, String>> {
         ui.horizontal(|ui| {
-            ui.label("16-bit tile word");
+            ui.label(text(catalog, Key::NativeAssetsLayer2TileWord));
             ui.text_edit_singleline(&mut self.layer2_tile);
-            if ui.button("Load").clicked()
+            if ui
+                .button(text(catalog, Key::NativeAssetsLayer2Load))
+                .clicked()
                 && let Some(bytes) =
                     bytes.get(self.layer2_tile_index * 2..self.layer2_tile_index * 2 + 2)
             {
@@ -631,9 +657,10 @@ impl AggregatePanels {
             }
         });
         let apply_label = if selected_cells > 1 {
-            format!("Fill {selected_cells} selected cells")
+            text(catalog, Key::NativeAssetsLayer2FillSelectionFormat)
+                .replace("{count}", &selected_cells.to_string())
         } else {
-            "Apply tile".into()
+            text(catalog, Key::NativeAssetsLayer2ApplyTile)
         };
         let mut action = None;
         ui.horizontal(|ui| {
@@ -643,12 +670,9 @@ impl AggregatePanels {
             if ui
                 .add_enabled(
                     self.layer2_tile_cursor.is_some(),
-                    egui::Button::new("Flood fill from cursor"),
+                    egui::Button::new(text(catalog, Key::NativeAssetsLayer2FloodCursor)),
                 )
-                .on_hover_text(
-                    "Replace the four-connected region matching the cursor's complete 16-bit word. \
-                     Lunar Magic normalizes the replacement to a 12-bit Map16 index.",
-                )
+                .on_hover_text(text(catalog, Key::NativeAssetsLayer2FloodHelp))
                 .clicked()
             {
                 action = Some(true);
@@ -675,18 +699,17 @@ impl AggregatePanels {
         &mut self,
         ui: &mut egui::Ui,
         bytes: &[u8],
+        catalog: Option<&LocalizationCatalog>,
     ) -> Option<Result<NativeLevelAssetsControllerEdit, String>> {
         let enabled = self.layer2_tile_anchor.is_some() && self.layer2_tile_cursor.is_some();
         let mut requested = None;
         ui.horizontal(|ui| {
-            ui.label("Move selection");
+            ui.label(text(catalog, Key::NativeAssetsLayer2MoveSelection));
             for (label, delta_x, delta_y) in [("←", -1, 0), ("↑", 0, -1), ("↓", 0, 1), ("→", 1, 0)]
             {
                 if ui
                     .add_enabled(enabled, egui::Button::new(label))
-                    .on_hover_text(
-                        "Move the complete rectangle by one Map16 cell as one undoable edit.",
-                    )
+                    .on_hover_text(text(catalog, Key::NativeAssetsLayer2MoveHelp))
                     .clicked()
                 {
                     requested = Some((delta_x, delta_y));
@@ -713,11 +736,12 @@ impl AggregatePanels {
         &mut self,
         ui: &mut egui::Ui,
         bytes: &[u8],
+        catalog: Option<&LocalizationCatalog>,
     ) -> Option<Result<NativeLevelAssetsControllerEdit, String>> {
         let enabled = self.layer2_tile_anchor.is_some() && self.layer2_tile_cursor.is_some();
         let mut requested = None;
         ui.horizontal(|ui| {
-            ui.label("Resize selection");
+            ui.label(text(catalog, Key::NativeAssetsLayer2ResizeSelection));
             for (label, edge, grow) in [
                 ("L+", Layer2ResizeEdge::Left, true),
                 ("L−", Layer2ResizeEdge::Left, false),
@@ -730,10 +754,7 @@ impl AggregatePanels {
             ] {
                 if ui
                     .add_enabled(enabled, egui::Button::new(label))
-                    .on_hover_text(
-                        "Grow (+) or shrink (−) this edge by one cell, repeating the original \
-                         selection pattern from the resized top-left corner.",
-                    )
+                    .on_hover_text(text(catalog, Key::NativeAssetsLayer2ResizeHelp))
                     .clicked()
                 {
                     requested = Some((edge, grow));
@@ -760,17 +781,18 @@ impl AggregatePanels {
         &mut self,
         ui: &mut egui::Ui,
         bytes: &[u8],
+        catalog: Option<&LocalizationCatalog>,
     ) -> Option<Result<NativeLevelAssetsControllerEdit, String>> {
         let can_capture = self.layer2_tile_anchor.is_some() && self.layer2_tile_cursor.is_some();
         let mut capture_error = None;
         let mut apply = false;
         ui.horizontal(|ui| {
             if ui
-                .add_enabled(can_capture, egui::Button::new("Capture fill pattern"))
-                .on_hover_text(
-                    "Retain the selected rectangle as a visual row-major Map16 pattern. Then click \
-                     any destination cell and apply it to that connected region.",
+                .add_enabled(
+                    can_capture,
+                    egui::Button::new(text(catalog, Key::NativeAssetsLayer2CapturePattern)),
                 )
+                .on_hover_text(text(catalog, Key::NativeAssetsLayer2CapturePatternHelp))
                 .clicked()
             {
                 match layer2_selection_words(
@@ -789,12 +811,11 @@ impl AggregatePanels {
                 }
             }
             let label = self.layer2_fill_pattern.as_ref().map_or_else(
-                || "Flood fill with captured pattern".into(),
+                || text(catalog, Key::NativeAssetsLayer2FloodCaptured),
                 |pattern| {
-                    format!(
-                        "Flood fill with {}×{} pattern",
-                        pattern.width, pattern.height
-                    )
+                    text(catalog, Key::NativeAssetsLayer2FloodPatternFormat)
+                        .replace("{width}", &pattern.width.to_string())
+                        .replace("{height}", &pattern.height.to_string())
                 },
             );
             if ui
@@ -802,10 +823,7 @@ impl AggregatePanels {
                     self.layer2_fill_pattern.is_some() && self.layer2_tile_cursor.is_some(),
                     egui::Button::new(label),
                 )
-                .on_hover_text(
-                    "Repeat the captured rectangle from the connected region's minimum X/Y corner, \
-                     matching Lunar Magic's pattern anchoring.",
-                )
+                .on_hover_text(text(catalog, Key::NativeAssetsLayer2PatternHelp))
                 .clicked()
             {
                 apply = true;
@@ -830,13 +848,20 @@ impl AggregatePanels {
         &mut self,
         ui: &mut egui::Ui,
         bytes: &[u8],
+        catalog: Option<&LocalizationCatalog>,
     ) -> Option<Result<NativeLevelAssetsControllerEdit, String>> {
         let mut copy_error = None;
         let mut cut_requested = false;
         ui.horizontal(|ui| {
             let can_copy = self.layer2_tile_anchor.is_some() && self.layer2_tile_cursor.is_some();
-            for (label, cut) in [("Copy selection", false), ("Cut selection", true)] {
-                if ui.add_enabled(can_copy, egui::Button::new(label)).clicked() {
+            for (key, cut) in [
+                (Key::NativeAssetsLayer2CopySelection, false),
+                (Key::NativeAssetsLayer2CutSelection, true),
+            ] {
+                if ui
+                    .add_enabled(can_copy, egui::Button::new(text(catalog, key)))
+                    .clicked()
+                {
                     let encoded = layer2_selection_words(
                         bytes,
                         self.layer2_tile_anchor,
@@ -857,7 +882,7 @@ impl AggregatePanels {
             if ui
                 .add_enabled(
                     self.layer2_tile_anchor.is_some(),
-                    egui::Button::new("Paste at anchor"),
+                    egui::Button::new(text(catalog, Key::NativeAssetsLayer2PasteAnchor)),
                 )
                 .clicked()
             {
@@ -895,7 +920,12 @@ impl AggregatePanels {
         Some(result)
     }
 
-    fn layer2_tilemap_grid(&mut self, ui: &mut egui::Ui, bytes: &[u8]) {
+    fn layer2_tilemap_grid(
+        &mut self,
+        ui: &mut egui::Ui,
+        bytes: &[u8],
+        catalog: Option<&LocalizationCatalog>,
+    ) {
         egui::ScrollArea::both()
             .id_salt("native-layer2-tilemap-grid")
             .max_height(360.0)
@@ -922,9 +952,13 @@ impl AggregatePanels {
                                     let extend = ui.input(|input| input.modifiers.shift);
                                     select_layer2_tile_cell(self, x, y, index, word, extend);
                                 }
-                                response.on_hover_text(format!(
-                                    "Canvas ({x}, {y}) · storage index ${index:03X} · word ${word:04X}"
-                                ));
+                                response.on_hover_text(
+                                    text(catalog, Key::NativeAssetsLayer2CellHelpFormat)
+                                        .replace("{x}", &x.to_string())
+                                        .replace("{y}", &y.to_string())
+                                        .replace("{index}", &format!("{index:03X}"))
+                                        .replace("{word}", &format!("{word:04X}")),
+                                );
                             }
                             ui.end_row();
                         }
@@ -936,6 +970,26 @@ impl AggregatePanels {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn complete_aggregate_layer2_panel_has_no_literal_widget_text() {
+        let source = include_str!("layer2.rs");
+        for literal_widget in [
+            "ui.heading(\"",
+            "ui.label(\"",
+            "ui.button(\"",
+            "Button::new(\"",
+            "ui.small(\"",
+            "ui.collapsing(\"",
+            ".on_hover_text(\"",
+            ".text(\"",
+        ] {
+            assert!(
+                !source.contains(literal_widget),
+                "aggregate Layer 2 panel regressed to fixed widget text: {literal_widget}"
+            );
+        }
+    }
 
     #[test]
     fn tilemap_grid_reads_lunar_magic_canvas_order() {

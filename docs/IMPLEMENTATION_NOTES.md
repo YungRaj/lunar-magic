@@ -7153,6 +7153,16 @@ four-file source audit prevents literal widget text across the complete editor s
 forward-compatible extension mechanism rather than overflowing the published byte key domain;
 Localization stays Partial and aggregate parity remains 60/65.
 
+Localization coverage update (2026-08-12, aggregate Layer 2 domain): thirty-five appended
+`NativeAssetsLayer2*` identities plus shared object identities cover ordinary Layer 2 object-stream
+editing and the complete 32×32 tilemap workflow: descriptor/bank context, rectangle selection,
+storage index, tile-word load/fill, connected flood fill, move, patterned resize, pattern capture and
+flood, cut/copy/paste, and Lunar Magic remap programs. Coordinates, cell counts, descriptors, banks,
+tile words, and captured dimensions remain exact substitutions; directional and edge glyph buttons
+remain language-neutral symbols with localized hover guidance. The complete Layer 2 source audit,
+localization 28/28 active cases (one provenance ignore), native compile, and renderer 237/237 pass.
+ExAnimation and Settings remain, so Localization stays Partial and aggregate parity remains 60/65.
+
 Localization coverage update (2026-08-11, verified-update family): all eighteen static and dynamic
 texts across offer review, staging, immutable installation, activation, restart/rollback guidance,
 and failure acknowledgement now route through typed `UiTextKey` entries and the active catalog.

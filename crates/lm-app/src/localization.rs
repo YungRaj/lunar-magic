@@ -2092,6 +2092,41 @@ pub enum ExtendedUiTextKey {
     NativeAssetsPaletteCopyRow,
     NativeAssetsPalettePasteRow,
     NativeAssetsPaletteShortcutNotice,
+    NativeAssetsLayer2ObjectsFormat,
+    NativeAssetsLayer2TilemapFormat,
+    NativeAssetsLayer2InstalledDescriptorFormat,
+    NativeAssetsLayer2LegacyDescriptor,
+    NativeAssetsLayer2SelectionNotice,
+    NativeAssetsLayer2SelectionFormat,
+    NativeAssetsLayer2SelectionOne,
+    NativeAssetsLayer2SelectionMany,
+    NativeAssetsLayer2StorageIndex,
+    NativeAssetsLayer2ClearSelection,
+    NativeAssetsLayer2RemapTitle,
+    NativeAssetsLayer2RemapNotice,
+    NativeAssetsLayer2GlobalOffset,
+    NativeAssetsLayer2SelectionOnly,
+    NativeAssetsLayer2ApplyRemap,
+    NativeAssetsLayer2RemapHelp,
+    NativeAssetsLayer2TileWord,
+    NativeAssetsLayer2Load,
+    NativeAssetsLayer2FillSelectionFormat,
+    NativeAssetsLayer2ApplyTile,
+    NativeAssetsLayer2FloodCursor,
+    NativeAssetsLayer2FloodHelp,
+    NativeAssetsLayer2MoveSelection,
+    NativeAssetsLayer2MoveHelp,
+    NativeAssetsLayer2ResizeSelection,
+    NativeAssetsLayer2ResizeHelp,
+    NativeAssetsLayer2CapturePattern,
+    NativeAssetsLayer2CapturePatternHelp,
+    NativeAssetsLayer2FloodCaptured,
+    NativeAssetsLayer2FloodPatternFormat,
+    NativeAssetsLayer2PatternHelp,
+    NativeAssetsLayer2CopySelection,
+    NativeAssetsLayer2CutSelection,
+    NativeAssetsLayer2PasteAnchor,
+    NativeAssetsLayer2CellHelpFormat,
     CustomSpriteEditorTitle,
     CustomSpritePlacementsFormat,
     CustomSpritePlacement,
@@ -3161,7 +3196,7 @@ pub enum ExtendedUiTextKey {
 }
 
 impl ExtendedUiTextKey {
-    pub const ALL: [Self; 1457] = [
+    pub const ALL: [Self; 1492] = [
         Self::MwlDocumentEditorTitle,
         Self::MwlDocumentVersionFormat,
         Self::MwlDocumentFlagsHex,
@@ -3553,6 +3588,41 @@ impl ExtendedUiTextKey {
         Self::NativeAssetsPaletteCopyRow,
         Self::NativeAssetsPalettePasteRow,
         Self::NativeAssetsPaletteShortcutNotice,
+        Self::NativeAssetsLayer2ObjectsFormat,
+        Self::NativeAssetsLayer2TilemapFormat,
+        Self::NativeAssetsLayer2InstalledDescriptorFormat,
+        Self::NativeAssetsLayer2LegacyDescriptor,
+        Self::NativeAssetsLayer2SelectionNotice,
+        Self::NativeAssetsLayer2SelectionFormat,
+        Self::NativeAssetsLayer2SelectionOne,
+        Self::NativeAssetsLayer2SelectionMany,
+        Self::NativeAssetsLayer2StorageIndex,
+        Self::NativeAssetsLayer2ClearSelection,
+        Self::NativeAssetsLayer2RemapTitle,
+        Self::NativeAssetsLayer2RemapNotice,
+        Self::NativeAssetsLayer2GlobalOffset,
+        Self::NativeAssetsLayer2SelectionOnly,
+        Self::NativeAssetsLayer2ApplyRemap,
+        Self::NativeAssetsLayer2RemapHelp,
+        Self::NativeAssetsLayer2TileWord,
+        Self::NativeAssetsLayer2Load,
+        Self::NativeAssetsLayer2FillSelectionFormat,
+        Self::NativeAssetsLayer2ApplyTile,
+        Self::NativeAssetsLayer2FloodCursor,
+        Self::NativeAssetsLayer2FloodHelp,
+        Self::NativeAssetsLayer2MoveSelection,
+        Self::NativeAssetsLayer2MoveHelp,
+        Self::NativeAssetsLayer2ResizeSelection,
+        Self::NativeAssetsLayer2ResizeHelp,
+        Self::NativeAssetsLayer2CapturePattern,
+        Self::NativeAssetsLayer2CapturePatternHelp,
+        Self::NativeAssetsLayer2FloodCaptured,
+        Self::NativeAssetsLayer2FloodPatternFormat,
+        Self::NativeAssetsLayer2PatternHelp,
+        Self::NativeAssetsLayer2CopySelection,
+        Self::NativeAssetsLayer2CutSelection,
+        Self::NativeAssetsLayer2PasteAnchor,
+        Self::NativeAssetsLayer2CellHelpFormat,
         Self::CustomSpriteEditorTitle,
         Self::CustomSpritePlacementsFormat,
         Self::CustomSpritePlacement,
@@ -5066,6 +5136,67 @@ impl ExtendedUiTextKey {
             Self::NativeAssetsPalettePasteRow => "Paste row",
             Self::NativeAssetsPaletteShortcutNotice => {
                 "Ctrl+left/right copies or pastes a color; add Alt for its complete row."
+            }
+            Self::NativeAssetsLayer2ObjectsFormat => "Layer 2 objects ({count})",
+            Self::NativeAssetsLayer2TilemapFormat => "Layer 2 tilemap ({count} words)",
+            Self::NativeAssetsLayer2InstalledDescriptorFormat => {
+                "Installed descriptor ${descriptor} · active Map16 bank ${bank}"
+            }
+            Self::NativeAssetsLayer2LegacyDescriptor => {
+                "Pristine/legacy descriptor · active Map16 bank $0"
+            }
+            Self::NativeAssetsLayer2SelectionNotice => {
+                "Click a Map16 cell, or Shift-click a second cell to select a rectangle. Applying fills every selected cell with the complete 16-bit tile word."
+            }
+            Self::NativeAssetsLayer2SelectionFormat => {
+                "Canvas selection: ({ax}, {ay}) to ({cx}, {cy}) · {count} {unit}"
+            }
+            Self::NativeAssetsLayer2SelectionOne => "cell",
+            Self::NativeAssetsLayer2SelectionMany => "cells",
+            Self::NativeAssetsLayer2StorageIndex => "Storage index",
+            Self::NativeAssetsLayer2ClearSelection => "Clear canvas selection",
+            Self::NativeAssetsLayer2RemapTitle => "Remap Map16 tiles",
+            Self::NativeAssetsLayer2RemapNotice => {
+                "Enter Lunar Magic source,destination pairs using displayed $8000–$FFFF values. Ranges and the +, −, M, and R prefixes are supported."
+            }
+            Self::NativeAssetsLayer2GlobalOffset => "Global offset",
+            Self::NativeAssetsLayer2SelectionOnly => "Selected rectangle only",
+            Self::NativeAssetsLayer2ApplyRemap => "Apply remap",
+            Self::NativeAssetsLayer2RemapHelp => {
+                "Apply the complete program as one undoable edit. Cross-bank mappings persist when this ROM profile supplies Lunar Magic's installed descriptor table; pristine/legacy layouts reject them before mutation."
+            }
+            Self::NativeAssetsLayer2TileWord => "16-bit tile word",
+            Self::NativeAssetsLayer2Load => "Load",
+            Self::NativeAssetsLayer2FillSelectionFormat => "Fill {count} selected cells",
+            Self::NativeAssetsLayer2ApplyTile => "Apply tile",
+            Self::NativeAssetsLayer2FloodCursor => "Flood fill from cursor",
+            Self::NativeAssetsLayer2FloodHelp => {
+                "Replace the four-connected region matching the cursor's complete 16-bit word. Lunar Magic normalizes the replacement to a 12-bit Map16 index."
+            }
+            Self::NativeAssetsLayer2MoveSelection => "Move selection",
+            Self::NativeAssetsLayer2MoveHelp => {
+                "Move the complete rectangle by one Map16 cell as one undoable edit."
+            }
+            Self::NativeAssetsLayer2ResizeSelection => "Resize selection",
+            Self::NativeAssetsLayer2ResizeHelp => {
+                "Grow (+) or shrink (−) this edge by one cell, repeating the original selection pattern from the resized top-left corner."
+            }
+            Self::NativeAssetsLayer2CapturePattern => "Capture fill pattern",
+            Self::NativeAssetsLayer2CapturePatternHelp => {
+                "Retain the selected rectangle as a visual row-major Map16 pattern. Then click any destination cell and apply it to that connected region."
+            }
+            Self::NativeAssetsLayer2FloodCaptured => "Flood fill with captured pattern",
+            Self::NativeAssetsLayer2FloodPatternFormat => {
+                "Flood fill with {width}×{height} pattern"
+            }
+            Self::NativeAssetsLayer2PatternHelp => {
+                "Repeat the captured rectangle from the connected region's minimum X/Y corner, matching Lunar Magic's pattern anchoring."
+            }
+            Self::NativeAssetsLayer2CopySelection => "Copy selection",
+            Self::NativeAssetsLayer2CutSelection => "Cut selection",
+            Self::NativeAssetsLayer2PasteAnchor => "Paste at anchor",
+            Self::NativeAssetsLayer2CellHelpFormat => {
+                "Canvas ({x}, {y}) · storage index ${index} · word ${word}"
             }
             Self::CustomSpriteEditorTitle => "Custom Sprite Placement Editor",
             Self::CustomSpritePlacementsFormat => "Synchronized placements: {count}",
