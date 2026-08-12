@@ -23,6 +23,7 @@ pub(super) struct GeneralOptions {
     pub gfx_bypass_lists: bool,
     pub prefer_past_2mb: bool,
     pub remember_window_size: bool,
+    pub allow_control_wheel_zoom: bool,
     pub show_add_editor_ids: bool,
     pub auto_deselect: bool,
     pub correct_fatal_errors: bool,
@@ -143,6 +144,13 @@ impl UndoHistorySettings {
                     0x2294,
                     "Remember Window Size",
                     &mut self.draft.remember_window_size,
+                );
+                option(
+                    ui,
+                    catalog,
+                    0x2299,
+                    "Allow Control + Mouse Wheel to Zoom",
+                    &mut self.draft.allow_control_wheel_zoom,
                 );
                 option(
                     ui,
@@ -359,6 +367,7 @@ mod tests {
             gfx_bypass_lists: false,
             prefer_past_2mb: false,
             remember_window_size: false,
+            allow_control_wheel_zoom: false,
             show_add_editor_ids: false,
             auto_deselect: true,
             correct_fatal_errors: false,

@@ -748,6 +748,7 @@ impl RomLevelAssetsEditor {
         special_world_passed: bool,
         visibility: crate::application::LevelViewVisibility,
         animation_rate: crate::animation_rate::AnimationRate,
+        allow_control_wheel_zoom: bool,
     ) -> (bool, Option<Command>) {
         self.poll_palette_file_io(context, project_revision);
         if let Some(result) = self.mwl_batch_worker.show(context) {
@@ -820,6 +821,7 @@ impl RomLevelAssetsEditor {
                         visibility,
                         command.is_some(),
                         animation_rate,
+                        allow_control_wheel_zoom,
                     ) {
                         command = Some(ui_command);
                     }
@@ -841,6 +843,7 @@ impl RomLevelAssetsEditor {
         visibility: crate::application::LevelViewVisibility,
         rom_command_pending: bool,
         animation_rate: crate::animation_rate::AnimationRate,
+        allow_control_wheel_zoom: bool,
     ) -> Option<Command> {
         let stale = self.workspace.as_ref()?.controller.revision() != project_revision;
         let palette_busy =
@@ -1363,9 +1366,13 @@ impl RomLevelAssetsEditor {
             if response.drag_stopped() {
                 self.bypass_drag = None;
             }
-            let wheel_delta = ui.input(|input| {
-                preview_modified_wheel_delta(input.modifiers, input.raw_scroll_delta.y)
-            });
+            let wheel_delta = allow_control_wheel_zoom
+                .then(|| {
+                    ui.input(|input| {
+                        preview_modified_wheel_delta(input.modifiers, input.raw_scroll_delta.y)
+                    })
+                })
+                .flatten();
             if response.hovered()
                 && let (Some(delta_y), Some(pointer), Some(header)) =
                     (wheel_delta, response.hover_pos(), header)

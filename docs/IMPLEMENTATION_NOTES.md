@@ -6877,3 +6877,6 @@ same resource: Remember Window Size, Show IDs, Auto-Deselect, Correct Fatal Erro
 conversion, exit scan, sprite count, object-placement checking, sibling-IPS detection, and vertical
 fireball buoyancy checking. Apply routes each value through its canonical setter so editor workers,
 graphics workers, pending warnings, and persisted state change together; Cancel publishes none.
+The recovered `$2299` Allow Control + Mouse Wheel to Zoom choice is now separately persisted,
+staged in that dialog, and consumed at the installed level-assets canvas's pointer-anchored wheel
+route. Disabling it suppresses only modified-wheel zoom; explicit zoom controls remain available.

@@ -229,6 +229,7 @@ pub(crate) struct NativeApplication {
     background_cursor_highlight: Option<bool>,
     background_editor_owned: Option<bool>,
     remember_window_size: Option<bool>,
+    allow_control_wheel_zoom: Option<bool>,
     scan_exits_on_save: Option<bool>,
     count_sprites_on_save: Option<bool>,
     check_object_placement_on_save: Option<bool>,
@@ -322,6 +323,7 @@ impl NativeApplication {
             gfx_bypass_lists: self.gfx_bypass_list_dialogs.unwrap_or(true),
             prefer_past_2mb: self.prioritize_allocations_past_2mb.unwrap_or(true),
             remember_window_size: self.remember_window_size.unwrap_or(true),
+            allow_control_wheel_zoom: self.allow_control_wheel_zoom.unwrap_or(true),
             show_add_editor_ids: self.show_add_editor_ids.unwrap_or(true),
             auto_deselect: self.auto_deselect_on_editor_select,
             correct_fatal_errors: self.correct_fatal_errors.unwrap_or(true),
@@ -355,6 +357,7 @@ impl NativeApplication {
         self.app
             .set_prioritize_allocations_past_2mb(options.prefer_past_2mb);
         self.set_remember_window_size(options.remember_window_size);
+        self.allow_control_wheel_zoom = Some(options.allow_control_wheel_zoom);
         self.set_show_add_editor_ids(options.show_add_editor_ids);
         self.set_auto_deselect_on_editor_select(options.auto_deselect);
         self.set_correct_fatal_errors(options.correct_fatal_errors);
@@ -390,6 +393,8 @@ impl NativeApplication {
         "lunar_magic_rust.background_editor_owned.v1";
     const REMEMBER_WINDOW_SIZE_STORAGE_KEY: &'static str =
         "lunar_magic_rust.remember_window_size.v1";
+    const ALLOW_CONTROL_WHEEL_ZOOM_STORAGE_KEY: &'static str =
+        "lunar_magic_rust.allow_control_wheel_zoom.v1";
     const SCAN_EXITS_ON_SAVE_STORAGE_KEY: &'static str = "lunar_magic_rust.scan_exits_on_save.v1";
     const COUNT_SPRITES_ON_SAVE_STORAGE_KEY: &'static str =
         "lunar_magic_rust.count_sprites_on_save.v1";
@@ -742,6 +747,12 @@ impl NativeApplication {
                     self.effects.error =
                         Some(format!("cannot load window-size preference: {error}"));
                 }
+            }
+        }
+        if let Some(encoded) = storage.get_string(Self::ALLOW_CONTROL_WHEEL_ZOOM_STORAGE_KEY) {
+            match decode_enabled_preference(&encoded, "control-wheel zoom") {
+                Ok(enabled) => self.allow_control_wheel_zoom = Some(enabled),
+                Err(error) => self.effects.error = Some(error),
             }
         }
         if let Some(encoded) = storage.get_string(Self::SCAN_EXITS_ON_SAVE_STORAGE_KEY) {
@@ -1449,6 +1460,10 @@ impl eframe::App for NativeApplication {
         storage.set_string(
             Self::REMEMBER_WINDOW_SIZE_STORAGE_KEY,
             encode_remember_window_size_preference(self.remember_window_size.unwrap_or(true)),
+        );
+        storage.set_string(
+            Self::ALLOW_CONTROL_WHEEL_ZOOM_STORAGE_KEY,
+            encode_enabled_preference(self.allow_control_wheel_zoom.unwrap_or(true)),
         );
         storage.set_string(
             Self::SCAN_EXITS_ON_SAVE_STORAGE_KEY,

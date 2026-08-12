@@ -134,6 +134,7 @@ impl NativeApplication {
             self.special_world_passed,
             self.level_view_visibility,
             self.animation_rate,
+            self.allow_control_wheel_zoom.unwrap_or(true),
         );
         let command = command.and_then(|command| {
             let result = self
