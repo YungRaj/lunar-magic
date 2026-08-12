@@ -1,5 +1,5 @@
 use eframe::egui;
-use lm_app::{ExternalTool, LocalizationCatalog, ToolEvent};
+use lm_app::{ExtendedUiTextKey as Key, ExternalTool, LocalizationCatalog, ToolEvent};
 use std::path::PathBuf;
 
 const ORIGINAL_SNES_EMULATOR_DIALOG_ID: u16 = 0x0407;
@@ -164,21 +164,35 @@ impl ExternalToolConfigEditor {
                                 self.selected = index;
                             }
                         }
-                        if ui.button("Add SNES emulator").clicked() {
+                        if ui
+                            .button(config_text(catalog, Key::ExternalToolConfigAddSnes))
+                            .clicked()
+                        {
                             self.drafts.push(ToolDraft::emulator(self.drafts.len()));
                             self.selected = self.drafts.len() - 1;
                         }
-                        if ui.button("Add GBA emulator").clicked() {
-                            self.drafts
-                                .push(ToolDraft::gba_emulator(self.drafts.len()));
+                        if ui
+                            .button(config_text(catalog, Key::ExternalToolConfigAddGba))
+                            .clicked()
+                        {
+                            self.drafts.push(ToolDraft::gba_emulator(self.drafts.len()));
                             self.selected = self.drafts.len() - 1;
                         }
-                        if ui.button("Add tile editor").clicked() {
+                        if ui
+                            .button(config_text(catalog, Key::ExternalToolConfigAddTileEditor))
+                            .clicked()
+                        {
                             self.drafts.push(ToolDraft::tile_editor(self.drafts.len()));
                             self.selected = self.drafts.len() - 1;
                         }
                         if ui
-                            .add_enabled(!self.drafts.is_empty(), egui::Button::new("Remove"))
+                            .add_enabled(
+                                !self.drafts.is_empty(),
+                                egui::Button::new(config_text(
+                                    catalog,
+                                    Key::ExternalToolConfigRemove,
+                                )),
+                            )
                             .clicked()
                         {
                             self.drafts.remove(self.selected);
@@ -189,18 +203,26 @@ impl ExternalToolConfigEditor {
                     ui.vertical(|ui| {
                         ui.set_min_width(400.0);
                         let Some(draft) = self.drafts.get_mut(self.selected) else {
-                            ui.label("Add an emulator or external tool to begin.");
+                            ui.label(config_text(catalog, Key::ExternalToolConfigEmptyNotice));
                             return;
                         };
-                        field(ui, "Stable ID", &mut draft.id);
-                        field(ui, "Display name", &mut draft.name);
+                        field(
+                            ui,
+                            &config_text(catalog, Key::ExternalToolConfigStableId),
+                            &mut draft.id,
+                        );
+                        field(
+                            ui,
+                            &config_text(catalog, Key::ExternalToolConfigDisplayName),
+                            &mut draft.name,
+                        );
                         field(
                             ui,
                             &dialog_control_text(catalog, dialog_id, 0x66, "Executable path"),
                             &mut draft.executable,
                         );
                         ui.label(dialog_control_text(catalog, dialog_id, 0x68, "Arguments"));
-                        ui.small("One direct process argument per line; use {rom}, {project_dir}, {level_hex}, or {level_dec}.");
+                        ui.small(config_text(catalog, Key::ExternalToolConfigArgumentsNotice));
                         ui.add(egui::TextEdit::multiline(&mut draft.arguments).desired_rows(4));
                         if dialog_id == ORIGINAL_TILE_EDITOR_DIALOG_ID {
                             ui.radio_value(
@@ -234,12 +256,25 @@ impl ExternalToolConfigEditor {
                                 ),
                             );
                         }
-                        field(ui, "Working directory template (optional)", &mut draft.working_directory);
+                        field(
+                            ui,
+                            &config_text(catalog, Key::ExternalToolConfigWorkingDirectory),
+                            &mut draft.working_directory,
+                        );
                         ui.separator();
-                        ui.label("Run automatically after:");
-                        ui.checkbox(&mut draft.project_opened, "ROM opened");
-                        ui.checkbox(&mut draft.project_saved, "ROM saved");
-                        ui.checkbox(&mut draft.level_changed, "Level changed");
+                        ui.label(config_text(catalog, Key::ExternalToolConfigRunAfter));
+                        ui.checkbox(
+                            &mut draft.project_opened,
+                            config_text(catalog, Key::ExternalToolConfigRomOpened),
+                        );
+                        ui.checkbox(
+                            &mut draft.project_saved,
+                            config_text(catalog, Key::ExternalToolConfigRomSaved),
+                        );
+                        ui.checkbox(
+                            &mut draft.level_changed,
+                            config_text(catalog, Key::ExternalToolConfigLevelChanged),
+                        );
                     });
                 });
                 if let Some(error) = &self.error {
@@ -302,6 +337,13 @@ fn dialog_control_text(
         .to_owned()
 }
 
+fn config_text(catalog: Option<&LocalizationCatalog>, key: Key) -> String {
+    catalog.map_or_else(
+        || key.english().to_owned(),
+        |catalog| catalog.extended_text(key).to_owned(),
+    )
+}
+
 fn field(ui: &mut egui::Ui, label: &str, value: &mut String) {
     ui.label(label);
     ui.text_edit_singleline(value);
@@ -311,6 +353,34 @@ fn field(ui: &mut egui::Ui, label: &str, value: &mut String) {
 mod tests {
     use super::*;
     use lm_app::{OriginalDialogTextKey, UiTextKey, validate_tools};
+
+    #[test]
+    fn complete_external_tool_configuration_surface_has_no_literal_widget_text() {
+        let source = include_str!("external_tool_config_editor.rs");
+        for literal_widget in [
+            "ui.button(\"",
+            "ui.label(\"",
+            "ui.small(\"",
+            "Button::new(\"",
+            "ui.checkbox(&mut draft.project_opened, \"",
+            "ui.checkbox(&mut draft.project_saved, \"",
+            "ui.checkbox(&mut draft.level_changed, \"",
+        ] {
+            assert!(
+                !source.contains(literal_widget),
+                "external-tool configuration bypasses typed localization with {literal_widget}"
+            );
+        }
+        for key in Key::ALL
+            .into_iter()
+            .filter(|key| format!("{key:?}").starts_with("ExternalToolConfig"))
+        {
+            assert!(
+                source.contains(&format!("Key::{key:?}")),
+                "external-tool configuration does not consume {key:?}"
+            );
+        }
+    }
 
     #[test]
     fn draft_round_trip_preserves_argument_boundaries_working_directory_and_events() {

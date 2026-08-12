@@ -7967,3 +7967,14 @@ requiring both typed identities. Native compilation, the focused audit, localiza
 cases (one provenance ignore), and renderer 237/237 pass. Other unaudited frontend modules and the
 retained translated language-DLL gesture keep Localization Partial; aggregate parity remains
 60/65.
+
+Localization coverage update (2026-08-12, external-tool configuration): thirteen appended
+`ExternalToolConfig*` identities cover SNES/GBA/tile-editor creation, removal, empty state, stable
+ID and display name, argument guidance, working-directory template, and all automatic event
+subscriptions. Original Lunar Magic dialog titles, executable/argument controls, platform options,
+and Apply/Cancel continue to prefer recovered type-5 dialog translations, while these Rust-added
+controls use the typed catalog. A complete surface audit rejects literal widget regressions and
+requires every family key. Native compilation, the focused audit, localization 28/28 active cases
+(one provenance ignore), and renderer 237/237 pass. Other unaudited frontend modules and the
+retained translated language-DLL gesture keep Localization Partial; aggregate parity remains
+60/65.
