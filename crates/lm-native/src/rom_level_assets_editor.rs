@@ -789,10 +789,15 @@ impl RomLevelAssetsEditor {
         if let Some(result) = self.mwl_batch_worker.show(context, catalog) {
             match result {
                 Ok(Some(count)) => {
-                    self.mwl_batch_status =
-                        Some(format!("{count} levels were exported successfully."));
+                    self.mwl_batch_status = Some(
+                        text(catalog, Key::RomNativeAssetsMwlBatchResultFormat)
+                            .replace("{count}", &count.to_string()),
+                    );
                 }
-                Ok(None) => self.mwl_batch_status = Some("Batch MWL export cancelled.".into()),
+                Ok(None) => {
+                    self.mwl_batch_status =
+                        Some(text(catalog, Key::RomNativeAssetsMwlBatchCancelled));
+                }
                 Err(error) => self.error = Some(error),
             }
         }
@@ -825,7 +830,7 @@ impl RomLevelAssetsEditor {
             }
         });
         if let Some(result) = self.legacy_mwl_loader.show(context) {
-            match self.finish_legacy_mwl_load(result, project_revision) {
+            match self.finish_legacy_mwl_load(result, project_revision, catalog) {
                 Ok(Some(legacy_command)) => command = Some(legacy_command),
                 Ok(None) => {}
                 Err(error) => self.error = Some(error),
@@ -1223,12 +1228,10 @@ impl RomLevelAssetsEditor {
                         egui::TextureOptions::NEAREST,
                     ));
                     self.bypass_validation = Some(if diagnostics.is_empty() {
-                        "Rendered installed Layer 2 and Layer 1 object streams with the selected Super GFX files, installed Map16 definitions, and staged level palette.".into()
+                        text(catalog, Key::RomNativeAssetsPreviewRendered)
                     } else {
-                        format!(
-                            "Rendered the installed object layers with unresolved definitions: {}",
-                            diagnostics.join("; ")
-                        )
+                        text(catalog, Key::RomNativeAssetsPreviewUnresolvedFormat)
+                            .replace("{diagnostics}", &diagnostics.join("; "))
                     });
                     self.bypass_inspection = inspection;
                 }
@@ -1250,12 +1253,13 @@ impl RomLevelAssetsEditor {
         }
         if let Some(inspection) = &self.bypass_inspection {
             ui.group(|ui| {
-                ui.label(format!(
-                    "Resolved staged Map16 cell X ${:03X}, Y ${:03X} in painter order",
-                    inspection.selection.cell_x, inspection.selection.cell_y
-                ));
+                ui.label(
+                    text(catalog, Key::RomNativeAssetsInspectionHeadingFormat)
+                        .replace("{x}", &format!("{:03X}", inspection.selection.cell_x))
+                        .replace("{y}", &format!("{:03X}", inspection.selection.cell_y)),
+                );
                 if inspection.hits.is_empty() {
-                    ui.monospace("No Layer 2 or Layer 1 placement resolves at this cell.");
+                    ui.monospace(text(catalog, Key::RomNativeAssetsInspectionNoMap16));
                 }
                 for (paint_index, hit) in inspection.hits.iter().enumerate() {
                     let outer_flips = match (hit.outer_x_flip, hit.outer_y_flip) {
@@ -1341,9 +1345,9 @@ impl RomLevelAssetsEditor {
                         ui.monospace("  Map16 definition is unavailable.");
                     }
                 }
-                ui.label("Overlapping staged sprite-preview parts in painter order");
+                ui.label(text(catalog, Key::RomNativeAssetsInspectionSpriteHeading));
                 if inspection.sprites.is_empty() {
-                    ui.monospace("No materialized sprite-preview part overlaps this cell.");
+                    ui.monospace(text(catalog, Key::RomNativeAssetsInspectionNoSprite));
                 }
                 for (paint_index, sprite) in inspection.sprites.iter().enumerate() {
                     ui.monospace(format!(
@@ -3852,6 +3856,7 @@ mod tests {
                     files: vec![(std::path::PathBuf::from("manifest.mwl"), bytes)],
                 }),
                 0,
+                None,
             )
             .unwrap();
         assert!(result.is_none());
@@ -3893,6 +3898,7 @@ mod tests {
                     ],
                 }),
                 0,
+                None,
             )
             .unwrap_err();
         assert_eq!(error, "workspace is closed");

@@ -2243,6 +2243,15 @@ pub enum ExtendedUiTextKey {
     RomNativeAssetsLayer2ResetChangeFormat,
     RomNativeAssetsLayer2ResetNotice,
     RomNativeAssetsLayer2ResetAction,
+    RomNativeAssetsMwlBatchResultFormat,
+    RomNativeAssetsMwlBatchCancelled,
+    RomNativeAssetsLegacyCompatibilityFormat,
+    RomNativeAssetsPreviewRendered,
+    RomNativeAssetsPreviewUnresolvedFormat,
+    RomNativeAssetsInspectionHeadingFormat,
+    RomNativeAssetsInspectionNoMap16,
+    RomNativeAssetsInspectionSpriteHeading,
+    RomNativeAssetsInspectionNoSprite,
     ExAnimationDocumentTitle,
     ExAnimationDocumentOpenTitle,
     ExAnimationDocumentMaximumRecords,
@@ -3405,7 +3414,7 @@ pub enum ExtendedUiTextKey {
 }
 
 impl ExtendedUiTextKey {
-    pub const ALL: [Self; 1701] = [
+    pub const ALL: [Self; 1710] = [
         Self::MwlDocumentEditorTitle,
         Self::MwlDocumentVersionFormat,
         Self::MwlDocumentFlagsHex,
@@ -3948,6 +3957,15 @@ impl ExtendedUiTextKey {
         Self::RomNativeAssetsLayer2ResetChangeFormat,
         Self::RomNativeAssetsLayer2ResetNotice,
         Self::RomNativeAssetsLayer2ResetAction,
+        Self::RomNativeAssetsMwlBatchResultFormat,
+        Self::RomNativeAssetsMwlBatchCancelled,
+        Self::RomNativeAssetsLegacyCompatibilityFormat,
+        Self::RomNativeAssetsPreviewRendered,
+        Self::RomNativeAssetsPreviewUnresolvedFormat,
+        Self::RomNativeAssetsInspectionHeadingFormat,
+        Self::RomNativeAssetsInspectionNoMap16,
+        Self::RomNativeAssetsInspectionSpriteHeading,
+        Self::RomNativeAssetsInspectionNoSprite,
         Self::ExAnimationDocumentTitle,
         Self::ExAnimationDocumentOpenTitle,
         Self::ExAnimationDocumentMaximumRecords,
@@ -5774,6 +5792,31 @@ impl ExtendedUiTextKey {
                 "Lunar Magic clears the tilemap workspace when entering a tilemap-backed mode. Object-backed data remains available if you switch back before saving."
             }
             Self::RomNativeAssetsLayer2ResetAction => "Reset Layer 2 and stage changes",
+            Self::RomNativeAssetsMwlBatchResultFormat => {
+                "{count} levels were exported successfully."
+            }
+            Self::RomNativeAssetsMwlBatchCancelled => "Batch MWL export cancelled.",
+            Self::RomNativeAssetsLegacyCompatibilityFormat => {
+                "Legacy import compatibility: {diagnostics}"
+            }
+            Self::RomNativeAssetsPreviewRendered => {
+                "Rendered installed Layer 2 and Layer 1 object streams with the selected Super GFX files, installed Map16 definitions, and staged level palette."
+            }
+            Self::RomNativeAssetsPreviewUnresolvedFormat => {
+                "Rendered the installed object layers with unresolved definitions: {diagnostics}"
+            }
+            Self::RomNativeAssetsInspectionHeadingFormat => {
+                "Resolved staged Map16 cell X ${x}, Y ${y} in painter order"
+            }
+            Self::RomNativeAssetsInspectionNoMap16 => {
+                "No Layer 2 or Layer 1 placement resolves at this cell."
+            }
+            Self::RomNativeAssetsInspectionSpriteHeading => {
+                "Overlapping staged sprite-preview parts in painter order"
+            }
+            Self::RomNativeAssetsInspectionNoSprite => {
+                "No materialized sprite-preview part overlaps this cell."
+            }
             Self::ExAnimationDocumentTitle => "Portable ExAnimation Editor",
             Self::ExAnimationDocumentOpenTitle => "Open ExAnimation",
             Self::ExAnimationDocumentMaximumRecords => {

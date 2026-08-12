@@ -7887,3 +7887,14 @@ vocabulary. The complete key audit passes, localization passes 28/28 active case
 ignore), native compilation passes, and renderer remains 237/237. Remaining localized batch
 completion statuses and technical preview headings will be audited separately; Localization and
 aggregate parity remain Partial and 60/65 respectively.
+
+Localization coverage update (2026-08-12, installed-ROM level-assets final status audit): nine
+appended `RomNativeAssets*` identities cover MWL completion/cancellation, legacy-import
+compatibility prefixes, preview success/unresolved summaries, Map16 inspection heading/empty
+state, and sprite-inspection heading/empty state. Parser diagnostics, acts-like chains, raw Map16
+words, VRAM tiles, CGRAM rows, painter indices, and sprite token/part records remain exact opaque
+technical evidence substituted after localized framing. The family key audit passes, localization
+passes 28/28 active cases (one provenance ignore), native compilation passes, and renderer remains
+237/237. This completes catalog routing for the installed-ROM level-assets editor family; retained
+live original language-DLL behavior and other native forms keep Localization Partial and aggregate
+parity at 60/65.

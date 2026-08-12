@@ -203,6 +203,7 @@ impl RomLevelAssetsEditor {
         &mut self,
         result: Result<LoadedDocument, String>,
         project_revision: u64,
+        catalog: Option<&LocalizationCatalog>,
     ) -> Result<Option<Command>, String> {
         let pending = self
             .pending_legacy_mwl_load
@@ -217,14 +218,14 @@ impl RomLevelAssetsEditor {
                 let report = LegacyMwlManifest::decode_with_diagnostics(&bytes)
                     .map_err(|error| error.to_string())?;
                 self.legacy_mwl_status = (!report.diagnostics.is_empty()).then(|| {
-                    format!(
-                        "Legacy import compatibility: {}",
-                        report
+                    super::text(catalog, Key::RomNativeAssetsLegacyCompatibilityFormat).replace(
+                        "{diagnostics}",
+                        &report
                             .diagnostics
                             .iter()
                             .map(ToString::to_string)
                             .collect::<Vec<_>>()
-                            .join("; ")
+                            .join("; "),
                     )
                 });
                 let manifest = report.manifest;
@@ -281,7 +282,8 @@ impl RomLevelAssetsEditor {
                         "Couldn't locate the palette file! Switching to non-custom shared palette.";
                     self.legacy_mwl_status = Some(match self.legacy_mwl_status.take() {
                         Some(status) => format!("{status}; {warning}"),
-                        None => format!("Legacy import compatibility: {warning}"),
+                        None => super::text(catalog, Key::RomNativeAssetsLegacyCompatibilityFormat)
+                            .replace("{diagnostics}", warning),
                     });
                 }
                 let bundle = LegacyMwlBundle {
