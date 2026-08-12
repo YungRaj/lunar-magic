@@ -6973,3 +6973,12 @@ earlier domain are visible to every later domain. The
 exact metadata and palette reopen, valid checksum, selected-level retention, and unchanged live
 ROM/history. The Release row remains Partial for its separately listed distribution and remaining
 recovery gaps; aggregate parity remains 60/65.
+
+Release-publication update (2026-08-11): portable release builds no longer stamp every tag with
+the unrelated hard-coded `0.1.0` version. Manual runs use an explicit development version, while
+`v*` pushes derive the bundle/manifest version from the immutable tag. A least-privilege publish
+job waits for all four platform builds, merges their artifacts, validates every neighboring SHA-256
+file with strict parsing, records GitHub artifact provenance, and creates the tag-matched GitHub
+Release with all archives/checksums and generated notes. The three deterministic packager tests
+pass. A real tagged workflow run, installers, platform signing/notarization, and updates remain
+required before the Release row can pass; aggregate parity remains 60/65.

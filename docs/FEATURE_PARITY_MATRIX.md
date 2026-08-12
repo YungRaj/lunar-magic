@@ -1166,6 +1166,14 @@ all three values, checksum health, and unchanged live ROM/Undo state. The Releas
 Partial for the explicitly listed installer, update, publication, signing, and other recovery gaps;
 aggregate parity remains 60/65.
 
+Release-publication update (2026-08-11): the four-platform workflow now derives tagged artifact
+versions from `github.ref_name`, waits for the entire build matrix, strictly verifies every archive
+checksum, records GitHub artifact provenance, and publishes all artifacts to the matching GitHub
+Release using job-scoped write permissions. Manual runs remain non-publishing development builds.
+The deterministic packager gate remains 3/3. A retained successful tagged run is still required as
+hosted proof, and installers, signing/notarization, and updates remain incomplete, so Release stays
+Partial and aggregate parity remains 60/65.
+
 Crash-recovery evidence update (2026-08-11, fixed-ROM family): palette, Map16, secondary-exit,
 and Lunar Magic metadata staging now accepts every complete two-, three-, or four-editor subset on
 one evolving project clone, superseding the former pair-only coordinator branches. Deterministic

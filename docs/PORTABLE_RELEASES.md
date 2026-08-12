@@ -1,8 +1,10 @@
 # Portable release bundles
 
-Portable bundles are the first release-engineering milestone for the Rust editor. They provide a
-repeatable archive containing the graphical editor and command-line tool; they do not yet provide
-an installer, code signing or notarization, or automatic updates. The graphical editor separately
+Portable bundles provide a repeatable archive containing the graphical editor and command-line
+tools. A pushed `v*` tag uses the exact tag name as the embedded bundle version, verifies every
+archive against its neighboring SHA-256 file, records GitHub artifact provenance, and publishes
+all platform assets on the corresponding GitHub Release. Installer, platform code signing and
+notarization, and automatic updates remain separate milestones. The graphical editor separately
 maintains isolated local crash-recovery records for committed unsaved ROM changes.
 
 ## Bundle contents
@@ -50,6 +52,8 @@ On Windows, compare `Get-FileHash -Algorithm SHA256` with the first field of the
 ## Continuous integration scope
 
 The portable-release workflow builds Linux x86-64, Windows x86-64, macOS Apple Silicon, and macOS
-Intel bundles. It retains the resulting CI artifacts for 14 days. The workflow deliberately does
-not publish a GitHub release: release publication, platform signing, and long-term retention need a
-separate reviewed policy.
+Intel bundles. Manual runs produce `0.1.0-dev` CI artifacts retained for 14 days. A pushed `v*` tag
+instead derives the version from that tag and, only after all four matrix builds succeed, downloads
+the complete set, verifies every checksum with strict parsing, attests the artifacts, and creates
+the matching GitHub Release with generated notes. The release job has scoped `contents: write`,
+`id-token: write`, and `attestations: write` permissions; build jobs retain read-only access.
