@@ -4049,10 +4049,24 @@ pub enum ExtendedUiTextKey {
     VanillaLevelSave,
     VanillaLevelDiscard,
     VanillaLevelSaveBeforeExitFormat,
+    VanillaLevelObjectFormat,
+    VanillaLevelNoSelectedObject,
+    VanillaLevelNativeScreenExit,
+    VanillaLevelSourceScreen,
+    VanillaLevelScreenExitEncodingHelp,
+    VanillaLevelScreenJumpFormat,
+    VanillaLevelLowByteFirst,
+    VanillaLevelHighByteFirst,
+    VanillaLevelFirstEncodedComponent,
+    VanillaLevelSecondEncodedComponent,
+    VanillaLevelAdvanceScreen,
+    VanillaLevelPreviewZoomOut,
+    VanillaLevelPreviewZoomIn,
+    VanillaLevelPreviewZoomDefault,
 }
 
 impl ExtendedUiTextKey {
-    pub const ALL: [Self; 2348] = [
+    pub const ALL: [Self; 2362] = [
         Self::MwlDocumentEditorTitle,
         Self::MwlDocumentVersionFormat,
         Self::MwlDocumentFlagsHex,
@@ -6401,6 +6415,20 @@ impl ExtendedUiTextKey {
         Self::VanillaLevelSave,
         Self::VanillaLevelDiscard,
         Self::VanillaLevelSaveBeforeExitFormat,
+        Self::VanillaLevelObjectFormat,
+        Self::VanillaLevelNoSelectedObject,
+        Self::VanillaLevelNativeScreenExit,
+        Self::VanillaLevelSourceScreen,
+        Self::VanillaLevelScreenExitEncodingHelp,
+        Self::VanillaLevelScreenJumpFormat,
+        Self::VanillaLevelLowByteFirst,
+        Self::VanillaLevelHighByteFirst,
+        Self::VanillaLevelFirstEncodedComponent,
+        Self::VanillaLevelSecondEncodedComponent,
+        Self::VanillaLevelAdvanceScreen,
+        Self::VanillaLevelPreviewZoomOut,
+        Self::VanillaLevelPreviewZoomIn,
+        Self::VanillaLevelPreviewZoomDefault,
     ];
 
     #[must_use]
@@ -9462,6 +9490,22 @@ impl ExtendedUiTextKey {
             Self::VanillaLevelSaveBeforeExitFormat => {
                 "The current level has staged changes. Save before following this exit to level {destination}?"
             }
+            Self::VanillaLevelObjectFormat => "Object {index}",
+            Self::VanillaLevelNoSelectedObject => "No selected object.",
+            Self::VanillaLevelNativeScreenExit => "Native screen-exit object",
+            Self::VanillaLevelSourceScreen => "Source screen",
+            Self::VanillaLevelScreenExitEncodingHelp => {
+                "Lunar Magic always sets flag 0400. Resulting values below 1000 use the compact four-byte form; higher flag values use the five-byte extended form."
+            }
+            Self::VanillaLevelScreenJumpFormat => "Screen-jump control ({order})",
+            Self::VanillaLevelLowByteFirst => "low byte first",
+            Self::VanillaLevelHighByteFirst => "high byte first",
+            Self::VanillaLevelFirstEncodedComponent => "First encoded component",
+            Self::VanillaLevelSecondEncodedComponent => "Second encoded component",
+            Self::VanillaLevelAdvanceScreen => "Advance screen",
+            Self::VanillaLevelPreviewZoomOut => "Zoom out",
+            Self::VanillaLevelPreviewZoomIn => "Zoom in",
+            Self::VanillaLevelPreviewZoomDefault => "Default 100%",
         }
     }
 

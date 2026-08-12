@@ -2397,3 +2397,11 @@ key and rejects the former literal controls; translated lookup, English fallback
 28/28 active tests (one provenance ignore), native compilation, and renderer 237/237 pass.
 Remaining vanilla editor/native surfaces and live translated language-DLL evidence keep
 Localization Partial, so aggregate parity remains 60/65.
+
+Localization coverage update (2026-08-12, vanilla Layer 1 semantic object controls): fourteen
+typed `VanillaLevel*` keys replace fixed English in selected-object state, native screen-exit and
+screen-jump semantic fields, byte-order presentation, advance-screen state, and shared object/sprite
+catalog preview zoom. A bounded source audit requires the typed family and rejects each former
+literal control. The focused native audit, localization 28/28 active cases (one provenance ignore),
+and renderer 237/237 pass. Remaining vanilla/native forms and live translated language-DLL
+evidence keep Localization Partial, so aggregate parity remains 60/65.

@@ -8265,3 +8265,13 @@ fallback behavior. The focused native audit passes, localization passes 28/28 ac
 provenance ignore), native compilation passes, and renderer remains 237/237. Remaining vanilla
 level-editor controls, other native forms, and retained live language-DLL evidence keep
 Localization Partial; aggregate parity remains 60/65.
+
+Localization coverage update (2026-08-12, vanilla Layer 1 semantic object controls): fourteen
+appended `VanillaLevel*` identities now cover the selected-object heading and empty state, native
+screen-exit fields and encoding guidance, both screen-jump byte orders and encoded components,
+advance-screen state, and the shared object/sprite catalog preview zoom actions. The live catalog
+flows through both catalog toolbar callers with independent English fallback. The bounded source
+audit rejects every former fixed-English semantic and preview control. The focused native audit
+passes, localization passes 28/28 active cases (one provenance ignore), and renderer remains
+237/237. Remaining vanilla/native forms and retained live language-DLL evidence keep Localization
+Partial; aggregate parity remains 60/65.

@@ -9508,12 +9508,19 @@ impl VanillaLevelEditor {
             })
             .and_then(|record| self.active_object_resize_model(record, custom_objects));
         if has_selection {
-            ui.label(format!("Object {}", self.selected_object));
+            ui.label(
+                vanilla_text(catalog, ExtendedUiTextKey::VanillaLevelObjectFormat)
+                    .replace("{index}", &self.selected_object.to_string()),
+            );
         } else {
-            ui.label("No selected object.");
+            ui.label(vanilla_text(
+                catalog,
+                ExtendedUiTextKey::VanillaLevelNoSelectedObject,
+            ));
         }
         self.catalog_presentation_toolbar(
             ui,
+            catalog,
             toolbar_images,
             OriginalToolbarImages::AddObject,
             true,
@@ -9523,12 +9530,21 @@ impl VanillaLevelEditor {
         self.custom_object_catalog(ui, catalog, custom_objects, custom_map16, false);
         self.object_catalog_preview_area(ui, custom_objects, custom_map16, false);
         if let Some((screen, destination_and_flags)) = &mut self.object_form.screen_exit {
-            ui.label("Native screen-exit object");
+            ui.label(vanilla_text(
+                catalog,
+                ExtendedUiTextKey::VanillaLevelNativeScreenExit,
+            ));
             egui::Grid::new("vanilla-screen-exit-fields").show(ui, |ui| {
-                ui.label("Source screen");
+                ui.label(vanilla_text(
+                    catalog,
+                    ExtendedUiTextKey::VanillaLevelSourceScreen,
+                ));
                 ui.add(egui::DragValue::new(screen).range(0..=0x1f));
                 ui.end_row();
-                ui.label("Destination / flags");
+                ui.label(vanilla_text(
+                    catalog,
+                    ExtendedUiTextKey::VanillaLevelDestinationFlags,
+                ));
                 ui.add(
                     egui::DragValue::new(destination_and_flags)
                         .range(0..=u16::MAX)
@@ -9536,27 +9552,39 @@ impl VanillaLevelEditor {
                 );
                 ui.end_row();
             });
-            ui.small(
-                "Lunar Magic always sets flag 0400. Resulting values below 1000 use the compact four-byte form; higher flag values use the five-byte extended form.",
-            );
-        } else if let Some((encoding, target)) = &mut self.object_form.screen_jump {
-            ui.label(format!(
-                "Screen-jump control ({})",
-                match encoding {
-                    lm_level::ScreenJumpEncoding::FirstLow => "low byte first",
-                    lm_level::ScreenJumpEncoding::FirstHigh => "high byte first",
-                }
+            ui.small(vanilla_text(
+                catalog,
+                ExtendedUiTextKey::VanillaLevelScreenExitEncodingHelp,
             ));
+        } else if let Some((encoding, target)) = &mut self.object_form.screen_jump {
+            let order = match encoding {
+                lm_level::ScreenJumpEncoding::FirstLow => {
+                    vanilla_text(catalog, ExtendedUiTextKey::VanillaLevelLowByteFirst)
+                }
+                lm_level::ScreenJumpEncoding::FirstHigh => {
+                    vanilla_text(catalog, ExtendedUiTextKey::VanillaLevelHighByteFirst)
+                }
+            };
+            ui.label(
+                vanilla_text(catalog, ExtendedUiTextKey::VanillaLevelScreenJumpFormat)
+                    .replace("{order}", &order),
+            );
             let (mut first, mut second) = screen_jump_components(*encoding, *target);
             egui::Grid::new("vanilla-screen-jump-fields").show(ui, |ui| {
-                ui.label("First encoded component");
+                ui.label(vanilla_text(
+                    catalog,
+                    ExtendedUiTextKey::VanillaLevelFirstEncodedComponent,
+                ));
                 ui.add(
                     egui::DragValue::new(&mut first)
                         .range(0..=0x1f)
                         .hexadecimal(2, false, true),
                 );
                 ui.end_row();
-                ui.label("Second encoded component");
+                ui.label(vanilla_text(
+                    catalog,
+                    ExtendedUiTextKey::VanillaLevelSecondEncodedComponent,
+                ));
                 ui.add(
                     egui::DragValue::new(&mut second)
                         .range(0..=0x0f)
@@ -9582,7 +9610,10 @@ impl VanillaLevelEditor {
                     &mut self.object_form.second_coordinate,
                     0x0f,
                 );
-                ui.label("Advance screen");
+                ui.label(vanilla_text(
+                    catalog,
+                    ExtendedUiTextKey::VanillaLevelAdvanceScreen,
+                ));
                 ui.checkbox(&mut self.object_form.advances_screen, "");
                 ui.end_row();
             });
@@ -9596,6 +9627,7 @@ impl VanillaLevelEditor {
     fn catalog_presentation_toolbar(
         &mut self,
         ui: &mut egui::Ui,
+        catalog: Option<&LocalizationCatalog>,
         images: &MainToolbarImageSet,
         kind: OriginalToolbarImages,
         objects: bool,
@@ -9691,13 +9723,31 @@ impl VanillaLevelEditor {
                             }
                         }
                         ui.separator();
-                        if ui.button("Zoom out").clicked() {
+                        if ui
+                            .button(vanilla_text(
+                                catalog,
+                                ExtendedUiTextKey::VanillaLevelPreviewZoomOut,
+                            ))
+                            .clicked()
+                        {
                             zoom = change_catalog_preview_zoom(zoom, -100);
                         }
-                        if ui.button("Zoom in").clicked() {
+                        if ui
+                            .button(vanilla_text(
+                                catalog,
+                                ExtendedUiTextKey::VanillaLevelPreviewZoomIn,
+                            ))
+                            .clicked()
+                        {
                             zoom = change_catalog_preview_zoom(zoom, 100);
                         }
-                        if ui.button("Default 100%").clicked() {
+                        if ui
+                            .button(vanilla_text(
+                                catalog,
+                                ExtendedUiTextKey::VanillaLevelPreviewZoomDefault,
+                            ))
+                            .clicked()
+                        {
                             zoom = 100;
                             ui.close_menu();
                         }
@@ -10630,6 +10680,7 @@ impl VanillaLevelEditor {
         ));
         self.catalog_presentation_toolbar(
             ui,
+            catalog,
             toolbar_images,
             OriginalToolbarImages::AddSprite,
             false,
@@ -17617,6 +17668,32 @@ mod tests {
             assert!(
                 !layer1_actions.contains(literal),
                 "fixed-English placement action: {literal}"
+            );
+        }
+        let object_semantic_editor = source
+            .split("    fn object_editor(")
+            .nth(1)
+            .unwrap()
+            .split("    fn object_catalog(")
+            .next()
+            .unwrap();
+        for literal in [
+            "format!(\"Object {}\"",
+            "label(\"No selected object.\")",
+            "label(\"Native screen-exit object\")",
+            "label(\"Source screen\")",
+            "label(\"Destination / flags\")",
+            "label(\"Screen-jump control",
+            "label(\"First encoded component\")",
+            "label(\"Second encoded component\")",
+            "label(\"Advance screen\")",
+            "button(\"Zoom out\")",
+            "button(\"Zoom in\")",
+            "button(\"Default 100%\")",
+        ] {
+            assert!(
+                !object_semantic_editor.contains(literal),
+                "fixed-English object-semantic control: {literal}"
             );
         }
         let placement_catalogs = source
