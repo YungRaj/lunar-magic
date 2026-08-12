@@ -7106,6 +7106,17 @@ preservation, and divergent history. Localization passes 28/28 active cases (one
 ignore), and renderer passes 237/237. Other native forms and retained language-DLL evidence keep
 Localization Partial; aggregate parity remains 60/65.
 
+Localization coverage update (2026-08-12, portable ExAnimation document): thirty appended
+`ExAnimationDocument*` identities cover the shell, open/profile-bound maximum configuration,
+record list, slot globals, trigger form, record properties, lifecycle, and error dialogs. Identical
+record/frame clipboard, trigger, destination-flag, and slot-apply semantics reuse the already
+verified aggregate ExAnimation identities. Record indices, kinds, and trigger values remain exact
+opaque substitutions. Four-file audits require every document-specific key and reject fixed window,
+heading, label, button, prefix, and slider text. Both audits pass, localization passes 28/28 active
+cases (one provenance ignore), native compile passes, and renderer passes 237/237. Other native
+forms and retained live language-DLL evidence keep Localization Partial; aggregate parity remains
+60/65.
+
 Localization coverage update (2026-08-12, custom-object library): twenty-seven appended
 `CustomObject*` keys cover synchronized entry count/search/navigation, multi-object group bytes,
 Unicode descriptions, typed object copy/paste, replace/remove/insert/move, UTF-8 BOM and LF/CRLF

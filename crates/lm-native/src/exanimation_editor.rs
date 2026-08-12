@@ -11,7 +11,7 @@ use crate::{
 use clipboard::PasteTarget;
 use eframe::egui;
 use exanimation_form::{GlobalForm, RecordForm};
-use lm_app::ExAnimationDocumentController;
+use lm_app::{ExAnimationDocumentController, ExtendedUiTextKey as Key, LocalizationCatalog};
 use persistence::decode_document;
 use std::path::PathBuf;
 
@@ -87,33 +87,37 @@ impl ExAnimationEditor {
         false
     }
 
-    pub(crate) fn show(&mut self, context: &egui::Context) -> bool {
+    pub(crate) fn show(
+        &mut self,
+        context: &egui::Context,
+        catalog: Option<&LocalizationCatalog>,
+    ) -> bool {
         self.poll_open_load(context);
         if let Some(document) = self.document.as_mut()
             && let Some(Err(error)) = self.persistence.show(context, &mut document.controller)
         {
             self.error = Some(error);
         }
-        self.show_open_configuration(context);
+        self.show_open_configuration(context, catalog);
         if self.document.is_some() {
             self.load_forms();
-            egui::Window::new("Portable ExAnimation Editor")
+            egui::Window::new(text(catalog, Key::ExAnimationDocumentTitle))
                 .default_size([820.0, 620.0])
-                .show(context, |ui| self.contents(ui));
+                .show(context, |ui| self.contents(ui, catalog));
         }
-        let approved = self.show_close_confirmation(context);
-        self.show_error(context);
+        let approved = self.show_close_confirmation(context, catalog);
+        self.show_error(context, catalog);
         approved
     }
 
-    fn contents(&mut self, ui: &mut egui::Ui) {
+    fn contents(&mut self, ui: &mut egui::Ui, catalog: Option<&LocalizationCatalog>) {
         let pasted = ui.input(|input| {
             input.events.iter().find_map(|event| match event {
                 egui::Event::Paste(text) => Some(text.clone()),
                 _ => None,
             })
         });
-        self.toolbar(ui);
+        self.toolbar(ui, catalog);
         if let Some(text) = pasted {
             match self.paste_target.take() {
                 Some(PasteTarget::Record) => self.paste_record(&text),
@@ -123,12 +127,12 @@ impl ExAnimationEditor {
         }
         ui.separator();
         ui.columns(2, |columns| {
-            self.record_list(&mut columns[0]);
-            self.properties(&mut columns[1]);
+            self.record_list(&mut columns[0], catalog);
+            self.properties(&mut columns[1], catalog);
         });
     }
 
-    fn toolbar(&mut self, ui: &mut egui::Ui) {
+    fn toolbar(&mut self, ui: &mut egui::Ui, catalog: Option<&LocalizationCatalog>) {
         let Some(document) = self.document.as_ref() else {
             return;
         };
@@ -140,24 +144,35 @@ impl ExAnimationEditor {
         let mut save_requested = false;
         ui.horizontal(|ui| {
             if ui
-                .add_enabled(can_undo, egui::Button::new("Undo"))
+                .add_enabled(
+                    can_undo,
+                    egui::Button::new(text(catalog, Key::ExAnimationDocumentUndo)),
+                )
                 .clicked()
             {
                 undo = true;
             }
             if ui
-                .add_enabled(can_redo, egui::Button::new("Redo"))
+                .add_enabled(
+                    can_redo,
+                    egui::Button::new(text(catalog, Key::ExAnimationDocumentRedo)),
+                )
                 .clicked()
             {
                 redo = true;
             }
             if ui
-                .add_enabled(!self.persistence.is_running(), egui::Button::new("Save"))
+                .add_enabled(
+                    !self.persistence.is_running(),
+                    egui::Button::new(text(catalog, Key::ExAnimationDocumentSave)),
+                )
                 .clicked()
             {
                 save_requested = true;
             }
-            if ui.button("Copy record").clicked()
+            if ui
+                .button(text(catalog, Key::NativeAssetsAnimationCopyRecord))
+                .clicked()
                 && let Some(record) = document
                     .controller
                     .value()
@@ -170,12 +185,22 @@ impl ExAnimationEditor {
                     Err(error) => self.error = Some(error),
                 }
             }
-            if ui.button("Paste record").clicked() {
+            if ui
+                .button(text(catalog, Key::NativeAssetsAnimationPasteRecord))
+                .clicked()
+            {
                 self.paste_target = Some(PasteTarget::Record);
                 ui.ctx()
                     .send_viewport_cmd(egui::ViewportCommand::RequestPaste);
             }
-            ui.label(if modified { "Modified" } else { "Saved" });
+            ui.label(text(
+                catalog,
+                if modified {
+                    Key::ExAnimationDocumentModified
+                } else {
+                    Key::ExAnimationDocumentSaved
+                },
+            ));
         });
         let Some(document) = self.document.as_mut() else {
             return;
@@ -193,22 +218,32 @@ impl ExAnimationEditor {
         }
     }
 
-    fn show_close_confirmation(&mut self, context: &egui::Context) -> bool {
+    fn show_close_confirmation(
+        &mut self,
+        context: &egui::Context,
+        catalog: Option<&LocalizationCatalog>,
+    ) -> bool {
         let Some(pending) = self.pending_close else {
             return false;
         };
         let mut approved = false;
-        egui::Window::new("Unsaved ExAnimation")
+        egui::Window::new(text(catalog, Key::ExAnimationDocumentDiscardTitle))
             .collapsible(false)
             .resizable(false)
             .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
             .show(context, |ui| {
-                ui.label("Discard unsaved ExAnimation changes?");
+                ui.label(text(catalog, Key::ExAnimationDocumentDiscardNotice));
                 ui.horizontal(|ui| {
-                    if ui.button("Cancel").clicked() {
+                    if ui
+                        .button(text(catalog, Key::ExAnimationDocumentCancel))
+                        .clicked()
+                    {
                         self.pending_close = None;
                     }
-                    if ui.button("Discard").clicked() {
+                    if ui
+                        .button(text(catalog, Key::ExAnimationDocumentDiscard))
+                        .clicked()
+                    {
                         self.clear();
                         approved = pending == PendingClose::Application;
                     }
@@ -217,14 +252,17 @@ impl ExAnimationEditor {
         approved
     }
 
-    fn show_error(&mut self, context: &egui::Context) {
+    fn show_error(&mut self, context: &egui::Context, catalog: Option<&LocalizationCatalog>) {
         if let Some(error) = self.error.clone() {
-            egui::Window::new("ExAnimation error")
+            egui::Window::new(text(catalog, Key::ExAnimationDocumentErrorTitle))
                 .collapsible(false)
                 .resizable(false)
                 .show(context, |ui| {
                     ui.label(error);
-                    if ui.button("OK").clicked() {
+                    if ui
+                        .button(text(catalog, Key::ExAnimationDocumentOk))
+                        .clicked()
+                    {
                         self.error = None;
                     }
                 });
@@ -240,10 +278,59 @@ impl ExAnimationEditor {
     }
 }
 
+fn text(catalog: Option<&LocalizationCatalog>, key: Key) -> String {
+    crate::frontend_ui::extended_localized_text(catalog, key)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use lm_graphics::{CompactExAnimation, CompactExAnimationFile, ExAnimationRecord};
+
+    #[test]
+    fn complete_portable_exanimation_surface_uses_every_document_key() {
+        let sources = [
+            include_str!("exanimation_editor.rs"),
+            include_str!("exanimation_editor/open_workflow.rs"),
+            include_str!("exanimation_editor/clipboard.rs"),
+            include_str!("exanimation_editor/panels.rs"),
+        ]
+        .join("\n");
+        for key in Key::ALL
+            .into_iter()
+            .filter(|key| format!("{key:?}").starts_with("ExAnimationDocument"))
+        {
+            assert!(
+                sources.contains(&format!("Key::{key:?}")),
+                "missing portable ExAnimation label {key:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn complete_portable_exanimation_surface_has_no_literal_widget_text() {
+        let sources = [
+            include_str!("exanimation_editor.rs"),
+            include_str!("exanimation_editor/open_workflow.rs"),
+            include_str!("exanimation_editor/clipboard.rs"),
+            include_str!("exanimation_editor/panels.rs"),
+        ]
+        .join("\n");
+        for literal_widget in [
+            "Window::new(\"",
+            "ui.heading(\"",
+            "ui.label(\"",
+            "ui.button(\"",
+            "Button::new(\"",
+            ".prefix(\"",
+            ".text(\"",
+        ] {
+            assert!(
+                !sources.contains(literal_widget),
+                "portable ExAnimation editor regressed to fixed widget text: {literal_widget}"
+            );
+        }
+    }
 
     fn editor() -> ExAnimationEditor {
         let modes = [false; 256];

@@ -1,7 +1,7 @@
 use super::ExAnimationEditor;
 use crate::native_clipboard;
 use eframe::egui;
-use lm_app::ExAnimationControllerEdit;
+use lm_app::{ExAnimationControllerEdit, ExtendedUiTextKey as Key, LocalizationCatalog};
 use lm_graphics::ExAnimationFrameEdit;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -11,7 +11,12 @@ pub(super) enum PasteTarget {
 }
 
 impl ExAnimationEditor {
-    pub(super) fn frame_clipboard(&mut self, ui: &mut egui::Ui, record_exists: bool) {
+    pub(super) fn frame_clipboard(
+        &mut self,
+        ui: &mut egui::Ui,
+        record_exists: bool,
+        catalog: Option<&LocalizationCatalog>,
+    ) {
         let frames = self
             .document
             .as_ref()
@@ -22,12 +27,12 @@ impl ExAnimationEditor {
             ui.add(
                 egui::DragValue::new(&mut self.selected_frame)
                     .range(0..=frames.len().saturating_sub(1))
-                    .prefix("Frame "),
+                    .prefix(super::text(catalog, Key::NativeAssetsAnimationFramePrefix)),
             );
             if ui
                 .add_enabled(
                     self.record_editable && record_exists && !frames.is_empty(),
-                    egui::Button::new("Copy frame"),
+                    egui::Button::new(super::text(catalog, Key::NativeAssetsAnimationCopyFrame)),
                 )
                 .clicked()
             {
@@ -39,7 +44,7 @@ impl ExAnimationEditor {
             if ui
                 .add_enabled(
                     self.record_editable && record_exists && !frames.is_empty(),
-                    egui::Button::new("Paste frame"),
+                    egui::Button::new(super::text(catalog, Key::NativeAssetsAnimationPasteFrame)),
                 )
                 .clicked()
             {

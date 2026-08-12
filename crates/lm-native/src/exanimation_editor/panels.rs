@@ -1,11 +1,11 @@
 use super::ExAnimationEditor;
 use crate::exanimation_form::{self, RecordForm};
 use eframe::egui;
-use lm_app::ExAnimationControllerEdit;
+use lm_app::{ExAnimationControllerEdit, ExtendedUiTextKey as Key, LocalizationCatalog};
 
 impl ExAnimationEditor {
-    pub(super) fn record_list(&mut self, ui: &mut egui::Ui) {
-        ui.heading("Records");
+    pub(super) fn record_list(&mut self, ui: &mut egui::Ui, catalog: Option<&LocalizationCatalog>) {
+        ui.heading(super::text(catalog, Key::ExAnimationDocumentRecords));
         let Some(document) = self.document.as_ref() else {
             return;
         };
@@ -16,7 +16,11 @@ impl ExAnimationEditor {
             .records
             .iter()
             .enumerate()
-            .map(|(index, record)| format!("{index:02X}: kind {:02X}", record.kind()))
+            .map(|(index, record)| {
+                super::text(catalog, Key::ExAnimationDocumentRecordListFormat)
+                    .replace("{index}", &format!("{index:02X}"))
+                    .replace("{kind}", &format!("{:02X}", record.kind()))
+            })
             .collect::<Vec<_>>();
         let has_records = !labels.is_empty();
         egui::ScrollArea::vertical().show(ui, |ui| {
@@ -30,13 +34,19 @@ impl ExAnimationEditor {
                 }
             }
         });
-        if ui.button("Append new record").clicked() {
+        if ui
+            .button(super::text(catalog, Key::ExAnimationDocumentAppendRecord))
+            .clicked()
+        {
             self.record = RecordForm::default();
             self.record_editable = true;
             self.apply_record(true);
         }
         if ui
-            .add_enabled(has_records, egui::Button::new("Remove selected"))
+            .add_enabled(
+                has_records,
+                egui::Button::new(super::text(catalog, Key::ExAnimationDocumentRemoveSelected)),
+            )
             .clicked()
         {
             self.apply_edits(&[ExAnimationControllerEdit::RemoveRecord {
@@ -46,41 +56,53 @@ impl ExAnimationEditor {
         }
     }
 
-    pub(super) fn properties(&mut self, ui: &mut egui::Ui) {
-        ui.heading("Slot settings");
+    pub(super) fn properties(&mut self, ui: &mut egui::Ui, catalog: Option<&LocalizationCatalog>) {
+        ui.heading(super::text(catalog, Key::ExAnimationDocumentSlotSettings));
         ui.horizontal(|ui| {
-            ui.label("Setting (hex)");
+            ui.label(super::text(catalog, Key::ExAnimationDocumentSettingHex));
             ui.text_edit_singleline(&mut self.global.setting);
         });
         ui.horizontal(|ui| {
-            ui.label("Header (hex)");
+            ui.label(super::text(catalog, Key::ExAnimationDocumentHeaderHex));
             ui.text_edit_singleline(&mut self.global.header);
         });
-        if ui.button("Apply slot settings").clicked() {
+        if ui
+            .button(super::text(catalog, Key::NativeAssetsAnimationApplySlots))
+            .clicked()
+        {
             self.apply_global();
         }
-        self.trigger_properties(ui);
+        self.trigger_properties(ui, catalog);
         ui.separator();
-        self.record_properties(ui);
+        self.record_properties(ui, catalog);
     }
 
-    fn trigger_properties(&mut self, ui: &mut egui::Ui) {
-        ui.heading("Trigger");
+    fn trigger_properties(&mut self, ui: &mut egui::Ui, catalog: Option<&LocalizationCatalog>) {
+        ui.heading(super::text(catalog, Key::NativeAssetsAnimationTrigger));
         if ui
             .add(egui::Slider::new(&mut self.trigger_index, 0..=15))
             .changed()
         {
             self.load_trigger();
         }
-        ui.checkbox(&mut self.trigger_enabled, "Enabled");
+        ui.checkbox(
+            &mut self.trigger_enabled,
+            super::text(catalog, Key::NativeAssetsAnimationEnabled),
+        );
         ui.horizontal(|ui| {
-            ui.label("Value (hex)");
+            ui.label(super::text(
+                catalog,
+                Key::ExAnimationDocumentTriggerValueHex,
+            ));
             ui.add_enabled(
                 self.trigger_enabled,
                 egui::TextEdit::singleline(&mut self.trigger_value),
             );
         });
-        if ui.button("Apply trigger").clicked() {
+        if ui
+            .button(super::text(catalog, Key::NativeAssetsAnimationApplyTrigger))
+            .clicked()
+        {
             let value = if self.trigger_enabled {
                 exanimation_form::hex_u8(&self.trigger_value, "trigger value").map(Some)
             } else {
@@ -96,32 +118,50 @@ impl ExAnimationEditor {
         }
     }
 
-    fn record_properties(&mut self, ui: &mut egui::Ui) {
+    fn record_properties(&mut self, ui: &mut egui::Ui, catalog: Option<&LocalizationCatalog>) {
         let record_exists = self.document.as_ref().is_some_and(|document| {
             self.selected_record < document.controller.value().animation.records.len()
         });
-        ui.heading(format!("Record {:02X}", self.selected_record));
-        for (label, field) in [
-            ("Kind (hex)", &mut self.record.kind),
-            ("Trigger (hex)", &mut self.record.size_mode),
-            ("Destination (hex)", &mut self.record.destination),
+        ui.heading(
+            super::text(catalog, Key::ExAnimationDocumentRecordFormat)
+                .replace("{index}", &format!("{:02X}", self.selected_record)),
+        );
+        for (key, field) in [
+            (Key::ExAnimationDocumentKindHex, &mut self.record.kind),
+            (
+                Key::ExAnimationDocumentTriggerHex,
+                &mut self.record.size_mode,
+            ),
+            (
+                Key::ExAnimationDocumentDestinationHex,
+                &mut self.record.destination,
+            ),
         ] {
             ui.horizontal(|ui| {
-                ui.label(label);
+                ui.label(super::text(catalog, key));
                 ui.text_edit_singleline(field);
             });
         }
-        ui.checkbox(&mut self.record.destination_flag, "Destination flag");
-        ui.label("Source words, one frame per line:");
+        ui.checkbox(
+            &mut self.record.destination_flag,
+            super::text(catalog, Key::NativeAssetsAnimationDestinationFlag),
+        );
+        ui.label(super::text(
+            catalog,
+            Key::ExAnimationDocumentSourceWordsNotice,
+        ));
         ui.add(egui::TextEdit::multiline(&mut self.record.frames).desired_rows(8));
         if !self.record_editable {
-            ui.label("This special transfer kind has no ordinary source-word frame payload.");
+            ui.label(super::text(
+                catalog,
+                Key::ExAnimationDocumentSpecialTransferNotice,
+            ));
         }
-        self.frame_clipboard(ui, record_exists);
+        self.frame_clipboard(ui, record_exists, catalog);
         if ui
             .add_enabled(
                 self.record_editable && record_exists,
-                egui::Button::new("Apply record"),
+                egui::Button::new(super::text(catalog, Key::ExAnimationDocumentApplyRecord)),
             )
             .clicked()
         {

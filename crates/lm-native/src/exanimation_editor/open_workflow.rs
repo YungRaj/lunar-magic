@@ -1,6 +1,7 @@
 use super::{ExAnimationEditor, PendingOpen, animation_modes, decode_document, dialogs, egui};
 use crate::document_loader::BoundedRead;
 use crate::document_loader::LoadedDocument;
+use lm_app::{ExtendedUiTextKey as Key, LocalizationCatalog};
 use lm_graphics::CompactExAnimationFile;
 
 impl ExAnimationEditor {
@@ -36,24 +37,34 @@ impl ExAnimationEditor {
         }
     }
 
-    pub(super) fn show_open_configuration(&mut self, context: &egui::Context) {
+    pub(super) fn show_open_configuration(
+        &mut self,
+        context: &egui::Context,
+        catalog: Option<&LocalizationCatalog>,
+    ) {
         if self.pending_open.is_none() {
             return;
         }
-        egui::Window::new("Open ExAnimation")
+        egui::Window::new(super::text(catalog, Key::ExAnimationDocumentOpenTitle))
             .collapsible(false)
             .resizable(false)
             .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
             .show(context, |ui| {
-                ui.label("Maximum records from this ROM revision/profile:");
+                ui.label(super::text(catalog, Key::ExAnimationDocumentMaximumRecords));
                 if let Some(pending) = self.pending_open.as_mut() {
                     ui.text_edit_singleline(&mut pending.maximum_records);
                 }
                 ui.horizontal(|ui| {
-                    if ui.button("Cancel").clicked() {
+                    if ui
+                        .button(super::text(catalog, Key::ExAnimationDocumentCancel))
+                        .clicked()
+                    {
                         self.pending_open = None;
                     }
-                    if ui.button("Open").clicked() {
+                    if ui
+                        .button(super::text(catalog, Key::ExAnimationDocumentOpen))
+                        .clicked()
+                    {
                         self.finish_open();
                     }
                 });
