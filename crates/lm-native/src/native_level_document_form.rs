@@ -1,5 +1,5 @@
 use crate::level_editor_forms;
-use lm_app::NativeLevelEdit;
+use lm_app::{ExtendedUiTextKey as Key, LocalizationCatalog, NativeLevelEdit};
 use lm_level::{
     CustomTimeError, CustomTimeSettings, Layer1VerticalScrollMode, LegacyHeaderEdit,
     NativeObjectRecordFields, NativeSpriteHeader, NativeSpriteMemoryError,
@@ -52,10 +52,19 @@ pub(crate) fn show_sprite_header_form(
     id: &'static str,
     form: &mut NativeSpriteHeaderForm,
 ) -> bool {
+    show_localized_sprite_header_form(ui, id, form, None)
+}
+
+pub(crate) fn show_localized_sprite_header_form(
+    ui: &mut eframe::egui::Ui,
+    id: &'static str,
+    form: &mut NativeSpriteHeaderForm,
+    catalog: Option<&LocalizationCatalog>,
+) -> bool {
     eframe::egui::Grid::new(id)
         .show(ui, |ui| {
             let mut changed = false;
-            ui.label("Sprite memory");
+            ui.label(text(catalog, Key::NativeLevelDocumentSpriteMemory));
             changed |= ui
                 .add(
                     eframe::egui::DragValue::new(&mut form.memory)
@@ -64,22 +73,32 @@ pub(crate) fn show_sprite_header_form(
                 )
                 .changed();
             ui.end_row();
-            ui.label("Sprite buoyancy 1");
+            ui.label(text(catalog, Key::NativeLevelDocumentSpriteBuoyancy1));
             changed |= ui
-                .checkbox(&mut form.buoyancy_1, "Water/lava interaction")
+                .checkbox(
+                    &mut form.buoyancy_1,
+                    text(catalog, Key::NativeLevelDocumentSpriteInteraction),
+                )
                 .changed();
             ui.end_row();
-            ui.label("Sprite buoyancy 2");
+            ui.label(text(catalog, Key::NativeLevelDocumentSpriteBuoyancy2));
             changed |= ui
                 .checkbox(
                     &mut form.buoyancy_2,
-                    "Water/lava; disable Layer 2/3 interaction",
+                    text(
+                        catalog,
+                        Key::NativeLevelDocumentSpriteDisableLayerInteraction,
+                    ),
                 )
                 .changed();
             ui.end_row();
             changed
         })
         .inner
+}
+
+fn text(catalog: Option<&LocalizationCatalog>, key: Key) -> String {
+    crate::frontend_ui::extended_localized_text(catalog, key)
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]

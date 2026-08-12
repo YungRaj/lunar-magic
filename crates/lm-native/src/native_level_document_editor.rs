@@ -2,10 +2,14 @@ use crate::{
     dialogs,
     document_loader::{BoundedRead, DocumentLoader, LoadedDocument},
     document_persistence::DocumentPersistence,
-    native_level_document_form::{NativeLevelRecordForm, NativeSpriteHeaderForm},
+    native_level_document_form::{
+        NativeLevelRecordForm, NativeSpriteHeaderForm, show_localized_sprite_header_form,
+    },
 };
 use eframe::egui;
-use lm_app::{NativeLevelDocumentController, NativeLevelEdit};
+use lm_app::{
+    ExtendedUiTextKey as Key, LocalizationCatalog, NativeLevelDocumentController, NativeLevelEdit,
+};
 use lm_level::{NativeLevelFile, SpriteLengthTable};
 
 mod canvas;
@@ -97,7 +101,11 @@ impl NativeLevelDocumentEditor {
         false
     }
 
-    pub(crate) fn show(&mut self, context: &egui::Context) -> bool {
+    pub(crate) fn show(
+        &mut self,
+        context: &egui::Context,
+        catalog: Option<&LocalizationCatalog>,
+    ) -> bool {
         if let Some(result) = self.loader.show(context) {
             match result.and_then(decode_loaded) {
                 Ok(controller) => {
@@ -114,49 +122,56 @@ impl NativeLevelDocumentEditor {
             self.error = Some(error);
         }
         if self.controller.is_some() {
-            egui::Window::new("Native Level Stream Editor")
+            egui::Window::new(text(catalog, Key::NativeLevelDocumentTitle))
                 .default_size([760.0, 620.0])
                 .vscroll(true)
-                .show(context, |ui| self.contents(ui));
+                .show(context, |ui| self.contents(ui, catalog));
         }
-        let approved = self.close_confirmation(context);
-        self.show_error(context);
+        let approved = self.close_confirmation(context, catalog);
+        self.show_error(context, catalog);
         approved
     }
 
-    fn contents(&mut self, ui: &mut egui::Ui) {
-        self.toolbar(ui);
+    fn contents(&mut self, ui: &mut egui::Ui, catalog: Option<&LocalizationCatalog>) {
+        self.toolbar(ui, catalog);
         let Some(controller) = self.controller.as_ref() else {
             return;
         };
         let value = controller.value().clone();
-        ui.label(format!(
-            "Source level: {:04X}  |  {} framing",
-            value.source_level,
+        let framing = text(
+            catalog,
             if value.sprites.expanded {
-                "expanded"
+                Key::NativeLevelDocumentExpandedFraming
             } else {
-                "legacy"
-            }
-        ));
-        ui.label(format!(
-            "Legacy header: {}",
-            crate::level_editor_forms::format_bytes(&value.layer1.header.encoded())
-        ));
+                Key::NativeLevelDocumentLegacyFraming
+            },
+        );
+        ui.label(
+            text(catalog, Key::NativeLevelDocumentSourceFormat)
+                .replace("{level}", &format!("{:04X}", value.source_level))
+                .replace("{framing}", &framing),
+        );
+        ui.label(
+            text(catalog, Key::NativeLevelDocumentLegacyHeaderFormat).replace(
+                "{bytes}",
+                &crate::level_editor_forms::format_bytes(&value.layer1.header.encoded()),
+            ),
+        );
         ui.separator();
         self.level_canvas(ui, &value);
         ui.separator();
-        self.object_panel(ui, &value);
+        self.object_panel(ui, &value, catalog);
         ui.separator();
-        crate::native_level_document_form::show_sprite_header_form(
+        show_localized_sprite_header_form(
             ui,
             "portable-native-sprite-header",
             &mut self.sprite_header,
+            catalog,
         );
-        self.sprite_panel(ui, &value);
+        self.sprite_panel(ui, &value, catalog);
     }
 
-    fn toolbar(&mut self, ui: &mut egui::Ui) {
+    fn toolbar(&mut self, ui: &mut egui::Ui, catalog: Option<&LocalizationCatalog>) {
         let Some(c) = self.controller.as_ref() else {
             return;
         };
@@ -165,22 +180,47 @@ impl NativeLevelDocumentEditor {
         let mut save_requested = false;
         let mut header_requested = false;
         ui.horizontal(|ui| {
-            if ui.add_enabled(undo, egui::Button::new("Undo")).clicked() {
+            if ui
+                .add_enabled(
+                    undo,
+                    egui::Button::new(text(catalog, Key::NativeLevelDocumentUndo)),
+                )
+                .clicked()
+            {
                 history = Some(true);
             }
-            if ui.add_enabled(redo, egui::Button::new("Redo")).clicked() {
+            if ui
+                .add_enabled(
+                    redo,
+                    egui::Button::new(text(catalog, Key::NativeLevelDocumentRedo)),
+                )
+                .clicked()
+            {
                 history = Some(false);
             }
             if ui
-                .add_enabled(!self.persistence.is_running(), egui::Button::new("Save"))
+                .add_enabled(
+                    !self.persistence.is_running(),
+                    egui::Button::new(text(catalog, Key::NativeLevelDocumentSave)),
+                )
                 .clicked()
             {
                 save_requested = true;
             }
-            if ui.button("Apply sprite header").clicked() {
+            if ui
+                .button(text(catalog, Key::NativeLevelDocumentApplySpriteHeader))
+                .clicked()
+            {
                 header_requested = true;
             }
-            ui.label(if modified { "Modified" } else { "Saved" });
+            ui.label(text(
+                catalog,
+                if modified {
+                    Key::NativeLevelDocumentModified
+                } else {
+                    Key::NativeLevelDocumentSaved
+                },
+            ));
         });
         if let (Some(undo), Some(c)) = (history, self.controller.as_mut()) {
             let result = if undo {
@@ -276,21 +316,31 @@ impl NativeLevelDocumentEditor {
             self.error = Some(error);
         }
     }
-    fn close_confirmation(&mut self, context: &egui::Context) -> bool {
+    fn close_confirmation(
+        &mut self,
+        context: &egui::Context,
+        catalog: Option<&LocalizationCatalog>,
+    ) -> bool {
         let Some(pending) = self.pending_close else {
             return false;
         };
         let mut approved = false;
-        egui::Window::new("Unsaved native level")
+        egui::Window::new(text(catalog, Key::NativeLevelDocumentDiscardTitle))
             .collapsible(false)
             .resizable(false)
             .show(context, |ui| {
-                ui.label("Discard unsaved native-level stream changes?");
+                ui.label(text(catalog, Key::NativeLevelDocumentDiscardNotice));
                 ui.horizontal(|ui| {
-                    if ui.button("Cancel").clicked() {
+                    if ui
+                        .button(text(catalog, Key::NativeLevelDocumentCancel))
+                        .clicked()
+                    {
                         self.pending_close = None;
                     }
-                    if ui.button("Discard").clicked() {
+                    if ui
+                        .button(text(catalog, Key::NativeLevelDocumentDiscard))
+                        .clicked()
+                    {
                         self.clear();
                         approved = pending == PendingClose::Application;
                     }
@@ -298,14 +348,20 @@ impl NativeLevelDocumentEditor {
             });
         approved
     }
-    fn show_error(&mut self, context: &egui::Context) {
+    fn show_error(&mut self, context: &egui::Context, catalog: Option<&LocalizationCatalog>) {
         if let Some(error) = self.error.clone() {
-            egui::Window::new("Native-level editor error").show(context, |ui| {
-                ui.label(error);
-                if ui.button("OK").clicked() {
-                    self.error = None;
-                }
-            });
+            egui::Window::new(text(catalog, Key::NativeLevelDocumentErrorTitle)).show(
+                context,
+                |ui| {
+                    ui.label(error);
+                    if ui
+                        .button(text(catalog, Key::NativeLevelDocumentOk))
+                        .clicked()
+                    {
+                        self.error = None;
+                    }
+                },
+            );
         }
     }
     fn clear(&mut self) {
@@ -325,11 +381,20 @@ fn pasted_text(ui: &egui::Ui) -> Option<String> {
     })
 }
 
-fn index_row(ui: &mut egui::Ui, index: &mut usize, len: usize) {
+fn index_row(
+    ui: &mut egui::Ui,
+    index: &mut usize,
+    len: usize,
+    catalog: Option<&LocalizationCatalog>,
+) {
     ui.horizontal(|ui| {
-        ui.label("Index");
+        ui.label(text(catalog, Key::NativeLevelDocumentIndex));
         ui.add(egui::DragValue::new(index).range(0..=len));
     });
+}
+
+fn text(catalog: Option<&LocalizationCatalog>, key: Key) -> String {
+    crate::frontend_ui::extended_localized_text(catalog, key)
 }
 
 fn decode_loaded(loaded: LoadedDocument) -> Result<NativeLevelDocumentController, String> {
@@ -343,6 +408,46 @@ fn decode_loaded(loaded: LoadedDocument) -> Result<NativeLevelDocumentController
 mod tests {
     use super::*;
     use std::path::PathBuf;
+
+    #[test]
+    fn complete_native_level_document_surface_uses_every_typed_key() {
+        let sources = [
+            include_str!("native_level_document_editor.rs"),
+            include_str!("native_level_document_editor/panels.rs"),
+            include_str!("native_level_document_form.rs"),
+        ]
+        .join("\n");
+        for key in Key::ALL
+            .into_iter()
+            .filter(|key| format!("{key:?}").starts_with("NativeLevelDocument"))
+        {
+            assert!(
+                sources.contains(&format!("Key::{key:?}")),
+                "missing native-level document label {key:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn complete_native_level_document_surface_has_no_literal_widget_text() {
+        let sources = [
+            include_str!("native_level_document_editor.rs"),
+            include_str!("native_level_document_editor/panels.rs"),
+        ]
+        .join("\n");
+        for literal_widget in [
+            "Window::new(\"",
+            "ui.heading(\"",
+            "ui.label(\"",
+            "ui.button(\"",
+            "Button::new(\"",
+        ] {
+            assert!(
+                !sources.contains(literal_widget),
+                "native-level document editor regressed to literal widget text: {literal_widget}"
+            );
+        }
+    }
 
     #[test]
     fn loaded_native_level_requires_exact_interpretation_table() {

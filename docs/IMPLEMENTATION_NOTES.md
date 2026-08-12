@@ -7731,3 +7731,13 @@ focused tests pass for bounded queueing, permission lifecycle, no-shell expansio
 missing executables, multiple/focused instances, completion, and private emulator-workspace
 cleanup; the source audit, localization model, and renderer 237/237 also pass. Other native forms
 and retained live language-DLL evidence keep Localization Partial; aggregate parity remains 60/65.
+Localization coverage update (2026-08-12, native level-stream document editor): forty-nine appended
+`NativeLevelDocument*` identities now cover the complete document shell, source/framing summary,
+object and sprite-token panels, semantic field forms, history/save state, close/error dialogs, and
+the shared sprite-header form. The application supplies the live catalog to this editor, while the
+shared header helper retains an explicit English-fallback wrapper for callers without localization
+context; the MWL editor now supplies its catalog to that helper as well. Source audits require every
+typed key and reject literal window, heading, label, button, and `Button` text. Localization passes
+28/28 active cases (one provenance ignore), native-level document tests pass 17/17, and renderer
+passes 237/237. Other native forms and retained live language-DLL evidence keep Localization
+Partial; aggregate parity remains 60/65.

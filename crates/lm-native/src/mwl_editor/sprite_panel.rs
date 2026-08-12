@@ -1,7 +1,7 @@
 use super::OptionalCatalogText;
 use crate::{
     level_editor_forms,
-    native_level_document_form::{NativeSpriteHeaderForm, show_sprite_header_form},
+    native_level_document_form::{NativeSpriteHeaderForm, show_localized_sprite_header_form},
 };
 use eframe::egui;
 use lm_app::{ExtendedUiTextKey as Key, LocalizationCatalog, MwlDocumentController};
@@ -116,7 +116,7 @@ impl MwlSpritePanel {
                 .extended_text(Key::MwlSpriteTokenCountFormat)
                 .replace("{count}", &stream.tokens.len().to_string()),
         );
-        show_sprite_header_form(ui, "mwl-sprite-header", &mut self.header);
+        show_localized_sprite_header_form(ui, "mwl-sprite-header", &mut self.header, catalog);
         if ui
             .button(catalog.extended_text(Key::MwlSpriteStageHeader))
             .clicked()
