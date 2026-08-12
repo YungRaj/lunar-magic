@@ -63,6 +63,7 @@ mod map16_subtile_form;
 mod menu_color_fix;
 mod metadata_editor;
 mod metadata_editor_forms;
+mod multiple_level_deletion_dialog;
 mod mwl_editor;
 mod mwl_editor_form;
 mod native_clipboard;

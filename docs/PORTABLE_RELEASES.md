@@ -33,6 +33,12 @@ version/target/length/digest verification. Verification failures create no file,
 replace an existing archive, and write/reopen/final-verification failures remove only the newly
 created staged file.
 
+In the native editor, choose **Help → Stage verified update…**, select the `.update` file beside
+its declared archive, review the verified version/platform/name/size, then explicitly choose a
+staging folder. Merely selecting an offer creates no files. The editor does not replace its running
+executable or relaunch automatically; the staged archive is ready for manual installation after
+exit.
+
 ## Build and verify locally
 
 For a native Linux x86-64 build, run:

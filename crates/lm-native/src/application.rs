@@ -173,6 +173,7 @@ pub(crate) struct NativeApplication {
     shortcut_editor: ShortcutEditor,
     toolbar_editor: ToolbarEditor,
     toolbar_graphics_transfer: ToolbarGraphicsTransfer,
+    update_dialog: crate::update_dialog::UpdateDialog,
     legacy_graphics_bypass_transfer: LegacyGraphicsBypassTransfer,
     undo_history_settings: undo_history_settings::UndoHistorySettings,
     open_level_number_dialog: crate::open_level_number_dialog::OpenLevelNumberDialog,
@@ -1815,6 +1816,7 @@ impl eframe::App for NativeApplication {
         self.diagnostics_dialog
             .show(context, self.app.localization());
         self.help_dialog.show(context, self.app.localization());
+        self.update_dialog.show(context);
         if let Some(level) = self
             .open_level_number_dialog
             .show(context, self.app.localization())

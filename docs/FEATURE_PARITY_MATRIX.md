@@ -1196,6 +1196,15 @@ paths remove only the create-new destination. The trust core passes 6/6. Native 
 replacement/relaunch, signing, and live proof remain missing, so Release stays Partial and aggregate
 parity remains 60/65.
 
+Native update-consent update (2026-08-11): a localized Help-menu route now accepts an explicitly
+selected bounded local update manifest, resolves its declared same-directory archive, streams a
+complete preflight, and displays the verified offer before a distinct folder-selection/staging
+consent. No file is created before consent and the running executable is never silently replaced.
+Exact post-consent staging and pre-consent tamper rejection gates pass, as do the menu localization
+invariant, native build, 7/7 updater tests, and 237/237 renderer tests. Network discovery and
+platform replacement/relaunch remain missing; Release stays Partial and aggregate parity remains
+60/65.
+
 Crash-recovery evidence update (2026-08-11, fixed-ROM family): palette, Map16, secondary-exit,
 and Lunar Magic metadata staging now accepts every complete two-, three-, or four-editor subset on
 one evolving project clone, superseding the former pair-only coordinator branches. Deterministic

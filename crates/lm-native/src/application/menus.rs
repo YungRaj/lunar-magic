@@ -49,6 +49,13 @@ impl NativeApplication {
                 ui.close_menu();
                 self.diagnostics_dialog.open(&self.app);
             }
+            if ui
+                .button(self.menu_text(UiTextKey::HelpStageVerifiedUpdate))
+                .clicked()
+            {
+                ui.close_menu();
+                self.update_dialog.choose_manifest();
+            }
             if ui.button(self.menu_text(UiTextKey::HelpAbout)).clicked() {
                 ui.close_menu();
                 self.about_dialog.open();

@@ -69,6 +69,42 @@ impl UpdateManifest {
         Ok(())
     }
 
+    pub fn verify_archive_reader(
+        &self,
+        current: Version,
+        target: &str,
+        mut archive: impl Read,
+    ) -> Result<(), UpdateError> {
+        self.verify_offer(current, target)?;
+        let mut hasher = Sha256::new();
+        let mut remaining = self.length;
+        let mut buffer = [0_u8; 64 * 1024];
+        while remaining != 0 {
+            let request = usize::try_from(remaining.min(buffer.len() as u64))
+                .map_err(|_| UpdateError::ArchiveRead("read size overflow".into()))?;
+            let read = archive
+                .read(&mut buffer[..request])
+                .map_err(|error| UpdateError::ArchiveRead(error.to_string()))?;
+            if read == 0 {
+                return Err(UpdateError::ArchiveLength);
+            }
+            hasher.update(&buffer[..read]);
+            remaining -= u64::try_from(read).unwrap_or(u64::MAX);
+        }
+        let mut trailing = [0_u8; 1];
+        if archive
+            .read(&mut trailing)
+            .map_err(|error| UpdateError::ArchiveRead(error.to_string()))?
+            != 0
+        {
+            return Err(UpdateError::ArchiveLength);
+        }
+        if <[u8; 32]>::from(hasher.finalize()) != self.sha256 {
+            return Err(UpdateError::Digest);
+        }
+        Ok(())
+    }
+
     /// Verifies and durably stages an update archive without replacing an existing path.
     /// Verification completes before the destination is opened.
     pub fn stage_archive(
@@ -279,6 +315,7 @@ pub enum UpdateError {
     DigestEncoding,
     ArchiveLength,
     Digest,
+    ArchiveRead(String),
     StageDirectory,
     StageIo {
         operation: &'static str,
@@ -440,6 +477,34 @@ mod tests {
                     .is_err()
             );
             assert_eq!(fs::read_dir(directory.path()).unwrap().count(), 0);
+        }
+    }
+
+    #[test]
+    fn streaming_preflight_matches_byte_verification_and_rejects_framing() {
+        let archive = b"complete verified archive";
+        let parsed = UpdateManifest::decode(&manifest("2.0.0", "target-a", archive)).unwrap();
+        parsed
+            .verify_archive_reader(
+                "1.0.0".parse().unwrap(),
+                "target-a",
+                std::io::Cursor::new(archive),
+            )
+            .unwrap();
+        for rejected in [
+            archive[..archive.len() - 1].to_vec(),
+            [archive.as_slice(), b"x"].concat(),
+            vec![b'x'; archive.len()],
+        ] {
+            assert!(
+                parsed
+                    .verify_archive_reader(
+                        "1.0.0".parse().unwrap(),
+                        "target-a",
+                        std::io::Cursor::new(rejected),
+                    )
+                    .is_err()
+            );
         }
     }
 }

@@ -20,6 +20,7 @@ lm-rats = { path = "../lm-rats" }
 lm-render = { path = "../lm-render" }
 lm-rom = { path = "../lm-rom" }
 lm-title = { path = "../lm-title" }
+lm-update = { path = "../lm-update" }
 rfd = "0.15"
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
 arboard = "3.6.1"

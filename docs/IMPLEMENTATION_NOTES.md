@@ -7010,3 +7010,14 @@ syncs, reopens, and performs the complete verification again. Truncation, one-by
 equal-length tampering all remove the newly created destination and leave the staging directory
 empty. The byte-slice entry point is now a thin wrapper over this same path. The update trust core
 passes 6/6; Release remains Partial and aggregate parity remains 60/65.
+
+Native update-consent update (2026-08-11): the Help menu now exposes a localized `Stage verified
+update…` workflow. The user explicitly selects a bounded local `LMUPDATE1` manifest; the native
+dialog resolves only its declared same-directory portable archive name, streams a complete
+platform/version/length/digest preflight, and displays the verified version, platform, filename,
+and size. No output exists until a separate consent action selects a destination directory. That
+action invokes the create-new streaming stage/reopen/reverify core, and the dialog states that the
+running application is never replaced automatically. Native gates prove exact staging after consent
+and tamper rejection before consent; the menu localization invariant, native build, 7/7 trust-core
+tests, and 237/237 renderer tests pass. Network discovery and platform replacement/relaunch remain
+incomplete; Release stays Partial and aggregate parity remains 60/65.

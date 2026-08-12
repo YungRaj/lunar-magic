@@ -1902,6 +1902,7 @@ dependencies = [
  "lm-render",
  "lm-rom",
  "lm-title",
+ "lm-update",
  "lm-windows",
  "png 0.17.16",
  "rfd",

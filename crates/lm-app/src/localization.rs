@@ -913,6 +913,7 @@ pub enum UiTextKey {
     ToolsBuiltInEnglish,
     HelpTopics,
     HelpCompatibilityDiagnostics,
+    HelpStageVerifiedUpdate,
     HelpAbout,
     DocumentsOpenFormat,
     DocumentsCloseFormat,
@@ -1144,6 +1145,7 @@ impl UiTextKey {
             Self::ToolsBuiltInEnglish => "Built-in English",
             Self::HelpTopics => "Help Topics…",
             Self::HelpCompatibilityDiagnostics => "Compatibility diagnostics…",
+            Self::HelpStageVerifiedUpdate => "Stage verified update…",
             Self::HelpAbout => "About Lunar Magic Rust…",
             Self::DocumentsOpenFormat => "Open {document}…",
             Self::DocumentsCloseFormat => "Close {document}",
@@ -1323,7 +1325,7 @@ impl UiTextKey {
         }
     }
 
-    pub const ALL: [Self; 211] = [
+    pub const ALL: [Self; 212] = [
         Self::AppTitle,
         Self::FileOpen,
         Self::FileSave,
@@ -1387,6 +1389,7 @@ impl UiTextKey {
         Self::ToolsBuiltInEnglish,
         Self::HelpTopics,
         Self::HelpCompatibilityDiagnostics,
+        Self::HelpStageVerifiedUpdate,
         Self::HelpAbout,
         Self::DocumentsOpenFormat,
         Self::DocumentsCloseFormat,
