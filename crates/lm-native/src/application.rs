@@ -2611,6 +2611,7 @@ fn original_external_tools(
     const GBA_EMULATOR_SHORT_PATH: u32 = 1 << 17;
     const GBA_EMULATOR_CUSTOM_ARGUMENTS: u32 = 1 << 18;
     const TILE_EDITOR_CUSTOM_ARGUMENTS: u32 = 1 << 24;
+    const TILE_EDITOR_REPLACE_PALETTE: u32 = 1 << 25;
 
     let mut tools = Vec::new();
     if let Some(executable) = nonempty_original_path(settings.emulator) {
@@ -2644,14 +2645,16 @@ fn original_external_tools(
         )?);
     }
     if let Some(executable) = nonempty_original_path(settings.tile_editor) {
-        tools.push(original_profile_tool(
+        let mut tool = original_profile_tool(
             "lunar-magic-tile-editor",
             "Tile Editor",
             executable,
             settings.tile_editor_arguments,
             settings.options2 & TILE_EDITOR_CUSTOM_ARGUMENTS != 0,
             "graphics",
-        )?);
+        )?;
+        tool.replace_tile_editor_palette = settings.options2 & TILE_EDITOR_REPLACE_PALETTE != 0;
+        tools.push(tool);
     }
     Ok(tools)
 }
@@ -2685,6 +2688,7 @@ fn original_profile_tool(
         arguments,
         working_directory: None,
         subscriptions: Vec::new(),
+        replace_tile_editor_palette: false,
     };
     ToolConfig {
         tools: vec![tool.clone()],
@@ -2811,6 +2815,7 @@ mod preference_tests {
             arguments: vec!["--rom={rom}".into(), "two words".into()],
             working_directory: Some("{project_dir}".into()),
             subscriptions: vec![lm_app::ToolEvent::ProjectSaved],
+            replace_tile_editor_palette: false,
         }
     }
 

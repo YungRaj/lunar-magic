@@ -17,6 +17,7 @@ struct ToolDraft {
     project_saved: bool,
     level_changed: bool,
     use_short_rom_path: bool,
+    replace_tile_editor_palette: bool,
 }
 
 impl ToolDraft {
@@ -34,6 +35,7 @@ impl ToolDraft {
                 .arguments
                 .iter()
                 .any(|argument| argument.contains("{rom_8dot3}")),
+            replace_tile_editor_palette: tool.replace_tile_editor_palette,
         }
     }
 
@@ -104,6 +106,7 @@ impl ToolDraft {
             working_directory: (!self.working_directory.trim().is_empty())
                 .then(|| self.working_directory.trim().to_owned()),
             subscriptions,
+            replace_tile_editor_palette: self.replace_tile_editor_palette,
         }
     }
 }
@@ -208,6 +211,17 @@ impl ExternalToolConfigEditor {
                                 "Use Windows 8.3 short path for ROM",
                             ),
                         );
+                        if dialog_id == ORIGINAL_TILE_EDITOR_DIALOG_ID {
+                            ui.checkbox(
+                                &mut draft.replace_tile_editor_palette,
+                                dialog_control_text(
+                                    catalog,
+                                    dialog_id,
+                                    0x67,
+                                    "Replace yychr.pal file with current palette.",
+                                ),
+                            );
+                        }
                         field(ui, "Working directory template (optional)", &mut draft.working_directory);
                         ui.separator();
                         ui.label("Run automatically after:");
@@ -295,6 +309,7 @@ mod tests {
             arguments: vec!["--fullscreen".into(), "{rom}".into()],
             working_directory: Some("{project_dir}".into()),
             subscriptions: vec![ToolEvent::ProjectSaved, ToolEvent::LevelChanged],
+            replace_tile_editor_palette: false,
         };
         let rebuilt = ToolDraft::from_tool(&source).build();
         assert_eq!(rebuilt, source);

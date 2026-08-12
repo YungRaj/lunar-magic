@@ -443,6 +443,7 @@ mod tests {
                 arguments: vec!["{rom}".into(), "--level={level_hex}".into()],
                 working_directory: Some("{project_dir}".into()),
                 subscriptions: Vec::new(),
+                replace_tile_editor_palette: false,
             },
             revision: 17,
             level: 0x1ab,

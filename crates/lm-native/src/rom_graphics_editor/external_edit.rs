@@ -1,5 +1,6 @@
 use eframe::egui;
 use lm_app::{ExternalTool, ToolContext, ToolInvocation};
+use lm_graphics::{Palette, RgbChannelExpansion, RgbPaletteFile};
 use std::fs::{self, OpenOptions};
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -74,6 +75,7 @@ impl ExternalGraphicsEditor {
         context: ToolContext<'_>,
         file_name: &str,
         bytes: &[u8],
+        palette: Option<&Palette>,
         expected_revision: u64,
     ) -> Result<(), String> {
         if !tool.uses_graphics_editor_argument() {
@@ -88,7 +90,21 @@ impl ExternalGraphicsEditor {
                 tool.id
             ));
         }
-        self.stage_with(file_name, bytes, expected_revision, |_, path| {
+        let palette_bytes = if tool.replace_tile_editor_palette {
+            let palette =
+                palette.ok_or("tile-editor palette replacement requires a current palette")?;
+            Some(
+                RgbPaletteFile::from_snes_palette(palette, RgbChannelExpansion::ReplicatedBits)
+                    .and_then(|file| file.encode())
+                    .map_err(|error| error.to_string())?,
+            )
+        } else {
+            None
+        };
+        self.stage_with(file_name, bytes, expected_revision, |directory, path| {
+            if let Some(bytes) = &palette_bytes {
+                write_private_file(&directory.join("yychr.pal"), bytes, "tile-editor palette")?;
+            }
             tool.expand_graphics_editor(ToolContext {
                 graphics: Some(path),
                 ..context
@@ -244,6 +260,15 @@ impl ExternalGraphicsEditor {
     }
 }
 
+fn write_private_file(path: &Path, bytes: &[u8], description: &str) -> Result<(), String> {
+    OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(path)
+        .and_then(|mut file| file.write_all(bytes).and_then(|()| file.sync_all()))
+        .map_err(|error| format!("could not stage {description}: {error}"))
+}
+
 impl Drop for ExternalGraphicsEditor {
     fn drop(&mut self) {
         if let Some(pending) = self.pending.take() {
@@ -347,6 +372,7 @@ mod tests {
                 .collect(),
             working_directory: Some("{project_dir}".into()),
             subscriptions: Vec::new(),
+            replace_tile_editor_palette: false,
         }
     }
 
@@ -378,9 +404,17 @@ mod tests {
                         arguments: vec![template.into()],
                         working_directory: None,
                         subscriptions: Vec::new(),
+                        replace_tile_editor_palette: false,
                     };
                     editor
-                        .stage_configured(&tool, ToolContext::default(), file_name, &[0xa5; 32], 41)
+                        .stage_configured(
+                            &tool,
+                            ToolContext::default(),
+                            file_name,
+                            &[0xa5; 32],
+                            None,
+                            41,
+                        )
                         .unwrap();
                 } else {
                     editor
@@ -423,6 +457,37 @@ mod tests {
         assert_eq!(
             pending.invocation.working_directory.as_deref(),
             Some(directory.as_path())
+        );
+        editor.cancel_pending().unwrap();
+        assert!(!directory.exists());
+    }
+
+    #[test]
+    fn configured_tile_editor_stages_exact_rgb24_palette_and_cleans_it_with_workspace() {
+        let mut editor = ExternalGraphicsEditor::default();
+        let mut tool = configured_tool(&["{graphics}"]);
+        tool.working_directory = None;
+        tool.replace_tile_editor_palette = true;
+        let palette = Palette {
+            colors: (0_u16..256).map(lm_graphics::Bgr555).collect(),
+        };
+        editor
+            .stage_configured(
+                &tool,
+                ToolContext::default(),
+                "GFX00.bin",
+                &[7; 32],
+                Some(&palette),
+                4,
+            )
+            .unwrap();
+        let pending = editor.pending.as_ref().unwrap();
+        let directory = pending.directory.clone();
+        let bytes = fs::read(directory.join("yychr.pal")).unwrap();
+        assert_eq!(bytes.len(), RgbPaletteFile::FILE_LEN);
+        assert_eq!(
+            RgbPaletteFile::decode(&bytes).unwrap().to_snes_palette(),
+            palette
         );
         editor.cancel_pending().unwrap();
         assert!(!directory.exists());
@@ -537,6 +602,7 @@ mod tests {
                 },
                 "ExGFX123.bin",
                 &[6; 32],
+                None,
                 19,
             )
             .unwrap();
@@ -570,6 +636,7 @@ mod tests {
                 },
                 "GFX00.bin",
                 &[9; 32],
+                None,
                 23,
             )
             .unwrap();
@@ -607,6 +674,7 @@ mod tests {
                 },
                 "GFX00.bin",
                 &[1; 32],
+                None,
                 0,
             )
             .unwrap_err();
@@ -623,7 +691,14 @@ mod tests {
         let mut tool = configured_tool(&["{graphics}"]);
         tool.working_directory = Some("{graphics}".into());
         let error = editor
-            .stage_configured(&tool, ToolContext::default(), "GFX00.bin", &[1; 32], 0)
+            .stage_configured(
+                &tool,
+                ToolContext::default(),
+                "GFX00.bin",
+                &[1; 32],
+                None,
+                0,
+            )
             .unwrap_err();
         assert!(error.contains("cannot use {graphics} or %1"), "{error}");
         assert!(!editor.is_running());

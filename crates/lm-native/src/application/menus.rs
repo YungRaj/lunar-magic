@@ -865,6 +865,7 @@ impl NativeApplication {
                 arguments: vec!["{rom}".into()],
                 working_directory: None,
                 subscriptions: Vec::new(),
+                replace_tile_editor_palette: false,
             },
             revision: snapshot.revision,
             level,

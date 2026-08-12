@@ -8,6 +8,7 @@ fn emulator_tool(id: &str) -> ExternalTool {
         arguments: vec!["{rom}".into(), "--level={level_hex}".into()],
         working_directory: Some("{project_dir}".into()),
         subscriptions: vec![ToolEvent::ProjectSaved],
+        replace_tile_editor_palette: false,
     }
 }
 

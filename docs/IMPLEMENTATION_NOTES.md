@@ -6831,7 +6831,11 @@ Imported Lunar Magic tile-editor profiles and newly created native profiles now 
 tile-editor identity instead of falling through to the SNES-emulator form. The configuration editor
 uses resource `$0409` for the matching title, executable-path and argument labels, OK, and Cancel;
 new profiles default to the private `{graphics}` placeholder used by the staged graphics round trip.
-Identity survives the existing `LMTOOLS1` encode/decode boundary, and Unicode template tests cover
-resource selection and fallback. The original palette-file replacement and transparent-blue flags
-are not fabricated as command-line arguments because that would alter process behavior; their
-lossless model/launch integration remains an explicit open Localization/Configuration sub-gate.
+Identity survives the tool-config encode/decode boundary, and Unicode template tests cover resource
+selection and fallback. The recovered palette-file replacement option is now a typed capability:
+registry `Options2` bit 25 migrates into the tool, the `$0409` checkbox edits it, and canonical
+`LMTOOLS2` persistence retains it while every prior `LMTOOLS1` file upgrades with the option off.
+Before launch the installed graphics editor creates exact 768-byte RGB24 `yychr.pal` beside the
+private staged GFX file from the current 256-color SNES palette, and cancellation or completion
+removes both together. The original transparent-blue presentation option is not fabricated as a
+process argument; its separate recovered palette-generation behavior remains open.

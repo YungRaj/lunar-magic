@@ -4,7 +4,8 @@ use std::path::PathBuf;
 
 use crate::{ExternalTool, ExternalToolError, ToolEvent, validate_tools};
 
-const MAGIC: &[u8; 8] = b"LMTOOLS1";
+const MAGIC_V1: &[u8; 8] = b"LMTOOLS1";
+const MAGIC_V2: &[u8; 8] = b"LMTOOLS2";
 const MAX_TOOLS: usize = 256;
 const MAX_ARGUMENTS: usize = 256;
 const MAX_STRING_BYTES: usize = 1 << 20;
@@ -27,6 +28,7 @@ pub enum ToolConfigError {
     StringTooLong(usize),
     InvalidEventBits(u8),
     InvalidWorkingDirectoryFlag(u8),
+    InvalidTileEditorPaletteFlag(u8),
     InvalidTool(ExternalToolError),
     Overflow,
 }
@@ -49,7 +51,7 @@ impl ToolConfig {
     /// Maximum portable configuration size accepted by the application.
     pub const MAX_ENCODED_LEN: usize = 64 * 1024 * 1024;
 
-    /// Serializes this configuration into the versioned `LMTOOLS1` interchange format.
+    /// Serializes this configuration into the current versioned `LMTOOLS2` interchange format.
     ///
     /// # Errors
     ///
@@ -62,7 +64,7 @@ impl ToolConfig {
         }
         let encoded_len = self.encoded_len_with_limit(Self::MAX_ENCODED_LEN)?;
         let mut output = Vec::with_capacity(encoded_len);
-        output.extend_from_slice(MAGIC);
+        output.extend_from_slice(MAGIC_V2);
         write_u16(&mut output, self.tools.len())?;
         for tool in &self.tools {
             write_string(&mut output, &tool.id)?;
@@ -95,6 +97,7 @@ impl ToolConfig {
                 }
             });
             output.push(event_bits);
+            output.push(u8::from(tool.replace_tile_editor_palette));
         }
         if output.len() > Self::MAX_ENCODED_LEN {
             return Err(ToolConfigError::EncodedTooLong(output.len()));
@@ -103,7 +106,7 @@ impl ToolConfig {
     }
 
     fn encoded_len_with_limit(&self, limit: usize) -> Result<usize, ToolConfigError> {
-        let mut len = MAGIC
+        let mut len = MAGIC_V2
             .len()
             .checked_add(2)
             .ok_or(ToolConfigError::Overflow)?;
@@ -123,6 +126,7 @@ impl ToolConfig {
                 len = checked_string_len(len, argument)?;
             }
             len = len.checked_add(1).ok_or(ToolConfigError::Overflow)?;
+            len = len.checked_add(1).ok_or(ToolConfigError::Overflow)?;
             if let Some(directory) = &tool.working_directory {
                 len = checked_string_len(len, directory)?;
             }
@@ -137,7 +141,7 @@ impl ToolConfig {
         Ok(len)
     }
 
-    /// Parses a complete bounded `LMTOOLS1` configuration.
+    /// Parses a complete bounded `LMTOOLS1` or `LMTOOLS2` configuration.
     ///
     /// # Errors
     ///
@@ -148,9 +152,12 @@ impl ToolConfig {
             return Err(ToolConfigError::EncodedTooLong(bytes.len()));
         }
         let mut reader = Reader::new(bytes);
-        if reader.take(MAGIC.len())? != MAGIC {
-            return Err(ToolConfigError::WrongMagic);
-        }
+        let magic = reader.take(MAGIC_V2.len())?;
+        let v2 = match magic {
+            value if value == MAGIC_V2 => true,
+            value if value == MAGIC_V1 => false,
+            _ => return Err(ToolConfigError::WrongMagic),
+        };
         let tool_count = usize::from(reader.u16()?);
         if tool_count > MAX_TOOLS {
             return Err(ToolConfigError::TooManyTools(tool_count));
@@ -187,6 +194,15 @@ impl ToolConfig {
                     subscriptions.push(event);
                 }
             }
+            let replace_tile_editor_palette = if v2 {
+                match reader.byte()? {
+                    0 => false,
+                    1 => true,
+                    value => return Err(ToolConfigError::InvalidTileEditorPaletteFlag(value)),
+                }
+            } else {
+                false
+            };
             tools.push(ExternalTool {
                 id,
                 name,
@@ -194,6 +210,7 @@ impl ToolConfig {
                 arguments,
                 working_directory,
                 subscriptions,
+                replace_tile_editor_palette,
             });
         }
         if !reader.is_empty() {
@@ -292,6 +309,7 @@ mod tests {
                 arguments: vec!["--rom".into(), "{rom}".into()],
                 working_directory: Some("{project_dir}".into()),
                 subscriptions: vec![ToolEvent::ProjectSaved, ToolEvent::LevelChanged],
+                replace_tile_editor_palette: false,
             }],
         }
     }
@@ -302,6 +320,29 @@ mod tests {
         let bytes = expected.encode().unwrap();
         assert_eq!(ToolConfig::decode(&bytes).unwrap(), expected);
         assert_eq!(ToolConfig::decode(&bytes).unwrap().encode().unwrap(), bytes);
+    }
+
+    #[test]
+    fn legacy_lmtools1_decodes_with_palette_replacement_disabled_and_upgrades_canonically() {
+        let expected = config();
+        let mut legacy = expected.encode().unwrap();
+        legacy[..8].copy_from_slice(MAGIC_V1);
+        assert_eq!(legacy.pop(), Some(0));
+
+        let decoded = ToolConfig::decode(&legacy).unwrap();
+        assert_eq!(decoded, expected);
+        let upgraded = decoded.encode().unwrap();
+        assert_eq!(&upgraded[..8], MAGIC_V2);
+        assert_eq!(ToolConfig::decode(&upgraded).unwrap(), expected);
+    }
+
+    #[test]
+    fn tile_editor_palette_option_round_trips_in_lmtools2() {
+        let mut expected = config();
+        expected.tools[0].replace_tile_editor_palette = true;
+        let bytes = expected.encode().unwrap();
+        assert_eq!(&bytes[..8], MAGIC_V2);
+        assert_eq!(ToolConfig::decode(&bytes).unwrap(), expected);
     }
 
     #[test]
@@ -338,11 +379,19 @@ mod tests {
             Err(ToolConfigError::TrailingBytes)
         );
 
-        let mut unknown_event = bytes;
-        *unknown_event.last_mut().unwrap() = 0x80;
+        let mut unknown_event = bytes.clone();
+        let event_index = unknown_event.len() - 2;
+        unknown_event[event_index] = 0x80;
         assert_eq!(
             ToolConfig::decode(&unknown_event),
             Err(ToolConfigError::InvalidEventBits(0x80))
+        );
+
+        let mut unknown_palette_flag = bytes;
+        *unknown_palette_flag.last_mut().unwrap() = 0x80;
+        assert_eq!(
+            ToolConfig::decode(&unknown_palette_flag),
+            Err(ToolConfigError::InvalidTileEditorPaletteFlag(0x80))
         );
     }
 

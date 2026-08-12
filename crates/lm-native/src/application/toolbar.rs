@@ -3257,6 +3257,7 @@ mod user_toolbar_tests {
             arguments: vec![argument.into()],
             working_directory: None,
             subscriptions: Vec::new(),
+            replace_tile_editor_palette: false,
         };
         let tools = [
             tool("lunar-magic-gba-emulator", "{rom}"),

@@ -1783,6 +1783,7 @@ impl RomGraphicsEditor {
             app.tool_context(),
             &file_name,
             &bytes,
+            Some(&workspace.palette.palette),
             app.project_revision(),
         ) {
             Ok(()) => self.io_status = None,

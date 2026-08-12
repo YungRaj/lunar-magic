@@ -43,6 +43,7 @@ fn tool_fixture() -> ToolConfig {
             arguments: vec!["--rom".into(), "{rom}".into(), "--level={level_hex}".into()],
             working_directory: Some("{project_dir}".into()),
             subscriptions: vec![ToolEvent::ProjectSaved],
+            replace_tile_editor_palette: false,
         }],
     }
 }

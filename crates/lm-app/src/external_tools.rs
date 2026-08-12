@@ -65,6 +65,8 @@ pub struct ExternalTool {
     pub arguments: Vec<String>,
     pub working_directory: Option<String>,
     pub subscriptions: Vec<ToolEvent>,
+    /// Writes the current 256-color RGB24 palette as `yychr.pal` beside staged graphics.
+    pub replace_tile_editor_palette: bool,
 }
 
 /// Context made available to external-tool templates.
@@ -384,6 +386,7 @@ mod tests {
             arguments: arguments.iter().map(|value| (*value).into()).collect(),
             working_directory: Some("{project_dir}".into()),
             subscriptions: vec![ToolEvent::ProjectSaved],
+            replace_tile_editor_palette: false,
         }
     }
 
