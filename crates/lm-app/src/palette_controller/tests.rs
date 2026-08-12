@@ -1,7 +1,11 @@
 use super::*;
-use crate::{AppError, AppState, Command, FrontendEffect};
+use crate::{AppError, AppState, Command, FrontendEffect, Map16Controller, Map16ControllerEdit};
 use lm_graphics::PaletteEntryOwner;
-use lm_project::{LevelPointerTable, PaletteSaveOptions, Project, RatsOwnershipManifest};
+use lm_level::{Map16Address, Map16Page, Map16Quadrant, Map16Tile, Subtile};
+use lm_project::{
+    LevelPointerTable, Map16RomLayout, Map16SetSaveOptions, PaletteSaveOptions, Project,
+    RatsOwnershipManifest,
+};
 use lm_rats::{AllocationPolicy, ProtectedRange};
 use lm_rom::RomImage;
 
@@ -68,6 +72,58 @@ fn options() -> PaletteSaveOptions {
     }
 }
 
+fn combined_map16_layout() -> Map16RomLayout {
+    Map16RomLayout {
+        mapper: Mapper::LoRom,
+        graphics: LevelPointerTable {
+            offset: 0x300,
+            entries: 1,
+            stride: 3,
+        },
+        acts_like: LevelPointerTable {
+            offset: 0x400,
+            entries: 1,
+            stride: 3,
+        },
+    }
+}
+
+fn combined_recovery_rom() -> Vec<u8> {
+    let mut project = Project::new(RomImage::from_bytes(test_rom()).unwrap());
+    let mut tiles = vec![Map16Tile::default(); Map16Page::TILE_COUNT];
+    tiles[0].top_left = Subtile(1);
+    let set = lm_level::Map16Set {
+        pages: vec![Map16Page::new(tiles).unwrap()],
+    };
+    let policy = AllocationPolicy {
+        search: 0x4000..0x7000,
+        bank_size: Some(0x8000),
+        fill_bytes: vec![0xff],
+        protected: vec![
+            ProtectedRange(0x200..0x206),
+            ProtectedRange(0x300..0x303),
+            ProtectedRange(0x400..0x403),
+            ProtectedRange(0x7fdc..0x7fe0),
+        ],
+    };
+    project
+        .save_map16_set_with_checksum(
+            &set,
+            combined_map16_layout(),
+            0x7fdc,
+            &Map16SetSaveOptions {
+                graphics_allocation: policy.clone(),
+                acts_like_allocation: policy,
+                previous_graphics: Vec::new(),
+                previous_acts_like: Vec::new(),
+                reuse_identical: true,
+                erase_fill: 0xff,
+            },
+        )
+        .unwrap();
+    project.save_snapshot()
+}
+
 #[test]
 fn palette_saves_semantically_on_a_growing_recovery_project() {
     let mut app = AppState::default();
@@ -95,6 +151,82 @@ fn palette_saves_semantically_on_a_growing_recovery_project() {
     assert_eq!(
         staged.load_palette(1, layout()).unwrap(),
         *palette_controller.palette()
+    );
+    assert_eq!(app.project().unwrap().save_snapshot(), baseline);
+    let logical = staged.rom.logical_bytes();
+    assert_eq!(
+        lm_rom::SnesChecksum::decode(logical, 0x7fdc).unwrap(),
+        lm_rom::compute_snes_checksum(logical, 0x7fdc).unwrap()
+    );
+}
+
+#[test]
+fn palette_and_map16_share_one_growing_recovery_project() {
+    let mut app = AppState::default();
+    app.load_rom(combined_recovery_rom()).unwrap();
+    app.dispatch(Command::ShowPalette(1)).unwrap();
+    let mut palette_controller = PaletteController::decode(
+        &app.controller_snapshot().unwrap(),
+        layout(),
+        PaletteOwnership::editable(32),
+    )
+    .unwrap();
+    palette_controller
+        .apply_edits(&[PaletteControllerEdit::ReplaceRange {
+            start: 6,
+            colors: vec![Bgr555(0x2345)],
+        }])
+        .unwrap();
+    app.dispatch(Command::ShowMap16).unwrap();
+    let mut map16_controller =
+        Map16Controller::decode(&app.controller_snapshot().unwrap(), combined_map16_layout())
+            .unwrap();
+    map16_controller
+        .apply_edits(&[Map16ControllerEdit::SetSubtile {
+            address: Map16Address { page: 0, tile: 3 },
+            quadrant: Map16Quadrant::BottomRight,
+            subtile: Subtile(0x4567),
+            resolution_limit: 256,
+        }])
+        .unwrap();
+
+    let baseline = app.project().unwrap().save_snapshot();
+    let mut staged = app.project().unwrap().clone();
+    palette_controller
+        .save_to_project(&mut staged, &options())
+        .unwrap();
+    let map16_policy = AllocationPolicy {
+        search: 0x1_0000..0x1_8000,
+        bank_size: Some(0x8000),
+        fill_bytes: vec![0xff],
+        protected: vec![
+            ProtectedRange(0x200..0x206),
+            ProtectedRange(0x300..0x303),
+            ProtectedRange(0x400..0x403),
+            ProtectedRange(0x7fdc..0x7fe0),
+        ],
+    };
+    map16_controller
+        .save_to_project(
+            &mut staged,
+            &Map16SetSaveOptions {
+                graphics_allocation: map16_policy.clone(),
+                acts_like_allocation: map16_policy,
+                previous_graphics: Vec::new(),
+                previous_acts_like: Vec::new(),
+                reuse_identical: true,
+                erase_fill: 0xff,
+            },
+        )
+        .unwrap();
+
+    assert_eq!(
+        staged.load_palette(1, layout()).unwrap(),
+        *palette_controller.palette()
+    );
+    assert_eq!(
+        staged.load_map16_set(combined_map16_layout()).unwrap(),
+        *map16_controller.set()
     );
     assert_eq!(app.project().unwrap().save_snapshot(), baseline);
     let logical = staged.rom.logical_bytes();

@@ -6714,7 +6714,9 @@ against that evolved image. The coordinator therefore preserves growth and alloc
 without merging independently prepared mutations. `palette_saves_semantically_on_a_growing_`
 `recovery_project` and `map16_saves_semantically_after_independent_recovery_growth` prove exact
 reopen, checksum repair, growth retention, and live-project isolation. Native compilation and all
-237 renderer tests pass.
+237 renderer tests pass. `palette_and_map16_share_one_growing_recovery_project` additionally stages
+both controllers on the same clone, forces allocation beyond the original image, reopens both exact
+semantic results, validates the final checksum, and proves the live application bytes never change.
 
 ## Complete overworld palette and ExAnimation variant persistence
 

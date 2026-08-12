@@ -624,7 +624,10 @@ derives its graphics and Acts-Like allocation policies against the palette resul
 growth and ownership. `palette_saves_semantically_on_a_growing_recovery_project` and
 `map16_saves_semantically_after_independent_recovery_growth` prove exact semantic reopen, checksum
 validity, post-growth persistence, and byte-identical live application state. Native compilation
-binds those adapters to the two-editor coordinator, and all 237 renderer tests remain green. Other
+binds those adapters to the two-editor coordinator. `palette_and_map16_share_one_growing_recovery_`
+`project` now supplies the combined semantic gate: both independent staged controllers serialize in
+order, both reopen exactly after growth, the final checksum is valid, and the live project remains
+byte-identical. All 237 renderer tests remain green. Other
 unlisted simultaneous staged-editor families remain explicitly rejected.
 
 The Patches/runtime row additionally routes authenticated SMW-US SA-1 sources through the recovered
