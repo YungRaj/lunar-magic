@@ -6776,3 +6776,15 @@ resource literals. The running application passes its active catalog into the ac
 analysis workflow, and a Unicode catalog encode/decode test proves every mapped key remains
 available after persistence. Localization remains `Partial` pending the remaining native forms and
 retained live third-party language-DLL/Wine evidence.
+
+## Original ROM user-area scan-results template
+
+The native ROM User Area Scan Results form now consumes Lunar Magic 3.63 resource `$0427` for its
+title, OK caption, six protected/used/free-space labels, two conflict labels, three RATS/free-area
+labels, and last-used-version label. The original stores those metrics in three multiline controls;
+Rust validates each translated group has the exact required line count before assigning its lines
+to individual grid rows. A malformed group falls back atomically, preventing a missing translation
+line from shifting labels onto unrelated calculated values. Unicode catalog persistence and grouped
+fallback tests cover that boundary; addresses, counts, detected version, and conflict-log results
+remain untranslated runtime data. Localization remains `Partial` pending the remaining forms and
+retained live third-party language-DLL/Wine evidence.

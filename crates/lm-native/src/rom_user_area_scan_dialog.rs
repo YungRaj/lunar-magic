@@ -1,9 +1,25 @@
 use eframe::egui;
-use lm_app::{AppState, RomUserAreaReport};
+use lm_app::{AppState, LocalizationCatalog, RomUserAreaReport};
 use lm_rats::RatsConflict;
 use std::fs::{self, OpenOptions};
 use std::io::Write as _;
 use std::path::{Path, PathBuf};
+
+const ORIGINAL_DIALOG_ID: u16 = 0x0427;
+const FALLBACK_METRIC_LABELS: [&str; 12] = [
+    "RAT Protected Space:",
+    "Unprotected Map16:",
+    "Unprotected Used Space:",
+    "Unusable Space:",
+    "Free Space:",
+    "Total User Space:",
+    "Conflicting RATs:",
+    "Conflicted Space:",
+    "RAT Structures:",
+    "Largest Free 32KB Bank:",
+    "Largest Free Area:",
+    "Last version of Lunar Magic used:",
+];
 
 #[derive(Default)]
 pub(crate) struct RomUserAreaScanDialog {
@@ -31,29 +47,69 @@ impl RomUserAreaScanDialog {
         Ok(())
     }
 
-    pub(crate) fn show(&mut self, context: &egui::Context) {
+    pub(crate) fn show(&mut self, context: &egui::Context, catalog: Option<&LocalizationCatalog>) {
         let Some(report) = self.report.as_ref() else {
             return;
         };
         let mut open = true;
         let mut dismiss = false;
-        egui::Window::new("ROM User Area Scan Results")
+        egui::Window::new(user_area_dialog_title(catalog))
             .collapsible(false)
             .resizable(false)
             .open(&mut open)
             .show(context, |ui| {
-                metric_grid(ui, report);
+                metric_grid(ui, report, catalog);
                 if report.scan.conflicting_rats != 0 {
                     ui.separator();
                     ui.colored_label(ui.visuals().warn_fg_color, "See RATS.log for more info.");
                 }
                 ui.add_space(4.0);
-                ui.vertical_centered(|ui| dismiss = ui.button("OK").clicked());
+                ui.vertical_centered(|ui| {
+                    dismiss = ui.button(user_area_dialog_text(catalog, 1, "OK")).clicked();
+                });
             });
         if !open || dismiss {
             self.report = None;
         }
     }
+}
+
+fn user_area_dialog_title(catalog: Option<&LocalizationCatalog>) -> String {
+    catalog
+        .and_then(|catalog| catalog.original_dialog_title(ORIGINAL_DIALOG_ID))
+        .unwrap_or("ROM User Area Scan Results")
+        .to_owned()
+}
+
+fn user_area_dialog_text(
+    catalog: Option<&LocalizationCatalog>,
+    control_id: u32,
+    fallback: &str,
+) -> String {
+    catalog
+        .and_then(|catalog| catalog.original_dialog_control_text(ORIGINAL_DIALOG_ID, control_id))
+        .unwrap_or(fallback)
+        .to_owned()
+}
+
+fn user_area_metric_labels(catalog: Option<&LocalizationCatalog>) -> [String; 12] {
+    let mut labels = FALLBACK_METRIC_LABELS.map(str::to_owned);
+    for (control_id, range) in [(0x68, 0..6), (0x65, 6..8), (0x66, 8..11)] {
+        let Some(text) = catalog.and_then(|catalog| {
+            catalog.original_dialog_control_text(ORIGINAL_DIALOG_ID, control_id)
+        }) else {
+            continue;
+        };
+        let lines = text.lines().collect::<Vec<_>>();
+        if lines.len() != range.len() || lines.iter().any(|line| line.is_empty()) {
+            continue;
+        }
+        for (index, line) in range.zip(lines) {
+            labels[index] = line.to_owned();
+        }
+    }
+    labels[11] = user_area_dialog_text(catalog, 0x67, FALLBACK_METRIC_LABELS[11]);
+    labels
 }
 
 fn append_conflict_log(rom_path: &Path, report: &RomUserAreaReport) -> Result<(), String> {
@@ -118,31 +174,36 @@ fn format_conflict_log_entries(
     text
 }
 
-fn metric_grid(ui: &mut egui::Ui, report: &RomUserAreaReport) {
+fn metric_grid(
+    ui: &mut egui::Ui,
+    report: &RomUserAreaReport,
+    catalog: Option<&LocalizationCatalog>,
+) {
     let scan = &report.scan;
-    let metrics = [
-        ("RAT Protected Space:", scan.rat_protected_space),
-        ("Unprotected Map16:", scan.unprotected_map16),
-        ("Unprotected Used Space:", scan.unprotected_used_space),
-        ("Unusable Space:", scan.unusable_space),
-        ("Free Space:", scan.free_space),
-        ("Total User Space:", scan.total_user_space),
-        ("Conflicting RATs:", scan.conflicting_rats),
-        ("Conflicted Space:", scan.conflicting_space),
-        ("RAT Structures:", scan.rat_structures),
-        ("Largest Free 32KB Bank:", scan.largest_free_32kb_bank),
-        ("Largest Free Area:", scan.largest_free_area),
+    let labels = user_area_metric_labels(catalog);
+    let values = [
+        scan.rat_protected_space,
+        scan.unprotected_map16,
+        scan.unprotected_used_space,
+        scan.unusable_space,
+        scan.free_space,
+        scan.total_user_space,
+        scan.conflicting_rats,
+        scan.conflicting_space,
+        scan.rat_structures,
+        scan.largest_free_32kb_bank,
+        scan.largest_free_area,
     ];
     egui::Grid::new("rom-user-area-scan-metrics")
         .num_columns(2)
         .spacing([24.0, 2.0])
         .show(ui, |ui| {
-            for (label, value) in metrics {
+            for (label, value) in labels.iter().zip(values) {
                 ui.label(label);
                 ui.monospace(format!("{value:X}"));
                 ui.end_row();
             }
-            ui.label("Last version of Lunar Magic used:");
+            ui.label(&labels[11]);
             ui.monospace(report.last_lunar_magic_version.as_deref().unwrap_or("N/A"));
             ui.end_row();
         });
@@ -151,6 +212,7 @@ fn metric_grid(ui: &mut egui::Ui, report: &RomUserAreaReport) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use lm_app::{OriginalDialogTextKey, UiTextKey};
     use lm_rats::RomUserAreaScan;
 
     #[test]
@@ -216,5 +278,104 @@ mod tests {
         };
         let error = append_conflict_log(&root.path().join("game.sfc"), &report).unwrap_err();
         assert!(error.contains("non-regular file"));
+    }
+
+    #[test]
+    fn original_scan_template_splits_grouped_metric_labels_and_round_trips() {
+        let catalog = LocalizationCatalog::new(
+            "fr-test",
+            UiTextKey::ALL.map(|key| (key, key.english().to_owned())),
+        )
+        .unwrap()
+        .with_original_dialog_texts([
+            (
+                OriginalDialogTextKey {
+                    dialog_id: ORIGINAL_DIALOG_ID,
+                    item_index: u16::MAX,
+                    control_id: u32::MAX,
+                },
+                "Résultats de l’analyse ROM".into(),
+            ),
+            (
+                OriginalDialogTextKey {
+                    dialog_id: ORIGINAL_DIALOG_ID,
+                    item_index: 1,
+                    control_id: 0x68,
+                },
+                "Protégé:\r\nMap16 libre:\r\nUtilisé:\r\nInutilisable:\r\nLibre:\r\nTotal:".into(),
+            ),
+            (
+                OriginalDialogTextKey {
+                    dialog_id: ORIGINAL_DIALOG_ID,
+                    item_index: 2,
+                    control_id: 0x65,
+                },
+                "RAT en conflit:\r\nEspace en conflit:".into(),
+            ),
+            (
+                OriginalDialogTextKey {
+                    dialog_id: ORIGINAL_DIALOG_ID,
+                    item_index: 3,
+                    control_id: 0x66,
+                },
+                "Structures RAT:\r\nBanque libre:\r\nZone libre:".into(),
+            ),
+            (
+                OriginalDialogTextKey {
+                    dialog_id: ORIGINAL_DIALOG_ID,
+                    item_index: 4,
+                    control_id: 0x67,
+                },
+                "Dernière version de Lunar Magic:".into(),
+            ),
+            (
+                OriginalDialogTextKey {
+                    dialog_id: ORIGINAL_DIALOG_ID,
+                    item_index: 5,
+                    control_id: 1,
+                },
+                "Fermer".into(),
+            ),
+        ])
+        .unwrap();
+
+        let labels = user_area_metric_labels(Some(&catalog));
+        assert_eq!(labels[0], "Protégé:");
+        assert_eq!(labels[5], "Total:");
+        assert_eq!(labels[6], "RAT en conflit:");
+        assert_eq!(labels[10], "Zone libre:");
+        assert_eq!(labels[11], "Dernière version de Lunar Magic:");
+        assert_eq!(
+            user_area_dialog_title(Some(&catalog)),
+            "Résultats de l’analyse ROM"
+        );
+        assert_eq!(user_area_dialog_text(Some(&catalog), 1, "OK"), "Fermer");
+
+        let reopened = LocalizationCatalog::decode(&catalog.encode().unwrap()).unwrap();
+        assert_eq!(user_area_metric_labels(Some(&reopened)), labels);
+    }
+
+    #[test]
+    fn malformed_grouped_template_falls_back_without_shifting_metric_meanings() {
+        let catalog = LocalizationCatalog::new(
+            "fr-test",
+            UiTextKey::ALL.map(|key| (key, key.english().to_owned())),
+        )
+        .unwrap()
+        .with_original_dialog_texts([(
+            OriginalDialogTextKey {
+                dialog_id: ORIGINAL_DIALOG_ID,
+                item_index: 1,
+                control_id: 0x68,
+            },
+            "Seulement une ligne".into(),
+        )])
+        .unwrap();
+
+        assert_eq!(
+            user_area_metric_labels(Some(&catalog)),
+            FALLBACK_METRIC_LABELS.map(str::to_owned)
+        );
+        assert_eq!(user_area_dialog_title(None), "ROM User Area Scan Results");
     }
 }
