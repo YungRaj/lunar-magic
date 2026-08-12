@@ -7100,6 +7100,15 @@ ignore), native compilation passes, and renderer remains 237/237. Vanilla-level 
 shared progress windows, and retained live language-DLL evidence keep Localization Partial;
 aggregate parity remains 60/65.
 
+Localization coverage update (2026-08-12, vanilla canvas interaction): twenty additional
+`VanillaLevel*` identities cover selection/placement guidance, duplicate/delete actions, game-pixel
+and 256×224 preview modes, live-frame selection overlay and help, every canvas tool, zoom/reset,
+and camera screen/entrance controls. The catalog now flows through the complete canvas helper chain
+without altering responsive sizing, selection behavior, placement modes, or camera bounds. Arrow
+and plus/minus glyphs remain universal symbols. A bounded source audit rejects former fixed-English
+controls. Focused native and localization tests pass, and renderer remains 237/237. Other
+vanilla/native forms keep Localization Partial; aggregate parity remains 60/65.
+
 Localization coverage update (2026-08-12, vanilla Layer 2 tilemap editing): eight additional
 `VanillaLevel*` identities cover the Layer 2 panel, tilemap selection status, Map16 word staging,
 paint/storage guidance, shared-background read-only explanation, decoded object-stream count, and

@@ -1144,6 +1144,7 @@ impl VanillaLevelEditor {
                 |ui| {
                     self.object_canvas(
                         ui,
+                        catalog,
                         visibility,
                         custom_sprites,
                         external_assets,
@@ -3207,6 +3208,7 @@ impl VanillaLevelEditor {
     fn object_canvas(
         &mut self,
         ui: &mut egui::Ui,
+        catalog: Option<&LocalizationCatalog>,
         visibility: crate::application::LevelViewVisibility,
         custom_sprites: Option<&lm_level::SscResolvedTable>,
         external_assets: &lm_graphics::ExternalSpriteAssets,
@@ -3313,13 +3315,24 @@ impl VanillaLevelEditor {
         major_tiles = major_tiles.min(canvas_major_ceiling);
         let game_preview = self.game_preview();
         let snes_viewport = game_preview && self.snes_viewport();
-        self.show_canvas_tools(ui, major_tiles, minor_tiles, vertical, live_frame.is_some());
+        self.show_canvas_tools(
+            ui,
+            catalog,
+            major_tiles,
+            minor_tiles,
+            vertical,
+            live_frame.is_some(),
+        );
         if self.placement_mode.is_some() {
-            ui.label("Click a canvas tile to place the values from the matching editor below.");
+            ui.label(vanilla_text(
+                catalog,
+                ExtendedUiTextKey::VanillaLevelCanvasPlaceHelp,
+            ));
         } else {
-            ui.label(
-                "Select or drag an object/enemy; Insert places the active template at the pointer, right-click duplicates there, and Delete removes the selection.",
-            );
+            ui.label(vanilla_text(
+                catalog,
+                ExtendedUiTextKey::VanillaLevelCanvasSelectHelp,
+            ));
         }
         let mut toolbar_shortcut = None;
         if let Some(selection) = self.canvas_entity_selection {
@@ -3336,10 +3349,22 @@ impl VanillaLevelEditor {
             };
             ui.horizontal_wrapped(|ui| {
                 ui.colored_label(egui::Color32::YELLOW, description);
-                if ui.button("Duplicate selected").clicked() {
+                if ui
+                    .button(vanilla_text(
+                        catalog,
+                        ExtendedUiTextKey::VanillaLevelDuplicateSelected,
+                    ))
+                    .clicked()
+                {
                     toolbar_shortcut = Some(CanvasEntityShortcut::Duplicate);
                 }
-                if ui.button("Delete selected").clicked() {
+                if ui
+                    .button(vanilla_text(
+                        catalog,
+                        ExtendedUiTextKey::VanillaLevelDeleteSelected,
+                    ))
+                    .clicked()
+                {
                     toolbar_shortcut = Some(CanvasEntityShortcut::Remove);
                 }
             });
@@ -3531,6 +3556,7 @@ impl VanillaLevelEditor {
     fn show_canvas_tools(
         &mut self,
         ui: &mut egui::Ui,
+        catalog: Option<&LocalizationCatalog>,
         major_tiles: u16,
         minor_tiles: u16,
         vertical: bool,
@@ -3552,13 +3578,22 @@ impl VanillaLevelEditor {
                 .show(ui, |ui| {
                     ui.horizontal(|ui| {
                         let mut game_preview = self.game_preview();
-                        if ui.toggle_value(&mut game_preview, "Game pixels").changed() {
+                        if ui
+                            .toggle_value(
+                                &mut game_preview,
+                                vanilla_text(catalog, ExtendedUiTextKey::VanillaLevelGamePixels),
+                            )
+                            .changed()
+                        {
                             self.game_preview = Some(game_preview);
                         }
                         if game_preview {
                             let mut snes_viewport = self.snes_viewport();
                             if ui
-                                .toggle_value(&mut snes_viewport, "256×224 viewport")
+                                .toggle_value(
+                                    &mut snes_viewport,
+                                    vanilla_text(catalog, ExtendedUiTextKey::VanillaLevelViewport),
+                                )
                                 .changed()
                             {
                                 self.snes_viewport = Some(snes_viewport);
@@ -3567,10 +3602,17 @@ impl VanillaLevelEditor {
                                 if live_frame_available {
                                     let mut draw_selection = self.draw_selection_over_live();
                                     if ui
-                                        .toggle_value(&mut draw_selection, "Selection over game")
-                                        .on_hover_text(
-                                            "Draw selected object and sprite tiles over the live emulator frame",
+                                        .toggle_value(
+                                            &mut draw_selection,
+                                            vanilla_text(
+                                                catalog,
+                                                ExtendedUiTextKey::VanillaLevelSelectionOverGame,
+                                            ),
                                         )
+                                        .on_hover_text(vanilla_text(
+                                            catalog,
+                                            ExtendedUiTextKey::VanillaLevelSelectionOverGameHelp,
+                                        ))
                                         .changed()
                                     {
                                         self.draw_selection_over_live = Some(draw_selection);
@@ -3578,6 +3620,7 @@ impl VanillaLevelEditor {
                                 }
                                 self.show_preview_camera_tools(
                                     ui,
+                                    catalog,
                                     major_tiles,
                                     minor_tiles,
                                     vertical,
@@ -3585,17 +3628,24 @@ impl VanillaLevelEditor {
                             }
                         }
                         ui.separator();
-                        ui.label("Canvas tool:");
-                        ui.selectable_value(&mut self.placement_mode, None, "Select / move");
+                        ui.label(vanilla_text(
+                            catalog,
+                            ExtendedUiTextKey::VanillaLevelCanvasTool,
+                        ));
+                        ui.selectable_value(
+                            &mut self.placement_mode,
+                            None,
+                            vanilla_text(catalog, ExtendedUiTextKey::VanillaLevelSelectMove),
+                        );
                         ui.selectable_value(
                             &mut self.placement_mode,
                             Some(CanvasPlacementMode::Object),
-                            "Place object",
+                            vanilla_text(catalog, ExtendedUiTextKey::VanillaLevelPlaceObject),
                         );
                         ui.selectable_value(
                             &mut self.placement_mode,
                             Some(CanvasPlacementMode::Sprite),
-                            "Place sprite",
+                            vanilla_text(catalog, ExtendedUiTextKey::VanillaLevelPlaceSprite),
                         );
                         if matches!(
                             self.controller.as_ref().and_then(LevelController::layer2),
@@ -3605,7 +3655,10 @@ impl VanillaLevelEditor {
                             ui.selectable_value(
                                 &mut self.placement_mode,
                                 Some(CanvasPlacementMode::Layer2Tile),
-                                "Paint Layer 2 tile",
+                                vanilla_text(
+                                    catalog,
+                                    ExtendedUiTextKey::VanillaLevelPaintLayer2Tile,
+                                ),
                             );
                         } else if matches!(
                             self.controller.as_ref().and_then(LevelController::layer2),
@@ -3614,11 +3667,14 @@ impl VanillaLevelEditor {
                             ui.selectable_value(
                                 &mut self.placement_mode,
                                 Some(CanvasPlacementMode::Layer2Object),
-                                "Place Layer 2 object",
+                                vanilla_text(
+                                    catalog,
+                                    ExtendedUiTextKey::VanillaLevelPlaceLayer2Object,
+                                ),
                             );
                         }
                         ui.separator();
-                        ui.label("Zoom:");
+                        ui.label(vanilla_text(catalog, ExtendedUiTextKey::VanillaLevelZoom));
                         let mut zoom = self.canvas_zoom_percent();
                         if ui.small_button("−").clicked() {
                             zoom = zoom.saturating_sub(ROM_LEVEL_CANVAS_ZOOM_STEP);
@@ -3630,7 +3686,13 @@ impl VanillaLevelEditor {
                         .suffix("%")
                         .step_by(f64::from(ROM_LEVEL_CANVAS_ZOOM_STEP));
                         ui.add(slider);
-                        if ui.small_button("Reset").clicked() {
+                        if ui
+                            .small_button(vanilla_text(
+                                catalog,
+                                ExtendedUiTextKey::VanillaLevelReset,
+                            ))
+                            .clicked()
+                        {
                             zoom = 100;
                         }
                         if ui.small_button("+").clicked() {
@@ -3649,19 +3711,28 @@ impl VanillaLevelEditor {
     fn show_preview_camera_tools(
         &mut self,
         ui: &mut egui::Ui,
+        catalog: Option<&LocalizationCatalog>,
         major_tiles: u16,
         minor_tiles: u16,
         vertical: bool,
     ) {
         ui.separator();
-        ui.label("Camera:");
+        ui.label(vanilla_text(catalog, ExtendedUiTextKey::VanillaLevelCamera));
         for (label, major_delta, minor_delta) in [
-            ("Screen −", -16, 0),
-            ("←", -1, 0),
-            ("→", 1, 0),
-            ("Screen +", 16, 0),
-            ("↑", 0, -1),
-            ("↓", 0, 1),
+            (
+                vanilla_text(catalog, ExtendedUiTextKey::VanillaLevelScreenMinus),
+                -16,
+                0,
+            ),
+            ("←".to_owned(), -1, 0),
+            ("→".to_owned(), 1, 0),
+            (
+                vanilla_text(catalog, ExtendedUiTextKey::VanillaLevelScreenPlus),
+                16,
+                0,
+            ),
+            ("↑".to_owned(), 0, -1),
+            ("↓".to_owned(), 0, 1),
         ] {
             if ui.small_button(label).clicked() {
                 self.preview_camera_major_offset =
@@ -3670,7 +3741,13 @@ impl VanillaLevelEditor {
                     self.preview_camera_minor_offset.saturating_add(minor_delta);
             }
         }
-        if ui.small_button("Entrance").clicked() {
+        if ui
+            .small_button(vanilla_text(
+                catalog,
+                ExtendedUiTextKey::VanillaLevelEntrance,
+            ))
+            .clicked()
+        {
             self.preview_camera_major_offset = 0;
             self.preview_camera_minor_offset = 0;
         }
@@ -17632,6 +17709,28 @@ mod tests {
             assert!(
                 !layer2_panel.contains(literal),
                 "fixed-English Layer 2 control: {literal}"
+            );
+        }
+        let canvas_controls = source
+            .split("    fn object_canvas(")
+            .nth(1)
+            .unwrap()
+            .split("    fn canvas_zoom_percent(")
+            .next()
+            .unwrap();
+        for literal in [
+            "label(\"Click a canvas tile to place",
+            "button(\"Duplicate selected\")",
+            "button(\"Delete selected\")",
+            "label(\"Canvas tool:\")",
+            "label(\"Zoom:\")",
+            "label(\"Camera:\")",
+            "small_button(\"Reset\")",
+            "small_button(\"Entrance\")",
+        ] {
+            assert!(
+                !canvas_controls.contains(literal),
+                "fixed-English canvas control: {literal}"
             );
         }
         let modeless_editors = source

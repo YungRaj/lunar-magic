@@ -4020,10 +4020,30 @@ pub enum ExtendedUiTextKey {
     VanillaLevelSharedBackgroundReadOnly,
     VanillaLevelLayer2ObjectCountFormat,
     VanillaLevelBackgroundCanvas,
+    VanillaLevelCanvasPlaceHelp,
+    VanillaLevelCanvasSelectHelp,
+    VanillaLevelDuplicateSelected,
+    VanillaLevelDeleteSelected,
+    VanillaLevelGamePixels,
+    VanillaLevelViewport,
+    VanillaLevelSelectionOverGame,
+    VanillaLevelSelectionOverGameHelp,
+    VanillaLevelCanvasTool,
+    VanillaLevelSelectMove,
+    VanillaLevelPlaceObject,
+    VanillaLevelPlaceSprite,
+    VanillaLevelPaintLayer2Tile,
+    VanillaLevelPlaceLayer2Object,
+    VanillaLevelZoom,
+    VanillaLevelReset,
+    VanillaLevelCamera,
+    VanillaLevelScreenMinus,
+    VanillaLevelScreenPlus,
+    VanillaLevelEntrance,
 }
 
 impl ExtendedUiTextKey {
-    pub const ALL: [Self; 2319] = [
+    pub const ALL: [Self; 2339] = [
         Self::MwlDocumentEditorTitle,
         Self::MwlDocumentVersionFormat,
         Self::MwlDocumentFlagsHex,
@@ -6343,6 +6363,26 @@ impl ExtendedUiTextKey {
         Self::VanillaLevelSharedBackgroundReadOnly,
         Self::VanillaLevelLayer2ObjectCountFormat,
         Self::VanillaLevelBackgroundCanvas,
+        Self::VanillaLevelCanvasPlaceHelp,
+        Self::VanillaLevelCanvasSelectHelp,
+        Self::VanillaLevelDuplicateSelected,
+        Self::VanillaLevelDeleteSelected,
+        Self::VanillaLevelGamePixels,
+        Self::VanillaLevelViewport,
+        Self::VanillaLevelSelectionOverGame,
+        Self::VanillaLevelSelectionOverGameHelp,
+        Self::VanillaLevelCanvasTool,
+        Self::VanillaLevelSelectMove,
+        Self::VanillaLevelPlaceObject,
+        Self::VanillaLevelPlaceSprite,
+        Self::VanillaLevelPaintLayer2Tile,
+        Self::VanillaLevelPlaceLayer2Object,
+        Self::VanillaLevelZoom,
+        Self::VanillaLevelReset,
+        Self::VanillaLevelCamera,
+        Self::VanillaLevelScreenMinus,
+        Self::VanillaLevelScreenPlus,
+        Self::VanillaLevelEntrance,
     ];
 
     #[must_use]
@@ -9357,6 +9397,32 @@ impl ExtendedUiTextKey {
                 "{count} native Layer 2 object records are decoded and rendered."
             }
             Self::VanillaLevelBackgroundCanvas => "32×32 background canvas",
+            Self::VanillaLevelCanvasPlaceHelp => {
+                "Click a canvas tile to place the values from the matching editor below."
+            }
+            Self::VanillaLevelCanvasSelectHelp => {
+                "Select or drag an object/enemy; Insert places the active template at the pointer, right-click duplicates there, and Delete removes the selection."
+            }
+            Self::VanillaLevelDuplicateSelected => "Duplicate selected",
+            Self::VanillaLevelDeleteSelected => "Delete selected",
+            Self::VanillaLevelGamePixels => "Game pixels",
+            Self::VanillaLevelViewport => "256×224 viewport",
+            Self::VanillaLevelSelectionOverGame => "Selection over game",
+            Self::VanillaLevelSelectionOverGameHelp => {
+                "Draw selected object and sprite tiles over the live emulator frame"
+            }
+            Self::VanillaLevelCanvasTool => "Canvas tool:",
+            Self::VanillaLevelSelectMove => "Select / move",
+            Self::VanillaLevelPlaceObject => "Place object",
+            Self::VanillaLevelPlaceSprite => "Place sprite",
+            Self::VanillaLevelPaintLayer2Tile => "Paint Layer 2 tile",
+            Self::VanillaLevelPlaceLayer2Object => "Place Layer 2 object",
+            Self::VanillaLevelZoom => "Zoom:",
+            Self::VanillaLevelReset => "Reset",
+            Self::VanillaLevelCamera => "Camera:",
+            Self::VanillaLevelScreenMinus => "Screen −",
+            Self::VanillaLevelScreenPlus => "Screen +",
+            Self::VanillaLevelEntrance => "Entrance",
         }
     }
 
