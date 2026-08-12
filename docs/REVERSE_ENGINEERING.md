@@ -5020,12 +5020,14 @@ expanded level-ExAnimation installer. For the SA-1 branch, eight runtime words a
 `+$78F`, `+$7A7`, `+$824`, `+$894`, `+$8E3`, and `+$8F4` must each be at most `$1FFF` before Lunar
 Magic adds `$6000`; the compact value at `+$7D1` must be at most `$FF` before it adds `$3000`.
 ExLoROM routes those same nine sites through `PatchExLoRomRelocationValue` (`$00441F30`) instead.
+Instruction-level disassembly of that helper proves it reads a 16-bit word, requires it at most
+`$1FFF`, adds `$6000`, seeks back, and writes the converted word. Thus ExLoROM converts all nine
+sites uniformly; SA-1 alone uses the compact `< $0100`, `+$3000` rule at `+$7D1`.
 After those conversions, the suffix-present branch passes the mapped allocation address of core
 `+$C20` to `StoreMappedRelocationScalar` (`$00441AD0`). Instruction-level stream tracing proves its
 destination is core `+$8F6`: the immediately preceding conversion seeks to `+$8F4`, reads and writes
 one word, and leaves the stream positioned at `+$8F6`. Rust now models this exact SA-1 `$C40`
-payload and canonical 24-bit suffix pointer while retaining an explicit fail-closed ExLoROM branch
-until the replacement semantics of `PatchExLoRomRelocationValue` are independently authenticated.
+payload and canonical 24-bit suffix pointer for both mapper families.
 
 The ordinary path allocates three independent RATS owners in order: the `$C20` runtime, a
 `$15`-byte auxiliary initialized with `$FF` at every third byte, and the seven zeroed option

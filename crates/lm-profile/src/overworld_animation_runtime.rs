@@ -178,7 +178,10 @@ fn pointer_encoding(mapper: Mapper) -> PatchFixupEncoding {
     }
 }
 
-fn relocate_sa1_iram(bytes: &mut [u8]) -> Result<(), SmwUsV1OverworldAnimationRuntimeError> {
+fn relocate_mapper_iram(
+    bytes: &mut [u8],
+    mapper: Mapper,
+) -> Result<(), SmwUsV1OverworldAnimationRuntimeError> {
     if bytes.len() != SMW_US_V1_OVERWORLD_ANIMATION_RUNTIME_LEN {
         return Err(SmwUsV1OverworldAnimationRuntimeError::WrongMapperTemplateLength(bytes.len()));
     }
@@ -190,12 +193,27 @@ fn relocate_sa1_iram(bytes: &mut [u8]) -> Result<(), SmwUsV1OverworldAnimationRu
             );
         }
     }
-    let byte = bytes[SA1_IRAM_BYTE_OFFSET];
+    let compact =
+        u16::from_le_bytes([bytes[SA1_IRAM_BYTE_OFFSET], bytes[SA1_IRAM_BYTE_OFFSET + 1]]);
+    let compact_limit = if mapper == Mapper::Sa1 { 0xff } else { 0x1fff };
+    if compact > compact_limit {
+        return Err(
+            SmwUsV1OverworldAnimationRuntimeError::MapperIramWordOutOfRange {
+                offset: SA1_IRAM_BYTE_OFFSET,
+                value: compact,
+            },
+        );
+    }
     for offset in SA1_IRAM_WORD_OFFSETS {
         let value = u16::from_le_bytes([bytes[offset], bytes[offset + 1]]) + 0x6000;
         bytes[offset..offset + 2].copy_from_slice(&value.to_le_bytes());
     }
-    let relocated = u16::from(byte) + 0x3000;
+    let relocated = compact
+        + if mapper == Mapper::Sa1 {
+            0x3000
+        } else {
+            0x6000
+        };
     bytes[SA1_IRAM_BYTE_OFFSET..SA1_IRAM_BYTE_OFFSET + 2].copy_from_slice(&relocated.to_le_bytes());
     Ok(())
 }
@@ -206,8 +224,8 @@ fn runtime_payload() -> Result<PatchPayload, SmwUsV1OverworldAnimationRuntimeErr
 
 /// Builds the exact mapper-conditioned overworld-animation payload recovered from
 /// `InstallExAnimationRomPatch` (`$004B2440`). SA-1 applies the eight word and one compact-byte
-/// IRAM conversions before appending the shared `$20` compatibility suffix. ExLoROM's distinct
-/// conversion helper remains rejected until its replacement values are independently authenticated.
+/// IRAM conversions before appending the shared `$20` compatibility suffix. ExLoROM applies the
+/// same word conversion at all nine sites, while SA-1 uses its compact `$3000` form at `+$7D1`.
 pub fn smw_us_v1_overworld_animation_runtime_payload_for_mapper(
     mapper: Mapper,
     mapper_runtime: bool,
@@ -226,10 +244,7 @@ fn runtime_payload_for_mapper(
     bytes[0x61..0x63].copy_from_slice(&0_u16.to_le_bytes());
     if mapper_runtime {
         match mapper {
-            Mapper::Sa1 => relocate_sa1_iram(&mut bytes)?,
-            Mapper::ExLoRom => {
-                return Err(SmwUsV1OverworldAnimationRuntimeError::FixedAddress);
-            }
+            Mapper::Sa1 | Mapper::ExLoRom => relocate_mapper_iram(&mut bytes, mapper)?,
             Mapper::LoRom => {}
         }
         bytes.extend(
@@ -769,15 +784,45 @@ mod tests {
     }
 
     #[test]
-    fn mapper_payload_keeps_lorom_ordinary_and_rejects_unauthenticated_exlorom_conversion() {
+    fn exlorom_mapper_payload_uses_nine_word_conversions_and_canonical_pointers() {
+        let ordinary = smw_us_v1_overworld_animation_runtime_template().unwrap();
+        let payload =
+            smw_us_v1_overworld_animation_runtime_payload_for_mapper(Mapper::ExLoRom, true)
+                .unwrap();
+        assert_eq!(
+            payload.bytes.len(),
+            SMW_US_V1_OVERWORLD_ANIMATION_MAPPER_RUNTIME_LEN
+        );
+        for offset in SA1_IRAM_WORD_OFFSETS
+            .into_iter()
+            .chain([SA1_IRAM_BYTE_OFFSET])
+        {
+            let before = u16::from_le_bytes([ordinary[offset], ordinary[offset + 1]]);
+            let after = u16::from_le_bytes([payload.bytes[offset], payload.bytes[offset + 1]]);
+            assert_eq!(after, before + 0x6000, "IRAM word at +{offset:#x}");
+        }
+        assert!(
+            payload
+                .fixups
+                .iter()
+                .filter(|fixup| { matches!(fixup.encoding, PatchFixupEncoding::Long24) })
+                .count()
+                >= 1
+        );
+        assert!(
+            !payload
+                .fixups
+                .iter()
+                .any(|fixup| { matches!(fixup.encoding, PatchFixupEncoding::Long24LowBank) })
+        );
+    }
+
+    #[test]
+    fn mapper_payload_keeps_lorom_ordinary() {
         assert_eq!(
             smw_us_v1_overworld_animation_runtime_payload_for_mapper(Mapper::LoRom, false).unwrap(),
             runtime_payload().unwrap()
         );
-        assert!(matches!(
-            smw_us_v1_overworld_animation_runtime_payload_for_mapper(Mapper::ExLoRom, true),
-            Err(SmwUsV1OverworldAnimationRuntimeError::FixedAddress)
-        ));
     }
 
     #[test]
