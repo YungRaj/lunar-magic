@@ -2980,6 +2980,7 @@ pub enum ExtendedUiTextKey {
     RomExpandedSettingsDiscard,
     RomExpandedSettingsErrorTitle,
     RomExpandedSettingsOk,
+    RomExpandedSettingsGfxSlotFormat,
     ExpandedSettingsDocumentTitle,
     ExpandedSettingsRecoveredNotice,
     ExpandedSettingsApplyLayer3,
@@ -3335,7 +3336,7 @@ pub enum ExtendedUiTextKey {
 }
 
 impl ExtendedUiTextKey {
-    pub const ALL: [Self; 1631] = [
+    pub const ALL: [Self; 1632] = [
         Self::MwlDocumentEditorTitle,
         Self::MwlDocumentVersionFormat,
         Self::MwlDocumentFlagsHex,
@@ -4615,6 +4616,7 @@ impl ExtendedUiTextKey {
         Self::RomExpandedSettingsDiscard,
         Self::RomExpandedSettingsErrorTitle,
         Self::RomExpandedSettingsOk,
+        Self::RomExpandedSettingsGfxSlotFormat,
         Self::ExpandedSettingsDocumentTitle,
         Self::ExpandedSettingsRecoveredNotice,
         Self::ExpandedSettingsApplyLayer3,
@@ -6559,6 +6561,7 @@ impl ExtendedUiTextKey {
             Self::RomExpandedSettingsDiscard => "Discard",
             Self::RomExpandedSettingsErrorTitle => "ROM expanded-settings error",
             Self::RomExpandedSettingsOk => "OK",
+            Self::RomExpandedSettingsGfxSlotFormat => "{slot}",
             Self::ExpandedSettingsDocumentTitle => "Expanded Settings Editor",
             Self::ExpandedSettingsRecoveredNotice => "Recovered Layer 3 tilemap settings",
             Self::ExpandedSettingsApplyLayer3 => "Apply Layer 3 settings",

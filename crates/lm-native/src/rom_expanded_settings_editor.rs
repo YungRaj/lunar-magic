@@ -263,7 +263,10 @@ impl RomExpandedSettingsEditor {
                     .into_iter()
                     .enumerate()
                 {
-                    ui.label(label);
+                    ui.label(
+                        text(catalog, ExtendedUiTextKey::RomExpandedSettingsGfxSlotFormat)
+                            .replace("{slot}", label),
+                    );
                     ui.add(
                         egui::DragValue::new(&mut self.form.bypass_foreground_background[slot])
                             .hexadecimal(3, false, true)
@@ -274,7 +277,10 @@ impl RomExpandedSettingsEditor {
                     }
                 }
                 for (slot, label) in ["SP1", "SP2", "SP3", "SP4"].into_iter().enumerate() {
-                    ui.label(label);
+                    ui.label(
+                        text(catalog, ExtendedUiTextKey::RomExpandedSettingsGfxSlotFormat)
+                            .replace("{slot}", label),
+                    );
                     ui.add(
                         egui::DragValue::new(&mut self.form.bypass_sprites[slot])
                             .hexadecimal(3, false, true)
@@ -491,14 +497,18 @@ mod tests {
         {
             assert!(source.contains(&format!("ExtendedUiTextKey::{key:?}")));
         }
-        for bypass in [
-            "egui::Window::new(\"ROM Expanded Settings\")",
-            "ui.heading(\"Custom Layer 3 tilemap graphics\")",
-            "egui::Button::new(\"Stage Super GFX bypass\")",
-            "egui::Button::new(\"Commit to ROM\")",
-            "egui::Window::new(\"Discard staged ROM settings?\")",
+        for literal_widget in [
+            "Window::new(\"",
+            "ui.heading(\"",
+            "ui.label(\"",
+            "ui.button(\"",
+            "ui.small(\"",
+            "Button::new(\"",
         ] {
-            assert!(!source.contains(bypass));
+            assert!(
+                !source.contains(literal_widget),
+                "ROM expanded-settings editor regressed to fixed widget text: {literal_widget}"
+            );
         }
     }
 

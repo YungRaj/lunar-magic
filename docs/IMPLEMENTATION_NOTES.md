@@ -7837,3 +7837,12 @@ literal window, heading, label, button, and frame-prefix text across the complet
 Localization passes 28/28 active cases (one provenance ignore), the focused native source audits
 pass 2/2, native compilation passes, and renderer remains 237/237. Remaining native forms and
 retained live language-DLL evidence keep Localization Partial; aggregate parity remains 60/65.
+
+Localization coverage update (2026-08-12, installed-ROM expanded-settings editor): the final ten
+Super GFX bypass slot captions now flow through the typed `RomExpandedSettingsGfxSlotFormat`
+template instead of bypassing the active catalog as fixed `FG1`–`BG3` and `SP1`–`SP4` labels.
+The editor's source audit now rejects every literal window, heading, label, button, small-text, and
+`Button` caption in addition to requiring every `RomExpandedSettings*` key. The focused complete
+surface audit passes, localization passes 28/28 active cases (one provenance ignore), and renderer
+remains 237/237. Remaining native forms and retained live language-DLL evidence keep Localization
+Partial; aggregate parity remains 60/65.
