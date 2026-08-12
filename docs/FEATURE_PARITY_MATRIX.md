@@ -1175,6 +1175,14 @@ that every accepted historical 19/183/184/199/201/212-key prefix remains transla
 230-key suffix receives canonical English fallback. Localization 26/26 focused tests, updater 6/6,
 and renderer 237/237 pass. Other native forms and retained live language-DLL evidence remain open;
 Localization stays Partial and aggregate parity remains 60/65.
+Localization coverage update (2026-08-11, overworld event tilemaps): the complete 2,048-cell,
+three-plane editor now consumes twenty typed extension keys, including translated pristine versus
+installed storage state and all three plane choices, plus shared fixed-prefix confirmation actions.
+A literal-widget audit covers the full surface. Pristine installation, exact primary-high and
+secondary-high reopen, bounds/stale safety, complete three-plane recovery, and installed-plane
+preservation remain proven. Localization model 28/28, event-tilemap editor 5/5, and renderer
+237/237 pass. Other native forms and retained live language-DLL evidence remain open; Localization
+stays Partial and aggregate parity remains 60/65.
 
 Localization coverage update (2026-08-11, current-level palette transfer): the full Raw 257-color,
 TPL v2, and RGB24 import/export chooser—including format guidance, `.palmask` behavior, actions, and

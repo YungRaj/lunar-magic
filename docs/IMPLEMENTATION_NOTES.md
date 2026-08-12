@@ -7179,3 +7179,13 @@ model 28/28, event-reveal editor 5/5—including growth to 200 records and last-
 reopen, invalid/stale safety, pristine expanded-table recovery, and installed-table preservation—
 and renderer 237/237 pass. Localization stays Partial for remaining forms and live original
 language-DLL evidence; aggregate parity remains 60/65.
+
+Localization coverage update (2026-08-11, overworld event tilemaps): the complete 2,048-cell,
+three-plane editor now uses twenty typed extension keys for its window, buffer description, dynamic
+pristine/installed storage state, stale warning, tile/plane/value fields, all three plane choices,
+load/apply/commit actions, staged state, unsaved confirmation, and errors. Shared Cancel/Discard/OK
+retain fixed-prefix keys. A source audit rejects literal widget text and requires every
+`EventTilemap*` key. Localization model 28/28, event-tilemap editor 5/5—including pristine install,
+exact primary-high/secondary-high reopen, bounds/stale safety, complete three-plane recovery, and
+installed-plane preservation—and renderer 237/237 pass. Localization stays Partial for remaining
+forms and live original language-DLL evidence; aggregate parity remains 60/65.

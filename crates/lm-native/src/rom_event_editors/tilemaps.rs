@@ -1,6 +1,6 @@
 use crate::level_editor_forms::{parse_hex_u8, parse_hex_u16};
 use eframe::egui;
-use lm_app::{AppState, Command};
+use lm_app::{AppState, Command, ExtendedUiTextKey, LocalizationCatalog, UiTextKey};
 use lm_overworld::EventTilemapBuffers;
 use lm_profile::{SmwUsV1EventTilemapStorage, load_smw_us_v1_event_tilemaps};
 
@@ -142,49 +142,62 @@ impl RomOverworldEventTilemapEditor {
         &mut self,
         context: &egui::Context,
         revision: u64,
+        catalog: Option<&LocalizationCatalog>,
     ) -> (bool, Option<Command>) {
         let mut command = None;
         if self.workspace.is_some() {
-            egui::Window::new("ROM Overworld Event Tilemaps")
+            egui::Window::new(text(catalog, ExtendedUiTextKey::EventTilemapEditorTitle))
                 .default_size([540.0, 320.0])
-                .show(context, |ui| command = self.contents(ui, revision));
+                .show(context, |ui| command = self.contents(ui, revision, catalog));
         }
-        let approved = self.close_confirmation(context);
-        self.show_error(context);
+        let approved = self.close_confirmation(context, catalog);
+        self.show_error(context, catalog);
         (approved, command)
     }
 
-    fn contents(&mut self, ui: &mut egui::Ui, revision: u64) -> Option<Command> {
+    fn contents(
+        &mut self,
+        ui: &mut egui::Ui,
+        revision: u64,
+        catalog: Option<&LocalizationCatalog>,
+    ) -> Option<Command> {
         let workspace = self.workspace.as_ref()?;
         let stale = workspace.revision != revision;
         let dirty = workspace.current != workspace.original;
         let storage = match workspace.storage {
-            SmwUsV1EventTilemapStorage::Pristine => "pristine zero workspaces",
-            SmwUsV1EventTilemapStorage::Installed(_) => "installed compressed streams",
+            SmwUsV1EventTilemapStorage::Pristine => {
+                text(catalog, ExtendedUiTextKey::EventTilemapPristineStorage)
+            }
+            SmwUsV1EventTilemapStorage::Installed(_) => {
+                text(catalog, ExtendedUiTextKey::EventTilemapInstalledStorage)
+            }
         };
-        ui.label("All 2,048 tiles in the primary low/high and secondary high-byte planes.");
-        ui.label(format!("Loaded storage: {storage}"));
+        ui.label(text(catalog, ExtendedUiTextKey::EventTilemapDescription));
+        ui.label(
+            text(catalog, ExtendedUiTextKey::EventTilemapLoadedStorageFormat)
+                .replace("{storage}", &storage),
+        );
         if stale {
             ui.colored_label(
                 egui::Color32::YELLOW,
-                "The ROM changed after these buffers were opened. Reopen before committing.",
+                text(catalog, ExtendedUiTextKey::EventTilemapStaleNotice),
             );
         }
         egui::Grid::new("rom-overworld-event-tilemap-form")
             .striped(true)
             .show(ui, |ui| {
-                ui.label("Tile index (000–7FF)");
+                ui.label(text(catalog, ExtendedUiTextKey::EventTilemapTileIndex));
                 if ui.text_edit_singleline(&mut self.tile).changed() {
                     self.loaded = None;
                 }
                 ui.end_row();
-                ui.label("Plane");
+                ui.label(text(catalog, ExtendedUiTextKey::EventTilemapPlane));
                 egui::ComboBox::from_id_salt("event-tilemap-plane")
-                    .selected_text(self.plane.label())
+                    .selected_text(self.plane.label(catalog))
                     .show_ui(ui, |ui| {
                         for plane in Plane::ALL {
                             if ui
-                                .selectable_value(&mut self.plane, plane, plane.label())
+                                .selectable_value(&mut self.plane, plane, plane.label(catalog))
                                 .changed()
                             {
                                 self.loaded = None;
@@ -192,26 +205,34 @@ impl RomOverworldEventTilemapEditor {
                         }
                     });
                 ui.end_row();
-                ui.label("Byte value");
+                ui.label(text(catalog, ExtendedUiTextKey::EventTilemapByteValue));
                 ui.text_edit_singleline(&mut self.value);
                 ui.end_row();
             });
         let mut command = None;
         ui.horizontal(|ui| {
-            if ui.button("Load byte").clicked()
+            if ui
+                .button(text(catalog, ExtendedUiTextKey::EventTilemapLoadByte))
+                .clicked()
                 && let Err(error) = self.load_selected()
             {
                 self.error = Some(error);
             }
             if ui
-                .add_enabled(!stale, egui::Button::new("Apply byte"))
+                .add_enabled(
+                    !stale,
+                    egui::Button::new(text(catalog, ExtendedUiTextKey::EventTilemapApplyByte)),
+                )
                 .clicked()
                 && let Err(error) = self.apply_selected()
             {
                 self.error = Some(error);
             }
             if ui
-                .add_enabled(dirty && !stale, egui::Button::new("Commit tilemaps to ROM"))
+                .add_enabled(
+                    dirty && !stale,
+                    egui::Button::new(text(catalog, ExtendedUiTextKey::EventTilemapCommit)),
+                )
                 .clicked()
             {
                 match self.prepare_commit(revision) {
@@ -219,7 +240,14 @@ impl RomOverworldEventTilemapEditor {
                     Err(error) => self.error = Some(error),
                 }
             }
-            ui.label(if dirty { "Staged" } else { "Unchanged" });
+            ui.label(text(
+                catalog,
+                if dirty {
+                    ExtendedUiTextKey::EventTilemapStaged
+                } else {
+                    ExtendedUiTextKey::EventTilemapUnchanged
+                },
+            ));
         });
         command
     }
@@ -279,21 +307,37 @@ impl RomOverworldEventTilemapEditor {
         }))
     }
 
-    fn close_confirmation(&mut self, context: &egui::Context) -> bool {
+    fn close_confirmation(
+        &mut self,
+        context: &egui::Context,
+        catalog: Option<&LocalizationCatalog>,
+    ) -> bool {
         let Some(pending) = self.pending_close else {
             return false;
         };
         let mut approved = false;
-        egui::Window::new("Discard event-tilemap changes?")
+        egui::Window::new(text(catalog, ExtendedUiTextKey::EventTilemapDiscardTitle))
             .collapsible(false)
             .resizable(false)
             .show(context, |ui| {
-                ui.label("The staged tilemap buffers have not been committed.");
+                ui.label(text(catalog, ExtendedUiTextKey::EventTilemapUnsavedNotice));
                 ui.horizontal(|ui| {
-                    if ui.button("Cancel").clicked() {
+                    if ui
+                        .button(crate::frontend_ui::localized_text(
+                            catalog,
+                            UiTextKey::CommonCancel,
+                        ))
+                        .clicked()
+                    {
                         self.pending_close = None;
                     }
-                    if ui.button("Discard").clicked() {
+                    if ui
+                        .button(crate::frontend_ui::localized_text(
+                            catalog,
+                            UiTextKey::UnsavedDiscard,
+                        ))
+                        .clicked()
+                    {
                         self.clear();
                         approved = pending == PendingClose::Application;
                     }
@@ -302,14 +346,23 @@ impl RomOverworldEventTilemapEditor {
         approved
     }
 
-    fn show_error(&mut self, context: &egui::Context) {
+    fn show_error(&mut self, context: &egui::Context, catalog: Option<&LocalizationCatalog>) {
         if let Some(error) = self.error.clone() {
-            egui::Window::new("Event-tilemap editor error").show(context, |ui| {
-                ui.label(error);
-                if ui.button("OK").clicked() {
-                    self.error = None;
-                }
-            });
+            egui::Window::new(text(catalog, ExtendedUiTextKey::EventTilemapErrorTitle)).show(
+                context,
+                |ui| {
+                    ui.label(error);
+                    if ui
+                        .button(crate::frontend_ui::localized_text(
+                            catalog,
+                            UiTextKey::CommonOk,
+                        ))
+                        .clicked()
+                    {
+                        self.error = None;
+                    }
+                },
+            );
         }
     }
 
@@ -327,13 +380,17 @@ impl RomOverworldEventTilemapEditor {
 impl Plane {
     const ALL: [Self; 3] = [Self::PrimaryLow, Self::PrimaryHigh, Self::SecondaryHigh];
 
-    const fn label(self) -> &'static str {
+    fn label(self, catalog: Option<&LocalizationCatalog>) -> String {
         match self {
-            Self::PrimaryLow => "Primary low byte",
-            Self::PrimaryHigh => "Primary high byte",
-            Self::SecondaryHigh => "Secondary high byte",
+            Self::PrimaryLow => text(catalog, ExtendedUiTextKey::EventTilemapPrimaryLow),
+            Self::PrimaryHigh => text(catalog, ExtendedUiTextKey::EventTilemapPrimaryHigh),
+            Self::SecondaryHigh => text(catalog, ExtendedUiTextKey::EventTilemapSecondaryHigh),
         }
     }
+}
+
+fn text(catalog: Option<&LocalizationCatalog>, key: ExtendedUiTextKey) -> String {
+    crate::frontend_ui::extended_localized_text(catalog, key)
 }
 
 fn byte(buffers: &EventTilemapBuffers, (tile, plane): (usize, Plane)) -> u8 {
@@ -356,6 +413,28 @@ fn set_byte(buffers: &mut EventTilemapBuffers, (tile, plane): (usize, Plane), va
 mod tests {
     use super::*;
     use std::path::PathBuf;
+
+    #[test]
+    fn event_tilemap_editor_surface_has_no_literal_widget_text() {
+        let source = include_str!("tilemaps.rs");
+        for literal_widget in [
+            "egui::Window::new(\"",
+            "ui.button(\"",
+            "egui::Button::new(\"",
+            "ui.label(\"",
+        ] {
+            assert!(
+                !source.contains(literal_widget),
+                "event-tilemap editor bypasses typed localization with {literal_widget}"
+            );
+        }
+        for key in ExtendedUiTextKey::ALL
+            .into_iter()
+            .filter(|key| format!("{key:?}").starts_with("EventTilemap"))
+        {
+            assert!(source.contains(&format!("ExtendedUiTextKey::{key:?}")));
+        }
+    }
 
     #[test]
     fn pristine_planes_install_and_semantically_reopen_exact_bytes() {

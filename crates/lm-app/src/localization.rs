@@ -1807,10 +1807,30 @@ pub enum ExtendedUiTextKey {
     EventRevealDiscardTitle,
     EventRevealUnsavedNotice,
     EventRevealErrorTitle,
+    EventTilemapEditorTitle,
+    EventTilemapDescription,
+    EventTilemapLoadedStorageFormat,
+    EventTilemapPristineStorage,
+    EventTilemapInstalledStorage,
+    EventTilemapStaleNotice,
+    EventTilemapTileIndex,
+    EventTilemapPlane,
+    EventTilemapPrimaryLow,
+    EventTilemapPrimaryHigh,
+    EventTilemapSecondaryHigh,
+    EventTilemapByteValue,
+    EventTilemapLoadByte,
+    EventTilemapApplyByte,
+    EventTilemapCommit,
+    EventTilemapStaged,
+    EventTilemapUnchanged,
+    EventTilemapDiscardTitle,
+    EventTilemapUnsavedNotice,
+    EventTilemapErrorTitle,
 }
 
 impl ExtendedUiTextKey {
-    pub const ALL: [Self; 106] = [
+    pub const ALL: [Self; 126] = [
         Self::TilemapTitleScreenName,
         Self::TilemapCreditsName,
         Self::TilemapEditorTitleFormat,
@@ -1917,6 +1937,26 @@ impl ExtendedUiTextKey {
         Self::EventRevealDiscardTitle,
         Self::EventRevealUnsavedNotice,
         Self::EventRevealErrorTitle,
+        Self::EventTilemapEditorTitle,
+        Self::EventTilemapDescription,
+        Self::EventTilemapLoadedStorageFormat,
+        Self::EventTilemapPristineStorage,
+        Self::EventTilemapInstalledStorage,
+        Self::EventTilemapStaleNotice,
+        Self::EventTilemapTileIndex,
+        Self::EventTilemapPlane,
+        Self::EventTilemapPrimaryLow,
+        Self::EventTilemapPrimaryHigh,
+        Self::EventTilemapSecondaryHigh,
+        Self::EventTilemapByteValue,
+        Self::EventTilemapLoadByte,
+        Self::EventTilemapApplyByte,
+        Self::EventTilemapCommit,
+        Self::EventTilemapStaged,
+        Self::EventTilemapUnchanged,
+        Self::EventTilemapDiscardTitle,
+        Self::EventTilemapUnsavedNotice,
+        Self::EventTilemapErrorTitle,
     ];
 
     #[must_use]
@@ -2060,6 +2100,32 @@ impl ExtendedUiTextKey {
             Self::EventRevealDiscardTitle => "Discard event-reveal changes?",
             Self::EventRevealUnsavedNotice => "The staged reveal table has not been committed.",
             Self::EventRevealErrorTitle => "Event-reveal editor error",
+            Self::EventTilemapEditorTitle => "ROM Overworld Event Tilemaps",
+            Self::EventTilemapDescription => {
+                "All 2,048 tiles in the primary low/high and secondary high-byte planes."
+            }
+            Self::EventTilemapLoadedStorageFormat => "Loaded storage: {storage}",
+            Self::EventTilemapPristineStorage => "pristine zero workspaces",
+            Self::EventTilemapInstalledStorage => "installed compressed streams",
+            Self::EventTilemapStaleNotice => {
+                "The ROM changed after these buffers were opened. Reopen before committing."
+            }
+            Self::EventTilemapTileIndex => "Tile index (000–7FF)",
+            Self::EventTilemapPlane => "Plane",
+            Self::EventTilemapPrimaryLow => "Primary low byte",
+            Self::EventTilemapPrimaryHigh => "Primary high byte",
+            Self::EventTilemapSecondaryHigh => "Secondary high byte",
+            Self::EventTilemapByteValue => "Byte value",
+            Self::EventTilemapLoadByte => "Load byte",
+            Self::EventTilemapApplyByte => "Apply byte",
+            Self::EventTilemapCommit => "Commit tilemaps to ROM",
+            Self::EventTilemapStaged => "Staged",
+            Self::EventTilemapUnchanged => "Unchanged",
+            Self::EventTilemapDiscardTitle => "Discard event-tilemap changes?",
+            Self::EventTilemapUnsavedNotice => {
+                "The staged tilemap buffers have not been committed."
+            }
+            Self::EventTilemapErrorTitle => "Event-tilemap editor error",
         }
     }
 
