@@ -12771,6 +12771,55 @@ fn vertical_entrance_marker_pixels(
     )
 }
 
+fn nearest_selector(target: u16, values: &[u16]) -> u8 {
+    values
+        .iter()
+        .enumerate()
+        .min_by_key(|(index, value)| (target.abs_diff(**value), *index))
+        .map_or(0, |(index, _)| u8::try_from(index).unwrap_or(0))
+}
+
+fn main_entrance_at_marker(
+    mut entrance: VanillaMainEntrance,
+    x: u16,
+    y: u16,
+    vertical: bool,
+    alternate_vertical_layout: bool,
+) -> VanillaMainEntrance {
+    let y_values = std::array::from_fn::<_, 16, _>(|index| {
+        u16::from(VANILLA_ENTRANCE_Y_HIGH[index]) * 0x100 + u16::from(VANILLA_ENTRANCE_Y_LOW[index])
+    });
+    let (screen, x_target, y_target) = if vertical {
+        (y / 0x100, x, y % 0x100)
+    } else {
+        (x / 0x100, x % 0x100, y)
+    };
+    let x_values = std::array::from_fn::<_, 8, _>(|index| {
+        let high = if vertical {
+            if alternate_vertical_layout {
+                VANILLA_ALTERNATE_VERTICAL_ENTRANCE_X_HIGH[index]
+            } else {
+                VANILLA_VERTICAL_ENTRANCE_X_HIGH[index]
+            }
+        } else {
+            0
+        };
+        u16::from(high) * 0x100 + u16::from(VANILLA_ENTRANCE_X_LOW[index])
+    });
+    let y_selector = if vertical {
+        nearest_selector(y_target, &VANILLA_ENTRANCE_Y_LOW.map(u16::from))
+    } else {
+        nearest_selector(y_target, &y_values)
+    };
+    entrance.position = entrance.position & 0xf0 | y_selector;
+    entrance.vertical_settings =
+        entrance.vertical_settings & 0xf8 | nearest_selector(x_target, &x_values);
+    entrance.level_mode_and_screen = entrance.level_mode_and_screen & 0xc0
+        | if vertical { 0x20 } else { 0 }
+        | u8::try_from(screen.min(0x1f)).unwrap_or(0x1f);
+    entrance
+}
+
 /// Returns the vanilla midway entrance marker. In an untouched SMW ROM, midway entrances share
 /// the main entrance's X/Y and pose settings; the high nibble of `$05:D7A1` selects their screen.
 /// This is the `DAT_00600246 >> 4` path in Lunar Magic 3.63's
@@ -23069,6 +23118,27 @@ mod tests {
             midway_entrance_label_pixels(entrance, false, false),
             (0xf2, 0x130)
         );
+    }
+
+    #[test]
+    fn dragged_main_entrance_snaps_to_representable_horizontal_and_vertical_selectors() {
+        let source = VanillaMainEntrance {
+            position: 0xa0,
+            vertical_settings: 0xf8,
+            screen_and_method: 0x45,
+            level_mode_and_screen: 0xc0,
+        };
+        let horizontal = main_entrance_at_marker(source, 0x381, 0x131, false, false);
+        assert_eq!(horizontal.position, 0xa9);
+        assert_eq!(horizontal.vertical_settings, 0xf9);
+        assert_eq!(horizontal.level_mode_and_screen, 0xc3);
+        assert_eq!(horizontal.screen_and_method, source.screen_and_method);
+
+        let vertical = main_entrance_at_marker(source, 0x171, 0x561, true, false);
+        assert_eq!(vertical.position, 0xa2);
+        assert_eq!(vertical.vertical_settings, 0xfd);
+        assert_eq!(vertical.level_mode_and_screen, 0xe5);
+        assert_eq!(vertical.screen_and_method, source.screen_and_method);
     }
 
     #[test]
