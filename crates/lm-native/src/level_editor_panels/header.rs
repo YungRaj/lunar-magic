@@ -1,10 +1,11 @@
 use eframe::egui;
-use lm_app::CompleteLevelDocumentEdit;
+use lm_app::{CompleteLevelDocumentEdit, ExtendedUiTextKey as Key, LocalizationCatalog};
 use lm_level::{CompleteLevelFile, Layer1VerticalScrollMode, LegacyHeaderEdit, LevelPropertyEdit};
 
 pub(super) fn show_header(
     ui: &mut egui::Ui,
     level: &CompleteLevelFile,
+    catalog: Option<&LocalizationCatalog>,
 ) -> Option<Result<Vec<CompleteLevelDocumentEdit>, String>> {
     let header = level.0.header.legacy;
     let mut level_number = level.0.number;
@@ -23,21 +24,24 @@ pub(super) fn show_header(
         header.object_tileset(),
     ];
     let labels = [
-        "Background palette",
-        "Last screen",
-        "Level mode",
-        "Background color",
-        "Sprite tileset",
-        "Default music selector",
-        "Time limit selector",
-        "Sprite palette",
-        "Foreground palette",
-        "Object tileset",
+        text(catalog, Key::LevelCoreBackgroundPalette),
+        text(catalog, Key::LevelCoreLastScreen),
+        text(catalog, Key::LevelCoreLevelMode),
+        text(catalog, Key::LevelCoreBackgroundColor),
+        text(catalog, Key::LevelCoreSpriteTileset),
+        text(catalog, Key::LevelCoreDefaultMusicSelector),
+        text(catalog, Key::LevelCoreTimeLimitSelector),
+        text(catalog, Key::LevelCoreSpritePalette),
+        text(catalog, Key::LevelCoreForegroundPalette),
+        text(catalog, Key::LevelCoreObjectTileset),
     ];
     let mut changed = false;
     let mut layer1_vertical_scroll = header.layer1_vertical_scroll().raw();
     changed |= ui
-        .add(egui::Slider::new(&mut level_number, 0..=u16::MAX).text("Level number"))
+        .add(
+            egui::Slider::new(&mut level_number, 0..=u16::MAX)
+                .text(text(catalog, Key::LevelCoreLevelNumber)),
+        )
         .changed();
     changed |= crate::native_level_document_form::show_sprite_header_form(
         ui,
@@ -52,11 +56,14 @@ pub(super) fn show_header(
             _ => 7,
         };
         changed |= ui
-            .add(egui::Slider::new(value, 0..=maximum).text(labels[index]))
+            .add(egui::Slider::new(value, 0..=maximum).text(&labels[index]))
             .changed();
     }
     changed |= ui
-        .add(egui::Slider::new(&mut layer1_vertical_scroll, 0..=3).text("Layer 1 vertical scroll"))
+        .add(
+            egui::Slider::new(&mut layer1_vertical_scroll, 0..=3)
+                .text(text(catalog, Key::LevelCoreLayer1VerticalScroll)),
+        )
         .changed();
     changed.then(|| {
         let sprite_header = sprite_header.header().map_err(|error| error.to_string())?;
@@ -84,4 +91,11 @@ pub(super) fn show_header(
         }));
         Ok(edits)
     })
+}
+
+fn text(catalog: Option<&LocalizationCatalog>, key: Key) -> String {
+    catalog.map_or_else(
+        || key.english().to_owned(),
+        |catalog| catalog.extended_text(key).to_owned(),
+    )
 }

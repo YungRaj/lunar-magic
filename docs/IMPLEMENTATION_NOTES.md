@@ -8029,3 +8029,14 @@ rejects literal button, label, heading, slider, and `Button` captions and requir
 identity. Native compilation, the focused audit, localization 28/28 active cases (one provenance
 ignore), and renderer 237/237 pass. Other unaudited frontend modules and the retained translated
 language-DLL gesture keep Localization Partial; aggregate parity remains 60/65.
+
+Localization coverage update (2026-08-12, complete-level core panels): thirty-eight appended
+`LevelCore*` identities cover the six parent tabs, Layer 1/2 object streams, object and sprite
+record selectors and lossless byte forms, stream-header reporting, clipboard/sequence actions,
+entrance kinds and fields, and every editable legacy-header property. The live catalog now reaches
+the header, object, sprite, and entrance children through the existing complete-level panel stack,
+with independent English fallback for every absent translation. A three-module source audit rejects
+literal widget captions and requires every family identity. The focused audit passes, localization
+passes 28/28 active cases (one provenance ignore), native compilation passes, and renderer remains
+237/237. Other unaudited frontend modules and retained live language-DLL evidence keep Localization
+Partial; aggregate parity remains 60/65.
