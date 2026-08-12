@@ -2472,10 +2472,16 @@ pub enum ExtendedUiTextKey {
     BuiltInRuntimeMigrateLayer2Format100,
     BuiltInRuntimeMigrateLayer2Format101,
     BuiltInRuntimeMigrateLayer2Format102,
+    RomLoaderMissingHeaderTitle,
+    RomLoaderMissingHeaderQuestion,
+    RomLoaderAddHeader,
+    RomLoaderCancel,
+    RomLoaderOpeningTitle,
+    RomLoaderOpeningProgress,
 }
 
 impl ExtendedUiTextKey {
-    pub const ALL: [Self; 771] = [
+    pub const ALL: [Self; 777] = [
         Self::TilemapTitleScreenName,
         Self::TilemapCreditsName,
         Self::TilemapEditorTitleFormat,
@@ -3247,6 +3253,12 @@ impl ExtendedUiTextKey {
         Self::BuiltInRuntimeMigrateLayer2Format100,
         Self::BuiltInRuntimeMigrateLayer2Format101,
         Self::BuiltInRuntimeMigrateLayer2Format102,
+        Self::RomLoaderMissingHeaderTitle,
+        Self::RomLoaderMissingHeaderQuestion,
+        Self::RomLoaderAddHeader,
+        Self::RomLoaderCancel,
+        Self::RomLoaderOpeningTitle,
+        Self::RomLoaderOpeningProgress,
     ];
 
     #[must_use]
@@ -4355,6 +4367,14 @@ impl ExtendedUiTextKey {
             Self::BuiltInRuntimeMigrateLayer2Format102 => {
                 "The authenticated legacy Layer 2 format $102 pointer table and descriptors will be converted to format $103 together with the exact current runtime hook."
             }
+            Self::RomLoaderMissingHeaderTitle => "Missing Copier Header",
+            Self::RomLoaderMissingHeaderQuestion => {
+                "This ROM has no 0x200-byte copier header. Add the header now?"
+            }
+            Self::RomLoaderAddHeader => "Add Header",
+            Self::RomLoaderCancel => "Cancel",
+            Self::RomLoaderOpeningTitle => "Opening ROM",
+            Self::RomLoaderOpeningProgress => "Reading and validating the selected ROM…",
         }
     }
 

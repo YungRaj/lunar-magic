@@ -1433,6 +1433,14 @@ paths remove only the create-new destination. The trust core passes 6/6. Native 
 replacement/relaunch, signing, and live proof remain missing, so Release stays Partial and aggregate
 parity remains 60/65.
 
+Localization coverage update (2026-08-12, ROM loading): missing-header confirmation and bounded
+open progress now use six typed extension keys, with the selected catalog threaded through the
+effects host. Supported/malformed bounded reads, exact request routing, canonical Lunar Magic
+header synthesis, prompted/silent behavior, and changed-file overwrite protection remain proven.
+The focused loader passes 6/6, localization model 28/28, and renderer 237/237. Other native forms
+and retained live language-DLL evidence keep Localization Partial, so aggregate parity remains
+60/65.
+
 Native update-consent update (2026-08-11): a localized Help-menu route now accepts an explicitly
 selected bounded local update manifest, resolves its declared same-directory archive, streams a
 complete preflight, and displays the verified offer before a distinct folder-selection/staging

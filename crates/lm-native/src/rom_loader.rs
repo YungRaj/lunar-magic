@@ -1,7 +1,7 @@
 //! Bounded ROM reading and application-neutral project preparation on one worker.
 
 use eframe::egui;
-use lm_app::{AppState, PreparedRomOpen};
+use lm_app::{AppState, ExtendedUiTextKey, LocalizationCatalog, PreparedRomOpen};
 use std::{
     path::PathBuf,
     sync::mpsc::{self, Receiver, TryRecvError},
@@ -86,21 +86,35 @@ impl RomLoader {
         Ok(())
     }
 
-    pub(crate) fn show(&mut self, context: &egui::Context) -> Option<RomLoadCompletion> {
+    pub(crate) fn show(
+        &mut self,
+        context: &egui::Context,
+        catalog: Option<&LocalizationCatalog>,
+    ) -> Option<RomLoadCompletion> {
         let mut completion = self.poll();
         if self.header_prompt.is_some() {
             let mut accept = false;
             let mut reject = false;
-            egui::Window::new("Missing Copier Header")
-                .collapsible(false)
-                .resizable(false)
-                .show(context, |ui| {
-                    ui.label("This ROM has no 0x200-byte copier header. Add the header now?");
-                    ui.horizontal(|ui| {
-                        accept = ui.button("Add Header").clicked();
-                        reject = ui.button("Cancel").clicked();
-                    });
+            egui::Window::new(text(
+                catalog,
+                ExtendedUiTextKey::RomLoaderMissingHeaderTitle,
+            ))
+            .collapsible(false)
+            .resizable(false)
+            .show(context, |ui| {
+                ui.label(text(
+                    catalog,
+                    ExtendedUiTextKey::RomLoaderMissingHeaderQuestion,
+                ));
+                ui.horizontal(|ui| {
+                    accept = ui
+                        .button(text(catalog, ExtendedUiTextKey::RomLoaderAddHeader))
+                        .clicked();
+                    reject = ui
+                        .button(text(catalog, ExtendedUiTextKey::RomLoaderCancel))
+                        .clicked();
                 });
+            });
             if accept {
                 let prompt = self.header_prompt.take().expect("visible prompt exists");
                 if let Err(error) = self.start_worker(
@@ -127,11 +141,11 @@ impl RomLoader {
             }
         }
         if self.running.is_some() {
-            egui::Window::new("Opening ROM")
+            egui::Window::new(text(catalog, ExtendedUiTextKey::RomLoaderOpeningTitle))
                 .collapsible(false)
                 .resizable(false)
                 .show(context, |ui| {
-                    ui.label("Reading and validating the selected ROM…");
+                    ui.label(text(catalog, ExtendedUiTextKey::RomLoaderOpeningProgress));
                 });
             context.request_repaint_after(std::time::Duration::from_millis(100));
         }
@@ -172,6 +186,10 @@ impl RomLoader {
             }),
         }
     }
+}
+
+fn text(catalog: Option<&LocalizationCatalog>, key: ExtendedUiTextKey) -> String {
+    crate::frontend_ui::extended_localized_text(catalog, key)
 }
 
 fn prepare_rom_open(
@@ -230,6 +248,25 @@ mod tests {
     };
 
     static NEXT: AtomicU64 = AtomicU64::new(0);
+
+    #[test]
+    fn complete_rom_loader_form_uses_every_typed_key() {
+        let source = include_str!("rom_loader.rs");
+        for key in ExtendedUiTextKey::ALL
+            .into_iter()
+            .filter(|key| format!("{key:?}").starts_with("RomLoader"))
+        {
+            assert!(source.contains(&format!("ExtendedUiTextKey::{key:?}")));
+        }
+        for hard_coded_caption in [
+            "Window::new(\"Missing Copier Header\")",
+            "ui.button(\"Add Header\")",
+            "Window::new(\"Opening ROM\")",
+            "ui.label(\"Reading and validating the selected ROM…\")",
+        ] {
+            assert!(!source.contains(hard_coded_caption));
+        }
+    }
 
     fn path() -> PathBuf {
         std::env::temp_dir().join(format!(

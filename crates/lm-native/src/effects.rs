@@ -124,7 +124,8 @@ impl EffectState {
     }
 
     pub(crate) fn show_rom_loader(&mut self, context: &egui::Context, app: &mut AppState) {
-        let Some(completion) = self.rom_loader.show(context) else {
+        let catalog = app.localization().cloned();
+        let Some(completion) = self.rom_loader.show(context, catalog.as_ref()) else {
             return;
         };
         self.complete_rom_load(app, context, completion);

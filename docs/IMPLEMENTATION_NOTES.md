@@ -7421,6 +7421,17 @@ migration, header variants, occupied expansion, reopen, and byte-exact Undo. Loc
 variants; Localization remains Partial for other native forms and retained live language-DLL
 evidence; aggregate parity remains 60/65.
 
+Localization coverage update (2026-08-12, ROM loading): six appended `RomLoader*` keys cover the
+complete asynchronous loader UI: missing-header confirmation, add/cancel actions, and bounded
+read/validation progress. The effects host snapshots the active catalog before borrowing mutable
+application state, so the prompt and worker window consistently use the selected language. Loader,
+identity, filesystem, and cancellation errors remain technical payloads. The complete-family source
+audit and semantic suite pass 6/6, including bounded supported/malformed reads, exact pending-request
+routing, Lunar Magic copier-header synthesis, prompted and silent paths, and refusal to overwrite a
+ROM changed after confirmation. Localization passes 28/28 and renderer passes 237/237. Other native
+forms and retained live language-DLL evidence keep Localization Partial; aggregate parity remains
+60/65.
+
 Localization coverage update (2026-08-12, IPS application): nine appended `IpsApply*` keys cover
 the complete revision-bound IPS application form: logical-offset/header preservation, dynamic
 source/target/change counts, identity and bank-shape requirements, stale state, transactional
