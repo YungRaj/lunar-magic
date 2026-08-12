@@ -1,6 +1,8 @@
 use super::{AppState, PendingClose, PendingLoad, RomPaletteEditor, Workspace, egui};
 use crate::document_loader::{BoundedRead, LoadedDocument};
-use lm_app::{PaletteOwnershipFile, RevisionProfileControllers};
+use lm_app::{
+    ExtendedUiTextKey as Key, LocalizationCatalog, PaletteOwnershipFile, RevisionProfileControllers,
+};
 use lm_rom::RomImage;
 
 impl RomPaletteEditor {
@@ -83,21 +85,31 @@ impl RomPaletteEditor {
         }
     }
 
-    pub(super) fn close_confirmation(&mut self, context: &egui::Context) -> bool {
+    pub(super) fn close_confirmation(
+        &mut self,
+        context: &egui::Context,
+        catalog: Option<&LocalizationCatalog>,
+    ) -> bool {
         let Some(pending) = self.pending_close else {
             return false;
         };
         let mut approved = false;
-        egui::Window::new("Discard staged palette changes?")
+        egui::Window::new(super::text(catalog, Key::RomPaletteDiscardTitle))
             .collapsible(false)
             .resizable(false)
             .show(context, |ui| {
-                ui.label("These changes have not been committed to the ROM.");
+                ui.label(super::text(catalog, Key::RomPaletteDiscardNotice));
                 ui.horizontal(|ui| {
-                    if ui.button("Cancel").clicked() {
+                    if ui
+                        .button(super::text(catalog, Key::RomPaletteCancel))
+                        .clicked()
+                    {
                         self.pending_close = None;
                     }
-                    if ui.button("Discard").clicked() {
+                    if ui
+                        .button(super::text(catalog, Key::RomPaletteDiscard))
+                        .clicked()
+                    {
                         self.clear();
                         approved = pending == PendingClose::Application;
                     }
@@ -106,14 +118,21 @@ impl RomPaletteEditor {
         approved
     }
 
-    pub(super) fn show_error(&mut self, context: &egui::Context) {
+    pub(super) fn show_error(
+        &mut self,
+        context: &egui::Context,
+        catalog: Option<&LocalizationCatalog>,
+    ) {
         if let Some(error) = self.error.clone() {
-            egui::Window::new("ROM palette error").show(context, |ui| {
-                ui.label(error);
-                if ui.button("OK").clicked() {
-                    self.error = None;
-                }
-            });
+            egui::Window::new(super::text(catalog, Key::RomPaletteErrorTitle)).show(
+                context,
+                |ui| {
+                    ui.label(error);
+                    if ui.button(super::text(catalog, Key::RomPaletteOk)).clicked() {
+                        self.error = None;
+                    }
+                },
+            );
         }
     }
 

@@ -1,8 +1,8 @@
 use crate::{document_loader::DocumentLoader, native_clipboard};
 use eframe::egui;
 use lm_app::{
-    AppState, Command, PaletteController, PaletteControllerEdit, ProfiledControllerSnapshot,
-    RevisionProfile,
+    AppState, Command, ExtendedUiTextKey as Key, LocalizationCatalog, PaletteController,
+    PaletteControllerEdit, ProfiledControllerSnapshot, RevisionProfile,
 };
 use lm_graphics::{Bgr555, PaletteChange, PaletteEntryOwner, Rgb8};
 
@@ -149,6 +149,7 @@ impl RomPaletteEditor {
         &mut self,
         context: &egui::Context,
         revision: u64,
+        catalog: Option<&LocalizationCatalog>,
     ) -> (bool, Option<Command>) {
         if let Some(result) = self.loader.show(context) {
             self.finish_ownership_load(result, revision);
@@ -169,19 +170,24 @@ impl RomPaletteEditor {
             None => None,
         };
         if self.workspace.is_some() {
-            egui::Window::new("ROM Palette Editor")
+            egui::Window::new(text(catalog, Key::RomPaletteTitle))
                 .default_size([600.0, 560.0])
                 .show(context, |ui| {
-                    if let Some(ui_command) = self.contents(ui, revision) {
+                    if let Some(ui_command) = self.contents(ui, revision, catalog) {
                         command = Some(ui_command);
                     }
                 });
         }
-        let approved = self.close_confirmation(context);
-        self.show_error(context);
+        let approved = self.close_confirmation(context, catalog);
+        self.show_error(context, catalog);
         (approved, command)
     }
-    fn contents(&mut self, ui: &mut egui::Ui, revision: u64) -> Option<Command> {
+    fn contents(
+        &mut self,
+        ui: &mut egui::Ui,
+        revision: u64,
+        catalog: Option<&LocalizationCatalog>,
+    ) -> Option<Command> {
         let pasted = ui.input(|input| {
             input.events.iter().find_map(|event| match event {
                 egui::Event::Paste(text) => Some(text.clone()),
@@ -195,20 +201,20 @@ impl RomPaletteEditor {
         if stale {
             ui.colored_label(
                 egui::Color32::YELLOW,
-                "The ROM changed; reopen before editing or committing.",
+                text(catalog, Key::RomPaletteStaleNotice),
             );
         }
-        self.raw_palette_file_controls(ui, stale, revision);
-        self.palette_mask_controls(ui);
+        self.raw_palette_file_controls(ui, stale, revision, catalog);
+        self.palette_mask_controls(ui, catalog);
         let palette_locked = stale || self.transfer_loader.is_running();
         ui.add_enabled_ui(!palette_locked, |ui| {
-            self.palette_surface(ui, palette_locked, pasted);
+            self.palette_surface(ui, palette_locked, pasted, catalog);
         });
         ui.separator();
         ui.horizontal(|ui| {
-            ui.label("Allocation logical PC hex");
+            ui.label(text(catalog, Key::RomPaletteAllocation));
             ui.text_edit_singleline(&mut self.search_start);
-            ui.label("..");
+            ui.label(text(catalog, Key::RomPaletteRangeSeparator));
             ui.text_edit_singleline(&mut self.search_end);
         });
         let modified = self
@@ -218,7 +224,7 @@ impl RomPaletteEditor {
         if ui
             .add_enabled(
                 modified && !stale && !self.manifest_loader.is_running() && !transfer_busy,
-                egui::Button::new("Commit palette to ROM"),
+                egui::Button::new(text(catalog, Key::RomPaletteCommit)),
             )
             .clicked()
         {
@@ -232,7 +238,7 @@ impl RomPaletteEditor {
         if ui
             .add_enabled(
                 modified && !stale && !self.manifest_loader.is_running() && !transfer_busy,
-                egui::Button::new("Commit and reclaim"),
+                egui::Button::new(text(catalog, Key::RomPaletteCommitReclaim)),
             )
             .clicked()
         {
@@ -240,14 +246,23 @@ impl RomPaletteEditor {
                 self.error = Some(error);
             }
         }
-        ui.label(if modified {
-            "Staged palette changes"
-        } else {
-            "No staged changes"
-        });
+        ui.label(text(
+            catalog,
+            if modified {
+                Key::RomPaletteStaged
+            } else {
+                Key::RomPaletteUnmodified
+            },
+        ));
         None
     }
-    fn palette_surface(&mut self, ui: &mut egui::Ui, stale: bool, pasted: Option<String>) {
+    fn palette_surface(
+        &mut self,
+        ui: &mut egui::Ui,
+        stale: bool,
+        pasted: Option<String>,
+        catalog: Option<&LocalizationCatalog>,
+    ) {
         let Some(workspace) = self.workspace.as_ref() else {
             self.error = Some("palette workspace is closed".into());
             return;
@@ -276,7 +291,7 @@ impl RomPaletteEditor {
             }
         }
         if let Some(color) = colors.get(self.selected).copied() {
-            self.selected_color_controls(ui, stale, color);
+            self.selected_color_controls(ui, stale, color, catalog);
         }
     }
 
@@ -388,18 +403,25 @@ impl RomPaletteEditor {
         native_paste
     }
 
-    fn selected_color_controls(&mut self, ui: &mut egui::Ui, stale: bool, color: Bgr555) {
+    fn selected_color_controls(
+        &mut self,
+        ui: &mut egui::Ui,
+        stale: bool,
+        color: Bgr555,
+        catalog: Option<&LocalizationCatalog>,
+    ) {
         let rgb = color.to_rgb8();
         let mut value = [rgb.red, rgb.green, rgb.blue];
-        ui.label(format!(
-            "Color {:03X} — raw BGR555 {:04X}",
-            self.selected, color.0
-        ));
+        ui.label(
+            text(catalog, Key::RomPaletteColorFormat)
+                .replace("{index}", &format!("{:03X}", self.selected))
+                .replace("{value}", &format!("{:04X}", color.0)),
+        );
         let owner = self
             .workspace
             .as_ref()
             .and_then(|workspace| workspace.controller.ownership().owner(self.selected));
-        let editable = ownership::show(ui, owner);
+        let editable = ownership::show(ui, owner, catalog);
         let row_colors: Option<[Bgr555; 16]> = palette_row(
             &self
                 .workspace
@@ -421,14 +443,20 @@ impl RomPaletteEditor {
                 })
         });
         ui.horizontal(|ui| {
-            if ui.button("Copy color").clicked() {
+            if ui
+                .button(text(catalog, Key::NativeAssetsPaletteCopyColor))
+                .clicked()
+            {
                 if let Err(error) = native_clipboard::copy_palette_color_to_system(ui.ctx(), color)
                 {
                     self.error = Some(error);
                 }
             }
             if ui
-                .add_enabled(!stale && editable, egui::Button::new("Paste color"))
+                .add_enabled(
+                    !stale && editable,
+                    egui::Button::new(text(catalog, Key::NativeAssetsPalettePasteColor)),
+                )
                 .clicked()
             {
                 match native_clipboard::request_palette_color_paste(ui.ctx()) {
@@ -443,7 +471,10 @@ impl RomPaletteEditor {
                 }
             }
             if ui
-                .add_enabled(row_colors.is_some(), egui::Button::new("Copy row"))
+                .add_enabled(
+                    row_colors.is_some(),
+                    egui::Button::new(text(catalog, Key::NativeAssetsPaletteCopyRow)),
+                )
                 .clicked()
             {
                 if let Err(error) = native_clipboard::copy_palette_row_to_system(
@@ -454,7 +485,10 @@ impl RomPaletteEditor {
                 }
             }
             if ui
-                .add_enabled(!stale && row_editable, egui::Button::new("Paste row"))
+                .add_enabled(
+                    !stale && row_editable,
+                    egui::Button::new(text(catalog, Key::NativeAssetsPalettePasteRow)),
+                )
                 .clicked()
             {
                 match native_clipboard::request_palette_row_paste(ui.ctx()) {
@@ -476,9 +510,7 @@ impl RomPaletteEditor {
                 }
             }
         });
-        ui.small(
-            "Ctrl+left/right copies or pastes a color; add Alt for its complete 16-color row.",
-        );
+        ui.small(text(catalog, Key::RomPaletteShortcutNotice));
         if ui
             .add_enabled_ui(!stale && editable, |ui| {
                 ui.color_edit_button_srgb(&mut value)
@@ -497,24 +529,33 @@ impl RomPaletteEditor {
         }
     }
 
-    fn palette_mask_controls(&mut self, ui: &mut egui::Ui) {
+    fn palette_mask_controls(&mut self, ui: &mut egui::Ui, catalog: Option<&LocalizationCatalog>) {
         ui.horizontal(|ui| {
-            ui.toggle_value(&mut self.palette_mask_edit, "Palette mask edit mode");
+            ui.toggle_value(
+                &mut self.palette_mask_edit,
+                text(catalog, Key::RomPaletteMaskMode),
+            );
             if ui
-                .add_enabled(self.palette_mask_edit, egui::Button::new("Enable all"))
+                .add_enabled(
+                    self.palette_mask_edit,
+                    egui::Button::new(text(catalog, Key::RomPaletteEnableAll)),
+                )
                 .clicked()
             {
                 self.palette_mask.fill(1);
             }
             if ui
-                .add_enabled(self.palette_mask_edit, egui::Button::new("Disable all"))
+                .add_enabled(
+                    self.palette_mask_edit,
+                    egui::Button::new(text(catalog, Key::RomPaletteDisableAll)),
+                )
                 .clicked()
             {
                 self.palette_mask.fill(0);
             }
         });
         if self.palette_mask_edit {
-            ui.small("Click a color to enable/disable it for .palmask export; hold Alt to change its entire row.");
+            ui.small(text(catalog, Key::RomPaletteMaskNotice));
         }
     }
     fn apply(&mut self, edit: PaletteControllerEdit) {
@@ -526,6 +567,10 @@ impl RomPaletteEditor {
             self.error = Some(error.to_string());
         }
     }
+}
+
+fn text(catalog: Option<&LocalizationCatalog>, key: Key) -> String {
+    crate::frontend_ui::extended_localized_text(catalog, key)
 }
 
 fn toggle_palette_mask(mask: &mut [u8], index: usize, whole_row: bool) {
@@ -591,6 +636,50 @@ fn palette_paste_changes(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn complete_rom_palette_surface_uses_every_typed_key() {
+        let sources = [
+            include_str!("rom_palette_editor.rs"),
+            include_str!("rom_palette_editor/lifecycle.rs"),
+            include_str!("rom_palette_editor/ownership.rs"),
+            include_str!("rom_palette_editor/transfer.rs"),
+        ]
+        .join("\n");
+        for key in Key::ALL
+            .into_iter()
+            .filter(|key| format!("{key:?}").starts_with("RomPalette"))
+        {
+            assert!(
+                sources.contains(&format!("Key::{key:?}")),
+                "missing ROM palette label {key:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn complete_rom_palette_surface_has_no_literal_widget_text() {
+        let sources = [
+            include_str!("rom_palette_editor.rs"),
+            include_str!("rom_palette_editor/lifecycle.rs"),
+            include_str!("rom_palette_editor/ownership.rs"),
+            include_str!("rom_palette_editor/transfer.rs"),
+        ]
+        .join("\n");
+        for literal_widget in [
+            "Window::new(\"",
+            "ui.heading(\"",
+            "ui.label(\"",
+            "ui.button(\"",
+            "ui.small(\"",
+            "Button::new(\"",
+        ] {
+            assert!(
+                !sources.contains(literal_widget),
+                "ROM palette editor regressed to fixed widget text: {literal_widget}"
+            );
+        }
+    }
     use crate::native_clipboard;
     use lm_graphics::{Bgr555, PaletteOwnership};
 

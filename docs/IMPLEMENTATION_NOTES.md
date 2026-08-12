@@ -7126,6 +7126,18 @@ whole-surface audits pass, localization passes 28/28 active cases (one provenanc
 compile passes, and renderer passes 237/237. Other native forms and retained live language-DLL
 evidence keep Localization Partial; aggregate parity remains 60/65.
 
+Localization coverage update (2026-08-12, installed-ROM palette workflow): thirty-one appended
+`RomPalette*` identities cover the editor shell, stale-ROM warning, allocation range, commit and
+reclaim actions, staged state, mask editing, close/error dialogs, exact selected-row transfer,
+257-word raw transfer, TPL v2, RGB24, and `.palmask` behavior. Identical ownership states and
+color/row clipboard actions reuse the verified aggregate palette identities. Color/record indices
+and BGR555 words remain exact substitutions; `X`, `•`, and empty swatch marks remain
+language-neutral grid state symbols. Four-module audits require every ROM-palette key and reject
+fixed window, heading, label, button, and help text. Both audits pass, localization passes 28/28
+active cases (one provenance ignore), native compile passes, and renderer passes 237/237. Other
+native forms and retained live language-DLL evidence keep Localization Partial; aggregate parity
+remains 60/65.
+
 Localization coverage update (2026-08-12, custom-object library): twenty-seven appended
 `CustomObject*` keys cover synchronized entry count/search/navigation, multi-object group bytes,
 Unicode descriptions, typed object copy/paste, replace/remove/insert/move, UTF-8 BOM and LF/CRLF

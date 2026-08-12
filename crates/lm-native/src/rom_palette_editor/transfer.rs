@@ -1,6 +1,7 @@
 use super::RomPaletteEditor;
 use crate::{dialogs, document_loader::BoundedRead, persistence_worker::PersistenceTarget};
 use eframe::egui;
+use lm_app::{ExtendedUiTextKey as Key, LocalizationCatalog};
 use lm_graphics::{
     Bgr555, PaletteChange, PaletteMaskFile, RawSnesPaletteFile, RgbChannelExpansion,
     RgbPaletteFile, TplPaletteFile,
@@ -92,6 +93,7 @@ impl RomPaletteEditor {
         ui: &mut egui::Ui,
         stale: bool,
         revision: u64,
+        catalog: Option<&LocalizationCatalog>,
     ) {
         let busy = self.transfer_loader.is_running()
             || self.transfer_persistence.is_running()
@@ -104,7 +106,7 @@ impl RomPaletteEditor {
             if ui
                 .add_enabled(
                     !stale && !busy && complete_row,
-                    egui::Button::new("Import selected row…"),
+                    egui::Button::new(super::text(catalog, Key::RomPaletteImportRow)),
                 )
                 .clicked()
                 && let Some(path) = dialogs::choose_snes_palette_row()
@@ -121,17 +123,20 @@ impl RomPaletteEditor {
             if ui
                 .add_enabled(
                     !stale && !busy && complete_row,
-                    egui::Button::new("Export selected row…"),
+                    egui::Button::new(super::text(catalog, Key::RomPaletteExportRow)),
                 )
                 .clicked()
             {
                 self.start_row_export(revision, row_start);
             }
         });
-        ui.small("Row transfer matches Lunar Magic's exact 32-byte, 16-color little-endian SNES format and targets the row selected when loading starts.");
+        ui.small(super::text(catalog, Key::RomPaletteRowTransferNotice));
         ui.horizontal(|ui| {
             if ui
-                .add_enabled(!stale && !busy, egui::Button::new("Import raw palette…"))
+                .add_enabled(
+                    !stale && !busy,
+                    egui::Button::new(super::text(catalog, Key::RomPaletteImportRaw)),
+                )
                 .clicked()
                 && let Some(path) = dialogs::choose_raw_palette_document()
             {
@@ -143,14 +148,17 @@ impl RomPaletteEditor {
                 );
             }
             if ui
-                .add_enabled(!stale && !busy, egui::Button::new("Export raw palette…"))
+                .add_enabled(
+                    !stale && !busy,
+                    egui::Button::new(super::text(catalog, Key::RomPaletteExportRaw)),
+                )
                 .clicked()
             {
                 self.start_raw_export(revision);
             }
         });
-        ui.small("Raw transfer preserves all 257 native words and automatically applies a same-name .palmask sidecar when present.");
-        self.supported_palette_file_controls(ui, stale, busy, revision);
+        ui.small(super::text(catalog, Key::RomPaletteRawTransferNotice));
+        self.supported_palette_file_controls(ui, stale, busy, revision, catalog);
     }
 
     fn supported_palette_file_controls(
@@ -159,10 +167,14 @@ impl RomPaletteEditor {
         stale: bool,
         busy: bool,
         revision: u64,
+        catalog: Option<&LocalizationCatalog>,
     ) {
         ui.horizontal(|ui| {
             if ui
-                .add_enabled(!stale && !busy, egui::Button::new("Import TPL v2…"))
+                .add_enabled(
+                    !stale && !busy,
+                    egui::Button::new(super::text(catalog, Key::RomPaletteImportTpl)),
+                )
                 .clicked()
                 && let Some(path) = dialogs::choose_tpl_palette_document()
             {
@@ -174,7 +186,10 @@ impl RomPaletteEditor {
                 );
             }
             if ui
-                .add_enabled(!stale && !busy, egui::Button::new("Export TPL v2…"))
+                .add_enabled(
+                    !stale && !busy,
+                    egui::Button::new(super::text(catalog, Key::RomPaletteExportTpl)),
+                )
                 .clicked()
             {
                 self.start_tpl_export(revision);
@@ -182,7 +197,10 @@ impl RomPaletteEditor {
         });
         ui.horizontal(|ui| {
             if ui
-                .add_enabled(!stale && !busy, egui::Button::new("Import RGB24…"))
+                .add_enabled(
+                    !stale && !busy,
+                    egui::Button::new(super::text(catalog, Key::RomPaletteImportRgb)),
+                )
                 .clicked()
                 && let Some(path) = dialogs::choose_rgb_palette_document()
             {
@@ -194,13 +212,16 @@ impl RomPaletteEditor {
                 );
             }
             if ui
-                .add_enabled(!stale && !busy, egui::Button::new("Export RGB24…"))
+                .add_enabled(
+                    !stale && !busy,
+                    egui::Button::new(super::text(catalog, Key::RomPaletteExportRgb)),
+                )
                 .clicked()
             {
                 self.start_rgb_export(revision);
             }
         });
-        ui.small("TPL/RGB transfer uses retained installed-to-supported ordering; an automatic same-name .palmask preserves unselected colors and clears selected row-zero entries 1–15.");
+        ui.small(super::text(catalog, Key::RomPaletteSupportedTransferNotice));
     }
 
     fn start_palette_import(

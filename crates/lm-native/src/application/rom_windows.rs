@@ -399,7 +399,20 @@ impl NativeApplication {
         if quit {
             self.request_quit(context);
         }
-        show_rom_editor!(self, context, rom_palette_editor);
+        let (quit, command) = self.rom_palette_editor.show(
+            context,
+            self.app.project_revision(),
+            self.app.localization(),
+        );
+        if let Some(command) = command
+            && self.try_dispatch(context, command)
+        {
+            self.rom_palette_editor.commit_succeeded();
+            self.renderer.invalidate();
+        }
+        if quit {
+            self.request_quit(context);
+        }
         let (quit, command) = self.rom_graphics_editor.show(
             context,
             &self.app,
