@@ -7359,6 +7359,17 @@ regressions. Overworld messages pass 6/6, boss messages pass 6/6, localization p
 renderer passes 237/237. Other native forms and retained live language-DLL evidence keep
 Localization Partial; aggregate parity remains 60/65.
 
+Localization coverage update (2026-08-11, Lunar Magic ROM metadata): twenty-four appended
+`RomMetadata*` keys cover the fixed-region editor's title, description, four-value summary template,
+stale state, compact and ranged region names, byte fields/actions, commit/status, unsaved dialog,
+and error lifecycle. The application call site now threads the active catalog; raw metadata values
+and validation/I/O errors remain technical payloads. A dedicated complete-family source audit
+rejects representative literal regressions. The retained-LM-3.63 editor suite passes 5/5 across
+protected bits, lossless opaque-byte edits, exact commit/reopen, and recovery of all three owned
+regions without touching the live project; localization passes 28/28 and renderer 237/237. Other
+native forms and live language-DLL evidence keep Localization Partial; aggregate parity remains
+60/65.
+
 Localization coverage update (2026-08-11, installed expanded settings): thirty typed extension
 keys cover the complete profile-backed editor surface—exact record guidance, Layer 3 semantic
 controls, ten bypass assignments, sprite-boundary behavior, sixteen raw words, staging/commit,

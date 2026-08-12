@@ -3,7 +3,7 @@ mod workspace;
 
 use eframe::egui;
 use form::MetadataByteForm;
-use lm_app::{AppState, Command};
+use lm_app::{AppState, Command, ExtendedUiTextKey, LocalizationCatalog};
 use workspace::{LunarMagicMetadataWorkspace, MetadataRegion};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -121,54 +121,76 @@ impl RomLunarMagicMetadataEditor {
         &mut self,
         context: &egui::Context,
         project_revision: u64,
+        catalog: Option<&LocalizationCatalog>,
     ) -> (bool, Option<Command>) {
         let mut command = None;
         if self.workspace.is_some() {
-            egui::Window::new("Lunar Magic ROM Metadata")
+            egui::Window::new(text(catalog, ExtendedUiTextKey::RomMetadataTitle))
                 .default_size([570.0, 370.0])
-                .show(context, |ui| command = self.contents(ui, project_revision));
+                .show(context, |ui| {
+                    command = self.contents(ui, project_revision, catalog)
+                });
         }
-        let approved = self.close_confirmation(context);
-        self.show_error(context);
+        let approved = self.close_confirmation(context, catalog);
+        self.show_error(context, catalog);
         (approved, command)
     }
 
-    fn contents(&mut self, ui: &mut egui::Ui, project_revision: u64) -> Option<Command> {
+    fn contents(
+        &mut self,
+        ui: &mut egui::Ui,
+        project_revision: u64,
+        catalog: Option<&LocalizationCatalog>,
+    ) -> Option<Command> {
         let workspace = self.workspace.as_ref()?;
         let stale = workspace.is_stale(project_revision);
         let dirty = workspace.is_dirty();
         let metadata = workspace.metadata();
-        ui.label("Lossless fixed LM metadata. Unknown bytes remain deliberately opaque.");
-        ui.monospace(format!(
-            "features={:08X}  compression={:02X}  mapping={:02X}  checksum-status={:02X}",
-            metadata.feature_bits(),
-            metadata.compression_configuration(),
-            metadata.mapping_configuration(),
-            metadata.checksum_status()
-        ));
+        ui.label(text(catalog, ExtendedUiTextKey::RomMetadataDescription));
+        ui.monospace(
+            text(catalog, ExtendedUiTextKey::RomMetadataSummary)
+                .replace("{features}", &format!("{:08X}", metadata.feature_bits()))
+                .replace(
+                    "{compression}",
+                    &format!("{:02X}", metadata.compression_configuration()),
+                )
+                .replace(
+                    "{mapping}",
+                    &format!("{:02X}", metadata.mapping_configuration()),
+                )
+                .replace("{checksum}", &format!("{:02X}", metadata.checksum_status())),
+        );
         if stale {
             ui.colored_label(
                 egui::Color32::YELLOW,
-                "The ROM changed after this metadata was opened. Reopen before committing.",
+                text(catalog, ExtendedUiTextKey::RomMetadataStaleNotice),
             );
         }
-        self.byte_form(ui);
+        self.byte_form(ui, catalog);
         let mut command = None;
         ui.horizontal(|ui| {
-            if ui.button("Load byte").clicked()
+            if ui
+                .button(text(catalog, ExtendedUiTextKey::RomMetadataLoadByte))
+                .clicked()
                 && let Err(error) = self.load_selected()
             {
                 self.error = Some(error);
             }
             if ui
-                .add_enabled(!stale, egui::Button::new("Apply byte"))
+                .add_enabled(
+                    !stale,
+                    egui::Button::new(text(catalog, ExtendedUiTextKey::RomMetadataApplyByte)),
+                )
                 .clicked()
                 && let Err(error) = self.apply_selected()
             {
                 self.error = Some(error);
             }
             if ui
-                .add_enabled(dirty && !stale, egui::Button::new("Commit metadata to ROM"))
+                .add_enabled(
+                    dirty && !stale,
+                    egui::Button::new(text(catalog, ExtendedUiTextKey::RomMetadataCommit)),
+                )
                 .clicked()
             {
                 match self.prepare_commit(project_revision) {
@@ -176,46 +198,53 @@ impl RomLunarMagicMetadataEditor {
                     Err(error) => self.error = Some(error),
                 }
             }
-            ui.label(if dirty { "Staged" } else { "Unchanged" });
+            ui.label(text(
+                catalog,
+                if dirty {
+                    ExtendedUiTextKey::RomMetadataStaged
+                } else {
+                    ExtendedUiTextKey::RomMetadataUnchanged
+                },
+            ));
         });
         command
     }
 
-    fn byte_form(&mut self, ui: &mut egui::Ui) {
+    fn byte_form(&mut self, ui: &mut egui::Ui, catalog: Option<&LocalizationCatalog>) {
         egui::Grid::new("rom-lunar-magic-metadata-form")
             .striped(true)
             .show(ui, |ui| {
-                ui.label("Region");
+                ui.label(text(catalog, ExtendedUiTextKey::RomMetadataRegion));
                 let before = self.form.region;
                 egui::ComboBox::from_id_salt("lm-metadata-region")
-                    .selected_text(region_name(self.form.region))
+                    .selected_text(region_name(catalog, self.form.region))
                     .show_ui(ui, |ui| {
                         ui.selectable_value(
                             &mut self.form.region,
                             MetadataRegion::Attribution,
-                            "Attribution (00–9F)",
+                            text(catalog, ExtendedUiTextKey::RomMetadataAttributionRange),
                         );
                         ui.selectable_value(
                             &mut self.form.region,
                             MetadataRegion::VramVersion,
-                            "VRAM version (00)",
+                            text(catalog, ExtendedUiTextKey::RomMetadataVramVersionRange),
                         );
                         ui.selectable_value(
                             &mut self.form.region,
                             MetadataRegion::FeatureRecord,
-                            "Feature record (00–18)",
+                            text(catalog, ExtendedUiTextKey::RomMetadataFeatureRecordRange),
                         );
                     });
                 if before != self.form.region {
                     self.form.selection_changed();
                 }
                 ui.end_row();
-                ui.label("Byte index");
+                ui.label(text(catalog, ExtendedUiTextKey::RomMetadataByteIndex));
                 if ui.text_edit_singleline(&mut self.form.index).changed() {
                     self.form.selection_changed();
                 }
                 ui.end_row();
-                ui.label("Byte value");
+                ui.label(text(catalog, ExtendedUiTextKey::RomMetadataByteValue));
                 ui.text_edit_singleline(&mut self.form.value);
                 ui.end_row();
             });
@@ -244,21 +273,31 @@ impl RomLunarMagicMetadataEditor {
             .prepare_commit(project_revision)
     }
 
-    fn close_confirmation(&mut self, context: &egui::Context) -> bool {
+    fn close_confirmation(
+        &mut self,
+        context: &egui::Context,
+        catalog: Option<&LocalizationCatalog>,
+    ) -> bool {
         let Some(pending) = self.pending_close else {
             return false;
         };
         let mut approved = false;
-        egui::Window::new("Discard Lunar Magic metadata changes?")
+        egui::Window::new(text(catalog, ExtendedUiTextKey::RomMetadataDiscardTitle))
             .collapsible(false)
             .resizable(false)
             .show(context, |ui| {
-                ui.label("The staged fixed metadata has not been committed.");
+                ui.label(text(catalog, ExtendedUiTextKey::RomMetadataUnsavedNotice));
                 ui.horizontal(|ui| {
-                    if ui.button("Cancel").clicked() {
+                    if ui
+                        .button(text(catalog, ExtendedUiTextKey::RomMetadataCancel))
+                        .clicked()
+                    {
                         self.pending_close = None;
                     }
-                    if ui.button("Discard").clicked() {
+                    if ui
+                        .button(text(catalog, ExtendedUiTextKey::RomMetadataDiscard))
+                        .clicked()
+                    {
                         self.clear();
                         approved = pending == PendingClose::Application;
                     }
@@ -267,14 +306,20 @@ impl RomLunarMagicMetadataEditor {
         approved
     }
 
-    fn show_error(&mut self, context: &egui::Context) {
+    fn show_error(&mut self, context: &egui::Context, catalog: Option<&LocalizationCatalog>) {
         if let Some(error) = self.error.clone() {
-            egui::Window::new("Lunar Magic metadata editor error").show(context, |ui| {
-                ui.label(error);
-                if ui.button("OK").clicked() {
-                    self.error = None;
-                }
-            });
+            egui::Window::new(text(catalog, ExtendedUiTextKey::RomMetadataErrorTitle)).show(
+                context,
+                |ui| {
+                    ui.label(error);
+                    if ui
+                        .button(text(catalog, ExtendedUiTextKey::RomMetadataOk))
+                        .clicked()
+                    {
+                        self.error = None;
+                    }
+                },
+            );
         }
     }
 
@@ -289,12 +334,19 @@ impl RomLunarMagicMetadataEditor {
     }
 }
 
-const fn region_name(region: MetadataRegion) -> &'static str {
-    match region {
-        MetadataRegion::Attribution => "Attribution",
-        MetadataRegion::VramVersion => "VRAM version",
-        MetadataRegion::FeatureRecord => "Feature record",
-    }
+fn text(catalog: Option<&LocalizationCatalog>, key: ExtendedUiTextKey) -> String {
+    crate::frontend_ui::extended_localized_text(catalog, key)
+}
+
+fn region_name(catalog: Option<&LocalizationCatalog>, region: MetadataRegion) -> String {
+    text(
+        catalog,
+        match region {
+            MetadataRegion::Attribution => ExtendedUiTextKey::RomMetadataAttribution,
+            MetadataRegion::VramVersion => ExtendedUiTextKey::RomMetadataVramVersion,
+            MetadataRegion::FeatureRecord => ExtendedUiTextKey::RomMetadataFeatureRecord,
+        },
+    )
 }
 
 #[cfg(test)]
@@ -302,6 +354,25 @@ mod tests {
     use super::*;
     use lm_profile::smw_us_v1_lunar_magic_metadata_layout;
     use std::{fs, path::PathBuf};
+
+    #[test]
+    fn complete_rom_metadata_form_uses_every_typed_key() {
+        let source = include_str!("rom_lunar_magic_metadata_editor.rs");
+        for key in ExtendedUiTextKey::ALL
+            .into_iter()
+            .filter(|key| format!("{key:?}").starts_with("RomMetadata"))
+        {
+            assert!(source.contains(&format!("ExtendedUiTextKey::{key:?}")));
+        }
+        for bypass in [
+            "Window::new(\"Lunar Magic ROM Metadata\")",
+            "ui.button(\"Load byte\")",
+            "Button::new(\"Commit metadata to ROM\")",
+            "Window::new(\"Discard Lunar Magic metadata changes?\")",
+        ] {
+            assert!(!source.contains(bypass));
+        }
+    }
 
     #[test]
     fn real_lm363_metadata_edit_commits_reopens_and_closes() {

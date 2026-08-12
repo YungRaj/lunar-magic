@@ -2332,10 +2332,34 @@ pub enum ExtendedUiTextKey {
     MessageEditorCancel,
     MessageEditorDiscard,
     MessageEditorOk,
+    RomMetadataTitle,
+    RomMetadataDescription,
+    RomMetadataSummary,
+    RomMetadataStaleNotice,
+    RomMetadataRegion,
+    RomMetadataAttribution,
+    RomMetadataAttributionRange,
+    RomMetadataVramVersion,
+    RomMetadataVramVersionRange,
+    RomMetadataFeatureRecord,
+    RomMetadataFeatureRecordRange,
+    RomMetadataByteIndex,
+    RomMetadataByteValue,
+    RomMetadataLoadByte,
+    RomMetadataApplyByte,
+    RomMetadataCommit,
+    RomMetadataStaged,
+    RomMetadataUnchanged,
+    RomMetadataDiscardTitle,
+    RomMetadataUnsavedNotice,
+    RomMetadataCancel,
+    RomMetadataDiscard,
+    RomMetadataErrorTitle,
+    RomMetadataOk,
 }
 
 impl ExtendedUiTextKey {
-    pub const ALL: [Self; 631] = [
+    pub const ALL: [Self; 655] = [
         Self::TilemapTitleScreenName,
         Self::TilemapCreditsName,
         Self::TilemapEditorTitleFormat,
@@ -2967,6 +2991,30 @@ impl ExtendedUiTextKey {
         Self::MessageEditorCancel,
         Self::MessageEditorDiscard,
         Self::MessageEditorOk,
+        Self::RomMetadataTitle,
+        Self::RomMetadataDescription,
+        Self::RomMetadataSummary,
+        Self::RomMetadataStaleNotice,
+        Self::RomMetadataRegion,
+        Self::RomMetadataAttribution,
+        Self::RomMetadataAttributionRange,
+        Self::RomMetadataVramVersion,
+        Self::RomMetadataVramVersionRange,
+        Self::RomMetadataFeatureRecord,
+        Self::RomMetadataFeatureRecordRange,
+        Self::RomMetadataByteIndex,
+        Self::RomMetadataByteValue,
+        Self::RomMetadataLoadByte,
+        Self::RomMetadataApplyByte,
+        Self::RomMetadataCommit,
+        Self::RomMetadataStaged,
+        Self::RomMetadataUnchanged,
+        Self::RomMetadataDiscardTitle,
+        Self::RomMetadataUnsavedNotice,
+        Self::RomMetadataCancel,
+        Self::RomMetadataDiscard,
+        Self::RomMetadataErrorTitle,
+        Self::RomMetadataOk,
     ];
 
     #[must_use]
@@ -3847,6 +3895,36 @@ impl ExtendedUiTextKey {
             Self::MessageEditorCancel => "Cancel",
             Self::MessageEditorDiscard => "Discard",
             Self::MessageEditorOk => "OK",
+            Self::RomMetadataTitle => "Lunar Magic ROM Metadata",
+            Self::RomMetadataDescription => {
+                "Lossless fixed LM metadata. Unknown bytes remain deliberately opaque."
+            }
+            Self::RomMetadataSummary => {
+                "features={features}  compression={compression}  mapping={mapping}  checksum-status={checksum}"
+            }
+            Self::RomMetadataStaleNotice => {
+                "The ROM changed after this metadata was opened. Reopen before committing."
+            }
+            Self::RomMetadataRegion => "Region",
+            Self::RomMetadataAttribution => "Attribution",
+            Self::RomMetadataAttributionRange => "Attribution (00–9F)",
+            Self::RomMetadataVramVersion => "VRAM version",
+            Self::RomMetadataVramVersionRange => "VRAM version (00)",
+            Self::RomMetadataFeatureRecord => "Feature record",
+            Self::RomMetadataFeatureRecordRange => "Feature record (00–18)",
+            Self::RomMetadataByteIndex => "Byte index",
+            Self::RomMetadataByteValue => "Byte value",
+            Self::RomMetadataLoadByte => "Load byte",
+            Self::RomMetadataApplyByte => "Apply byte",
+            Self::RomMetadataCommit => "Commit metadata to ROM",
+            Self::RomMetadataStaged => "Staged",
+            Self::RomMetadataUnchanged => "Unchanged",
+            Self::RomMetadataDiscardTitle => "Discard Lunar Magic metadata changes?",
+            Self::RomMetadataUnsavedNotice => "The staged fixed metadata has not been committed.",
+            Self::RomMetadataCancel => "Cancel",
+            Self::RomMetadataDiscard => "Discard",
+            Self::RomMetadataErrorTitle => "Lunar Magic metadata editor error",
+            Self::RomMetadataOk => "OK",
         }
     }
 

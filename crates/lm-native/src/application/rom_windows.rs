@@ -60,7 +60,20 @@ impl NativeApplication {
         }
         show_rom_editor!(self, context, rom_legacy_fg_bg_bypass_editor);
         show_rom_editor!(self, context, rom_legacy_sprite_bypass_editor);
-        show_rom_editor!(self, context, rom_lunar_magic_metadata_editor);
+        let (quit, command) = self.rom_lunar_magic_metadata_editor.show(
+            context,
+            self.app.project_revision(),
+            self.app.localization(),
+        );
+        if let Some(command) = command
+            && self.try_dispatch(context, command)
+        {
+            self.rom_lunar_magic_metadata_editor.commit_succeeded();
+            self.renderer.invalidate();
+        }
+        if quit {
+            self.request_quit(context);
+        }
         let (quit, command) = self.rom_shared_palette_editor.show(
             context,
             self.app.project_revision(),
