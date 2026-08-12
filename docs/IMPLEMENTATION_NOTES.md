@@ -6854,5 +6854,6 @@ and the resulting warning all present one translated option identity.
 Five additional live Tools controls now consume their byte-authenticated `$041F` entries:
 Remember Window Size `$2294`, Show ID in Add Object/Sprite Editors `$2296`, Auto-Deselect on Editor
 Select `$2298`, Convert Berry GFX Tile `$22A5`, and Check if ROMFileName.ips Exists `$22AC`.
-“Correct Fatal Errors in Level Data” remains native English because that exact phrase is absent from
-the original resource; no unrelated control is reused as localization evidence.
+The complete resource extraction also identifies `$22A1` as the shorter original “Correct Fatal
+Errors” label; the native option now uses that authenticated text instead of its longer Rust-only
+wording. No unrelated control is reused as localization evidence.

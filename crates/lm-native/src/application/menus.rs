@@ -604,11 +604,10 @@ impl NativeApplication {
                 self.set_check_object_placement_on_save(check_object_placement);
             }
             let mut correct_fatal_errors = self.correct_fatal_errors.unwrap_or(true);
+            let correct_fatal_errors_label =
+                self.original_general_option_text(0x22a1, "Correct Fatal Errors");
             if ui
-                .checkbox(
-                    &mut correct_fatal_errors,
-                    "Correct Fatal Errors in Level Data",
-                )
+                .checkbox(&mut correct_fatal_errors, correct_fatal_errors_label)
                 .changed()
             {
                 self.set_correct_fatal_errors(correct_fatal_errors);
