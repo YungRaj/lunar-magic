@@ -868,7 +868,7 @@ impl RomLevelAssetsEditor {
                 });
         }
         if command.is_none() {
-            self.show_layer2_mode_reset_confirmation(context, project_revision);
+            self.show_layer2_mode_reset_confirmation(context, project_revision, catalog);
         }
         let approved = self.close_confirmation(context, catalog);
         self.show_error(context, catalog);
@@ -1043,16 +1043,19 @@ impl RomLevelAssetsEditor {
                 Err(error) => self.error = Some(error),
             }
         }
-        if ui.button("Validate selected Super GFX files").clicked() {
+        if ui
+            .button(text(catalog, Key::RomNativeAssetsValidateGfx))
+            .clicked()
+        {
             self.bypass_validation = self
                 .workspace
                 .as_ref()
                 .map(|workspace| validate_super_graphics(workspace, self.gfx_display_override));
         }
         let preview_button = if self.bypass_preview.enabled {
-            "Stop live bypass-aware preview"
+            text(catalog, Key::RomNativeAssetsPreviewStop)
         } else {
-            "Start live bypass-aware preview"
+            text(catalog, Key::RomNativeAssetsPreviewStart)
         };
         if ui.button(preview_button).clicked() {
             self.bypass_preview.toggle();
@@ -1098,19 +1101,19 @@ impl RomLevelAssetsEditor {
             let mut viewport_changed = false;
             let mut selected_zoom = self.bypass_viewport.zoom_index;
             ui.horizontal(|ui| {
-                ui.label("Preview camera");
+                ui.label(text(catalog, Key::RomNativeAssetsPreviewCamera));
                 viewport_changed |= ui
                     .add(
                         egui::DragValue::new(&mut self.bypass_viewport.origin_x)
                             .range(0..=maximum_x)
-                            .prefix("X "),
+                            .prefix(text(catalog, Key::RomNativeAssetsPreviewXPrefix)),
                     )
                     .changed();
                 viewport_changed |= ui
                     .add(
                         egui::DragValue::new(&mut self.bypass_viewport.origin_y)
                             .range(0..=maximum_y)
-                            .prefix("Y "),
+                            .prefix(text(catalog, Key::RomNativeAssetsPreviewYPrefix)),
                     )
                     .changed();
                 let selected = PreviewViewportState::LABELS
@@ -1128,14 +1131,20 @@ impl RomLevelAssetsEditor {
                             );
                         }
                     });
-                if ui.button("Reset view").clicked() {
+                if ui
+                    .button(text(catalog, Key::RomNativeAssetsPreviewReset))
+                    .clicked()
+                {
                     self.bypass_viewport = PreviewViewportState::default();
                     selected_zoom = self.bypass_viewport.zoom_index;
                     self.bypass_drag = None;
                     viewport_changed = true;
                 }
                 viewport_changed |= ui
-                    .checkbox(&mut self.bypass_map16_grid, "Map16 grid")
+                    .checkbox(
+                        &mut self.bypass_map16_grid,
+                        text(catalog, Key::RomNativeAssetsPreviewMap16Grid),
+                    )
                     .changed();
             });
             if selected_zoom != self.bypass_viewport.zoom_index {
@@ -1157,11 +1166,15 @@ impl RomLevelAssetsEditor {
             }
             if let Some(selection) = self.bypass_selection {
                 ui.horizontal(|ui| {
-                    ui.label(format!(
-                        "Selected Map16 cell X ${:03X}, Y ${:03X}",
-                        selection.cell_x, selection.cell_y
-                    ));
-                    if ui.button("Clear selection").clicked() {
+                    ui.label(
+                        text(catalog, Key::RomNativeAssetsPreviewSelectionFormat)
+                            .replace("{x}", &format!("{:03X}", selection.cell_x))
+                            .replace("{y}", &format!("{:03X}", selection.cell_y)),
+                    );
+                    if ui
+                        .button(text(catalog, Key::RomNativeAssetsPreviewClearSelection))
+                        .clicked()
+                    {
                         self.bypass_selection = None;
                         self.bypass_inspection = None;
                         self.bypass_preview.invalidate();
@@ -1374,9 +1387,7 @@ impl RomLevelAssetsEditor {
                         .sense(egui::Sense::click_and_drag()),
                 )
                 .on_hover_cursor(egui::CursorIcon::Grab)
-                .on_hover_text(
-                    "Click to select a Map16 cell; drag to pan; Ctrl/Command-wheel zooms",
-                );
+                .on_hover_text(text(catalog, Key::RomNativeAssetsPreviewHoverNotice));
             if response.clicked()
                 && let Some(pointer) = response.interact_pointer_pos()
             {
@@ -1537,7 +1548,7 @@ impl RomLevelAssetsEditor {
                     && !self.manifest_loader.is_running()
                     && !self.image_batch_worker.is_running()
                     && !palette_busy,
-                egui::Button::new("Commit all domains to ROM"),
+                egui::Button::new(text(catalog, Key::RomNativeAssetsCommit)),
             )
             .clicked()
         {
@@ -1555,7 +1566,7 @@ impl RomLevelAssetsEditor {
                     && !self.manifest_loader.is_running()
                     && !self.image_batch_worker.is_running()
                     && !palette_busy,
-                egui::Button::new("Commit and reclaim with LMRATS01 evidence"),
+                egui::Button::new(text(catalog, Key::RomNativeAssetsCommitReclaim)),
             )
             .clicked()
         {
@@ -1563,11 +1574,14 @@ impl RomLevelAssetsEditor {
                 self.error = Some(error);
             }
         }
-        ui.label(if modified {
-            "Staged aggregate changes"
-        } else {
-            "No staged changes"
-        });
+        ui.label(text(
+            catalog,
+            if modified {
+                Key::RomNativeAssetsStaged
+            } else {
+                Key::RomNativeAssetsNoStaged
+            },
+        ));
         None
     }
 
@@ -1582,6 +1596,7 @@ impl RomLevelAssetsEditor {
         &mut self,
         context: &egui::Context,
         project_revision: u64,
+        catalog: Option<&LocalizationCatalog>,
     ) {
         if self.mutation_file_busy() {
             return;
@@ -1605,22 +1620,27 @@ impl RomLevelAssetsEditor {
             );
             return;
         }
-        egui::Window::new("Reset Layer 2 for level mode change?")
+        egui::Window::new(text(catalog, Key::RomNativeAssetsLayer2ResetTitle))
             .collapsible(false)
             .resizable(false)
             .show(context, |ui| {
-                ui.label(format!(
-                    "Changing level mode ${:02X} to ${:02X} switches Layer 2 storage formats.",
-                    pending.from, pending.to
-                ));
                 ui.label(
-                    "Lunar Magic clears the tilemap workspace when entering a tilemap-backed mode. Object-backed data remains available if you switch back before saving.",
+                    text(catalog, Key::RomNativeAssetsLayer2ResetChangeFormat)
+                        .replace("{from}", &format!("{:02X}", pending.from))
+                        .replace("{to}", &format!("{:02X}", pending.to)),
                 );
+                ui.label(text(catalog, Key::RomNativeAssetsLayer2ResetNotice));
                 ui.horizontal(|ui| {
-                    if ui.button("Cancel").clicked() {
+                    if ui
+                        .button(text(catalog, Key::RomNativeAssetsCancel))
+                        .clicked()
+                    {
                         self.pending_layer2_mode_reset = None;
                     }
-                    if ui.button("Reset Layer 2 and stage changes").clicked() {
+                    if ui
+                        .button(text(catalog, Key::RomNativeAssetsLayer2ResetAction))
+                        .clicked()
+                    {
                         let result = self
                             .workspace
                             .as_mut()

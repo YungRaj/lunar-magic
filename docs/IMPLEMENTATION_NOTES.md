@@ -7877,3 +7877,13 @@ key-coverage and fixed-widget audit. The focused audit passes, localization pass
 cases (one provenance ignore), and renderer remains 237/237. Preview, commit, and Layer 2
 mode-reset controls remain before this installed aggregate family is complete; Localization and
 aggregate parity remain Partial and 60/65 respectively.
+
+Localization coverage update (2026-08-12, installed-ROM level-assets preview and commit): nineteen
+appended `RomNativeAssets*` identities cover Super GFX validation, preview start/stop, camera axes,
+reset, zoom-adjacent grid state, Map16 selection/clear/gesture help, ordinary and reclaiming commits,
+aggregate staged state, and the complete Layer 2 storage-mode reset confirmation with dynamic mode
+values. Long Map16/VRAM/sprite inspection rows remain exact technical diagnostics rather than UI
+vocabulary. The complete key audit passes, localization passes 28/28 active cases (one provenance
+ignore), native compilation passes, and renderer remains 237/237. Remaining localized batch
+completion statuses and technical preview headings will be audited separately; Localization and
+aggregate parity remain Partial and 60/65 respectively.

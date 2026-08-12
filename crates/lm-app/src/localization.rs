@@ -2224,6 +2224,25 @@ pub enum ExtendedUiTextKey {
     RomNativeAssetsImageBatchAllSelection,
     RomNativeAssetsImageBatchProgressFormat,
     RomNativeAssetsImageBatchNotice,
+    RomNativeAssetsValidateGfx,
+    RomNativeAssetsPreviewStart,
+    RomNativeAssetsPreviewStop,
+    RomNativeAssetsPreviewCamera,
+    RomNativeAssetsPreviewXPrefix,
+    RomNativeAssetsPreviewYPrefix,
+    RomNativeAssetsPreviewReset,
+    RomNativeAssetsPreviewMap16Grid,
+    RomNativeAssetsPreviewSelectionFormat,
+    RomNativeAssetsPreviewClearSelection,
+    RomNativeAssetsPreviewHoverNotice,
+    RomNativeAssetsCommit,
+    RomNativeAssetsCommitReclaim,
+    RomNativeAssetsStaged,
+    RomNativeAssetsNoStaged,
+    RomNativeAssetsLayer2ResetTitle,
+    RomNativeAssetsLayer2ResetChangeFormat,
+    RomNativeAssetsLayer2ResetNotice,
+    RomNativeAssetsLayer2ResetAction,
     ExAnimationDocumentTitle,
     ExAnimationDocumentOpenTitle,
     ExAnimationDocumentMaximumRecords,
@@ -3386,7 +3405,7 @@ pub enum ExtendedUiTextKey {
 }
 
 impl ExtendedUiTextKey {
-    pub const ALL: [Self; 1682] = [
+    pub const ALL: [Self; 1701] = [
         Self::MwlDocumentEditorTitle,
         Self::MwlDocumentVersionFormat,
         Self::MwlDocumentFlagsHex,
@@ -3910,6 +3929,25 @@ impl ExtendedUiTextKey {
         Self::RomNativeAssetsImageBatchAllSelection,
         Self::RomNativeAssetsImageBatchProgressFormat,
         Self::RomNativeAssetsImageBatchNotice,
+        Self::RomNativeAssetsValidateGfx,
+        Self::RomNativeAssetsPreviewStart,
+        Self::RomNativeAssetsPreviewStop,
+        Self::RomNativeAssetsPreviewCamera,
+        Self::RomNativeAssetsPreviewXPrefix,
+        Self::RomNativeAssetsPreviewYPrefix,
+        Self::RomNativeAssetsPreviewReset,
+        Self::RomNativeAssetsPreviewMap16Grid,
+        Self::RomNativeAssetsPreviewSelectionFormat,
+        Self::RomNativeAssetsPreviewClearSelection,
+        Self::RomNativeAssetsPreviewHoverNotice,
+        Self::RomNativeAssetsCommit,
+        Self::RomNativeAssetsCommitReclaim,
+        Self::RomNativeAssetsStaged,
+        Self::RomNativeAssetsNoStaged,
+        Self::RomNativeAssetsLayer2ResetTitle,
+        Self::RomNativeAssetsLayer2ResetChangeFormat,
+        Self::RomNativeAssetsLayer2ResetNotice,
+        Self::RomNativeAssetsLayer2ResetAction,
         Self::ExAnimationDocumentTitle,
         Self::ExAnimationDocumentOpenTitle,
         Self::ExAnimationDocumentMaximumRecords,
@@ -5711,6 +5749,31 @@ impl ExtendedUiTextKey {
             Self::RomNativeAssetsImageBatchNotice => {
                 "Files become visible only after the complete batch is staged."
             }
+            Self::RomNativeAssetsValidateGfx => "Validate selected Super GFX files",
+            Self::RomNativeAssetsPreviewStart => "Start live bypass-aware preview",
+            Self::RomNativeAssetsPreviewStop => "Stop live bypass-aware preview",
+            Self::RomNativeAssetsPreviewCamera => "Preview camera",
+            Self::RomNativeAssetsPreviewXPrefix => "X ",
+            Self::RomNativeAssetsPreviewYPrefix => "Y ",
+            Self::RomNativeAssetsPreviewReset => "Reset view",
+            Self::RomNativeAssetsPreviewMap16Grid => "Map16 grid",
+            Self::RomNativeAssetsPreviewSelectionFormat => "Selected Map16 cell X ${x}, Y ${y}",
+            Self::RomNativeAssetsPreviewClearSelection => "Clear selection",
+            Self::RomNativeAssetsPreviewHoverNotice => {
+                "Click to select a Map16 cell; drag to pan; Ctrl/Command-wheel zooms"
+            }
+            Self::RomNativeAssetsCommit => "Commit all domains to ROM",
+            Self::RomNativeAssetsCommitReclaim => "Commit and reclaim with LMRATS01 evidence",
+            Self::RomNativeAssetsStaged => "Staged aggregate changes",
+            Self::RomNativeAssetsNoStaged => "No staged changes",
+            Self::RomNativeAssetsLayer2ResetTitle => "Reset Layer 2 for level mode change?",
+            Self::RomNativeAssetsLayer2ResetChangeFormat => {
+                "Changing level mode ${from} to ${to} switches Layer 2 storage formats."
+            }
+            Self::RomNativeAssetsLayer2ResetNotice => {
+                "Lunar Magic clears the tilemap workspace when entering a tilemap-backed mode. Object-backed data remains available if you switch back before saving."
+            }
+            Self::RomNativeAssetsLayer2ResetAction => "Reset Layer 2 and stage changes",
             Self::ExAnimationDocumentTitle => "Portable ExAnimation Editor",
             Self::ExAnimationDocumentOpenTitle => "Open ExAnimation",
             Self::ExAnimationDocumentMaximumRecords => {
