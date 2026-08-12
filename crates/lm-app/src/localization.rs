@@ -2628,6 +2628,13 @@ pub enum ExtendedUiTextKey {
     NavigationPathErrorTitle,
     NavigationWarpErrorTitle,
     NavigationOk,
+    OverworldAppearancePortableTitle,
+    OverworldAppearanceNativeTitle,
+    OverworldAppearanceImportNative,
+    OverworldAppearanceExportNative,
+    OverworldAppearanceDefinitionsFormat,
+    OverworldAppearanceDefinition,
+    OverworldAppearanceEmptyNotice,
     ExAnimationDocumentTitle,
     ExAnimationDocumentOpenTitle,
     ExAnimationDocumentMaximumRecords,
@@ -3790,7 +3797,7 @@ pub enum ExtendedUiTextKey {
 }
 
 impl ExtendedUiTextKey {
-    pub const ALL: [Self; 2086] = [
+    pub const ALL: [Self; 2093] = [
         Self::MwlDocumentEditorTitle,
         Self::MwlDocumentVersionFormat,
         Self::MwlDocumentFlagsHex,
@@ -4718,6 +4725,13 @@ impl ExtendedUiTextKey {
         Self::NavigationPathErrorTitle,
         Self::NavigationWarpErrorTitle,
         Self::NavigationOk,
+        Self::OverworldAppearancePortableTitle,
+        Self::OverworldAppearanceNativeTitle,
+        Self::OverworldAppearanceImportNative,
+        Self::OverworldAppearanceExportNative,
+        Self::OverworldAppearanceDefinitionsFormat,
+        Self::OverworldAppearanceDefinition,
+        Self::OverworldAppearanceEmptyNotice,
         Self::ExAnimationDocumentTitle,
         Self::ExAnimationDocumentOpenTitle,
         Self::ExAnimationDocumentMaximumRecords,
@@ -7023,6 +7037,15 @@ impl ExtendedUiTextKey {
             Self::NavigationPathErrorTitle => "Path-link editor error",
             Self::NavigationWarpErrorTitle => "Warp-link editor error",
             Self::NavigationOk => "OK",
+            Self::OverworldAppearancePortableTitle => "Portable Overworld Appearance Editor",
+            Self::OverworldAppearanceNativeTitle => "Native Overworld Appearance Editor",
+            Self::OverworldAppearanceImportNative => "Import Native Pair",
+            Self::OverworldAppearanceExportNative => "Export Native Pair",
+            Self::OverworldAppearanceDefinitionsFormat => "Sprite definitions: {count}",
+            Self::OverworldAppearanceDefinition => "Definition",
+            Self::OverworldAppearanceEmptyNotice => {
+                "Insert a sprite definition before adding tile parts."
+            }
             Self::ExAnimationDocumentTitle => "Portable ExAnimation Editor",
             Self::ExAnimationDocumentOpenTitle => "Open ExAnimation",
             Self::ExAnimationDocumentMaximumRecords => {

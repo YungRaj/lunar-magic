@@ -6,7 +6,10 @@ use crate::{
     persistence_worker::PersistenceWorker,
 };
 use eframe::egui;
-use lm_app::{OverworldAppearanceDocumentController, OverworldAppearanceDocumentEdit};
+use lm_app::{
+    ExtendedUiTextKey as Key, LocalizationCatalog, OverworldAppearanceDocumentController,
+    OverworldAppearanceDocumentEdit,
+};
 
 mod document_io;
 mod form_fields;
@@ -97,7 +100,11 @@ impl OverworldAppearanceEditor {
         false
     }
 
-    pub(crate) fn show(&mut self, context: &egui::Context) -> bool {
+    pub(crate) fn show(
+        &mut self,
+        context: &egui::Context,
+        catalog: Option<&LocalizationCatalog>,
+    ) -> bool {
         if let Some(result) = self.loader.show(context) {
             let pending = self.pending_load.take();
             match pending {
@@ -146,9 +153,9 @@ impl OverworldAppearanceEditor {
         if self.controller.is_some() || self.native_controller.is_some() {
             self.clamp_indices();
             let title = if self.native_controller.is_some() {
-                "Native Overworld Appearance Editor"
+                text(catalog, Key::OverworldAppearanceNativeTitle)
             } else {
-                "Portable Overworld Appearance Editor"
+                text(catalog, Key::OverworldAppearancePortableTitle)
             };
             egui::Window::new(title)
                 .default_size([720.0, 600.0])
@@ -158,27 +165,27 @@ impl OverworldAppearanceEditor {
                         !self.loader.is_running() && !self.native_persistence.is_running(),
                         |ui| {
                             if self.native_controller.is_some() {
-                                self.native_contents(ui);
+                                self.native_contents(ui, catalog);
                             } else {
-                                self.contents(ui);
+                                self.contents(ui, catalog);
                             }
                         },
                     );
                 });
         }
-        let approved = self.show_close_confirmation(context);
-        self.show_error(context);
+        let approved = self.show_close_confirmation(context, catalog);
+        self.show_error(context, catalog);
         approved
     }
 
-    fn contents(&mut self, ui: &mut egui::Ui) {
+    fn contents(&mut self, ui: &mut egui::Ui, catalog: Option<&LocalizationCatalog>) {
         let pasted = ui.input(|input| {
             input.events.iter().find_map(|event| match event {
                 egui::Event::Paste(text) => Some(text.clone()),
                 _ => None,
             })
         });
-        self.toolbar(ui);
+        self.toolbar(ui, catalog);
         if let Some(text) = pasted
             && let Some(target) = self.clipboard_paste_target.take()
         {
@@ -194,13 +201,16 @@ impl OverworldAppearanceEditor {
                 controller.value().definitions.clone(),
             )
         };
-        ui.label(format!("Sprite definitions: {}", definitions.len()));
+        ui.label(
+            text(catalog, Key::OverworldAppearanceDefinitionsFormat)
+                .replace("{count}", &definitions.len().to_string()),
+        );
         ui.add(
             egui::Slider::new(
                 &mut self.definition_index,
                 0..=definitions.len().saturating_sub(1),
             )
-            .text("Definition"),
+            .text(text(catalog, Key::OverworldAppearanceDefinition)),
         );
         let selected = definitions.get(self.definition_index);
         if self.definition_key != Some((revision, self.definition_index)) {
@@ -209,14 +219,14 @@ impl OverworldAppearanceEditor {
             });
             self.definition_key = Some((revision, self.definition_index));
         }
-        let mut edit = self.definition_fields(ui, &definitions);
+        let mut edit = self.definition_fields(ui, &definitions, catalog);
         ui.separator();
         if let Some(definition) = selected {
-            let preview_edit = self.appearance_preview(ui, revision, definition);
-            let part_edit = self.part_fields(ui, revision, definition);
+            let preview_edit = self.appearance_preview(ui, revision, definition, catalog);
+            let part_edit = self.part_fields(ui, revision, definition, catalog);
             edit = edit.or(preview_edit.map(Ok)).or(part_edit);
         } else {
-            ui.label("Insert a sprite definition before adding tile parts.");
+            ui.label(text(catalog, Key::OverworldAppearanceEmptyNotice));
         }
         if let Some(edit) = edit {
             match edit {
@@ -226,7 +236,7 @@ impl OverworldAppearanceEditor {
         }
     }
 
-    fn toolbar(&mut self, ui: &mut egui::Ui) {
+    fn toolbar(&mut self, ui: &mut egui::Ui, catalog: Option<&LocalizationCatalog>) {
         let Some(controller) = self.controller.as_ref() else {
             return;
         };
@@ -241,23 +251,43 @@ impl OverworldAppearanceEditor {
         let mut native_export_requested = false;
         ui.horizontal(|ui| {
             if ui
-                .add_enabled(can_undo, egui::Button::new("Undo"))
+                .add_enabled(
+                    can_undo,
+                    egui::Button::new(text(catalog, Key::AppearanceUndo)),
+                )
                 .clicked()
             {
                 history = Some(true);
             }
             if ui
-                .add_enabled(can_redo, egui::Button::new("Redo"))
+                .add_enabled(
+                    can_redo,
+                    egui::Button::new(text(catalog, Key::AppearanceRedo)),
+                )
                 .clicked()
             {
                 history = Some(false);
             }
             save_requested = ui
-                .add_enabled(!self.persistence.is_running(), egui::Button::new("Save"))
+                .add_enabled(
+                    !self.persistence.is_running(),
+                    egui::Button::new(text(catalog, Key::AppearanceSave)),
+                )
                 .clicked();
-            native_import_requested = ui.button("Import Native Pair").clicked();
-            native_export_requested = ui.button("Export Native Pair").clicked();
-            ui.label(if modified { "Modified" } else { "Saved" });
+            native_import_requested = ui
+                .button(text(catalog, Key::OverworldAppearanceImportNative))
+                .clicked();
+            native_export_requested = ui
+                .button(text(catalog, Key::OverworldAppearanceExportNative))
+                .clicked();
+            ui.label(text(
+                catalog,
+                if modified {
+                    Key::AppearanceModified
+                } else {
+                    Key::AppearanceSaved
+                },
+            ));
         });
         let mut changed = false;
         if let Some(controller) = self.controller.as_mut() {
@@ -432,22 +462,26 @@ impl OverworldAppearanceEditor {
         self.preview_drag = None;
     }
 
-    fn show_close_confirmation(&mut self, context: &egui::Context) -> bool {
+    fn show_close_confirmation(
+        &mut self,
+        context: &egui::Context,
+        catalog: Option<&LocalizationCatalog>,
+    ) -> bool {
         let Some(pending) = self.pending_close else {
             return false;
         };
         let mut approved = false;
-        egui::Window::new("Unsaved overworld appearances")
+        egui::Window::new(text(catalog, Key::AppearanceDiscardTitle))
             .collapsible(false)
             .resizable(false)
             .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
             .show(context, |ui| {
-                ui.label("Discard unsaved appearance changes?");
+                ui.label(text(catalog, Key::AppearanceUnsavedNotice));
                 ui.horizontal(|ui| {
-                    if ui.button("Cancel").clicked() {
+                    if ui.button(text(catalog, Key::AppearanceCancel)).clicked() {
                         self.pending_close = None;
                     }
-                    if ui.button("Discard").clicked() {
+                    if ui.button(text(catalog, Key::AppearanceDiscard)).clicked() {
                         self.clear();
                         approved = pending == PendingClose::Application;
                     }
@@ -456,14 +490,14 @@ impl OverworldAppearanceEditor {
         approved
     }
 
-    fn show_error(&mut self, context: &egui::Context) {
+    fn show_error(&mut self, context: &egui::Context, catalog: Option<&LocalizationCatalog>) {
         if let Some(error) = self.error.clone() {
-            egui::Window::new("Overworld appearance editor error")
+            egui::Window::new(text(catalog, Key::AppearanceErrorTitle))
                 .collapsible(false)
                 .resizable(false)
                 .show(context, |ui| {
                     ui.label(error);
-                    if ui.button("OK").clicked() {
+                    if ui.button(text(catalog, Key::AppearanceOk)).clicked() {
                         self.error = None;
                     }
                 });
@@ -479,6 +513,13 @@ impl OverworldAppearanceEditor {
         self.native_form.invalidate();
         self.invalidate();
     }
+}
+
+fn text(catalog: Option<&LocalizationCatalog>, key: Key) -> String {
+    catalog.map_or_else(
+        || key.english().to_owned(),
+        |catalog| catalog.extended_text(key).to_owned(),
+    )
 }
 
 fn clamp(index: usize, len: usize) -> usize {

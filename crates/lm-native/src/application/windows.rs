@@ -55,7 +55,10 @@ impl NativeApplication {
         {
             self.request_quit(context);
         }
-        if self.overworld_appearance_editor.show(context) {
+        if self
+            .overworld_appearance_editor
+            .show(context, self.app.localization())
+        {
             self.request_quit(context);
         }
         if self.layer3_editor.show(context, self.app.localization()) {

@@ -7109,6 +7109,16 @@ ignore), native compilation passes, and renderer remains 237/237. Other unaudite
 surfaces and retained live language-DLL evidence keep Localization Partial; aggregate parity remains
 60/65.
 
+Localization coverage update (2026-08-12, overworld-appearance catalog boundary and parent shell):
+seven appended `OverworldAppearance*` identities cover native/portable titles, native-pair
+import/export, dynamic definition count and selector, and the empty-composition notice. Existing
+`Appearance*` identities now drive Undo/Redo/Save, dirty state, dirty-close confirmation, and error
+acknowledgement. The application passes its live catalog through the parent into portable panels,
+composition preview, and native mode, establishing the boundary required to localize those children
+without global state. Native compilation, localization 28/28 active cases (one provenance ignore),
+and renderer 237/237 pass. Child composition/native controls, other frontend/status surfaces, and
+retained live language-DLL evidence keep Localization Partial; aggregate parity remains 60/65.
+
 Localization coverage update (2026-08-12, custom-sprite placement library): twenty-nine appended
 `CustomSprite*` keys cover synchronized placement count/navigation, library header, Unicode
 search/descriptions, variable-width record groups, typed placement copy/paste,

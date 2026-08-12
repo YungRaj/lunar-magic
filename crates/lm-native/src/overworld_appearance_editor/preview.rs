@@ -1,5 +1,6 @@
 use super::OverworldAppearanceEditor;
 use eframe::egui;
+use lm_app::LocalizationCatalog;
 use lm_overworld::{SpriteAppearanceDefinition, SpriteAppearancePart};
 
 const TILE_SIDE: i32 = 8;
@@ -76,6 +77,7 @@ impl OverworldAppearanceEditor {
         ui: &mut egui::Ui,
         revision: u64,
         definition: &SpriteAppearanceDefinition,
+        _catalog: Option<&LocalizationCatalog>,
     ) -> Option<lm_app::OverworldAppearanceDocumentEdit> {
         if self
             .preview_drag
@@ -735,7 +737,10 @@ mod tests {
             parts: vec![selected],
         };
         assert_eq!(shortcut_edit(&singleton, 0, PreviewShortcut::Remove), None);
-        assert_eq!(shortcut_edit(&definition, 3, PreviewShortcut::Duplicate), None);
+        assert_eq!(
+            shortcut_edit(&definition, 3, PreviewShortcut::Duplicate),
+            None
+        );
     }
 
     #[test]

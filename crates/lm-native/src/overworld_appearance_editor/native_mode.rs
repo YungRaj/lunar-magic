@@ -1,6 +1,6 @@
 use super::OverworldAppearanceEditor;
 use eframe::egui;
-use lm_app::NativeOverworldAppearanceEdit;
+use lm_app::{LocalizationCatalog, NativeOverworldAppearanceEdit};
 use lm_level::{Map16Tile, Subtile};
 use lm_overworld::{
     NativeOverworldSpriteAppearance, NativeOverworldSpriteDisplay, NativeOverworldSpriteMap16Part,
@@ -100,7 +100,11 @@ impl NativeAppearanceForm {
 }
 
 impl OverworldAppearanceEditor {
-    pub(super) fn native_contents(&mut self, ui: &mut egui::Ui) {
+    pub(super) fn native_contents(
+        &mut self,
+        ui: &mut egui::Ui,
+        _catalog: Option<&LocalizationCatalog>,
+    ) {
         let Some(controller) = self.native_controller.as_ref() else {
             return;
         };

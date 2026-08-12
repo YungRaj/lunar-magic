@@ -2,7 +2,7 @@ use super::form_fields::{part_value_fields, text_field};
 use super::{AppearancePasteMode, AppearancePasteTarget, OverworldAppearanceEditor};
 use crate::{native_clipboard, overworld_appearance_editor_forms::PartForm};
 use eframe::egui;
-use lm_app::OverworldAppearanceDocumentEdit;
+use lm_app::{LocalizationCatalog, OverworldAppearanceDocumentEdit};
 use lm_overworld::SpriteAppearanceDefinition;
 
 impl OverworldAppearanceEditor {
@@ -10,6 +10,7 @@ impl OverworldAppearanceEditor {
         &mut self,
         ui: &mut egui::Ui,
         definitions: &[SpriteAppearanceDefinition],
+        _catalog: Option<&LocalizationCatalog>,
     ) -> Option<Result<OverworldAppearanceDocumentEdit, String>> {
         text_field(ui, "Sprite ID (hex)", &mut self.definition.sprite_id);
         let mut edit = None;
@@ -72,6 +73,7 @@ impl OverworldAppearanceEditor {
         ui: &mut egui::Ui,
         revision: u64,
         definition: &SpriteAppearanceDefinition,
+        _catalog: Option<&LocalizationCatalog>,
     ) -> Option<Result<OverworldAppearanceDocumentEdit, String>> {
         ui.heading(format!(
             "Tile parts for sprite {:04X}",
