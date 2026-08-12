@@ -2035,106 +2035,67 @@ impl eframe::App for NativeApplication {
                     staged_editors + usize::from(level_assets_recovery_revision.is_some());
                 let staged_editors =
                     staged_editors + usize::from(overworld_recovery_revision.is_some());
-                if staged_editors == 2
-                    && path_link_recovery_revision.is_some()
-                    && warp_link_recovery_revision.is_some()
-                {
-                    let paths = self
-                        .rom_overworld_path_link_editor
-                        .staged_recovery_table(&self.app)?
-                        .ok_or("staged path-link recovery table disappeared")?;
-                    let warps = self
-                        .rom_overworld_warp_link_editor
-                        .staged_recovery_table(&self.app)?
-                        .ok_or("staged warp-link recovery table disappeared")?;
+                let staged_overworld_family = usize::from(path_link_recovery_revision.is_some())
+                    + usize::from(warp_link_recovery_revision.is_some())
+                    + usize::from(event_number_recovery_revision.is_some())
+                    + usize::from(event_reveal_recovery_revision.is_some())
+                    + usize::from(special_event_recovery_revision.is_some())
+                    + usize::from(event_tilemap_recovery_revision.is_some())
+                    + usize::from(level_name_recovery_revision.is_some())
+                    + usize::from(player_start_recovery_revision.is_some())
+                    + usize::from(overworld_settings_recovery_revision.is_some())
+                    + usize::from(overworld_message_recovery_revision.is_some())
+                    + usize::from(boss_sequence_recovery_revision.is_some());
+                if staged_editors == staged_overworld_family && staged_overworld_family >= 2 {
+                    let edits = lm_app::OverworldRecoveryEdits {
+                        paths: if path_link_recovery_revision.is_some() {
+                            self.rom_overworld_path_link_editor
+                                .staged_recovery_table(&self.app)?
+                        } else { None },
+                        warps: if warp_link_recovery_revision.is_some() {
+                            self.rom_overworld_warp_link_editor
+                                .staged_recovery_table(&self.app)?
+                        } else { None },
+                        event_numbers: if event_number_recovery_revision.is_some() {
+                            self.rom_overworld_event_number_editor
+                                .staged_recovery_map(&self.app)?
+                        } else { None },
+                        event_reveals: if event_reveal_recovery_revision.is_some() {
+                            self.rom_overworld_event_reveal_editor
+                                .staged_recovery_table(&self.app)?
+                        } else { None },
+                        special_events: if special_event_recovery_revision.is_some() {
+                            self.rom_overworld_special_event_editor
+                                .staged_recovery_table(&self.app)?
+                        } else { None },
+                        event_tilemaps: if event_tilemap_recovery_revision.is_some() {
+                            self.rom_overworld_event_tilemap_editor
+                                .staged_recovery_buffers(&self.app)?
+                        } else { None },
+                        level_names: if level_name_recovery_revision.is_some() {
+                            self.rom_overworld_level_name_editor
+                                .staged_recovery_table(&self.app)?
+                        } else { None },
+                        player_starts: if player_start_recovery_revision.is_some() {
+                            self.rom_overworld_player_start_editor
+                                .staged_recovery_starts(&self.app)?
+                        } else { None },
+                        settings: if overworld_settings_recovery_revision.is_some() {
+                            self.rom_overworld_settings_editor
+                                .staged_recovery_settings(&self.app)?
+                        } else { None },
+                        messages: if overworld_message_recovery_revision.is_some() {
+                            self.rom_overworld_message_editor
+                                .staged_recovery_messages(&self.app)?
+                        } else { None },
+                        boss_sequence: if boss_sequence_recovery_revision.is_some() {
+                            self.rom_boss_sequence_editor
+                                .staged_recovery_table(&self.app)?
+                        } else { None },
+                    };
                     return self
                         .app
-                        .recovery_snapshot_with_overworld_navigation_links(
-                            paths,
-                            warps,
-                            self.app.current_level(),
-                        )
-                        .map_err(|error| error.to_string());
-                }
-                if staged_editors == 4
-                    && event_number_recovery_revision.is_some()
-                    && event_reveal_recovery_revision.is_some()
-                    && special_event_recovery_revision.is_some()
-                    && event_tilemap_recovery_revision.is_some()
-                {
-                    let numbers = self
-                        .rom_overworld_event_number_editor
-                        .staged_recovery_map(&self.app)?
-                        .ok_or("staged event-number recovery map disappeared")?;
-                    let reveals = self
-                        .rom_overworld_event_reveal_editor
-                        .staged_recovery_table(&self.app)?
-                        .ok_or("staged event-reveal recovery table disappeared")?;
-                    let special = self
-                        .rom_overworld_special_event_editor
-                        .staged_recovery_table(&self.app)?
-                        .ok_or("staged special-event recovery table disappeared")?;
-                    let tilemaps = self
-                        .rom_overworld_event_tilemap_editor
-                        .staged_recovery_buffers(&self.app)?
-                        .ok_or("staged event-tilemap recovery buffers disappeared")?;
-                    return self
-                        .app
-                        .recovery_snapshot_with_overworld_event_family(
-                            numbers,
-                            reveals,
-                            special,
-                            tilemaps,
-                            self.app.current_level(),
-                        )
-                        .map_err(|error| error.to_string());
-                }
-                if staged_editors == 3
-                    && level_name_recovery_revision.is_some()
-                    && player_start_recovery_revision.is_some()
-                    && overworld_settings_recovery_revision.is_some()
-                {
-                    let names = self
-                        .rom_overworld_level_name_editor
-                        .staged_recovery_table(&self.app)?
-                        .ok_or("staged level-name recovery table disappeared")?;
-                    let starts = self
-                        .rom_overworld_player_start_editor
-                        .staged_recovery_starts(&self.app)?
-                        .ok_or("staged player-start recovery table disappeared")?;
-                    let settings = self
-                        .rom_overworld_settings_editor
-                        .staged_recovery_settings(&self.app)?
-                        .ok_or("staged overworld-settings recovery table disappeared")?;
-                    return self
-                        .app
-                        .recovery_snapshot_with_overworld_configuration(
-                            names,
-                            starts,
-                            settings,
-                            self.app.current_level(),
-                        )
-                        .map_err(|error| error.to_string());
-                }
-                if staged_editors == 2
-                    && overworld_message_recovery_revision.is_some()
-                    && boss_sequence_recovery_revision.is_some()
-                {
-                    let messages = self
-                        .rom_overworld_message_editor
-                        .staged_recovery_messages(&self.app)?
-                        .ok_or("staged overworld-message recovery table disappeared")?;
-                    let boss_sequence = self
-                        .rom_boss_sequence_editor
-                        .staged_recovery_table(&self.app)?
-                        .ok_or("staged boss-sequence recovery table disappeared")?;
-                    return self
-                        .app
-                        .recovery_snapshot_with_overworld_message_family(
-                            messages,
-                            boss_sequence,
-                            self.app.current_level(),
-                        )
+                        .recovery_snapshot_with_overworld_edits(edits, self.app.current_level())
                         .map_err(|error| error.to_string());
                 }
                 if staged_editors == 2

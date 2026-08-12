@@ -6935,3 +6935,13 @@ clone. Each adapter retains its revision, ownership, allocation, semantic-reopen
 guards. The existing `palette_and_map16_share_one_growing_recovery_project` and
 `secondary_exits_and_metadata_share_one_recovery_project` stress the allocating and fixed-storage
 halves respectively; the native build proves the unified coordinator route.
+
+Overworld recovery-family audit (2026-08-11): navigation, event, configuration, and message
+editors now enter one typed optional-domain dispatcher, so any subset inside one family composes on
+the same evolving clone instead of requiring every sibling dialog to be dirty. Cross-family
+composition deliberately rejects before touching the clone: a pristine path-plus-event-number
+probe exposed a real guarded-hook collision at logical `$01BD90`, proving that simple sequential
+installation is not sound. `cross_family_overworld_recovery_rejects_before_shared_hook_mutation`
+locks this failure-atomic boundary; all six existing pristine family composition gates still pass.
+A future cross-family route requires an authenticated combined shared-hook runtime, not write
+reordering. Native compilation and the renderer gate remain green at 237/237.

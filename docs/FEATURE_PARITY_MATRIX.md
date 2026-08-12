@@ -1174,6 +1174,14 @@ enforces revision, ownership, reopen, and checksum invariants. Existing growth a
 composition gates cover both halves and the unified native coordinator compiles. The Release row
 and 60/65 aggregate remain unchanged pending its explicitly listed broader gaps.
 
+Overworld recovery audit update (2026-08-11): the four navigation/event/configuration/message
+families now share a typed optional-domain dispatcher, allowing partial sibling subsets to compose
+without requiring every family editor to be staged. Cross-family requests fail before mutation:
+the retained pristine probe identifies a genuine guarded-hook collision at `$01BD90`, so accepting
+those combinations requires a recovered combined runtime rather than unsafe last-writer ordering.
+All established within-family exact-reopen gates and the 237-test renderer gate remain green. This
+newly explicit shared-runtime gap keeps Release Partial and aggregate parity at 60/65.
+
 Toolbar coverage update (2026-08-11, GFX display override): authenticated `LM_KEY_GFX_OVERRIDE`
 `$26B8` now opens the original session-only two-row hexadecimal dialog. Eight Layer 1/2 and eight
 Layer 3 slots default to `$7F` (use the real level assignment); explicit `$000..=$FFF` values

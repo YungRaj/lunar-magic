@@ -9,7 +9,89 @@ pub struct RecoverySnapshot {
     pub current_rom: Vec<u8>,
 }
 
+#[derive(Default)]
+pub struct OverworldRecoveryEdits<'a> {
+    pub paths: Option<&'a lm_overworld::OverworldPathLinkTable>,
+    pub warps: Option<&'a lm_overworld::OverworldWarpLinkTable>,
+    pub event_numbers: Option<&'a lm_overworld::EventNumberMap>,
+    pub event_reveals: Option<&'a lm_overworld::EventRevealTable>,
+    pub special_events: Option<&'a lm_overworld::SpecialEventRevealTable>,
+    pub event_tilemaps: Option<&'a lm_overworld::EventTilemapBuffers>,
+    pub level_names: Option<&'a lm_overworld::NativeOverworldLevelNameTable>,
+    pub player_starts: Option<&'a lm_overworld::NativeOverworldPlayerStarts>,
+    pub settings: Option<&'a lm_level::ExpandedOverworldSettings>,
+    pub messages: Option<&'a [lm_overworld::OverworldMessage]>,
+    pub boss_sequence: Option<&'a lm_overworld::BossSequenceMessageTable>,
+}
+
 impl AppState {
+    pub fn recovery_snapshot_with_overworld_edits(
+        &self,
+        edits: OverworldRecoveryEdits<'_>,
+        level: Option<u16>,
+    ) -> Result<Option<RecoverySnapshot>, AppError> {
+        let active_families = usize::from(edits.paths.is_some() || edits.warps.is_some())
+            + usize::from(
+                edits.event_numbers.is_some()
+                    || edits.event_reveals.is_some()
+                    || edits.special_events.is_some()
+                    || edits.event_tilemaps.is_some(),
+            )
+            + usize::from(
+                edits.level_names.is_some()
+                    || edits.player_starts.is_some()
+                    || edits.settings.is_some(),
+            )
+            + usize::from(edits.messages.is_some() || edits.boss_sequence.is_some());
+        if active_families > 1 {
+            return Err(AppError::Recovery(
+                "cross-family overworld recovery requires a combined shared-hook runtime".into(),
+            ));
+        }
+        let project = self.project.as_ref().ok_or(AppError::NoProject)?;
+        let mut staged = project.clone();
+        if let Some(value) = edits.paths {
+            crate::overworld_path_link_state::replace_native_path_links_in_project(
+                &mut staged,
+                value,
+            )?;
+        }
+        if let Some(value) = edits.warps {
+            crate::overworld_warp_link_state::replace_native_warp_links_in_project(
+                &mut staged,
+                value,
+            )?;
+        }
+        if let Some(value) = edits.event_numbers {
+            crate::save_native_overworld_event_number_map_to_project(&mut staged, value)?;
+        }
+        if let Some(value) = edits.event_reveals {
+            crate::save_native_overworld_event_reveals_to_project(&mut staged, value)?;
+        }
+        if let Some(value) = edits.special_events {
+            crate::save_native_special_event_reveals_to_project(&mut staged, value)?;
+        }
+        if let Some(value) = edits.event_tilemaps {
+            crate::save_native_overworld_event_tilemaps_to_project(&mut staged, value)?;
+        }
+        if let Some(value) = edits.level_names {
+            crate::save_native_overworld_level_names_to_project(&mut staged, value)?;
+        }
+        if let Some(value) = edits.player_starts {
+            crate::save_native_overworld_player_starts_to_project(&mut staged, value)?;
+        }
+        if let Some(value) = edits.settings {
+            crate::save_native_overworld_settings_to_project(&mut staged, value)?;
+        }
+        if let Some(value) = edits.messages {
+            crate::save_native_overworld_messages_to_project(&mut staged, value)?;
+        }
+        if let Some(value) = edits.boss_sequence {
+            crate::save_native_boss_sequence_to_project(&mut staged, value)?;
+        }
+        self.recovery_snapshot_with_current_rom(staged.save_snapshot(), level)
+    }
+
     /// Captures a recovery record only while the open ROM differs from its save baseline.
     #[must_use]
     pub fn recovery_snapshot(&self) -> Option<RecoverySnapshot> {
@@ -271,6 +353,135 @@ mod tests {
     use lm_profile::{
         smw_us_v1_overworld_path_patch_locator, smw_us_v1_overworld_warp_patch_locator,
     };
+
+    #[test]
+    fn cross_family_overworld_recovery_rejects_before_shared_hook_mutation() {
+        let mut app = AppState::default();
+        app.load_rom(crate::test_support::pristine_smw_us_rom_bytes())
+            .unwrap();
+        let project = app.project().unwrap();
+        let paths = project
+            .load_overworld_path_links_detected(smw_us_v1_overworld_path_patch_locator())
+            .unwrap()
+            .table;
+        let numbers = project
+            .load_overworld_event_number_map_detected(
+                lm_profile::smw_us_v1_overworld_event_number_map_locator(),
+            )
+            .unwrap()
+            .map;
+        let baseline = project.save_snapshot();
+        let error = app
+            .recovery_snapshot_with_overworld_edits(
+                OverworldRecoveryEdits {
+                    paths: Some(&paths),
+                    event_numbers: Some(&numbers),
+                    ..OverworldRecoveryEdits::default()
+                },
+                Some(0x105),
+            )
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("combined shared-hook runtime"), "{error}");
+        assert_eq!(app.project().unwrap().save_snapshot(), baseline);
+        assert_eq!(app.project().unwrap().history.undo_len(), 0);
+    }
+
+    #[test]
+    fn cross_family_overworld_recovery_reopens_navigation_event_configuration_and_messages() {
+        use lm_profile::{
+            load_smw_us_v1_overworld_messages, smw_us_v1_overworld_event_number_map_locator,
+            smw_us_v1_overworld_level_name_locator, smw_us_v1_overworld_level_name_runtime,
+            smw_us_v1_overworld_message_patch_locator,
+        };
+        let mut app = AppState::default();
+        app.load_rom(crate::test_support::pristine_smw_us_rom_bytes())
+            .unwrap();
+        let baseline = app.project().unwrap().save_snapshot();
+        let project = app.project().unwrap();
+        let mut paths = project
+            .load_overworld_path_links_detected(smw_us_v1_overworld_path_patch_locator())
+            .unwrap()
+            .table;
+        paths.links[0].target.x_tile ^= 0x01;
+        let mut numbers =
+            project
+                .load_overworld_event_number_map_detected(
+                    smw_us_v1_overworld_event_number_map_locator(),
+                )
+                .unwrap()
+                .map;
+        numbers.set(0xff, 0x7e);
+        let mut names = project
+            .load_overworld_level_names_detected(
+                smw_us_v1_overworld_level_name_locator(),
+                smw_us_v1_overworld_level_name_runtime(),
+            )
+            .unwrap()
+            .table;
+        names.names[0].tiles[0] ^= 0x3f;
+        let mut messages = load_smw_us_v1_overworld_messages(project).unwrap().messages;
+        messages[0].0[0] ^= 0x01;
+
+        let recovery = app
+            .recovery_snapshot_with_overworld_edits(
+                OverworldRecoveryEdits {
+                    paths: Some(&paths),
+                    event_numbers: Some(&numbers),
+                    level_names: Some(&names),
+                    messages: Some(&messages),
+                    ..OverworldRecoveryEdits::default()
+                },
+                Some(0x105),
+            )
+            .unwrap()
+            .unwrap();
+        assert_eq!(app.project().unwrap().save_snapshot(), baseline);
+        assert_eq!(app.project().unwrap().history.undo_len(), 0);
+        let mut reopened = AppState::default();
+        reopened.load_recovery(recovery).unwrap();
+        let project = reopened.project().unwrap();
+        assert_eq!(
+            project
+                .load_overworld_path_links_detected(smw_us_v1_overworld_path_patch_locator())
+                .unwrap()
+                .table,
+            paths
+        );
+        assert_eq!(
+            project
+                .load_overworld_event_number_map_detected(
+                    smw_us_v1_overworld_event_number_map_locator()
+                )
+                .unwrap()
+                .map,
+            numbers
+        );
+        assert_eq!(
+            project
+                .load_overworld_level_names_detected(
+                    smw_us_v1_overworld_level_name_locator(),
+                    smw_us_v1_overworld_level_name_runtime()
+                )
+                .unwrap()
+                .table,
+            names
+        );
+        assert_eq!(
+            project
+                .load_expanded_overworld_messages_detected(
+                    smw_us_v1_overworld_message_patch_locator()
+                )
+                .unwrap()
+                .messages,
+            messages
+        );
+        let logical = project.rom.logical_bytes();
+        assert_eq!(
+            lm_rom::SnesChecksum::decode(logical, 0x7fdc).unwrap(),
+            lm_rom::compute_snes_checksum(logical, 0x7fdc).unwrap()
+        );
+    }
 
     #[test]
     fn simultaneous_pristine_path_and_warp_growth_allocate_and_recover_together() {
