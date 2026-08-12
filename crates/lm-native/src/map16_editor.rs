@@ -5,7 +5,7 @@ use crate::{
     user_toolbar_images::{MainToolbarImageSet, OriginalToolbarAction, OriginalToolbarImages},
 };
 use eframe::egui;
-use lm_app::Map16PageDocumentController;
+use lm_app::{ExtendedUiTextKey as Key, LocalizationCatalog, Map16PageDocumentController};
 use lm_graphics::{GraphicsInterchangeFile, PaletteInterchangeFile};
 use map16_subtile_form::SubtileForm;
 
@@ -95,6 +95,7 @@ impl Map16Editor {
         &mut self,
         context: &egui::Context,
         toolbar_images: &MainToolbarImageSet,
+        catalog: Option<&LocalizationCatalog>,
     ) -> bool {
         if let Some(result) = self.loader.show(context) {
             match result.and_then(document_io::decode_document) {
@@ -114,40 +115,48 @@ impl Map16Editor {
         if self.document.is_some() {
             self.refresh_texture(context);
             self.load_form();
-            egui::Window::new("Portable Map16 Page Editor")
+            egui::Window::new(text(catalog, Key::Map16DocumentTitle))
                 .default_size([760.0, 620.0])
-                .show(context, |ui| self.contents(ui, toolbar_images));
+                .show(context, |ui| self.contents(ui, toolbar_images, catalog));
         }
         if let Some(pending) = self.pending_close {
-            egui::Window::new("Unsaved Map16 page")
+            egui::Window::new(text(catalog, Key::Map16DocumentDiscardTitle))
                 .collapsible(false)
                 .resizable(false)
                 .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
                 .show(context, |ui| {
-                    ui.label("Discard unsaved Map16 changes?");
+                    ui.label(text(catalog, Key::Map16DocumentDiscardNotice));
                     ui.horizontal(|ui| {
-                        if ui.button("Cancel").clicked() {
+                        if ui.button(text(catalog, Key::Map16DocumentCancel)).clicked() {
                             self.pending_close = None;
                         }
-                        if ui.button("Discard").clicked() {
+                        if ui
+                            .button(text(catalog, Key::Map16DocumentDiscard))
+                            .clicked()
+                        {
                             self.clear();
                             quit_approved = pending == PendingClose::Application;
                         }
                     });
                 });
         }
-        self.show_error(context);
+        self.show_error(context, catalog);
         quit_approved
     }
 
-    fn contents(&mut self, ui: &mut egui::Ui, toolbar_images: &MainToolbarImageSet) {
+    fn contents(
+        &mut self,
+        ui: &mut egui::Ui,
+        toolbar_images: &MainToolbarImageSet,
+        catalog: Option<&LocalizationCatalog>,
+    ) {
         let pasted = ui.input(|input| {
             input.events.iter().find_map(|event| match event {
                 egui::Event::Paste(text) => Some(text.clone()),
                 _ => None,
             })
         });
-        self.toolbar(ui, toolbar_images);
+        self.toolbar(ui, toolbar_images, catalog);
         if let Some(text) = pasted
             && let Some((revision, tile)) = self.clipboard_paste_target.take()
         {
@@ -155,12 +164,17 @@ impl Map16Editor {
         }
         ui.separator();
         ui.columns(2, |columns| {
-            self.page_view(&mut columns[0]);
-            self.properties(&mut columns[1]);
+            self.page_view(&mut columns[0], catalog);
+            self.properties(&mut columns[1], catalog);
         });
     }
 
-    fn toolbar(&mut self, ui: &mut egui::Ui, toolbar_images: &MainToolbarImageSet) {
+    fn toolbar(
+        &mut self,
+        ui: &mut egui::Ui,
+        toolbar_images: &MainToolbarImageSet,
+        catalog: Option<&LocalizationCatalog>,
+    ) {
         let save_available = !self.save_worker.is_running();
         let Some(document) = self.document.as_mut() else {
             return;
@@ -174,7 +188,7 @@ impl Map16Editor {
                     ui,
                     OriginalToolbarImages::Map16,
                     OriginalToolbarAction::Undo,
-                    "Undo",
+                    &text(catalog, Key::RomMap16Undo),
                     controller.can_undo(),
                 )
                 .clicked()
@@ -187,7 +201,7 @@ impl Map16Editor {
                     ui,
                     OriginalToolbarImages::Map16,
                     OriginalToolbarAction::Redo,
-                    "Redo",
+                    &text(catalog, Key::RomMap16Redo),
                     controller.can_redo(),
                 )
                 .clicked()
@@ -200,21 +214,21 @@ impl Map16Editor {
                     ui,
                     OriginalToolbarImages::Map16,
                     OriginalToolbarAction::Save,
-                    "Save",
+                    &text(catalog, Key::Map16DocumentSave),
                     save_available,
                 )
                 .clicked()
             {
                 document_io::begin_save(controller, &mut self.save_worker, &mut self.error);
             }
-            if ui.button("Copy tile").clicked()
+            if ui.button(text(catalog, Key::RomMap16CopyTile)).clicked()
                 && let Some(tile) = controller.value().page.tiles.get(self.selected_tile)
             {
                 if let Err(error) = native_clipboard::copy_map16_tile_to_system(ui.ctx(), *tile) {
                     self.error = Some(error);
                 }
             }
-            if ui.button("Paste tile").clicked() {
+            if ui.button(text(catalog, Key::RomMap16PasteTile)).clicked() {
                 self.clipboard_paste_target = Some((controller.revision(), self.selected_tile));
                 match native_clipboard::request_map16_tile_paste(ui.ctx()) {
                     Ok(Some(tile)) => {
@@ -231,11 +245,14 @@ impl Map16Editor {
                     }
                 }
             }
-            ui.label(if controller.is_modified() {
-                "Modified"
-            } else {
-                "Saved"
-            });
+            ui.label(text(
+                catalog,
+                if controller.is_modified() {
+                    Key::Map16DocumentModified
+                } else {
+                    Key::Map16DocumentSaved
+                },
+            ));
         });
         if let Some(((revision, tile), value)) = native_paste {
             match controller.apply_edits(
@@ -251,9 +268,9 @@ impl Map16Editor {
         }
     }
 
-    fn page_view(&mut self, ui: &mut egui::Ui) {
+    fn page_view(&mut self, ui: &mut egui::Ui, catalog: Option<&LocalizationCatalog>) {
         let Some(texture) = &self.texture else {
-            ui.label("Preview unavailable");
+            ui.label(text(catalog, Key::Map16DocumentPreviewUnavailable));
             return;
         };
         let image = egui::Image::new(texture).sense(egui::Sense::click());
@@ -280,19 +297,22 @@ impl Map16Editor {
         );
     }
 
-    fn properties(&mut self, ui: &mut egui::Ui) {
-        ui.heading(format!("Tile {:02X}", self.selected_tile));
+    fn properties(&mut self, ui: &mut egui::Ui, catalog: Option<&LocalizationCatalog>) {
+        ui.heading(
+            text(catalog, Key::Map16DocumentTileFormat)
+                .replace("{tile}", &format!("{:02X}", self.selected_tile)),
+        );
         ui.horizontal(|ui| {
-            ui.label("Quadrant");
+            ui.label(text(catalog, Key::RomMap16Quadrant));
             egui::ComboBox::from_id_salt("map16-quadrant")
-                .selected_text(map16_subtile_form::quadrant_name(self.quadrant))
+                .selected_text(quadrant_text(catalog, self.quadrant))
                 .show_ui(ui, |ui| {
                     for index in 0..4 {
                         if ui
                             .selectable_value(
                                 &mut self.quadrant,
                                 index,
-                                map16_subtile_form::quadrant_name(index),
+                                quadrant_text(catalog, index),
                             )
                             .clicked()
                         {
@@ -302,22 +322,40 @@ impl Map16Editor {
                 });
         });
         ui.horizontal(|ui| {
-            ui.label("8×8 tile (hex)");
+            ui.label(text(catalog, Key::Map16DocumentSubtileHex));
             ui.text_edit_singleline(&mut self.subtile.tile);
         });
-        ui.add(egui::Slider::new(&mut self.subtile.palette, 0..=7).text("Palette"));
-        ui.checkbox(&mut self.subtile.priority, "Priority");
-        ui.checkbox(&mut self.subtile.x_flip, "Horizontal flip");
-        ui.checkbox(&mut self.subtile.y_flip, "Vertical flip");
-        if ui.button("Apply subtile").clicked() {
+        ui.add(
+            egui::Slider::new(&mut self.subtile.palette, 0..=7)
+                .text(text(catalog, Key::RomMap16Palette)),
+        );
+        ui.checkbox(
+            &mut self.subtile.priority,
+            text(catalog, Key::RomMap16Priority),
+        );
+        ui.checkbox(
+            &mut self.subtile.x_flip,
+            text(catalog, Key::Map16DocumentHorizontalFlip),
+        );
+        ui.checkbox(
+            &mut self.subtile.y_flip,
+            text(catalog, Key::Map16DocumentVerticalFlip),
+        );
+        if ui
+            .button(text(catalog, Key::RomMap16ApplySubtile))
+            .clicked()
+        {
             self.apply_subtile();
         }
         ui.separator();
         ui.horizontal(|ui| {
-            ui.label("Acts Like (hex)");
+            ui.label(text(catalog, Key::LevelAuxActsLike));
             ui.text_edit_singleline(&mut self.acts_like);
         });
-        if ui.button("Apply Acts Like").clicked() {
+        if ui
+            .button(text(catalog, Key::RomMap16ApplyActsLike))
+            .clicked()
+        {
             self.apply_acts_like();
         }
     }
@@ -377,14 +415,14 @@ impl Map16Editor {
         self.clipboard_paste_target = None;
     }
 
-    fn show_error(&mut self, context: &egui::Context) {
+    fn show_error(&mut self, context: &egui::Context, catalog: Option<&LocalizationCatalog>) {
         if let Some(error) = self.error.clone() {
-            egui::Window::new("Map16 error")
+            egui::Window::new(text(catalog, Key::Map16DocumentErrorTitle))
                 .collapsible(false)
                 .resizable(false)
                 .show(context, |ui| {
                     ui.label(error);
-                    if ui.button("OK").clicked() {
+                    if ui.button(text(catalog, Key::Map16DocumentOk)).clicked() {
                         self.error = None;
                     }
                 });
@@ -403,11 +441,57 @@ impl Map16Editor {
     }
 }
 
+fn text(catalog: Option<&LocalizationCatalog>, key: Key) -> String {
+    catalog.map_or_else(
+        || key.english().to_owned(),
+        |catalog| catalog.extended_text(key).to_owned(),
+    )
+}
+
+fn quadrant_text(catalog: Option<&LocalizationCatalog>, index: usize) -> String {
+    text(
+        catalog,
+        [
+            Key::Map16DocumentTopLeft,
+            Key::Map16DocumentTopRight,
+            Key::Map16DocumentBottomLeft,
+            Key::Map16DocumentBottomRight,
+        ][index.min(3)],
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use lm_graphics::{GraphicsFile4bpp, Palette};
     use lm_level::{Map16Page, Map16PageFile, Map16Tile, Subtile};
+
+    #[test]
+    fn portable_map16_editor_has_no_literal_widget_text() {
+        let source = include_str!("map16_editor.rs");
+        for literal_widget in [
+            "ui.button(\"",
+            "ui.label(\"",
+            "ui.heading(\"",
+            "Button::new(\"",
+            "Window::new(\"",
+            ".text(\"",
+        ] {
+            assert!(
+                !source.contains(literal_widget),
+                "portable Map16 editor bypasses localization with {literal_widget}"
+            );
+        }
+        for key in Key::ALL
+            .into_iter()
+            .filter(|key| format!("{key:?}").starts_with("Map16Document"))
+        {
+            assert!(
+                source.contains(&format!("Key::{key:?}")),
+                "portable Map16 editor does not consume {key:?}"
+            );
+        }
+    }
 
     fn editor() -> Map16Editor {
         let file = Map16PageFile {

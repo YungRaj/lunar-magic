@@ -7229,6 +7229,17 @@ localization passes 28/28 active cases (one provenance ignore), native compilati
 renderer remains 237/237. Other unaudited frontend modules and retained live language-DLL evidence
 keep Localization Partial; aggregate parity remains 60/65.
 
+Localization coverage update (2026-08-12, portable Map16 page editor): nineteen appended
+`Map16Document*` identities cover the document lifecycle, preview state, dynamic selected-tile
+heading, exact subtile wording, flip controls, all four quadrant names, dirty-close confirmation,
+and error acknowledgement. Existing proven `RomMap16*` editing vocabulary is reused for Undo/Redo,
+copy/paste, quadrant, palette, priority, subtile application, and Acts-Like controls; the application
+now passes its live catalog into the portable editor. A complete source audit rejects literal
+window, button, label, heading, slider, and `Button` captions and requires every document identity.
+The focused audit passes, localization passes 28/28 active cases (one provenance ignore), native
+compilation passes, and renderer remains 237/237. Other unaudited frontend modules and retained live
+language-DLL evidence keep Localization Partial; aggregate parity remains 60/65.
+
 Localization coverage update (2026-08-12, aggregate Level domain): twenty-six appended
 `NativeAssets*` identities plus the matching native-document identities now cover source/header
 summary, every legacy header semantic, custom-time controls, staged header lifecycle, Layer 1

@@ -22,7 +22,10 @@ impl NativeApplication {
         if self.graphics_editor.show(context, self.app.localization()) {
             self.request_quit(context);
         }
-        if self.map16_editor.show(context, &self.main_toolbar_images) {
+        if self
+            .map16_editor
+            .show(context, &self.main_toolbar_images, self.app.localization())
+        {
             self.request_quit(context);
         }
         if self
