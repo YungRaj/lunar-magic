@@ -7998,3 +7998,14 @@ surface audit rejects literal button, label, small-text, slider, and prefix capt
 every family identity. Native compilation, the focused audit, localization 28/28 active cases (one
 provenance ignore), and renderer 237/237 pass. Other unaudited frontend modules and the retained
 translated language-DLL gesture keep Localization Partial; aggregate parity remains 60/65.
+
+Localization coverage update (2026-08-12, portable complete-overworld shell): twenty-one appended
+`OverworldDocument*` identities cover document/open titles, maximum-record configuration, open,
+Undo/Redo/Save and dirty state, tilemap heading/coordinate/Map16 editing, completed-event preview,
+unavailable preview, dirty-close confirmation, and error acknowledgement. Existing installed-
+overworld keys are reused for Layer 1/2 and the Records/Palette/Animation tabs. A two-module audit
+requires every document identity and rejects literal window, button, label, heading, slider, and
+button captions across the shell and tilemap module. Native compilation, the focused audit,
+localization 28/28 active cases (one provenance ignore), and renderer 237/237 pass. Other unaudited
+frontend modules and the retained translated language-DLL gesture keep Localization Partial;
+aggregate parity remains 60/65.

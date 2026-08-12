@@ -3,18 +3,31 @@ use super::{
 };
 use crate::{level_editor_forms, overworld_editor_render};
 use eframe::egui;
-use lm_app::LocalizationCatalog;
+use lm_app::{ExtendedUiTextKey as Key, LocalizationCatalog};
 use lm_app::{OverworldControllerEdit, OverworldLayerId};
 use lm_project::CompleteOverworldShape;
 
 impl OverworldEditor {
-    pub(super) fn world_view(&mut self, ui: &mut egui::Ui, toolbar_images: &MainToolbarImageSet) {
+    pub(super) fn world_view(
+        &mut self,
+        ui: &mut egui::Ui,
+        toolbar_images: &MainToolbarImageSet,
+        catalog: Option<&LocalizationCatalog>,
+    ) {
         ui.horizontal(|ui| {
             if ui
-                .selectable_value(&mut self.edit_layer, 0, "Layer 1")
+                .selectable_value(
+                    &mut self.edit_layer,
+                    0,
+                    super::ow_document_text(catalog, Key::RomOverworldLayer1),
+                )
                 .clicked()
                 || ui
-                    .selectable_value(&mut self.edit_layer, 1, "Layer 2")
+                    .selectable_value(
+                        &mut self.edit_layer,
+                        1,
+                        super::ow_document_text(catalog, Key::RomOverworldLayer2),
+                    )
                     .clicked()
             {
                 self.loaded_tile = None;
@@ -25,15 +38,19 @@ impl OverworldEditor {
         });
         if ui
             .add(
-                egui::Slider::new(&mut self.completed_reveals, 0..=reveal_count)
-                    .text("Completed reveals"),
+                egui::Slider::new(&mut self.completed_reveals, 0..=reveal_count).text(
+                    super::ow_document_text(catalog, Key::OverworldDocumentCompletedReveals),
+                ),
             )
             .changed()
         {
             self.rendered_key = None;
         }
         let Some(texture) = self.texture.clone() else {
-            ui.label("Preview unavailable; property editing remains available.");
+            ui.label(super::ow_document_text(
+                catalog,
+                Key::OverworldDocumentPreviewUnavailable,
+            ));
             return;
         };
         let available = ui.available_size();
@@ -78,16 +95,29 @@ impl OverworldEditor {
     }
 
     pub(super) fn side_panel(&mut self, ui: &mut egui::Ui, catalog: Option<&LocalizationCatalog>) {
-        ui.heading("Tilemap");
-        ui.label(format!(
-            "Coordinate {}, {}",
-            self.selected.0, self.selected.1
+        ui.heading(super::ow_document_text(
+            catalog,
+            Key::OverworldDocumentTilemap,
         ));
+        ui.label(
+            super::ow_document_text(catalog, Key::OverworldDocumentCoordinateFormat)
+                .replace("{x}", &self.selected.0.to_string())
+                .replace("{y}", &self.selected.1.to_string()),
+        );
         ui.horizontal(|ui| {
-            ui.label("Map16 tile (hex)");
+            ui.label(super::ow_document_text(
+                catalog,
+                Key::OverworldDocumentMap16Tile,
+            ));
             ui.text_edit_singleline(&mut self.tile_value);
         });
-        if ui.button("Apply tile").clicked() {
+        if ui
+            .button(super::ow_document_text(
+                catalog,
+                Key::OverworldDocumentApplyTile,
+            ))
+            .clicked()
+        {
             match level_editor_forms::parse_hex_u16(&self.tile_value, "overworld Map16 tile") {
                 Ok(tile) => self.apply_edit(&OverworldControllerEdit::SetLayerTile {
                     layer: self.layer(),
@@ -100,9 +130,21 @@ impl OverworldEditor {
         }
         ui.separator();
         ui.horizontal(|ui| {
-            ui.selectable_value(&mut self.panel, Panel::Records, "Records");
-            ui.selectable_value(&mut self.panel, Panel::Palette, "Palette");
-            ui.selectable_value(&mut self.panel, Panel::Animation, "Animation");
+            ui.selectable_value(
+                &mut self.panel,
+                Panel::Records,
+                super::ow_document_text(catalog, Key::RomOverworldTabRecords),
+            );
+            ui.selectable_value(
+                &mut self.panel,
+                Panel::Palette,
+                super::ow_document_text(catalog, Key::RomOverworldTabPalette),
+            );
+            ui.selectable_value(
+                &mut self.panel,
+                Panel::Animation,
+                super::ow_document_text(catalog, Key::RomOverworldTabAnimation),
+            );
         });
         ui.separator();
         self.active_panel(ui, catalog);
