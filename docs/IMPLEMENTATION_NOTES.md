@@ -8305,3 +8305,13 @@ fresh production-widget scan finds only the intentional em-dash empty-value glyp
 editor. Native compilation, the focused audit, localization 28/28 active cases (one provenance
 ignore), and renderer 237/237 pass. Other native forms and retained live language-DLL evidence
 keep Localization Partial; aggregate parity remains 60/65.
+
+Localization coverage update (2026-08-12, complete live-emulator controls): three appended
+`LiveEmulator*` extension identities cover the audio and muted states plus the mute/unmute tooltip.
+The live session receives the active catalog alongside its legacy-key resolver. The fixed 256-key
+`UiTextKey` byte schema remains exactly unchanged; attempting to append there is rejected by its
+`repr(u8)` boundary, so new captions correctly use the append-only extension stream. A focused
+source audit rejects the former literals and requires all three identities. The focused native
+test and localization 28/28 active cases (one provenance ignore) pass, while renderer remains
+237/237. Other native forms and retained live language-DLL evidence keep Localization Partial;
+aggregate parity remains 60/65.

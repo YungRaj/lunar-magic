@@ -1411,11 +1411,14 @@ impl NativeApplication {
             }
         }
         let localization = self.app.localization().cloned();
-        if let Some(status) = self.live_emulator.show(context, |key| {
-            localization
-                .as_ref()
-                .map_or_else(|| key.english().into(), |catalog| catalog.text(key).into())
-        }) {
+        if let Some(status) = self
+            .live_emulator
+            .show(context, localization.as_ref(), |key| {
+                localization
+                    .as_ref()
+                    .map_or_else(|| key.english().into(), |catalog| catalog.text(key).into())
+            })
+        {
             self.app.status = status;
         }
         if let Some(error) = self.effects.error.clone() {

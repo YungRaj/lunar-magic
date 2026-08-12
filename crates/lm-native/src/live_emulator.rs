@@ -5,7 +5,8 @@ use lm_app::{
     EMULATOR_JOYPAD_A, EMULATOR_JOYPAD_B, EMULATOR_JOYPAD_DOWN, EMULATOR_JOYPAD_LEFT,
     EMULATOR_JOYPAD_RIGHT, EMULATOR_JOYPAD_SELECT, EMULATOR_JOYPAD_START, EMULATOR_JOYPAD_UP,
     EMULATOR_JOYPAD_X, EMULATOR_JOYPAD_Y, EmulatorBackendCommand, EmulatorBackendEvent,
-    EmulatorPauseMode, EmulatorPauseReason, EmulatorSessionAction, EmulatorSessionState, UiTextKey,
+    EmulatorPauseMode, EmulatorPauseReason, EmulatorSessionAction, EmulatorSessionState,
+    ExtendedUiTextKey, LocalizationCatalog, UiTextKey,
 };
 use std::io::{Read, Write};
 use std::path::PathBuf;
@@ -290,6 +291,7 @@ impl LiveEmulator {
     pub(crate) fn show(
         &mut self,
         context: &egui::Context,
+        catalog: Option<&LocalizationCatalog>,
         text: impl Fn(UiTextKey) -> String,
     ) -> Option<String> {
         self.poll(context);
@@ -358,10 +360,20 @@ impl LiveEmulator {
                     }
                     stop = ui.button(text(UiTextKey::LiveEmulatorStop)).clicked();
                     let mut muted = self.audio.muted();
-                    let audio_label = if muted { "Audio muted" } else { "Audio" };
+                    let audio_label = extended_text(
+                        catalog,
+                        if muted {
+                            ExtendedUiTextKey::LiveEmulatorAudioMuted
+                        } else {
+                            ExtendedUiTextKey::LiveEmulatorAudio
+                        },
+                    );
                     if ui
                         .toggle_value(&mut muted, audio_label)
-                        .on_hover_text("Mute or unmute internal emulator audio")
+                        .on_hover_text(extended_text(
+                            catalog,
+                            ExtendedUiTextKey::LiveEmulatorAudioHelp,
+                        ))
                         .changed()
                     {
                         self.audio.set_muted(muted);
@@ -518,6 +530,13 @@ impl LiveEmulator {
             }
         }
     }
+}
+
+fn extended_text(catalog: Option<&LocalizationCatalog>, key: ExtendedUiTextKey) -> String {
+    catalog.map_or_else(
+        || key.english().to_owned(),
+        |catalog| catalog.extended_text(key).to_owned(),
+    )
 }
 
 fn frame_is_translucent(enabled: bool, pause: EmulatorPauseMode) -> bool {
@@ -721,6 +740,38 @@ pub(crate) fn choose_core() -> Option<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn live_audio_controls_have_no_fixed_english_captions() {
+        let source = include_str!("live_emulator.rs");
+        let show = source
+            .split("    pub(crate) fn show(")
+            .nth(1)
+            .unwrap()
+            .split("    fn poll(")
+            .next()
+            .unwrap();
+        for literal in [
+            "\"Audio muted\"",
+            "\"Audio\"",
+            "on_hover_text(\"Mute or unmute internal emulator audio\")",
+        ] {
+            assert!(
+                !show.contains(literal),
+                "fixed-English live control: {literal}"
+            );
+        }
+        for key in [
+            ExtendedUiTextKey::LiveEmulatorAudio,
+            ExtendedUiTextKey::LiveEmulatorAudioMuted,
+            ExtendedUiTextKey::LiveEmulatorAudioHelp,
+        ] {
+            assert!(
+                show.contains(&format!("ExtendedUiTextKey::{key:?}")),
+                "missing live-emulator identity {key:?}"
+            );
+        }
+    }
 
     #[test]
     fn command_and_event_stream_helpers_share_exact_protocol_records() {

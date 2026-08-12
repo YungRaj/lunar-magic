@@ -4116,10 +4116,13 @@ pub enum ExtendedUiTextKey {
     VanillaLevelSize,
     VanillaLevelFixedByHandler,
     VanillaLevelResizeHelp,
+    LiveEmulatorAudio,
+    LiveEmulatorAudioMuted,
+    LiveEmulatorAudioHelp,
 }
 
 impl ExtendedUiTextKey {
-    pub const ALL: [Self; 2415] = [
+    pub const ALL: [Self; 2418] = [
         Self::MwlDocumentEditorTitle,
         Self::MwlDocumentVersionFormat,
         Self::MwlDocumentFlagsHex,
@@ -6535,6 +6538,9 @@ impl ExtendedUiTextKey {
         Self::VanillaLevelSize,
         Self::VanillaLevelFixedByHandler,
         Self::VanillaLevelResizeHelp,
+        Self::LiveEmulatorAudio,
+        Self::LiveEmulatorAudioMuted,
+        Self::LiveEmulatorAudioHelp,
     ];
 
     #[must_use]
@@ -9695,6 +9701,9 @@ impl ExtendedUiTextKey {
             Self::VanillaLevelResizeHelp => {
                 "Size controls update only the authenticated native fields; use Apply object fields to commit."
             }
+            Self::LiveEmulatorAudio => "Audio",
+            Self::LiveEmulatorAudioMuted => "Audio muted",
+            Self::LiveEmulatorAudioHelp => "Mute or unmute internal emulator audio",
         }
     }
 

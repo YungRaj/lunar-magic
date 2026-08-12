@@ -2431,3 +2431,11 @@ complete helper audit rejects former literals, and the production-widget scan le
 intentional em-dash empty-value glyph. Native compilation, the focused audit, localization 28/28
 active cases (one provenance ignore), and renderer 237/237 pass. Other native forms and live
 translated language-DLL evidence keep Localization Partial, so aggregate parity remains 60/65.
+
+Localization coverage update (2026-08-12, complete live-emulator controls): three appended
+`LiveEmulator*` extension keys replace fixed English for audio, muted audio, and their tooltip. The
+active catalog reaches the live window without changing the fixed 256-key byte-compatible
+`UiTextKey` prefix. A focused source audit rejects the former literals and requires all identities.
+The focused native test, localization 28/28 active cases (one provenance ignore), and renderer
+237/237 pass. Other native forms and live translated language-DLL evidence keep Localization
+Partial, so aggregate parity remains 60/65.
