@@ -2532,10 +2532,15 @@ pub enum ExtendedUiTextKey {
     VramPatchStatusNone,
     VramPatchStatusNormal,
     VramPatchStatusHd,
+    LegacyBypassTransferCompleteTitle,
+    LegacyBypassTransferCompleteFormat,
+    LegacyBypassTransferDestinationFallback,
+    LegacyBypassTransferErrorTitle,
+    LegacyBypassTransferOk,
 }
 
 impl ExtendedUiTextKey {
-    pub const ALL: [Self; 831] = [
+    pub const ALL: [Self; 836] = [
         Self::TilemapTitleScreenName,
         Self::TilemapCreditsName,
         Self::TilemapEditorTitleFormat,
@@ -3367,6 +3372,11 @@ impl ExtendedUiTextKey {
         Self::VramPatchStatusNone,
         Self::VramPatchStatusNormal,
         Self::VramPatchStatusHd,
+        Self::LegacyBypassTransferCompleteTitle,
+        Self::LegacyBypassTransferCompleteFormat,
+        Self::LegacyBypassTransferDestinationFallback,
+        Self::LegacyBypassTransferErrorTitle,
+        Self::LegacyBypassTransferOk,
     ];
 
     #[must_use]
@@ -4561,6 +4571,13 @@ impl ExtendedUiTextKey {
                 "Normal VRAM patch will be applied on the next level save."
             }
             Self::VramPatchStatusHd => "The installed HD VRAM patch selection is retained.",
+            Self::LegacyBypassTransferCompleteTitle => "Bypass List Extraction Complete",
+            Self::LegacyBypassTransferCompleteFormat => {
+                "Old ExGFX bypass list extracted to:\n{path}"
+            }
+            Self::LegacyBypassTransferDestinationFallback => "selected destination",
+            Self::LegacyBypassTransferErrorTitle => "Old ExGFX Bypass List Error",
+            Self::LegacyBypassTransferOk => "OK",
         }
     }
 

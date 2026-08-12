@@ -7467,6 +7467,16 @@ rejection without project mutation. Localization passes 28/28 and renderer passe
 native forms and retained live language-DLL evidence keep Localization Partial; aggregate parity
 remains 60/65.
 
+Localization coverage update (2026-08-12, legacy ExGFX bypass-list transfer): five appended
+`LegacyBypassTransfer*` keys cover extraction completion/path fallback and the shared asynchronous
+error/acknowledgement lifecycle. Paths remain data substituted into a localized template; loader,
+persistence, and revision errors remain technical payloads. Native transfer tests pass 3/3,
+including exact 400-byte envelope-free create/replace and concurrent-transfer rejection.
+Application semantics pass 2/2, proving exact-length rejection, prerequisite installation,
+transactional import, semantic reopen, byte-identical re-export, and atomic Undo. Localization
+passes 28/28 and renderer passes 237/237. Other native forms and retained live language-DLL
+evidence keep Localization Partial; aggregate parity remains 60/65.
+
 Localization coverage update (2026-08-12, IPS application): nine appended `IpsApply*` keys cover
 the complete revision-bound IPS application form: logical-offset/header preservation, dynamic
 source/target/change counts, identity and bank-shape requirements, stale state, transactional

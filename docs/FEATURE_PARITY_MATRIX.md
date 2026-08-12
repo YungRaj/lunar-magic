@@ -2138,3 +2138,10 @@ selection policy, deferred None, atomic Normal installation with the level save,
 replacement and Undo, and unknown-runtime no-mutation safety remain proven by 9/9 focused tests.
 Localization model passes 28/28 and renderer 237/237. Other native forms and retained live
 language-DLL evidence keep Localization Partial, so aggregate parity remains 60/65.
+
+Localization coverage update (2026-08-12, legacy ExGFX bypass-list transfer): extraction results
+and import/export errors now use five typed extension keys. Native I/O passes 3/3 for exact
+400-byte create/replace and concurrency safety; application semantics pass 2/2 for exact-length
+validation, prerequisite installation, commit/reopen/re-export equality, and Undo. Localization
+model passes 28/28 and renderer 237/237. Other native forms and retained live language-DLL evidence
+keep Localization Partial, so aggregate parity remains 60/65.

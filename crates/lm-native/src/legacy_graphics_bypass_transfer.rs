@@ -4,7 +4,7 @@ use crate::{
     persistence_worker::{PersistenceTarget, PersistenceWorker},
 };
 use eframe::egui;
-use lm_app::{AppState, Command, ControllerSnapshot};
+use lm_app::{AppState, Command, ControllerSnapshot, ExtendedUiTextKey, LocalizationCatalog};
 use lm_level::LegacyGraphicsBypassTable;
 use std::path::PathBuf;
 
@@ -80,17 +80,27 @@ impl LegacyGraphicsBypassTransfer {
     }
 
     pub(crate) fn show(&mut self, context: &egui::Context, app: &AppState) -> Option<Command> {
+        let catalog = app.localization();
         if let Some(completion) = self.persistence.show(context) {
             match completion.result {
                 Ok(()) => {
-                    self.completion = Some(format!(
-                        "Old ExGFX bypass list extracted to:\n{}",
-                        match completion.target {
-                            PersistenceTarget::Create(path)
-                            | PersistenceTarget::ReplaceAs(path) => path.display().to_string(),
-                            _ => "selected destination".into(),
-                        }
-                    ));
+                    self.completion = Some(
+                        text(
+                            catalog,
+                            ExtendedUiTextKey::LegacyBypassTransferCompleteFormat,
+                        )
+                        .replace(
+                            "{path}",
+                            &match completion.target {
+                                PersistenceTarget::Create(path)
+                                | PersistenceTarget::ReplaceAs(path) => path.display().to_string(),
+                                _ => text(
+                                    catalog,
+                                    ExtendedUiTextKey::LegacyBypassTransferDestinationFallback,
+                                ),
+                            },
+                        ),
+                    );
                 }
                 Err(error) => self.error = Some(error),
             }
@@ -119,35 +129,69 @@ impl LegacyGraphicsBypassTransfer {
         });
 
         if let Some(message) = self.completion.clone() {
-            egui::Window::new("Bypass List Extraction Complete")
-                .collapsible(false)
-                .resizable(false)
-                .show(context, |ui| {
-                    ui.label(message);
-                    if ui.button("OK").clicked() {
-                        self.completion = None;
-                    }
-                });
+            egui::Window::new(text(
+                catalog,
+                ExtendedUiTextKey::LegacyBypassTransferCompleteTitle,
+            ))
+            .collapsible(false)
+            .resizable(false)
+            .show(context, |ui| {
+                ui.label(message);
+                if ui
+                    .button(text(catalog, ExtendedUiTextKey::LegacyBypassTransferOk))
+                    .clicked()
+                {
+                    self.completion = None;
+                }
+            });
         }
         if let Some(message) = self.error.clone() {
-            egui::Window::new("Old ExGFX Bypass List Error")
-                .collapsible(false)
-                .resizable(false)
-                .show(context, |ui| {
-                    ui.label(message);
-                    if ui.button("OK").clicked() {
-                        self.error = None;
-                    }
-                });
+            egui::Window::new(text(
+                catalog,
+                ExtendedUiTextKey::LegacyBypassTransferErrorTitle,
+            ))
+            .collapsible(false)
+            .resizable(false)
+            .show(context, |ui| {
+                ui.label(message);
+                if ui
+                    .button(text(catalog, ExtendedUiTextKey::LegacyBypassTransferOk))
+                    .clicked()
+                {
+                    self.error = None;
+                }
+            });
         }
         command
     }
+}
+
+fn text(catalog: Option<&LocalizationCatalog>, key: ExtendedUiTextKey) -> String {
+    crate::frontend_ui::extended_localized_text(catalog, key)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::fs;
+
+    #[test]
+    fn complete_legacy_bypass_transfer_form_uses_every_typed_key() {
+        let source = include_str!("legacy_graphics_bypass_transfer.rs");
+        for key in ExtendedUiTextKey::ALL
+            .into_iter()
+            .filter(|key| format!("{key:?}").starts_with("LegacyBypassTransfer"))
+        {
+            assert!(source.contains(&format!("ExtendedUiTextKey::{key:?}")));
+        }
+        for literal in [
+            "Window::new(\"Bypass List Extraction Complete\")",
+            "Window::new(\"Old ExGFX Bypass List Error\")",
+            "ui.button(\"OK\")",
+        ] {
+            assert!(!source.contains(literal));
+        }
+    }
 
     #[test]
     fn extraction_publishes_exact_400_byte_table_without_an_envelope() {
