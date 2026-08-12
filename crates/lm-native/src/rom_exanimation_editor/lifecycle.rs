@@ -1,5 +1,5 @@
 use super::workspace::{decode, decode_slot};
-use super::{AppState, PendingClose, RomExAnimationEditor, egui};
+use super::{AppState, Key, LocalizationCatalog, PendingClose, RomExAnimationEditor, egui, text};
 
 impl RomExAnimationEditor {
     pub(crate) fn is_open(&self) -> bool {
@@ -93,21 +93,31 @@ impl RomExAnimationEditor {
         false
     }
 
-    pub(super) fn close_confirmation(&mut self, context: &egui::Context) -> bool {
+    pub(super) fn close_confirmation(
+        &mut self,
+        context: &egui::Context,
+        catalog: Option<&LocalizationCatalog>,
+    ) -> bool {
         let Some(pending) = self.pending_close else {
             return false;
         };
         let mut approved = false;
-        egui::Window::new("Discard staged ExAnimation changes?")
+        egui::Window::new(text(catalog, Key::RomExAnimationDiscardTitle))
             .collapsible(false)
             .resizable(false)
             .show(context, |ui| {
-                ui.label("These changes have not been committed to the ROM.");
+                ui.label(text(catalog, Key::RomExAnimationDiscardNotice));
                 ui.horizontal(|ui| {
-                    if ui.button("Cancel").clicked() {
+                    if ui
+                        .button(text(catalog, Key::RomExAnimationCancel))
+                        .clicked()
+                    {
                         self.pending_close = None;
                     }
-                    if ui.button("Discard").clicked() {
+                    if ui
+                        .button(text(catalog, Key::RomExAnimationDiscard))
+                        .clicked()
+                    {
                         self.clear();
                         approved = pending == PendingClose::Application;
                     }
@@ -116,11 +126,15 @@ impl RomExAnimationEditor {
         approved
     }
 
-    pub(super) fn show_error(&mut self, context: &egui::Context) {
+    pub(super) fn show_error(
+        &mut self,
+        context: &egui::Context,
+        catalog: Option<&LocalizationCatalog>,
+    ) {
         if let Some(error) = self.error.clone() {
-            egui::Window::new("ROM ExAnimation error").show(context, |ui| {
+            egui::Window::new(text(catalog, Key::RomExAnimationErrorTitle)).show(context, |ui| {
                 ui.label(error);
-                if ui.button("OK").clicked() {
+                if ui.button(text(catalog, Key::RomExAnimationOk)).clicked() {
                     self.error = None;
                 }
             });

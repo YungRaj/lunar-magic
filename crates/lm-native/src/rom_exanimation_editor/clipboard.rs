@@ -2,10 +2,17 @@ use super::{PasteTarget, RomExAnimationEditor};
 use crate::native_clipboard;
 use eframe::egui;
 use lm_app::ExAnimationControllerEdit;
+use lm_app::LocalizationCatalog;
 use lm_graphics::{ExAnimationFrameEdit, ExAnimationRecord};
 
 impl RomExAnimationEditor {
-    pub(super) fn frame_clipboard(&mut self, ui: &mut egui::Ui, stale: bool, record_exists: bool) {
+    pub(super) fn frame_clipboard(
+        &mut self,
+        ui: &mut egui::Ui,
+        stale: bool,
+        record_exists: bool,
+        catalog: Option<&LocalizationCatalog>,
+    ) {
         let frames = self
             .workspace
             .as_ref()
@@ -21,12 +28,18 @@ impl RomExAnimationEditor {
             ui.add(
                 egui::DragValue::new(&mut self.selected_frame)
                     .range(0..=frames.len().saturating_sub(1))
-                    .prefix("Frame "),
+                    .prefix(super::text(
+                        catalog,
+                        lm_app::ExtendedUiTextKey::NativeAssetsAnimationFramePrefix,
+                    )),
             );
             if ui
                 .add_enabled(
                     self.record_editable && record_exists && !frames.is_empty(),
-                    egui::Button::new("Copy frame"),
+                    egui::Button::new(super::text(
+                        catalog,
+                        lm_app::ExtendedUiTextKey::NativeAssetsAnimationCopyFrame,
+                    )),
                 )
                 .clicked()
             {
@@ -38,7 +51,10 @@ impl RomExAnimationEditor {
             if ui
                 .add_enabled(
                     !stale && self.record_editable && record_exists && !frames.is_empty(),
-                    egui::Button::new("Paste frame"),
+                    egui::Button::new(super::text(
+                        catalog,
+                        lm_app::ExtendedUiTextKey::NativeAssetsAnimationPasteFrame,
+                    )),
                 )
                 .clicked()
             {

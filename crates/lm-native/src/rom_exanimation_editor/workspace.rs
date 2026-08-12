@@ -2,6 +2,7 @@ use crate::rom_allocation::parse_search_range;
 use lm_app::{
     AppState, Command, ExAnimationController, RevisionProfile, RevisionProfileControllers,
 };
+use lm_app::{ExtendedUiTextKey as Key, LocalizationCatalog};
 use lm_project::ExAnimationSaveOptions;
 use lm_rom::RomImage;
 
@@ -18,11 +19,12 @@ pub(super) struct Workspace {
 }
 
 impl Workspace {
-    pub(super) fn target_label(&self) -> String {
+    pub(super) fn target_label(&self, catalog: Option<&LocalizationCatalog>) -> String {
         if self.editing_global {
-            "Global ExAnimation".into()
+            super::text(catalog, Key::RomExAnimationGlobalTarget)
         } else {
-            format!("Level {:03X} ExAnimation", self.slot)
+            super::text(catalog, Key::RomExAnimationLevelTargetFormat)
+                .replace("{level}", &format!("{:03X}", self.slot))
         }
     }
 
@@ -53,7 +55,7 @@ impl Workspace {
     ) -> Result<Command, String> {
         let options = self.save_options(search_start, search_end)?;
         self.controller
-            .prepare_commit(format!("Edit native {}", self.target_label()), &options)
+            .prepare_commit(format!("Edit native {}", self.target_label(None)), &options)
             .map(lm_app::PreparedRomCommit::into_command)
             .map_err(|error| error.to_string())
     }
@@ -67,7 +69,7 @@ impl Workspace {
         let options = self.save_options(search_start, search_end)?;
         self.controller
             .prepare_commit_with_reclamation(
-                format!("Edit and reclaim native {}", self.target_label()),
+                format!("Edit and reclaim native {}", self.target_label(None)),
                 &options,
                 manifest,
             )

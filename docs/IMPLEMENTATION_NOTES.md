@@ -7825,3 +7825,15 @@ source audits pass, localization passes 28/28 active cases (one provenance ignor
 passes, and renderer passes 237/237. The Level, Layer 2, Palette, ExAnimation, and Settings panel
 captions still require conversion, so aggregate localization and the overall Localization row stay
 Partial; aggregate parity remains 60/65.
+
+Localization coverage update (2026-08-12, installed-ROM ExAnimation editor): eighteen appended
+`RomExAnimation*` identities now cover the window, level/global target and switch state, dynamic
+global-unavailable notice, commit/staged state, record mutations, dirty-close confirmation, and
+error acknowledgement. The editor reuses existing typed ExAnimation field, record, frame,
+allocation, stale-ROM, and reclamation vocabulary rather than creating duplicate translations.
+The live catalog now flows through the application host, editor, clipboard controls, lifecycle
+dialogs, and workspace target labels. Source audits require every ROM ExAnimation key and reject
+literal window, heading, label, button, and frame-prefix text across the complete family.
+Localization passes 28/28 active cases (one provenance ignore), the focused native source audits
+pass 2/2, native compilation passes, and renderer remains 237/237. Remaining native forms and
+retained live language-DLL evidence keep Localization Partial; aggregate parity remains 60/65.

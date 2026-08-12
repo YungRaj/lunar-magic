@@ -429,7 +429,20 @@ impl NativeApplication {
         if quit {
             self.request_quit(context);
         }
-        show_rom_editor!(self, context, rom_exanimation_editor);
+        let (quit, command) = self.rom_exanimation_editor.show(
+            context,
+            self.app.project_revision(),
+            self.app.localization(),
+        );
+        if let Some(command) = command
+            && self.try_dispatch(context, command)
+        {
+            self.rom_exanimation_editor.commit_succeeded();
+            self.renderer.invalidate();
+        }
+        if quit {
+            self.request_quit(context);
+        }
         let (quit, command) = self.rom_overworld_editor.show(
             context,
             self.app.project_revision(),

@@ -9,7 +9,9 @@ use crate::{
     native_clipboard,
 };
 use eframe::egui;
-use lm_app::{AppState, Command, ExAnimationControllerEdit};
+use lm_app::{
+    AppState, Command, ExAnimationControllerEdit, ExtendedUiTextKey as Key, LocalizationCatalog,
+};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum PendingClose {
@@ -138,6 +140,7 @@ impl RomExAnimationEditor {
         &mut self,
         context: &egui::Context,
         revision: u64,
+        catalog: Option<&LocalizationCatalog>,
     ) -> (bool, Option<Command>) {
         let mut command = match self.manifest_loader.show(context, revision) {
             Some(Ok(manifest)) => match self.prepare_commit_owned(&manifest) {
@@ -155,20 +158,25 @@ impl RomExAnimationEditor {
         };
         if self.workspace.is_some() {
             self.load();
-            egui::Window::new("ROM ExAnimation Editor")
+            egui::Window::new(text(catalog, Key::RomExAnimationTitle))
                 .default_size([760.0, 680.0])
                 .vscroll(true)
                 .show(context, |ui| {
-                    if let Some(ui_command) = self.contents(ui, revision) {
+                    if let Some(ui_command) = self.contents(ui, revision, catalog) {
                         command = Some(ui_command);
                     }
                 });
         }
-        let approved = self.close_confirmation(context);
-        self.show_error(context);
+        let approved = self.close_confirmation(context, catalog);
+        self.show_error(context, catalog);
         (approved, command)
     }
-    fn contents(&mut self, ui: &mut egui::Ui, revision: u64) -> Option<Command> {
+    fn contents(
+        &mut self,
+        ui: &mut egui::Ui,
+        revision: u64,
+        catalog: Option<&LocalizationCatalog>,
+    ) -> Option<Command> {
         let pasted = ui.input(|input| {
             input.events.iter().find_map(|event| match event {
                 egui::Event::Paste(text) => Some(text.clone()),
@@ -178,7 +186,7 @@ impl RomExAnimationEditor {
         let (target_label, can_switch, target_modified, global_unavailable) =
             self.workspace.as_ref().map(|workspace| {
                 (
-                    workspace.target_label(),
+                    workspace.target_label(catalog),
                     workspace.alternate_controller.is_some() && !workspace.controller.is_modified(),
                     workspace.controller.is_modified(),
                     workspace.global_unavailable.clone(),
@@ -188,7 +196,10 @@ impl RomExAnimationEditor {
         ui.horizontal(|ui| {
             ui.heading(target_label);
             if ui
-                .add_enabled(can_switch, egui::Button::new("Switch level/global domain"))
+                .add_enabled(
+                    can_switch,
+                    egui::Button::new(text(catalog, Key::RomExAnimationSwitchDomain)),
+                )
                 .clicked()
             {
                 switch_target = true;
@@ -197,11 +208,12 @@ impl RomExAnimationEditor {
         if let Some(error) = global_unavailable {
             ui.colored_label(
                 egui::Color32::YELLOW,
-                format!("Global ExAnimation is unavailable: {error}"),
+                text(catalog, Key::RomExAnimationGlobalUnavailableFormat)
+                    .replace("{error}", &error),
             );
         }
         if target_modified {
-            ui.label("Commit or revert this domain before switching level/global targets.");
+            ui.label(text(catalog, Key::RomExAnimationSwitchBlocked));
         }
         if switch_target
             && self
@@ -219,12 +231,12 @@ impl RomExAnimationEditor {
         if stale {
             ui.colored_label(
                 egui::Color32::YELLOW,
-                "The ROM changed; reopen before editing or committing.",
+                text(catalog, Key::RomPaletteStaleNotice),
             );
         }
         ui.columns(2, |columns| {
-            self.record_list(&mut columns[0], stale);
-            self.properties(&mut columns[1], stale);
+            self.record_list(&mut columns[0], stale, catalog);
+            self.properties(&mut columns[1], stale, catalog);
         });
         if !stale && let Some(text) = pasted {
             match self.paste_target.take() {
@@ -235,9 +247,9 @@ impl RomExAnimationEditor {
         }
         ui.separator();
         ui.horizontal(|ui| {
-            ui.label("Allocation logical PC hex");
+            ui.label(text(catalog, Key::RomPaletteAllocation));
             ui.text_edit_singleline(&mut self.search_start);
-            ui.label("..");
+            ui.label(text(catalog, Key::RomPaletteRangeSeparator));
             ui.text_edit_singleline(&mut self.search_end);
         });
         let modified = self
@@ -247,7 +259,7 @@ impl RomExAnimationEditor {
         if ui
             .add_enabled(
                 modified && !stale && !self.manifest_loader.is_running(),
-                egui::Button::new("Commit ExAnimation to ROM"),
+                egui::Button::new(text(catalog, Key::RomExAnimationCommit)),
             )
             .clicked()
         {
@@ -261,7 +273,7 @@ impl RomExAnimationEditor {
         if ui
             .add_enabled(
                 modified && !stale && !self.manifest_loader.is_running(),
-                egui::Button::new("Commit and reclaim"),
+                egui::Button::new(text(catalog, Key::RomPaletteCommitReclaim)),
             )
             .clicked()
         {
@@ -269,15 +281,23 @@ impl RomExAnimationEditor {
                 self.error = Some(error);
             }
         }
-        ui.label(if modified {
-            "Staged animation changes"
-        } else {
-            "No staged changes"
-        });
+        ui.label(text(
+            catalog,
+            if modified {
+                Key::RomExAnimationStaged
+            } else {
+                Key::RomExAnimationUnmodified
+            },
+        ));
         None
     }
-    fn record_list(&mut self, ui: &mut egui::Ui, stale: bool) {
-        ui.heading("Records");
+    fn record_list(
+        &mut self,
+        ui: &mut egui::Ui,
+        stale: bool,
+        catalog: Option<&LocalizationCatalog>,
+    ) {
+        ui.heading(text(catalog, Key::ExAnimationDocumentRecords));
         let labels = self
             .workspace
             .as_ref()
@@ -287,7 +307,11 @@ impl RomExAnimationEditor {
                     .records
                     .iter()
                     .enumerate()
-                    .map(|(i, r)| format!("{i:02X}: kind {:02X}", r.kind()))
+                    .map(|(i, r)| {
+                        text(catalog, Key::ExAnimationDocumentRecordListFormat)
+                            .replace("{index}", &format!("{i:02X}"))
+                            .replace("{kind}", &format!("{:02X}", r.kind()))
+                    })
                     .collect::<Vec<_>>()
             })
             .unwrap_or_default();
@@ -301,7 +325,9 @@ impl RomExAnimationEditor {
             }
         }
         ui.horizontal(|ui| {
-            if ui.button("Copy record").clicked()
+            if ui
+                .button(text(catalog, Key::NativeAssetsAnimationCopyRecord))
+                .clicked()
                 && let Some(record) = self.current_record()
             {
                 match native_clipboard::encode_exanimation_record(record) {
@@ -312,7 +338,7 @@ impl RomExAnimationEditor {
             if ui
                 .add_enabled(
                     !stale && !labels.is_empty(),
-                    egui::Button::new("Paste record"),
+                    egui::Button::new(text(catalog, Key::NativeAssetsAnimationPasteRecord)),
                 )
                 .clicked()
             {
@@ -323,7 +349,10 @@ impl RomExAnimationEditor {
         });
         let len = labels.len();
         if ui
-            .add_enabled(!stale, egui::Button::new("Append form as record"))
+            .add_enabled(
+                !stale,
+                egui::Button::new(text(catalog, Key::RomExAnimationAppendRecord)),
+            )
             .clicked()
         {
             self.apply_record(true);
@@ -331,7 +360,7 @@ impl RomExAnimationEditor {
         if ui
             .add_enabled(
                 !stale && self.selected_record < len,
-                egui::Button::new("Remove selected"),
+                egui::Button::new(text(catalog, Key::ExAnimationDocumentRemoveSelected)),
             )
             .clicked()
         {
@@ -341,18 +370,26 @@ impl RomExAnimationEditor {
             self.selected_record = self.selected_record.saturating_sub(1);
         }
     }
-    fn properties(&mut self, ui: &mut egui::Ui, stale: bool) {
-        ui.heading("Slot settings");
+    fn properties(
+        &mut self,
+        ui: &mut egui::Ui,
+        stale: bool,
+        catalog: Option<&LocalizationCatalog>,
+    ) {
+        ui.heading(text(catalog, Key::ExAnimationDocumentSlotSettings));
         ui.horizontal(|ui| {
-            ui.label("Setting");
+            ui.label(text(catalog, Key::NativeAssetsAnimationSetting));
             ui.text_edit_singleline(&mut self.global.setting);
         });
         ui.horizontal(|ui| {
-            ui.label("Header");
+            ui.label(text(catalog, Key::NativeAssetsAnimationHeader));
             ui.text_edit_singleline(&mut self.global.header);
         });
         if ui
-            .add_enabled(!stale, egui::Button::new("Apply slot settings"))
+            .add_enabled(
+                !stale,
+                egui::Button::new(text(catalog, Key::NativeAssetsAnimationApplySlots)),
+            )
             .clicked()
         {
             match self.global.parse() {
@@ -364,20 +401,26 @@ impl RomExAnimationEditor {
             }
         }
         ui.separator();
-        ui.heading("Trigger");
+        ui.heading(text(catalog, Key::NativeAssetsAnimationTrigger));
         if ui
             .add(egui::Slider::new(&mut self.trigger_index, 0..=15))
             .changed()
         {
             self.load_trigger();
         }
-        ui.checkbox(&mut self.trigger_enabled, "Enabled");
+        ui.checkbox(
+            &mut self.trigger_enabled,
+            text(catalog, Key::NativeAssetsAnimationEnabled),
+        );
         ui.add_enabled(
             self.trigger_enabled,
             egui::TextEdit::singleline(&mut self.trigger_value),
         );
         if ui
-            .add_enabled(!stale, egui::Button::new("Apply trigger"))
+            .add_enabled(
+                !stale,
+                egui::Button::new(text(catalog, Key::NativeAssetsAnimationApplyTrigger)),
+            )
             .clicked()
         {
             let value = if self.trigger_enabled {
@@ -394,32 +437,44 @@ impl RomExAnimationEditor {
             }
         }
         ui.separator();
-        ui.heading(format!("Record {:02X}", self.selected_record));
-        for (label, field) in [
-            ("Kind", &mut self.record.kind),
-            ("Trigger", &mut self.record.size_mode),
-            ("Destination", &mut self.record.destination),
+        ui.heading(
+            text(catalog, Key::ExAnimationDocumentRecordFormat)
+                .replace("{index}", &format!("{:02X}", self.selected_record)),
+        );
+        for (key, field) in [
+            (Key::NativeAssetsAnimationKind, &mut self.record.kind),
+            (
+                Key::NativeAssetsAnimationTrigger,
+                &mut self.record.size_mode,
+            ),
+            (
+                Key::NativeAssetsAnimationDestination,
+                &mut self.record.destination,
+            ),
         ] {
             ui.horizontal(|ui| {
-                ui.label(label);
+                ui.label(text(catalog, key));
                 ui.text_edit_singleline(field);
             });
         }
-        ui.checkbox(&mut self.record.destination_flag, "Destination flag");
-        ui.label("Source words, one frame per line");
+        ui.checkbox(
+            &mut self.record.destination_flag,
+            text(catalog, Key::NativeAssetsAnimationDestinationFlag),
+        );
+        ui.label(text(catalog, Key::NativeAssetsAnimationSourceWords));
         ui.add(egui::TextEdit::multiline(&mut self.record.frames).desired_rows(7));
         if !self.record_editable {
-            ui.label("This transfer kind has no ordinary source-word payload.");
+            ui.label(text(catalog, Key::RomExAnimationSpecialTransferNotice));
         }
         let exists = self
             .workspace
             .as_ref()
             .is_some_and(|w| self.selected_record < w.controller.animation().records.len());
-        self.frame_clipboard(ui, stale, exists);
+        self.frame_clipboard(ui, stale, exists, catalog);
         if ui
             .add_enabled(
                 !stale && exists && self.record_editable,
-                egui::Button::new("Replace record"),
+                egui::Button::new(text(catalog, Key::RomExAnimationReplaceRecord)),
             )
             .clicked()
         {
@@ -513,6 +568,10 @@ impl RomExAnimationEditor {
     }
 }
 
+fn text(catalog: Option<&LocalizationCatalog>, key: Key) -> String {
+    crate::frontend_ui::extended_localized_text(catalog, key)
+}
+
 #[cfg(test)]
 mod tests {
     use super::{RomExAnimationEditor, Workspace};
@@ -521,6 +580,49 @@ mod tests {
     use lm_project::{ExAnimationSaveOptions, Project};
     use lm_rats::AllocationPolicy;
     use lm_rom::RomImage;
+
+    #[test]
+    fn complete_rom_exanimation_surface_uses_every_typed_key() {
+        let sources = [
+            include_str!("rom_exanimation_editor.rs"),
+            include_str!("rom_exanimation_editor/clipboard.rs"),
+            include_str!("rom_exanimation_editor/lifecycle.rs"),
+            include_str!("rom_exanimation_editor/workspace.rs"),
+        ]
+        .join("\n");
+        for key in lm_app::ExtendedUiTextKey::ALL
+            .into_iter()
+            .filter(|key| format!("{key:?}").starts_with("RomExAnimation"))
+        {
+            assert!(
+                sources.contains(&format!("{key:?}")),
+                "missing ROM ExAnimation label {key:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn complete_rom_exanimation_surface_has_no_literal_widget_text() {
+        let sources = [
+            include_str!("rom_exanimation_editor.rs"),
+            include_str!("rom_exanimation_editor/clipboard.rs"),
+            include_str!("rom_exanimation_editor/lifecycle.rs"),
+        ]
+        .join("\n");
+        for literal_widget in [
+            "Window::new(\"",
+            "ui.heading(\"",
+            "ui.label(\"",
+            "ui.button(\"",
+            "Button::new(\"",
+            ".prefix(\"",
+        ] {
+            assert!(
+                !sources.contains(literal_widget),
+                "ROM ExAnimation editor regressed to fixed widget text: {literal_widget}"
+            );
+        }
+    }
 
     #[test]
     fn staged_rom_exanimation_edit_is_recovered_without_committing_live_project() {

@@ -2243,6 +2243,24 @@ pub enum ExtendedUiTextKey {
     RomPaletteImportRaw,
     RomPaletteExportRaw,
     RomPaletteRawTransferNotice,
+    RomExAnimationTitle,
+    RomExAnimationSwitchDomain,
+    RomExAnimationGlobalUnavailableFormat,
+    RomExAnimationSwitchBlocked,
+    RomExAnimationGlobalTarget,
+    RomExAnimationLevelTargetFormat,
+    RomExAnimationCommit,
+    RomExAnimationStaged,
+    RomExAnimationUnmodified,
+    RomExAnimationAppendRecord,
+    RomExAnimationSpecialTransferNotice,
+    RomExAnimationReplaceRecord,
+    RomExAnimationDiscardTitle,
+    RomExAnimationDiscardNotice,
+    RomExAnimationCancel,
+    RomExAnimationDiscard,
+    RomExAnimationErrorTitle,
+    RomExAnimationOk,
     RomPaletteImportTpl,
     RomPaletteExportTpl,
     RomPaletteImportRgb,
@@ -3317,7 +3335,7 @@ pub enum ExtendedUiTextKey {
 }
 
 impl ExtendedUiTextKey {
-    pub const ALL: [Self; 1613] = [
+    pub const ALL: [Self; 1631] = [
         Self::MwlDocumentEditorTitle,
         Self::MwlDocumentVersionFormat,
         Self::MwlDocumentFlagsHex,
@@ -3860,6 +3878,24 @@ impl ExtendedUiTextKey {
         Self::RomPaletteImportRaw,
         Self::RomPaletteExportRaw,
         Self::RomPaletteRawTransferNotice,
+        Self::RomExAnimationTitle,
+        Self::RomExAnimationSwitchDomain,
+        Self::RomExAnimationGlobalUnavailableFormat,
+        Self::RomExAnimationSwitchBlocked,
+        Self::RomExAnimationGlobalTarget,
+        Self::RomExAnimationLevelTargetFormat,
+        Self::RomExAnimationCommit,
+        Self::RomExAnimationStaged,
+        Self::RomExAnimationUnmodified,
+        Self::RomExAnimationAppendRecord,
+        Self::RomExAnimationSpecialTransferNotice,
+        Self::RomExAnimationReplaceRecord,
+        Self::RomExAnimationDiscardTitle,
+        Self::RomExAnimationDiscardNotice,
+        Self::RomExAnimationCancel,
+        Self::RomExAnimationDiscard,
+        Self::RomExAnimationErrorTitle,
+        Self::RomExAnimationOk,
         Self::RomPaletteImportTpl,
         Self::RomPaletteExportTpl,
         Self::RomPaletteImportRgb,
@@ -5582,6 +5618,32 @@ impl ExtendedUiTextKey {
             Self::RomPaletteRawTransferNotice => {
                 "Raw transfer preserves all 257 native words and automatically applies a same-name .palmask sidecar when present."
             }
+            Self::RomExAnimationTitle => "ROM ExAnimation Editor",
+            Self::RomExAnimationSwitchDomain => "Switch level/global domain",
+            Self::RomExAnimationGlobalUnavailableFormat => {
+                "Global ExAnimation is unavailable: {error}"
+            }
+            Self::RomExAnimationSwitchBlocked => {
+                "Commit or revert this domain before switching level/global targets."
+            }
+            Self::RomExAnimationGlobalTarget => "Global ExAnimation",
+            Self::RomExAnimationLevelTargetFormat => "Level {level} ExAnimation",
+            Self::RomExAnimationCommit => "Commit ExAnimation to ROM",
+            Self::RomExAnimationStaged => "Staged animation changes",
+            Self::RomExAnimationUnmodified => "No staged changes",
+            Self::RomExAnimationAppendRecord => "Append form as record",
+            Self::RomExAnimationSpecialTransferNotice => {
+                "This transfer kind has no ordinary source-word payload."
+            }
+            Self::RomExAnimationReplaceRecord => "Replace record",
+            Self::RomExAnimationDiscardTitle => "Discard staged ExAnimation changes?",
+            Self::RomExAnimationDiscardNotice => {
+                "These changes have not been committed to the ROM."
+            }
+            Self::RomExAnimationCancel => "Cancel",
+            Self::RomExAnimationDiscard => "Discard",
+            Self::RomExAnimationErrorTitle => "ROM ExAnimation error",
+            Self::RomExAnimationOk => "OK",
             Self::RomPaletteImportTpl => "Import TPL v2…",
             Self::RomPaletteExportTpl => "Export TPL v2…",
             Self::RomPaletteImportRgb => "Import RGB24…",
