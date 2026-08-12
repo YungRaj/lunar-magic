@@ -2448,3 +2448,13 @@ standalone contexts. Three focused tests prove translated installation, fallback
 replacement, and worker source boundaries. Localization 28/28 active cases (one provenance ignore)
 and renderer 237/237 pass. Other native forms and live translated language-DLL evidence keep
 Localization Partial, so aggregate parity remains 60/65.
+
+Localization coverage update (2026-08-12, complete overworld-appearance preview): two typed
+`OverworldAppearance*` keys replace the live drag-offset painter caption and preview legend
+tooltip. The family audit now spans all six appearance modules rather than its former incomplete
+four-module boundary, rejects literal widget/tooltip/painter captions, and requires every family
+identity. A strict native production-widget inventory finds no remaining fixed English caption
+after documented non-caption exclusions. The focused audit, localization 28/28 active cases (one
+provenance ignore), and renderer 237/237 pass. Runtime GUI caption coverage is therefore complete;
+live translated language-DLL oracle and variant evidence still keep Localization Partial, so
+aggregate parity remains 60/65.

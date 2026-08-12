@@ -4123,10 +4123,12 @@ pub enum ExtendedUiTextKey {
     ProgressReadingFormat,
     ProgressSavingTitle,
     ProgressWritingFormat,
+    OverworldAppearanceOffsetFormat,
+    OverworldAppearancePreviewLegend,
 }
 
 impl ExtendedUiTextKey {
-    pub const ALL: [Self; 2422] = [
+    pub const ALL: [Self; 2424] = [
         Self::MwlDocumentEditorTitle,
         Self::MwlDocumentVersionFormat,
         Self::MwlDocumentFlagsHex,
@@ -6549,6 +6551,8 @@ impl ExtendedUiTextKey {
         Self::ProgressReadingFormat,
         Self::ProgressSavingTitle,
         Self::ProgressWritingFormat,
+        Self::OverworldAppearanceOffsetFormat,
+        Self::OverworldAppearancePreviewLegend,
     ];
 
     #[must_use]
@@ -9716,6 +9720,10 @@ impl ExtendedUiTextKey {
             Self::ProgressReadingFormat => "Reading {description}",
             Self::ProgressSavingTitle => "Saving",
             Self::ProgressWritingFormat => "Writing {target}",
+            Self::OverworldAppearanceOffsetFormat => "Offset: {x}, {y}",
+            Self::OverworldAppearancePreviewLegend => {
+                "Red dot: sprite origin; X/Y suffixes: tile flips"
+            }
         }
     }
 

@@ -8326,3 +8326,15 @@ fallback. Three focused tests prove English fallback, placeholder substitution, 
 installation, and absence of the former fixed captions in both workers. Localization passes 28/28
 active cases (one provenance ignore), and renderer remains 237/237. Other native forms and retained
 live language-DLL evidence keep Localization Partial; aggregate parity remains 60/65.
+
+Localization coverage update (2026-08-12, complete overworld-appearance preview): two appended
+`OverworldAppearance*` identities cover the live drag-offset overlay and sprite-origin/tile-flip
+legend tooltip. The appearance source audit now spans all six portable, native, preview, form,
+panel, and document-I/O modules, closing an earlier four-module scope omission; it rejects literal
+widget, tooltip, and painter captions and requires every appearance-family identity. A strict
+repository-wide native widget scan now finds no fixed English caption after excluding blank/swatch
+layout values, shortcut tokens, test-only tile buttons, and the intentional empty-value em dash.
+The focused family audit and localization 28/28 active cases (one provenance ignore) pass, while
+renderer remains 237/237. The complete runtime GUI caption inventory is therefore catalog-driven;
+retained live language-DLL oracle and variant evidence still keep Localization Partial and
+aggregate parity at 60/65.

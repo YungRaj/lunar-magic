@@ -538,6 +538,8 @@ mod tests {
             include_str!("overworld_appearance_editor/panels.rs"),
             include_str!("overworld_appearance_editor/form_fields.rs"),
             include_str!("overworld_appearance_editor/preview.rs"),
+            include_str!("overworld_appearance_editor/native_mode.rs"),
+            include_str!("overworld_appearance_editor/document_io.rs"),
         ];
         for literal in [
             "ui.button(\"",
@@ -546,6 +548,9 @@ mod tests {
             "Button::new(\"",
             "Window::new(\"",
             ".text(\"",
+            ".on_hover_text(\"",
+            "painter.text(\"",
+            "\"Offset: {}, {}\"",
         ] {
             assert!(
                 sources.iter().all(|source| !source.contains(literal)),

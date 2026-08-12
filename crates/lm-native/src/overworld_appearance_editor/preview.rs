@@ -215,10 +215,9 @@ impl OverworldAppearanceEditor {
             painter.text(
                 egui::pos2(rect.left() + 8.0, rect.bottom() - 8.0),
                 egui::Align2::LEFT_BOTTOM,
-                format!(
-                    "Offset: {}, {}",
-                    drag.current.x_offset, drag.current.y_offset
-                ),
+                text(catalog, Key::OverworldAppearanceOffsetFormat)
+                    .replace("{x}", &drag.current.x_offset.to_string())
+                    .replace("{y}", &drag.current.y_offset.to_string()),
                 egui::FontId::monospace(11.0),
                 egui::Color32::WHITE,
             );
@@ -240,7 +239,7 @@ impl OverworldAppearanceEditor {
             } else {
                 egui::CursorIcon::Grab
             })
-            .on_hover_text("Red dot: sprite origin; X/Y suffixes: tile flips");
+            .on_hover_text(text(catalog, Key::OverworldAppearancePreviewLegend));
         if drag_stopped
             && let Some(drag) = self.preview_drag.take()
             && let Some(edit) = completed_drag_edit(drag)
