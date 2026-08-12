@@ -26,6 +26,7 @@ pub(super) struct GeneralOptions {
     pub allow_control_wheel_zoom: bool,
     pub rom_file_name_in_title: bool,
     pub pause_animation_when_inactive: bool,
+    pub open_levels_at_main_entrance: bool,
     pub show_add_editor_ids: bool,
     pub auto_deselect: bool,
     pub correct_fatal_errors: bool,
@@ -167,6 +168,13 @@ impl UndoHistorySettings {
                     0x229e,
                     "Pause Animation When Inactive",
                     &mut self.draft.pause_animation_when_inactive,
+                );
+                option(
+                    ui,
+                    catalog,
+                    0x229b,
+                    "Open Levels at Main Entrance",
+                    &mut self.draft.open_levels_at_main_entrance,
                 );
                 option(
                     ui,
@@ -386,6 +394,7 @@ mod tests {
             allow_control_wheel_zoom: false,
             rom_file_name_in_title: false,
             pause_animation_when_inactive: false,
+            open_levels_at_main_entrance: false,
             show_add_editor_ids: false,
             auto_deselect: true,
             correct_fatal_errors: false,

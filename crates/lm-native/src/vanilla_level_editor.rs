@@ -624,6 +624,8 @@ pub(crate) struct VanillaLevelEditor {
     preview_camera_major_offset: i16,
     preview_camera_minor_offset: i16,
     initial_vertical_scroll_tiles: Option<u16>,
+    initial_horizontal_scroll_tiles: Option<u16>,
+    open_levels_at_main_entrance: Option<bool>,
     placement_mode: Option<CanvasPlacementMode>,
     canvas_entity_selection: Option<CanvasEntitySelection>,
     auto_deselect_on_editor_select: bool,
@@ -2367,6 +2369,21 @@ impl VanillaLevelEditor {
                         .vertical)
                             .then(|| vanilla_horizontal_entrance_scroll_row(self.entrance_form))
                     });
+                if self.open_levels_at_main_entrance.unwrap_or(true) {
+                    let mode = lm_profile::smw_us_v1_level_mode(
+                        controller.level().layer1.header.level_mode(),
+                    );
+                    let marker = if mode.vertical {
+                        vertical_primary_entrance_marker_pixels(
+                            self.entrance_form,
+                            mode.alternate_layer_layout,
+                        )
+                    } else {
+                        horizontal_primary_entrance_marker_pixels(self.entrance_form)
+                    };
+                    self.initial_horizontal_scroll_tiles = Some(marker.0 / 16);
+                    self.initial_vertical_scroll_tiles = Some(marker.1 / 16);
+                }
                 self.preview_camera_major_offset = visual_smoke_camera_offset("MAJOR");
                 self.preview_camera_minor_offset = visual_smoke_camera_offset("MINOR");
                 self.midway_form = self
@@ -3096,6 +3113,7 @@ impl VanillaLevelEditor {
         let requested_major_scroll = visual_smoke_editor_scroll_major();
         let requested_horizontal_scroll = visual_smoke_editor_scroll_column()
             .or_else(|| (!vertical).then_some(requested_major_scroll).flatten())
+            .or(self.initial_horizontal_scroll_tiles)
             .map(|column| f32::from(column) * cell);
         let requested_vertical_scroll = visual_smoke_editor_scroll_row()
             .or_else(|| vertical.then_some(requested_major_scroll).flatten())
@@ -3228,6 +3246,16 @@ impl VanillaLevelEditor {
             );
             if (scroll_output.state.offset.y - target).abs() < 0.5 {
                 self.initial_vertical_scroll_tiles = None;
+            }
+        }
+        if !snes_viewport && let Some(requested) = requested_horizontal_scroll {
+            let target = clamped_scroll_offset(
+                requested,
+                scroll_output.content_size.x,
+                scroll_output.inner_rect.width(),
+            );
+            if (scroll_output.state.offset.x - target).abs() < 0.5 {
+                self.initial_horizontal_scroll_tiles = None;
             }
         }
         draw_canvas_caption(ui, vertical);
@@ -5730,6 +5758,10 @@ impl VanillaLevelEditor {
     pub(crate) fn set_application_animation_state(&mut self, active: bool, pause: bool) {
         self.application_active = Some(active);
         self.pause_animation_when_inactive = Some(pause);
+    }
+
+    pub(crate) fn set_open_levels_at_main_entrance(&mut self, enabled: bool) {
+        self.open_levels_at_main_entrance = Some(enabled);
     }
 
     fn animation_seconds(&mut self, wall_seconds: f64) -> f64 {
