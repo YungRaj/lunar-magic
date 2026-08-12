@@ -6872,3 +6872,8 @@ undo dialog. The resource-`$041F` Apply/Cancel workspace now stages the undo lim
 currently authenticated Program/ROM choices together. Cancel remains mutation-free; Apply updates
 the canonical editor and application consumers in one publication point. Both the Tools entry and
 the authenticated toolbar command seed that form from the same live preference snapshot.
+That staged snapshot now also includes all ten already-implemented warning/editor controls from the
+same resource: Remember Window Size, Show IDs, Auto-Deselect, Correct Fatal Errors, berry-GFX
+conversion, exit scan, sprite count, object-placement checking, sibling-IPS detection, and vertical
+fireball buoyancy checking. Apply routes each value through its canonical setter so editor workers,
+graphics workers, pending warnings, and persisted state change together; Cancel publishes none.

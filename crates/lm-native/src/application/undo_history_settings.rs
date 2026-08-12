@@ -22,6 +22,16 @@ pub(super) struct GeneralOptions {
     pub joined_graphics: bool,
     pub gfx_bypass_lists: bool,
     pub prefer_past_2mb: bool,
+    pub remember_window_size: bool,
+    pub show_add_editor_ids: bool,
+    pub auto_deselect: bool,
+    pub correct_fatal_errors: bool,
+    pub convert_berry_gfx: bool,
+    pub scan_exits: bool,
+    pub count_sprites: bool,
+    pub check_object_placement: bool,
+    pub warn_ips_sibling: bool,
+    pub warn_vertical_fireball: bool,
 }
 
 impl UndoHistorySettings {
@@ -125,6 +135,78 @@ impl UndoHistorySettings {
                     0x22a6,
                     "Prefer Saving in 2MB+ ROM Area",
                     &mut self.draft.prefer_past_2mb,
+                );
+                ui.separator();
+                option(
+                    ui,
+                    catalog,
+                    0x2294,
+                    "Remember Window Size",
+                    &mut self.draft.remember_window_size,
+                );
+                option(
+                    ui,
+                    catalog,
+                    0x2296,
+                    "Show ID in Add Object/Sprite Editors",
+                    &mut self.draft.show_add_editor_ids,
+                );
+                option(
+                    ui,
+                    catalog,
+                    0x2298,
+                    "Auto-Deselect on Editor Select",
+                    &mut self.draft.auto_deselect,
+                );
+                option(
+                    ui,
+                    catalog,
+                    0x22a1,
+                    "Correct Fatal Errors",
+                    &mut self.draft.correct_fatal_errors,
+                );
+                option(
+                    ui,
+                    catalog,
+                    0x22a5,
+                    "Convert Berry GFX Tile",
+                    &mut self.draft.convert_berry_gfx,
+                );
+                ui.separator();
+                option(
+                    ui,
+                    catalog,
+                    0x22a9,
+                    "Scan Exits on Save to ROM",
+                    &mut self.draft.scan_exits,
+                );
+                option(
+                    ui,
+                    catalog,
+                    0x22aa,
+                    "Count Sprites on Save to ROM",
+                    &mut self.draft.count_sprites,
+                );
+                option(
+                    ui,
+                    catalog,
+                    0x22ab,
+                    "Check Object Placement on Save to ROM",
+                    &mut self.draft.check_object_placement,
+                );
+                option(
+                    ui,
+                    catalog,
+                    0x22ac,
+                    "Check if ROMFileName.ips Exists",
+                    &mut self.draft.warn_ips_sibling,
+                );
+                option(
+                    ui,
+                    catalog,
+                    0x22ad,
+                    "Check if Vertical Fireball has Buoyancy",
+                    &mut self.draft.warn_vertical_fireball,
                 );
                 ui.horizontal(|ui| {
                     if ui
@@ -276,6 +358,16 @@ mod tests {
             joined_graphics: true,
             gfx_bypass_lists: false,
             prefer_past_2mb: false,
+            remember_window_size: false,
+            show_add_editor_ids: false,
+            auto_deselect: true,
+            correct_fatal_errors: false,
+            convert_berry_gfx: false,
+            scan_exits: false,
+            count_sprites: false,
+            check_object_placement: false,
+            warn_ips_sibling: false,
+            warn_vertical_fireball: false,
         };
         let mut dialog = UndoHistorySettings::default();
         dialog.open(options);

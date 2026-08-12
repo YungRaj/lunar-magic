@@ -321,6 +321,16 @@ impl NativeApplication {
             joined_graphics: self.joined_graphics_files,
             gfx_bypass_lists: self.gfx_bypass_list_dialogs.unwrap_or(true),
             prefer_past_2mb: self.prioritize_allocations_past_2mb.unwrap_or(true),
+            remember_window_size: self.remember_window_size.unwrap_or(true),
+            show_add_editor_ids: self.show_add_editor_ids.unwrap_or(true),
+            auto_deselect: self.auto_deselect_on_editor_select,
+            correct_fatal_errors: self.correct_fatal_errors.unwrap_or(true),
+            convert_berry_gfx: self.convert_berry_gfx_tile.unwrap_or(true),
+            scan_exits: self.scan_exits_on_save.unwrap_or(true),
+            count_sprites: self.count_sprites_on_save.unwrap_or(true),
+            check_object_placement: self.check_object_placement_on_save.unwrap_or(true),
+            warn_ips_sibling: self.warn_ips_sibling_on_save.unwrap_or(true),
+            warn_vertical_fireball: self.warn_vertical_fireball_buoyancy.unwrap_or(true),
         }
     }
 
@@ -344,6 +354,16 @@ impl NativeApplication {
         self.prioritize_allocations_past_2mb = Some(options.prefer_past_2mb);
         self.app
             .set_prioritize_allocations_past_2mb(options.prefer_past_2mb);
+        self.set_remember_window_size(options.remember_window_size);
+        self.set_show_add_editor_ids(options.show_add_editor_ids);
+        self.set_auto_deselect_on_editor_select(options.auto_deselect);
+        self.set_correct_fatal_errors(options.correct_fatal_errors);
+        self.set_convert_berry_gfx_tile(options.convert_berry_gfx);
+        self.set_scan_exits_on_save(options.scan_exits);
+        self.set_count_sprites_on_save(options.count_sprites);
+        self.set_check_object_placement_on_save(options.check_object_placement);
+        self.set_warn_ips_sibling_on_save(options.warn_ips_sibling);
+        self.set_warn_vertical_fireball_buoyancy(options.warn_vertical_fireball);
         Ok(())
     }
 
