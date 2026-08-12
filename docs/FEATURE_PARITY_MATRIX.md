@@ -1263,6 +1263,13 @@ proven through revisioned replacement, Undo, and Redo. Focused DSC tests pass 4/
 passes 28/28 active cases, and renderer passes 237/237. Other native forms and retained
 language-DLL evidence keep Localization Partial, so aggregate parity remains 60/65.
 
+Localization coverage update (2026-08-12, lossless OSC custom-object metadata): seventeen typed
+extension keys cover the complete source/diagnostic/history/save/close/error form with the live
+catalog. UI/source tests pass 3/3; controller tests pass 2/2 for binary-preserving history, stale
+and oversized replacement atomicity, immutable saves, and later-edit preservation. Localization
+passes 28/28 active cases and renderer 237/237. Other native forms and retained language-DLL
+evidence keep Localization Partial, so aggregate parity remains 60/65.
+
 Localization coverage update (2026-08-12, lossless SSC custom-sprite metadata): twenty typed
 extension keys cover the complete source, external-asset status, diagnostics, history/save, close,
 and error surface with the live catalog. Binary-preserving source history, nearest asset-directory

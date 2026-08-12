@@ -5,7 +5,7 @@ use crate::{
     osc_sidecar_editor_form::{OscSourceForm, diagnostic},
 };
 use eframe::egui;
-use lm_app::OscSidecarController;
+use lm_app::{ExtendedUiTextKey, LocalizationCatalog, OscSidecarController};
 use lm_level::MAX_OSC_SOURCE_LEN;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -72,17 +72,21 @@ impl OscSidecarEditor {
         false
     }
 
-    pub(crate) fn show(&mut self, context: &egui::Context) -> bool {
+    pub(crate) fn show(
+        &mut self,
+        context: &egui::Context,
+        catalog: Option<&LocalizationCatalog>,
+    ) -> bool {
         self.poll_io(context);
         if self.controller.is_some() {
             self.load_form();
-            egui::Window::new("Lossless OSC Custom-Object Metadata")
+            egui::Window::new(text(catalog, ExtendedUiTextKey::OscEditorTitle))
                 .default_size([840.0, 680.0])
                 .vscroll(true)
-                .show(context, |ui| self.contents(ui));
+                .show(context, |ui| self.contents(ui, catalog));
         }
-        let approved = self.show_close_confirmation(context);
-        self.show_error(context);
+        let approved = self.show_close_confirmation(context, catalog);
+        self.show_error(context, catalog);
         approved
     }
 
@@ -123,8 +127,8 @@ impl OscSidecarEditor {
         }
     }
 
-    fn contents(&mut self, ui: &mut egui::Ui) {
-        self.toolbar(ui);
+    fn contents(&mut self, ui: &mut egui::Ui, catalog: Option<&LocalizationCatalog>) {
+        self.toolbar(ui, catalog);
         ui.separator();
         let Some(controller) = self.controller.as_ref() else {
             return;
@@ -136,24 +140,32 @@ impl OscSidecarEditor {
             .entries()
             .get(self.entry_index)
             .map(diagnostic);
-        ui.label(format!(
-            "Lossless source: {source_len} bytes; valid metadata records: {entry_count}"
-        ));
+        ui.label(
+            text(catalog, ExtendedUiTextKey::OscSourceSummaryFormat)
+                .replace("{bytes}", &source_len.to_string())
+                .replace("{records}", &entry_count.to_string()),
+        );
         ui.add(
             egui::TextEdit::multiline(&mut self.form.bytes)
                 .desired_rows(18)
                 .code_editor(),
         );
-        if ui.button("Replace complete lossless source").clicked() {
+        if ui
+            .button(text(catalog, ExtendedUiTextKey::OscReplaceSource))
+            .clicked()
+        {
             self.replace_form();
         }
         ui.separator();
-        ui.heading("Recovered-record diagnostics");
+        ui.heading(text(catalog, ExtendedUiTextKey::OscDiagnosticsHeading));
         ui.add(
             egui::Slider::new(&mut self.entry_index, 0..=entry_count.saturating_sub(1))
-                .text("Parsed record"),
+                .text(text(catalog, ExtendedUiTextKey::OscParsedRecord)),
         );
-        ui.label(entry_diagnostic.unwrap_or_else(|| "No valid metadata records.".into()));
+        ui.label(
+            entry_diagnostic
+                .unwrap_or_else(|| text(catalog, ExtendedUiTextKey::OscNoMetadataRecords)),
+        );
     }
 
     fn replace_form(&mut self) {
@@ -172,7 +184,7 @@ impl OscSidecarEditor {
         }
     }
 
-    fn toolbar(&mut self, ui: &mut egui::Ui) {
+    fn toolbar(&mut self, ui: &mut egui::Ui, catalog: Option<&LocalizationCatalog>) {
         let Some(controller) = self.controller.as_ref() else {
             return;
         };
@@ -180,25 +192,37 @@ impl OscSidecarEditor {
         let mut save = false;
         ui.horizontal(|ui| {
             if ui
-                .add_enabled(controller.can_undo(), egui::Button::new("Undo"))
+                .add_enabled(
+                    controller.can_undo(),
+                    egui::Button::new(text(catalog, ExtendedUiTextKey::OscUndo)),
+                )
                 .clicked()
             {
                 history = Some(true);
             }
             if ui
-                .add_enabled(controller.can_redo(), egui::Button::new("Redo"))
+                .add_enabled(
+                    controller.can_redo(),
+                    egui::Button::new(text(catalog, ExtendedUiTextKey::OscRedo)),
+                )
                 .clicked()
             {
                 history = Some(false);
             }
             save = ui
-                .add_enabled(!self.persistence.is_running(), egui::Button::new("Save"))
+                .add_enabled(
+                    !self.persistence.is_running(),
+                    egui::Button::new(text(catalog, ExtendedUiTextKey::OscSave)),
+                )
                 .clicked();
-            ui.label(if controller.is_modified() {
-                "Modified"
-            } else {
-                "Saved"
-            });
+            ui.label(text(
+                catalog,
+                if controller.is_modified() {
+                    ExtendedUiTextKey::OscModified
+                } else {
+                    ExtendedUiTextKey::OscSaved
+                },
+            ));
         });
         let Some(controller) = self.controller.as_mut() else {
             return;
@@ -220,22 +244,32 @@ impl OscSidecarEditor {
         }
     }
 
-    fn show_close_confirmation(&mut self, context: &egui::Context) -> bool {
+    fn show_close_confirmation(
+        &mut self,
+        context: &egui::Context,
+        catalog: Option<&LocalizationCatalog>,
+    ) -> bool {
         let Some(pending) = self.pending_close else {
             return false;
         };
         let mut approved = false;
-        egui::Window::new("Unsaved OSC sidecar")
+        egui::Window::new(text(catalog, ExtendedUiTextKey::OscDiscardTitle))
             .collapsible(false)
             .resizable(false)
             .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
             .show(context, |ui| {
-                ui.label("Discard unsaved custom-object metadata changes?");
+                ui.label(text(catalog, ExtendedUiTextKey::OscUnsavedNotice));
                 ui.horizontal(|ui| {
-                    if ui.button("Cancel").clicked() {
+                    if ui
+                        .button(text(catalog, ExtendedUiTextKey::OscCancel))
+                        .clicked()
+                    {
                         self.pending_close = None;
                     }
-                    if ui.button("Discard").clicked() {
+                    if ui
+                        .button(text(catalog, ExtendedUiTextKey::OscDiscard))
+                        .clicked()
+                    {
                         self.clear();
                         approved = pending == PendingClose::Application;
                     }
@@ -244,14 +278,14 @@ impl OscSidecarEditor {
         approved
     }
 
-    fn show_error(&mut self, context: &egui::Context) {
+    fn show_error(&mut self, context: &egui::Context, catalog: Option<&LocalizationCatalog>) {
         if let Some(error) = self.error.clone() {
-            egui::Window::new("OSC sidecar error")
+            egui::Window::new(text(catalog, ExtendedUiTextKey::OscErrorTitle))
                 .collapsible(false)
                 .resizable(false)
                 .show(context, |ui| {
                     ui.label(error);
-                    if ui.button("OK").clicked() {
+                    if ui.button(text(catalog, ExtendedUiTextKey::OscOk)).clicked() {
                         self.error = None;
                     }
                 });
@@ -263,5 +297,61 @@ impl OscSidecarEditor {
         self.loaded_revision = None;
         self.pending_close = None;
         self.resolved = None;
+    }
+}
+
+fn text(catalog: Option<&LocalizationCatalog>, key: ExtendedUiTextKey) -> String {
+    crate::frontend_ui::extended_localized_text(catalog, key)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn complete_osc_sidecar_form_uses_every_typed_key_and_live_catalog() {
+        let source = include_str!("osc_sidecar_editor.rs");
+        for key in ExtendedUiTextKey::ALL
+            .into_iter()
+            .filter(|key| format!("{key:?}").starts_with("Osc"))
+        {
+            assert!(
+                source.contains(&format!("ExtendedUiTextKey::{key:?}")),
+                "missing OSC label {key:?}"
+            );
+        }
+        for literal in [
+            "Window::new(\"Lossless OSC Custom-Object Metadata\")",
+            "Window::new(\"Unsaved OSC sidecar\")",
+            "Window::new(\"OSC sidecar error\")",
+            "Button::new(\"Undo\")",
+            "Button::new(\"Save\")",
+            "ui.button(\"Replace complete lossless source\")",
+        ] {
+            assert!(
+                !source.contains(literal),
+                "fixed-English control: {literal}"
+            );
+        }
+        assert!(
+            include_str!("application/windows.rs")
+                .contains(".show(context, self.app.localization())")
+        );
+    }
+
+    #[test]
+    fn lossless_custom_object_metadata_is_revisioned_and_undoable() {
+        let original = b"\xef\xbb\xbf10\t2\t0\tfirst\r\nmalformed\xff\n";
+        let replacement = b"11\t2\t0\tsecond\n# retained comment\r\n";
+        let mut controller = OscSidecarController::decode("objects.osc".into(), original).unwrap();
+        controller
+            .replace_source(controller.revision(), replacement)
+            .unwrap();
+        assert_eq!(controller.revision(), 1);
+        assert_eq!(controller.value().source(), replacement);
+        assert!(controller.undo(controller.revision()).unwrap());
+        assert_eq!(controller.value().source(), original);
+        assert!(controller.redo(controller.revision()).unwrap());
+        assert_eq!(controller.value().source(), replacement);
     }
 }

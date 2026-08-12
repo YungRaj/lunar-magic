@@ -85,7 +85,10 @@ impl NativeApplication {
         {
             self.request_quit(context);
         }
-        if self.osc_sidecar_editor.show(context) {
+        if self
+            .osc_sidecar_editor
+            .show(context, self.app.localization())
+        {
             self.request_quit(context);
         }
         if self.map16_set_editor.show(context, self.app.localization()) {

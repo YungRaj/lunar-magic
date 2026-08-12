@@ -1701,6 +1701,23 @@ const RUST_UI_ITEM_INDEX: u16 = u16::MAX - 1;
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 #[repr(u32)]
 pub enum ExtendedUiTextKey {
+    OscEditorTitle,
+    OscSourceSummaryFormat,
+    OscReplaceSource,
+    OscDiagnosticsHeading,
+    OscParsedRecord,
+    OscNoMetadataRecords,
+    OscUndo,
+    OscRedo,
+    OscSave,
+    OscModified,
+    OscSaved,
+    OscDiscardTitle,
+    OscUnsavedNotice,
+    OscCancel,
+    OscDiscard,
+    OscErrorTitle,
+    OscOk,
     SscEditorTitle,
     SscSourceSummaryFormat,
     SscAssetsSummaryFormat,
@@ -2604,7 +2621,24 @@ pub enum ExtendedUiTextKey {
 }
 
 impl ExtendedUiTextKey {
-    pub const ALL: [Self; 900] = [
+    pub const ALL: [Self; 917] = [
+        Self::OscEditorTitle,
+        Self::OscSourceSummaryFormat,
+        Self::OscReplaceSource,
+        Self::OscDiagnosticsHeading,
+        Self::OscParsedRecord,
+        Self::OscNoMetadataRecords,
+        Self::OscUndo,
+        Self::OscRedo,
+        Self::OscSave,
+        Self::OscModified,
+        Self::OscSaved,
+        Self::OscDiscardTitle,
+        Self::OscUnsavedNotice,
+        Self::OscCancel,
+        Self::OscDiscard,
+        Self::OscErrorTitle,
+        Self::OscOk,
         Self::SscEditorTitle,
         Self::SscSourceSummaryFormat,
         Self::SscAssetsSummaryFormat,
@@ -3510,6 +3544,25 @@ impl ExtendedUiTextKey {
     #[must_use]
     pub const fn english(self) -> &'static str {
         match self {
+            Self::OscEditorTitle => "Lossless OSC Custom-Object Metadata",
+            Self::OscSourceSummaryFormat => {
+                "Lossless source: {bytes} bytes; valid metadata records: {records}"
+            }
+            Self::OscReplaceSource => "Replace complete lossless source",
+            Self::OscDiagnosticsHeading => "Recovered-record diagnostics",
+            Self::OscParsedRecord => "Parsed record",
+            Self::OscNoMetadataRecords => "No valid metadata records.",
+            Self::OscUndo => "Undo",
+            Self::OscRedo => "Redo",
+            Self::OscSave => "Save",
+            Self::OscModified => "Modified",
+            Self::OscSaved => "Saved",
+            Self::OscDiscardTitle => "Unsaved OSC sidecar",
+            Self::OscUnsavedNotice => "Discard unsaved custom-object metadata changes?",
+            Self::OscCancel => "Cancel",
+            Self::OscDiscard => "Discard",
+            Self::OscErrorTitle => "OSC sidecar error",
+            Self::OscOk => "OK",
             Self::SscEditorTitle => "Lossless SSC Custom-Sprite Metadata",
             Self::SscSourceSummaryFormat => {
                 "Lossless source: {bytes} bytes; valid metadata records: {records}"

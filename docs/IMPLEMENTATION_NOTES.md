@@ -7112,6 +7112,16 @@ proves dynamic replacement. Localization 26/26 focused tests, native updater 6/6
 237/237 pass. Remaining native forms and retained original language-DLL behavior keep Localization
 Partial; aggregate parity remains 60/65.
 
+Localization coverage update (2026-08-12, lossless OSC custom-object metadata): seventeen
+appended `Osc*` keys cover the complete source editor, record diagnostics, history/save/dirty
+state, close confirmation, and error lifecycle, with the live catalog passed by the application
+host. The UI/source suite passes 3/3 and proves exact BOM, mixed-line-ending, malformed, and
+non-UTF-8 preservation across replacement/Undo/Redo. The controller suite passes 2/2 for stale
+revision rejection, maximum-length atomicity, immutable save snapshots, wrong-request rejection,
+and preservation of edits made after persistence begins. Localization passes 28/28 active cases
+(one provenance ignore), and renderer passes 237/237. Other native forms and retained live
+language-DLL evidence keep Localization Partial; aggregate parity remains 60/65.
+
 Localization coverage update (2026-08-11, current-level palette transfer): the complete native
 import/export format chooser now routes its export/import titles, format explanation, Raw/TPL/RGB
 actions, optional `.palmask` guidance, Cancel/OK actions, and error title through the active typed
