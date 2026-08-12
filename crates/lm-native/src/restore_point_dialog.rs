@@ -1,5 +1,6 @@
 use chrono::{Datelike as _, Timelike as _};
 use eframe::egui;
+use lm_app::ExtendedUiTextKey as Key;
 use lm_project::{
     LUNAR_RESTORE_ASSOCIATED_EXTENSIONS, LUNAR_RESTORE_ASSOCIATED_FILE_COUNT, LunarRestoreArchive,
     LunarRestoreArchiveCreateRequest, LunarRestoreAutomaticDecision,
@@ -623,11 +624,11 @@ impl RestorePointDialog {
     }
 
     pub(crate) fn show(&mut self, context: &egui::Context, app: &lm_app::AppState) {
-        self.poll();
+        self.poll(app.localization());
         self.show_automatic_policy(context, app);
         self.show_loaded(context, app.localization());
-        self.show_running(context);
-        self.show_result(context);
+        self.show_running(context, app.localization());
+        self.show_result(context, app.localization());
     }
 
     fn show_automatic_policy(&mut self, context: &egui::Context, app: &lm_app::AppState) {
@@ -636,29 +637,28 @@ impl RestorePointDialog {
         };
         let mut create = false;
         let mut cancel = false;
-        egui::Window::new("Automatic Restore Point")
+        let catalog = app.localization();
+        egui::Window::new(text(catalog, Key::RestoreAutomaticTitle))
             .collapsible(false)
             .resizable(false)
             .show(context, |ui| {
                 ui.checkbox(
                     &mut policy.interval_enabled,
-                    "Create a full point after this many deltas",
+                    text(catalog, Key::RestoreInterval),
                 );
                 ui.add_enabled(
                     policy.interval_enabled,
                     egui::DragValue::new(&mut policy.full_interval).range(1..=u32::MAX),
                 );
-                ui.checkbox(&mut policy.daily_full, "Create one full point per day");
+                ui.checkbox(&mut policy.daily_full, text(catalog, Key::RestoreDaily));
                 ui.checkbox(
                     &mut policy.destructive_full,
-                    "Create a full point before destructive ROM operations",
+                    text(catalog, Key::RestoreDestructive),
                 );
-                ui.label(
-                    "A ROM timestamp or checksum continuity break always forces a full point.",
-                );
+                ui.label(text(catalog, Key::RestoreContinuityNotice));
                 ui.horizontal(|ui| {
-                    create = ui.button("Append").clicked();
-                    cancel = ui.button("Cancel").clicked();
+                    create = ui.button(text(catalog, Key::RestoreAppend)).clicked();
+                    cancel = ui.button(text(catalog, Key::RestoreCancel)).clicked();
                 });
             });
         if cancel {
@@ -673,7 +673,7 @@ impl RestorePointDialog {
                 Ok(true) => {
                     self.automatic_defaults = selected;
                     self.automatic_policy = None;
-                    self.completed = Some("Automatic restore point appended.".to_owned());
+                    self.completed = Some(text(catalog, Key::RestoreAutomaticComplete));
                 }
                 Ok(false) => {}
                 Err(error) => self.error = Some(error),
@@ -696,9 +696,18 @@ impl RestorePointDialog {
             .resizable(true)
             .default_width(680.0)
             .show(context, |ui| {
-                ui.label(format!("Archive: {}", loaded.archive_path.display()));
-                ui.label(format!("Original: {}", loaded.original_path.display()));
-                ui.label(format!("Restore target: {}", loaded.target_path.display()));
+                ui.label(
+                    text(catalog, Key::RestoreArchiveFormat)
+                        .replace("{path}", &loaded.archive_path.display().to_string()),
+                );
+                ui.label(
+                    text(catalog, Key::RestoreOriginalFormat)
+                        .replace("{path}", &loaded.original_path.display().to_string()),
+                );
+                ui.label(
+                    text(catalog, Key::RestoreTargetFormat)
+                        .replace("{path}", &loaded.target_path.display().to_string()),
+                );
                 ui.label(restore_dialog_text(
                     catalog,
                     0x6b,
@@ -711,25 +720,29 @@ impl RestorePointDialog {
                         egui::Grid::new("restore_point_list")
                             .striped(true)
                             .show(ui, |ui| {
-                                ui.strong("ID");
-                                ui.strong("Date and time");
-                                ui.strong("Type");
-                                ui.strong("Description");
+                                ui.strong(text(catalog, Key::RestoreId));
+                                ui.strong(text(catalog, Key::RestoreDateTime));
+                                ui.strong(text(catalog, Key::RestoreType));
+                                ui.strong(text(catalog, Key::RestoreDescription));
                                 ui.end_row();
                                 for (index, record) in loaded.archive.records.iter().enumerate() {
                                     let date = record.created;
                                     let time = record.created_time;
-                                    let period = if time.hour < 12 { "AM" } else { "PM" };
+                                    let period = if time.hour < 12 {
+                                        text(catalog, Key::RestoreAm)
+                                    } else {
+                                        text(catalog, Key::RestorePm)
+                                    };
                                     let hour = match time.hour % 12 {
                                         0 => 12,
                                         value => value,
                                     };
                                     let kind = if record.directory_version & 4 != 0 {
-                                        "Reversion"
+                                        text(catalog, Key::RestoreReversion)
                                     } else if record.directory_version.trailing_zeros() < 2 {
-                                        "Full"
+                                        text(catalog, Key::RestoreFull)
                                     } else {
-                                        "Delta"
+                                        text(catalog, Key::RestoreDelta)
                                     };
                                     ui.selectable_value(
                                         &mut loaded.selected,
@@ -762,7 +775,7 @@ impl RestorePointDialog {
                 );
                 ui.colored_label(
                     egui::Color32::YELLOW,
-                    "The selected existing ROM will be replaced atomically. Close it in the editor first.",
+                    text(catalog, Key::RestoreReplaceWarning),
                 );
                 ui.horizontal(|ui| {
                     restore = ui.button(restore_dialog_text(catalog, 1, "OK")).clicked();
@@ -826,47 +839,57 @@ impl RestorePointDialog {
         Ok(())
     }
 
-    fn show_running(&self, context: &egui::Context) {
+    fn show_running(&self, context: &egui::Context, catalog: Option<&lm_app::LocalizationCatalog>) {
         let Some(running) = &self.running else {
             return;
         };
-        egui::Window::new("Restoring ROM")
+        egui::Window::new(text(catalog, Key::RestoreRunningTitle))
             .collapsible(false)
             .resizable(false)
             .show(context, |ui| {
-                ui.label(format!("Restore point: {}", running.record_id));
-                ui.label(format!("Target: {}", running.target_path.display()));
-                ui.label("Validating and publishing the reconstructed ROM…");
+                ui.label(
+                    text(catalog, Key::RestorePointFormat)
+                        .replace("{id}", &running.record_id.to_string()),
+                );
+                ui.label(
+                    text(catalog, Key::RestoreRunningTargetFormat)
+                        .replace("{path}", &running.target_path.display().to_string()),
+                );
+                ui.label(text(catalog, Key::RestoreRunningNotice));
             });
         context.request_repaint_after(std::time::Duration::from_millis(100));
     }
 
-    fn show_result(&mut self, context: &egui::Context) {
+    fn show_result(
+        &mut self,
+        context: &egui::Context,
+        catalog: Option<&lm_app::LocalizationCatalog>,
+    ) {
         if let Some(message) = self.completed.clone() {
-            egui::Window::new("ROM restored")
+            egui::Window::new(text(catalog, Key::RestoreCompleteTitle))
                 .collapsible(false)
                 .resizable(false)
                 .show(context, |ui| {
                     ui.label(message);
-                    if ui.button("OK").clicked() {
+                    if ui.button(text(catalog, Key::RestoreOk)).clicked() {
                         self.completed = None;
                     }
                 });
         }
         if let Some(error) = self.error.clone() {
-            egui::Window::new("Restore-point error")
+            egui::Window::new(text(catalog, Key::RestoreErrorTitle))
                 .collapsible(false)
                 .resizable(false)
                 .show(context, |ui| {
                     ui.colored_label(egui::Color32::RED, error);
-                    if ui.button("OK").clicked() {
+                    if ui.button(text(catalog, Key::RestoreOk)).clicked() {
                         self.error = None;
                     }
                 });
         }
     }
 
-    fn poll(&mut self) {
+    fn poll(&mut self, catalog: Option<&lm_app::LocalizationCatalog>) {
         let Some(running) = self.running.as_ref() else {
             return;
         };
@@ -887,14 +910,17 @@ impl RestorePointDialog {
             Ok(publication) => {
                 let associated = match publication.associated_file_count {
                     0 => String::new(),
-                    1 => " and 1 associated file".to_owned(),
-                    count => format!(" and {count} associated files"),
+                    1 => text(catalog, Key::RestoreAssociatedOne),
+                    count => text(catalog, Key::RestoreAssociatedManyFormat)
+                        .replace("{count}", &count.to_string()),
                 };
-                self.completed = Some(format!(
-                    "Restored point {record_id} to {} ({} bytes{associated}).",
-                    target.display(),
-                    publication.rom_len,
-                ));
+                self.completed = Some(
+                    text(catalog, Key::RestoreCompleteFormat)
+                        .replace("{id}", &record_id.to_string())
+                        .replace("{path}", &target.display().to_string())
+                        .replace("{bytes}", &publication.rom_len.to_string())
+                        .replace("{associated}", &associated),
+                );
             }
             Err(error) => self.error = Some(error),
         }
@@ -906,6 +932,13 @@ fn restore_dialog_title(catalog: Option<&lm_app::LocalizationCatalog>) -> String
         .and_then(|catalog| catalog.original_dialog_title(ORIGINAL_RESTORE_DIALOG_ID))
         .unwrap_or("Restore ROM to Previous State")
         .to_owned()
+}
+
+fn text(catalog: Option<&lm_app::LocalizationCatalog>, key: Key) -> String {
+    catalog.map_or_else(
+        || key.english().to_owned(),
+        |catalog| catalog.extended_text(key).to_owned(),
+    )
 }
 
 fn restore_dialog_text(
@@ -1485,5 +1518,34 @@ mod tests {
             restore_dialog_title(Some(&reopened)),
             "Restaurer la ROM à un état précédent"
         );
+    }
+
+    #[test]
+    fn complete_restore_surface_has_no_literal_widget_text_and_keeps_archive_descriptions_fixed() {
+        let source = include_str!("restore_point_dialog.rs");
+        for literal in [
+            "egui::Window::new(\"",
+            "ui.button(\"",
+            "ui.label(\"",
+            "ui.strong(\"",
+        ] {
+            assert!(
+                !source.contains(literal),
+                "literal restore widget text: {literal}"
+            );
+        }
+        for persisted in [
+            "Automatic Full Restore Point (continuity break).",
+            "Automatic Full Restore Point (interval).",
+            "Automatic Full Restore Point (daily).",
+            "Manual Full Restore Point.",
+            "Automatic Delta Restore Point.",
+            "Manual Delta Restore Point.",
+        ] {
+            assert!(
+                source.contains(persisted),
+                "missing fixed archive description: {persisted}"
+            );
+        }
     }
 }

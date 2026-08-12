@@ -2247,3 +2247,15 @@ instead of built-in English. Stable action IDs/slugs remain untranslated persist
 toolbar tests pass 5/5, localization model tests pass, and renderer remains 237/237. Other native
 forms and retained live language-DLL evidence keep Localization Partial; aggregate parity remains
 60/65.
+
+Localization coverage update (2026-08-12, restore points): thirty-one typed extension keys now
+cover automatic-point policy, archive/original/target diagnostics, restore-table headings, record
+type and AM/PM presentation, atomic-replacement warning, running state, completion summaries, and
+errors. The authenticated original dialog-template title and controls remain preferred where
+available. Lunar Magic-compatible persisted archive descriptions, restore identity filenames,
+technical errors, and record descriptions remain deliberately untranslated. The focused suite
+passes 11/11 for associated-file order, directory/readme publication, atomic replacement,
+failed-reversion markers, preferences, full/delta/daily archives, original-template localization,
+and the visible/persisted-text boundary; localization model tests pass and renderer remains
+237/237. Other native forms and retained live language-DLL evidence keep Localization Partial;
+aggregate parity remains 60/65.
