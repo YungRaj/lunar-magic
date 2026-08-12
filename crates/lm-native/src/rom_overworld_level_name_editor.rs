@@ -1,6 +1,6 @@
 use crate::level_editor_forms::{parse_hex_u8, parse_hex_u16};
 use eframe::egui;
-use lm_app::{AppState, Command};
+use lm_app::{AppState, Command, ExtendedUiTextKey, LocalizationCatalog, UiTextKey};
 use lm_overworld::{NativeOverworldLevelNameTable, OverworldLevelName};
 use lm_profile::{smw_us_v1_overworld_level_name_locator, smw_us_v1_overworld_level_name_runtime};
 
@@ -146,68 +146,112 @@ impl RomOverworldLevelNameEditor {
         &mut self,
         context: &egui::Context,
         project_revision: u64,
+        catalog: Option<&LocalizationCatalog>,
     ) -> (bool, Option<Command>) {
         let mut command = None;
         if self.workspace.is_some() {
-            egui::Window::new("ROM Overworld Level Names")
-                .default_size([520.0, 320.0])
-                .show(context, |ui| command = self.contents(ui, project_revision));
+            egui::Window::new(crate::frontend_ui::extended_localized_text(
+                catalog,
+                ExtendedUiTextKey::LevelNameEditorTitle,
+            ))
+            .default_size([520.0, 320.0])
+            .show(context, |ui| {
+                command = self.contents(ui, project_revision, catalog)
+            });
         }
-        let approved = self.close_confirmation(context);
-        self.show_error(context);
+        let approved = self.close_confirmation(context, catalog);
+        self.show_error(context, catalog);
         (approved, command)
     }
 
-    fn contents(&mut self, ui: &mut egui::Ui, project_revision: u64) -> Option<Command> {
+    fn contents(
+        &mut self,
+        ui: &mut egui::Ui,
+        project_revision: u64,
+        catalog: Option<&LocalizationCatalog>,
+    ) -> Option<Command> {
         let workspace = self.workspace.as_ref()?;
         let stale = workspace.revision != project_revision;
         let dirty = workspace.current != workspace.original;
-        ui.label(
-            "Lossless 19-tile level-name records. Level, tile index, and value are hexadecimal.",
-        );
-        ui.label(format!(
-            "Staged name records: {}",
-            workspace.current.names.len()
+        ui.label(crate::frontend_ui::extended_localized_text(
+            catalog,
+            ExtendedUiTextKey::LevelNameDescription,
         ));
+        ui.label(
+            crate::frontend_ui::extended_localized_text(
+                catalog,
+                ExtendedUiTextKey::LevelNameCountFormat,
+            )
+            .replace("{count}", &workspace.current.names.len().to_string()),
+        );
         if stale {
             ui.colored_label(
                 egui::Color32::YELLOW,
-                "The ROM changed after this table was opened. Reopen before committing.",
+                crate::frontend_ui::extended_localized_text(
+                    catalog,
+                    ExtendedUiTextKey::LevelNameStaleNotice,
+                ),
             );
         }
         egui::Grid::new("rom-overworld-level-name-form")
             .striped(true)
             .show(ui, |ui| {
-                ui.label("Level");
+                ui.label(crate::frontend_ui::extended_localized_text(
+                    catalog,
+                    ExtendedUiTextKey::LevelNameLevel,
+                ));
                 if ui.text_edit_singleline(&mut self.level).changed() {
                     self.loaded = None;
                 }
                 ui.end_row();
-                ui.label("Tile (00–12)");
+                ui.label(crate::frontend_ui::extended_localized_text(
+                    catalog,
+                    ExtendedUiTextKey::LevelNameTile,
+                ));
                 if ui.text_edit_singleline(&mut self.tile).changed() {
                     self.loaded = None;
                 }
                 ui.end_row();
-                ui.label("Tile value");
+                ui.label(crate::frontend_ui::extended_localized_text(
+                    catalog,
+                    ExtendedUiTextKey::LevelNameTileValue,
+                ));
                 ui.text_edit_singleline(&mut self.value);
                 ui.end_row();
             });
         let mut command = None;
         ui.horizontal(|ui| {
-            if ui.button("Load tile").clicked()
+            if ui
+                .button(crate::frontend_ui::extended_localized_text(
+                    catalog,
+                    ExtendedUiTextKey::LevelNameLoadTile,
+                ))
+                .clicked()
                 && let Err(error) = self.load_selected()
             {
                 self.error = Some(error);
             }
             if ui
-                .add_enabled(!stale, egui::Button::new("Apply tile"))
+                .add_enabled(
+                    !stale,
+                    egui::Button::new(crate::frontend_ui::extended_localized_text(
+                        catalog,
+                        ExtendedUiTextKey::LevelNameApplyTile,
+                    )),
+                )
                 .clicked()
                 && let Err(error) = self.apply_selected()
             {
                 self.error = Some(error);
             }
             if ui
-                .add_enabled(dirty && !stale, egui::Button::new("Commit names to ROM"))
+                .add_enabled(
+                    dirty && !stale,
+                    egui::Button::new(crate::frontend_ui::extended_localized_text(
+                        catalog,
+                        ExtendedUiTextKey::LevelNameCommit,
+                    )),
+                )
                 .clicked()
             {
                 match self.prepare_commit(project_revision) {
@@ -215,7 +259,14 @@ impl RomOverworldLevelNameEditor {
                     Err(error) => self.error = Some(error),
                 }
             }
-            ui.label(if dirty { "Staged" } else { "Unchanged" });
+            ui.label(crate::frontend_ui::extended_localized_text(
+                catalog,
+                if dirty {
+                    ExtendedUiTextKey::LevelNameStaged
+                } else {
+                    ExtendedUiTextKey::LevelNameUnchanged
+                },
+            ));
         });
         command
     }
@@ -294,34 +345,66 @@ impl RomOverworldLevelNameEditor {
         }))
     }
 
-    fn close_confirmation(&mut self, context: &egui::Context) -> bool {
+    fn close_confirmation(
+        &mut self,
+        context: &egui::Context,
+        catalog: Option<&LocalizationCatalog>,
+    ) -> bool {
         let Some(pending) = self.pending_close else {
             return false;
         };
         let mut approved = false;
-        egui::Window::new("Discard level-name changes?")
-            .collapsible(false)
-            .resizable(false)
-            .show(context, |ui| {
-                ui.label("The staged level names have not been committed to the ROM.");
-                ui.horizontal(|ui| {
-                    if ui.button("Cancel").clicked() {
-                        self.pending_close = None;
-                    }
-                    if ui.button("Discard").clicked() {
-                        self.clear();
-                        approved = pending == PendingClose::Application;
-                    }
-                });
+        egui::Window::new(crate::frontend_ui::extended_localized_text(
+            catalog,
+            ExtendedUiTextKey::LevelNameDiscardTitle,
+        ))
+        .collapsible(false)
+        .resizable(false)
+        .show(context, |ui| {
+            ui.label(crate::frontend_ui::extended_localized_text(
+                catalog,
+                ExtendedUiTextKey::LevelNameUnsavedNotice,
+            ));
+            ui.horizontal(|ui| {
+                if ui
+                    .button(crate::frontend_ui::localized_text(
+                        catalog,
+                        UiTextKey::CommonCancel,
+                    ))
+                    .clicked()
+                {
+                    self.pending_close = None;
+                }
+                if ui
+                    .button(crate::frontend_ui::localized_text(
+                        catalog,
+                        UiTextKey::UnsavedDiscard,
+                    ))
+                    .clicked()
+                {
+                    self.clear();
+                    approved = pending == PendingClose::Application;
+                }
             });
+        });
         approved
     }
 
-    fn show_error(&mut self, context: &egui::Context) {
+    fn show_error(&mut self, context: &egui::Context, catalog: Option<&LocalizationCatalog>) {
         if let Some(error) = self.error.clone() {
-            egui::Window::new("Level-name editor error").show(context, |ui| {
+            egui::Window::new(crate::frontend_ui::extended_localized_text(
+                catalog,
+                ExtendedUiTextKey::LevelNameErrorTitle,
+            ))
+            .show(context, |ui| {
                 ui.label(error);
-                if ui.button("OK").clicked() {
+                if ui
+                    .button(crate::frontend_ui::localized_text(
+                        catalog,
+                        UiTextKey::CommonOk,
+                    ))
+                    .clicked()
+                {
                     self.error = None;
                 }
             });
@@ -354,6 +437,28 @@ fn extend_names_through(table: &mut NativeOverworldLevelNameTable, slot: usize) 
 mod tests {
     use super::*;
     use std::path::PathBuf;
+
+    #[test]
+    fn level_name_editor_surface_has_no_literal_widget_text() {
+        let source = include_str!("rom_overworld_level_name_editor.rs");
+        for literal_widget in [
+            "egui::Window::new(\"",
+            "ui.button(\"",
+            "egui::Button::new(\"",
+            "ui.label(\"",
+        ] {
+            assert!(
+                !source.contains(literal_widget),
+                "level-name editor bypasses typed localization with {literal_widget}"
+            );
+        }
+        for key in ExtendedUiTextKey::ALL
+            .into_iter()
+            .filter(|key| format!("{key:?}").starts_with("LevelName"))
+        {
+            assert!(source.contains(&format!("ExtendedUiTextKey::{key:?}")));
+        }
+    }
 
     fn pristine_app() -> AppState {
         let mut app = AppState::default();

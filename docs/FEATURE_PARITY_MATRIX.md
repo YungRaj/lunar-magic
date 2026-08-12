@@ -1847,3 +1847,10 @@ Existing high-event semantic install/reopen, malformed/stale retention, and both
 crash-recovery gates remain green. Localization model 28/28, event-number editor 5/5, and renderer
 237/237 pass. Other native forms and retained live language-DLL evidence remain open; Localization
 stays Partial and aggregate parity remains 60/65.
+Localization coverage update (2026-08-11, overworld level names): the complete variable-size
+19-tile name editor now consumes fifteen typed extension keys plus shared fixed-prefix confirmation
+actions. A literal-widget audit covers the full surface. Canonical gap growth, pristine semantic
+install/reopen, stale-state rejection, and pristine/installed maximum-table recovery remain proven.
+Localization model 28/28, level-name editor 6/6, and renderer 237/237 pass. Other native forms and
+retained live language-DLL evidence remain open; Localization stays Partial and aggregate parity
+remains 60/65.

@@ -1734,10 +1734,25 @@ pub enum ExtendedUiTextKey {
     EventNumberDiscardTitle,
     EventNumberUnsavedNotice,
     EventNumberErrorTitle,
+    LevelNameEditorTitle,
+    LevelNameDescription,
+    LevelNameCountFormat,
+    LevelNameStaleNotice,
+    LevelNameLevel,
+    LevelNameTile,
+    LevelNameTileValue,
+    LevelNameLoadTile,
+    LevelNameApplyTile,
+    LevelNameCommit,
+    LevelNameStaged,
+    LevelNameUnchanged,
+    LevelNameDiscardTitle,
+    LevelNameUnsavedNotice,
+    LevelNameErrorTitle,
 }
 
 impl ExtendedUiTextKey {
-    pub const ALL: [Self; 33] = [
+    pub const ALL: [Self; 48] = [
         Self::TilemapTitleScreenName,
         Self::TilemapCreditsName,
         Self::TilemapEditorTitleFormat,
@@ -1771,6 +1786,21 @@ impl ExtendedUiTextKey {
         Self::EventNumberDiscardTitle,
         Self::EventNumberUnsavedNotice,
         Self::EventNumberErrorTitle,
+        Self::LevelNameEditorTitle,
+        Self::LevelNameDescription,
+        Self::LevelNameCountFormat,
+        Self::LevelNameStaleNotice,
+        Self::LevelNameLevel,
+        Self::LevelNameTile,
+        Self::LevelNameTileValue,
+        Self::LevelNameLoadTile,
+        Self::LevelNameApplyTile,
+        Self::LevelNameCommit,
+        Self::LevelNameStaged,
+        Self::LevelNameUnchanged,
+        Self::LevelNameDiscardTitle,
+        Self::LevelNameUnsavedNotice,
+        Self::LevelNameErrorTitle,
     ];
 
     #[must_use]
@@ -1819,6 +1849,27 @@ impl ExtendedUiTextKey {
                 "The staged mapping has not been committed to the ROM."
             }
             Self::EventNumberErrorTitle => "Event-number editor error",
+            Self::LevelNameEditorTitle => "ROM Overworld Level Names",
+            Self::LevelNameDescription => {
+                "Lossless 19-tile level-name records. Level, tile index, and value are hexadecimal."
+            }
+            Self::LevelNameCountFormat => "Staged name records: {count}",
+            Self::LevelNameStaleNotice => {
+                "The ROM changed after this table was opened. Reopen before committing."
+            }
+            Self::LevelNameLevel => "Level",
+            Self::LevelNameTile => "Tile (00–12)",
+            Self::LevelNameTileValue => "Tile value",
+            Self::LevelNameLoadTile => "Load tile",
+            Self::LevelNameApplyTile => "Apply tile",
+            Self::LevelNameCommit => "Commit names to ROM",
+            Self::LevelNameStaged => "Staged",
+            Self::LevelNameUnchanged => "Unchanged",
+            Self::LevelNameDiscardTitle => "Discard level-name changes?",
+            Self::LevelNameUnsavedNotice => {
+                "The staged level names have not been committed to the ROM."
+            }
+            Self::LevelNameErrorTitle => "Level-name editor error",
         }
     }
 

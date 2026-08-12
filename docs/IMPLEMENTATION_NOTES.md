@@ -7140,3 +7140,12 @@ rejects literal widget text and requires every `EventNumber*` key. Localization 
 event-number editor 5/5—including high-event install/reopen, invalid/stale handling, and pristine
 plus installed recovery—and renderer 237/237 pass. Localization stays Partial for remaining forms
 and live original language-DLL evidence; aggregate parity remains 60/65.
+Localization coverage update (2026-08-11, overworld level names): the complete lossless 19-tile
+name-table editor now uses fifteen typed extension keys for its window, record/count descriptions,
+stale warning, level/tile/value fields, load/apply/commit actions, staged state, unsaved confirmation,
+and errors; shared Cancel/Discard/OK remain fixed-prefix entries. Its active-catalog call boundary
+is isolated from neighboring ROM editors. A source audit rejects literal widget text and requires
+every `LevelName*` key. Localization model 28/28, level-name editor 6/6—including canonical growth
+across the level-number gap, pristine install/reopen, stale selection safety, and pristine/installed
+maximum-table recovery—and renderer 237/237 pass. Localization stays Partial for remaining forms
+and live original language-DLL evidence; aggregate parity remains 60/65.
