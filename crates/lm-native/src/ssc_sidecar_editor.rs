@@ -5,7 +5,7 @@ use crate::{
     ssc_sidecar_editor_form::{SscSourceForm, diagnostic},
 };
 use eframe::egui;
-use lm_app::SscSidecarController;
+use lm_app::{ExtendedUiTextKey, LocalizationCatalog, SscSidecarController};
 use lm_graphics::{
     EXTERNAL_SPRITE_GRAPHICS_SLOT_MAX_BYTES, EXTERNAL_SPRITE_GRAPHICS_SLOTS,
     EXTERNAL_SPRITE_PALETTE_RGB_MAX_BYTES, EXTERNAL_SPRITE_PALETTE_SNES_MAX_BYTES,
@@ -93,17 +93,21 @@ impl SscSidecarEditor {
         false
     }
 
-    pub(crate) fn show(&mut self, context: &egui::Context) -> bool {
+    pub(crate) fn show(
+        &mut self,
+        context: &egui::Context,
+        catalog: Option<&LocalizationCatalog>,
+    ) -> bool {
         self.poll_io(context);
         if self.controller.is_some() {
             self.load_form();
-            egui::Window::new("Lossless SSC Custom-Sprite Metadata")
+            egui::Window::new(text(catalog, ExtendedUiTextKey::SscEditorTitle))
                 .default_size([840.0, 680.0])
                 .vscroll(true)
-                .show(context, |ui| self.contents(ui));
+                .show(context, |ui| self.contents(ui, catalog));
         }
-        let approved = self.show_close_confirmation(context);
-        self.show_error(context);
+        let approved = self.show_close_confirmation(context, catalog);
+        self.show_error(context, catalog);
         approved
     }
 
@@ -149,8 +153,8 @@ impl SscSidecarEditor {
         }
     }
 
-    fn contents(&mut self, ui: &mut egui::Ui) {
-        self.toolbar(ui);
+    fn contents(&mut self, ui: &mut egui::Ui, catalog: Option<&LocalizationCatalog>) {
+        self.toolbar(ui, catalog);
         ui.separator();
         let Some(controller) = self.controller.as_ref() else {
             return;
@@ -162,36 +166,49 @@ impl SscSidecarEditor {
             .entries()
             .get(self.entry_index)
             .map(diagnostic);
-        ui.label(format!(
-            "Lossless source: {source_len} bytes; valid metadata records: {entry_count}"
-        ));
+        ui.label(
+            text(catalog, ExtendedUiTextKey::SscSourceSummaryFormat)
+                .replace("{bytes}", &source_len.to_string())
+                .replace("{records}", &entry_count.to_string()),
+        );
         let graphics_slots = (0..EXTERNAL_SPRITE_GRAPHICS_SLOTS)
             .filter(|&slot| self.external_assets.has_graphics_slot(slot))
             .count();
-        ui.label(format!(
-            "External sprite assets: {graphics_slots}/{} graphics slots; palette {}",
-            EXTERNAL_SPRITE_GRAPHICS_SLOTS,
+        let palette_status = text(
+            catalog,
             if self.external_assets.has_palette() {
-                "loaded"
+                ExtendedUiTextKey::SscPaletteLoaded
             } else {
-                "not found"
-            }
-        ));
+                ExtendedUiTextKey::SscPaletteMissing
+            },
+        );
+        ui.label(
+            text(catalog, ExtendedUiTextKey::SscAssetsSummaryFormat)
+                .replace("{loaded}", &graphics_slots.to_string())
+                .replace("{total}", &EXTERNAL_SPRITE_GRAPHICS_SLOTS.to_string())
+                .replace("{palette}", &palette_status),
+        );
         ui.add(
             egui::TextEdit::multiline(&mut self.form.bytes)
                 .desired_rows(18)
                 .code_editor(),
         );
-        if ui.button("Replace complete lossless source").clicked() {
+        if ui
+            .button(text(catalog, ExtendedUiTextKey::SscReplaceSource))
+            .clicked()
+        {
             self.replace_form();
         }
         ui.separator();
-        ui.heading("Recovered-record diagnostics");
+        ui.heading(text(catalog, ExtendedUiTextKey::SscDiagnosticsHeading));
         ui.add(
             egui::Slider::new(&mut self.entry_index, 0..=entry_count.saturating_sub(1))
-                .text("Parsed record"),
+                .text(text(catalog, ExtendedUiTextKey::SscParsedRecord)),
         );
-        ui.label(entry_diagnostic.unwrap_or_else(|| "No valid metadata records.".into()));
+        ui.label(
+            entry_diagnostic
+                .unwrap_or_else(|| text(catalog, ExtendedUiTextKey::SscNoMetadataRecords)),
+        );
     }
 
     fn replace_form(&mut self) {
@@ -210,7 +227,7 @@ impl SscSidecarEditor {
         }
     }
 
-    fn toolbar(&mut self, ui: &mut egui::Ui) {
+    fn toolbar(&mut self, ui: &mut egui::Ui, catalog: Option<&LocalizationCatalog>) {
         let Some(controller) = self.controller.as_ref() else {
             return;
         };
@@ -218,25 +235,37 @@ impl SscSidecarEditor {
         let mut save = false;
         ui.horizontal(|ui| {
             if ui
-                .add_enabled(controller.can_undo(), egui::Button::new("Undo"))
+                .add_enabled(
+                    controller.can_undo(),
+                    egui::Button::new(text(catalog, ExtendedUiTextKey::SscUndo)),
+                )
                 .clicked()
             {
                 history = Some(true);
             }
             if ui
-                .add_enabled(controller.can_redo(), egui::Button::new("Redo"))
+                .add_enabled(
+                    controller.can_redo(),
+                    egui::Button::new(text(catalog, ExtendedUiTextKey::SscRedo)),
+                )
                 .clicked()
             {
                 history = Some(false);
             }
             save = ui
-                .add_enabled(!self.persistence.is_running(), egui::Button::new("Save"))
+                .add_enabled(
+                    !self.persistence.is_running(),
+                    egui::Button::new(text(catalog, ExtendedUiTextKey::SscSave)),
+                )
                 .clicked();
-            ui.label(if controller.is_modified() {
-                "Modified"
-            } else {
-                "Saved"
-            });
+            ui.label(text(
+                catalog,
+                if controller.is_modified() {
+                    ExtendedUiTextKey::SscModified
+                } else {
+                    ExtendedUiTextKey::SscSaved
+                },
+            ));
         });
         let Some(controller) = self.controller.as_mut() else {
             return;
@@ -258,22 +287,32 @@ impl SscSidecarEditor {
         }
     }
 
-    fn show_close_confirmation(&mut self, context: &egui::Context) -> bool {
+    fn show_close_confirmation(
+        &mut self,
+        context: &egui::Context,
+        catalog: Option<&LocalizationCatalog>,
+    ) -> bool {
         let Some(pending) = self.pending_close else {
             return false;
         };
         let mut approved = false;
-        egui::Window::new("Unsaved SSC sidecar")
+        egui::Window::new(text(catalog, ExtendedUiTextKey::SscDiscardTitle))
             .collapsible(false)
             .resizable(false)
             .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
             .show(context, |ui| {
-                ui.label("Discard unsaved custom-sprite metadata changes?");
+                ui.label(text(catalog, ExtendedUiTextKey::SscUnsavedNotice));
                 ui.horizontal(|ui| {
-                    if ui.button("Cancel").clicked() {
+                    if ui
+                        .button(text(catalog, ExtendedUiTextKey::SscCancel))
+                        .clicked()
+                    {
                         self.pending_close = None;
                     }
-                    if ui.button("Discard").clicked() {
+                    if ui
+                        .button(text(catalog, ExtendedUiTextKey::SscDiscard))
+                        .clicked()
+                    {
                         self.clear();
                         approved = pending == PendingClose::Application;
                     }
@@ -282,14 +321,14 @@ impl SscSidecarEditor {
         approved
     }
 
-    fn show_error(&mut self, context: &egui::Context) {
+    fn show_error(&mut self, context: &egui::Context, catalog: Option<&LocalizationCatalog>) {
         if let Some(error) = self.error.clone() {
-            egui::Window::new("SSC sidecar error")
+            egui::Window::new(text(catalog, ExtendedUiTextKey::SscErrorTitle))
                 .collapsible(false)
                 .resizable(false)
                 .show(context, |ui| {
                     ui.label(error);
-                    if ui.button("OK").clicked() {
+                    if ui.button(text(catalog, ExtendedUiTextKey::SscOk)).clicked() {
                         self.error = None;
                     }
                 });
@@ -304,6 +343,10 @@ impl SscSidecarEditor {
         self.external_assets = ExternalSpriteAssets::default();
         self.asset_revision = self.asset_revision.wrapping_add(1);
     }
+}
+
+fn text(catalog: Option<&LocalizationCatalog>, key: ExtendedUiTextKey) -> String {
+    crate::frontend_ui::extended_localized_text(catalog, key)
 }
 
 pub(crate) fn external_sprite_requests(ssc_path: &Path) -> Vec<BoundedRead> {
@@ -398,6 +441,53 @@ mod tests {
             std::process::id(),
             NEXT.fetch_add(1, Ordering::Relaxed)
         ))
+    }
+
+    #[test]
+    fn complete_ssc_sidecar_form_uses_every_typed_key_and_live_catalog() {
+        let source = include_str!("ssc_sidecar_editor.rs");
+        for key in ExtendedUiTextKey::ALL
+            .into_iter()
+            .filter(|key| format!("{key:?}").starts_with("Ssc"))
+        {
+            assert!(
+                source.contains(&format!("ExtendedUiTextKey::{key:?}")),
+                "missing SSC label {key:?}"
+            );
+        }
+        for literal in [
+            "Window::new(\"Lossless SSC Custom-Sprite Metadata\")",
+            "Window::new(\"Unsaved SSC sidecar\")",
+            "Window::new(\"SSC sidecar error\")",
+            "Button::new(\"Undo\")",
+            "Button::new(\"Save\")",
+            "ui.button(\"Replace complete lossless source\")",
+        ] {
+            assert!(
+                !source.contains(literal),
+                "fixed-English control: {literal}"
+            );
+        }
+        assert!(
+            include_str!("application/windows.rs")
+                .contains(".show(context, self.app.localization())")
+        );
+    }
+
+    #[test]
+    fn lossless_custom_sprite_metadata_is_revisioned_and_undoable() {
+        let original = b"\xef\xbb\xbf10\t0\tfirst\r\nmalformed\xff\n";
+        let replacement = b"11\t1\tsecond\n# retained comment\r\n";
+        let mut controller = SscSidecarController::decode("sprites.ssc".into(), original).unwrap();
+        controller
+            .replace_source(controller.revision(), replacement)
+            .unwrap();
+        assert_eq!(controller.revision(), 1);
+        assert_eq!(controller.value().source(), replacement);
+        assert!(controller.undo(controller.revision()).unwrap());
+        assert_eq!(controller.value().source(), original);
+        assert!(controller.redo(controller.revision()).unwrap());
+        assert_eq!(controller.value().source(), replacement);
     }
 
     #[test]

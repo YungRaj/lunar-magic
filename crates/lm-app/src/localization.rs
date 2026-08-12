@@ -1701,6 +1701,26 @@ const RUST_UI_ITEM_INDEX: u16 = u16::MAX - 1;
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 #[repr(u32)]
 pub enum ExtendedUiTextKey {
+    SscEditorTitle,
+    SscSourceSummaryFormat,
+    SscAssetsSummaryFormat,
+    SscPaletteLoaded,
+    SscPaletteMissing,
+    SscReplaceSource,
+    SscDiagnosticsHeading,
+    SscParsedRecord,
+    SscNoMetadataRecords,
+    SscUndo,
+    SscRedo,
+    SscSave,
+    SscModified,
+    SscSaved,
+    SscDiscardTitle,
+    SscUnsavedNotice,
+    SscCancel,
+    SscDiscard,
+    SscErrorTitle,
+    SscOk,
     DscEditorTitle,
     DscSourceSummaryFormat,
     DscSourceNotice,
@@ -2584,7 +2604,27 @@ pub enum ExtendedUiTextKey {
 }
 
 impl ExtendedUiTextKey {
-    pub const ALL: [Self; 880] = [
+    pub const ALL: [Self; 900] = [
+        Self::SscEditorTitle,
+        Self::SscSourceSummaryFormat,
+        Self::SscAssetsSummaryFormat,
+        Self::SscPaletteLoaded,
+        Self::SscPaletteMissing,
+        Self::SscReplaceSource,
+        Self::SscDiagnosticsHeading,
+        Self::SscParsedRecord,
+        Self::SscNoMetadataRecords,
+        Self::SscUndo,
+        Self::SscRedo,
+        Self::SscSave,
+        Self::SscModified,
+        Self::SscSaved,
+        Self::SscDiscardTitle,
+        Self::SscUnsavedNotice,
+        Self::SscCancel,
+        Self::SscDiscard,
+        Self::SscErrorTitle,
+        Self::SscOk,
         Self::DscEditorTitle,
         Self::DscSourceSummaryFormat,
         Self::DscSourceNotice,
@@ -3470,6 +3510,30 @@ impl ExtendedUiTextKey {
     #[must_use]
     pub const fn english(self) -> &'static str {
         match self {
+            Self::SscEditorTitle => "Lossless SSC Custom-Sprite Metadata",
+            Self::SscSourceSummaryFormat => {
+                "Lossless source: {bytes} bytes; valid metadata records: {records}"
+            }
+            Self::SscAssetsSummaryFormat => {
+                "External sprite assets: {loaded}/{total} graphics slots; palette {palette}"
+            }
+            Self::SscPaletteLoaded => "loaded",
+            Self::SscPaletteMissing => "not found",
+            Self::SscReplaceSource => "Replace complete lossless source",
+            Self::SscDiagnosticsHeading => "Recovered-record diagnostics",
+            Self::SscParsedRecord => "Parsed record",
+            Self::SscNoMetadataRecords => "No valid metadata records.",
+            Self::SscUndo => "Undo",
+            Self::SscRedo => "Redo",
+            Self::SscSave => "Save",
+            Self::SscModified => "Modified",
+            Self::SscSaved => "Saved",
+            Self::SscDiscardTitle => "Unsaved SSC sidecar",
+            Self::SscUnsavedNotice => "Discard unsaved custom-sprite metadata changes?",
+            Self::SscCancel => "Cancel",
+            Self::SscDiscard => "Discard",
+            Self::SscErrorTitle => "SSC sidecar error",
+            Self::SscOk => "OK",
             Self::DscEditorTitle => "Lossless DSC Sidecar Editor",
             Self::DscSourceSummaryFormat => {
                 "Lossless source: {bytes} bytes; valid parsed records: {records}"

@@ -7130,6 +7130,18 @@ a focused test proves BOM, CRLF/LF, malformed, and non-UTF-8 bytes across replac
 Redo. The DSC editor/form suite passes 4/4, localization passes 28/28 active tests (one provenance
 ignore), and renderer passes 237/237. Other native forms and retained live language-DLL evidence
 keep Localization Partial; aggregate parity remains 60/65.
+
+Localization coverage update (2026-08-12, lossless SSC custom-sprite metadata): twenty appended
+`Ssc*` keys cover the complete sidecar window: byte/record summary, discovered external-graphics
+slot counts, independently localized loaded/missing palette states, complete source replacement,
+record diagnostics, history/save/dirty state, close confirmation, and error lifecycle. The
+application host passes the live catalog. Technical filenames and asset decoder errors remain
+opaque data. The source remains binary-preserving and revision-bound; the focused suite proves
+BOM, mixed line endings, malformed and non-UTF-8 bytes across replacement/Undo/Redo, nearest
+ExternalGraphics discovery, MW3-over-RGB palette precedence, slot/palette decode, and unknown-file
+rejection. SSC tests pass 5/5, localization passes 28/28 active cases (one provenance ignore), and
+renderer passes 237/237. Other native forms and retained language-DLL evidence keep Localization
+Partial; aggregate parity remains 60/65.
 Localization coverage update (2026-08-11, title/credits tilemap family): the first production use
 of `ExtendedUiTextKey` covers both installed ROM tilemap editors as one complete family. Typed
 extension text now controls title-versus-credits names, dynamic window/dimensions/confirmation/error
