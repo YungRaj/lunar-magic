@@ -2584,6 +2584,13 @@ pub enum ExtendedUiTextKey {
     Map16DocumentDiscard,
     Map16DocumentErrorTitle,
     Map16DocumentOk,
+    VanillaGraphicsHeadingFormat,
+    VanillaGraphicsSplitPointers,
+    VanillaGraphicsPaintColor,
+    VanillaGraphicsRelocationNotice,
+    VanillaGraphicsExpandRom,
+    VanillaGraphicsCommit,
+    VanillaGraphicsNoTiles,
     ExAnimationDocumentTitle,
     ExAnimationDocumentOpenTitle,
     ExAnimationDocumentMaximumRecords,
@@ -3746,7 +3753,7 @@ pub enum ExtendedUiTextKey {
 }
 
 impl ExtendedUiTextKey {
-    pub const ALL: [Self; 2042] = [
+    pub const ALL: [Self; 2049] = [
         Self::MwlDocumentEditorTitle,
         Self::MwlDocumentVersionFormat,
         Self::MwlDocumentFlagsHex,
@@ -4630,6 +4637,13 @@ impl ExtendedUiTextKey {
         Self::Map16DocumentDiscard,
         Self::Map16DocumentErrorTitle,
         Self::Map16DocumentOk,
+        Self::VanillaGraphicsHeadingFormat,
+        Self::VanillaGraphicsSplitPointers,
+        Self::VanillaGraphicsPaintColor,
+        Self::VanillaGraphicsRelocationNotice,
+        Self::VanillaGraphicsExpandRom,
+        Self::VanillaGraphicsCommit,
+        Self::VanillaGraphicsNoTiles,
         Self::ExAnimationDocumentTitle,
         Self::ExAnimationDocumentOpenTitle,
         Self::ExAnimationDocumentMaximumRecords,
@@ -6877,6 +6891,17 @@ impl ExtendedUiTextKey {
             Self::Map16DocumentDiscard => "Discard",
             Self::Map16DocumentErrorTitle => "Map16 error",
             Self::Map16DocumentOk => "OK",
+            Self::VanillaGraphicsHeadingFormat => "GFX{slot} — built-in SMW graphics editor",
+            Self::VanillaGraphicsSplitPointers => {
+                "Vanilla split pointer planes detected automatically."
+            }
+            Self::VanillaGraphicsPaintColor => "Paint color",
+            Self::VanillaGraphicsRelocationNotice => {
+                "Graphics relocation needs one expanded free-space bank."
+            }
+            Self::VanillaGraphicsExpandRom => "Expand ROM to 1 MiB",
+            Self::VanillaGraphicsCommit => "Commit graphics changes to ROM",
+            Self::VanillaGraphicsNoTiles => "No tiles in this graphics file.",
             Self::ExAnimationDocumentTitle => "Portable ExAnimation Editor",
             Self::ExAnimationDocumentOpenTitle => "Open ExAnimation",
             Self::ExAnimationDocumentMaximumRecords => {

@@ -25,8 +25,8 @@ use crate::{
 };
 use eframe::egui;
 use lm_app::{
-    AppState, Command, EditorMode, GraphicsController, GraphicsControllerEdit, LocalizationCatalog,
-    RomExpansionCommand,
+    AppState, Command, EditorMode, ExtendedUiTextKey as Key, GraphicsController,
+    GraphicsControllerEdit, LocalizationCatalog, RomExpansionCommand,
 };
 use lm_graphics::{
     Bgr555, GraphicsTileChange, IndexedTile, Palette, PaletteInterchangeFile, TileShift,
@@ -142,20 +142,26 @@ impl VanillaGraphicsEditor {
         if !file_work_running && let Some(text) = pasted {
             self.paste_tile(&text);
         }
-        ui.heading(format!("GFX{slot:02X} — built-in SMW graphics editor"));
-        ui.label("Vanilla split pointer planes detected automatically.");
+        ui.heading(
+            text(app.localization(), Key::VanillaGraphicsHeadingFormat)
+                .replace("{slot}", &format!("{slot:02X}")),
+        );
+        ui.label(text(app.localization(), Key::VanillaGraphicsSplitPointers));
         if ui
             .add_enabled(
                 !file_work_running && app.current_level().is_some(),
-                egui::Button::new("Extract current level GFX…"),
+                egui::Button::new(text(app.localization(), Key::GraphicsExtractLevel)),
             )
-            .on_hover_text("Choose a new directory for the active level's decoded FG/BG/SP files")
+            .on_hover_text(text(app.localization(), Key::GraphicsExtractLevelNotice))
             .clicked()
         {
             self.pending_level_graphics_export = Some(LevelGraphicsExportMode::ChooseNewDirectory);
         }
-        ui.checkbox(joined_graphics_files, "Use joined AllGFX.bin files")
-            .on_hover_text("Original global joined-GFX mode (command $24BD)");
+        ui.checkbox(
+            joined_graphics_files,
+            text(app.localization(), Key::GraphicsUseJoined),
+        )
+        .on_hover_text(text(app.localization(), Key::GraphicsJoinedNotice));
         ui.separator();
         let palette = grayscale_palette();
         let Some(controller) = self.controller.as_ref() else {
@@ -171,7 +177,7 @@ impl VanillaGraphicsEditor {
         let mut selected_foreground = None;
         let mut selected_background = None;
         ui.horizontal(|ui| {
-            ui.label("Paint color");
+            ui.label(text(app.localization(), Key::VanillaGraphicsPaintColor));
             for color in 0_u8..16 {
                 let fill =
                     crate::graphics_painter::palette_color(&palette, self.display_palette, color);
@@ -233,8 +239,14 @@ impl VanillaGraphicsEditor {
         }
         let expanded = snapshot.rom_bytes.len() > 0x80_000;
         if !expanded {
-            ui.label("Graphics relocation needs one expanded free-space bank.");
-            if ui.button("Expand ROM to 1 MiB").clicked() {
+            ui.label(text(
+                app.localization(),
+                Key::VanillaGraphicsRelocationNotice,
+            ));
+            if ui
+                .button(text(app.localization(), Key::VanillaGraphicsExpandRom))
+                .clicked()
+            {
                 return Some(Command::ExpandRom(RomExpansionCommand {
                     expected_revision: snapshot.revision,
                     mapper: snapshot.identity.mapper,
@@ -253,7 +265,7 @@ impl VanillaGraphicsEditor {
         let commit_clicked = ui
             .add_enabled(
                 expanded && modified && !file_work_running,
-                egui::Button::new("Commit graphics changes to ROM"),
+                egui::Button::new(text(app.localization(), Key::VanillaGraphicsCommit)),
             )
             .clicked();
         if expanded && modified && !file_work_running && commit_clicked {
@@ -283,17 +295,21 @@ impl VanillaGraphicsEditor {
         };
         let mut accepted = false;
         let mut cancelled = false;
-        egui::Window::new("Save level GFX to Graphics folder?")
+        egui::Window::new(text(app.localization(), Key::GraphicsSaveLevelTitle))
             .collapsible(false)
             .resizable(false)
             .anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO)
             .show(context, |ui| {
-                ui.label("Do you want to save the current level GFX to file,");
-                ui.label("so it can be inserted to the ROM later?");
-                ui.label("Don't do this if you haven't extracted the graphics yet!");
+                ui.label(text(app.localization(), Key::GraphicsSaveLevelQuestion));
+                ui.label(text(app.localization(), Key::GraphicsSaveLevelPurpose));
+                ui.label(text(app.localization(), Key::GraphicsSaveLevelWarning));
                 ui.horizontal(|ui| {
-                    accepted = ui.button("Yes").clicked();
-                    cancelled = ui.button("No").clicked();
+                    accepted = ui
+                        .button(text(app.localization(), Key::GraphicsYes))
+                        .clicked();
+                    cancelled = ui
+                        .button(text(app.localization(), Key::GraphicsNo))
+                        .clicked();
                 });
             });
         if accepted {
@@ -539,7 +555,7 @@ impl VanillaGraphicsEditor {
                 self.error = Some("internal graphics cache is unavailable".into());
                 return;
             };
-            ui.small("Internal GFX data — transient working cache; F9 publishes current-level FG/BG/SP slots");
+            ui.small(text(catalog, Key::GraphicsInternalCacheNotice));
             &cache.tiles
         } else {
             &controller.graphics().tiles
@@ -753,7 +769,7 @@ impl VanillaGraphicsEditor {
                 .cloned()
         });
         let Some(mut tile) = tile else {
-            ui.label("No tiles in this graphics file.");
+            ui.label(text(catalog, Key::VanillaGraphicsNoTiles));
             return;
         };
         if let Some(direction) = self.pending_shift.take() {
@@ -764,7 +780,10 @@ impl VanillaGraphicsEditor {
         if character_shortcut == Some(GraphicsCharacterShortcut::EditColorMap) {
             self.color_map.open_dialog();
         }
-        ui.label(format!("Tile {:03X}", self.selected_tile));
+        ui.label(
+            text(catalog, Key::GraphicsTileFormat)
+                .replace("{index}", &format!("{:03X}", self.selected_tile)),
+        );
         let clicked_mapping = self.color_map.show(
             ui,
             palette,
@@ -1048,9 +1067,44 @@ fn prepare_commit(
         .map_err(|error| error.to_string())
 }
 
+fn text(catalog: Option<&LocalizationCatalog>, key: Key) -> String {
+    catalog.map_or_else(
+        || key.english().to_owned(),
+        |catalog| catalog.extended_text(key).to_owned(),
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn vanilla_graphics_editor_has_no_literal_widget_text() {
+        let source = include_str!("vanilla_graphics_editor.rs");
+        for literal_widget in [
+            "ui.button(\"",
+            "ui.label(\"",
+            "ui.heading(\"",
+            "ui.small(\"",
+            "Button::new(\"",
+            "Window::new(\"",
+            ".text(\"",
+        ] {
+            assert!(
+                !source.contains(literal_widget),
+                "vanilla graphics editor bypasses localization with {literal_widget}"
+            );
+        }
+        for key in Key::ALL
+            .into_iter()
+            .filter(|key| format!("{key:?}").starts_with("VanillaGraphics"))
+        {
+            assert!(
+                source.contains(&format!("Key::{key:?}")),
+                "vanilla graphics editor does not consume {key:?}"
+            );
+        }
+    }
 
     #[test]
     fn pristine_editor_loads_the_complete_diagnostic_cache_but_keeps_it_locked() {

@@ -7079,6 +7079,17 @@ later-edit preservation, history divergence, and request overflow. Localization 
 active cases (one provenance ignore), and renderer passes 237/237. Other native forms and retained
 language-DLL evidence keep Localization Partial; aggregate parity remains 60/65.
 
+Localization coverage update (2026-08-12, vanilla graphics editor): seven appended
+`VanillaGraphics*` identities cover the dynamic built-in editor heading, authenticated split-pointer
+notice, paint-color selector, expansion requirement/action, ROM commit, and empty-file state. The
+surface also reuses the complete existing `Graphics*` vocabulary for current-level extraction,
+joined AllGFX mode, the three-part save-level warning, Yes/No confirmation, internal-cache notice,
+and dynamic tile label. A complete source audit rejects literal window, button, label, heading,
+small-text, slider, and `Button` captions and requires every vanilla identity. The focused audit
+passes, localization passes 28/28 active cases (one provenance ignore), native compilation passes,
+and renderer remains 237/237. Operational status strings, other unaudited frontend modules, and
+retained live language-DLL evidence keep Localization Partial; aggregate parity remains 60/65.
+
 Localization coverage update (2026-08-12, custom-sprite placement library): twenty-nine appended
 `CustomSprite*` keys cover synchronized placement count/navigation, library header, Unicode
 search/descriptions, variable-width record groups, typed placement copy/paste,
