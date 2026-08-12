@@ -7164,6 +7164,17 @@ proves dynamic replacement. Localization 26/26 focused tests, native updater 6/6
 237/237 pass. Remaining native forms and retained original language-DLL behavior keep Localization
 Partial; aggregate parity remains 60/65.
 
+Localization coverage update (2026-08-12, aggregate Level domain): twenty-six appended
+`NativeAssets*` identities plus the matching native-document identities now cover source/header
+summary, every legacy header semantic, custom-time controls, staged header lifecycle, Layer 1
+objects, sprite tokens, sprite memory/buoyancy, authenticated Lfix3 spawn settings, clipboard,
+semantic fields, and ordering controls. The catalog-backed shared panel is exercised by both
+portable and installed-ROM aggregate editors. A complete Level-panel source audit rejects literal
+heading, label, button, slider, and collapsing captions. The focused audit passes, localization
+passes 28/28 active cases (one provenance ignore), native compile passes, and renderer passes
+237/237. The Layer 2, Palette, ExAnimation, and Settings aggregate domains remain, so Localization
+and aggregate parity stay Partial and 60/65 respectively.
+
 Localization coverage update (2026-08-12, lossless OSC custom-object metadata): seventeen
 appended `Osc*` keys cover the complete source editor, record diagnostics, history/save/dirty
 state, close confirmation, and error lifecycle, with the live catalog passed by the application

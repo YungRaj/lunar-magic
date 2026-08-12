@@ -5,7 +5,7 @@ use super::{
 };
 use crate::{level_editor_forms, native_clipboard};
 use eframe::egui;
-use lm_app::NativeLevelAssetsControllerEdit;
+use lm_app::{LocalizationCatalog, NativeLevelAssetsControllerEdit};
 use lm_level::{NativeLayer2Data, ObjectEdit};
 
 fn layer2_tilemap_word(bytes: &[u8], x: usize, y: usize) -> Option<(usize, u16)> {
@@ -322,9 +322,10 @@ impl AggregatePanels {
         ui: &mut egui::Ui,
         layer2: &NativeLayer2Data,
         descriptor: Option<lm_level::MwlLayer2Descriptor>,
+        catalog: Option<&LocalizationCatalog>,
     ) -> Option<Result<NativeLevelAssetsControllerEdit, String>> {
         match layer2 {
-            NativeLayer2Data::Objects(objects) => self.layer2_objects_panel(ui, objects),
+            NativeLayer2Data::Objects(objects) => self.layer2_objects_panel(ui, objects, catalog),
             NativeLayer2Data::Tilemap(bytes) => self.layer2_tilemap_panel(ui, bytes, descriptor),
         }
     }
@@ -333,6 +334,7 @@ impl AggregatePanels {
         &mut self,
         ui: &mut egui::Ui,
         objects: &lm_level::LevelObjectData,
+        catalog: Option<&LocalizationCatalog>,
     ) -> Option<Result<NativeLevelAssetsControllerEdit, String>> {
         ui.heading(format!(
             "Layer 2 objects ({})",
@@ -342,10 +344,11 @@ impl AggregatePanels {
             ui,
             &mut self.layer2_object_index,
             objects.objects.records.len(),
+            catalog,
         );
         self.sync_layer2_object_form(objects, false);
         ui.text_edit_singleline(&mut self.layer2_record.object);
-        object_semantic_fields(ui, &mut self.layer2_record);
+        object_semantic_fields(ui, &mut self.layer2_record, catalog);
         let mut action = None;
         let mut apply_object_fields = false;
         let mut move_object = None;
