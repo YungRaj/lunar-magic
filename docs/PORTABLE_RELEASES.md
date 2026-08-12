@@ -27,6 +27,12 @@ or update manifest cannot also be created; an existing output is never replaced.
 SHA-256 digest. Consumers reject non-newer versions, wrong targets, malformed components, length
 mismatches, and digest mismatches before offering an update.
 
+After verification, the updater stages the archive with create-new semantics in an explicitly
+selected directory, flushes it to stable storage, reopens it, and repeats the complete
+version/target/length/digest verification. Verification failures create no file, collisions never
+replace an existing archive, and write/reopen/final-verification failures remove only the newly
+created staged file.
+
 ## Build and verify locally
 
 For a native Linux x86-64 build, run:

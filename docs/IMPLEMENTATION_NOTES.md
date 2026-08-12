@@ -6993,3 +6993,12 @@ collision at either later file removes only newly created predecessors and prese
 target. Producer/consumer, malformed-input, mismatch, and atomic-collision tests pass 6/6. Network
 discovery, user consent, platform installation/relaunch, signing, and retained end-to-end update
 evidence remain incomplete; Release stays Partial and aggregate parity remains 60/65.
+
+Verified-update staging update (2026-08-11): `lm-update` now crosses the filesystem boundary only
+after complete manifest/archive verification. It requires an existing directory, opens the exact
+portable manifest filename with create-new semantics, writes and syncs all bytes, reopens the file,
+and repeats platform/version/length/digest verification. Any write, reopen, or final-verification
+failure removes only that newly created file; pre-verification failure creates nothing and a name
+collision preserves the existing file byte-for-byte. Five trust-core tests plus three packager tests
+pass. Discovery, consent UI, extraction/replacement/relaunch, signing, and live update evidence
+remain incomplete; Release stays Partial and aggregate parity remains 60/65.

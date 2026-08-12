@@ -1182,6 +1182,13 @@ failure-atomic create-new behavior. Six producer/consumer and rejection gates pa
 discovery, consent UI, platform replacement/relaunch, signing, and live end-to-end proof remain
 missing, so Release remains Partial and aggregate parity remains 60/65.
 
+Verified-update staging update (2026-08-11): accepted update bytes now enter durable storage only
+through a create-new stage operation that syncs, reopens, and re-verifies the exact platform,
+strictly newer version, length, and digest. Invalid inputs create nothing; collisions preserve the
+existing file; later failures clean up only the newly created file. The update trust core passes
+5/5 and the producer passes 3/3. Discovery, consent UI, replacement/relaunch, signing, and live
+proof remain missing, so Release remains Partial and aggregate parity remains 60/65.
+
 Crash-recovery evidence update (2026-08-11, fixed-ROM family): palette, Map16, secondary-exit,
 and Lunar Magic metadata staging now accepts every complete two-, three-, or four-editor subset on
 one evolving project clone, superseding the former pair-only coordinator branches. Deterministic

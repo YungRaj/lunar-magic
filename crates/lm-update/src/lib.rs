@@ -1,7 +1,12 @@
 #![forbid(unsafe_code)]
 
 use sha2::{Digest, Sha256};
-use std::{cmp::Ordering, fmt};
+use std::{
+    cmp::Ordering,
+    fmt, fs,
+    io::Write as _,
+    path::{Path, PathBuf},
+};
 
 pub const MAX_MANIFEST_BYTES: usize = 16 * 1024;
 pub const MAX_ARCHIVE_BYTES: u64 = 512 * 1024 * 1024;
@@ -73,6 +78,58 @@ impl UpdateManifest {
             return Err(UpdateError::Digest);
         }
         Ok(())
+    }
+
+    /// Verifies and durably stages an update archive without replacing an existing path.
+    /// Verification completes before the destination is opened.
+    pub fn stage_archive(
+        &self,
+        current: Version,
+        target: &str,
+        archive: &[u8],
+        directory: &Path,
+    ) -> Result<PathBuf, UpdateError> {
+        self.verify_archive(current, target, archive)?;
+        let metadata = fs::metadata(directory).map_err(|error| UpdateError::StageIo {
+            operation: "inspect destination directory",
+            message: error.to_string(),
+        })?;
+        if !metadata.is_dir() {
+            return Err(UpdateError::StageDirectory);
+        }
+        let destination = directory.join(&self.archive);
+        let mut file = fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&destination)
+            .map_err(|error| UpdateError::StageIo {
+                operation: "create staged archive",
+                message: error.to_string(),
+            })?;
+        if let Err(error) = file.write_all(archive).and_then(|()| file.sync_all()) {
+            drop(file);
+            let _cleanup = fs::remove_file(&destination);
+            return Err(UpdateError::StageIo {
+                operation: "write staged archive",
+                message: error.to_string(),
+            });
+        }
+        drop(file);
+        let reopened = match fs::read(&destination) {
+            Ok(reopened) => reopened,
+            Err(error) => {
+                let _cleanup = fs::remove_file(&destination);
+                return Err(UpdateError::StageIo {
+                    operation: "reopen staged archive",
+                    message: error.to_string(),
+                });
+            }
+        };
+        if let Err(error) = self.verify_archive(current, target, &reopened) {
+            let _cleanup = fs::remove_file(&destination);
+            return Err(error);
+        }
+        Ok(destination)
     }
 }
 
@@ -173,8 +230,19 @@ pub enum UpdateError {
     DigestEncoding,
     ArchiveLength,
     Digest,
-    Target { expected: String, actual: String },
-    NotNewer { current: Version, offered: Version },
+    StageDirectory,
+    StageIo {
+        operation: &'static str,
+        message: String,
+    },
+    Target {
+        expected: String,
+        actual: String,
+    },
+    NotNewer {
+        current: Version,
+        offered: Version,
+    },
 }
 
 impl fmt::Display for UpdateError {
@@ -243,5 +311,62 @@ mod tests {
             UpdateManifest::decode(&vec![b'x'; MAX_MANIFEST_BYTES + 1]),
             Err(UpdateError::ManifestTooLarge(_))
         ));
+    }
+
+    #[test]
+    fn verified_archive_stages_exactly_and_never_replaces_a_collision() {
+        let directory = tempfile::tempdir().unwrap();
+        let archive = b"complete verified archive";
+        let parsed = UpdateManifest::decode(&manifest("2.0.0", "target-a", archive)).unwrap();
+        let path = parsed
+            .stage_archive(
+                "1.0.0".parse().unwrap(),
+                "target-a",
+                archive,
+                directory.path(),
+            )
+            .unwrap();
+        assert_eq!(path, directory.path().join("bundle.tar.gz"));
+        assert_eq!(fs::read(&path).unwrap(), archive);
+        assert!(matches!(
+            parsed.stage_archive(
+                "1.0.0".parse().unwrap(),
+                "target-a",
+                archive,
+                directory.path(),
+            ),
+            Err(UpdateError::StageIo { .. })
+        ));
+        assert_eq!(fs::read(path).unwrap(), archive);
+    }
+
+    #[test]
+    fn verification_failure_creates_no_staged_file() {
+        let directory = tempfile::tempdir().unwrap();
+        let archive = b"complete verified archive";
+        let parsed = UpdateManifest::decode(&manifest("2.0.0", "target-a", archive)).unwrap();
+        assert_eq!(
+            parsed.stage_archive(
+                "1.0.0".parse().unwrap(),
+                "target-a",
+                b"tampered archive bytes",
+                directory.path(),
+            ),
+            Err(UpdateError::ArchiveLength)
+        );
+        assert_eq!(fs::read_dir(directory.path()).unwrap().count(), 0);
+
+        let not_directory = directory.path().join("ordinary-file");
+        fs::write(&not_directory, b"preserve").unwrap();
+        assert_eq!(
+            parsed.stage_archive(
+                "1.0.0".parse().unwrap(),
+                "target-a",
+                archive,
+                &not_directory,
+            ),
+            Err(UpdateError::StageDirectory)
+        );
+        assert_eq!(fs::read(not_directory).unwrap(), b"preserve");
     }
 }
