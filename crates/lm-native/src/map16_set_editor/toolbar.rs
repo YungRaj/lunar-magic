@@ -1,11 +1,11 @@
 use super::Map16SetEditor;
 use crate::native_clipboard;
 use eframe::egui;
-use lm_app::Map16DocumentEdit;
+use lm_app::{LocalizationCatalog, Map16DocumentEdit, UiTextKey};
 use lm_level::Map16Page;
 
 impl Map16SetEditor {
-    pub(super) fn toolbar(&mut self, ui: &mut egui::Ui) {
+    pub(super) fn toolbar(&mut self, ui: &mut egui::Ui, catalog: Option<&LocalizationCatalog>) {
         let Some(document) = self.document.as_ref() else {
             return;
         };
@@ -24,22 +24,51 @@ impl Map16SetEditor {
         let page_count = controller.value().set.pages.len();
         ui.horizontal(|ui| {
             if ui
-                .add_enabled(can_undo, egui::Button::new("Undo"))
+                .add_enabled(
+                    can_undo,
+                    egui::Button::new(crate::frontend_ui::localized_text(
+                        catalog,
+                        UiTextKey::EditUndo,
+                    )),
+                )
                 .clicked()
             {
                 history = Some(true);
             }
             if ui
-                .add_enabled(can_redo, egui::Button::new("Redo"))
+                .add_enabled(
+                    can_redo,
+                    egui::Button::new(crate::frontend_ui::localized_text(
+                        catalog,
+                        UiTextKey::EditRedo,
+                    )),
+                )
                 .clicked()
             {
                 history = Some(false);
             }
             save_requested = ui
-                .add_enabled(!self.persistence.is_running(), egui::Button::new("Save"))
+                .add_enabled(
+                    !self.persistence.is_running(),
+                    egui::Button::new(crate::frontend_ui::localized_text(
+                        catalog,
+                        UiTextKey::FileSave,
+                    )),
+                )
                 .clicked();
-            copy_requested = ui.button("Copy tile").clicked();
-            if ui.button("Paste tile").clicked() {
+            copy_requested = ui
+                .button(crate::frontend_ui::localized_text(
+                    catalog,
+                    UiTextKey::EditCopy,
+                ))
+                .clicked();
+            if ui
+                .button(crate::frontend_ui::localized_text(
+                    catalog,
+                    UiTextKey::EditPaste,
+                ))
+                .clicked()
+            {
                 self.clipboard_paste_target = Some((
                     controller.revision(),
                     lm_level::Map16Address {
@@ -65,13 +94,29 @@ impl Map16SetEditor {
             append_requested = ui
                 .add_enabled(
                     page_count < lm_level::Map16Set::MAX_PAGES,
-                    egui::Button::new("Add blank page"),
+                    egui::Button::new(crate::frontend_ui::localized_text(
+                        catalog,
+                        UiTextKey::Map16SetAddBlankPage,
+                    )),
                 )
                 .clicked();
             remove_requested = ui
-                .add_enabled(page_count > 1, egui::Button::new("Remove last page"))
+                .add_enabled(
+                    page_count > 1,
+                    egui::Button::new(crate::frontend_ui::localized_text(
+                        catalog,
+                        UiTextKey::Map16SetRemoveLastPage,
+                    )),
+                )
                 .clicked();
-            ui.label(if modified { "Modified" } else { "Saved" });
+            ui.label(crate::frontend_ui::localized_text(
+                catalog,
+                if modified {
+                    UiTextKey::Map16SetModified
+                } else {
+                    UiTextKey::Map16SetSaved
+                },
+            ));
         });
         if let Some(((revision, address), tile)) = native_paste {
             match native_clipboard::encode_map16_tile(tile) {

@@ -20,8 +20,8 @@ const MAX_LOCALE_BYTES: usize = 64;
 const MAX_TEXT_BYTES: usize = 4096;
 const MAX_DIALOG_TEXT_ENTRIES: usize = 4096;
 const LEGACY_CHROME_KEY_COUNT: usize = 19;
-const PREVIOUS_COMPLETE_KEY_COUNT: usize = 230;
-const EARLIER_COMPLETE_KEY_COUNTS: [usize; 5] = [183, 184, 199, 201, 212];
+const PREVIOUS_COMPLETE_KEY_COUNT: usize = 238;
+const EARLIER_COMPLETE_KEY_COUNTS: [usize; 6] = [183, 184, 199, 201, 212, 230];
 const MAX_ENCODED_BYTES: usize = MAGIC.len()
     + 2
     + MAX_LOCALE_BYTES
@@ -1088,6 +1088,24 @@ pub enum UiTextKey {
     PaletteTransferRgbFormat,
     PaletteTransferMaskNotice,
     PaletteTransferErrorTitle,
+    Map16SetEditorTitle,
+    Map16SetPage,
+    Map16SetAddBlankPage,
+    Map16SetRemoveLastPage,
+    Map16SetModified,
+    Map16SetSaved,
+    Map16SetAddressFormat,
+    Map16SetTileLabel,
+    Map16SetPriority,
+    Map16SetHorizontalFlip,
+    Map16SetVerticalFlip,
+    Map16SetApplySubtile,
+    Map16SetActsLikeLabel,
+    Map16SetApplyActsLike,
+    Map16SetPreviewUnavailable,
+    Map16SetUnsavedTitle,
+    Map16SetDiscardQuestion,
+    Map16SetErrorTitle,
 }
 
 impl UiTextKey {
@@ -1382,10 +1400,28 @@ impl UiTextKey {
                 "Imports automatically apply a same-name .palmask sidecar when present."
             }
             Self::PaletteTransferErrorTitle => "Current-level palette transfer error",
+            Self::Map16SetEditorTitle => "Complete Map16 Set Editor",
+            Self::Map16SetPage => "Page",
+            Self::Map16SetAddBlankPage => "Add blank page",
+            Self::Map16SetRemoveLastPage => "Remove last page",
+            Self::Map16SetModified => "Modified",
+            Self::Map16SetSaved => "Saved",
+            Self::Map16SetAddressFormat => "Address {address}",
+            Self::Map16SetTileLabel => "8×8 tile (hex)",
+            Self::Map16SetPriority => "Priority",
+            Self::Map16SetHorizontalFlip => "Horizontal flip",
+            Self::Map16SetVerticalFlip => "Vertical flip",
+            Self::Map16SetApplySubtile => "Apply subtile",
+            Self::Map16SetActsLikeLabel => "Acts Like (hex)",
+            Self::Map16SetApplyActsLike => "Apply Acts Like",
+            Self::Map16SetPreviewUnavailable => "Preview unavailable",
+            Self::Map16SetUnsavedTitle => "Unsaved complete Map16 set",
+            Self::Map16SetDiscardQuestion => "Discard unsaved complete Map16 changes?",
+            Self::Map16SetErrorTitle => "Complete Map16 editor error",
         }
     }
 
-    pub const ALL: [Self; 238] = [
+    pub const ALL: [Self; 256] = [
         Self::AppTitle,
         Self::FileOpen,
         Self::FileSave,
@@ -1624,6 +1660,24 @@ impl UiTextKey {
         Self::PaletteTransferRgbFormat,
         Self::PaletteTransferMaskNotice,
         Self::PaletteTransferErrorTitle,
+        Self::Map16SetEditorTitle,
+        Self::Map16SetPage,
+        Self::Map16SetAddBlankPage,
+        Self::Map16SetRemoveLastPage,
+        Self::Map16SetModified,
+        Self::Map16SetSaved,
+        Self::Map16SetAddressFormat,
+        Self::Map16SetTileLabel,
+        Self::Map16SetPriority,
+        Self::Map16SetHorizontalFlip,
+        Self::Map16SetVerticalFlip,
+        Self::Map16SetApplySubtile,
+        Self::Map16SetActsLikeLabel,
+        Self::Map16SetApplyActsLike,
+        Self::Map16SetPreviewUnavailable,
+        Self::Map16SetUnsavedTitle,
+        Self::Map16SetDiscardQuestion,
+        Self::Map16SetErrorTitle,
     ];
 
     fn from_byte(value: u8) -> Option<Self> {
@@ -3072,7 +3126,7 @@ mod tests {
     }
 
     #[test]
-    fn every_truncation_trailing_byte_and_unknown_key_is_rejected() {
+    fn every_truncation_trailing_byte_and_duplicate_key_is_rejected_at_full_capacity() {
         let bytes = catalog().encode().unwrap();
         for end in 0..bytes.len() {
             assert!(LocalizationCatalog::decode(&bytes[..end]).is_err());
@@ -3083,12 +3137,14 @@ mod tests {
             LocalizationCatalog::decode(&trailing),
             Err(LocalizationError::TrailingBytes)
         );
-        let mut unknown = bytes;
+        let mut duplicate = bytes;
         let first_key = MAGIC.len() + 2 + "fr-CA".len() + 2;
-        unknown[first_key] = 0xff;
+        duplicate[first_key] = 0xff;
         assert_eq!(
-            LocalizationCatalog::decode(&unknown),
-            Err(LocalizationError::UnknownKey(0xff))
+            LocalizationCatalog::decode(&duplicate),
+            Err(LocalizationError::DuplicateKey(
+                UiTextKey::Map16SetErrorTitle
+            ))
         );
     }
 

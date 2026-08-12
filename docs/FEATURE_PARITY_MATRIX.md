@@ -1185,6 +1185,16 @@ for the new 238-key suffix. Localization 26/26, palette-transfer 4/4, and render
 Other native forms and retained live language-DLL evidence remain open; Localization stays Partial
 and aggregate parity remains 60/65.
 
+Localization coverage update (2026-08-11, complete Map16-set editor): all visible document,
+navigation, history, clipboard, page-management, subtile, Acts Like, preview, unsaved-confirmation,
+and error controls now use typed localization. Shared semantic keys are reused and eighteen new
+entries fill the stable one-byte catalog exactly to 256 without renumbering prior keys; all accepted
+historical 19/183/184/199/201/212/230/238-key catalogs retain their translated prefix. A source
+audit spans the main editor plus toolbar, editing, and preview modules. Localization 26/26, Map16
+editor 4/4, and renderer 237/237 pass. Further native forms require the already-versioned catalog
+extension boundary; retained language-DLL evidence also remains open. Localization stays Partial
+and aggregate parity remains 60/65.
+
 Cross-platform release execution gate update (2026-08-11): the portable-release matrix now runs
 `lm-package`, `lm-update`, and `lm-launcher` contract tests on every native release runner instead
 of testing only the packager. Windows receives real process coverage by copying `cmd.exe` into two

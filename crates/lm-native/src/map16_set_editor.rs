@@ -11,7 +11,7 @@ use crate::{
     map16_subtile_form,
 };
 use eframe::egui;
-use lm_app::Map16DocumentController;
+use lm_app::{LocalizationCatalog, Map16DocumentController, UiTextKey};
 use lm_graphics::{GraphicsInterchangeFile, PaletteInterchangeFile};
 use lm_level::Map16Page;
 use map16_subtile_form::SubtileForm;
@@ -96,7 +96,11 @@ impl Map16SetEditor {
         false
     }
 
-    pub(crate) fn show(&mut self, context: &egui::Context) -> bool {
+    pub(crate) fn show(
+        &mut self,
+        context: &egui::Context,
+        catalog: Option<&LocalizationCatalog>,
+    ) -> bool {
         if let Some(result) = self.loader.show(context) {
             match result.and_then(decode_document) {
                 Ok(document) => {
@@ -118,23 +122,26 @@ impl Map16SetEditor {
             self.clamp_selection();
             self.refresh_texture(context);
             self.load_form();
-            egui::Window::new("Complete Map16 Set Editor")
-                .default_size([820.0, 680.0])
-                .show(context, |ui| self.contents(ui));
+            egui::Window::new(crate::frontend_ui::localized_text(
+                catalog,
+                UiTextKey::Map16SetEditorTitle,
+            ))
+            .default_size([820.0, 680.0])
+            .show(context, |ui| self.contents(ui, catalog));
         }
-        let approved = self.show_close_confirmation(context);
-        self.show_error(context);
+        let approved = self.show_close_confirmation(context, catalog);
+        self.show_error(context, catalog);
         approved
     }
 
-    fn contents(&mut self, ui: &mut egui::Ui) {
+    fn contents(&mut self, ui: &mut egui::Ui, catalog: Option<&LocalizationCatalog>) {
         let pasted = ui.input(|input| {
             input.events.iter().find_map(|event| match event {
                 egui::Event::Paste(text) => Some(text.clone()),
                 _ => None,
             })
         });
-        self.toolbar(ui);
+        self.toolbar(ui, catalog);
         if let Some(text) = pasted
             && let Some((revision, address)) = self.clipboard_paste_target.take()
         {
@@ -146,14 +153,18 @@ impl Map16SetEditor {
             .as_ref()
             .map_or(0, |document| document.controller.value().set.pages.len());
         let previous_page = self.page;
-        ui.add(egui::Slider::new(&mut self.page, 0..=page_count.saturating_sub(1)).text("Page"));
+        ui.add(
+            egui::Slider::new(&mut self.page, 0..=page_count.saturating_sub(1)).text(
+                crate::frontend_ui::localized_text(catalog, UiTextKey::Map16SetPage),
+            ),
+        );
         if previous_page != self.page {
             self.tile = 0;
             self.invalidate();
         }
         ui.columns(2, |columns| {
-            self.page_view(&mut columns[0]);
-            self.properties(&mut columns[1]);
+            self.page_view(&mut columns[0], catalog);
+            self.properties(&mut columns[1], catalog);
         });
     }
 
@@ -172,41 +183,72 @@ impl Map16SetEditor {
         self.texture = None;
     }
 
-    fn show_close_confirmation(&mut self, context: &egui::Context) -> bool {
+    fn show_close_confirmation(
+        &mut self,
+        context: &egui::Context,
+        catalog: Option<&LocalizationCatalog>,
+    ) -> bool {
         let Some(pending) = self.pending_close else {
             return false;
         };
         let mut approved = false;
-        egui::Window::new("Unsaved complete Map16 set")
-            .collapsible(false)
-            .resizable(false)
-            .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
-            .show(context, |ui| {
-                ui.label("Discard unsaved complete Map16 changes?");
-                ui.horizontal(|ui| {
-                    if ui.button("Cancel").clicked() {
-                        self.pending_close = None;
-                    }
-                    if ui.button("Discard").clicked() {
-                        self.clear();
-                        approved = pending == PendingClose::Application;
-                    }
-                });
+        egui::Window::new(crate::frontend_ui::localized_text(
+            catalog,
+            UiTextKey::Map16SetUnsavedTitle,
+        ))
+        .collapsible(false)
+        .resizable(false)
+        .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+        .show(context, |ui| {
+            ui.label(crate::frontend_ui::localized_text(
+                catalog,
+                UiTextKey::Map16SetDiscardQuestion,
+            ));
+            ui.horizontal(|ui| {
+                if ui
+                    .button(crate::frontend_ui::localized_text(
+                        catalog,
+                        UiTextKey::CommonCancel,
+                    ))
+                    .clicked()
+                {
+                    self.pending_close = None;
+                }
+                if ui
+                    .button(crate::frontend_ui::localized_text(
+                        catalog,
+                        UiTextKey::UnsavedDiscard,
+                    ))
+                    .clicked()
+                {
+                    self.clear();
+                    approved = pending == PendingClose::Application;
+                }
             });
+        });
         approved
     }
 
-    fn show_error(&mut self, context: &egui::Context) {
+    fn show_error(&mut self, context: &egui::Context, catalog: Option<&LocalizationCatalog>) {
         if let Some(error) = self.error.clone() {
-            egui::Window::new("Complete Map16 editor error")
-                .collapsible(false)
-                .resizable(false)
-                .show(context, |ui| {
-                    ui.label(error);
-                    if ui.button("OK").clicked() {
-                        self.error = None;
-                    }
-                });
+            egui::Window::new(crate::frontend_ui::localized_text(
+                catalog,
+                UiTextKey::Map16SetErrorTitle,
+            ))
+            .collapsible(false)
+            .resizable(false)
+            .show(context, |ui| {
+                ui.label(error);
+                if ui
+                    .button(crate::frontend_ui::localized_text(
+                        catalog,
+                        UiTextKey::CommonOk,
+                    ))
+                    .clicked()
+                {
+                    self.error = None;
+                }
+            });
         }
     }
 
@@ -215,5 +257,44 @@ impl Map16SetEditor {
         self.pending_close = None;
         self.clipboard_paste_target = None;
         self.invalidate();
+    }
+}
+
+#[cfg(test)]
+mod localization_tests {
+    use super::*;
+
+    #[test]
+    fn complete_map16_editor_surface_has_no_literal_widget_text() {
+        let sources = [
+            include_str!("map16_set_editor.rs"),
+            include_str!("map16_set_editor/toolbar.rs"),
+            include_str!("map16_set_editor/editing.rs"),
+            include_str!("map16_set_editor/preview.rs"),
+        ]
+        .join("\n");
+        for literal_widget in [
+            "egui::Window::new(\"",
+            "ui.button(\"",
+            "egui::Button::new(\"",
+            "ui.label(\"",
+            "ui.heading(\"",
+            ".text(\"",
+        ] {
+            assert!(
+                !sources.contains(literal_widget),
+                "complete Map16 editor bypasses typed localization with {literal_widget}"
+            );
+        }
+        for key in [
+            UiTextKey::Map16SetEditorTitle,
+            UiTextKey::EditCopy,
+            UiTextKey::Map16SetApplySubtile,
+            UiTextKey::Map16SetApplyActsLike,
+            UiTextKey::Map16SetUnsavedTitle,
+            UiTextKey::Map16SetErrorTitle,
+        ] {
+            assert!(sources.contains(&format!("UiTextKey::{key:?}")));
+        }
     }
 }

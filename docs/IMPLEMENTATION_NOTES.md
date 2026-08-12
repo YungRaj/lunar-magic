@@ -7078,6 +7078,18 @@ the Windows test target cross-compiles locally. The public workflow currently ha
 so hosted four-platform execution and a real tag publication remain required. Release stays Partial
 and aggregate parity remains 60/65.
 
+Localization coverage update (2026-08-11, complete Map16-set editor): the full document editor now
+routes its window, page navigation, Undo/Redo/Save, copy/paste, page insertion/removal, modified
+state, address, subtile fields, palette/priority/flips, Acts Like editor, preview fallback, unsaved
+confirmation, and error acknowledgement through the active typed catalog. Existing semantically
+identical Copy, Paste, Palette, Cancel, Discard, and OK keys are reused; eighteen new keys bring the
+stable one-byte catalog to its exact 256-key capacity without changing any prior identifier.
+Migration retains every historical 19/183/184/199/201/212/230/238-key translated prefix. A
+four-file source audit prevents literal widget text across the complete editor surface. Localization
+26/26, Map16-set editor 4/4, and renderer 237/237 pass. Remaining native forms require the catalog's
+forward-compatible extension mechanism rather than overflowing the published byte key domain;
+Localization stays Partial and aggregate parity remains 60/65.
+
 Localization coverage update (2026-08-11, verified-update family): all eighteen static and dynamic
 texts across offer review, staging, immutable installation, activation, restart/rollback guidance,
 and failure acknowledgement now route through typed `UiTextKey` entries and the active catalog.

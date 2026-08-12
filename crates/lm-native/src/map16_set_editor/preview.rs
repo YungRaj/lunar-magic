@@ -1,12 +1,16 @@
 use super::Map16SetEditor;
 use crate::map16_editor_render;
 use eframe::egui;
+use lm_app::{LocalizationCatalog, UiTextKey};
 use lm_level::Map16PageFile;
 
 impl Map16SetEditor {
-    pub(super) fn page_view(&mut self, ui: &mut egui::Ui) {
+    pub(super) fn page_view(&mut self, ui: &mut egui::Ui, catalog: Option<&LocalizationCatalog>) {
         let Some(texture) = &self.texture else {
-            ui.label("Preview unavailable");
+            ui.label(crate::frontend_ui::localized_text(
+                catalog,
+                UiTextKey::Map16SetPreviewUnavailable,
+            ));
             return;
         };
         let response = ui.add(egui::Image::new(texture).sense(egui::Sense::click()));

@@ -79,7 +79,7 @@ impl NativeApplication {
         if self.osc_sidecar_editor.show(context) {
             self.request_quit(context);
         }
-        if self.map16_set_editor.show(context) {
+        if self.map16_set_editor.show(context, self.app.localization()) {
             self.request_quit(context);
         }
         if self.native_level_document_editor.show(context) {

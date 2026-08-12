@@ -1,13 +1,16 @@
 use super::Map16SetEditor;
 use crate::map16_subtile_form;
 use eframe::egui;
-use lm_app::Map16DocumentEdit;
+use lm_app::{LocalizationCatalog, Map16DocumentEdit, UiTextKey};
 use lm_level::{Map16Address, Map16Page};
 use map16_subtile_form::SubtileForm;
 
 impl Map16SetEditor {
-    pub(super) fn properties(&mut self, ui: &mut egui::Ui) {
-        ui.heading(format!("Address {:02X}:{:02X}", self.page, self.tile));
+    pub(super) fn properties(&mut self, ui: &mut egui::Ui, catalog: Option<&LocalizationCatalog>) {
+        ui.heading(
+            crate::frontend_ui::localized_text(catalog, UiTextKey::Map16SetAddressFormat)
+                .replace("{address}", &format!("{:02X}:{:02X}", self.page, self.tile)),
+        );
         egui::ComboBox::from_id_salt("map16-set-quadrant")
             .selected_text(map16_subtile_form::quadrant_name(self.quadrant))
             .show_ui(ui, |ui| {
@@ -25,14 +28,34 @@ impl Map16SetEditor {
                 }
             });
         ui.horizontal(|ui| {
-            ui.label("8×8 tile (hex)");
+            ui.label(crate::frontend_ui::localized_text(
+                catalog,
+                UiTextKey::Map16SetTileLabel,
+            ));
             ui.text_edit_singleline(&mut self.subtile.tile);
         });
-        ui.add(egui::Slider::new(&mut self.subtile.palette, 0..=7).text("Palette"));
-        ui.checkbox(&mut self.subtile.priority, "Priority");
-        ui.checkbox(&mut self.subtile.x_flip, "Horizontal flip");
-        ui.checkbox(&mut self.subtile.y_flip, "Vertical flip");
-        if ui.button("Apply subtile").clicked() {
+        ui.add(egui::Slider::new(&mut self.subtile.palette, 0..=7).text(
+            crate::frontend_ui::localized_text(catalog, UiTextKey::ViewPalette),
+        ));
+        ui.checkbox(
+            &mut self.subtile.priority,
+            crate::frontend_ui::localized_text(catalog, UiTextKey::Map16SetPriority),
+        );
+        ui.checkbox(
+            &mut self.subtile.x_flip,
+            crate::frontend_ui::localized_text(catalog, UiTextKey::Map16SetHorizontalFlip),
+        );
+        ui.checkbox(
+            &mut self.subtile.y_flip,
+            crate::frontend_ui::localized_text(catalog, UiTextKey::Map16SetVerticalFlip),
+        );
+        if ui
+            .button(crate::frontend_ui::localized_text(
+                catalog,
+                UiTextKey::Map16SetApplySubtile,
+            ))
+            .clicked()
+        {
             match self.subtile.parse() {
                 Ok(subtile) => self.apply_edit(&Map16DocumentEdit::SetSubtile {
                     address: Map16Address {
@@ -48,10 +71,19 @@ impl Map16SetEditor {
         }
         ui.separator();
         ui.horizontal(|ui| {
-            ui.label("Acts Like (hex)");
+            ui.label(crate::frontend_ui::localized_text(
+                catalog,
+                UiTextKey::Map16SetActsLikeLabel,
+            ));
             ui.text_edit_singleline(&mut self.acts_like);
         });
-        if ui.button("Apply Acts Like").clicked() {
+        if ui
+            .button(crate::frontend_ui::localized_text(
+                catalog,
+                UiTextKey::Map16SetApplyActsLike,
+            ))
+            .clicked()
+        {
             match u16::from_str_radix(self.acts_like.trim(), 16) {
                 Ok(acts_like) => self.apply_edit(&Map16DocumentEdit::SetActsLike {
                     address: Map16Address {
