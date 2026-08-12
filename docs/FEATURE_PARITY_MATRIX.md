@@ -1158,6 +1158,14 @@ live ROM and Undo history remain unchanged. The Release row remains Partial for 
 listed installer, update, publication, signing, and remaining recovery gaps; aggregate parity stays
 60/65.
 
+Crash-recovery evidence update (2026-08-11, title family): independently staged title-screen
+recording, title tilemap, and credits tilemap edits now compose on one isolated project clone for
+every two- and three-domain combination. Revision validation occurs at each semantic adapter before
+the deterministic recording/title/credits persistence order. A combined exact-reopen test proves
+all three values, checksum health, and unchanged live ROM/Undo state. The Release row remains
+Partial for the explicitly listed installer, update, publication, signing, and other recovery gaps;
+aggregate parity remains 60/65.
+
 Toolbar coverage update (2026-08-11, GFX display override): authenticated `LM_KEY_GFX_OVERRIDE`
 `$26B8` now opens the original session-only two-row hexadecimal dialog. Eight Layer 1/2 and eight
 Layer 3 slots default to `$7F` (use the real level assignment); explicit `$000..=$FFF` values

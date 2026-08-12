@@ -264,6 +264,18 @@ macro_rules! tilemap_editor_wrapper {
                 self.0.staged_recovery_snapshot(app)
             }
 
+            pub(crate) fn stage_recovery_on_project(
+                &self,
+                app: &AppState,
+                staged: &mut lm_project::Project,
+            ) -> Result<bool, String> {
+                self.0
+                    .workspace
+                    .as_ref()
+                    .ok_or_else(|| "tilemap workspace is closed".to_owned())?
+                    .stage_recovery_on_project(app, staged)
+            }
+
             pub(crate) fn request_close(&mut self, application: bool) -> bool {
                 self.0.request_close(application)
             }
@@ -278,6 +290,20 @@ macro_rules! tilemap_editor_wrapper {
 
             pub(crate) fn commit_succeeded(&mut self) {
                 self.0.commit_succeeded();
+            }
+
+            #[cfg(test)]
+            pub(crate) fn set_word_for_test(
+                &mut self,
+                selection: (usize, usize, usize),
+                value: u16,
+            ) {
+                self.0
+                    .workspace
+                    .as_mut()
+                    .expect("workspace open")
+                    .set_word(selection, value)
+                    .unwrap();
             }
         }
     };

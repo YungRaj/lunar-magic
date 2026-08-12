@@ -6917,3 +6917,12 @@ field reject visibly. `independent_dialog_edits_three_way_merge_without_losing_s
 `simultaneous_dialog_recovery_reopens_both_selectors_and_rows_without_live_mutation` prove combined
 reopen, checksum validity, and unchanged live ROM/history. The native build passes and the renderer
 gate remains green at 237/237.
+
+Crash-recovery composition update (2026-08-11, title family): staged title-screen recording,
+title-screen tilemap, and credits tilemap edits now persist in their real semantic order on one
+isolated project clone. Every two- or three-domain combination is accepted only when it is the
+complete staged-editor set; each adapter revalidates its source revision before writing. The
+`recording_title_and_credits_tilemaps_share_one_recovery_project` gate installs a fresh recording,
+changes both tilemaps, reopens all three exact values with a valid checksum, and proves the live ROM
+and Undo history were not mutated. Both affected editor suites and the native build pass; the
+renderer remains green at 237/237.

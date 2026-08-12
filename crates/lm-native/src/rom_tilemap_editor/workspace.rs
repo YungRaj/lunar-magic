@@ -154,18 +154,31 @@ impl TilemapWorkspace {
             .project()
             .ok_or_else(|| "open a supported ROM first".to_owned())?
             .clone();
+        self.stage_recovery_on_project(app, &mut staged)?;
+        app.recovery_snapshot_with_current_rom(staged.save_snapshot(), app.current_level())
+            .map_err(|error| error.to_string())
+    }
+
+    pub(super) fn stage_recovery_on_project(
+        &self,
+        app: &AppState,
+        staged: &mut lm_project::Project,
+    ) -> Result<bool, String> {
+        self.validate_recovery_revision(app)?;
+        if !self.is_dirty() {
+            return Ok(false);
+        }
         match &self.current {
             TilemapData::Title(tilemap) => {
-                lm_app::save_native_title_tilemap_to_project(&mut staged, tilemap)
+                lm_app::save_native_title_tilemap_to_project(staged, tilemap)
                     .map_err(|error| error.to_string())?;
             }
             TilemapData::Credits(tilemap) => {
-                lm_app::save_native_credits_tilemap_to_project(&mut staged, tilemap)
+                lm_app::save_native_credits_tilemap_to_project(staged, tilemap)
                     .map_err(|error| error.to_string())?;
             }
         };
-        app.recovery_snapshot_with_current_rom(staged.save_snapshot(), app.current_level())
-            .map_err(|error| error.to_string())
+        Ok(true)
     }
 
     pub(super) fn word(&self, selection: (usize, usize, usize)) -> Result<u16, String> {

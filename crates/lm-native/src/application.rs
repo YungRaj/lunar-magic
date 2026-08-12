@@ -2158,6 +2158,35 @@ impl eframe::App for NativeApplication {
                         )
                         .map_err(|error| error.to_string());
                 }
+                let staged_title_family = usize::from(title_recording_recovery_revision.is_some())
+                    + usize::from(title_tilemap_recovery_revision.is_some())
+                    + usize::from(credits_tilemap_recovery_revision.is_some());
+                if staged_editors == staged_title_family && staged_title_family >= 2 {
+                    let mut staged = self
+                        .app
+                        .project()
+                        .ok_or("open a supported ROM first")?
+                        .clone();
+                    if title_recording_recovery_revision.is_some() {
+                        self.rom_title_recording_editor
+                            .stage_recovery_on_project(&self.app, &mut staged)?;
+                    }
+                    if title_tilemap_recovery_revision.is_some() {
+                        self.rom_title_tilemap_editor
+                            .stage_recovery_on_project(&self.app, &mut staged)?;
+                    }
+                    if credits_tilemap_recovery_revision.is_some() {
+                        self.rom_credits_tilemap_editor
+                            .stage_recovery_on_project(&self.app, &mut staged)?;
+                    }
+                    return self
+                        .app
+                        .recovery_snapshot_with_current_rom(
+                            staged.save_snapshot(),
+                            self.app.current_level(),
+                        )
+                        .map_err(|error| error.to_string());
+                }
                 if staged_editors == 2
                     && palette_recovery_revision.is_some()
                     && shared_palette_recovery_revision.is_some()
