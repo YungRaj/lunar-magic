@@ -2074,3 +2074,11 @@ apply, malformed/no-op rejection, stale revision, and exact loader-group behavio
 The focused form passes 4/4, localization model 28/28, and renderer 237/237. IPS creation and other
 native forms plus retained live language-DLL evidence remain open; Localization stays Partial and
 aggregate parity remains 60/65.
+
+Localization coverage update (2026-08-12, IPS creation): the full create-IPS workflow now uses
+eleven typed extension keys across picker prompts, asynchronous input/output progress, completion,
+and errors, with all four entry/continuation routes carrying the active catalog. Exact round-trip
+creation, headerless-to-Lunar-Magic-coordinate normalization, input preservation, and collision
+rejection remain proven. The focused form passes 4/4, localization model 28/28, and renderer
+237/237. Other native forms and retained live language-DLL evidence remain open; Localization stays
+Partial and aggregate parity remains 60/65.

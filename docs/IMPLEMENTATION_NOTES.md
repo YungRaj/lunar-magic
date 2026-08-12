@@ -7417,3 +7417,14 @@ regressions. Real-ROM transactional application, malformed/no-op rejection, stal
 and loader framing pass 4/4; localization passes 28/28 and renderer passes 237/237. Localization
 remains Partial for the create-IPS workflow, other native forms, and retained live language-DLL
 evidence; aggregate parity remains 60/65.
+
+Localization coverage update (2026-08-12, IPS creation): eleven appended `IpsCreate*` keys cover
+the complete asynchronous creation workflow, including original/modified ROM picker prompts,
+running input/output paths, progress, output-path/size completion, and error lifecycle. Menu,
+toolbar, level-restriction continuation, and window-loop call sites now pass the active catalog end
+to end. Paths and byte counts remain data substituted into localized templates; technical worker,
+filesystem, and codec errors remain opaque payloads. The complete-family source audit and semantic
+suite pass 4/4, proving exact round-trip creation, Lunar Magic's headered IPS-coordinate convention,
+input preservation, and alias/output-collision rejection; localization passes 28/28 and renderer
+passes 237/237. Localization remains Partial for other native forms and retained live language-DLL
+evidence; aggregate parity remains 60/65.

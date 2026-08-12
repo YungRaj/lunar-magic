@@ -455,7 +455,8 @@ impl NativeApplication {
             .show(context, self.app.localization());
         self.rom_user_area_scan_dialog
             .show(context, self.app.localization());
-        self.ips_create_dialog.show(context);
+        self.ips_create_dialog
+            .show(context, self.app.localization());
         self.restore_point_dialog.show(context, &self.app);
         self.rom_mwl_batch_export_dialog.show(context);
         if let Some(command) = self.rom_mwl_batch_import_dialog.show(context, &self.app) {
@@ -510,7 +511,10 @@ impl NativeApplication {
                     let _accepted = self.try_dispatch(context, lm_app::Command::Save);
                 }
                 LevelAccessRestrictionAction::CreateIps => {
-                    match self.ips_create_dialog.choose_and_start() {
+                    match self
+                        .ips_create_dialog
+                        .choose_and_start(self.app.localization())
+                    {
                         Ok(started) => self
                             .level_access_restriction_dialog
                             .ips_choice_completed(started),

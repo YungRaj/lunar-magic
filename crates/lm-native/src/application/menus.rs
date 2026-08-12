@@ -395,7 +395,10 @@ impl NativeApplication {
             .clicked()
         {
             ui.close_menu();
-            if let Err(error) = self.ips_create_dialog.choose_and_start() {
+            if let Err(error) = self
+                .ips_create_dialog
+                .choose_and_start(self.app.localization())
+            {
                 self.effects.error = Some(error);
             }
         }

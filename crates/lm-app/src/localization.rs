@@ -2397,10 +2397,21 @@ pub enum ExtendedUiTextKey {
     IpsApplyAction,
     IpsApplyErrorTitle,
     IpsApplyOk,
+    IpsCreateOriginalPrompt,
+    IpsCreateModifiedPrompt,
+    IpsCreateTitle,
+    IpsCreateOriginalFormat,
+    IpsCreateModifiedFormat,
+    IpsCreateOutputFormat,
+    IpsCreateProgress,
+    IpsCreateCompletedTitle,
+    IpsCreateCompletedFormat,
+    IpsCreateErrorTitle,
+    IpsCreateOk,
 }
 
 impl ExtendedUiTextKey {
-    pub const ALL: [Self; 696] = [
+    pub const ALL: [Self; 707] = [
         Self::TilemapTitleScreenName,
         Self::TilemapCreditsName,
         Self::TilemapEditorTitleFormat,
@@ -3097,6 +3108,17 @@ impl ExtendedUiTextKey {
         Self::IpsApplyAction,
         Self::IpsApplyErrorTitle,
         Self::IpsApplyOk,
+        Self::IpsCreateOriginalPrompt,
+        Self::IpsCreateModifiedPrompt,
+        Self::IpsCreateTitle,
+        Self::IpsCreateOriginalFormat,
+        Self::IpsCreateModifiedFormat,
+        Self::IpsCreateOutputFormat,
+        Self::IpsCreateProgress,
+        Self::IpsCreateCompletedTitle,
+        Self::IpsCreateCompletedFormat,
+        Self::IpsCreateErrorTitle,
+        Self::IpsCreateOk,
     ];
 
     #[must_use]
@@ -4066,6 +4088,17 @@ impl ExtendedUiTextKey {
             Self::IpsApplyAction => "Apply transactionally",
             Self::IpsApplyErrorTitle => "IPS patch error",
             Self::IpsApplyOk => "OK",
+            Self::IpsCreateOriginalPrompt => "Select Original ROM",
+            Self::IpsCreateModifiedPrompt => "Select Modified ROM",
+            Self::IpsCreateTitle => "Create IPS Patch",
+            Self::IpsCreateOriginalFormat => "Original: {path}",
+            Self::IpsCreateModifiedFormat => "Modified: {path}",
+            Self::IpsCreateOutputFormat => "Output: {path}",
+            Self::IpsCreateProgress => "Comparing logical ROM bytes and creating the IPS patch…",
+            Self::IpsCreateCompletedTitle => "IPS patch created",
+            Self::IpsCreateCompletedFormat => "Created {path} ({bytes} bytes).",
+            Self::IpsCreateErrorTitle => "IPS creation error",
+            Self::IpsCreateOk => "OK",
         }
     }
 

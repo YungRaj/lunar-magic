@@ -1,4 +1,5 @@
 use eframe::egui;
+use lm_app::{ExtendedUiTextKey, LocalizationCatalog};
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{self, Receiver, TryRecvError};
 
@@ -31,14 +32,23 @@ impl IpsCreateDialog {
         self.running.is_some() || self.completed.is_some() || self.error.is_some()
     }
 
-    pub(crate) fn choose_and_start(&mut self) -> Result<bool, String> {
+    pub(crate) fn choose_and_start(
+        &mut self,
+        catalog: Option<&LocalizationCatalog>,
+    ) -> Result<bool, String> {
         if self.running.is_some() {
             return Err("an IPS creation workflow is already active".into());
         }
-        let Some(before) = crate::dialogs::choose_ips_source_rom("Select Original ROM") else {
+        let Some(before) = crate::dialogs::choose_ips_source_rom(&text(
+            catalog,
+            ExtendedUiTextKey::IpsCreateOriginalPrompt,
+        )) else {
             return Ok(false);
         };
-        let Some(after) = crate::dialogs::choose_ips_source_rom("Select Modified ROM") else {
+        let Some(after) = crate::dialogs::choose_ips_source_rom(&text(
+            catalog,
+            ExtendedUiTextKey::IpsCreateModifiedPrompt,
+        )) else {
             return Ok(false);
         };
         let suggested = after
@@ -72,45 +82,66 @@ impl IpsCreateDialog {
         Ok(true)
     }
 
-    pub(crate) fn show(&mut self, context: &egui::Context) {
-        self.poll();
+    pub(crate) fn show(&mut self, context: &egui::Context, catalog: Option<&LocalizationCatalog>) {
+        self.poll(catalog);
         if let Some(running) = &self.running {
-            egui::Window::new("Create IPS Patch")
+            egui::Window::new(text(catalog, ExtendedUiTextKey::IpsCreateTitle))
                 .collapsible(false)
                 .resizable(false)
                 .show(context, |ui| {
-                    ui.label(format!("Original: {}", running.before.display()));
-                    ui.label(format!("Modified: {}", running.after.display()));
-                    ui.label(format!("Output: {}", running.output.display()));
-                    ui.label("Comparing logical ROM bytes and creating the IPS patch…");
+                    ui.label(format_text(
+                        catalog,
+                        ExtendedUiTextKey::IpsCreateOriginalFormat,
+                        "{path}",
+                        &running.before.display().to_string(),
+                    ));
+                    ui.label(format_text(
+                        catalog,
+                        ExtendedUiTextKey::IpsCreateModifiedFormat,
+                        "{path}",
+                        &running.after.display().to_string(),
+                    ));
+                    ui.label(format_text(
+                        catalog,
+                        ExtendedUiTextKey::IpsCreateOutputFormat,
+                        "{path}",
+                        &running.output.display().to_string(),
+                    ));
+                    ui.label(text(catalog, ExtendedUiTextKey::IpsCreateProgress));
                 });
             context.request_repaint_after(std::time::Duration::from_millis(100));
         }
         if let Some(message) = self.completed.clone() {
-            egui::Window::new("IPS patch created")
+            egui::Window::new(text(catalog, ExtendedUiTextKey::IpsCreateCompletedTitle))
                 .collapsible(false)
                 .resizable(false)
                 .show(context, |ui| {
                     ui.label(message);
-                    if ui.button("OK").clicked() {
+                    if ui
+                        .button(text(catalog, ExtendedUiTextKey::IpsCreateOk))
+                        .clicked()
+                    {
                         self.completed = None;
                     }
                 });
         }
         if let Some(error) = self.error.clone() {
-            egui::Window::new("IPS creation error")
+            egui::Window::new(text(catalog, ExtendedUiTextKey::IpsCreateErrorTitle))
                 .collapsible(false)
                 .resizable(false)
                 .show(context, |ui| {
                     ui.colored_label(egui::Color32::RED, error);
-                    if ui.button("OK").clicked() {
+                    if ui
+                        .button(text(catalog, ExtendedUiTextKey::IpsCreateOk))
+                        .clicked()
+                    {
                         self.error = None;
                     }
                 });
         }
     }
 
-    fn poll(&mut self) {
+    fn poll(&mut self, catalog: Option<&LocalizationCatalog>) {
         let Some(running) = self.running.as_ref() else {
             return;
         };
@@ -128,7 +159,11 @@ impl IpsCreateDialog {
         self.running = None;
         match result {
             Ok(bytes) => {
-                self.completed = Some(format!("Created {} ({} bytes).", output.display(), bytes));
+                self.completed = Some(
+                    text(catalog, ExtendedUiTextKey::IpsCreateCompletedFormat)
+                        .replace("{path}", &output.display().to_string())
+                        .replace("{bytes}", &bytes.to_string()),
+                );
             }
             Err(error) => self.error = Some(error),
         }
@@ -152,6 +187,19 @@ impl IpsCreateDialog {
             Err(error) => self.error = Some(error),
         }
     }
+}
+
+fn text(catalog: Option<&LocalizationCatalog>, key: ExtendedUiTextKey) -> String {
+    crate::frontend_ui::extended_localized_text(catalog, key)
+}
+
+fn format_text(
+    catalog: Option<&LocalizationCatalog>,
+    key: ExtendedUiTextKey,
+    placeholder: &str,
+    value: &str,
+) -> String {
+    text(catalog, key).replace(placeholder, value)
 }
 
 fn create_and_publish_ips(before: &Path, after: &Path, output: &Path) -> Result<usize, String> {
@@ -215,6 +263,25 @@ mod tests {
     use std::sync::atomic::{AtomicU64, Ordering};
 
     static NEXT: AtomicU64 = AtomicU64::new(0);
+
+    #[test]
+    fn complete_ips_create_form_uses_every_typed_key() {
+        let source = include_str!("ips_create_dialog.rs");
+        for key in ExtendedUiTextKey::ALL
+            .into_iter()
+            .filter(|key| format!("{key:?}").starts_with("IpsCreate"))
+        {
+            assert!(source.contains(&format!("ExtendedUiTextKey::{key:?}")));
+        }
+        for hard_coded_caption in [
+            "choose_ips_source_rom(\"Select Original ROM\")",
+            "Window::new(\"Create IPS Patch\")",
+            "Window::new(\"IPS patch created\")",
+            "Window::new(\"IPS creation error\")",
+        ] {
+            assert!(!source.contains(hard_coded_caption));
+        }
+    }
 
     fn directory() -> PathBuf {
         let path = std::env::temp_dir().join(format!(
