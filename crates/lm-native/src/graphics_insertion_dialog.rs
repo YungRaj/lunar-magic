@@ -1,4 +1,5 @@
 use eframe::egui;
+use lm_app::LocalizationCatalog;
 
 const STANDARD_DEFAULT_LOGICAL_PC: usize = 0x40000;
 const EXGRAPHICS_DEFAULT_LOGICAL_PC: usize = 0x100000;
@@ -13,6 +14,13 @@ pub(crate) enum GraphicsInsertionFamily {
 }
 
 impl GraphicsInsertionFamily {
+    const fn original_dialog_id(self) -> u16 {
+        match self {
+            Self::Standard => 0x03ec,
+            Self::ExGraphics => 0x03fe,
+        }
+    }
+
     const fn title(self) -> &'static str {
         match self {
             Self::Standard => "Insert GFX to ROM (in hex)",
@@ -135,30 +143,59 @@ impl GraphicsInsertionDialog {
     pub(crate) fn show(
         &mut self,
         context: &egui::Context,
+        catalog: Option<&LocalizationCatalog>,
     ) -> Option<Option<GraphicsInsertionRequest>> {
         let mut accept = false;
         let mut cancel = false;
-        egui::Window::new(self.family.title())
+        let dialog_id = self.family.original_dialog_id();
+        egui::Window::new(dialog_title(catalog, self.family))
             .collapsible(false)
             .resizable(false)
             .show(context, |ui| {
                 ui.set_max_width(620.0);
-                ui.checkbox(&mut self.expand_rom, self.family.expansion_label());
+                ui.checkbox(
+                    &mut self.expand_rom,
+                    dialog_control_text(
+                        catalog,
+                        dialog_id,
+                        0xdd,
+                        self.family.expansion_label(),
+                    ),
+                );
                 ui.checkbox(
                     &mut self.use_4bpp,
-                    "Modify the ROM with ASM to use 4bpp tiles instead of 3bpp tiles, if it doesn't already",
+                    dialog_control_text(
+                        catalog,
+                        dialog_id,
+                        0x1bb,
+                        "Modify the ROM with ASM to use 4bpp tiles instead of 3bpp tiles, if it doesn't already",
+                    ),
                 );
-                ui.label(self.family.reciprocal_note());
+                ui.label(dialog_control_text(
+                    catalog,
+                    dialog_id,
+                    0x65,
+                    self.family.reciprocal_note(),
+                ));
                 ui.horizontal(|ui| {
-                    ui.label("PC address to insert (in hex)");
+                    ui.label(dialog_control_text(
+                        catalog,
+                        dialog_id,
+                        0xdb,
+                        "PC address to insert (in hex)",
+                    ));
                     ui.text_edit_singleline(&mut self.physical_pc_address);
                 });
                 if let Some(error) = &self.error {
                     ui.colored_label(egui::Color32::RED, error);
                 }
                 ui.horizontal(|ui| {
-                    accept = ui.button("OK").clicked();
-                    cancel = ui.button("Cancel").clicked()
+                    accept = ui
+                        .button(dialog_control_text(catalog, dialog_id, 1, "OK"))
+                        .clicked();
+                    cancel = ui
+                        .button(dialog_control_text(catalog, dialog_id, 2, "Cancel"))
+                        .clicked()
                         || context.input(|input| input.key_pressed(egui::Key::Escape));
                 });
             });
@@ -175,9 +212,75 @@ impl GraphicsInsertionDialog {
     }
 }
 
+fn dialog_title(catalog: Option<&LocalizationCatalog>, family: GraphicsInsertionFamily) -> String {
+    catalog
+        .and_then(|catalog| catalog.original_dialog_title(family.original_dialog_id()))
+        .unwrap_or_else(|| family.title())
+        .to_owned()
+}
+
+fn dialog_control_text(
+    catalog: Option<&LocalizationCatalog>,
+    dialog_id: u16,
+    control_id: u32,
+    fallback: &str,
+) -> String {
+    catalog
+        .and_then(|catalog| catalog.original_dialog_control_text(dialog_id, control_id))
+        .unwrap_or(fallback)
+        .to_owned()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use lm_app::{OriginalDialogTextKey, UiTextKey};
+
+    fn localized_graphics_dialog_catalog() -> LocalizationCatalog {
+        let mut dialog_texts = Vec::new();
+        for (family, title, prefix) in [
+            (GraphicsInsertionFamily::Standard, "Insérer GFX", "GFX"),
+            (
+                GraphicsInsertionFamily::ExGraphics,
+                "Insérer ExGFX",
+                "ExGFX",
+            ),
+        ] {
+            let dialog_id = family.original_dialog_id();
+            dialog_texts.push((
+                OriginalDialogTextKey {
+                    dialog_id,
+                    item_index: u16::MAX,
+                    control_id: u32::MAX,
+                },
+                title.into(),
+            ));
+            for (item_index, control_id, suffix) in [
+                (0, 1, "Valider"),
+                (1, 2, "Annuler"),
+                (2, 0xdd, "Agrandir"),
+                (3, 0x1bb, "Utiliser 4bpp"),
+                (4, 0x65, "Note réciproque"),
+                (5, 0xdb, "Adresse PC"),
+            ] {
+                dialog_texts.push((
+                    OriginalDialogTextKey {
+                        dialog_id,
+                        item_index,
+                        control_id,
+                    },
+                    format!("{prefix} {suffix}"),
+                ));
+            }
+        }
+        LocalizationCatalog::new(
+            "fr-test",
+            UiTextKey::ALL.map(|key| (key, format!("traduit-{key:?}"))),
+        )
+        .unwrap()
+        .with_original_dialog_texts(dialog_texts)
+        .unwrap()
+    }
 
     #[test]
     fn original_defaults_track_physical_copier_prefix_and_expansion_thresholds() {
@@ -233,5 +336,63 @@ mod tests {
         assert!(dialog.request().unwrap_err().contains("copier prefix"));
         dialog.physical_pc_address = "800200".into();
         assert!(dialog.request().unwrap_err().contains("must be below"));
+    }
+
+    #[test]
+    fn decoded_original_templates_drive_both_graphics_insertion_dialog_families() {
+        let catalog = localized_graphics_dialog_catalog();
+        for (family, title, prefix) in [
+            (GraphicsInsertionFamily::Standard, "Insérer GFX", "GFX"),
+            (
+                GraphicsInsertionFamily::ExGraphics,
+                "Insérer ExGFX",
+                "ExGFX",
+            ),
+        ] {
+            let dialog_id = family.original_dialog_id();
+            assert_eq!(dialog_title(Some(&catalog), family), title);
+            for (control_id, suffix) in [
+                (1, "Valider"),
+                (2, "Annuler"),
+                (0xdd, "Agrandir"),
+                (0x1bb, "Utiliser 4bpp"),
+                (0x65, "Note réciproque"),
+                (0xdb, "Adresse PC"),
+            ] {
+                assert_eq!(
+                    dialog_control_text(Some(&catalog), dialog_id, control_id, "fallback"),
+                    format!("{prefix} {suffix}")
+                );
+            }
+        }
+
+        let reopened = LocalizationCatalog::decode(&catalog.encode().unwrap()).unwrap();
+        assert_eq!(
+            dialog_title(Some(&reopened), GraphicsInsertionFamily::ExGraphics),
+            "Insérer ExGFX"
+        );
+        assert_eq!(
+            dialog_control_text(Some(&reopened), 0x03fe, 0x1bb, "fallback"),
+            "ExGFX Utiliser 4bpp"
+        );
+    }
+
+    #[test]
+    fn graphics_insertion_template_fallbacks_remain_family_specific() {
+        for family in [
+            GraphicsInsertionFamily::Standard,
+            GraphicsInsertionFamily::ExGraphics,
+        ] {
+            assert_eq!(dialog_title(None, family), family.title());
+            assert_eq!(
+                dialog_control_text(
+                    None,
+                    family.original_dialog_id(),
+                    0xdd,
+                    family.expansion_label()
+                ),
+                family.expansion_label()
+            );
+        }
     }
 }

@@ -10,6 +10,9 @@ pub(crate) const COMPATIBILITY_TARGET: &str = "Lunar Magic 3.63 workflow compati
 pub(crate) const LICENSE: &str = "MIT OR Apache-2.0";
 pub(crate) const SOURCE_URL: &str = "https://github.com/YungRaj/lunar-magic";
 const ORIGINAL_ABOUT_DIALOG_UNITS: (f32, f32) = (248.0, 160.0);
+const ORIGINAL_ABOUT_DIALOG_ID: u16 = 0x03f8;
+const ORIGINAL_THIRD_PARTY_DIALOG_ID: u16 = 0x0429;
+const ORIGINAL_LEGAL_DIALOG_ID: u16 = 0x042a;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum AboutAuxiliary {
@@ -37,8 +40,7 @@ impl AboutDialog {
         }
         let mut copied_source = self.copied_source;
         let product = localized_text(catalog, UiTextKey::AppTitle);
-        let title = localized_text(catalog, UiTextKey::AboutWindowTitleFormat)
-            .replace("{product}", &product);
+        let title = about_window_title(catalog, &product);
         let mut close_requested = false;
         let mut auxiliary = self.auxiliary;
         egui::Window::new(title)
@@ -108,10 +110,7 @@ impl AboutDialog {
                         auxiliary = Some(AboutAuxiliary::Legal);
                     }
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        if ui
-                            .button(localized_text(catalog, UiTextKey::AboutOk))
-                            .clicked()
-                        {
+                        if ui.button(about_ok_text(catalog)).clicked() {
                             close_requested = true;
                         }
                     });
@@ -133,16 +132,21 @@ impl AboutDialog {
         let Some(auxiliary) = self.auxiliary else {
             return;
         };
-        let (title, body) = match auxiliary {
+        let (dialog_id, title, body) = match auxiliary {
             AboutAuxiliary::ThirdParty => (
+                ORIGINAL_THIRD_PARTY_DIALOG_ID,
                 UiTextKey::AboutThirdPartyTitle,
                 UiTextKey::AboutThirdPartyBody,
             ),
-            AboutAuxiliary::Legal => (UiTextKey::AboutLegalTitle, UiTextKey::AboutLegalBody),
+            AboutAuxiliary::Legal => (
+                ORIGINAL_LEGAL_DIALOG_ID,
+                UiTextKey::AboutLegalTitle,
+                UiTextKey::AboutLegalBody,
+            ),
         };
         let mut open = true;
         let mut close_requested = false;
-        egui::Window::new(localized_text(catalog, title))
+        egui::Window::new(auxiliary_title(catalog, dialog_id, title))
             .open(&mut open)
             .collapsible(false)
             .resizable(false)
@@ -151,10 +155,7 @@ impl AboutDialog {
                 ui.set_max_width(480.0);
                 ui.label(localized_text(catalog, body));
                 ui.add_space(8.0);
-                if ui
-                    .button(localized_text(catalog, UiTextKey::AboutOk))
-                    .clicked()
-                {
+                if ui.button(auxiliary_ok_text(catalog, dialog_id)).clicked() {
                     close_requested = true;
                 }
             });
@@ -162,6 +163,46 @@ impl AboutDialog {
             self.auxiliary = None;
         }
     }
+}
+
+fn about_window_title(catalog: Option<&LocalizationCatalog>, product: &str) -> String {
+    catalog
+        .and_then(|catalog| catalog.original_dialog_title(ORIGINAL_ABOUT_DIALOG_ID))
+        .map(str::to_owned)
+        .unwrap_or_else(|| {
+            localized_text(catalog, UiTextKey::AboutWindowTitleFormat).replace("{product}", product)
+        })
+}
+
+fn about_ok_text(catalog: Option<&LocalizationCatalog>) -> String {
+    original_dialog_control_text(catalog, ORIGINAL_ABOUT_DIALOG_ID, 1, UiTextKey::AboutOk)
+}
+
+fn auxiliary_title(
+    catalog: Option<&LocalizationCatalog>,
+    dialog_id: u16,
+    fallback: UiTextKey,
+) -> String {
+    catalog
+        .and_then(|catalog| catalog.original_dialog_title(dialog_id))
+        .map(str::to_owned)
+        .unwrap_or_else(|| localized_text(catalog, fallback))
+}
+
+fn auxiliary_ok_text(catalog: Option<&LocalizationCatalog>, dialog_id: u16) -> String {
+    original_dialog_control_text(catalog, dialog_id, 1, UiTextKey::AboutOk)
+}
+
+fn original_dialog_control_text(
+    catalog: Option<&LocalizationCatalog>,
+    dialog_id: u16,
+    control_id: u32,
+    fallback: UiTextKey,
+) -> String {
+    catalog
+        .and_then(|catalog| catalog.original_dialog_control_text(dialog_id, control_id))
+        .map(str::to_owned)
+        .unwrap_or_else(|| localized_text(catalog, fallback))
 }
 
 #[derive(Default)]
@@ -273,6 +314,66 @@ fn editor_mode(mode: EditorMode) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use lm_app::OriginalDialogTextKey;
+
+    fn catalog_with_original_about_templates() -> LocalizationCatalog {
+        LocalizationCatalog::new(
+            "fr-test",
+            UiTextKey::ALL.map(|key| (key, format!("traduit-{key:?}"))),
+        )
+        .unwrap()
+        .with_original_dialog_texts([
+            (
+                OriginalDialogTextKey {
+                    dialog_id: ORIGINAL_ABOUT_DIALOG_ID,
+                    item_index: u16::MAX,
+                    control_id: u32::MAX,
+                },
+                "À propos de Lunar Magic".into(),
+            ),
+            (
+                OriginalDialogTextKey {
+                    dialog_id: ORIGINAL_ABOUT_DIALOG_ID,
+                    item_index: 9,
+                    control_id: 1,
+                },
+                "Fermer".into(),
+            ),
+            (
+                OriginalDialogTextKey {
+                    dialog_id: ORIGINAL_THIRD_PARTY_DIALOG_ID,
+                    item_index: u16::MAX,
+                    control_id: u32::MAX,
+                },
+                "Extensions tierces".into(),
+            ),
+            (
+                OriginalDialogTextKey {
+                    dialog_id: ORIGINAL_THIRD_PARTY_DIALOG_ID,
+                    item_index: 1,
+                    control_id: 1,
+                },
+                "D'accord".into(),
+            ),
+            (
+                OriginalDialogTextKey {
+                    dialog_id: ORIGINAL_LEGAL_DIALOG_ID,
+                    item_index: u16::MAX,
+                    control_id: u32::MAX,
+                },
+                "Avis juridique".into(),
+            ),
+            (
+                OriginalDialogTextKey {
+                    dialog_id: ORIGINAL_LEGAL_DIALOG_ID,
+                    item_index: 1,
+                    control_id: 1,
+                },
+                "Compris".into(),
+            ),
+        ])
+        .unwrap()
+    }
 
     #[test]
     fn about_identity_is_explicit_and_build_bound() {
@@ -348,6 +449,73 @@ mod tests {
             assert!(rows.iter().any(|row| row[0] == id && row[6] == role));
         }
         assert_eq!(ORIGINAL_ABOUT_DIALOG_UNITS, (248.0, 160.0));
+    }
+
+    #[test]
+    fn decoded_original_about_family_templates_drive_native_titles_and_dismissal_controls() {
+        let catalog = catalog_with_original_about_templates();
+        assert_eq!(
+            about_window_title(Some(&catalog), PRODUCT_NAME),
+            "À propos de Lunar Magic"
+        );
+        assert_eq!(about_ok_text(Some(&catalog)), "Fermer");
+        assert_eq!(
+            auxiliary_title(
+                Some(&catalog),
+                ORIGINAL_THIRD_PARTY_DIALOG_ID,
+                UiTextKey::AboutThirdPartyTitle,
+            ),
+            "Extensions tierces"
+        );
+        assert_eq!(
+            auxiliary_ok_text(Some(&catalog), ORIGINAL_THIRD_PARTY_DIALOG_ID),
+            "D'accord"
+        );
+        assert_eq!(
+            auxiliary_title(
+                Some(&catalog),
+                ORIGINAL_LEGAL_DIALOG_ID,
+                UiTextKey::AboutLegalTitle,
+            ),
+            "Avis juridique"
+        );
+        assert_eq!(
+            auxiliary_ok_text(Some(&catalog), ORIGINAL_LEGAL_DIALOG_ID),
+            "Compris"
+        );
+
+        let reopened = LocalizationCatalog::decode(&catalog.encode().unwrap()).unwrap();
+        assert_eq!(
+            about_window_title(Some(&reopened), PRODUCT_NAME),
+            "À propos de Lunar Magic"
+        );
+        assert_eq!(
+            auxiliary_ok_text(Some(&reopened), ORIGINAL_LEGAL_DIALOG_ID),
+            "Compris"
+        );
+    }
+
+    #[test]
+    fn about_family_template_fallbacks_remain_complete_without_original_dialog_resources() {
+        assert_eq!(
+            about_window_title(None, PRODUCT_NAME),
+            UiTextKey::AboutWindowTitleFormat
+                .english()
+                .replace("{product}", PRODUCT_NAME)
+        );
+        assert_eq!(about_ok_text(None), UiTextKey::AboutOk.english());
+        assert_eq!(
+            auxiliary_title(
+                None,
+                ORIGINAL_THIRD_PARTY_DIALOG_ID,
+                UiTextKey::AboutThirdPartyTitle,
+            ),
+            UiTextKey::AboutThirdPartyTitle.english()
+        );
+        assert_eq!(
+            auxiliary_ok_text(None, ORIGINAL_LEGAL_DIALOG_ID),
+            UiTextKey::AboutOk.english()
+        );
     }
 
     #[test]

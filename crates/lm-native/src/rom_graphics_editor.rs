@@ -2169,7 +2169,7 @@ impl RomGraphicsEditor {
         let completion = self
             .ordinary_insertion_dialog
             .as_mut()
-            .and_then(|dialog| dialog.show(context));
+            .and_then(|dialog| dialog.show(context, app.localization()));
         match completion {
             Some(None) => {
                 self.ordinary_insertion_dialog = None;

@@ -6722,3 +6722,20 @@ restores and reapplies exact physical bytes through one Undo/Redo boundary, and 
 logical output across header forms. This closes the supported mapper/identity persistence evidence
 for these two domains; the parity-matrix row remains Partial pending broader original-editor
 behavioral evidence.
+
+## Original language-template application in native dialogs
+
+The locally supplied, SHA-256-authenticated Lunar Magic 3.63 executable now passes the portable
+decoder across all 107 mapped original dialog resources in one opt-in gate. The native About
+family consumes decoded titles and dismissal captions from original resources `$03F8`, `$0429`,
+and `$042A`, while retaining complete typed-catalog fallbacks when a language module omits any
+template. The ordinary standard-GFX and ExGFX insertion workflows now consume all equivalent
+literal captions from resources `$03EC` and `$03FE`: title, expansion option, 4bpp runtime option,
+reciprocal format note, physical PC-address label, OK, and Cancel.
+
+The graphics editor passes the active application catalog into the modal instead of rendering a
+hard-coded English island. Synthetic Unicode catalogs prove both resource families independently,
+canonical catalog encode/decode preserves every dialog-text key, and absent-template tests retain
+the family-specific English behavior. This advances template application but does not close the
+Localization row: remaining mapped native forms and a retained live third-party language-DLL Wine
+gesture are still required.
