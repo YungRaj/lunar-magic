@@ -1,6 +1,31 @@
 use super::*;
 
 #[test]
+fn rom_map16_main_and_lifecycle_surfaces_use_every_typed_key() {
+    let sources = [
+        include_str!("../rom_map16_editor.rs"),
+        include_str!("lifecycle.rs"),
+    ];
+    for key in ExtendedUiTextKey::ALL
+        .into_iter()
+        .filter(|key| format!("{key:?}").starts_with("RomMap16"))
+    {
+        let needle = format!("ExtendedUiTextKey::{key:?}");
+        assert!(sources.iter().any(|source| source.contains(&needle)));
+    }
+    for bypass in [
+        "egui::Window::new(\"ROM Complete Map16 Editor\")",
+        "ui.button(\"Copy tile\")",
+        "egui::Button::new(\"Apply subtile\")",
+        "egui::Button::new(\"Commit complete Map16 set to ROM\")",
+        "egui::Window::new(\"Discard staged Map16 changes?\")",
+        "egui::Window::new(\"ROM Map16 error\")",
+    ] {
+        assert!(!sources.iter().any(|source| source.contains(bypass)));
+    }
+}
+
+#[test]
 fn retained_lunar_magic_map16_editor_oracle_binds_complete_edit_history() {
     let oracle = include_str!(
         "../../../../docs/oracle-work/lm363/pristine-us/map16-editor-interaction/oracle.tsv"
@@ -366,7 +391,13 @@ fn ctrl_v_captures_the_current_map16_target_before_requesting_clipboard_data() {
         },
         |context| {
             egui::CentralPanel::default().show(context, |ui| {
-                editor.selection_and_clipboard(ui, false, lm_app::SMW_COMPLETE_MAP16_PAGES, None);
+                editor.selection_and_clipboard(
+                    ui,
+                    false,
+                    lm_app::SMW_COMPLETE_MAP16_PAGES,
+                    None,
+                    None,
+                );
             });
         },
     );
@@ -592,7 +623,7 @@ fn unmodified_f9_routes_through_the_existing_map16_commit_transaction() {
         |context| {
             egui::CentralPanel::default().show(context, |ui| {
                 let shortcut = take_map16_commit_shortcut(ui);
-                command = editor.commit_controls(ui, false, project_revision, shortcut);
+                command = editor.commit_controls(ui, false, project_revision, shortcut, None);
             });
         },
     );

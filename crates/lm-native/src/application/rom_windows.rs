@@ -292,6 +292,7 @@ impl NativeApplication {
             context,
             self.app.project_revision(),
             active_sidecar.as_ref(),
+            self.app.localization(),
         );
         if self.auto_deselect_on_editor_select
             && self.rom_map16_editor.selection_generation() != map16_selection_generation

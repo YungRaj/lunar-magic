@@ -3,7 +3,8 @@ use crate::{
 };
 use eframe::egui;
 use lm_app::{
-    AppState, Command, Map16Controller, Map16ControllerEdit, RevisionProfile, SmwMap16Controller,
+    AppState, Command, ExtendedUiTextKey, LocalizationCatalog, Map16Controller,
+    Map16ControllerEdit, RevisionProfile, SmwMap16Controller,
 };
 use lm_level::{Map16Address, Map16Page};
 
@@ -17,6 +18,10 @@ mod sidecar_export;
 mod snes_tileset_import;
 #[cfg(test)]
 mod tests;
+
+fn text(catalog: Option<&LocalizationCatalog>, key: ExtendedUiTextKey) -> String {
+    crate::frontend_ui::extended_localized_text(catalog, key)
+}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum PendingClose {
@@ -315,6 +320,7 @@ impl RomMap16Editor {
         context: &egui::Context,
         project_revision: u64,
         active_sidecar: Option<&lm_app::NativeMap16SidecarDocument>,
+        catalog: Option<&LocalizationCatalog>,
     ) -> (bool, Option<Command>) {
         let mut command = self.poll_bitmap_loader(context);
         self.poll_complete_file_io(context);
@@ -342,10 +348,12 @@ impl RomMap16Editor {
         if self.workspace.is_some() {
             self.clamp();
             self.load();
-            egui::Window::new("ROM Complete Map16 Editor")
+            egui::Window::new(text(catalog, ExtendedUiTextKey::RomMap16EditorTitle))
                 .default_size([560.0, 650.0])
                 .show(context, |ui| {
-                    if let Some(ui_command) = self.contents(ui, project_revision, active_sidecar) {
+                    if let Some(ui_command) =
+                        self.contents(ui, project_revision, active_sidecar, catalog)
+                    {
                         command = Some(ui_command);
                     }
                 });
@@ -356,10 +364,10 @@ impl RomMap16Editor {
         if let Some(snes_command) = self.snes_tileset_preview_window(context, project_revision) {
             command = Some(snes_command);
         }
-        self.protected_page_confirmation(context);
+        self.protected_page_confirmation(context, catalog);
         self.sidecar_export_confirmation(context);
-        let approved = self.close_confirmation(context);
-        self.show_error(context);
+        let approved = self.close_confirmation(context, catalog);
+        self.show_error(context, catalog);
         (approved, command)
     }
     fn contents(
@@ -367,6 +375,7 @@ impl RomMap16Editor {
         ui: &mut egui::Ui,
         project_revision: u64,
         active_sidecar: Option<&lm_app::NativeMap16SidecarDocument>,
+        catalog: Option<&LocalizationCatalog>,
     ) -> Option<Command> {
         let commit_shortcut = take_map16_commit_shortcut(ui);
         let pasted = ui.input(|input| {
@@ -385,7 +394,7 @@ impl RomMap16Editor {
         if stale {
             ui.colored_label(
                 egui::Color32::YELLOW,
-                "The ROM changed; reopen before editing or committing.",
+                text(catalog, ExtendedUiTextKey::RomMap16StaleNotice),
             );
         }
         let file_busy = self.complete_loader.is_running()
@@ -427,10 +436,10 @@ impl RomMap16Editor {
                 self.load();
             }
         }
-        self.history_controls(ui, edit_blocked);
-        self.selection_and_clipboard(ui, edit_blocked, pages, pasted.as_deref());
-        self.visual_page(ui);
-        self.tile_fields(ui, edit_blocked, pages);
+        self.history_controls(ui, edit_blocked, catalog);
+        self.selection_and_clipboard(ui, edit_blocked, pages, pasted.as_deref(), catalog);
+        self.visual_page(ui, catalog);
+        self.tile_fields(ui, edit_blocked, pages, catalog);
         self.complete_file_controls(
             ui,
             stale
@@ -467,39 +476,59 @@ impl RomMap16Editor {
         self.bitmap_import_controls(ui, edit_blocked, project_revision);
         self.snes_tileset_controls(ui, edit_blocked, project_revision);
         self.sidecar_export_controls(ui, edit_blocked, project_revision, active_sidecar);
-        self.commit_controls(ui, edit_blocked, project_revision, commit_shortcut)
+        self.commit_controls(ui, edit_blocked, project_revision, commit_shortcut, catalog)
     }
-    fn visual_page(&mut self, ui: &mut egui::Ui) {
+    fn visual_page(&mut self, ui: &mut egui::Ui, catalog: Option<&LocalizationCatalog>) {
         let changed = ui
             .horizontal_wrapped(|ui| {
-                ui.label("Preview level");
+                ui.label(text(catalog, ExtendedUiTextKey::RomMap16PreviewLevel));
                 let level = ui.text_edit_singleline(&mut self.preview_level).changed();
                 let tileset = ui
-                    .add(egui::Slider::new(&mut self.preview_tileset, 0..=15).text("Object set"))
+                    .add(
+                        egui::Slider::new(&mut self.preview_tileset, 0..=15)
+                            .text(text(catalog, ExtendedUiTextKey::RomMap16ObjectSet)),
+                    )
                     .changed();
                 let palette = ui
-                    .add(egui::Slider::new(&mut self.preview_palette, 0..=7).text("FG palette"))
+                    .add(
+                        egui::Slider::new(&mut self.preview_palette, 0..=7)
+                            .text(text(catalog, ExtendedUiTextKey::RomMap16FgPalette)),
+                    )
                     .changed();
-                ui.checkbox(&mut self.show_grid, "16×16 grid")
-                    .on_hover_text("F8 toggles the grid; Ctrl+Alt+F8 switches white/black.");
-                if ui.button("Grid color").clicked() {
+                ui.checkbox(
+                    &mut self.show_grid,
+                    text(catalog, ExtendedUiTextKey::RomMap16Grid),
+                )
+                .on_hover_text(text(catalog, ExtendedUiTextKey::RomMap16GridNotice));
+                if ui
+                    .button(text(catalog, ExtendedUiTextKey::RomMap16GridColor))
+                    .clicked()
+                {
                     self.dark_grid = !self.dark_grid;
                 }
-                if ui.button("−").on_hover_text("Ctrl+Numpad −").clicked() {
+                if ui
+                    .button(text(catalog, ExtendedUiTextKey::RomMap16ZoomOut))
+                    .on_hover_text("Ctrl+Numpad −")
+                    .clicked()
+                {
                     self.page_zoom_percent = map16_zoom_after_shortcut(
                         self.page_zoom_percent,
                         Map16ZoomShortcut::Decrease,
                     );
                 }
                 if ui
-                    .button("Reset zoom")
+                    .button(text(catalog, ExtendedUiTextKey::RomMap16ZoomReset))
                     .on_hover_text("Ctrl+Numpad 0")
                     .clicked()
                 {
                     self.page_zoom_percent =
                         map16_zoom_after_shortcut(self.page_zoom_percent, Map16ZoomShortcut::Reset);
                 }
-                if ui.button("+").on_hover_text("Ctrl+Numpad +").clicked() {
+                if ui
+                    .button(text(catalog, ExtendedUiTextKey::RomMap16ZoomIn))
+                    .on_hover_text("Ctrl+Numpad +")
+                    .clicked()
+                {
                     self.page_zoom_percent = map16_zoom_after_shortcut(
                         self.page_zoom_percent,
                         Map16ZoomShortcut::Increase,
@@ -510,13 +539,16 @@ impl RomMap16Editor {
                         .step_by(100.0)
                         .suffix("%"),
                 );
-                ui.checkbox(&mut self.show_page_number, "Page number")
-                    .on_hover_text("F1 toggles page numbers.");
+                ui.checkbox(
+                    &mut self.show_page_number,
+                    text(catalog, ExtendedUiTextKey::RomMap16PageNumber),
+                )
+                .on_hover_text(text(catalog, ExtendedUiTextKey::RomMap16PageNumberNotice));
                 if ui
                     .button(if self.protected_pages_unlocked {
-                        "Lock built-in pages…"
+                        text(catalog, ExtendedUiTextKey::RomMap16LockPages)
                     } else {
-                        "Unlock built-in pages…"
+                        text(catalog, ExtendedUiTextKey::RomMap16UnlockPages)
                     })
                     .on_hover_text("Ctrl+F1")
                     .clicked()
@@ -531,13 +563,16 @@ impl RomMap16Editor {
             self.page_texture_key = None;
         }
         let Ok(level) = u16::from_str_radix(self.preview_level.trim(), 16) else {
-            ui.colored_label(egui::Color32::RED, "Preview level must be hexadecimal.");
+            ui.colored_label(
+                egui::Color32::RED,
+                text(catalog, ExtendedUiTextKey::RomMap16PreviewHexError),
+            );
             return;
         };
         if level > 0x01ff {
             ui.colored_label(
                 egui::Color32::RED,
-                "Preview level must be between 000 and 1FF.",
+                text(catalog, ExtendedUiTextKey::RomMap16PreviewRangeError),
             );
             return;
         }
@@ -682,7 +717,7 @@ impl RomMap16Editor {
         if response.drag_stopped() {
             self.rectangle_drag_anchor = None;
         }
-        ui.small("Click a rendered 16×16 tile, or drag across tiles to select a rectangle.");
+        ui.small(text(catalog, ExtendedUiTextKey::RomMap16SelectionNotice));
     }
 
     fn selection_and_clipboard(
@@ -691,13 +726,20 @@ impl RomMap16Editor {
         stale: bool,
         pages: usize,
         pasted: Option<&str>,
+        catalog: Option<&LocalizationCatalog>,
     ) {
         let old = (self.page, self.tile, self.quadrant);
         let paste_shortcut = take_map16_paste_shortcut(ui);
         let editable = map16_page_is_editable(self.page, self.protected_pages_unlocked);
-        ui.add(egui::Slider::new(&mut self.page, 0..=pages.saturating_sub(1)).text("Page"));
-        ui.add(egui::Slider::new(&mut self.tile, 0..=Map16Page::TILE_COUNT - 1).text("Tile"));
-        egui::ComboBox::from_label("Quadrant")
+        ui.add(
+            egui::Slider::new(&mut self.page, 0..=pages.saturating_sub(1))
+                .text(text(catalog, ExtendedUiTextKey::RomMap16Page)),
+        );
+        ui.add(
+            egui::Slider::new(&mut self.tile, 0..=Map16Page::TILE_COUNT - 1)
+                .text(text(catalog, ExtendedUiTextKey::RomMap16Tile)),
+        );
+        egui::ComboBox::from_label(text(catalog, ExtendedUiTextKey::RomMap16Quadrant))
             .selected_text(map16_subtile_form::quadrant_name(self.quadrant))
             .show_ui(ui, |ui| {
                 for index in 0..4 {
@@ -712,10 +754,16 @@ impl RomMap16Editor {
             self.loaded = None;
             self.load();
         }
-        ui.heading(format!("Map16 {:02X}:{:02X}", self.page, self.tile));
+        ui.heading(
+            text(catalog, ExtendedUiTextKey::RomMap16AddressFormat)
+                .replace("{page}", &format!("{:02X}", self.page))
+                .replace("{tile}", &format!("{:02X}", self.tile)),
+        );
         let mut native_paste = None;
         ui.horizontal(|ui| {
-            if ui.button("Copy tile").clicked()
+            if ui
+                .button(text(catalog, ExtendedUiTextKey::RomMap16CopyTile))
+                .clicked()
                 && let Some(tile) = self.current_tile()
             {
                 if let Err(error) = native_clipboard::copy_map16_tile_to_system(ui.ctx(), tile) {
@@ -723,7 +771,10 @@ impl RomMap16Editor {
                 }
             }
             let paste_clicked = ui
-                .add_enabled(!stale && editable, egui::Button::new("Paste tile"))
+                .add_enabled(
+                    !stale && editable,
+                    egui::Button::new(text(catalog, ExtendedUiTextKey::RomMap16PasteTile)),
+                )
                 .clicked();
             if !stale && editable && (paste_clicked || paste_shortcut) {
                 self.rectangle_clipboard_paste_target = None;
@@ -795,12 +846,17 @@ impl RomMap16Editor {
         }
     }
 
-    fn history_controls(&mut self, ui: &mut egui::Ui, blocked: bool) {
+    fn history_controls(
+        &mut self,
+        ui: &mut egui::Ui,
+        blocked: bool,
+        catalog: Option<&LocalizationCatalog>,
+    ) {
         ui.horizontal(|ui| {
             if ui
                 .add_enabled(
                     !blocked && !self.undo_history.is_empty(),
-                    egui::Button::new("Undo"),
+                    egui::Button::new(text(catalog, ExtendedUiTextKey::RomMap16Undo)),
                 )
                 .clicked()
                 && let Err(error) = self.navigate_history(true)
@@ -810,7 +866,7 @@ impl RomMap16Editor {
             if ui
                 .add_enabled(
                     !blocked && !self.redo_history.is_empty(),
-                    egui::Button::new("Redo"),
+                    egui::Button::new(text(catalog, ExtendedUiTextKey::RomMap16Redo)),
                 )
                 .clicked()
                 && let Err(error) = self.navigate_history(false)
@@ -857,23 +913,44 @@ impl RomMap16Editor {
         Ok(())
     }
 
-    fn tile_fields(&mut self, ui: &mut egui::Ui, stale: bool, pages: usize) {
+    fn tile_fields(
+        &mut self,
+        ui: &mut egui::Ui,
+        stale: bool,
+        pages: usize,
+        catalog: Option<&LocalizationCatalog>,
+    ) {
         let protected = !map16_page_is_editable(self.page, self.protected_pages_unlocked);
         let supports_acts_like = self
             .workspace
             .as_ref()
             .is_some_and(|workspace| workspace.controller.supports_acts_like(self.page));
         ui.horizontal(|ui| {
-            ui.label("8×8 tile");
+            ui.label(text(catalog, ExtendedUiTextKey::RomMap16Subtile));
             ui.text_edit_singleline(&mut self.subtile.tile);
         });
-        ui.add(egui::Slider::new(&mut self.subtile.palette, 0..=7).text("Palette"));
-        ui.checkbox(&mut self.subtile.priority, "Priority");
-        ui.checkbox(&mut self.subtile.x_flip, "X flip");
-        ui.checkbox(&mut self.subtile.y_flip, "Y flip");
+        ui.add(
+            egui::Slider::new(&mut self.subtile.palette, 0..=7)
+                .text(text(catalog, ExtendedUiTextKey::RomMap16Palette)),
+        );
+        ui.checkbox(
+            &mut self.subtile.priority,
+            text(catalog, ExtendedUiTextKey::RomMap16Priority),
+        );
+        ui.checkbox(
+            &mut self.subtile.x_flip,
+            text(catalog, ExtendedUiTextKey::RomMap16XFlip),
+        );
+        ui.checkbox(
+            &mut self.subtile.y_flip,
+            text(catalog, ExtendedUiTextKey::RomMap16YFlip),
+        );
         let mut edit = None;
         if ui
-            .add_enabled(!stale && !protected, egui::Button::new("Apply subtile"))
+            .add_enabled(
+                !stale && !protected,
+                egui::Button::new(text(catalog, ExtendedUiTextKey::RomMap16ApplySubtile)),
+            )
             .clicked()
         {
             edit = Some(
@@ -889,14 +966,14 @@ impl RomMap16Editor {
         }
         ui.add_enabled_ui(supports_acts_like, |ui| {
             ui.horizontal(|ui| {
-                ui.label("Acts Like");
+                ui.label(text(catalog, ExtendedUiTextKey::RomMap16ActsLike));
                 ui.text_edit_singleline(&mut self.acts_like);
             });
         });
         if ui
             .add_enabled(
                 !stale && !protected && supports_acts_like,
-                egui::Button::new("Apply Acts Like"),
+                egui::Button::new(text(catalog, ExtendedUiTextKey::RomMap16ApplyActsLike)),
             )
             .clicked()
         {
@@ -917,39 +994,59 @@ impl RomMap16Editor {
             }
         }
         if !supports_acts_like {
-            ui.small("Background Map16 definitions do not have Acts-Like values.");
+            ui.small(text(catalog, ExtendedUiTextKey::RomMap16NoActsLikeNotice));
         }
         if protected {
             ui.colored_label(
                 egui::Color32::YELLOW,
-                "Built-in pages 00–01 are protected. Use Ctrl+F1 to unlock them.",
+                text(catalog, ExtendedUiTextKey::RomMap16ProtectedNotice),
             );
         }
     }
 
-    fn protected_page_confirmation(&mut self, context: &egui::Context) {
+    fn protected_page_confirmation(
+        &mut self,
+        context: &egui::Context,
+        catalog: Option<&LocalizationCatalog>,
+    ) {
         if !self.pending_protected_page_toggle {
             return;
         }
         let unlocking = !self.protected_pages_unlocked;
         egui::Window::new(if unlocking {
-            "Unlock built-in Map16 pages?"
+            text(catalog, ExtendedUiTextKey::RomMap16UnlockTitle)
         } else {
-            "Lock built-in Map16 pages?"
+            text(catalog, ExtendedUiTextKey::RomMap16LockTitle)
         })
         .collapsible(false)
         .resizable(false)
         .show(context, |ui| {
             if unlocking {
-                ui.label("Pages 00–01 contain built-in game definitions. Editing them can affect many levels and imported files continue to preserve their graphics words.");
+                ui.label(text(catalog, ExtendedUiTextKey::RomMap16UnlockWarning));
             } else {
-                ui.label("Lock pages 00–01 against further manual edits?");
+                ui.label(text(catalog, ExtendedUiTextKey::RomMap16LockQuestion));
             }
             ui.horizontal(|ui| {
-                if ui.button("Cancel").clicked() {
+                if ui
+                    .button(crate::frontend_ui::localized_text(
+                        catalog,
+                        lm_app::UiTextKey::CommonCancel,
+                    ))
+                    .clicked()
+                {
                     self.pending_protected_page_toggle = false;
                 }
-                if ui.button(if unlocking { "Unlock" } else { "Lock" }).clicked() {
+                if ui
+                    .button(text(
+                        catalog,
+                        if unlocking {
+                            ExtendedUiTextKey::RomMap16Unlock
+                        } else {
+                            ExtendedUiTextKey::RomMap16Lock
+                        },
+                    ))
+                    .clicked()
+                {
                     self.protected_pages_unlocked = unlocking;
                     self.pending_protected_page_toggle = false;
                 }
@@ -963,12 +1060,16 @@ impl RomMap16Editor {
         stale: bool,
         project_revision: u64,
         commit_shortcut: bool,
+        catalog: Option<&LocalizationCatalog>,
     ) -> Option<Command> {
         ui.separator();
         ui.horizontal(|ui| {
-            ui.label("Allocation logical PC hex");
+            ui.label(text(catalog, ExtendedUiTextKey::RomMap16AllocationPc));
             ui.text_edit_singleline(&mut self.search_start);
-            ui.label("..");
+            ui.label(text(
+                catalog,
+                ExtendedUiTextKey::RomMap16AllocationSeparator,
+            ));
             ui.text_edit_singleline(&mut self.search_end);
         });
         let modified = self
@@ -978,7 +1079,8 @@ impl RomMap16Editor {
         let commit_clicked = ui
             .add_enabled(
                 modified && !stale && !self.manifest_loader.is_running(),
-                egui::Button::new("Commit complete Map16 set to ROM").shortcut_text("F9"),
+                egui::Button::new(text(catalog, ExtendedUiTextKey::RomMap16Commit))
+                    .shortcut_text("F9"),
             )
             .clicked();
         if modified
@@ -1002,7 +1104,7 @@ impl RomMap16Editor {
                         .workspace
                         .as_ref()
                         .is_some_and(|workspace| workspace.controller.supports_reclamation()),
-                egui::Button::new("Commit and reclaim"),
+                egui::Button::new(text(catalog, ExtendedUiTextKey::RomMap16CommitReclaim)),
             )
             .clicked()
         {
@@ -1010,11 +1112,14 @@ impl RomMap16Editor {
                 self.error = Some(error);
             }
         }
-        ui.label(if modified {
-            "Staged Map16 changes"
-        } else {
-            "No staged changes"
-        });
+        ui.label(text(
+            catalog,
+            if modified {
+                ExtendedUiTextKey::RomMap16Staged
+            } else {
+                ExtendedUiTextKey::RomMap16Unchanged
+            },
+        ));
         None
     }
     fn apply(&mut self, edit: Map16ControllerEdit) {

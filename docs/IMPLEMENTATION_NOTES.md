@@ -7141,6 +7141,17 @@ event-number editor 5/5—including high-event install/reopen, invalid/stale han
 plus installed recovery—and renderer 237/237 pass. Localization stays Partial for remaining forms
 and live original language-DLL evidence; aggregate parity remains 60/65.
 
+Localization coverage update (2026-08-11, installed-ROM Map16 main editor): fifty-one typed
+`RomMap16*` keys now cover the complete main canvas, preview level/object set/palette, grid/zoom/page
+display, rectangle selection, page/tile/quadrant and address templates, native tile clipboard,
+staged undo/redo, subtile graphics/palette/priority/flips, Acts Like, protected built-in pages,
+allocation, commit/reclaim, staged state, discard, and error lifecycle. The active catalog is wired
+from the application into the editor and lifecycle module; a two-module source audit requires every
+key and rejects literal regressions. Localization model 28/28, Map16 editor 68/68—including complete,
+selected, legacy, bitmap, SNES tileset, atomic graphics+Map16, Layer 2 placement, reopen/undo, and
+recovery—and renderer 237/237 pass. Import/export subdialog catalog wiring remains, so Localization
+stays Partial and aggregate parity remains 60/65.
+
 Localization coverage update (2026-08-11, complete Graphics/ExGFX family): fourteen additional
 typed keys close tile/cache diagnostics, level-GFX export and 3bpp/4bpp format confirmations, tile
 clipboard actions, and Yes/No controls; seven keys close atomic batch extraction/insertion progress

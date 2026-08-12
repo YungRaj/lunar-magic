@@ -1,5 +1,5 @@
 use super::{AppState, Controller, PendingClose, RomMap16Editor, Workspace, egui};
-use lm_app::RevisionProfileControllers;
+use lm_app::{ExtendedUiTextKey, LocalizationCatalog, RevisionProfileControllers, UiTextKey};
 use lm_rom::RomImage;
 
 impl RomMap16Editor {
@@ -147,39 +147,72 @@ impl RomMap16Editor {
         false
     }
 
-    pub(super) fn close_confirmation(&mut self, context: &egui::Context) -> bool {
+    pub(super) fn close_confirmation(
+        &mut self,
+        context: &egui::Context,
+        catalog: Option<&LocalizationCatalog>,
+    ) -> bool {
         let Some(pending) = self.pending_close else {
             return false;
         };
         let mut approved = false;
-        egui::Window::new("Discard staged Map16 changes?")
-            .collapsible(false)
-            .resizable(false)
-            .show(context, |ui| {
-                ui.label(
-                    "These Map16 changes or bitmap import have not been committed to the ROM.",
-                );
-                ui.horizontal(|ui| {
-                    if ui.button("Cancel").clicked() {
-                        self.pending_close = None;
-                    }
-                    if ui.button("Discard").clicked() {
-                        self.clear();
-                        approved = pending == PendingClose::Application;
-                    }
-                });
+        egui::Window::new(super::text(
+            catalog,
+            ExtendedUiTextKey::RomMap16DiscardTitle,
+        ))
+        .collapsible(false)
+        .resizable(false)
+        .show(context, |ui| {
+            ui.label(super::text(
+                catalog,
+                ExtendedUiTextKey::RomMap16UnsavedNotice,
+            ));
+            ui.horizontal(|ui| {
+                if ui
+                    .button(crate::frontend_ui::localized_text(
+                        catalog,
+                        UiTextKey::CommonCancel,
+                    ))
+                    .clicked()
+                {
+                    self.pending_close = None;
+                }
+                if ui
+                    .button(crate::frontend_ui::localized_text(
+                        catalog,
+                        UiTextKey::UnsavedDiscard,
+                    ))
+                    .clicked()
+                {
+                    self.clear();
+                    approved = pending == PendingClose::Application;
+                }
             });
+        });
         approved
     }
 
-    pub(super) fn show_error(&mut self, context: &egui::Context) {
+    pub(super) fn show_error(
+        &mut self,
+        context: &egui::Context,
+        catalog: Option<&LocalizationCatalog>,
+    ) {
         if let Some(error) = self.error.clone() {
-            egui::Window::new("ROM Map16 error").show(context, |ui| {
-                ui.label(error);
-                if ui.button("OK").clicked() {
-                    self.error = None;
-                }
-            });
+            egui::Window::new(super::text(catalog, ExtendedUiTextKey::RomMap16ErrorTitle)).show(
+                context,
+                |ui| {
+                    ui.label(error);
+                    if ui
+                        .button(crate::frontend_ui::localized_text(
+                            catalog,
+                            UiTextKey::CommonOk,
+                        ))
+                        .clicked()
+                    {
+                        self.error = None;
+                    }
+                },
+            );
         }
     }
 

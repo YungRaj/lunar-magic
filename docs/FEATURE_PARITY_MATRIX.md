@@ -1166,6 +1166,13 @@ tamper rejection. The four-platform workflow builds it and the packager binds it
 manifest. Launcher 2/2, updater 11/11, packager 3/3, and renderer 237/237 pass. Native activation
 consent and retained cross-platform release execution remain missing, so Release stays Partial and
 aggregate parity remains 60/65.
+Localization coverage update (2026-08-11, installed-ROM Map16 main editor): fifty-one typed keys now
+cover its complete canvas/preview, grid/zoom/page display, rectangle selection, tile clipboard,
+history, subtile and Acts-Like semantics, protected pages, allocation/commit, staged state, discard,
+and error lifecycle. A two-module audit requires the full group. Localization model 28/28, Map16
+editor 68/68—including all complete/selected/legacy/bitmap/SNES formats, atomic graphics+Map16,
+Layer 2 placement, reopen/undo, and recovery—and renderer 237/237 pass. Import/export subdialog
+catalog wiring remains; Localization stays Partial and aggregate parity remains 60/65.
 Localization coverage update (2026-08-11, complete Graphics/ExGFX family): tile/cache diagnostics,
 level-GFX and format confirmations, tile clipboard actions, atomic batch extraction/insertion
 progress, cancellation, and toolbar standard/ExGFX completion/error dialogs now join the previously
