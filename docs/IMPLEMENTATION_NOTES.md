@@ -6857,3 +6857,9 @@ Select `$2298`, Convert Berry GFX Tile `$22A5`, and Check if ROMFileName.ips Exi
 The complete resource extraction also identifies `$22A1` as the shorter original “Correct Fatal
 Errors” label; the native option now uses that authenticated text instead of its longer Rust-only
 wording. No unrelated control is reused as localization evidence.
+Five more authenticated and persisted General Options behaviors are now present on the ordinary
+Tools options surface instead of being reachable only from a customized toolbar: Mouse Gestures
+`$2292`, Auto-Save on Mouse Gestures `$2293`, Maintain ROM Checksum `$22A2`, Silently Add Header
+to ROM `$22A7`, and Save Prompt `$22A8`. Each uses its original `$041F` catalog control label and
+updates the same live application/editor state as the corresponding toolbar command. The dependent
+auto-save control is unavailable while mouse gestures are disabled, matching the option hierarchy.

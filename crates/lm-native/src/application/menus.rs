@@ -579,6 +579,52 @@ impl NativeApplication {
             {
                 self.set_remember_window_size(remember_window_size);
             }
+            let mut mouse_gestures = self.mouse_gestures.unwrap_or(true);
+            let mouse_gestures_label = self.original_general_option_text(0x2292, "Mouse Gestures");
+            if ui
+                .checkbox(&mut mouse_gestures, mouse_gestures_label)
+                .changed()
+            {
+                self.mouse_gestures = Some(mouse_gestures);
+                self.vanilla_level_editor.set_mouse_gestures(mouse_gestures);
+            }
+            let mut save_mouse_gestures = self.save_mouse_gestures.unwrap_or(false);
+            let save_mouse_gestures_label =
+                self.original_general_option_text(0x2293, "Auto-Save on Mouse Gestures");
+            if ui
+                .add_enabled(
+                    mouse_gestures,
+                    egui::Checkbox::new(&mut save_mouse_gestures, save_mouse_gestures_label),
+                )
+                .changed()
+            {
+                self.save_mouse_gestures = Some(save_mouse_gestures);
+            }
+            let mut maintain_checksum = self.maintain_checksum.unwrap_or(true);
+            let maintain_checksum_label =
+                self.original_general_option_text(0x22a2, "Maintain ROM Checksum");
+            if ui
+                .checkbox(&mut maintain_checksum, maintain_checksum_label)
+                .changed()
+            {
+                self.maintain_checksum = Some(maintain_checksum);
+                self.app.set_maintain_checksum(maintain_checksum);
+            }
+            let mut silently_add_header = self.silently_add_copier_header.unwrap_or(true);
+            let silently_add_header_label =
+                self.original_general_option_text(0x22a7, "Silently Add Header to ROM");
+            if ui
+                .checkbox(&mut silently_add_header, silently_add_header_label)
+                .changed()
+            {
+                self.silently_add_copier_header = Some(silently_add_header);
+                self.app.set_silently_add_copier_header(silently_add_header);
+            }
+            let mut save_prompt = self.save_prompt.unwrap_or(true);
+            let save_prompt_label = self.original_general_option_text(0x22a8, "Save Prompt");
+            if ui.checkbox(&mut save_prompt, save_prompt_label).changed() {
+                self.save_prompt = Some(save_prompt);
+            }
             let mut scan_exits = self.scan_exits_on_save.unwrap_or(true);
             let scan_exits_label =
                 self.original_general_option_text(0x22a9, "Scan Exits on Save to ROM");
