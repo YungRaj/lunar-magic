@@ -1166,6 +1166,13 @@ tamper rejection. The four-platform workflow builds it and the packager binds it
 manifest. Launcher 2/2, updater 11/11, packager 3/3, and renderer 237/237 pass. Native activation
 consent and retained cross-platform release execution remain missing, so Release stays Partial and
 aggregate parity remains 60/65.
+Localization coverage update (2026-08-11, graphics file operations): thirty-two typed extension
+keys now cover the main window and the complete standard GFX, GFX32/GFX33, ExGFX, AllGFX, raw, and
+current-level extraction/insertion toolbar, plus palette/joined mode, allocation, commit/reclaim,
+staged state, and hover guidance. A source audit requires the full group. Localization model 28/28,
+graphics editor 43 active tests with one explicit Wine/original-LM ignore, and renderer 237/237
+pass. Tile/pixel controls, warnings/confirmations, batch progress, and technical status localization
+remain; Localization stays Partial and aggregate parity remains 60/65.
 
 Localization coverage update (2026-08-11, verified-update family): the complete offer, stage,
 install, activation, rollback guidance, and failure UI now uses eighteen typed catalog entries.

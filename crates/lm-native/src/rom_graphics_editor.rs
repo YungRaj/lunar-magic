@@ -523,15 +523,18 @@ impl RomGraphicsEditor {
         self.graphics_format_warning(context);
         self.ordinary_graphics_insertion_dialog(context, app, *joined_graphics_files);
         if self.workspace.is_some() {
-            egui::Window::new("ROM Graphics Editor")
-                .default_size([780.0, 680.0])
-                .show(context, |ui| {
-                    if let Some(ui_command) = self.contents(ui, app, joined_graphics_files)
-                        && command.is_none()
-                    {
-                        command = Some(ui_command);
-                    }
-                });
+            egui::Window::new(text(
+                app.localization(),
+                ExtendedUiTextKey::GraphicsEditorTitle,
+            ))
+            .default_size([780.0, 680.0])
+            .show(context, |ui| {
+                if let Some(ui_command) = self.contents(ui, app, joined_graphics_files)
+                    && command.is_none()
+                {
+                    command = Some(ui_command);
+                }
+            });
         }
         self.level_graphics_export_confirmation(context, app, special_world_passed);
         let approved = self.close_confirmation(context, app.localization());
@@ -565,7 +568,7 @@ impl RomGraphicsEditor {
         if stale {
             ui.colored_label(
                 egui::Color32::YELLOW,
-                "The ROM changed; reopen before editing or committing.",
+                text(app.localization(), ExtendedUiTextKey::GraphicsStaleNotice),
             );
         }
         let rows = workspace.palette.palette.colors.len() / 16;
@@ -589,22 +592,28 @@ impl RomGraphicsEditor {
             self.external_tool_id = configured_graphics_tools.first().map(|(id, _)| id.clone());
         }
         let previous_display_palette = self.display_palette;
-        egui::ComboBox::from_label("Palette row")
-            .selected_text(self.display_palette.label())
-            .show_ui(ui, |ui| {
+        egui::ComboBox::from_label(text(
+            app.localization(),
+            ExtendedUiTextKey::GraphicsPaletteRow,
+        ))
+        .selected_text(self.display_palette.label())
+        .show_ui(ui, |ui| {
+            ui.selectable_value(
+                &mut self.display_palette,
+                GraphicsDisplayPalette::Default,
+                text(
+                    app.localization(),
+                    ExtendedUiTextKey::GraphicsDefaultPalette,
+                ),
+            );
+            for row in 0..rows {
                 ui.selectable_value(
                     &mut self.display_palette,
-                    GraphicsDisplayPalette::Default,
-                    "Default",
+                    GraphicsDisplayPalette::Row(row),
+                    format!("{row:X}"),
                 );
-                for row in 0..rows {
-                    ui.selectable_value(
-                        &mut self.display_palette,
-                        GraphicsDisplayPalette::Row(row),
-                        format!("{row:X}"),
-                    );
-                }
-            });
+            }
+        });
         if self.display_palette != previous_display_palette {
             self.status
                 .set_pointer_action(self.display_palette.status());
@@ -641,8 +650,14 @@ impl RomGraphicsEditor {
                 }
             }
         });
-        ui.checkbox(joined_graphics_files, "Use joined AllGFX.bin files")
-            .on_hover_text("Original global joined-GFX mode (command $24BD)");
+        ui.checkbox(
+            joined_graphics_files,
+            text(app.localization(), ExtendedUiTextKey::GraphicsUseJoined),
+        )
+        .on_hover_text(text(
+            app.localization(),
+            ExtendedUiTextKey::GraphicsJoinedNotice,
+        ));
         self.status.update_palette_hover(
             hovered_color,
             ui.input(|input| input.pointer.delta() != egui::Vec2::ZERO),
@@ -654,28 +669,34 @@ impl RomGraphicsEditor {
             self.status.select_background_color(color);
         }
         ui.separator();
+        let configured_editor_name = self
+            .external_tool_id
+            .as_deref()
+            .and_then(|selected| {
+                configured_graphics_tools
+                    .iter()
+                    .find(|(id, _)| id == selected)
+                    .map(|(_, name)| name.clone())
+            })
+            .unwrap_or_else(|| text(app.localization(), ExtendedUiTextKey::GraphicsNone));
         ui.horizontal(|ui| {
-            egui::ComboBox::from_label("Configured graphics editor")
-                .selected_text(
-                    self.external_tool_id
-                        .as_deref()
-                        .and_then(|selected| {
-                            configured_graphics_tools
-                                .iter()
-                                .find(|(id, _)| id == selected)
-                                .map(|(_, name)| name.as_str())
-                        })
-                        .unwrap_or("None"),
-                )
-                .show_ui(ui, |ui| {
-                    for (id, name) in &configured_graphics_tools {
-                        ui.selectable_value(&mut self.external_tool_id, Some(id.clone()), name);
-                    }
-                });
+            egui::ComboBox::from_label(text(
+                app.localization(),
+                ExtendedUiTextKey::GraphicsConfiguredEditor,
+            ))
+            .selected_text(configured_editor_name)
+            .show_ui(ui, |ui| {
+                for (id, name) in &configured_graphics_tools {
+                    ui.selectable_value(&mut self.external_tool_id, Some(id.clone()), name);
+                }
+            });
             if ui
                 .add_enabled(
                     !stale && !file_work_running && self.external_tool_id.is_some(),
-                    egui::Button::new("Edit with configured tool"),
+                    egui::Button::new(text(
+                        app.localization(),
+                        ExtendedUiTextKey::GraphicsEditConfigured,
+                    )),
                 )
                 .clicked()
             {
@@ -684,7 +705,10 @@ impl RomGraphicsEditor {
             if ui
                 .add_enabled(
                     !stale && !file_work_running,
-                    egui::Button::new("Edit with executable…"),
+                    egui::Button::new(text(
+                        app.localization(),
+                        ExtendedUiTextKey::GraphicsEditExecutable,
+                    )),
                 )
                 .clicked()
             {
@@ -695,7 +719,10 @@ impl RomGraphicsEditor {
             if ui
                 .add_enabled(
                     !stale && !file_work_running,
-                    egui::Button::new("Insert raw GFX/ExGFX…"),
+                    egui::Button::new(text(
+                        app.localization(),
+                        ExtendedUiTextKey::GraphicsInsertRaw,
+                    )),
                 )
                 .clicked()
             {
@@ -704,7 +731,10 @@ impl RomGraphicsEditor {
             if ui
                 .add_enabled(
                     !stale && !file_work_running,
-                    egui::Button::new("Extract raw GFX/ExGFX…"),
+                    egui::Button::new(text(
+                        app.localization(),
+                        ExtendedUiTextKey::GraphicsExtractRaw,
+                    )),
                 )
                 .clicked()
             {
@@ -713,11 +743,15 @@ impl RomGraphicsEditor {
             if ui
                 .add_enabled(
                     !stale && !file_work_running && app.current_level().is_some(),
-                    egui::Button::new("Extract current level GFX…"),
+                    egui::Button::new(text(
+                        app.localization(),
+                        ExtendedUiTextKey::GraphicsExtractLevel,
+                    )),
                 )
-                .on_hover_text(
-                    "Choose a new directory for the active level's decoded FG/BG/SP files",
-                )
+                .on_hover_text(text(
+                    app.localization(),
+                    ExtendedUiTextKey::GraphicsExtractLevelNotice,
+                ))
                 .clicked()
             {
                 self.pending_level_graphics_export =
@@ -726,7 +760,10 @@ impl RomGraphicsEditor {
             if ui
                 .add_enabled(
                     !stale && !file_work_running,
-                    egui::Button::new("Extract all standard GFX…"),
+                    egui::Button::new(text(
+                        app.localization(),
+                        ExtendedUiTextKey::GraphicsExtractStandard,
+                    )),
                 )
                 .clicked()
             {
@@ -735,9 +772,15 @@ impl RomGraphicsEditor {
             if ui
                 .add_enabled(
                     !stale && !file_work_running && special_graphics_available,
-                    egui::Button::new("Extract GFX32/GFX33…"),
+                    egui::Button::new(text(
+                        app.localization(),
+                        ExtendedUiTextKey::GraphicsExtractSpecial,
+                    )),
                 )
-                .on_hover_text("Uses the authenticated pristine SMW special-pointer operands")
+                .on_hover_text(text(
+                    app.localization(),
+                    ExtendedUiTextKey::GraphicsSpecialNotice,
+                ))
                 .clicked()
             {
                 self.begin_special_graphics_batch();
@@ -745,9 +788,15 @@ impl RomGraphicsEditor {
             if ui
                 .add_enabled(
                     !stale && !file_work_running && exgraphics_available,
-                    egui::Button::new("Extract installed ExGFX…"),
+                    egui::Button::new(text(
+                        app.localization(),
+                        ExtendedUiTextKey::GraphicsExtractExGfx,
+                    )),
                 )
-                .on_hover_text("Exports every nonempty ExGFX pointer from the installed table")
+                .on_hover_text(text(
+                    app.localization(),
+                    ExtendedUiTextKey::GraphicsExtractExGfxNotice,
+                ))
                 .clicked()
             {
                 self.begin_exgraphics_batch();
@@ -755,7 +804,10 @@ impl RomGraphicsEditor {
             if ui
                 .add_enabled(
                     !stale && !file_work_running,
-                    egui::Button::new("Extract AllGFX.bin…"),
+                    egui::Button::new(text(
+                        app.localization(),
+                        ExtendedUiTextKey::GraphicsExtractAllGfx,
+                    )),
                 )
                 .clicked()
             {
@@ -764,9 +816,15 @@ impl RomGraphicsEditor {
             if ui
                 .add_enabled(
                     !stale && !file_work_running && !modified_controller(self.workspace.as_ref()),
-                    egui::Button::new("Insert all standard GFX…"),
+                    egui::Button::new(text(
+                        app.localization(),
+                        ExtendedUiTextKey::GraphicsInsertStandard,
+                    )),
                 )
-                .on_hover_text("Commit or discard staged tile edits before inserting a directory")
+                .on_hover_text(text(
+                    app.localization(),
+                    ExtendedUiTextKey::GraphicsStagedEditNotice,
+                ))
                 .clicked()
             {
                 self.begin_graphics_import();
@@ -777,9 +835,15 @@ impl RomGraphicsEditor {
                         && !file_work_running
                         && !modified_controller(self.workspace.as_ref())
                         && special_graphics_available,
-                    egui::Button::new("Insert GFX32/GFX33…"),
+                    egui::Button::new(text(
+                        app.localization(),
+                        ExtendedUiTextKey::GraphicsInsertSpecial,
+                    )),
                 )
-                .on_hover_text("Uses the authenticated pristine SMW special-pointer operands")
+                .on_hover_text(text(
+                    app.localization(),
+                    ExtendedUiTextKey::GraphicsSpecialNotice,
+                ))
                 .clicked()
             {
                 self.begin_special_graphics_import();
@@ -790,9 +854,15 @@ impl RomGraphicsEditor {
                         && !file_work_running
                         && !modified_controller(self.workspace.as_ref())
                         && exgraphics_insert_available,
-                    egui::Button::new("Insert ExGFX…"),
+                    egui::Button::new(text(
+                        app.localization(),
+                        ExtendedUiTextKey::GraphicsInsertExGfx,
+                    )),
                 )
-                .on_hover_text("Atomically inserts the canonical ExGFX files found in a directory")
+                .on_hover_text(text(
+                    app.localization(),
+                    ExtendedUiTextKey::GraphicsInsertExGfxNotice,
+                ))
                 .clicked()
             {
                 self.begin_exgraphics_import();
@@ -800,9 +870,15 @@ impl RomGraphicsEditor {
             if ui
                 .add_enabled(
                     !stale && !file_work_running && !modified_controller(self.workspace.as_ref()),
-                    egui::Button::new("Insert AllGFX.bin…"),
+                    egui::Button::new(text(
+                        app.localization(),
+                        ExtendedUiTextKey::GraphicsInsertAllGfx,
+                    )),
                 )
-                .on_hover_text("Commit or discard staged tile edits before inserting AllGFX.bin")
+                .on_hover_text(text(
+                    app.localization(),
+                    ExtendedUiTextKey::GraphicsStagedEditNotice,
+                ))
                 .clicked()
             {
                 self.begin_all_gfx_import();
@@ -831,9 +907,15 @@ impl RomGraphicsEditor {
         self.status.show(ui);
         ui.separator();
         ui.horizontal(|ui| {
-            ui.label("Allocation logical PC hex");
+            ui.label(text(
+                app.localization(),
+                ExtendedUiTextKey::GraphicsAllocationPc,
+            ));
             ui.text_edit_singleline(&mut self.search_start);
-            ui.label("..");
+            ui.label(text(
+                app.localization(),
+                ExtendedUiTextKey::GraphicsAllocationRangeSeparator,
+            ));
             ui.text_edit_singleline(&mut self.search_end);
         });
         let modified = self
@@ -843,7 +925,10 @@ impl RomGraphicsEditor {
         let commit_enabled =
             modified && !stale && !file_work_running && !self.manifest_loader.is_running();
         let commit_clicked = ui
-            .add_enabled(commit_enabled, egui::Button::new("Commit graphics to ROM"))
+            .add_enabled(
+                commit_enabled,
+                egui::Button::new(text(app.localization(), ExtendedUiTextKey::GraphicsCommit)),
+            )
             .clicked();
         if commit_enabled && commit_clicked {
             match self.prepare_commit() {
@@ -856,7 +941,10 @@ impl RomGraphicsEditor {
         if ui
             .add_enabled(
                 modified && !stale && !file_work_running && !self.manifest_loader.is_running(),
-                egui::Button::new("Commit and reclaim"),
+                egui::Button::new(text(
+                    app.localization(),
+                    ExtendedUiTextKey::GraphicsCommitReclaim,
+                )),
             )
             .clicked()
         {
@@ -864,11 +952,14 @@ impl RomGraphicsEditor {
                 self.error = Some(error);
             }
         }
-        ui.label(if modified {
-            "Staged graphics changes"
-        } else {
-            "No staged changes"
-        });
+        ui.label(text(
+            app.localization(),
+            if modified {
+                ExtendedUiTextKey::GraphicsStagedChanges
+            } else {
+                ExtendedUiTextKey::GraphicsNoStagedChanges
+            },
+        ));
         None
     }
     fn tile_list(
@@ -2766,6 +2857,59 @@ mod tests {
             "ui.label(\"Ownership: editable\")",
         ] {
             assert!(!sources.iter().any(|source| source.contains(bypass)));
+        }
+    }
+
+    #[test]
+    fn graphics_main_file_toolbar_uses_every_typed_key_in_its_group() {
+        let source = include_str!("rom_graphics_editor.rs");
+        for key in ExtendedUiTextKey::ALL.into_iter().filter(|key| {
+            matches!(
+                key,
+                ExtendedUiTextKey::GraphicsEditorTitle
+                    | ExtendedUiTextKey::GraphicsStaleNotice
+                    | ExtendedUiTextKey::GraphicsPaletteRow
+                    | ExtendedUiTextKey::GraphicsDefaultPalette
+                    | ExtendedUiTextKey::GraphicsUseJoined
+                    | ExtendedUiTextKey::GraphicsJoinedNotice
+                    | ExtendedUiTextKey::GraphicsConfiguredEditor
+                    | ExtendedUiTextKey::GraphicsNone
+                    | ExtendedUiTextKey::GraphicsEditConfigured
+                    | ExtendedUiTextKey::GraphicsEditExecutable
+                    | ExtendedUiTextKey::GraphicsInsertRaw
+                    | ExtendedUiTextKey::GraphicsExtractRaw
+                    | ExtendedUiTextKey::GraphicsExtractLevel
+                    | ExtendedUiTextKey::GraphicsExtractLevelNotice
+                    | ExtendedUiTextKey::GraphicsExtractStandard
+                    | ExtendedUiTextKey::GraphicsExtractSpecial
+                    | ExtendedUiTextKey::GraphicsSpecialNotice
+                    | ExtendedUiTextKey::GraphicsExtractExGfx
+                    | ExtendedUiTextKey::GraphicsExtractExGfxNotice
+                    | ExtendedUiTextKey::GraphicsExtractAllGfx
+                    | ExtendedUiTextKey::GraphicsInsertStandard
+                    | ExtendedUiTextKey::GraphicsStagedEditNotice
+                    | ExtendedUiTextKey::GraphicsInsertSpecial
+                    | ExtendedUiTextKey::GraphicsInsertExGfx
+                    | ExtendedUiTextKey::GraphicsInsertExGfxNotice
+                    | ExtendedUiTextKey::GraphicsInsertAllGfx
+                    | ExtendedUiTextKey::GraphicsAllocationPc
+                    | ExtendedUiTextKey::GraphicsAllocationRangeSeparator
+                    | ExtendedUiTextKey::GraphicsCommit
+                    | ExtendedUiTextKey::GraphicsCommitReclaim
+                    | ExtendedUiTextKey::GraphicsStagedChanges
+                    | ExtendedUiTextKey::GraphicsNoStagedChanges
+            )
+        }) {
+            assert!(source.contains(&format!("ExtendedUiTextKey::{key:?}")));
+        }
+        for bypass in [
+            "egui::Window::new(\"ROM Graphics Editor\")",
+            "egui::Button::new(\"Insert raw GFX/ExGFX…\")",
+            "egui::Button::new(\"Extract installed ExGFX…\")",
+            "egui::Button::new(\"Insert ExGFX…\")",
+            "egui::Button::new(\"Commit graphics to ROM\")",
+        ] {
+            assert!(!source.contains(bypass));
         }
     }
 

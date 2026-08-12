@@ -7141,6 +7141,16 @@ event-number editor 5/5—including high-event install/reopen, invalid/stale han
 plus installed recovery—and renderer 237/237 pass. Localization stays Partial for remaining forms
 and live original language-DLL evidence; aggregate parity remains 60/65.
 
+Localization coverage update (2026-08-11, graphics file operations): thirty-two additional typed
+extension keys now cover the main ROM Graphics window, stale and palette-row state, joined-AllGFX
+mode, configured/direct external-editor actions, raw GFX/ExGFX transfer, current-level FG/BG/SP
+extraction, all standard GFX, authenticated GFX32/GFX33, installed ExGFX, joined AllGFX extraction
+and insertion, allocation bounds, commit/reclaim, and staged state, including hover guidance. A
+source audit requires the complete key group and rejects literal file-operation regressions.
+Localization model 28/28, graphics editor 43 active tests with one explicit Wine/original-LM ignore,
+and renderer 237/237 pass. Tile/pixel controls, warnings/confirmations, batch progress, and technical
+status localization remain, so Localization stays Partial and aggregate parity remains 60/65.
+
 Localization coverage update (2026-08-11, graphics lifecycle/ownership/external editing): nineteen
 typed extension keys now cover the complete external-process consent and running-state dialogs,
 including executable/staged paths and argument templates; all seven editable/fixed/animation/

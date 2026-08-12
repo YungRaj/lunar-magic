@@ -1920,10 +1920,42 @@ pub enum ExtendedUiTextKey {
     GraphicsDiscardTitle,
     GraphicsUnsavedNotice,
     GraphicsErrorTitle,
+    GraphicsEditorTitle,
+    GraphicsStaleNotice,
+    GraphicsPaletteRow,
+    GraphicsDefaultPalette,
+    GraphicsUseJoined,
+    GraphicsJoinedNotice,
+    GraphicsConfiguredEditor,
+    GraphicsNone,
+    GraphicsEditConfigured,
+    GraphicsEditExecutable,
+    GraphicsInsertRaw,
+    GraphicsExtractRaw,
+    GraphicsExtractLevel,
+    GraphicsExtractLevelNotice,
+    GraphicsExtractStandard,
+    GraphicsExtractSpecial,
+    GraphicsSpecialNotice,
+    GraphicsExtractExGfx,
+    GraphicsExtractExGfxNotice,
+    GraphicsExtractAllGfx,
+    GraphicsInsertStandard,
+    GraphicsStagedEditNotice,
+    GraphicsInsertSpecial,
+    GraphicsInsertExGfx,
+    GraphicsInsertExGfxNotice,
+    GraphicsInsertAllGfx,
+    GraphicsAllocationPc,
+    GraphicsAllocationRangeSeparator,
+    GraphicsCommit,
+    GraphicsCommitReclaim,
+    GraphicsStagedChanges,
+    GraphicsNoStagedChanges,
 }
 
 impl ExtendedUiTextKey {
-    pub const ALL: [Self; 219] = [
+    pub const ALL: [Self; 251] = [
         Self::TilemapTitleScreenName,
         Self::TilemapCreditsName,
         Self::TilemapEditorTitleFormat,
@@ -2143,6 +2175,38 @@ impl ExtendedUiTextKey {
         Self::GraphicsDiscardTitle,
         Self::GraphicsUnsavedNotice,
         Self::GraphicsErrorTitle,
+        Self::GraphicsEditorTitle,
+        Self::GraphicsStaleNotice,
+        Self::GraphicsPaletteRow,
+        Self::GraphicsDefaultPalette,
+        Self::GraphicsUseJoined,
+        Self::GraphicsJoinedNotice,
+        Self::GraphicsConfiguredEditor,
+        Self::GraphicsNone,
+        Self::GraphicsEditConfigured,
+        Self::GraphicsEditExecutable,
+        Self::GraphicsInsertRaw,
+        Self::GraphicsExtractRaw,
+        Self::GraphicsExtractLevel,
+        Self::GraphicsExtractLevelNotice,
+        Self::GraphicsExtractStandard,
+        Self::GraphicsExtractSpecial,
+        Self::GraphicsSpecialNotice,
+        Self::GraphicsExtractExGfx,
+        Self::GraphicsExtractExGfxNotice,
+        Self::GraphicsExtractAllGfx,
+        Self::GraphicsInsertStandard,
+        Self::GraphicsStagedEditNotice,
+        Self::GraphicsInsertSpecial,
+        Self::GraphicsInsertExGfx,
+        Self::GraphicsInsertExGfxNotice,
+        Self::GraphicsInsertAllGfx,
+        Self::GraphicsAllocationPc,
+        Self::GraphicsAllocationRangeSeparator,
+        Self::GraphicsCommit,
+        Self::GraphicsCommitReclaim,
+        Self::GraphicsStagedChanges,
+        Self::GraphicsNoStagedChanges,
     ];
 
     #[must_use]
@@ -2445,6 +2509,48 @@ impl ExtendedUiTextKey {
             Self::GraphicsDiscardTitle => "Discard staged graphics changes?",
             Self::GraphicsUnsavedNotice => "These changes have not been committed to the ROM.",
             Self::GraphicsErrorTitle => "ROM graphics error",
+            Self::GraphicsEditorTitle => "ROM Graphics Editor",
+            Self::GraphicsStaleNotice => "The ROM changed; reopen before editing or committing.",
+            Self::GraphicsPaletteRow => "Palette row",
+            Self::GraphicsDefaultPalette => "Default",
+            Self::GraphicsUseJoined => "Use joined AllGFX.bin files",
+            Self::GraphicsJoinedNotice => "Original global joined-GFX mode (command $24BD)",
+            Self::GraphicsConfiguredEditor => "Configured graphics editor",
+            Self::GraphicsNone => "None",
+            Self::GraphicsEditConfigured => "Edit with configured tool",
+            Self::GraphicsEditExecutable => "Edit with executable…",
+            Self::GraphicsInsertRaw => "Insert raw GFX/ExGFX…",
+            Self::GraphicsExtractRaw => "Extract raw GFX/ExGFX…",
+            Self::GraphicsExtractLevel => "Extract current level GFX…",
+            Self::GraphicsExtractLevelNotice => {
+                "Choose a new directory for the active level's decoded FG/BG/SP files"
+            }
+            Self::GraphicsExtractStandard => "Extract all standard GFX…",
+            Self::GraphicsExtractSpecial => "Extract GFX32/GFX33…",
+            Self::GraphicsSpecialNotice => {
+                "Uses the authenticated pristine SMW special-pointer operands"
+            }
+            Self::GraphicsExtractExGfx => "Extract installed ExGFX…",
+            Self::GraphicsExtractExGfxNotice => {
+                "Exports every nonempty ExGFX pointer from the installed table"
+            }
+            Self::GraphicsExtractAllGfx => "Extract AllGFX.bin…",
+            Self::GraphicsInsertStandard => "Insert all standard GFX…",
+            Self::GraphicsStagedEditNotice => {
+                "Commit or discard staged tile edits before inserting a directory"
+            }
+            Self::GraphicsInsertSpecial => "Insert GFX32/GFX33…",
+            Self::GraphicsInsertExGfx => "Insert ExGFX…",
+            Self::GraphicsInsertExGfxNotice => {
+                "Atomically inserts the canonical ExGFX files found in a directory"
+            }
+            Self::GraphicsInsertAllGfx => "Insert AllGFX.bin…",
+            Self::GraphicsAllocationPc => "Allocation logical PC hex",
+            Self::GraphicsAllocationRangeSeparator => "..",
+            Self::GraphicsCommit => "Commit graphics to ROM",
+            Self::GraphicsCommitReclaim => "Commit and reclaim",
+            Self::GraphicsStagedChanges => "Staged graphics changes",
+            Self::GraphicsNoStagedChanges => "No staged changes",
         }
     }
 
