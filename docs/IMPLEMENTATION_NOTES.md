@@ -7312,6 +7312,14 @@ eligibility, confirmation, and lifecycle evidence passes in the expansion suite 
 localization model 28/28 and renderer 237/237. Localization remains Partial for other native forms;
 aggregate parity remains 60/65.
 
+Localization coverage update (2026-08-11, level-access restriction): twenty typed extension keys
+cover every Rust-only stage around the original `$03FF` dialog: acknowledgement, restore-point
+policy, persistence before IPS, IPS choice, completion, save-and-close retries, and errors. The
+source audit requires every `LevelRestriction*` key and rejects literal stage-window regressions;
+the existing original-template test continues to bind all matching native captions. Workflow and
+localization tests pass 6/6, localization model 28/28, and renderer 237/237. The full Localization
+row remains Partial for other native forms; aggregate parity remains 60/65.
+
 Localization coverage update (2026-08-11, installed expanded settings): thirty typed extension
 keys cover the complete profile-backed editor surface—exact record guidance, Layer 3 semantic
 controls, ten bypass assignments, sprite-boundary behavior, sixteen raw words, staging/commit,

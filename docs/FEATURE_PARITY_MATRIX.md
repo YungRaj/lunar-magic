@@ -745,6 +745,14 @@ confirmation, and errors. Exact semantic/raw edits, shared history, and persiste
 remain proven. Expanded-settings family 10/10, localization model 28/28, and renderer 237/237 pass.
 Broader runtime variants still keep the patch row Partial; aggregate parity remains 60/65.
 
+Localization coverage update (2026-08-11, level-access restriction): the authenticated original
+dialog captions remain sourced from dialog `$03FF`, while twenty typed extension keys now cover the
+Rust workflow's editing warning, acknowledgement, required restore point, save-before-IPS, IPS
+offer, completion, retry/save-close, and error states. Fresh protection keys, restore/save/IPS
+ordering, cancellation, persistence observation, and complete original-template caption mapping
+remain proven. Restriction dialog 6/6, localization model 28/28, and renderer 237/237 pass.
+Localization remains Partial for other native forms; aggregate parity remains 60/65.
+
 Converted catalogs now preserve the complete safely decoded literal dialog inventory in a bounded,
 optional `LMDLG001` extension keyed by dialog ID, exact item position, and 32-bit control ID.
 Historical catalogs without the extension remain byte-identical, duplicate control IDs survive by

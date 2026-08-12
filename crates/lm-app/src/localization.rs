@@ -2201,10 +2201,30 @@ pub enum ExtendedUiTextKey {
     ExpandedSettingsUnsavedTitle,
     ExpandedSettingsDiscardQuestion,
     ExpandedSettingsErrorTitle,
+    LevelRestrictionEditingWarning,
+    LevelRestrictionAcknowledge,
+    LevelRestrictionRestoreTitle,
+    LevelRestrictionRestoreNotice,
+    LevelRestrictionRetryRestore,
+    LevelRestrictionIpsTitle,
+    LevelRestrictionIpsQuestion,
+    LevelRestrictionYes,
+    LevelRestrictionNo,
+    LevelRestrictionSavingTitle,
+    LevelRestrictionSavingForIps,
+    LevelRestrictionSaveRequired,
+    LevelRestrictionRetrySave,
+    LevelRestrictionCompleteTitle,
+    LevelRestrictionCompleteNotice,
+    LevelRestrictionOk,
+    LevelRestrictionSavingForClose,
+    LevelRestrictionStillOpen,
+    LevelRestrictionRetrySaveClose,
+    LevelRestrictionErrorTitle,
 }
 
 impl ExtendedUiTextKey {
-    pub const ALL: [Self; 500] = [
+    pub const ALL: [Self; 520] = [
         Self::TilemapTitleScreenName,
         Self::TilemapCreditsName,
         Self::TilemapEditorTitleFormat,
@@ -2705,6 +2725,26 @@ impl ExtendedUiTextKey {
         Self::ExpandedSettingsUnsavedTitle,
         Self::ExpandedSettingsDiscardQuestion,
         Self::ExpandedSettingsErrorTitle,
+        Self::LevelRestrictionEditingWarning,
+        Self::LevelRestrictionAcknowledge,
+        Self::LevelRestrictionRestoreTitle,
+        Self::LevelRestrictionRestoreNotice,
+        Self::LevelRestrictionRetryRestore,
+        Self::LevelRestrictionIpsTitle,
+        Self::LevelRestrictionIpsQuestion,
+        Self::LevelRestrictionYes,
+        Self::LevelRestrictionNo,
+        Self::LevelRestrictionSavingTitle,
+        Self::LevelRestrictionSavingForIps,
+        Self::LevelRestrictionSaveRequired,
+        Self::LevelRestrictionRetrySave,
+        Self::LevelRestrictionCompleteTitle,
+        Self::LevelRestrictionCompleteNotice,
+        Self::LevelRestrictionOk,
+        Self::LevelRestrictionSavingForClose,
+        Self::LevelRestrictionStillOpen,
+        Self::LevelRestrictionRetrySaveClose,
+        Self::LevelRestrictionErrorTitle,
     ];
 
     #[must_use]
@@ -3392,6 +3432,40 @@ impl ExtendedUiTextKey {
             Self::ExpandedSettingsUnsavedTitle => "Unsaved expanded settings",
             Self::ExpandedSettingsDiscardQuestion => "Discard unsaved expanded-settings changes?",
             Self::ExpandedSettingsErrorTitle => "Expanded-settings editor error",
+            Self::LevelRestrictionEditingWarning => {
+                "After restriction, performing additional editing operations on the locked ROM is not recommended."
+            }
+            Self::LevelRestrictionAcknowledge => {
+                "I understand that the original tool cannot reverse this operation."
+            }
+            Self::LevelRestrictionRestoreTitle => "Create Full Restore Point",
+            Self::LevelRestrictionRestoreNotice => {
+                "A full restore point is required by the enabled destructive-operation policy before IPS creation can continue."
+            }
+            Self::LevelRestrictionRetryRestore => "Retry Restore Point",
+            Self::LevelRestrictionIpsTitle => "Create an IPS patch?",
+            Self::LevelRestrictionIpsQuestion => {
+                "Do you want to create an IPS for this locked ROM?"
+            }
+            Self::LevelRestrictionYes => "Yes",
+            Self::LevelRestrictionNo => "No",
+            Self::LevelRestrictionSavingTitle => "Saving restricted ROM",
+            Self::LevelRestrictionSavingForIps => "Saving the restricted ROM before IPS creation…",
+            Self::LevelRestrictionSaveRequired => {
+                "The restricted ROM must be saved before an IPS can be created."
+            }
+            Self::LevelRestrictionRetrySave => "Retry Save",
+            Self::LevelRestrictionCompleteTitle => "Level Access Restriction Complete",
+            Self::LevelRestrictionCompleteNotice => {
+                "Your modified levels are no longer accessible by Lunar Magic. Performing any additional operations on this ROM is not recommended."
+            }
+            Self::LevelRestrictionOk => "OK",
+            Self::LevelRestrictionSavingForClose => "Saving the restricted ROM before closing it…",
+            Self::LevelRestrictionStillOpen => {
+                "The restricted ROM is still open and has not been saved."
+            }
+            Self::LevelRestrictionRetrySaveClose => "Retry Save and Close",
+            Self::LevelRestrictionErrorTitle => "Level access restriction error",
         }
     }
 

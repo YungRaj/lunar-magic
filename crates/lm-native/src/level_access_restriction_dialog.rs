@@ -1,5 +1,5 @@
 use eframe::egui;
-use lm_app::{AppState, Command, LocalizationCatalog};
+use lm_app::{AppState, Command, ExtendedUiTextKey, LocalizationCatalog};
 use lm_project::LevelAccessRestrictionKeys;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -85,10 +85,10 @@ impl LevelAccessRestrictionDialog {
                              backup.",
                         ),
                     );
-                    ui.label(
-                        "After restriction, performing additional editing operations on the \
-                         locked ROM is not recommended.",
-                    );
+                    ui.label(text(
+                        catalog,
+                        ExtendedUiTextKey::LevelRestrictionEditingWarning,
+                    ));
                     ui.separator();
                     ui.label(restriction_dialog_text(
                         catalog,
@@ -102,7 +102,7 @@ impl LevelAccessRestrictionDialog {
                     );
                     ui.checkbox(
                         &mut self.acknowledged,
-                        "I understand that the original tool cannot reverse this operation.",
+                        text(catalog, ExtendedUiTextKey::LevelRestrictionAcknowledge),
                     );
                     ui.horizontal(|ui| {
                         if ui
@@ -139,87 +139,138 @@ impl LevelAccessRestrictionDialog {
                 });
         }
         if self.stage == RestrictionStage::CreateRestorePoint {
-            egui::Window::new("Create Full Restore Point")
-                .collapsible(false)
-                .resizable(false)
-                .show(context, |ui| {
-                    ui.label(
-                        "A full restore point is required by the enabled destructive-operation \
-                         policy before IPS creation can continue.",
-                    );
-                    if ui.button("Retry Restore Point").clicked() {
-                        action = Some(LevelAccessRestrictionAction::CreateRestorePoint);
-                    }
-                });
+            egui::Window::new(text(
+                catalog,
+                ExtendedUiTextKey::LevelRestrictionRestoreTitle,
+            ))
+            .collapsible(false)
+            .resizable(false)
+            .show(context, |ui| {
+                ui.label(text(
+                    catalog,
+                    ExtendedUiTextKey::LevelRestrictionRestoreNotice,
+                ));
+                if ui
+                    .button(text(
+                        catalog,
+                        ExtendedUiTextKey::LevelRestrictionRetryRestore,
+                    ))
+                    .clicked()
+                {
+                    action = Some(LevelAccessRestrictionAction::CreateRestorePoint);
+                }
+            });
         }
         if self.stage == RestrictionStage::OfferIps {
-            egui::Window::new("Create an IPS patch?")
+            egui::Window::new(text(catalog, ExtendedUiTextKey::LevelRestrictionIpsTitle))
                 .collapsible(false)
                 .resizable(false)
                 .show(context, |ui| {
-                    ui.label("Do you want to create an IPS for this locked ROM?");
+                    ui.label(text(
+                        catalog,
+                        ExtendedUiTextKey::LevelRestrictionIpsQuestion,
+                    ));
                     ui.horizontal(|ui| {
-                        if ui.button("Yes").clicked() {
+                        if ui
+                            .button(text(catalog, ExtendedUiTextKey::LevelRestrictionYes))
+                            .clicked()
+                        {
                             action = Some(LevelAccessRestrictionAction::CreateIps);
                         }
-                        if ui.button("No").clicked() {
+                        if ui
+                            .button(text(catalog, ExtendedUiTextKey::LevelRestrictionNo))
+                            .clicked()
+                        {
                             self.stage = RestrictionStage::Complete;
                         }
                     });
                 });
         }
         if self.stage == RestrictionStage::PersistBeforeIps {
-            egui::Window::new("Saving restricted ROM")
-                .collapsible(false)
-                .resizable(false)
-                .show(context, |ui| {
-                    if app.pending_save_request_id().is_some() {
-                        ui.label("Saving the restricted ROM before IPS creation…");
-                    } else {
-                        ui.label("The restricted ROM must be saved before an IPS can be created.");
-                        if ui.button("Retry Save").clicked() {
-                            action = Some(LevelAccessRestrictionAction::PersistRestrictedRom);
-                        }
+            egui::Window::new(text(
+                catalog,
+                ExtendedUiTextKey::LevelRestrictionSavingTitle,
+            ))
+            .collapsible(false)
+            .resizable(false)
+            .show(context, |ui| {
+                if app.pending_save_request_id().is_some() {
+                    ui.label(text(
+                        catalog,
+                        ExtendedUiTextKey::LevelRestrictionSavingForIps,
+                    ));
+                } else {
+                    ui.label(text(
+                        catalog,
+                        ExtendedUiTextKey::LevelRestrictionSaveRequired,
+                    ));
+                    if ui
+                        .button(text(catalog, ExtendedUiTextKey::LevelRestrictionRetrySave))
+                        .clicked()
+                    {
+                        action = Some(LevelAccessRestrictionAction::PersistRestrictedRom);
                     }
-                });
+                }
+            });
         }
         if self.stage == RestrictionStage::Complete {
-            egui::Window::new("Level Access Restriction Complete")
-                .collapsible(false)
-                .resizable(false)
-                .show(context, |ui| {
-                    ui.label(
-                        "Your modified levels are no longer accessible by Lunar Magic. \
-                         Performing any additional operations on this ROM is not recommended.",
-                    );
-                    if ui.button("OK").clicked() {
-                        self.stage = RestrictionStage::Persisting;
-                        action = Some(LevelAccessRestrictionAction::SaveAndClose);
-                    }
-                });
+            egui::Window::new(text(
+                catalog,
+                ExtendedUiTextKey::LevelRestrictionCompleteTitle,
+            ))
+            .collapsible(false)
+            .resizable(false)
+            .show(context, |ui| {
+                ui.label(text(
+                    catalog,
+                    ExtendedUiTextKey::LevelRestrictionCompleteNotice,
+                ));
+                if ui
+                    .button(text(catalog, ExtendedUiTextKey::LevelRestrictionOk))
+                    .clicked()
+                {
+                    self.stage = RestrictionStage::Persisting;
+                    action = Some(LevelAccessRestrictionAction::SaveAndClose);
+                }
+            });
         }
         if self.stage == RestrictionStage::Persisting && app.project().is_some() {
-            egui::Window::new("Saving restricted ROM")
-                .collapsible(false)
-                .resizable(false)
-                .show(context, |ui| {
-                    if app.pending_save_request_id().is_some() {
-                        ui.label("Saving the restricted ROM before closing it…");
-                    } else {
-                        ui.label("The restricted ROM is still open and has not been saved.");
-                        if ui.button("Retry Save and Close").clicked() {
-                            action = Some(LevelAccessRestrictionAction::SaveAndClose);
-                        }
+            egui::Window::new(text(
+                catalog,
+                ExtendedUiTextKey::LevelRestrictionSavingTitle,
+            ))
+            .collapsible(false)
+            .resizable(false)
+            .show(context, |ui| {
+                if app.pending_save_request_id().is_some() {
+                    ui.label(text(
+                        catalog,
+                        ExtendedUiTextKey::LevelRestrictionSavingForClose,
+                    ));
+                } else {
+                    ui.label(text(catalog, ExtendedUiTextKey::LevelRestrictionStillOpen));
+                    if ui
+                        .button(text(
+                            catalog,
+                            ExtendedUiTextKey::LevelRestrictionRetrySaveClose,
+                        ))
+                        .clicked()
+                    {
+                        action = Some(LevelAccessRestrictionAction::SaveAndClose);
                     }
-                });
+                }
+            });
         }
         if let Some(error) = self.error.clone() {
-            egui::Window::new("Level access restriction error")
+            egui::Window::new(text(catalog, ExtendedUiTextKey::LevelRestrictionErrorTitle))
                 .collapsible(false)
                 .resizable(false)
                 .show(context, |ui| {
                     ui.label(error);
-                    if ui.button("OK").clicked() {
+                    if ui
+                        .button(text(catalog, ExtendedUiTextKey::LevelRestrictionOk))
+                        .clicked()
+                    {
                         self.error = None;
                     }
                 });
@@ -269,6 +320,10 @@ impl LevelAccessRestrictionDialog {
     }
 }
 
+fn text(catalog: Option<&LocalizationCatalog>, key: ExtendedUiTextKey) -> String {
+    crate::frontend_ui::extended_localized_text(catalog, key)
+}
+
 fn restriction_dialog_title(catalog: Option<&LocalizationCatalog>) -> String {
     catalog
         .and_then(|catalog| catalog.original_dialog_title(ORIGINAL_DIALOG_ID))
@@ -309,6 +364,25 @@ fn fresh_keys() -> LevelAccessRestrictionKeys {
 mod tests {
     use super::*;
     use lm_app::{OriginalDialogTextKey, UiTextKey};
+
+    #[test]
+    fn complete_restriction_surface_uses_every_typed_extension_key() {
+        let source = include_str!("level_access_restriction_dialog.rs");
+        for key in ExtendedUiTextKey::ALL
+            .into_iter()
+            .filter(|key| format!("{key:?}").starts_with("LevelRestriction"))
+        {
+            assert!(source.contains(&format!("ExtendedUiTextKey::{key:?}")));
+        }
+        for bypass in [
+            "egui::Window::new(\"Create Full Restore Point\")",
+            "egui::Window::new(\"Create an IPS patch?\")",
+            "egui::Window::new(\"Level Access Restriction Complete\")",
+            "egui::Window::new(\"Level access restriction error\")",
+        ] {
+            assert!(!source.contains(bypass));
+        }
+    }
 
     #[test]
     fn fresh_material_respects_lunar_magics_seven_bit_first_key() {
