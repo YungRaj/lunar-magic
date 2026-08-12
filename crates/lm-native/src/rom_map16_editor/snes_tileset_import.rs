@@ -2,8 +2,9 @@ use super::{Command, Controller, RomMap16Editor};
 use crate::{dialogs, document_loader::BoundedRead};
 use eframe::egui;
 use lm_app::{
-    MaterializedSnesMap16Tileset, SNES_TILESET_GRAPHICS_LEN, SNES_TILESET_MAP_LEN,
-    SNES_TILESET_PALETTE_ROW_LEN, SnesMap16DefinitionPlacement, SnesMap16TilesetImport,
+    ExtendedUiTextKey, LocalizationCatalog, MaterializedSnesMap16Tileset,
+    SNES_TILESET_GRAPHICS_LEN, SNES_TILESET_MAP_LEN, SNES_TILESET_PALETTE_ROW_LEN,
+    SnesMap16DefinitionPlacement, SnesMap16TilesetImport,
 };
 use lm_level::Map16Page;
 use lm_project::{GraphicsSaveOptions, PaletteSaveOptions, Project, RomMutation};
@@ -76,27 +77,34 @@ impl RomMap16Editor {
         ui: &mut egui::Ui,
         blocked: bool,
         project_revision: u64,
+        catalog: Option<&LocalizationCatalog>,
     ) {
         let import_shortcut = take_snes_tileset_import_shortcut(ui);
         ui.separator();
-        ui.label("SNES graphics set + screen tile map");
+        ui.label(super::text(catalog, ExtendedUiTextKey::RomMap16SnesHeading));
         ui.horizontal(|ui| {
-            ui.checkbox(&mut self.snes_tileset_include_palette, "Import palette row");
+            ui.checkbox(
+                &mut self.snes_tileset_include_palette,
+                super::text(catalog, ExtendedUiTextKey::RomMap16SnesImportPalette),
+            );
             ui.add_enabled(
                 self.snes_tileset_include_palette,
                 egui::DragValue::new(&mut self.snes_tileset_palette_row)
                     .range(0..=15)
-                    .prefix("row ")
+                    .prefix(super::text(
+                        catalog,
+                        ExtendedUiTextKey::RomMap16SnesPaletteRowPrefix,
+                    ))
                     .hexadecimal(1, false, true),
             );
             ui.checkbox(
                 &mut self.snes_tileset_deduplicate,
-                "Optimize Map16 definitions",
+                super::text(catalog, ExtendedUiTextKey::RomMap16SnesOptimize),
             );
             let load_clicked = ui
                 .add_enabled(
                     !blocked && self.page < 0x100,
-                    egui::Button::new("Load SNES tileset…")
+                    egui::Button::new(super::text(catalog, ExtendedUiTextKey::RomMap16SnesLoad))
                         .shortcut_text("Ctrl+Shift+Alt+F1+Insert"),
                 )
                 .clicked();
@@ -105,19 +113,28 @@ impl RomMap16Editor {
             }
         });
         ui.horizontal(|ui| {
-            ui.label("Graphics offset");
+            ui.label(super::text(
+                catalog,
+                ExtendedUiTextKey::RomMap16SnesGraphicsOffset,
+            ));
             ui.add(
                 egui::DragValue::new(&mut self.snes_tileset_graphics_offset)
                     .range(0..=0x3ff)
                     .hexadecimal(3, false, true),
             );
-            ui.label("Map offset");
+            ui.label(super::text(
+                catalog,
+                ExtendedUiTextKey::RomMap16SnesMapOffset,
+            ));
             ui.add(
                 egui::DragValue::new(&mut self.snes_tileset_map_offset)
                     .range(0..=0x3ff)
                     .hexadecimal(3, false, true),
             );
-            ui.checkbox(&mut self.snes_tileset_color_filter, "Color-map filter");
+            ui.checkbox(
+                &mut self.snes_tileset_color_filter,
+                super::text(catalog, ExtendedUiTextKey::RomMap16SnesColorFilter),
+            );
             ui.add_enabled(
                 self.snes_tileset_color_filter,
                 egui::DragValue::new(&mut self.snes_tileset_color_filter_index).range(0..=15),
@@ -127,7 +144,10 @@ impl RomMap16Editor {
             let map = &mut self.snes_tileset_color_maps
                 [usize::from(self.snes_tileset_color_filter_index)];
             ui.horizontal_wrapped(|ui| {
-                ui.label("Color map");
+                ui.label(super::text(
+                    catalog,
+                    ExtendedUiTextKey::RomMap16SnesColorMap,
+                ));
                 for value in map {
                     ui.add(
                         egui::DragValue::new(value)
@@ -137,7 +157,7 @@ impl RomMap16Editor {
                 }
             });
         }
-        ui.small("Loads the original .set/.bin plus 32×32 .map workflow with an optional 16-color .col/.pal row. Preview is revision-bound and blocks conflicting Map16 work.");
+        ui.small(super::text(catalog, ExtendedUiTextKey::RomMap16SnesNotice));
     }
 
     fn start_snes_tileset_load(&mut self, project_revision: u64) {
@@ -205,6 +225,7 @@ impl RomMap16Editor {
         &mut self,
         context: &egui::Context,
         project_revision: u64,
+        catalog: Option<&LocalizationCatalog>,
     ) -> Option<Command> {
         let Some(preview) = self.snes_tileset_preview.as_ref() else {
             return None;
@@ -226,39 +247,73 @@ impl RomMap16Editor {
         let candidate_tiles = preview.candidate_page.tiles.len();
         let mut discard = false;
         let mut apply = false;
-        egui::Window::new("SNES tileset import preview")
-            .collapsible(false)
-            .resizable(false)
-            .show(context, |ui| {
-                ui.label(format!("Target Map16 page: ${page:02X}"));
-                ui.label(format!("Placement: {placement:?}"));
-                ui.label(format!("Graphics tiles: {graphics_tiles}"));
-                ui.label(format!("Candidate definitions: {candidate_tiles}"));
-                ui.label(format!("Definitions written: {written}"));
-                ui.label(format!("Index-grid span: {assignment_span}"));
-                ui.label(match palette_row {
-                    Some(row) => format!("Palette row loaded: ${row:X}"),
-                    None => "Palette row loaded: no".into(),
-                });
-                if stale {
-                    ui.colored_label(egui::Color32::YELLOW, "The ROM changed; discard this preview.");
-                }
-                ui.small("The decoded graphics, optional palette, candidate page, and background index grid are retained together for the atomic ROM-application milestone.");
-                ui.horizontal(|ui| {
-                    if ui
-                        .add_enabled(
-                            !stale,
-                            egui::Button::new("Apply graphics + palette + Map16"),
-                        )
-                        .clicked()
-                    {
-                        apply = true;
-                    }
-                    if ui.button("Discard preview").clicked() {
-                        discard = true;
-                    }
-                });
+        egui::Window::new(super::text(
+            catalog,
+            ExtendedUiTextKey::RomMap16SnesPreviewTitle,
+        ))
+        .collapsible(false)
+        .resizable(false)
+        .show(context, |ui| {
+            ui.label(
+                super::text(catalog, ExtendedUiTextKey::RomMap16SnesTargetPage)
+                    .replace("{page}", &format!("{page:02X}")),
+            );
+            ui.label(
+                super::text(catalog, ExtendedUiTextKey::RomMap16SnesPlacement)
+                    .replace("{placement}", &format!("{placement:?}")),
+            );
+            ui.label(
+                super::text(catalog, ExtendedUiTextKey::RomMap16SnesGraphicsTiles)
+                    .replace("{count}", &graphics_tiles.to_string()),
+            );
+            ui.label(
+                super::text(catalog, ExtendedUiTextKey::RomMap16SnesCandidateDefinitions)
+                    .replace("{count}", &candidate_tiles.to_string()),
+            );
+            ui.label(
+                super::text(catalog, ExtendedUiTextKey::RomMap16SnesDefinitionsWritten)
+                    .replace("{count}", &written.to_string()),
+            );
+            ui.label(
+                super::text(catalog, ExtendedUiTextKey::RomMap16SnesIndexGridSpan)
+                    .replace("{span}", &assignment_span),
+            );
+            ui.label(match palette_row {
+                Some(row) => super::text(catalog, ExtendedUiTextKey::RomMap16SnesPaletteLoaded)
+                    .replace("{row}", &format!("{row:X}")),
+                None => super::text(catalog, ExtendedUiTextKey::RomMap16SnesPaletteNotLoaded),
             });
+            if stale {
+                ui.colored_label(
+                    egui::Color32::YELLOW,
+                    super::text(catalog, ExtendedUiTextKey::RomMap16SnesStaleNotice),
+                );
+            }
+            ui.small(super::text(
+                catalog,
+                ExtendedUiTextKey::RomMap16SnesPreviewNotice,
+            ));
+            ui.horizontal(|ui| {
+                if ui
+                    .add_enabled(
+                        !stale,
+                        egui::Button::new(super::text(
+                            catalog,
+                            ExtendedUiTextKey::RomMap16SnesApply,
+                        )),
+                    )
+                    .clicked()
+                {
+                    apply = true;
+                }
+                if ui
+                    .button(super::text(catalog, ExtendedUiTextKey::RomMap16SnesDiscard))
+                    .clicked()
+                {
+                    discard = true;
+                }
+            });
+        });
         if discard {
             self.snes_tileset_preview = None;
         }

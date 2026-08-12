@@ -1,7 +1,7 @@
 use super::{Map16SidecarKind, PendingSidecarExport, RomMap16Editor};
 use crate::{document_loader::BoundedRead, persistence_worker::PersistenceTarget};
 use eframe::egui;
-use lm_app::NativeMap16SidecarDocument;
+use lm_app::{ExtendedUiTextKey, LocalizationCatalog, NativeMap16SidecarDocument};
 use lm_level::{M16Sidecar, S16Sidecar};
 use std::path::{Path, PathBuf};
 
@@ -80,18 +80,30 @@ impl RomMap16Editor {
         blocked: bool,
         project_revision: u64,
         active_sidecar: Option<&NativeMap16SidecarDocument>,
+        catalog: Option<&LocalizationCatalog>,
     ) {
         let shortcut = take_map16_sidecar_export_shortcut(ui);
         ui.horizontal_wrapped(|ui| {
-            ui.label("Associated custom Map16");
+            ui.label(super::text(
+                catalog,
+                ExtendedUiTextKey::RomMap16SidecarHeading,
+            ));
             for (kind, label, shortcut_text) in [
-                (Map16SidecarKind::M16, "Export .m16", "Ctrl+F9"),
-                (Map16SidecarKind::S16, "Export .s16", "Ctrl+Shift+F9"),
+                (
+                    Map16SidecarKind::M16,
+                    ExtendedUiTextKey::RomMap16SidecarExportM16,
+                    "Ctrl+F9",
+                ),
+                (
+                    Map16SidecarKind::S16,
+                    ExtendedUiTextKey::RomMap16SidecarExportS16,
+                    "Ctrl+Shift+F9",
+                ),
             ] {
                 let clicked = ui
                     .add_enabled(
                         !blocked,
-                        egui::Button::new(label).shortcut_text(shortcut_text),
+                        egui::Button::new(super::text(catalog, label)).shortcut_text(shortcut_text),
                     )
                     .clicked();
                 if !blocked && (clicked || shortcut == Some(kind)) {
@@ -152,43 +164,55 @@ impl RomMap16Editor {
         Ok(())
     }
 
-    pub(super) fn sidecar_export_confirmation(&mut self, context: &egui::Context) {
+    pub(super) fn sidecar_export_confirmation(
+        &mut self,
+        context: &egui::Context,
+        catalog: Option<&LocalizationCatalog>,
+    ) {
         let Some(pending) = self.pending_sidecar_export.as_ref() else {
             return;
         };
         let kind = pending.kind;
         let path = pending.path.clone();
-        egui::Window::new("Export associated Map16 sidecar?")
-            .collapsible(false)
-            .resizable(false)
-            .show(context, |ui| {
-                ui.label(format!(
-                    "Write the current {} buffer to {}?",
-                    sidecar_extension(kind),
-                    path.display()
-                ));
-                ui.horizontal(|ui| {
-                    if ui.button("No").clicked() {
-                        self.pending_sidecar_export = None;
-                    }
-                    if ui.button("Yes").clicked()
-                        && let Some(pending) = self.pending_sidecar_export.take()
-                    {
-                        match sidecar_persistence_target(&pending.path).and_then(|target| {
-                            self.associated_sidecar_persistence.start(
-                                pending.revision,
-                                target,
-                                pending.bytes.clone(),
-                            )
-                        }) {
-                            Ok(()) => {
-                                self.sidecar_export_in_flight = Some((pending.kind, pending.bytes));
-                            }
-                            Err(error) => self.error = Some(error),
+        egui::Window::new(super::text(
+            catalog,
+            ExtendedUiTextKey::RomMap16SidecarConfirmTitle,
+        ))
+        .collapsible(false)
+        .resizable(false)
+        .show(context, |ui| {
+            ui.label(
+                super::text(catalog, ExtendedUiTextKey::RomMap16SidecarConfirmQuestion)
+                    .replace("{extension}", sidecar_extension(kind))
+                    .replace("{path}", &path.display().to_string()),
+            );
+            ui.horizontal(|ui| {
+                if ui
+                    .button(super::text(catalog, ExtendedUiTextKey::RomMap16SidecarNo))
+                    .clicked()
+                {
+                    self.pending_sidecar_export = None;
+                }
+                if ui
+                    .button(super::text(catalog, ExtendedUiTextKey::RomMap16SidecarYes))
+                    .clicked()
+                    && let Some(pending) = self.pending_sidecar_export.take()
+                {
+                    match sidecar_persistence_target(&pending.path).and_then(|target| {
+                        self.associated_sidecar_persistence.start(
+                            pending.revision,
+                            target,
+                            pending.bytes.clone(),
+                        )
+                    }) {
+                        Ok(()) => {
+                            self.sidecar_export_in_flight = Some((pending.kind, pending.bytes));
                         }
+                        Err(error) => self.error = Some(error),
                     }
-                });
+                }
             });
+        });
     }
 
     fn install_exported_sidecar(

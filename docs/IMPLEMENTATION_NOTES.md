@@ -7276,3 +7276,12 @@ legacy-plane, asynchronous revision binding, shortcuts, GUI commit/reopen, and r
 passes in the Map16 editor suite (69/69); localization model 28/28 and renderer 237/237 also pass.
 Localization remains Partial pending the Map16 bitmap, sidecar, and SNES tileset subdialogs and
 other native forms; aggregate parity remains 60/65.
+
+Localization coverage update (2026-08-11, Map16 sidecars and SNES tilesets): thirty typed extension
+keys cover both associated custom-Map16 export buttons, the path-specific confirmation, SNES
+graphics/map/palette options, offsets and color map, complete preview statistics, revision warning,
+atomic apply, and discard. A dedicated source audit requires every key and rejects representative
+literal regressions. Sidecar path/atomic replacement and shortcut evidence plus SNES materialize,
+placement, palette, background index-grid, atomic commit/reopen, and undo evidence pass in the
+focused Map16 suite (70/70); localization model 28/28 and renderer 237/237 also pass. Localization
+remains Partial pending bitmap-converter and other native surfaces; aggregate parity remains 60/65.

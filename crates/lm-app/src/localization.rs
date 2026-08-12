@@ -2050,10 +2050,40 @@ pub enum ExtendedUiTextKey {
     RomMap16TransferImportBackground,
     RomMap16TransferExportBackground,
     RomMap16TransferLegacyCompleteNotice,
+    RomMap16SidecarHeading,
+    RomMap16SidecarExportM16,
+    RomMap16SidecarExportS16,
+    RomMap16SidecarConfirmTitle,
+    RomMap16SidecarConfirmQuestion,
+    RomMap16SidecarNo,
+    RomMap16SidecarYes,
+    RomMap16SnesHeading,
+    RomMap16SnesImportPalette,
+    RomMap16SnesPaletteRowPrefix,
+    RomMap16SnesOptimize,
+    RomMap16SnesLoad,
+    RomMap16SnesGraphicsOffset,
+    RomMap16SnesMapOffset,
+    RomMap16SnesColorFilter,
+    RomMap16SnesColorMap,
+    RomMap16SnesNotice,
+    RomMap16SnesPreviewTitle,
+    RomMap16SnesTargetPage,
+    RomMap16SnesPlacement,
+    RomMap16SnesGraphicsTiles,
+    RomMap16SnesCandidateDefinitions,
+    RomMap16SnesDefinitionsWritten,
+    RomMap16SnesIndexGridSpan,
+    RomMap16SnesPaletteLoaded,
+    RomMap16SnesPaletteNotLoaded,
+    RomMap16SnesStaleNotice,
+    RomMap16SnesPreviewNotice,
+    RomMap16SnesApply,
+    RomMap16SnesDiscard,
 }
 
 impl ExtendedUiTextKey {
-    pub const ALL: [Self; 349] = [
+    pub const ALL: [Self; 379] = [
         Self::TilemapTitleScreenName,
         Self::TilemapCreditsName,
         Self::TilemapEditorTitleFormat,
@@ -2403,6 +2433,36 @@ impl ExtendedUiTextKey {
         Self::RomMap16TransferImportBackground,
         Self::RomMap16TransferExportBackground,
         Self::RomMap16TransferLegacyCompleteNotice,
+        Self::RomMap16SidecarHeading,
+        Self::RomMap16SidecarExportM16,
+        Self::RomMap16SidecarExportS16,
+        Self::RomMap16SidecarConfirmTitle,
+        Self::RomMap16SidecarConfirmQuestion,
+        Self::RomMap16SidecarNo,
+        Self::RomMap16SidecarYes,
+        Self::RomMap16SnesHeading,
+        Self::RomMap16SnesImportPalette,
+        Self::RomMap16SnesPaletteRowPrefix,
+        Self::RomMap16SnesOptimize,
+        Self::RomMap16SnesLoad,
+        Self::RomMap16SnesGraphicsOffset,
+        Self::RomMap16SnesMapOffset,
+        Self::RomMap16SnesColorFilter,
+        Self::RomMap16SnesColorMap,
+        Self::RomMap16SnesNotice,
+        Self::RomMap16SnesPreviewTitle,
+        Self::RomMap16SnesTargetPage,
+        Self::RomMap16SnesPlacement,
+        Self::RomMap16SnesGraphicsTiles,
+        Self::RomMap16SnesCandidateDefinitions,
+        Self::RomMap16SnesDefinitionsWritten,
+        Self::RomMap16SnesIndexGridSpan,
+        Self::RomMap16SnesPaletteLoaded,
+        Self::RomMap16SnesPaletteNotLoaded,
+        Self::RomMap16SnesStaleNotice,
+        Self::RomMap16SnesPreviewNotice,
+        Self::RomMap16SnesApply,
+        Self::RomMap16SnesDiscard,
     ];
 
     #[must_use]
@@ -2883,6 +2943,42 @@ impl ExtendedUiTextKey {
             Self::RomMap16TransferLegacyCompleteNotice => {
                 "Legacy complete transfer uses Map16FG.bin/Map16FGG.bin for all 128 foreground pages and Map16BG.bin for all 128 background pages."
             }
+            Self::RomMap16SidecarHeading => "Associated custom Map16",
+            Self::RomMap16SidecarExportM16 => "Export .m16",
+            Self::RomMap16SidecarExportS16 => "Export .s16",
+            Self::RomMap16SidecarConfirmTitle => "Export associated Map16 sidecar?",
+            Self::RomMap16SidecarConfirmQuestion => {
+                "Write the current {extension} buffer to {path}?"
+            }
+            Self::RomMap16SidecarNo => "No",
+            Self::RomMap16SidecarYes => "Yes",
+            Self::RomMap16SnesHeading => "SNES graphics set + screen tile map",
+            Self::RomMap16SnesImportPalette => "Import palette row",
+            Self::RomMap16SnesPaletteRowPrefix => "row ",
+            Self::RomMap16SnesOptimize => "Optimize Map16 definitions",
+            Self::RomMap16SnesLoad => "Load SNES tileset…",
+            Self::RomMap16SnesGraphicsOffset => "Graphics offset",
+            Self::RomMap16SnesMapOffset => "Map offset",
+            Self::RomMap16SnesColorFilter => "Color-map filter",
+            Self::RomMap16SnesColorMap => "Color map",
+            Self::RomMap16SnesNotice => {
+                "Loads the original .set/.bin plus 32×32 .map workflow with an optional 16-color .col/.pal row. Preview is revision-bound and blocks conflicting Map16 work."
+            }
+            Self::RomMap16SnesPreviewTitle => "SNES tileset import preview",
+            Self::RomMap16SnesTargetPage => "Target Map16 page: ${page}",
+            Self::RomMap16SnesPlacement => "Placement: {placement}",
+            Self::RomMap16SnesGraphicsTiles => "Graphics tiles: {count}",
+            Self::RomMap16SnesCandidateDefinitions => "Candidate definitions: {count}",
+            Self::RomMap16SnesDefinitionsWritten => "Definitions written: {count}",
+            Self::RomMap16SnesIndexGridSpan => "Index-grid span: {span}",
+            Self::RomMap16SnesPaletteLoaded => "Palette row loaded: ${row}",
+            Self::RomMap16SnesPaletteNotLoaded => "Palette row loaded: no",
+            Self::RomMap16SnesStaleNotice => "The ROM changed; discard this preview.",
+            Self::RomMap16SnesPreviewNotice => {
+                "The decoded graphics, optional palette, candidate page, and background index grid are retained together for the atomic ROM-application milestone."
+            }
+            Self::RomMap16SnesApply => "Apply graphics + palette + Map16",
+            Self::RomMap16SnesDiscard => "Discard preview",
         }
     }
 

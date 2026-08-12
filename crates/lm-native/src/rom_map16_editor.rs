@@ -361,11 +361,13 @@ impl RomMap16Editor {
         if let Some(import_command) = self.bitmap_import_window(context, project_revision) {
             command = Some(import_command);
         }
-        if let Some(snes_command) = self.snes_tileset_preview_window(context, project_revision) {
+        if let Some(snes_command) =
+            self.snes_tileset_preview_window(context, project_revision, catalog)
+        {
             command = Some(snes_command);
         }
         self.protected_page_confirmation(context, catalog);
-        self.sidecar_export_confirmation(context);
+        self.sidecar_export_confirmation(context, catalog);
         let approved = self.close_confirmation(context, catalog);
         self.show_error(context, catalog);
         (approved, command)
@@ -482,8 +484,8 @@ impl RomMap16Editor {
             catalog,
         );
         self.bitmap_import_controls(ui, edit_blocked, project_revision);
-        self.snes_tileset_controls(ui, edit_blocked, project_revision);
-        self.sidecar_export_controls(ui, edit_blocked, project_revision, active_sidecar);
+        self.snes_tileset_controls(ui, edit_blocked, project_revision, catalog);
+        self.sidecar_export_controls(ui, edit_blocked, project_revision, active_sidecar, catalog);
         self.commit_controls(ui, edit_blocked, project_revision, commit_shortcut, catalog)
     }
     fn visual_page(&mut self, ui: &mut egui::Ui, catalog: Option<&LocalizationCatalog>) {

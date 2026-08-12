@@ -1951,3 +1951,11 @@ contracts, and complete GUI commit/reopen remain proven. Localization model 28/2
 editor 69/69, and renderer 237/237 pass. Bitmap conversion, associated sidecar, and SNES tileset
 subdialogs remain the next localization slice; Localization stays Partial and aggregate parity
 remains 60/65.
+
+Localization coverage update (2026-08-11, Map16 sidecars and SNES tilesets): associated `.m16`/
+`.s16` export controls and confirmation, plus the complete SNES graphics-set, screen-map, optional
+palette, color-remap, preview, stale-state, apply, and discard surface now use thirty typed extension
+keys. Exact sibling-path publication, authenticated shortcuts, retained preview products, atomic
+graphics/palette/Map16 application, reopen, and undo remain proven. Localization model 28/28,
+focused Map16 editor 70/70, and renderer 237/237 pass. Bitmap conversion remains the final Map16
+localization slice; Localization stays Partial and aggregate parity remains 60/65.

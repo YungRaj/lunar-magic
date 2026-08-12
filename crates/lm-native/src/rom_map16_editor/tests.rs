@@ -8,7 +8,10 @@ fn rom_map16_main_and_lifecycle_surfaces_use_every_typed_key() {
     ];
     for key in ExtendedUiTextKey::ALL.into_iter().filter(|key| {
         let name = format!("{key:?}");
-        name.starts_with("RomMap16") && !name.starts_with("RomMap16Transfer")
+        name.starts_with("RomMap16")
+            && !name.starts_with("RomMap16Transfer")
+            && !name.starts_with("RomMap16Sidecar")
+            && !name.starts_with("RomMap16Snes")
     }) {
         let needle = format!("ExtendedUiTextKey::{key:?}");
         assert!(sources.iter().any(|source| source.contains(&needle)));
@@ -20,6 +23,30 @@ fn rom_map16_main_and_lifecycle_surfaces_use_every_typed_key() {
         "egui::Button::new(\"Commit complete Map16 set to ROM\")",
         "egui::Window::new(\"Discard staged Map16 changes?\")",
         "egui::Window::new(\"ROM Map16 error\")",
+    ] {
+        assert!(!sources.iter().any(|source| source.contains(bypass)));
+    }
+}
+
+#[test]
+fn rom_map16_sidecar_and_snes_surfaces_use_every_typed_key() {
+    let sources = [
+        include_str!("sidecar_export.rs"),
+        include_str!("snes_tileset_import.rs"),
+    ];
+    for key in ExtendedUiTextKey::ALL.into_iter().filter(|key| {
+        let name = format!("{key:?}");
+        name.starts_with("RomMap16Sidecar") || name.starts_with("RomMap16Snes")
+    }) {
+        let needle = format!("ExtendedUiTextKey::{key:?}");
+        assert!(sources.iter().any(|source| source.contains(&needle)));
+    }
+    for bypass in [
+        "ui.label(\"Associated custom Map16\")",
+        "egui::Window::new(\"Export associated Map16 sidecar?\")",
+        "ui.label(\"SNES graphics set + screen tile map\")",
+        "egui::Window::new(\"SNES tileset import preview\")",
+        "egui::Button::new(\"Apply graphics + palette + Map16\")",
     ] {
         assert!(!sources.iter().any(|source| source.contains(bypass)));
     }
