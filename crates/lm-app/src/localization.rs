@@ -20,8 +20,8 @@ const MAX_LOCALE_BYTES: usize = 64;
 const MAX_TEXT_BYTES: usize = 4096;
 const MAX_DIALOG_TEXT_ENTRIES: usize = 4096;
 const LEGACY_CHROME_KEY_COUNT: usize = 19;
-const PREVIOUS_COMPLETE_KEY_COUNT: usize = 212;
-const EARLIER_COMPLETE_KEY_COUNTS: [usize; 4] = [183, 184, 199, 201];
+const PREVIOUS_COMPLETE_KEY_COUNT: usize = 230;
+const EARLIER_COMPLETE_KEY_COUNTS: [usize; 5] = [183, 184, 199, 201, 212];
 const MAX_ENCODED_BYTES: usize = MAGIC.len()
     + 2
     + MAX_LOCALE_BYTES
@@ -1080,6 +1080,14 @@ pub enum UiTextKey {
     UpdateSelectedExecutableFormat,
     UpdateRollbackNotice,
     UpdateVerificationFailedTitle,
+    PaletteTransferExportTitle,
+    PaletteTransferImportTitle,
+    PaletteTransferChooseFormat,
+    PaletteTransferRawFormat,
+    PaletteTransferTplFormat,
+    PaletteTransferRgbFormat,
+    PaletteTransferMaskNotice,
+    PaletteTransferErrorTitle,
 }
 
 impl UiTextKey {
@@ -1364,10 +1372,20 @@ impl UiTextKey {
                 "The previous selected version remains available for rollback."
             }
             Self::UpdateVerificationFailedTitle => "Update verification failed",
+            Self::PaletteTransferExportTitle => "Export Current-Level Palette",
+            Self::PaletteTransferImportTitle => "Import Current-Level Palette",
+            Self::PaletteTransferChooseFormat => "Choose Lunar Magic's native transfer format:",
+            Self::PaletteTransferRawFormat => "Raw 257-color",
+            Self::PaletteTransferTplFormat => "TPL v2",
+            Self::PaletteTransferRgbFormat => "RGB24",
+            Self::PaletteTransferMaskNotice => {
+                "Imports automatically apply a same-name .palmask sidecar when present."
+            }
+            Self::PaletteTransferErrorTitle => "Current-level palette transfer error",
         }
     }
 
-    pub const ALL: [Self; 230] = [
+    pub const ALL: [Self; 238] = [
         Self::AppTitle,
         Self::FileOpen,
         Self::FileSave,
@@ -1598,6 +1616,14 @@ impl UiTextKey {
         Self::UpdateSelectedExecutableFormat,
         Self::UpdateRollbackNotice,
         Self::UpdateVerificationFailedTitle,
+        Self::PaletteTransferExportTitle,
+        Self::PaletteTransferImportTitle,
+        Self::PaletteTransferChooseFormat,
+        Self::PaletteTransferRawFormat,
+        Self::PaletteTransferTplFormat,
+        Self::PaletteTransferRgbFormat,
+        Self::PaletteTransferMaskNotice,
+        Self::PaletteTransferErrorTitle,
     ];
 
     fn from_byte(value: u8) -> Option<Self> {

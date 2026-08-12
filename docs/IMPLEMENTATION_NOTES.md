@@ -7088,3 +7088,12 @@ literal window/button/label text in the complete update dialog, and a translated
 proves dynamic replacement. Localization 26/26 focused tests, native updater 6/6, and renderer
 237/237 pass. Remaining native forms and retained original language-DLL behavior keep Localization
 Partial; aggregate parity remains 60/65.
+
+Localization coverage update (2026-08-11, current-level palette transfer): the complete native
+import/export format chooser now routes its export/import titles, format explanation, Raw/TPL/RGB
+actions, optional `.palmask` guidance, Cancel/OK actions, and error title through the active typed
+catalog. A source audit rejects literal window/button/label/small text in this whole transfer
+surface. Catalog migration retains each historical 19/183/184/199/201/212/230-key translated
+prefix and appends English fallbacks into the new 238-key schema. Localization 26/26, focused
+palette-transfer 4/4, and renderer 237/237 gates pass. Remaining native forms and retained original
+language-DLL evidence keep Localization Partial; aggregate parity remains 60/65.

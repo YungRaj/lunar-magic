@@ -8,7 +8,7 @@ use crate::{
     },
 };
 use eframe::egui;
-use lm_app::{AppState, Command, ProfiledControllerSnapshot};
+use lm_app::{AppState, Command, ProfiledControllerSnapshot, UiTextKey};
 use lm_graphics::{Palette, RgbChannelExpansion};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -85,38 +85,57 @@ impl CurrentLevelPaletteTransfer {
             }
         });
         self.show_choice(context, app);
-        self.show_error(context);
+        self.show_error(context, app);
         command
     }
 
     fn show_choice(&mut self, context: &egui::Context, app: &AppState) {
         let Some(action) = self.choice else { return };
-        egui::Window::new(match action {
-            CurrentLevelPaletteAction::Export => "Export Current-Level Palette",
-            CurrentLevelPaletteAction::Import => "Import Current-Level Palette",
-        })
+        let catalog = app.localization();
+        egui::Window::new(crate::frontend_ui::localized_text(
+            catalog,
+            match action {
+                CurrentLevelPaletteAction::Export => UiTextKey::PaletteTransferExportTitle,
+                CurrentLevelPaletteAction::Import => UiTextKey::PaletteTransferImportTitle,
+            },
+        ))
         .collapsible(false)
         .resizable(false)
         .show(context, |ui| {
-            ui.label("Choose Lunar Magic's native transfer format:");
+            ui.label(crate::frontend_ui::localized_text(
+                catalog,
+                UiTextKey::PaletteTransferChooseFormat,
+            ));
             ui.horizontal(|ui| {
-                for (label, kind) in [
-                    ("Raw 257-color", PendingTransfer::Raw),
-                    ("TPL v2", PendingTransfer::Tpl),
-                    ("RGB24", PendingTransfer::Rgb),
+                for (key, kind) in [
+                    (UiTextKey::PaletteTransferRawFormat, PendingTransfer::Raw),
+                    (UiTextKey::PaletteTransferTplFormat, PendingTransfer::Tpl),
+                    (UiTextKey::PaletteTransferRgbFormat, PendingTransfer::Rgb),
                 ] {
-                    if ui.button(label).clicked() {
+                    if ui
+                        .button(crate::frontend_ui::localized_text(catalog, key))
+                        .clicked()
+                    {
                         self.choice = None;
                         if let Err(error) = self.begin(app, action, kind) {
                             self.error = Some(error);
                         }
                     }
                 }
-                if ui.button("Cancel").clicked() {
+                if ui
+                    .button(crate::frontend_ui::localized_text(
+                        catalog,
+                        UiTextKey::CommonCancel,
+                    ))
+                    .clicked()
+                {
                     self.choice = None;
                 }
             });
-            ui.small("Imports automatically apply a same-name .palmask sidecar when present.");
+            ui.small(crate::frontend_ui::localized_text(
+                catalog,
+                UiTextKey::PaletteTransferMaskNotice,
+            ));
         });
     }
 
@@ -182,16 +201,25 @@ impl CurrentLevelPaletteTransfer {
         }
     }
 
-    fn show_error(&mut self, context: &egui::Context) {
+    fn show_error(&mut self, context: &egui::Context, app: &AppState) {
         if let Some(error) = self.error.clone() {
-            egui::Window::new("Current-level palette transfer error")
-                .collapsible(false)
-                .show(context, |ui| {
-                    ui.label(error);
-                    if ui.button("OK").clicked() {
-                        self.error = None;
-                    }
-                });
+            egui::Window::new(crate::frontend_ui::localized_text(
+                app.localization(),
+                UiTextKey::PaletteTransferErrorTitle,
+            ))
+            .collapsible(false)
+            .show(context, |ui| {
+                ui.label(error);
+                if ui
+                    .button(crate::frontend_ui::localized_text(
+                        app.localization(),
+                        UiTextKey::CommonOk,
+                    ))
+                    .clicked()
+                {
+                    self.error = None;
+                }
+            });
         }
     }
 }
@@ -268,6 +296,35 @@ fn choose_export(kind: PendingTransfer) -> Option<std::path::PathBuf> {
 mod tests {
     use super::*;
     use lm_graphics::{Bgr555, PaletteMaskFile, TplPaletteFile};
+
+    #[test]
+    fn palette_transfer_surface_has_no_literal_widget_text() {
+        let source = include_str!("current_level_palette_transfer.rs");
+        for literal_widget in [
+            "egui::Window::new(\"",
+            "ui.button(\"",
+            "egui::Button::new(\"",
+            "ui.label(\"",
+            "ui.small(\"",
+        ] {
+            assert!(
+                !source.contains(literal_widget),
+                "palette transfer bypasses typed localization with {literal_widget}"
+            );
+        }
+        for key in [
+            UiTextKey::PaletteTransferExportTitle,
+            UiTextKey::PaletteTransferImportTitle,
+            UiTextKey::PaletteTransferChooseFormat,
+            UiTextKey::PaletteTransferRawFormat,
+            UiTextKey::PaletteTransferTplFormat,
+            UiTextKey::PaletteTransferRgbFormat,
+            UiTextKey::PaletteTransferMaskNotice,
+            UiTextKey::PaletteTransferErrorTitle,
+        ] {
+            assert!(source.contains(&format!("UiTextKey::{key:?}")));
+        }
+    }
 
     #[test]
     fn supported_export_uses_word_256_for_every_unsupported_row_zero() {

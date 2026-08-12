@@ -1176,6 +1176,15 @@ that every accepted historical 19/183/184/199/201/212-key prefix remains transla
 and renderer 237/237 pass. Other native forms and retained live language-DLL evidence remain open;
 Localization stays Partial and aggregate parity remains 60/65.
 
+Localization coverage update (2026-08-11, current-level palette transfer): the full Raw 257-color,
+TPL v2, and RGB24 import/export chooser—including format guidance, `.palmask` behavior, actions, and
+error acknowledgement—now uses eight typed catalog keys plus shared Cancel/OK. A source audit
+prevents literal widget text from returning. Every accepted historical
+19/183/184/199/201/212/230-key catalog preserves its translated prefix and receives English fallback
+for the new 238-key suffix. Localization 26/26, palette-transfer 4/4, and renderer 237/237 pass.
+Other native forms and retained live language-DLL evidence remain open; Localization stays Partial
+and aggregate parity remains 60/65.
+
 Cross-platform release execution gate update (2026-08-11): the portable-release matrix now runs
 `lm-package`, `lm-update`, and `lm-launcher` contract tests on every native release runner instead
 of testing only the packager. Windows receives real process coverage by copying `cmd.exe` into two
