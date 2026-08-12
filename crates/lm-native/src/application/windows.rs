@@ -30,7 +30,7 @@ impl NativeApplication {
         }
         if self
             .overworld_editor
-            .show(context, &self.main_toolbar_images)
+            .show(context, &self.main_toolbar_images, self.app.localization())
         {
             self.request_quit(context);
         }

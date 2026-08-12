@@ -3,6 +3,7 @@ use super::{
 };
 use crate::{level_editor_forms, overworld_editor_render};
 use eframe::egui;
+use lm_app::LocalizationCatalog;
 use lm_app::{OverworldControllerEdit, OverworldLayerId};
 use lm_project::CompleteOverworldShape;
 
@@ -76,7 +77,7 @@ impl OverworldEditor {
         });
     }
 
-    pub(super) fn side_panel(&mut self, ui: &mut egui::Ui) {
+    pub(super) fn side_panel(&mut self, ui: &mut egui::Ui, catalog: Option<&LocalizationCatalog>) {
         ui.heading("Tilemap");
         ui.label(format!(
             "Coordinate {}, {}",
@@ -104,10 +105,10 @@ impl OverworldEditor {
             ui.selectable_value(&mut self.panel, Panel::Animation, "Animation");
         });
         ui.separator();
-        self.active_panel(ui);
+        self.active_panel(ui, catalog);
     }
 
-    fn active_panel(&mut self, ui: &mut egui::Ui) {
+    fn active_panel(&mut self, ui: &mut egui::Ui, catalog: Option<&LocalizationCatalog>) {
         let Some(document) = self.document.as_ref() else {
             return;
         };
@@ -133,6 +134,7 @@ impl OverworldEditor {
                 None,
                 &document.modes,
                 revision,
+                catalog,
             ),
         };
         if let Some(owner) = self.palette.take_navigation() {

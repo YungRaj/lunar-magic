@@ -4,7 +4,9 @@ use crate::{
     native_clipboard,
 };
 use eframe::egui;
-use lm_app::{ExAnimationControllerEdit, OverworldControllerEdit};
+use lm_app::{
+    ExAnimationControllerEdit, ExtendedUiTextKey, LocalizationCatalog, OverworldControllerEdit,
+};
 use lm_graphics::{CompactExAnimation, ExAnimationFrameEdit, exanimation_frames};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -50,6 +52,7 @@ impl OverworldAnimationPanel {
         global_animation: Option<&CompactExAnimation>,
         modes: &[bool; 256],
         revision: u64,
+        catalog: Option<&LocalizationCatalog>,
     ) -> Option<Result<OverworldControllerEdit, String>> {
         if self.domain == OverworldAnimationDomain::Global && global_animation.is_none() {
             self.domain = OverworldAnimationDomain::Local;
@@ -58,10 +61,14 @@ impl OverworldAnimationPanel {
             ui.selectable_value(
                 &mut self.domain,
                 OverworldAnimationDomain::Local,
-                "This map",
+                text(catalog, ExtendedUiTextKey::OverworldAnimationThisMap),
             );
             ui.add_enabled_ui(global_animation.is_some(), |ui| {
-                ui.selectable_value(&mut self.domain, OverworldAnimationDomain::Global, "Global");
+                ui.selectable_value(
+                    &mut self.domain,
+                    OverworldAnimationDomain::Global,
+                    text(catalog, ExtendedUiTextKey::OverworldAnimationGlobal),
+                );
             });
         });
         let displayed = match self.domain {
@@ -71,9 +78,12 @@ impl OverworldAnimationPanel {
         let editable = self.domain == OverworldAnimationDomain::Local;
         self.load(displayed, modes, revision);
         if !editable {
-            ui.small("Global destination owner selected. This record is shown read-only here; use the ROM ExAnimation editor to modify the global domain.");
+            ui.small(text(
+                catalog,
+                ExtendedUiTextKey::OverworldAnimationGlobalReadOnly,
+            ));
         }
-        ui.add_enabled_ui(editable, |ui| self.domain_ui(ui, displayed, modes))
+        ui.add_enabled_ui(editable, |ui| self.domain_ui(ui, displayed, modes, catalog))
             .inner
     }
 
@@ -82,16 +92,23 @@ impl OverworldAnimationPanel {
         ui: &mut egui::Ui,
         animation: &CompactExAnimation,
         modes: &[bool; 256],
+        catalog: Option<&LocalizationCatalog>,
     ) -> Option<Result<OverworldControllerEdit, String>> {
         ui.horizontal(|ui| {
-            ui.label("Setting (hex)");
+            ui.label(text(catalog, ExtendedUiTextKey::OverworldAnimationSetting));
             ui.text_edit_singleline(&mut self.global.setting);
         });
         ui.horizontal(|ui| {
-            ui.label("Header (hex)");
+            ui.label(text(catalog, ExtendedUiTextKey::OverworldAnimationHeader));
             ui.text_edit_singleline(&mut self.global.header);
         });
-        if ui.button("Apply animation globals").clicked() {
+        if ui
+            .button(text(
+                catalog,
+                ExtendedUiTextKey::OverworldAnimationApplyGlobals,
+            ))
+            .clicked()
+        {
             return Some(self.global.parse().map(|(setting, header)| {
                 OverworldControllerEdit::Animation(vec![
                     ExAnimationControllerEdit::SetSetting(setting),
@@ -100,22 +117,34 @@ impl OverworldAnimationPanel {
             }));
         }
         ui.separator();
-        self.trigger_ui(ui, animation);
+        self.trigger_ui(ui, animation, catalog);
         ui.separator();
-        self.record_ui(ui, animation, modes)
+        self.record_ui(ui, animation, modes, catalog)
     }
 
-    fn trigger_ui(&mut self, ui: &mut egui::Ui, animation: &CompactExAnimation) {
+    fn trigger_ui(
+        &mut self,
+        ui: &mut egui::Ui,
+        animation: &CompactExAnimation,
+        catalog: Option<&LocalizationCatalog>,
+    ) {
         if ui
-            .add(egui::Slider::new(&mut self.trigger, 0..=15).text("Trigger"))
+            .add(
+                egui::Slider::new(&mut self.trigger, 0..=15)
+                    .text(text(catalog, ExtendedUiTextKey::OverworldAnimationTrigger)),
+            )
             .changed()
         {
             self.load_trigger(animation);
         }
-        ui.checkbox(&mut self.trigger_enabled, "Enabled");
+        ui.checkbox(
+            &mut self.trigger_enabled,
+            text(catalog, ExtendedUiTextKey::OverworldAnimationEnabled),
+        );
         ui.add_enabled(
             self.trigger_enabled,
-            egui::Slider::new(&mut self.trigger_value, 0..=u8::MAX).text("Value"),
+            egui::Slider::new(&mut self.trigger_value, 0..=u8::MAX)
+                .text(text(catalog, ExtendedUiTextKey::OverworldAnimationValue)),
         );
     }
 
@@ -124,12 +153,19 @@ impl OverworldAnimationPanel {
         ui: &mut egui::Ui,
         animation: &CompactExAnimation,
         modes: &[bool; 256],
+        catalog: Option<&LocalizationCatalog>,
     ) -> Option<Result<OverworldControllerEdit, String>> {
         let records = &animation.records;
         if !records.is_empty() {
             self.selected = self.selected.min(records.len() - 1);
         }
-        if ui.button("Apply trigger").clicked() {
+        if ui
+            .button(text(
+                catalog,
+                ExtendedUiTextKey::OverworldAnimationApplyTrigger,
+            ))
+            .clicked()
+        {
             return Some(Ok(OverworldControllerEdit::Animation(vec![
                 ExAnimationControllerEdit::SetTrigger {
                     trigger: self.trigger,
@@ -139,46 +175,73 @@ impl OverworldAnimationPanel {
         }
         ui.add(
             egui::Slider::new(&mut self.selected, 0..=records.len().saturating_sub(1))
-                .text("Record"),
+                .text(text(catalog, ExtendedUiTextKey::OverworldAnimationRecord)),
         );
         if self.loaded_record != Some(self.selected) {
             self.load_record(animation, modes);
         }
         for (label, field) in [
-            ("Kind (hex)", &mut self.record.kind),
-            ("Trigger (hex)", &mut self.record.size_mode),
-            ("Destination (hex)", &mut self.record.destination),
+            (
+                ExtendedUiTextKey::OverworldAnimationKind,
+                &mut self.record.kind,
+            ),
+            (
+                ExtendedUiTextKey::OverworldAnimationRecordTrigger,
+                &mut self.record.size_mode,
+            ),
+            (
+                ExtendedUiTextKey::OverworldAnimationDestination,
+                &mut self.record.destination,
+            ),
         ] {
             ui.horizontal(|ui| {
-                ui.label(label);
+                ui.label(text(catalog, label));
                 ui.text_edit_singleline(field);
             });
         }
-        ui.checkbox(&mut self.record.destination_flag, "Destination flag");
-        ui.label("Source words, one frame per line:");
+        ui.checkbox(
+            &mut self.record.destination_flag,
+            text(
+                catalog,
+                ExtendedUiTextKey::OverworldAnimationDestinationFlag,
+            ),
+        );
+        ui.label(text(
+            catalog,
+            ExtendedUiTextKey::OverworldAnimationSourceWords,
+        ));
         ui.add(egui::TextEdit::multiline(&mut self.record.frames).desired_rows(6));
         if !self.record_editable && !records.is_empty() {
-            ui.label("This special transfer kind has no ordinary frame payload.");
+            ui.label(text(
+                catalog,
+                ExtendedUiTextKey::OverworldAnimationSpecialNotice,
+            ));
         }
-        if let Some(edit) = self.clipboard_ui(ui, animation, modes) {
+        if let Some(edit) = self.clipboard_ui(ui, animation, modes, catalog) {
             return Some(edit);
         }
         let mut operation = None;
         ui.horizontal(|ui| {
-            if ui.button("Append").clicked() {
+            if ui
+                .button(text(catalog, ExtendedUiTextKey::OverworldAnimationAppend))
+                .clicked()
+            {
                 operation = Some(RecordOperation::Append);
             }
             if ui
                 .add_enabled(
                     !records.is_empty() && self.record_editable,
-                    egui::Button::new("Replace"),
+                    egui::Button::new(text(catalog, ExtendedUiTextKey::OverworldAnimationReplace)),
                 )
                 .clicked()
             {
                 operation = Some(RecordOperation::Replace);
             }
             if ui
-                .add_enabled(!records.is_empty(), egui::Button::new("Remove"))
+                .add_enabled(
+                    !records.is_empty(),
+                    egui::Button::new(text(catalog, ExtendedUiTextKey::OverworldAnimationRemove)),
+                )
                 .clicked()
             {
                 operation = Some(RecordOperation::Remove);
@@ -192,6 +255,7 @@ impl OverworldAnimationPanel {
         ui: &mut egui::Ui,
         animation: &CompactExAnimation,
         modes: &[bool; 256],
+        catalog: Option<&LocalizationCatalog>,
     ) -> Option<Result<OverworldControllerEdit, String>> {
         let record = animation.records.get(self.selected);
         let frames = record
@@ -203,14 +267,26 @@ impl OverworldAnimationPanel {
         let mut copy_result = None;
         ui.horizontal(|ui| {
             if ui
-                .add_enabled(record.is_some(), egui::Button::new("Copy record"))
+                .add_enabled(
+                    record.is_some(),
+                    egui::Button::new(text(
+                        catalog,
+                        ExtendedUiTextKey::OverworldAnimationCopyRecord,
+                    )),
+                )
                 .clicked()
                 && let Some(record) = record
             {
                 copy_result = Some(native_clipboard::encode_exanimation_record(record));
             }
             if ui
-                .add_enabled(record.is_some(), egui::Button::new("Paste record"))
+                .add_enabled(
+                    record.is_some(),
+                    egui::Button::new(text(
+                        catalog,
+                        ExtendedUiTextKey::OverworldAnimationPasteRecord,
+                    )),
+                )
                 .clicked()
             {
                 self.paste_target = Some(PasteTarget::Record);
@@ -220,10 +296,19 @@ impl OverworldAnimationPanel {
             ui.add(
                 egui::DragValue::new(&mut self.selected_frame)
                     .range(0..=frames.len().saturating_sub(1))
-                    .prefix("Frame "),
+                    .prefix(text(
+                        catalog,
+                        ExtendedUiTextKey::OverworldAnimationFramePrefix,
+                    )),
             );
             if ui
-                .add_enabled(!frames.is_empty(), egui::Button::new("Copy frame"))
+                .add_enabled(
+                    !frames.is_empty(),
+                    egui::Button::new(text(
+                        catalog,
+                        ExtendedUiTextKey::OverworldAnimationCopyFrame,
+                    )),
+                )
                 .clicked()
             {
                 copy_result = Some(native_clipboard::encode_exanimation_frame(
@@ -231,7 +316,13 @@ impl OverworldAnimationPanel {
                 ));
             }
             if ui
-                .add_enabled(!frames.is_empty(), egui::Button::new("Paste frame"))
+                .add_enabled(
+                    !frames.is_empty(),
+                    egui::Button::new(text(
+                        catalog,
+                        ExtendedUiTextKey::OverworldAnimationPasteFrame,
+                    )),
+                )
                 .clicked()
             {
                 self.paste_target = Some(PasteTarget::Frame);
@@ -327,6 +418,35 @@ impl OverworldAnimationPanel {
         }
         self.loaded_record = Some(self.selected);
     }
+}
+
+#[cfg(test)]
+mod localization_tests {
+    use super::*;
+
+    #[test]
+    fn complete_overworld_animation_panel_uses_every_typed_key() {
+        let source = include_str!("overworld_editor_animation.rs");
+        for key in ExtendedUiTextKey::ALL
+            .into_iter()
+            .filter(|key| format!("{key:?}").starts_with("OverworldAnimation"))
+        {
+            assert!(source.contains(&format!("ExtendedUiTextKey::{key:?}")));
+        }
+        for bypass in [
+            "ui.button(\"Apply animation globals\")",
+            "ui.button(\"Apply trigger\")",
+            "egui::Button::new(\"Copy record\")",
+            "egui::Button::new(\"Paste frame\")",
+            "egui::Button::new(\"Remove\")",
+        ] {
+            assert!(!source.contains(bypass));
+        }
+    }
+}
+
+fn text(catalog: Option<&LocalizationCatalog>, key: ExtendedUiTextKey) -> String {
+    crate::frontend_ui::extended_localized_text(catalog, key)
 }
 
 fn pasted_text(ui: &egui::Ui) -> Option<String> {

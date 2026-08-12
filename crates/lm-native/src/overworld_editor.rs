@@ -16,7 +16,7 @@ use crate::{
     },
 };
 use eframe::egui;
-use lm_app::OverworldDocumentController;
+use lm_app::{LocalizationCatalog, OverworldDocumentController};
 use lm_graphics::PaletteOwnership;
 use std::path::PathBuf;
 
@@ -119,6 +119,7 @@ impl OverworldEditor {
         &mut self,
         context: &egui::Context,
         toolbar_images: &MainToolbarImageSet,
+        catalog: Option<&LocalizationCatalog>,
     ) -> bool {
         if let Some(result) = self.loader.show(context) {
             match result.and_then(document_io::pending_from_loaded) {
@@ -137,7 +138,7 @@ impl OverworldEditor {
             self.load_tile();
             egui::Window::new("Portable Complete Overworld Editor")
                 .default_size([1020.0, 720.0])
-                .show(context, |ui| self.contents(ui, toolbar_images));
+                .show(context, |ui| self.contents(ui, toolbar_images, catalog));
         }
         let approved = self.show_close_confirmation(context);
         self.show_error(context);
@@ -194,12 +195,17 @@ impl OverworldEditor {
         }
     }
 
-    fn contents(&mut self, ui: &mut egui::Ui, toolbar_images: &MainToolbarImageSet) {
+    fn contents(
+        &mut self,
+        ui: &mut egui::Ui,
+        toolbar_images: &MainToolbarImageSet,
+        catalog: Option<&LocalizationCatalog>,
+    ) {
         self.toolbar(ui, toolbar_images);
         ui.separator();
         ui.columns(2, |columns| {
             self.world_view(&mut columns[0], toolbar_images);
-            self.side_panel(&mut columns[1]);
+            self.side_panel(&mut columns[1], catalog);
         });
     }
 

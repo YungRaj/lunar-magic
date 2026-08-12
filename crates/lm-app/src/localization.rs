@@ -2221,10 +2221,35 @@ pub enum ExtendedUiTextKey {
     LevelRestrictionStillOpen,
     LevelRestrictionRetrySaveClose,
     LevelRestrictionErrorTitle,
+    OverworldAnimationThisMap,
+    OverworldAnimationGlobal,
+    OverworldAnimationGlobalReadOnly,
+    OverworldAnimationSetting,
+    OverworldAnimationHeader,
+    OverworldAnimationApplyGlobals,
+    OverworldAnimationTrigger,
+    OverworldAnimationEnabled,
+    OverworldAnimationValue,
+    OverworldAnimationApplyTrigger,
+    OverworldAnimationRecord,
+    OverworldAnimationKind,
+    OverworldAnimationRecordTrigger,
+    OverworldAnimationDestination,
+    OverworldAnimationDestinationFlag,
+    OverworldAnimationSourceWords,
+    OverworldAnimationSpecialNotice,
+    OverworldAnimationAppend,
+    OverworldAnimationReplace,
+    OverworldAnimationRemove,
+    OverworldAnimationCopyRecord,
+    OverworldAnimationPasteRecord,
+    OverworldAnimationFramePrefix,
+    OverworldAnimationCopyFrame,
+    OverworldAnimationPasteFrame,
 }
 
 impl ExtendedUiTextKey {
-    pub const ALL: [Self; 520] = [
+    pub const ALL: [Self; 545] = [
         Self::TilemapTitleScreenName,
         Self::TilemapCreditsName,
         Self::TilemapEditorTitleFormat,
@@ -2745,6 +2770,31 @@ impl ExtendedUiTextKey {
         Self::LevelRestrictionStillOpen,
         Self::LevelRestrictionRetrySaveClose,
         Self::LevelRestrictionErrorTitle,
+        Self::OverworldAnimationThisMap,
+        Self::OverworldAnimationGlobal,
+        Self::OverworldAnimationGlobalReadOnly,
+        Self::OverworldAnimationSetting,
+        Self::OverworldAnimationHeader,
+        Self::OverworldAnimationApplyGlobals,
+        Self::OverworldAnimationTrigger,
+        Self::OverworldAnimationEnabled,
+        Self::OverworldAnimationValue,
+        Self::OverworldAnimationApplyTrigger,
+        Self::OverworldAnimationRecord,
+        Self::OverworldAnimationKind,
+        Self::OverworldAnimationRecordTrigger,
+        Self::OverworldAnimationDestination,
+        Self::OverworldAnimationDestinationFlag,
+        Self::OverworldAnimationSourceWords,
+        Self::OverworldAnimationSpecialNotice,
+        Self::OverworldAnimationAppend,
+        Self::OverworldAnimationReplace,
+        Self::OverworldAnimationRemove,
+        Self::OverworldAnimationCopyRecord,
+        Self::OverworldAnimationPasteRecord,
+        Self::OverworldAnimationFramePrefix,
+        Self::OverworldAnimationCopyFrame,
+        Self::OverworldAnimationPasteFrame,
     ];
 
     #[must_use]
@@ -3466,6 +3516,35 @@ impl ExtendedUiTextKey {
             }
             Self::LevelRestrictionRetrySaveClose => "Retry Save and Close",
             Self::LevelRestrictionErrorTitle => "Level access restriction error",
+            Self::OverworldAnimationThisMap => "This map",
+            Self::OverworldAnimationGlobal => "Global",
+            Self::OverworldAnimationGlobalReadOnly => {
+                "Global destination owner selected. This record is shown read-only here; use the ROM ExAnimation editor to modify the global domain."
+            }
+            Self::OverworldAnimationSetting => "Setting (hex)",
+            Self::OverworldAnimationHeader => "Header (hex)",
+            Self::OverworldAnimationApplyGlobals => "Apply animation globals",
+            Self::OverworldAnimationTrigger => "Trigger",
+            Self::OverworldAnimationEnabled => "Enabled",
+            Self::OverworldAnimationValue => "Value",
+            Self::OverworldAnimationApplyTrigger => "Apply trigger",
+            Self::OverworldAnimationRecord => "Record",
+            Self::OverworldAnimationKind => "Kind (hex)",
+            Self::OverworldAnimationRecordTrigger => "Trigger (hex)",
+            Self::OverworldAnimationDestination => "Destination (hex)",
+            Self::OverworldAnimationDestinationFlag => "Destination flag",
+            Self::OverworldAnimationSourceWords => "Source words, one frame per line:",
+            Self::OverworldAnimationSpecialNotice => {
+                "This special transfer kind has no ordinary frame payload."
+            }
+            Self::OverworldAnimationAppend => "Append",
+            Self::OverworldAnimationReplace => "Replace",
+            Self::OverworldAnimationRemove => "Remove",
+            Self::OverworldAnimationCopyRecord => "Copy record",
+            Self::OverworldAnimationPasteRecord => "Paste record",
+            Self::OverworldAnimationFramePrefix => "Frame ",
+            Self::OverworldAnimationCopyFrame => "Copy frame",
+            Self::OverworldAnimationPasteFrame => "Paste frame",
         }
     }
 

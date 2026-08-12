@@ -753,6 +753,16 @@ ordering, cancellation, persistence observation, and complete original-template 
 remain proven. Restriction dialog 6/6, localization model 28/28, and renderer 237/237 pass.
 Localization remains Partial for other native forms; aggregate parity remains 60/65.
 
+Localization coverage update (2026-08-11, overworld ExAnimation records): the shared portable and
+installed overworld animation panel now uses twenty-five typed extension keys for local/global
+ownership, read-only global navigation, global setting/header, trigger state, record fields,
+special-transfer guidance, record lifecycle, and record/frame clipboard actions. Both hosts thread
+the active catalog into the same panel. Ownership navigation and complete source coverage pass in
+the focused panel suite (2/2), with authenticated preview cadence/address-table checks 3/3,
+localization model 28/28, and renderer 237/237. Per-map options, live preview controls, and broader
+profile variants remain; the overworld palette/ExAnimation row stays Partial and aggregate parity
+remains 60/65.
+
 Converted catalogs now preserve the complete safely decoded literal dialog inventory in a bounded,
 optional `LMDLG001` extension keyed by dialog ID, exact item position, and 32-bit control ID.
 Historical catalogs without the extension remain byte-identical, duplicate control IDs survive by

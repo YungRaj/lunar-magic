@@ -7320,6 +7320,15 @@ the existing original-template test continues to bind all matching native captio
 localization tests pass 6/6, localization model 28/28, and renderer 237/237. The full Localization
 row remains Partial for other native forms; aggregate parity remains 60/65.
 
+Localization coverage update (2026-08-11, overworld ExAnimation records): twenty-five typed keys
+cover the reusable animation-edit panel across its portable complete-overworld and installed-ROM
+hosts. The catalog now reaches domain selection, global read-only ownership, settings/header,
+triggers, records, special transfers, append/replace/remove, and typed record/frame clipboard
+actions. A complete source audit rejects representative literal regressions. Panel localization and
+ownership navigation pass 2/2; installed animation cadence/table checks pass 3/3, localization model
+28/28, and renderer 237/237. Per-map runtime options, preview controls, and remaining profile
+evidence keep the overworld animation row Partial; aggregate parity remains 60/65.
+
 Localization coverage update (2026-08-11, installed expanded settings): thirty typed extension
 keys cover the complete profile-backed editor surface—exact record guidance, Layer 3 semantic
 controls, ten bypass assignments, sprite-boundary behavior, sixteen raw words, staging/commit,

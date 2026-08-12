@@ -8,9 +8,9 @@ use crate::{
 };
 use eframe::egui;
 use lm_app::{
-    AppState, Command, NativeCustomOverworldSpriteController, NativeCustomOverworldSpriteEdit,
-    OverworldController, OverworldControllerEdit, OverworldLayerId, ProfiledControllerSnapshot,
-    SmwMainOverworldLayer2Controller,
+    AppState, Command, LocalizationCatalog, NativeCustomOverworldSpriteController,
+    NativeCustomOverworldSpriteEdit, OverworldController, OverworldControllerEdit,
+    OverworldLayerId, ProfiledControllerSnapshot, SmwMainOverworldLayer2Controller,
 };
 use lm_graphics::{Palette, PaletteOwnership};
 use lm_overworld::{
@@ -850,6 +850,7 @@ impl RomOverworldEditor {
         &mut self,
         context: &egui::Context,
         revision: u64,
+        catalog: Option<&LocalizationCatalog>,
     ) -> (bool, Option<Command>) {
         if let Some(command) = self.take_editor_transition_after_save(revision) {
             return (false, Some(command));
@@ -882,7 +883,7 @@ impl RomOverworldEditor {
                 .default_size([820.0, 720.0])
                 .vscroll(true)
                 .show(context, |ui| {
-                    if let Some(ui_command) = self.contents(ui, revision) {
+                    if let Some(ui_command) = self.contents(ui, revision, catalog) {
                         command = Some(ui_command);
                     }
                 });
@@ -1055,7 +1056,12 @@ fn parse_native_sprite_form(
 }
 
 impl RomOverworldEditor {
-    fn contents(&mut self, ui: &mut egui::Ui, revision: u64) -> Option<Command> {
+    fn contents(
+        &mut self,
+        ui: &mut egui::Ui,
+        revision: u64,
+        catalog: Option<&LocalizationCatalog>,
+    ) -> Option<Command> {
         let (
             stale,
             shape,
@@ -1163,6 +1169,7 @@ impl RomOverworldEditor {
                     global_animation.as_ref(),
                     &modes,
                     controller_revision,
+                    catalog,
                 )
             }
             Panel::NativeSprites => {
