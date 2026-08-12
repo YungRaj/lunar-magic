@@ -13,6 +13,7 @@ use std::{
 };
 
 const MAX_ARCHIVE_LEN: u64 = 256 * 1024 * 1024;
+const ORIGINAL_RESTORE_DIALOG_ID: u16 = 0x0411;
 const RESTORE_DIRECTORY_README: &str = "This folder contains restore information for ROMs in the folder one level above it.\r\nMove this folder with those ROMs, and rename a ROM's .lrp file when renaming the ROM.\r\nDo not modify original-ROM copies or .lrp contents if you want restore operations to remain reliable.\r\n";
 
 struct CapturedAssociatedFiles {
@@ -624,7 +625,7 @@ impl RestorePointDialog {
     pub(crate) fn show(&mut self, context: &egui::Context, app: &lm_app::AppState) {
         self.poll();
         self.show_automatic_policy(context, app);
-        self.show_loaded(context);
+        self.show_loaded(context, app.localization());
         self.show_running(context);
         self.show_result(context);
     }
@@ -680,13 +681,17 @@ impl RestorePointDialog {
         }
     }
 
-    fn show_loaded(&mut self, context: &egui::Context) {
+    fn show_loaded(
+        &mut self,
+        context: &egui::Context,
+        catalog: Option<&lm_app::LocalizationCatalog>,
+    ) {
         let Some(loaded) = self.loaded.as_mut() else {
             return;
         };
         let mut restore = false;
         let mut cancel = false;
-        egui::Window::new("Restore ROM from Restore Point")
+        egui::Window::new(restore_dialog_title(catalog))
             .collapsible(false)
             .resizable(true)
             .default_width(680.0)
@@ -694,6 +699,11 @@ impl RestorePointDialog {
                 ui.label(format!("Archive: {}", loaded.archive_path.display()));
                 ui.label(format!("Original: {}", loaded.original_path.display()));
                 ui.label(format!("Restore target: {}", loaded.target_path.display()));
+                ui.label(restore_dialog_text(
+                    catalog,
+                    0x6b,
+                    "(blank) = Incremental Restore, F = Full Restore, R = Restore Reference",
+                ));
                 ui.separator();
                 egui::ScrollArea::vertical()
                     .max_height(320.0)
@@ -744,15 +754,21 @@ impl RestorePointDialog {
                 ui.separator();
                 ui.checkbox(
                     &mut loaded.restore_associated_files,
-                    "Restore associated files (.msc, .dsc, .ssc, Map16, and related files)",
+                    restore_dialog_text(
+                        catalog,
+                        0x65,
+                        "Restore associated files (.msc, .dsc, .ssc, Map16, and related files)",
+                    ),
                 );
                 ui.colored_label(
                     egui::Color32::YELLOW,
                     "The selected existing ROM will be replaced atomically. Close it in the editor first.",
                 );
                 ui.horizontal(|ui| {
-                    restore = ui.button("Restore").clicked();
-                    cancel = ui.button("Cancel").clicked();
+                    restore = ui.button(restore_dialog_text(catalog, 1, "OK")).clicked();
+                    cancel = ui
+                        .button(restore_dialog_text(catalog, 2, "Cancel"))
+                        .clicked();
                 });
             });
         if cancel {
@@ -885,6 +901,26 @@ impl RestorePointDialog {
     }
 }
 
+fn restore_dialog_title(catalog: Option<&lm_app::LocalizationCatalog>) -> String {
+    catalog
+        .and_then(|catalog| catalog.original_dialog_title(ORIGINAL_RESTORE_DIALOG_ID))
+        .unwrap_or("Restore ROM to Previous State")
+        .to_owned()
+}
+
+fn restore_dialog_text(
+    catalog: Option<&lm_app::LocalizationCatalog>,
+    control_id: u32,
+    fallback: &str,
+) -> String {
+    catalog
+        .and_then(|catalog| {
+            catalog.original_dialog_control_text(ORIGINAL_RESTORE_DIALOG_ID, control_id)
+        })
+        .unwrap_or(fallback)
+        .to_owned()
+}
+
 fn parse_preference_bool(value: Option<&str>, field: &str) -> Result<bool, String> {
     match value {
         Some("0") => Ok(false),
@@ -1001,6 +1037,7 @@ fn append_failed_reversion(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use lm_app::{LocalizationCatalog, OriginalDialogTextKey, UiTextKey};
     use std::sync::atomic::{AtomicU64, Ordering};
 
     static NEXT_TEST_DIRECTORY: AtomicU64 = AtomicU64::new(0);
@@ -1394,5 +1431,59 @@ mod tests {
         );
         assert_eq!(appended.restore_through(2, &original).unwrap(), second);
         fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn original_restore_selection_template_localizes_matching_controls_and_round_trips() {
+        let catalog = LocalizationCatalog::new(
+            "fr-test",
+            UiTextKey::ALL.map(|key| (key, key.english().to_owned())),
+        )
+        .unwrap()
+        .with_original_dialog_texts([
+            (
+                OriginalDialogTextKey {
+                    dialog_id: ORIGINAL_RESTORE_DIALOG_ID,
+                    item_index: u16::MAX,
+                    control_id: u32::MAX,
+                },
+                "Restaurer la ROM à un état précédent".into(),
+            ),
+            (
+                OriginalDialogTextKey {
+                    dialog_id: ORIGINAL_RESTORE_DIALOG_ID,
+                    item_index: 1,
+                    control_id: 0x65,
+                },
+                "Restaurer les fichiers auxiliaires".into(),
+            ),
+            (
+                OriginalDialogTextKey {
+                    dialog_id: ORIGINAL_RESTORE_DIALOG_ID,
+                    item_index: 2,
+                    control_id: 1,
+                },
+                "Valider".into(),
+            ),
+        ])
+        .unwrap();
+
+        assert_eq!(
+            restore_dialog_title(Some(&catalog)),
+            "Restaurer la ROM à un état précédent"
+        );
+        assert_eq!(
+            restore_dialog_text(Some(&catalog), 0x65, "fallback"),
+            "Restaurer les fichiers auxiliaires"
+        );
+        assert_eq!(restore_dialog_text(Some(&catalog), 1, "OK"), "Valider");
+        assert_eq!(restore_dialog_text(Some(&catalog), 2, "Cancel"), "Cancel");
+        assert_eq!(restore_dialog_title(None), "Restore ROM to Previous State");
+
+        let reopened = LocalizationCatalog::decode(&catalog.encode().unwrap()).unwrap();
+        assert_eq!(
+            restore_dialog_title(Some(&reopened)),
+            "Restaurer la ROM à un état précédent"
+        );
     }
 }

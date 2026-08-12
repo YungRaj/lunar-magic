@@ -6800,3 +6800,15 @@ form. Canonical Unicode catalog encode/decode and fallback tests cover the templ
 sorted selection, clear-area eligibility, revision binding, Undo, and deletion persistence are
 unchanged. Localization remains `Partial` pending remaining mapped forms and retained live
 third-party language-DLL/Wine evidence.
+
+## Original restore-selection template
+
+The loaded restore-archive selection form now consumes Lunar Magic 3.63 resource `$0411` for its
+title, incremental/full/reference legend, associated-file restoration option, and OK/Cancel
+controls. Archive/original/target paths, record IDs, timestamps, types, descriptions, atomic-target
+warning, and completion/error details remain runtime data. Resources `$0412` and `$0413` are not
+misapplied to the Rust automatic append-policy form because those original layouts represent
+different workflows. A Unicode catalog encode/decode test covers the `$0411` binding and independent
+fallback behavior; archive validation, associated-file restoration, failed-reversion recording,
+and atomic publication are unchanged. Localization remains `Partial` pending remaining mapped forms
+and retained live third-party language-DLL/Wine evidence.
