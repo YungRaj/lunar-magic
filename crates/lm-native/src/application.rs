@@ -1775,7 +1775,9 @@ impl eframe::App for NativeApplication {
                 self.dispatch(context, command);
             } else if !vanilla_level
                 && !vanilla_graphics
-                && !self.renderer.show(context, ui, &self.app)
+                && !self
+                    .renderer
+                    .show(context, ui, &self.app, self.app.localization())
             {
                 editor_view::show(ui, self.app.mode);
             }

@@ -2368,6 +2368,8 @@ pub enum ExtendedUiTextKey {
     RomOverworldAnimationSubsteps,
     RomOverworldAnimationTriggerPrefix,
     RomOverworldAnimationManualFramePrefix,
+    NativePreviewPreparing,
+    NativePreviewUnavailableFormat,
     ExAnimationDocumentTitle,
     ExAnimationDocumentOpenTitle,
     ExAnimationDocumentMaximumRecords,
@@ -3530,7 +3532,7 @@ pub enum ExtendedUiTextKey {
 }
 
 impl ExtendedUiTextKey {
-    pub const ALL: [Self; 1826] = [
+    pub const ALL: [Self; 1828] = [
         Self::MwlDocumentEditorTitle,
         Self::MwlDocumentVersionFormat,
         Self::MwlDocumentFlagsHex,
@@ -4198,6 +4200,8 @@ impl ExtendedUiTextKey {
         Self::RomOverworldAnimationSubsteps,
         Self::RomOverworldAnimationTriggerPrefix,
         Self::RomOverworldAnimationManualFramePrefix,
+        Self::NativePreviewPreparing,
+        Self::NativePreviewUnavailableFormat,
         Self::ExAnimationDocumentTitle,
         Self::ExAnimationDocumentOpenTitle,
         Self::ExAnimationDocumentMaximumRecords,
@@ -6207,6 +6211,8 @@ impl ExtendedUiTextKey {
             Self::RomOverworldAnimationSubsteps => "substeps",
             Self::RomOverworldAnimationTriggerPrefix => "#",
             Self::RomOverworldAnimationManualFramePrefix => "frame $",
+            Self::NativePreviewPreparing => "Preparing native preview…",
+            Self::NativePreviewUnavailableFormat => "Preview unavailable: {error}",
             Self::ExAnimationDocumentTitle => "Portable ExAnimation Editor",
             Self::ExAnimationDocumentOpenTitle => "Open ExAnimation",
             Self::ExAnimationDocumentMaximumRecords => {

@@ -7958,3 +7958,12 @@ the migrated constants. The focused audit passes, localization passes 28/28 acti
 provenance ignore), native compilation passes, and renderer remains 237/237. The retained live
 language-DLL Wine fixture and a whole-frontend fixed-widget audit remain required before the
 Localization row can pass; aggregate parity remains 60/65.
+
+Localization coverage update (2026-08-12, shared native preview lifecycle): two appended
+`NativePreview*` identities cover the asynchronous preparing state and dynamic unavailable error
+used by the graphics, palette, and Map16 native raster adapter. The application supplies its live
+catalog at the shared render boundary, and a source audit rejects literal preview widgets while
+requiring both typed identities. Native compilation, the focused audit, localization 28/28 active
+cases (one provenance ignore), and renderer 237/237 pass. Other unaudited frontend modules and the
+retained translated language-DLL gesture keep Localization Partial; aggregate parity remains
+60/65.

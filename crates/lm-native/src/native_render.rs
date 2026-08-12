@@ -1,5 +1,7 @@
 use eframe::egui;
-use lm_app::{AppState, EditorMode, RevisionProfileControllers};
+use lm_app::{
+    AppState, EditorMode, ExtendedUiTextKey as Key, LocalizationCatalog, RevisionProfileControllers,
+};
 use lm_graphics::{
     Bgr555, GraphicsInterchangeFile, Palette, PaletteInterchangeFile, PaletteOwnership,
 };
@@ -43,6 +45,7 @@ impl NativeRenderState {
         context: &egui::Context,
         ui: &mut egui::Ui,
         app: &AppState,
+        catalog: Option<&LocalizationCatalog>,
     ) -> bool {
         let profile_name = if let Some(profile) = app.revision_profile() {
             profile.name.clone()
@@ -71,7 +74,7 @@ impl NativeRenderState {
         }
         if self.running.is_some() {
             ui.centered_and_justified(|ui| {
-                ui.label("Preparing native preview…");
+                ui.label(native_render_text(catalog, Key::NativePreviewPreparing));
             });
             context.request_repaint_after(std::time::Duration::from_millis(100));
         } else if self.key.as_ref() == Some(&key)
@@ -84,7 +87,10 @@ impl NativeRenderState {
             && let Some(error) = &self.error
         {
             ui.centered_and_justified(|ui| {
-                ui.label(format!("Preview unavailable: {error}"));
+                ui.label(
+                    native_render_text(catalog, Key::NativePreviewUnavailableFormat)
+                        .replace("{error}", error),
+                );
             });
         }
         true
@@ -163,6 +169,13 @@ impl NativeRenderState {
         }
         self.key = Some(running.key);
     }
+}
+
+fn native_render_text(catalog: Option<&LocalizationCatalog>, key: Key) -> String {
+    catalog.map_or_else(
+        || key.english().to_owned(),
+        |catalog| catalog.extended_text(key).to_owned(),
+    )
 }
 
 enum RenderInput {
@@ -314,6 +327,26 @@ fn color_image(canvas: &Canvas) -> egui::ColorImage {
 mod tests {
     use super::*;
     use lm_render::Rgba;
+
+    #[test]
+    fn native_preview_surface_has_no_literal_widget_text() {
+        let source = include_str!("native_render.rs");
+        for literal_widget in ["ui.label(\"", "Button::new(\""] {
+            assert!(
+                !source.contains(literal_widget),
+                "native preview bypasses typed localization with {literal_widget}"
+            );
+        }
+        for key in [
+            Key::NativePreviewPreparing,
+            Key::NativePreviewUnavailableFormat,
+        ] {
+            assert!(
+                source.contains(&format!("Key::{key:?}")),
+                "native preview does not consume {key:?}"
+            );
+        }
+    }
 
     fn key(revision: u64) -> RenderKey {
         RenderKey {
