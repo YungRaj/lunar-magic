@@ -1844,7 +1844,7 @@ impl eframe::App for NativeApplication {
                 Err(error) => self.effects.error = Some(error.to_string()),
             }
         }
-        if let Some(result) = self.toolbar_editor.show(context) {
+        if let Some(result) = self.toolbar_editor.show(context, self.app.localization()) {
             match result {
                 ToolbarEditorResult::Apply(toolbar) => match self.app.set_toolbar(toolbar) {
                     Ok(()) => self.app.status = "Updated toolbar layout".into(),

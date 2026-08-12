@@ -1870,6 +1870,18 @@ pub enum ExtendedUiTextKey {
     Map16SidecarDiscard,
     Map16SidecarErrorTitle,
     Map16SidecarOk,
+    ToolbarEditorTitle,
+    ToolbarEditorNotice,
+    ToolbarEditorDefaultNotice,
+    ToolbarEditorMoveUp,
+    ToolbarEditorMoveDown,
+    ToolbarEditorRemove,
+    ToolbarEditorAddButton,
+    ToolbarEditorAddSeparator,
+    ToolbarEditorApply,
+    ToolbarEditorUseDefault,
+    ToolbarEditorCancel,
+    ToolbarEditorSeparator,
     CustomSpriteEditorTitle,
     CustomSpritePlacementsFormat,
     CustomSpritePlacement,
@@ -2939,7 +2951,7 @@ pub enum ExtendedUiTextKey {
 }
 
 impl ExtendedUiTextKey {
-    pub const ALL: [Self; 1235] = [
+    pub const ALL: [Self; 1247] = [
         Self::MwlDocumentEditorTitle,
         Self::MwlDocumentVersionFormat,
         Self::MwlDocumentFlagsHex,
@@ -3109,6 +3121,18 @@ impl ExtendedUiTextKey {
         Self::Map16SidecarDiscard,
         Self::Map16SidecarErrorTitle,
         Self::Map16SidecarOk,
+        Self::ToolbarEditorTitle,
+        Self::ToolbarEditorNotice,
+        Self::ToolbarEditorDefaultNotice,
+        Self::ToolbarEditorMoveUp,
+        Self::ToolbarEditorMoveDown,
+        Self::ToolbarEditorRemove,
+        Self::ToolbarEditorAddButton,
+        Self::ToolbarEditorAddSeparator,
+        Self::ToolbarEditorApply,
+        Self::ToolbarEditorUseDefault,
+        Self::ToolbarEditorCancel,
+        Self::ToolbarEditorSeparator,
         Self::CustomSpriteEditorTitle,
         Self::CustomSpritePlacementsFormat,
         Self::CustomSpritePlacement,
@@ -4365,6 +4389,22 @@ impl ExtendedUiTextKey {
             Self::Map16SidecarDiscard => "Discard",
             Self::Map16SidecarErrorTitle => "Native Map16 sidecar error",
             Self::Map16SidecarOk => "OK",
+            Self::ToolbarEditorTitle => "Customize Toolbar",
+            Self::ToolbarEditorNotice => {
+                "Buttons are shown from top to bottom. Text keys follow the active language catalog."
+            }
+            Self::ToolbarEditorDefaultNotice => {
+                "The built-in toolbar is active. Add a button to create a custom layout."
+            }
+            Self::ToolbarEditorMoveUp => "Move up",
+            Self::ToolbarEditorMoveDown => "Move down",
+            Self::ToolbarEditorRemove => "Remove",
+            Self::ToolbarEditorAddButton => "Add Button",
+            Self::ToolbarEditorAddSeparator => "Add Separator",
+            Self::ToolbarEditorApply => "Apply",
+            Self::ToolbarEditorUseDefault => "Use Built-in Toolbar",
+            Self::ToolbarEditorCancel => "Cancel",
+            Self::ToolbarEditorSeparator => "Separator",
             Self::CustomSpriteEditorTitle => "Custom Sprite Placement Editor",
             Self::CustomSpritePlacementsFormat => "Synchronized placements: {count}",
             Self::CustomSpritePlacement => "Placement",

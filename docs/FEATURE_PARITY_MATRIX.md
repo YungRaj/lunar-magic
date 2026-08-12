@@ -2238,3 +2238,12 @@ UI tests pass 2/2; controller tests pass 5/5 across both canonical formats, edit
 stale-revision/save rejection, save lifecycle, and Undo/Redo; localization model tests pass; and
 renderer remains 237/237. Other native forms and retained live language-DLL evidence keep
 Localization Partial; aggregate parity remains 60/65.
+
+Localization coverage update (2026-08-12, toolbar customization): twelve typed extension keys now
+cover the complete layout editor—window guidance, empty/default state, movement tooltips, removal,
+button/separator creation, apply/default/cancel, and separator rows. More importantly, all twelve
+action selectors and the complete typed label-key selector now render through the active catalog
+instead of built-in English. Stable action IDs/slugs remain untranslated persistence data. Focused
+toolbar tests pass 5/5, localization model tests pass, and renderer remains 237/237. Other native
+forms and retained live language-DLL evidence keep Localization Partial; aggregate parity remains
+60/65.

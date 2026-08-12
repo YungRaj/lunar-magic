@@ -1,5 +1,8 @@
 use eframe::egui;
-use lm_app::{ToolbarAction, ToolbarConfig, ToolbarItem, UiTextKey};
+use lm_app::{
+    ExtendedUiTextKey as Key, LocalizationCatalog, ToolbarAction, ToolbarConfig, ToolbarItem,
+    UiTextKey,
+};
 
 const ACTIONS: [(ToolbarAction, &str, UiTextKey, &str); 12] = [
     (ToolbarAction::Open, "Open", UiTextKey::FileOpen, "open"),
@@ -85,36 +88,40 @@ impl ToolbarEditor {
         self.open
     }
 
-    pub(crate) fn show(&mut self, context: &egui::Context) -> Option<ToolbarEditorResult> {
+    pub(crate) fn show(
+        &mut self,
+        context: &egui::Context,
+        catalog: Option<&LocalizationCatalog>,
+    ) -> Option<ToolbarEditorResult> {
         if !self.open {
             return None;
         }
         let mut result = None;
         let mut open = self.open;
-        egui::Window::new("Customize Toolbar")
+        egui::Window::new(text(catalog, Key::ToolbarEditorTitle))
             .open(&mut open)
             .collapsible(false)
             .resizable(true)
             .default_width(650.0)
             .show(context, |ui| {
-                ui.label("Buttons are shown from top to bottom. Text keys follow the active language catalog.");
+                ui.label(text(catalog, Key::ToolbarEditorNotice));
                 if self.items.is_empty() {
-                    ui.label("The built-in toolbar is active. Add a button to create a custom layout.");
+                    ui.label(text(catalog, Key::ToolbarEditorDefaultNotice));
                 }
                 ui.separator();
-                self.show_items(ui);
-                self.show_add_controls(ui);
+                self.show_items(ui, catalog);
+                self.show_add_controls(ui, catalog);
                 if let Some(error) = &self.error {
                     ui.colored_label(ui.visuals().error_fg_color, error);
                 }
                 ui.separator();
-                result = self.show_footer(ui);
+                result = self.show_footer(ui, catalog);
             });
         self.open &= open;
         result
     }
 
-    fn show_items(&mut self, ui: &mut egui::Ui) {
+    fn show_items(&mut self, ui: &mut egui::Ui, catalog: Option<&LocalizationCatalog>) {
         let mut operation = None;
         let item_count = self.items.len();
         egui::ScrollArea::vertical()
@@ -122,17 +129,25 @@ impl ToolbarEditor {
             .show(ui, |ui| {
                 for (index, item) in self.items.iter_mut().enumerate() {
                     ui.horizontal(|ui| {
-                        show_item_selectors(ui, index, item);
-                        if ui.add_enabled(index > 0, egui::Button::new("↑")).clicked() {
+                        show_item_selectors(ui, index, item, catalog);
+                        if ui
+                            .add_enabled(index > 0, egui::Button::new("↑"))
+                            .on_hover_text(text(catalog, Key::ToolbarEditorMoveUp))
+                            .clicked()
+                        {
                             operation = Some(Operation::MoveUp(index));
                         }
                         if ui
                             .add_enabled(index + 1 < item_count, egui::Button::new("↓"))
+                            .on_hover_text(text(catalog, Key::ToolbarEditorMoveDown))
                             .clicked()
                         {
                             operation = Some(Operation::MoveDown(index));
                         }
-                        if ui.small_button("Remove").clicked() {
+                        if ui
+                            .small_button(text(catalog, Key::ToolbarEditorRemove))
+                            .clicked()
+                        {
                             operation = Some(Operation::Remove(index));
                         }
                     });
@@ -143,9 +158,12 @@ impl ToolbarEditor {
         }
     }
 
-    fn show_add_controls(&mut self, ui: &mut egui::Ui) {
+    fn show_add_controls(&mut self, ui: &mut egui::Ui, catalog: Option<&LocalizationCatalog>) {
         ui.horizontal(|ui| {
-            if ui.button("Add Button").clicked() {
+            if ui
+                .button(text(catalog, Key::ToolbarEditorAddButton))
+                .clicked()
+            {
                 let action = ToolbarAction::Open;
                 self.items.push(ToolbarForm::Action {
                     id: next_id(&self.items, action),
@@ -153,16 +171,23 @@ impl ToolbarEditor {
                     label: default_label(action),
                 });
             }
-            if ui.button("Add Separator").clicked() {
+            if ui
+                .button(text(catalog, Key::ToolbarEditorAddSeparator))
+                .clicked()
+            {
                 self.items.push(ToolbarForm::Separator);
             }
         });
     }
 
-    fn show_footer(&mut self, ui: &mut egui::Ui) -> Option<ToolbarEditorResult> {
+    fn show_footer(
+        &mut self,
+        ui: &mut egui::Ui,
+        catalog: Option<&LocalizationCatalog>,
+    ) -> Option<ToolbarEditorResult> {
         let mut result = None;
         ui.horizontal(|ui| {
-            if ui.button("Apply").clicked() {
+            if ui.button(text(catalog, Key::ToolbarEditorApply)).clicked() {
                 match build_config(&self.items) {
                     Ok(config) => {
                         result = Some(ToolbarEditorResult::Apply(config));
@@ -172,12 +197,15 @@ impl ToolbarEditor {
                     Err(error) => self.error = Some(error),
                 }
             }
-            if ui.button("Use Built-in Toolbar").clicked() {
+            if ui
+                .button(text(catalog, Key::ToolbarEditorUseDefault))
+                .clicked()
+            {
                 result = Some(ToolbarEditorResult::UseDefault);
                 self.error = None;
                 self.open = false;
             }
-            if ui.button("Cancel").clicked() {
+            if ui.button(text(catalog, Key::ToolbarEditorCancel)).clicked() {
                 self.open = false;
             }
         });
@@ -185,29 +213,37 @@ impl ToolbarEditor {
     }
 }
 
-fn show_item_selectors(ui: &mut egui::Ui, index: usize, item: &mut ToolbarForm) {
+fn show_item_selectors(
+    ui: &mut egui::Ui,
+    index: usize,
+    item: &mut ToolbarForm,
+    catalog: Option<&LocalizationCatalog>,
+) {
     match item {
         ToolbarForm::Separator => {
-            ui.label("Separator");
+            ui.label(text(catalog, Key::ToolbarEditorSeparator));
             ui.add_space(414.0);
         }
         ToolbarForm::Action { action, label, .. } => {
             egui::ComboBox::from_id_salt(("toolbar-action", index))
-                .selected_text(action_name(*action))
+                .selected_text(localized_action_name(catalog, *action))
                 .width(170.0)
                 .show_ui(ui, |ui| {
-                    for (candidate, name, _, _) in ACTIONS {
-                        if ui.selectable_value(action, candidate, name).changed() {
+                    for (candidate, _, key, _) in ACTIONS {
+                        if ui
+                            .selectable_value(action, candidate, localized_ui_text(catalog, key))
+                            .changed()
+                        {
                             *label = default_label(candidate);
                         }
                     }
                 });
             egui::ComboBox::from_id_salt(("toolbar-label", index))
-                .selected_text(crate::frontend_ui::default_text(*label))
+                .selected_text(localized_ui_text(catalog, *label))
                 .width(170.0)
                 .show_ui(ui, |ui| {
                     for key in UiTextKey::ALL {
-                        ui.selectable_value(label, key, crate::frontend_ui::default_text(key));
+                        ui.selectable_value(label, key, localized_ui_text(catalog, key));
                     }
                 });
         }
@@ -272,6 +308,24 @@ fn action_name(action: ToolbarAction) -> &'static str {
     action_metadata(action).1
 }
 
+fn localized_action_name(catalog: Option<&LocalizationCatalog>, action: ToolbarAction) -> String {
+    localized_ui_text(catalog, action_metadata(action).2)
+}
+
+fn localized_ui_text(catalog: Option<&LocalizationCatalog>, key: UiTextKey) -> String {
+    catalog.map_or_else(
+        || crate::frontend_ui::default_text(key).to_owned(),
+        |catalog| catalog.text(key).to_owned(),
+    )
+}
+
+fn text(catalog: Option<&LocalizationCatalog>, key: Key) -> String {
+    catalog.map_or_else(
+        || key.english().to_owned(),
+        |catalog| catalog.extended_text(key).to_owned(),
+    )
+}
+
 fn default_label(action: ToolbarAction) -> UiTextKey {
     action_metadata(action).2
 }
@@ -300,6 +354,24 @@ mod tests {
             action,
             label: default_label(action),
         }
+    }
+
+    #[test]
+    fn complete_toolbar_editor_surface_has_no_literal_widget_text() {
+        let source = include_str!("toolbar_editor.rs");
+        for literal in [
+            "egui::Window::new(\"",
+            "ui.button(\"",
+            "egui::Button::new(\"",
+            "ui.label(\"",
+            "ui.small_button(\"",
+        ] {
+            assert!(
+                !source.contains(literal),
+                "literal toolbar widget text: {literal}"
+            );
+        }
+        assert!(source.contains("catalog.text(key)"));
     }
 
     #[test]
