@@ -1,6 +1,6 @@
 use super::OverworldAppearanceEditor;
 use eframe::egui;
-use lm_app::{LocalizationCatalog, NativeOverworldAppearanceEdit};
+use lm_app::{ExtendedUiTextKey as Key, LocalizationCatalog, NativeOverworldAppearanceEdit};
 use lm_level::{Map16Tile, Subtile};
 use lm_overworld::{
     NativeOverworldSpriteAppearance, NativeOverworldSpriteDisplay, NativeOverworldSpriteMap16Part,
@@ -103,7 +103,7 @@ impl OverworldAppearanceEditor {
     pub(super) fn native_contents(
         &mut self,
         ui: &mut egui::Ui,
-        _catalog: Option<&LocalizationCatalog>,
+        catalog: Option<&LocalizationCatalog>,
     ) {
         let Some(controller) = self.native_controller.as_ref() else {
             return;
@@ -118,13 +118,19 @@ impl OverworldAppearanceEditor {
         let mut save = false;
         ui.horizontal(|ui| {
             if ui
-                .add_enabled(controller.can_undo(), egui::Button::new("Undo"))
+                .add_enabled(
+                    controller.can_undo(),
+                    egui::Button::new(text(catalog, Key::AppearanceUndo)),
+                )
                 .clicked()
             {
                 history = Some(true);
             }
             if ui
-                .add_enabled(controller.can_redo(), egui::Button::new("Redo"))
+                .add_enabled(
+                    controller.can_redo(),
+                    egui::Button::new(text(catalog, Key::AppearanceRedo)),
+                )
                 .clicked()
             {
                 history = Some(false);
@@ -132,21 +138,33 @@ impl OverworldAppearanceEditor {
             save = ui
                 .add_enabled(
                     !self.persistence.is_running(),
-                    egui::Button::new("Save Native Pair"),
+                    egui::Button::new(text(catalog, Key::OverworldAppearanceSaveNative)),
                 )
                 .clicked();
-            ui.label(if controller.is_modified() {
-                "Modified"
-            } else {
-                "Saved"
-            });
-            ui.label(format!(
-                "{} tooltips, {} appearances, {} graphics ranges, {} palette ranges",
-                value.definitions.tooltips.len(),
-                value.definitions.appearances.len(),
-                value.definitions.graphics_ranges.len(),
-                value.definitions.palette_ranges.len(),
+            ui.label(text(
+                catalog,
+                if controller.is_modified() {
+                    Key::AppearanceModified
+                } else {
+                    Key::AppearanceSaved
+                },
             ));
+            ui.label(
+                text(catalog, Key::OverworldAppearanceNativeSummaryFormat)
+                    .replace("{tooltips}", &value.definitions.tooltips.len().to_string())
+                    .replace(
+                        "{appearances}",
+                        &value.definitions.appearances.len().to_string(),
+                    )
+                    .replace(
+                        "{graphics}",
+                        &value.definitions.graphics_ranges.len().to_string(),
+                    )
+                    .replace(
+                        "{palettes}",
+                        &value.definitions.palette_ranges.len().to_string(),
+                    ),
+            );
         });
         if let Some(undo) = history {
             let result = if undo {
@@ -170,7 +188,7 @@ impl OverworldAppearanceEditor {
 
         ui.separator();
         ui.horizontal(|ui| {
-            ui.label("Sprite ID");
+            ui.label(text(catalog, Key::OverworldAppearanceNativeSpriteId));
             if ui
                 .add(
                     egui::DragValue::new(&mut self.native_form.sprite_id)
@@ -185,14 +203,20 @@ impl OverworldAppearanceEditor {
         self.native_form.load(revision, &value);
 
         ui.group(|ui| {
-            ui.heading("Tooltip");
-            ui.checkbox(&mut self.native_form.tooltip_enabled, "Definition enabled");
+            ui.heading(text(catalog, Key::OverworldAppearanceTooltip));
+            ui.checkbox(
+                &mut self.native_form.tooltip_enabled,
+                text(catalog, Key::OverworldAppearanceDefinitionEnabled),
+            );
             ui.checkbox(
                 &mut self.native_form.disable_position_text,
-                "Disable original position text",
+                text(catalog, Key::OverworldAppearanceDisablePositionText),
             );
             ui.add(egui::TextEdit::multiline(&mut self.native_form.tooltip).desired_rows(3));
-            if ui.button("Apply Tooltip").clicked() {
+            if ui
+                .button(text(catalog, Key::OverworldAppearanceApplyTooltip))
+                .clicked()
+            {
                 let value =
                     self.native_form
                         .tooltip_enabled
@@ -208,22 +232,24 @@ impl OverworldAppearanceEditor {
         });
 
         ui.group(|ui| {
-            ui.heading("External Graphics and Palette Ranges");
-            ui.label("Ranges retain their native kind, inclusive tile span, base, and file order.");
+            ui.heading(text(catalog, Key::OverworldAppearanceExternalRanges));
+            ui.label(text(catalog, Key::OverworldAppearanceRangesNotice));
             let mut edit = None;
             Self::native_ranges(
                 ui,
-                "Graphics",
+                text(catalog, Key::OverworldAppearanceGraphics),
                 &mut self.native_form.graphics_ranges,
                 &mut edit,
                 NativeOverworldAppearanceEdit::ReplaceGraphicsRanges,
+                catalog,
             );
             Self::native_ranges(
                 ui,
-                "Palette",
+                text(catalog, Key::OverworldAppearancePalette),
                 &mut self.native_form.palette_ranges,
                 &mut edit,
                 NativeOverworldAppearanceEdit::ReplacePaletteRanges,
+                catalog,
             );
             if let Some(edit) = edit {
                 self.apply_native_edit(edit);
@@ -231,28 +257,42 @@ impl OverworldAppearanceEditor {
         });
 
         ui.group(|ui| {
-            ui.heading("Display Appearance");
+            ui.heading(text(catalog, Key::OverworldAppearanceDisplay));
             ui.checkbox(
                 &mut self.native_form.appearance_enabled,
-                "Definition enabled",
+                text(catalog, Key::OverworldAppearanceDefinitionEnabled),
             );
-            ui.checkbox(&mut self.native_form.shadow, "Editor shadow");
+            ui.checkbox(
+                &mut self.native_form.shadow,
+                text(catalog, Key::OverworldAppearanceEditorShadow),
+            );
             ui.horizontal(|ui| {
-                ui.selectable_value(&mut self.native_form.label_mode, false, "Map16 tiles");
-                ui.selectable_value(&mut self.native_form.label_mode, true, "Text label");
+                ui.selectable_value(
+                    &mut self.native_form.label_mode,
+                    false,
+                    text(catalog, Key::OverworldAppearanceMap16Tiles),
+                );
+                ui.selectable_value(
+                    &mut self.native_form.label_mode,
+                    true,
+                    text(catalog, Key::OverworldAppearanceTextLabel),
+                );
             });
             if self.native_form.label_mode {
                 ui.horizontal(|ui| {
-                    ui.label("X");
+                    ui.label(text(catalog, Key::OverworldAppearanceX));
                     ui.add(egui::DragValue::new(&mut self.native_form.label_x));
-                    ui.label("Y");
+                    ui.label(text(catalog, Key::OverworldAppearanceY));
                     ui.add(egui::DragValue::new(&mut self.native_form.label_y));
                 });
                 ui.text_edit_singleline(&mut self.native_form.label);
             } else {
-                self.native_parts(ui);
+                self.native_parts(ui, catalog);
             }
-            if ui.button("Apply Appearance").clicked() {
+            if ui
+                .button(text(catalog, Key::OverworldAppearanceApplyDisplay))
+                .clicked()
+            {
                 let display = if self.native_form.label_mode {
                     NativeOverworldSpriteDisplay::Label {
                         x: self.native_form.label_x,
@@ -277,9 +317,9 @@ impl OverworldAppearanceEditor {
         });
 
         ui.group(|ui| {
-            ui.heading("Custom Sprite Map16 Definition");
+            ui.heading(text(catalog, Key::OverworldAppearanceCustomMap16));
             ui.horizontal(|ui| {
-                ui.label("Native tile");
+                ui.label(text(catalog, Key::OverworldAppearanceNativeTile));
                 if ui
                     .add(
                         egui::DragValue::new(&mut self.native_form.map16_tile)
@@ -290,15 +330,23 @@ impl OverworldAppearanceEditor {
                 {
                     self.native_form.map16_key = None;
                 }
-                for (label, word) in ["TL", "TR", "BL", "BR"]
-                    .into_iter()
-                    .zip(&mut self.native_form.map16_words)
+                for (label, word) in [
+                    Key::OverworldAppearanceTopLeft,
+                    Key::OverworldAppearanceTopRight,
+                    Key::OverworldAppearanceBottomLeft,
+                    Key::OverworldAppearanceBottomRight,
+                ]
+                .into_iter()
+                .zip(&mut self.native_form.map16_words)
                 {
-                    ui.label(label);
+                    ui.label(text(catalog, label));
                     ui.add(egui::DragValue::new(word).hexadecimal(4, false, true));
                 }
             });
-            if ui.button("Apply Sprite Map16").clicked() {
+            if ui
+                .button(text(catalog, Key::OverworldAppearanceApplyMap16))
+                .clicked()
+            {
                 self.apply_native_edit(NativeOverworldAppearanceEdit::SetCustomMap16 {
                     native_tile: self.native_form.map16_tile,
                     value: Map16Tile {
@@ -313,19 +361,25 @@ impl OverworldAppearanceEditor {
         });
     }
 
-    fn native_parts(&mut self, ui: &mut egui::Ui) {
+    fn native_parts(&mut self, ui: &mut egui::Ui, catalog: Option<&LocalizationCatalog>) {
         ui.horizontal(|ui| {
-            ui.label(format!("Parts: {}", self.native_form.parts.len()));
+            ui.label(
+                text(catalog, Key::OverworldAppearanceNativePartsFormat)
+                    .replace("{count}", &self.native_form.parts.len().to_string()),
+            );
             if !self.native_form.parts.is_empty() {
                 ui.add(
                     egui::Slider::new(
                         &mut self.native_form.selected_part,
                         0..=self.native_form.parts.len() - 1,
                     )
-                    .text("Part"),
+                    .text(text(catalog, Key::OverworldAppearancePart)),
                 );
             }
-            if ui.button("Add Part").clicked() {
+            if ui
+                .button(text(catalog, Key::OverworldAppearanceAddPart))
+                .clicked()
+            {
                 self.native_form.parts.push(NativeOverworldSpriteMap16Part {
                     x: 0,
                     y: 0,
@@ -337,7 +391,7 @@ impl OverworldAppearanceEditor {
             if ui
                 .add_enabled(
                     !self.native_form.parts.is_empty(),
-                    egui::Button::new("Remove Part"),
+                    egui::Button::new(text(catalog, Key::OverworldAppearanceRemovePartNative)),
                 )
                 .clicked()
             {
@@ -352,7 +406,7 @@ impl OverworldAppearanceEditor {
             if ui
                 .add_enabled(
                     self.native_form.selected_part > 0,
-                    egui::Button::new("Send Backward"),
+                    egui::Button::new(text(catalog, Key::OverworldAppearanceSendBackward)),
                 )
                 .clicked()
             {
@@ -363,7 +417,7 @@ impl OverworldAppearanceEditor {
             if ui
                 .add_enabled(
                     self.native_form.selected_part + 1 < self.native_form.parts.len(),
-                    egui::Button::new("Bring Forward"),
+                    egui::Button::new(text(catalog, Key::OverworldAppearanceBringForward)),
                 )
                 .clicked()
             {
@@ -378,31 +432,38 @@ impl OverworldAppearanceEditor {
             .get_mut(self.native_form.selected_part)
         {
             ui.horizontal(|ui| {
-                ui.label("X");
+                ui.label(text(catalog, Key::OverworldAppearanceX));
                 ui.add(egui::DragValue::new(&mut part.x));
-                ui.label("Y");
+                ui.label(text(catalog, Key::OverworldAppearanceY));
                 ui.add(egui::DragValue::new(&mut part.y));
-                ui.label("Map16");
+                ui.label(text(catalog, Key::OverworldAppearanceMap16));
                 ui.add(
                     egui::DragValue::new(&mut part.tile)
                         .range(0..=0xcff)
                         .hexadecimal(3, false, true),
                 );
-                ui.checkbox(&mut part.translucent, "Translucent");
+                ui.checkbox(
+                    &mut part.translucent,
+                    text(catalog, Key::OverworldAppearanceTranslucent),
+                );
             });
         }
     }
 
     fn native_ranges(
         ui: &mut egui::Ui,
-        label: &str,
+        label: String,
         ranges: &mut Vec<NativeOverworldSpriteRange>,
         edit: &mut Option<NativeOverworldAppearanceEdit>,
         replacement: fn(Vec<NativeOverworldSpriteRange>) -> NativeOverworldAppearanceEdit,
+        catalog: Option<&LocalizationCatalog>,
     ) {
         ui.horizontal(|ui| {
-            ui.strong(label);
-            if ui.button("Add").clicked() {
+            ui.strong(&label);
+            if ui
+                .button(text(catalog, Key::OverworldAppearanceAddRange))
+                .clicked()
+            {
                 ranges.push(NativeOverworldSpriteRange {
                     kind: 0,
                     first_tile: 0x400,
@@ -410,7 +471,13 @@ impl OverworldAppearanceEditor {
                     base: 0,
                 });
             }
-            if ui.button(format!("Apply {label} Ranges")).clicked() {
+            if ui
+                .button(
+                    text(catalog, Key::OverworldAppearanceApplyRangesFormat)
+                        .replace("{kind}", &label),
+                )
+                .clicked()
+            {
                 *edit = Some(replacement(ranges.clone()));
             }
         });
@@ -418,23 +485,26 @@ impl OverworldAppearanceEditor {
         for (index, range) in ranges.iter_mut().enumerate() {
             ui.horizontal(|ui| {
                 ui.label(format!("#{index}"));
-                ui.label("Kind");
+                ui.label(text(catalog, Key::OverworldAppearanceKind));
                 ui.add(egui::DragValue::new(&mut range.kind).hexadecimal(4, false, true));
-                ui.label("First");
+                ui.label(text(catalog, Key::OverworldAppearanceFirst));
                 ui.add(
                     egui::DragValue::new(&mut range.first_tile)
                         .range(0..=0xbff)
                         .hexadecimal(3, false, true),
                 );
-                ui.label("Last");
+                ui.label(text(catalog, Key::OverworldAppearanceLast));
                 ui.add(
                     egui::DragValue::new(&mut range.last_tile)
                         .range(0..=0xbff)
                         .hexadecimal(3, false, true),
                 );
-                ui.label("Base");
+                ui.label(text(catalog, Key::OverworldAppearanceBase));
                 ui.add(egui::DragValue::new(&mut range.base).hexadecimal(4, false, true));
-                if ui.small_button("Remove").clicked() {
+                if ui
+                    .small_button(text(catalog, Key::OverworldAppearanceRemoveRange))
+                    .clicked()
+                {
                     remove = Some(index);
                 }
             });
@@ -455,9 +525,74 @@ impl OverworldAppearanceEditor {
     }
 }
 
+fn text(catalog: Option<&LocalizationCatalog>, key: Key) -> String {
+    catalog.map_or_else(
+        || key.english().to_owned(),
+        |catalog| catalog.extended_text(key).to_owned(),
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn native_overworld_appearance_surface_has_no_literal_widget_text() {
+        let source = include_str!("native_mode.rs");
+        for literal in [
+            "ui.button(\"",
+            "ui.label(\"",
+            "ui.heading(\"",
+            "ui.strong(\"",
+            "Button::new(\"",
+            ".text(\"",
+        ] {
+            assert!(
+                !source.contains(literal),
+                "native overworld appearance surface bypasses localization with {literal}"
+            );
+        }
+        for key in Key::ALL
+            .into_iter()
+            .filter(|key| format!("{key:?}").starts_with("OverworldAppearance"))
+        {
+            assert!(
+                source.contains(&format!("Key::{key:?}"))
+                    || matches!(
+                        key,
+                        Key::OverworldAppearancePortableTitle
+                            | Key::OverworldAppearanceNativeTitle
+                            | Key::OverworldAppearanceImportNative
+                            | Key::OverworldAppearanceExportNative
+                            | Key::OverworldAppearanceDefinitionsFormat
+                            | Key::OverworldAppearanceDefinition
+                            | Key::OverworldAppearanceEmptyNotice
+                            | Key::OverworldAppearanceSpriteId
+                            | Key::OverworldAppearanceInsertDefinition
+                            | Key::OverworldAppearanceRemoveDefinition
+                            | Key::OverworldAppearanceMoveToEnd
+                            | Key::OverworldAppearanceMoveDefinition
+                            | Key::OverworldAppearancePartsTitleFormat
+                            | Key::OverworldAppearancePartsCountFormat
+                            | Key::OverworldAppearanceReplacePart
+                            | Key::OverworldAppearanceRemovePart
+                            | Key::OverworldAppearanceCopyPart
+                            | Key::OverworldAppearancePasteOverPart
+                            | Key::OverworldAppearancePasteAfterPart
+                            | Key::OverworldAppearanceDuplicatePart
+                            | Key::OverworldAppearanceCopyComposition
+                            | Key::OverworldAppearanceReplaceComposition
+                            | Key::OverworldAppearanceAppendComposition
+                            | Key::OverworldAppearancePasteNewDefinition
+                            | Key::OverworldAppearanceMovePart
+                            | Key::OverworldAppearanceInsertPart
+                            | Key::OverworldAppearancePreviewTitle
+                            | Key::OverworldAppearancePreviewNotice
+                    ),
+                "native overworld appearance surface does not consume {key:?}"
+            );
+        }
+    }
     use lm_app::NativeOverworldAppearanceController;
 
     #[test]

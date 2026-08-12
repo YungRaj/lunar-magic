@@ -7079,6 +7079,18 @@ later-edit preservation, history divergence, and request overflow. Localization 
 active cases (one provenance ignore), and renderer passes 237/237. Other native forms and retained
 language-DLL evidence keep Localization Partial; aggregate parity remains 60/65.
 
+Localization coverage update (2026-08-12, native overworld appearance controls): thirty-nine
+additional `OverworldAppearance*` identities cover native-pair save and dynamic record summary,
+sprite selection, tooltip enablement/text behavior, graphics and palette range tables, display
+enablement/shadow/label-or-Map16 modes, positioned labels, custom four-word Map16 definitions,
+Map16 part insertion/removal/painter ordering/translucency, and range field/application/removal
+controls. The native-mode audit rejects literal button, label, heading, strong-text, slider, and
+`Button` captions and verifies consumption of the native subset. Combined with the prior parent and
+portable-composition audits, the full overworld appearance editor family is catalog-backed. The
+focused audit passes, localization passes 28/28 active cases (one provenance ignore), native
+compilation passes, and renderer remains 237/237. Other frontend/status surfaces and retained live
+language-DLL evidence keep Localization Partial; aggregate parity remains 60/65.
+
 Localization coverage update (2026-08-12, vanilla graphics editor): seven appended
 `VanillaGraphics*` identities cover the dynamic built-in editor heading, authenticated split-pointer
 notice, paint-color selector, expansion requirement/action, ROM commit, and empty-file state. The
