@@ -2515,10 +2515,27 @@ pub enum ExtendedUiTextKey {
     MwlBatchExportCompletedFormat,
     MwlBatchExportCancelled,
     MwlBatchExportClose,
+    VramPatchTitle,
+    VramPatchDescription,
+    VramPatchDeferredNotice,
+    VramPatchType,
+    VramPatchNone,
+    VramPatchNoneHelp,
+    VramPatchNormal,
+    VramPatchNormalHelp,
+    VramPatchHd16x9,
+    VramPatchHd21x9,
+    VramPatchUnknownNotice,
+    VramPatchCancel,
+    VramPatchOk,
+    VramPatchErrorTitle,
+    VramPatchStatusNone,
+    VramPatchStatusNormal,
+    VramPatchStatusHd,
 }
 
 impl ExtendedUiTextKey {
-    pub const ALL: [Self; 814] = [
+    pub const ALL: [Self; 831] = [
         Self::TilemapTitleScreenName,
         Self::TilemapCreditsName,
         Self::TilemapEditorTitleFormat,
@@ -3333,6 +3350,23 @@ impl ExtendedUiTextKey {
         Self::MwlBatchExportCompletedFormat,
         Self::MwlBatchExportCancelled,
         Self::MwlBatchExportClose,
+        Self::VramPatchTitle,
+        Self::VramPatchDescription,
+        Self::VramPatchDeferredNotice,
+        Self::VramPatchType,
+        Self::VramPatchNone,
+        Self::VramPatchNoneHelp,
+        Self::VramPatchNormal,
+        Self::VramPatchNormalHelp,
+        Self::VramPatchHd16x9,
+        Self::VramPatchHd21x9,
+        Self::VramPatchUnknownNotice,
+        Self::VramPatchCancel,
+        Self::VramPatchOk,
+        Self::VramPatchErrorTitle,
+        Self::VramPatchStatusNone,
+        Self::VramPatchStatusNormal,
+        Self::VramPatchStatusHd,
     ];
 
     #[must_use]
@@ -4498,6 +4532,35 @@ impl ExtendedUiTextKey {
             Self::MwlBatchExportCompletedFormat => "Exported {count} levels.",
             Self::MwlBatchExportCancelled => "Batch MWL export cancelled.",
             Self::MwlBatchExportClose => "Close",
+            Self::VramPatchTitle => "Change VRAM Patch Options",
+            Self::VramPatchDescription => {
+                "The VRAM patch by smkdan allows using an extra 2 GFX slots for more graphics (BG2 and BG3). It's also required for horizontal levels to be resized vertically."
+            }
+            Self::VramPatchDeferredNotice => "Any changes will be applied on the next level save.",
+            Self::VramPatchType => "VRAM Patch Type",
+            Self::VramPatchNone => "None - Do not install patch",
+            Self::VramPatchNoneHelp => {
+                "This will not install the VRAM patch. It can make some features unavailable. This option is only available if the patch has not yet been installed."
+            }
+            Self::VramPatchNormal => "Normal Version",
+            Self::VramPatchNormalHelp => {
+                "Installs the regular version of the VRAM patch. This is the default setting."
+            }
+            Self::VramPatchHd16x9 => "HD Version 16:9 (352 width)",
+            Self::VramPatchHd21x9 => "HD Version 21:9 (448 width)",
+            Self::VramPatchUnknownNotice => {
+                "The installed VRAM patch version is not recognized. Lunar Magic disables every choice to avoid overwriting an unknown patch."
+            }
+            Self::VramPatchCancel => "Cancel",
+            Self::VramPatchOk => "OK",
+            Self::VramPatchErrorTitle => "VRAM patch options error",
+            Self::VramPatchStatusNone => {
+                "VRAM patch will remain uninstalled on the next level save."
+            }
+            Self::VramPatchStatusNormal => {
+                "Normal VRAM patch will be applied on the next level save."
+            }
+            Self::VramPatchStatusHd => "The installed HD VRAM patch selection is retained.",
         }
     }
 

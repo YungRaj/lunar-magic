@@ -1,5 +1,5 @@
 use eframe::egui;
-use lm_app::{AppState, Command, ControllerSnapshot};
+use lm_app::{AppState, Command, ControllerSnapshot, ExtendedUiTextKey, LocalizationCatalog};
 use lm_profile::{
     SmwUsV1VramPatchState, detect_smw_us_v1_vram_patch,
     smw_us_v1_normal_vram_patch_installation_plan,
@@ -33,11 +33,7 @@ pub(crate) struct VramPatchOptionsDialog {
 }
 
 impl VramPatchOptionsDialog {
-    pub(crate) fn open(
-        &mut self,
-        app: &AppState,
-        pending: Option<VramPatchSelection>,
-    ) {
+    pub(crate) fn open(&mut self, app: &AppState, pending: Option<VramPatchSelection>) {
         match detect(app) {
             Ok(state) => {
                 let mut model = dialog_model(&state);
@@ -54,73 +50,70 @@ impl VramPatchOptionsDialog {
         }
     }
 
-    pub(crate) fn show(&mut self, context: &egui::Context) {
+    pub(crate) fn show(&mut self, context: &egui::Context, catalog: Option<&LocalizationCatalog>) {
         if self.open {
-            egui::Window::new("Change VRAM Patch Options")
+            egui::Window::new(text(catalog, ExtendedUiTextKey::VramPatchTitle))
                 .collapsible(false)
                 .resizable(false)
                 .show(context, |ui| {
-                    ui.label(
-                        "The VRAM patch by smkdan allows using an extra 2 GFX slots for more \
-                         graphics (BG2 and BG3). It's also required for horizontal levels to be \
-                         resized vertically.",
-                    );
-                    ui.label("Any changes will be applied on the next level save.");
+                    ui.label(text(catalog, ExtendedUiTextKey::VramPatchDescription));
+                    ui.label(text(catalog, ExtendedUiTextKey::VramPatchDeferredNotice));
                     ui.separator();
                     if let Some(model) = &mut self.model {
                         ui.group(|ui| {
-                            ui.label("VRAM Patch Type");
+                            ui.label(text(catalog, ExtendedUiTextKey::VramPatchType));
                             ui.add_enabled_ui(model.none_enabled, |ui| {
                                 ui.radio_value(
                                     &mut model.selected,
                                     VramPatchSelection::None,
-                                    "None - Do not install patch",
+                                    text(catalog, ExtendedUiTextKey::VramPatchNone),
                                 )
-                                .on_hover_text(
-                                    "This will not install the VRAM patch. It can make some \
-                                     features unavailable. This option is only available if the \
-                                     patch has not yet been installed.",
-                                );
+                                .on_hover_text(text(catalog, ExtendedUiTextKey::VramPatchNoneHelp));
                             });
                             ui.add_enabled_ui(model.normal_enabled, |ui| {
                                 ui.radio_value(
                                     &mut model.selected,
                                     VramPatchSelection::Normal,
-                                    "Normal Version",
+                                    text(catalog, ExtendedUiTextKey::VramPatchNormal),
                                 )
-                                .on_hover_text(
-                                    "Installs the regular version of the VRAM patch. This is the \
-                                     default setting.",
-                                );
+                                .on_hover_text(text(
+                                    catalog,
+                                    ExtendedUiTextKey::VramPatchNormalHelp,
+                                ));
                             });
                             ui.add_enabled_ui(model.hd_enabled, |ui| {
                                 ui.radio_value(
                                     &mut model.selected,
                                     VramPatchSelection::Hd16x9,
-                                    "HD Version 16:9 (352 width)",
+                                    text(catalog, ExtendedUiTextKey::VramPatchHd16x9),
                                 );
                                 ui.radio_value(
                                     &mut model.selected,
                                     VramPatchSelection::Hd21x9,
-                                    "HD Version 21:9 (448 width)",
+                                    text(catalog, ExtendedUiTextKey::VramPatchHd21x9),
                                 );
                             });
                         });
                         if !model.recognized {
                             ui.colored_label(
                                 egui::Color32::YELLOW,
-                                "The installed VRAM patch version is not recognized. Lunar Magic \
-                                 disables every choice to avoid overwriting an unknown patch.",
+                                text(catalog, ExtendedUiTextKey::VramPatchUnknownNotice),
                             );
                         }
                     }
                     ui.horizontal(|ui| {
-                        if ui.button("Cancel").clicked() {
+                        if ui
+                            .button(text(catalog, ExtendedUiTextKey::VramPatchCancel))
+                            .clicked()
+                        {
                             self.open = false;
                         }
                         let can_confirm = self.model.is_some_and(|model| model.recognized);
                         if ui
-                            .add_enabled(can_confirm, egui::Button::new("OK"))
+                            .add_enabled(
+                                can_confirm,
+                                egui::Button::new(text(catalog, ExtendedUiTextKey::VramPatchOk)),
+                            )
                             .clicked()
                         {
                             self.pending = self.model.map(|model| model.selected);
@@ -130,12 +123,15 @@ impl VramPatchOptionsDialog {
                 });
         }
         if let Some(error) = self.error.clone() {
-            egui::Window::new("VRAM patch options error")
+            egui::Window::new(text(catalog, ExtendedUiTextKey::VramPatchErrorTitle))
                 .collapsible(false)
                 .resizable(false)
                 .show(context, |ui| {
                     ui.label(error);
-                    if ui.button("OK").clicked() {
+                    if ui
+                        .button(text(catalog, ExtendedUiTextKey::VramPatchOk))
+                        .clicked()
+                    {
                         self.error = None;
                     }
                 });
@@ -145,6 +141,10 @@ impl VramPatchOptionsDialog {
     pub(crate) fn take_pending(&mut self) -> Option<VramPatchSelection> {
         self.pending.take()
     }
+}
+
+fn text(catalog: Option<&LocalizationCatalog>, key: ExtendedUiTextKey) -> String {
+    crate::frontend_ui::extended_localized_text(catalog, key)
 }
 
 pub(crate) fn effective_selection(app: &AppState) -> Option<VramPatchSelection> {
@@ -318,6 +318,28 @@ mod tests {
     use lm_rats::{RatsBlock, make_header};
     use lm_rom::{Mapper, pc_to_snes};
     use std::{fs, path::PathBuf};
+
+    #[test]
+    fn complete_vram_patch_form_uses_every_typed_key() {
+        let sources = [
+            include_str!("vram_patch_options_dialog.rs"),
+            include_str!("application/rom_windows.rs"),
+        ]
+        .concat();
+        for key in ExtendedUiTextKey::ALL
+            .into_iter()
+            .filter(|key| format!("{key:?}").starts_with("VramPatch"))
+        {
+            assert!(sources.contains(&format!("ExtendedUiTextKey::{key:?}")));
+        }
+        for literal in [
+            "Window::new(\"Change VRAM Patch Options\")",
+            "ui.button(\"Cancel\")",
+            "Window::new(\"VRAM patch options error\")",
+        ] {
+            assert!(!sources.contains(literal));
+        }
+    }
 
     fn vanilla_bytes() -> Vec<u8> {
         fs::read(

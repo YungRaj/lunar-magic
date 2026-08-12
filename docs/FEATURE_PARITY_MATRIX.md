@@ -2131,3 +2131,10 @@ remain proven by 17/17 active focused tests with three explicit retained-ROM ign
 model passes 28/28 and renderer 237/237. Documented mapper/identity variants keep Runtime patches
 Partial; remaining forms and live language-DLL evidence keep Localization Partial, so aggregate
 parity remains 60/65.
+
+Localization coverage update (2026-08-12, VRAM patch options): the full deferred patch selector
+and its application status route now use seventeen typed extension keys. Pristine/installed/unknown
+selection policy, deferred None, atomic Normal installation with the level save, old-generation
+replacement and Undo, and unknown-runtime no-mutation safety remain proven by 9/9 focused tests.
+Localization model passes 28/28 and renderer 237/237. Other native forms and retained live
+language-DLL evidence keep Localization Partial, so aggregate parity remains 60/65.

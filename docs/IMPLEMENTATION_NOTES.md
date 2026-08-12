@@ -7456,6 +7456,17 @@ across headered/headerless ROMs. Localization passes 28/28 and renderer passes 2
 forms and retained live language-DLL evidence keep Localization Partial; aggregate parity remains
 60/65.
 
+Localization coverage update (2026-08-12, VRAM patch options): seventeen appended `VramPatch*`
+keys cover the complete deferred-install surface: graphics-slot/vertical-resize purpose, next-save
+semantics, None/Normal/two HD selectors and help, unknown-runtime protection, actions/errors, and
+the three resulting application status messages. The active catalog is threaded through the dialog
+and status route. The complete semantic suite passes 9/9, including pristine defaults, installed
+and unknown choice gating, deferred None, one-Undo atomic composition of Normal installation with
+the level save, authenticated old-generation replacement with exact Undo, and unknown-runtime
+rejection without project mutation. Localization passes 28/28 and renderer passes 237/237. Other
+native forms and retained live language-DLL evidence keep Localization Partial; aggregate parity
+remains 60/65.
+
 Localization coverage update (2026-08-12, IPS application): nine appended `IpsApply*` keys cover
 the complete revision-bound IPS application form: logical-offset/header preservation, dynamic
 source/target/change counts, identity and bank-shape requirements, stale state, transactional
