@@ -2058,3 +2058,11 @@ retained original conversion options, palette-row state, exact preview pixels, a
 commit behavior remain proven. Localization model 28/28, focused Map16 editor 71/71, and renderer
 237/237 pass. All Map16 editor subdialogs are now typed; Localization remains Partial for other
 native forms and live original language-DLL evidence, so aggregate parity remains 60/65.
+
+Localization coverage update (2026-08-12, copier-header conversion): the complete physical-header
+conversion dialog now uses thirteen typed extension keys for its dynamic ROM status, targets,
+fill/preservation guidance, Lunar Magic canonical-header action, transactional actions, and error
+lifecycle. Existing inverse-target, canonical synthesis, stale-revision, no-op, and commit-close
+semantics remain proven. The focused form passes 5/5, localization model 28/28, and renderer
+237/237. Other native forms and retained live language-DLL evidence remain open; Localization stays
+Partial and aggregate parity remains 60/65.

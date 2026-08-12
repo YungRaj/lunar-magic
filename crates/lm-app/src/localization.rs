@@ -2375,10 +2375,23 @@ pub enum ExtendedUiTextKey {
     LegacyBypassDiscard,
     LegacyBypassErrorTitle,
     LegacyBypassOk,
+    CopierHeaderTitle,
+    CopierHeaderLogicalRomFormat,
+    CopierHeaderCurrentStateFormat,
+    CopierHeaderTarget,
+    CopierHeaderAbsent,
+    CopierHeaderPresent,
+    CopierHeaderFillByte,
+    CopierHeaderPreservationNotice,
+    CopierHeaderUseCanonical,
+    CopierHeaderCancel,
+    CopierHeaderConvert,
+    CopierHeaderErrorTitle,
+    CopierHeaderOk,
 }
 
 impl ExtendedUiTextKey {
-    pub const ALL: [Self; 674] = [
+    pub const ALL: [Self; 687] = [
         Self::TilemapTitleScreenName,
         Self::TilemapCreditsName,
         Self::TilemapEditorTitleFormat,
@@ -3053,6 +3066,19 @@ impl ExtendedUiTextKey {
         Self::LegacyBypassDiscard,
         Self::LegacyBypassErrorTitle,
         Self::LegacyBypassOk,
+        Self::CopierHeaderTitle,
+        Self::CopierHeaderLogicalRomFormat,
+        Self::CopierHeaderCurrentStateFormat,
+        Self::CopierHeaderTarget,
+        Self::CopierHeaderAbsent,
+        Self::CopierHeaderPresent,
+        Self::CopierHeaderFillByte,
+        Self::CopierHeaderPreservationNotice,
+        Self::CopierHeaderUseCanonical,
+        Self::CopierHeaderCancel,
+        Self::CopierHeaderConvert,
+        Self::CopierHeaderErrorTitle,
+        Self::CopierHeaderOk,
     ];
 
     #[must_use]
@@ -3992,6 +4018,21 @@ impl ExtendedUiTextKey {
             Self::LegacyBypassDiscard => "Discard",
             Self::LegacyBypassErrorTitle => "Standard GFX bypass error",
             Self::LegacyBypassOk => "OK",
+            Self::CopierHeaderTitle => "Convert Copier Header",
+            Self::CopierHeaderLogicalRomFormat => "Logical ROM: {length} bytes (unchanged)",
+            Self::CopierHeaderCurrentStateFormat => "Current physical state: {state}",
+            Self::CopierHeaderTarget => "Target",
+            Self::CopierHeaderAbsent => "Headerless",
+            Self::CopierHeaderPresent => "512-byte copier header",
+            Self::CopierHeaderFillByte => "New-header fill byte",
+            Self::CopierHeaderPreservationNotice => {
+                "Only the physical file prefix changes; mapper addresses and logical ROM contents remain identical."
+            }
+            Self::CopierHeaderUseCanonical => "Use Lunar Magic synthesized header",
+            Self::CopierHeaderCancel => "Cancel",
+            Self::CopierHeaderConvert => "Convert transactionally",
+            Self::CopierHeaderErrorTitle => "Copier-header conversion error",
+            Self::CopierHeaderOk => "OK",
         }
     }
 

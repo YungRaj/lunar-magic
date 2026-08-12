@@ -7397,3 +7397,13 @@ every `ExpandedSettings*` key and rejects representative literal regressions. Ex
 editing, history, and save-state evidence passes with both editor forms in the family suite (10/10),
 alongside localization model 28/28 and renderer 237/237. The runtime-patch row remains Partial for
 documented mapper/identity gaps; aggregate parity remains 60/65.
+
+Localization coverage update (2026-08-12, copier-header conversion): thirteen appended
+`CopierHeader*` keys cover the complete transactional conversion form: logical length and current
+physical-state templates, both target choices, fill byte, logical-address preservation guidance,
+canonical Lunar Magic header synthesis, conversion/cancel actions, and error lifecycle. Dynamic
+ROM lengths remain data substituted into localized templates. A complete-family source audit
+requires every key and rejects representative literal regressions. The semantic conversion and
+canonical-header suite passes 5/5, localization passes 28/28, and renderer passes 237/237.
+Localization remains Partial for other native forms and retained live language-DLL evidence;
+aggregate parity remains 60/65.

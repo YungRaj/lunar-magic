@@ -2,7 +2,7 @@ mod workspace;
 
 use crate::level_editor_forms;
 use eframe::egui;
-use lm_app::{AppState, Command};
+use lm_app::{AppState, Command, ExtendedUiTextKey, LocalizationCatalog};
 use lm_rom::CopierHeader;
 use workspace::CopierHeaderWorkspace;
 
@@ -26,48 +26,56 @@ impl CopierHeaderDialog {
     }
 
     pub(crate) fn show(&mut self, context: &egui::Context, app: &AppState) -> Option<Command> {
+        let catalog = app.localization();
         let mut command = None;
         if let Some(workspace) = self.workspace.as_mut() {
             let mut open = true;
             let mut cancel = false;
-            egui::Window::new("Convert Copier Header")
+            egui::Window::new(text(catalog, ExtendedUiTextKey::CopierHeaderTitle))
                 .open(&mut open)
                 .collapsible(false)
                 .resizable(false)
                 .show(context, |ui| {
-                    ui.label(format!(
-                        "Logical ROM: {:#X} bytes (unchanged)",
-                        workspace.logical_len()
+                    ui.label(format_text(
+                        catalog,
+                        ExtendedUiTextKey::CopierHeaderLogicalRomFormat,
+                        "{length}",
+                        &format!("{:#X}", workspace.logical_len()),
                     ));
-                    ui.label(format!(
-                        "Current physical state: {}",
-                        header_name(workspace.current())
+                    ui.label(format_text(
+                        catalog,
+                        ExtendedUiTextKey::CopierHeaderCurrentStateFormat,
+                        "{state}",
+                        &header_name(catalog, workspace.current()),
                     ));
                     ui.horizontal(|ui| {
-                        ui.label("Target");
+                        ui.label(text(catalog, ExtendedUiTextKey::CopierHeaderTarget));
                         ui.selectable_value(
                             workspace.target_mut(),
                             CopierHeader::Absent,
-                            "Headerless",
+                            text(catalog, ExtendedUiTextKey::CopierHeaderAbsent),
                         );
                         ui.selectable_value(
                             workspace.target_mut(),
                             CopierHeader::Present,
-                            "512-byte header",
+                            text(catalog, ExtendedUiTextKey::CopierHeaderPresent),
                         );
                     });
                     ui.add_enabled_ui(workspace.target() == CopierHeader::Present, |ui| {
                         ui.horizontal(|ui| {
-                            ui.label("New-header fill byte");
+                            ui.label(text(catalog, ExtendedUiTextKey::CopierHeaderFillByte));
                             ui.text_edit_singleline(&mut self.fill);
                         });
                     });
-                    ui.label(
-                        "Only the physical file prefix changes; mapper addresses and logical ROM \
-                         contents remain identical.",
-                    );
+                    ui.label(text(
+                        catalog,
+                        ExtendedUiTextKey::CopierHeaderPreservationNotice,
+                    ));
                     ui.add_enabled_ui(!workspace.canonical_lunar_magic(), |ui| {
-                        if ui.button("Use Lunar Magic synthesized header").clicked() {
+                        if ui
+                            .button(text(catalog, ExtendedUiTextKey::CopierHeaderUseCanonical))
+                            .clicked()
+                        {
                             match workspace.prepare_lunar_magic_canonical(app.project_revision()) {
                                 Ok(value) => command = Some(value),
                                 Err(error) => self.error = Some(error),
@@ -75,10 +83,16 @@ impl CopierHeaderDialog {
                         }
                     });
                     ui.horizontal(|ui| {
-                        if ui.button("Cancel").clicked() {
+                        if ui
+                            .button(text(catalog, ExtendedUiTextKey::CopierHeaderCancel))
+                            .clicked()
+                        {
                             cancel = true;
                         }
-                        if ui.button("Convert transactionally").clicked() {
+                        if ui
+                            .button(text(catalog, ExtendedUiTextKey::CopierHeaderConvert))
+                            .clicked()
+                        {
                             let fill = if workspace.target() == CopierHeader::Present {
                                 level_editor_forms::parse_hex_u8(
                                     &self.fill,
@@ -101,12 +115,18 @@ impl CopierHeaderDialog {
             }
         }
         if let Some(error) = self.error.clone() {
-            egui::Window::new("Copier-header conversion error").show(context, |ui| {
-                ui.label(error);
-                if ui.button("OK").clicked() {
-                    self.error = None;
-                }
-            });
+            egui::Window::new(text(catalog, ExtendedUiTextKey::CopierHeaderErrorTitle)).show(
+                context,
+                |ui| {
+                    ui.label(error);
+                    if ui
+                        .button(text(catalog, ExtendedUiTextKey::CopierHeaderOk))
+                        .clicked()
+                    {
+                        self.error = None;
+                    }
+                },
+            );
         }
         command
     }
@@ -116,10 +136,23 @@ impl CopierHeaderDialog {
     }
 }
 
-fn header_name(header: CopierHeader) -> &'static str {
+fn text(catalog: Option<&LocalizationCatalog>, key: ExtendedUiTextKey) -> String {
+    crate::frontend_ui::extended_localized_text(catalog, key)
+}
+
+fn format_text(
+    catalog: Option<&LocalizationCatalog>,
+    key: ExtendedUiTextKey,
+    placeholder: &str,
+    value: &str,
+) -> String {
+    text(catalog, key).replace(placeholder, value)
+}
+
+fn header_name(catalog: Option<&LocalizationCatalog>, header: CopierHeader) -> String {
     match header {
-        CopierHeader::Absent => "headerless",
-        CopierHeader::Present => "512-byte copier header",
+        CopierHeader::Absent => text(catalog, ExtendedUiTextKey::CopierHeaderAbsent),
+        CopierHeader::Present => text(catalog, ExtendedUiTextKey::CopierHeaderPresent),
     }
 }
 
@@ -127,6 +160,25 @@ fn header_name(header: CopierHeader) -> &'static str {
 mod tests {
     use super::*;
     use std::path::PathBuf;
+
+    #[test]
+    fn complete_copier_header_form_uses_every_typed_key() {
+        let source = include_str!("copier_header_dialog.rs");
+        for key in ExtendedUiTextKey::ALL
+            .into_iter()
+            .filter(|key| format!("{key:?}").starts_with("CopierHeader"))
+        {
+            assert!(source.contains(&format!("ExtendedUiTextKey::{key:?}")));
+        }
+        for hard_coded_caption in [
+            "Window::new(\"Convert Copier Header\")",
+            "ui.label(\"Target\")",
+            "ui.button(\"Convert transactionally\")",
+            "Window::new(\"Copier-header conversion error\")",
+        ] {
+            assert!(!source.contains(hard_coded_caption));
+        }
+    }
 
     fn app() -> AppState {
         let _root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
