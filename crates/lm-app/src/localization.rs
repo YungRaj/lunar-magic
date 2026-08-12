@@ -3997,10 +3997,25 @@ pub enum ExtendedUiTextKey {
     VanillaLevelStageEntrance,
     VanillaLevelResetEntrance,
     VanillaLevelCommitEntrances,
+    VanillaLevelCurrentUnavailable,
+    VanillaLevelExitTableHelp,
+    VanillaLevelScreen,
+    VanillaLevelPresent,
+    VanillaLevelDestinationFlags,
+    VanillaLevelApplyAllExits,
+    VanillaLevelResetExits,
+    VanillaLevelInvalidExitScreens,
+    VanillaLevelInvalidExitSaveHelp,
+    VanillaLevelDisableWarningFormat,
+    VanillaLevelSaveAnywayQuestion,
+    VanillaLevelSaveAnyway,
+    VanillaLevelScanExitsTitle,
+    VanillaLevelNoInvalidExits,
+    VanillaLevelInvalidExitFixHelp,
 }
 
 impl ExtendedUiTextKey {
-    pub const ALL: [Self; 2296] = [
+    pub const ALL: [Self; 2311] = [
         Self::MwlDocumentEditorTitle,
         Self::MwlDocumentVersionFormat,
         Self::MwlDocumentFlagsHex,
@@ -6297,6 +6312,21 @@ impl ExtendedUiTextKey {
         Self::VanillaLevelStageEntrance,
         Self::VanillaLevelResetEntrance,
         Self::VanillaLevelCommitEntrances,
+        Self::VanillaLevelCurrentUnavailable,
+        Self::VanillaLevelExitTableHelp,
+        Self::VanillaLevelScreen,
+        Self::VanillaLevelPresent,
+        Self::VanillaLevelDestinationFlags,
+        Self::VanillaLevelApplyAllExits,
+        Self::VanillaLevelResetExits,
+        Self::VanillaLevelInvalidExitScreens,
+        Self::VanillaLevelInvalidExitSaveHelp,
+        Self::VanillaLevelDisableWarningFormat,
+        Self::VanillaLevelSaveAnywayQuestion,
+        Self::VanillaLevelSaveAnyway,
+        Self::VanillaLevelScanExitsTitle,
+        Self::VanillaLevelNoInvalidExits,
+        Self::VanillaLevelInvalidExitFixHelp,
     ];
 
     #[must_use]
@@ -9270,6 +9300,31 @@ impl ExtendedUiTextKey {
             Self::VanillaLevelStageEntrance => "Stage entrance fields",
             Self::VanillaLevelResetEntrance => "Reset entrance",
             Self::VanillaLevelCommitEntrances => "Commit entrances to ROM",
+            Self::VanillaLevelCurrentUnavailable => "The current level is unavailable.",
+            Self::VanillaLevelExitTableHelp => {
+                "Stage all 32 source screens together. Apply creates one level-editor Undo step; Reset discards this form only."
+            }
+            Self::VanillaLevelScreen => "Screen",
+            Self::VanillaLevelPresent => "Present",
+            Self::VanillaLevelDestinationFlags => "Destination / flags",
+            Self::VanillaLevelApplyAllExits => "Apply all screen exits",
+            Self::VanillaLevelResetExits => "Reset screen exits",
+            Self::VanillaLevelInvalidExitScreens => {
+                "The following screens have exit-enabled objects that lead to level 0 or 0x100:"
+            }
+            Self::VanillaLevelInvalidExitSaveHelp => {
+                "If you do not set an exit destination or remove the exit-enabled objects on these screens, the player could become trapped in an endless bonus game."
+            }
+            Self::VanillaLevelDisableWarningFormat => {
+                "To disable this warning, turn off “{option}” in Tools."
+            }
+            Self::VanillaLevelSaveAnywayQuestion => "Save the level anyway?",
+            Self::VanillaLevelSaveAnyway => "Save Anyway",
+            Self::VanillaLevelScanExitsTitle => "Scan for Undefined Exits",
+            Self::VanillaLevelNoInvalidExits => "No undefined exit destinations were found.",
+            Self::VanillaLevelInvalidExitFixHelp => {
+                "Set an exit destination or remove the exit-enabled pipe or door objects on those screens; otherwise the player can become trapped in an endless bonus game."
+            }
         }
     }
 

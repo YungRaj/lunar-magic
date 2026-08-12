@@ -7100,6 +7100,14 @@ ignore), native compilation passes, and renderer remains 237/237. Vanilla-level 
 shared progress windows, and retained live language-DLL evidence keep Localization Partial;
 aggregate parity remains 60/65.
 
+Localization coverage update (2026-08-12, vanilla screen-exit workflow): fifteen additional
+`VanillaLevel*` identities cover the 32-screen table, apply/reset actions, save-time invalid-exit
+warning, manual scan result, remediation guidance, and original-option disable hint. The table,
+warning, and result window all receive the same live catalog; screen values and the authenticated
+original option caption remain exact data. Bounded source audits reject former fixed-English table
+and scan controls. Focused native and localization tests pass, and renderer remains 237/237. Other
+vanilla/native forms keep Localization Partial; aggregate parity remains 60/65.
+
 Localization coverage update (2026-08-12, vanilla main and midway entrances): sixteen additional
 `VanillaLevel*` identities cover the exact four-plane main entrance, all main and separate-midway
 fields, installed/uninstalled runtime states, runtime installation, staging/reset, and ROM commit.

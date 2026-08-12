@@ -915,7 +915,7 @@ impl VanillaLevelEditor {
         if self.key != Some(key) {
             self.load(&snapshot, key, custom_sprites);
         }
-        self.show_invalid_exit_scan_result(ui.ctx());
+        self.show_invalid_exit_scan_result(ui.ctx(), app.localization());
         if let Some(command) = self.show_invalid_exit_save_warning(ui.ctx(), app.localization()) {
             match self.request_sprite_count_before_save(&snapshot, command) {
                 Ok(Some(command)) => return Some(command),
@@ -1089,7 +1089,7 @@ impl VanillaLevelEditor {
                                 .default_open(
                                     requested_tool_panel == Some(LevelToolPanel::ScreenExits),
                                 )
-                                .show(ui, |ui| self.show_screen_exit_table_editor(ui));
+                                .show(ui, |ui| self.show_screen_exit_table_editor(ui, catalog));
                             self.show_layer2_editor(
                                 ui,
                                 catalog,
@@ -2356,24 +2356,38 @@ impl VanillaLevelEditor {
         }
     }
 
-    fn show_screen_exit_table_editor(&mut self, ui: &mut egui::Ui) {
+    fn show_screen_exit_table_editor(
+        &mut self,
+        ui: &mut egui::Ui,
+        catalog: Option<&LocalizationCatalog>,
+    ) {
         let Some(controller) = self.controller.as_ref() else {
-            ui.label("The current level is unavailable.");
+            ui.label(vanilla_text(
+                catalog,
+                ExtendedUiTextKey::VanillaLevelCurrentUnavailable,
+            ));
             return;
         };
         let current = screen_exit_table(&controller.level().layer1.objects.records);
         let selected_screen_exit = self.screen_exit_table_selected;
         let form = self.screen_exit_table_form.get_or_insert(current);
-        ui.label(
-            "Stage all 32 source screens together. Apply creates one level-editor Undo step; Reset discards this form only.",
-        );
+        ui.label(vanilla_text(
+            catalog,
+            ExtendedUiTextKey::VanillaLevelExitTableHelp,
+        ));
         egui::Grid::new("vanilla-screen-exit-table-grid")
             .num_columns(3)
             .striped(true)
             .show(ui, |ui| {
-                ui.label("Screen");
-                ui.label("Present");
-                ui.label("Destination / flags");
+                ui.label(vanilla_text(catalog, ExtendedUiTextKey::VanillaLevelScreen));
+                ui.label(vanilla_text(
+                    catalog,
+                    ExtendedUiTextKey::VanillaLevelPresent,
+                ));
+                ui.label(vanilla_text(
+                    catalog,
+                    ExtendedUiTextKey::VanillaLevelDestinationFlags,
+                ));
                 ui.end_row();
                 for (screen, entry) in form.iter_mut().enumerate() {
                     let selected = selected_screen_exit == Some(screen as u8);
@@ -2398,10 +2412,22 @@ impl VanillaLevelEditor {
         let mut reset = false;
         ui.horizontal_wrapped(|ui| {
             apply = ui
-                .add_enabled(dirty, egui::Button::new("Apply all screen exits"))
+                .add_enabled(
+                    dirty,
+                    egui::Button::new(vanilla_text(
+                        catalog,
+                        ExtendedUiTextKey::VanillaLevelApplyAllExits,
+                    )),
+                )
                 .clicked();
             reset = ui
-                .add_enabled(dirty, egui::Button::new("Reset screen exits"))
+                .add_enabled(
+                    dirty,
+                    egui::Button::new(vanilla_text(
+                        catalog,
+                        ExtendedUiTextKey::VanillaLevelResetExits,
+                    )),
+                )
                 .clicked();
         });
         if reset {
@@ -4149,7 +4175,10 @@ impl VanillaLevelEditor {
             .collapsible(false)
             .resizable(false)
             .show(context, |ui| {
-                ui.label("The following screens have exit-enabled objects that lead to level 0 or 0x100:");
+                ui.label(vanilla_text(
+                    catalog,
+                    ExtendedUiTextKey::VanillaLevelInvalidExitScreens,
+                ));
                 ui.monospace(
                     warning
                         .screens
@@ -4158,14 +4187,32 @@ impl VanillaLevelEditor {
                         .collect::<Vec<_>>()
                         .join(", "),
                 );
-                ui.label("If you do not set an exit destination or remove the exit-enabled objects on these screens, the player could become trapped in an endless bonus game.");
-                ui.label(format!("To disable this warning, turn off “{option}” in Tools."));
-                ui.label("Save the level anyway?");
+                ui.label(vanilla_text(
+                    catalog,
+                    ExtendedUiTextKey::VanillaLevelInvalidExitSaveHelp,
+                ));
+                ui.label(
+                    vanilla_text(catalog, ExtendedUiTextKey::VanillaLevelDisableWarningFormat)
+                        .replace("{option}", option),
+                );
+                ui.label(vanilla_text(
+                    catalog,
+                    ExtendedUiTextKey::VanillaLevelSaveAnywayQuestion,
+                ));
                 ui.horizontal(|ui| {
-                    if ui.button("Save Anyway").clicked() {
+                    if ui
+                        .button(vanilla_text(
+                            catalog,
+                            ExtendedUiTextKey::VanillaLevelSaveAnyway,
+                        ))
+                        .clicked()
+                    {
                         save_anyway = true;
                     }
-                    if ui.button("Cancel").clicked() {
+                    if ui
+                        .button(vanilla_text(catalog, ExtendedUiTextKey::VanillaLevelCancel))
+                        .clicked()
+                    {
                         cancel = true;
                     }
                 });
@@ -4179,33 +4226,52 @@ impl VanillaLevelEditor {
         None
     }
 
-    fn show_invalid_exit_scan_result(&mut self, context: &egui::Context) {
+    fn show_invalid_exit_scan_result(
+        &mut self,
+        context: &egui::Context,
+        catalog: Option<&LocalizationCatalog>,
+    ) {
         let Some(result) = self.invalid_exit_scan_result.clone() else {
             return;
         };
         let mut close = false;
-        egui::Window::new("Scan for Undefined Exits")
-            .collapsible(false)
-            .resizable(false)
-            .show(context, |ui| {
-                if result.screens.is_empty() {
-                    ui.label("No undefined exit destinations were found.");
-                } else {
-                    ui.label("The following screens have exit-enabled objects that lead to level 0 or 0x100:");
-                    ui.monospace(
-                        result
-                            .screens
-                            .iter()
-                            .map(|screen| format!("{screen:02X}"))
-                            .collect::<Vec<_>>()
-                            .join(", "),
-                    );
-                    ui.label("Set an exit destination or remove the exit-enabled pipe or door objects on those screens; otherwise the player can become trapped in an endless bonus game.");
-                }
-                if ui.button("OK").clicked() {
-                    close = true;
-                }
-            });
+        egui::Window::new(vanilla_text(
+            catalog,
+            ExtendedUiTextKey::VanillaLevelScanExitsTitle,
+        ))
+        .collapsible(false)
+        .resizable(false)
+        .show(context, |ui| {
+            if result.screens.is_empty() {
+                ui.label(vanilla_text(
+                    catalog,
+                    ExtendedUiTextKey::VanillaLevelNoInvalidExits,
+                ));
+            } else {
+                ui.label(vanilla_text(
+                    catalog,
+                    ExtendedUiTextKey::VanillaLevelInvalidExitScreens,
+                ));
+                ui.monospace(
+                    result
+                        .screens
+                        .iter()
+                        .map(|screen| format!("{screen:02X}"))
+                        .collect::<Vec<_>>()
+                        .join(", "),
+                );
+                ui.label(vanilla_text(
+                    catalog,
+                    ExtendedUiTextKey::VanillaLevelInvalidExitFixHelp,
+                ));
+            }
+            if ui
+                .button(vanilla_text(catalog, ExtendedUiTextKey::VanillaLevelOk))
+                .clicked()
+            {
+                close = true;
+            }
+        });
         if close {
             self.invalid_exit_scan_result = None;
         }
@@ -17492,6 +17558,44 @@ mod tests {
             assert!(
                 !entrance_editor.contains(literal),
                 "fixed-English entrance control: {literal}"
+            );
+        }
+        let exit_table = source
+            .split("    fn show_screen_exit_table_editor(")
+            .nth(1)
+            .unwrap()
+            .split("    fn refresh_forms_after_history(")
+            .next()
+            .unwrap();
+        let exit_scan = source
+            .split("    fn show_invalid_exit_save_warning(")
+            .nth(1)
+            .unwrap()
+            .split("    fn take_screen_exit_follow_after_save(")
+            .next()
+            .unwrap();
+        for literal in [
+            "label(\"The current level is unavailable.\")",
+            "label(\"Screen\")",
+            "label(\"Present\")",
+            "label(\"Destination / flags\")",
+            "Button::new(\"Apply all screen exits\")",
+            "Button::new(\"Reset screen exits\")",
+        ] {
+            assert!(
+                !exit_table.contains(literal),
+                "fixed-English exit-table control: {literal}"
+            );
+        }
+        for literal in [
+            "Window::new(\"Scan for Undefined Exits\")",
+            "label(\"No undefined exit destinations were found.\")",
+            "label(\"Save the level anyway?\")",
+            "button(\"Save Anyway\")",
+        ] {
+            assert!(
+                !exit_scan.contains(literal),
+                "fixed-English exit-scan control: {literal}"
             );
         }
         let modeless_editors = source
