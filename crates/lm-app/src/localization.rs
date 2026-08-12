@@ -4091,10 +4091,35 @@ pub enum ExtendedUiTextKey {
     VanillaLevelMatchesRomStatus,
     VanillaLevelRelocationNeedsExpansion,
     VanillaLevelExpandRomOneMib,
+    VanillaLevelSpriteStreamRelocateFormat,
+    VanillaLevelSpriteStreamInPlaceFormat,
+    VanillaLevelSpriteStreamErrorFormat,
+    VanillaLevelSelectOrdinaryLayer2Object,
+    VanillaLevelCommand,
+    VanillaLevelParameter,
+    VanillaLevelCoordinateA,
+    VanillaLevelCoordinateB,
+    VanillaLevelSpriteControlNoProperties,
+    VanillaLevelY,
+    VanillaLevelBytes,
+    VanillaLevelNativeBytesHelp,
+    VanillaLevelRecordValidationHelp,
+    VanillaLevelRawObjectRecord,
+    VanillaLevelRawObjectBytesHelp,
+    VanillaLevelRawObjectPreservationHelp,
+    VanillaLevelAuthenticatedObjectSize,
+    VanillaLevelMajorAxisTiles,
+    VanillaLevelMinorAxisTiles,
+    VanillaLevelFixedFormat,
+    VanillaLevelHorizontalTiles,
+    VanillaLevelVerticalTiles,
+    VanillaLevelSize,
+    VanillaLevelFixedByHandler,
+    VanillaLevelResizeHelp,
 }
 
 impl ExtendedUiTextKey {
-    pub const ALL: [Self; 2390] = [
+    pub const ALL: [Self; 2415] = [
         Self::MwlDocumentEditorTitle,
         Self::MwlDocumentVersionFormat,
         Self::MwlDocumentFlagsHex,
@@ -6485,6 +6510,31 @@ impl ExtendedUiTextKey {
         Self::VanillaLevelMatchesRomStatus,
         Self::VanillaLevelRelocationNeedsExpansion,
         Self::VanillaLevelExpandRomOneMib,
+        Self::VanillaLevelSpriteStreamRelocateFormat,
+        Self::VanillaLevelSpriteStreamInPlaceFormat,
+        Self::VanillaLevelSpriteStreamErrorFormat,
+        Self::VanillaLevelSelectOrdinaryLayer2Object,
+        Self::VanillaLevelCommand,
+        Self::VanillaLevelParameter,
+        Self::VanillaLevelCoordinateA,
+        Self::VanillaLevelCoordinateB,
+        Self::VanillaLevelSpriteControlNoProperties,
+        Self::VanillaLevelY,
+        Self::VanillaLevelBytes,
+        Self::VanillaLevelNativeBytesHelp,
+        Self::VanillaLevelRecordValidationHelp,
+        Self::VanillaLevelRawObjectRecord,
+        Self::VanillaLevelRawObjectBytesHelp,
+        Self::VanillaLevelRawObjectPreservationHelp,
+        Self::VanillaLevelAuthenticatedObjectSize,
+        Self::VanillaLevelMajorAxisTiles,
+        Self::VanillaLevelMinorAxisTiles,
+        Self::VanillaLevelFixedFormat,
+        Self::VanillaLevelHorizontalTiles,
+        Self::VanillaLevelVerticalTiles,
+        Self::VanillaLevelSize,
+        Self::VanillaLevelFixedByHandler,
+        Self::VanillaLevelResizeHelp,
     ];
 
     #[must_use]
@@ -9600,6 +9650,51 @@ impl ExtendedUiTextKey {
                 "Layer 1/2 relocation needs one expanded free-space bank."
             }
             Self::VanillaLevelExpandRomOneMib => "Expand ROM to 1 MiB",
+            Self::VanillaLevelSpriteStreamRelocateFormat => {
+                "Sprite stream: {original} → {staged} bytes. Commit will allocate a RATS-owned copy in the original shared bank, update only this level's low pointer, and preserve the old unowned bytes."
+            }
+            Self::VanillaLevelSpriteStreamInPlaceFormat => {
+                "Sprite stream: {original} → {staged} bytes. Commit can replace this level's exclusive shared-bank stream in place and repairs the checksum."
+            }
+            Self::VanillaLevelSpriteStreamErrorFormat => {
+                "Sprite stream cannot be serialized: {error}"
+            }
+            Self::VanillaLevelSelectOrdinaryLayer2Object => {
+                "Select an ordinary Layer 2 object to edit semantic fields."
+            }
+            Self::VanillaLevelCommand => "Command",
+            Self::VanillaLevelParameter => "Parameter",
+            Self::VanillaLevelCoordinateA => "Coordinate A",
+            Self::VanillaLevelCoordinateB => "Coordinate B",
+            Self::VanillaLevelSpriteControlNoProperties => {
+                "The selected sprite-stream control has no editable placement properties."
+            }
+            Self::VanillaLevelY => "Y",
+            Self::VanillaLevelBytes => "Bytes",
+            Self::VanillaLevelNativeBytesHelp => {
+                "Complete native record bytes separated by whitespace"
+            }
+            Self::VanillaLevelRecordValidationHelp => {
+                "The complete command-specific record is validated before any staged data changes."
+            }
+            Self::VanillaLevelRawObjectRecord => "Raw native object record",
+            Self::VanillaLevelRawObjectBytesHelp => {
+                "Three to eight hexadecimal bytes separated by whitespace"
+            }
+            Self::VanillaLevelRawObjectPreservationHelp => {
+                "Apply raw record preserves and exposes command-specific extension bytes. The encoded command must declare exactly the supplied native record length."
+            }
+            Self::VanillaLevelAuthenticatedObjectSize => "Authenticated object size",
+            Self::VanillaLevelMajorAxisTiles => "Major-axis tiles",
+            Self::VanillaLevelMinorAxisTiles => "Minor-axis tiles",
+            Self::VanillaLevelFixedFormat => "{count} (fixed)",
+            Self::VanillaLevelHorizontalTiles => "Horizontal tiles",
+            Self::VanillaLevelVerticalTiles => "Vertical tiles",
+            Self::VanillaLevelSize => "Size",
+            Self::VanillaLevelFixedByHandler => "fixed by active tileset handler",
+            Self::VanillaLevelResizeHelp => {
+                "Size controls update only the authenticated native fields; use Apply object fields to commit."
+            }
         }
     }
 

@@ -8294,3 +8294,14 @@ fallback. Bounded shell and commit/history audits reject all former literal capt
 compilation, the focused audit, localization 28/28 active cases (one provenance ignore), and
 renderer 237/237 pass. Remaining vanilla/native forms and retained live language-DLL evidence keep
 Localization Partial; aggregate parity remains 60/65.
+
+Localization coverage update (2026-08-12, complete shared vanilla entity forms): twenty-five
+appended `VanillaLevel*` identities cover sprite-stream allocation/in-place/error status, compact
+object and modeless sprite properties, manual and raw native-record fields/help, and every
+authenticated object-resize axis/fixed-state control. The active catalog now reaches every shared
+helper caller from Layer 1, Layer 2, sprite, properties, and manual-edit surfaces; technical errors
+remain exact payload substitutions. A complete helper-slice audit rejects the former literals. A
+fresh production-widget scan finds only the intentional em-dash empty-value glyph in the vanilla
+editor. Native compilation, the focused audit, localization 28/28 active cases (one provenance
+ignore), and renderer 237/237 pass. Other native forms and retained live language-DLL evidence
+keep Localization Partial; aggregate parity remains 60/65.

@@ -1721,12 +1721,14 @@ impl VanillaLevelEditor {
             .and_then(|record| self.active_object_resize_model(record, custom_objects));
         show_compact_object_fields(
             ui,
+            catalog,
             "vanilla-layer2-object-fields",
             &mut self.layer2_object_form,
         );
-        show_standard_object_resize_fields(ui, resize_model, &mut self.layer2_object_form);
+        show_standard_object_resize_fields(ui, catalog, resize_model, &mut self.layer2_object_form);
         show_raw_object_record(
             ui,
+            catalog,
             "vanilla-layer2-raw-object",
             &mut self.layer2_object_form,
         );
@@ -6237,6 +6239,7 @@ impl VanillaLevelEditor {
                 );
                 show_compact_object_fields(
                     ui,
+                    catalog,
                     "modeless-layer1-object-properties",
                     &mut self.object_form,
                 );
@@ -6260,6 +6263,7 @@ impl VanillaLevelEditor {
                 );
                 show_compact_object_fields(
                     ui,
+                    catalog,
                     "modeless-layer2-object-properties",
                     &mut self.layer2_object_form,
                 );
@@ -6291,7 +6295,7 @@ impl VanillaLevelEditor {
                     vanilla_text(catalog, ExtendedUiTextKey::VanillaLevelSpriteRecordFormat)
                         .replace("{index}", &self.selected_sprite.to_string()),
                 );
-                show_modeless_sprite_properties(ui, &mut self.sprite_form);
+                show_modeless_sprite_properties(ui, catalog, &mut self.sprite_form);
                 if ui
                     .add_enabled(
                         self.sprite_form.semantic_record,
@@ -6340,7 +6344,7 @@ impl VanillaLevelEditor {
                     vanilla_text(catalog, ExtendedUiTextKey::VanillaLevelLayer1ObjectFormat)
                         .replace("{index}", &self.selected_object.to_string()),
                 );
-                manual_record_field(ui, &mut self.object_form.encoded);
+                manual_record_field(ui, catalog, &mut self.object_form.encoded);
                 if ui
                     .button(vanilla_text(
                         catalog,
@@ -6362,7 +6366,7 @@ impl VanillaLevelEditor {
                     vanilla_text(catalog, ExtendedUiTextKey::VanillaLevelLayer2ObjectFormat)
                         .replace("{index}", &self.selected_layer2_object.to_string()),
                 );
-                manual_record_field(ui, &mut self.layer2_object_form.encoded);
+                manual_record_field(ui, catalog, &mut self.layer2_object_form.encoded);
                 if ui
                     .button(vanilla_text(
                         catalog,
@@ -6384,7 +6388,7 @@ impl VanillaLevelEditor {
                     vanilla_text(catalog, ExtendedUiTextKey::VanillaLevelSpriteTokenFormat)
                         .replace("{index}", &self.selected_sprite.to_string()),
                 );
-                manual_record_field(ui, &mut self.sprite_form.encoded);
+                manual_record_field(ui, catalog, &mut self.sprite_form.encoded);
                 if ui
                     .button(vanilla_text(
                         catalog,
@@ -9659,9 +9663,14 @@ impl VanillaLevelEditor {
                 ui.checkbox(&mut self.object_form.advances_screen, "");
                 ui.end_row();
             });
-            show_standard_object_resize_fields(ui, resize_model, &mut self.object_form);
+            show_standard_object_resize_fields(ui, catalog, resize_model, &mut self.object_form);
         }
-        show_raw_object_record(ui, "vanilla-layer1-raw-object", &mut self.object_form);
+        show_raw_object_record(
+            ui,
+            catalog,
+            "vanilla-layer1-raw-object",
+            &mut self.object_form,
+        );
         self.object_action_buttons(ui, catalog, record_count, has_selection);
         self.handle_object_paste(ui, record_count);
     }
@@ -10731,7 +10740,7 @@ impl VanillaLevelEditor {
         self.custom_sprite_catalog(ui, catalog, custom_sprites, external_assets, custom_map16);
         self.sprite_catalog_preview_area(ui, custom_sprites, external_assets, custom_map16);
         self.sprite_form_controls(ui, catalog);
-        sprite_save_constraint(ui, self.controller.as_ref());
+        sprite_save_constraint(ui, catalog, self.controller.as_ref());
         self.sprite_editor_actions(ui, catalog, token_count);
         if self.paste_target == Some(EntityPasteTarget::Sprite)
             && let Some(text) = pasted_text(ui)
@@ -16620,88 +16629,190 @@ fn header_row(ui: &mut egui::Ui, label: &str, value: &mut u8, maximum: u8) {
     ui.end_row();
 }
 
-fn sprite_save_constraint(ui: &mut egui::Ui, controller: Option<&LevelController>) {
+fn sprite_save_constraint(
+    ui: &mut egui::Ui,
+    catalog: Option<&LocalizationCatalog>,
+    controller: Option<&LevelController>,
+) {
     let Some(controller) = controller else {
         return;
     };
     match controller.sprite_encoded_lengths() {
         Ok((original, staged)) if staged > original => {
-            ui.small(format!(
-                "Sprite stream: {original} → {staged} bytes. Commit will allocate a RATS-owned copy in the original shared bank, update only this level's low pointer, and preserve the old unowned bytes."
-            ));
+            ui.small(
+                vanilla_text(
+                    catalog,
+                    ExtendedUiTextKey::VanillaLevelSpriteStreamRelocateFormat,
+                )
+                .replace("{original}", &original.to_string())
+                .replace("{staged}", &staged.to_string()),
+            );
         }
         Ok((original, staged)) => {
-            ui.small(format!(
-                "Sprite stream: {original} → {staged} bytes. Commit can replace this level's exclusive shared-bank stream in place and repairs the checksum."
-            ));
+            ui.small(
+                vanilla_text(
+                    catalog,
+                    ExtendedUiTextKey::VanillaLevelSpriteStreamInPlaceFormat,
+                )
+                .replace("{original}", &original.to_string())
+                .replace("{staged}", &staged.to_string()),
+            );
         }
         Err(error) => {
             ui.colored_label(
                 egui::Color32::RED,
-                format!("Sprite stream cannot be serialized: {error}"),
+                vanilla_text(
+                    catalog,
+                    ExtendedUiTextKey::VanillaLevelSpriteStreamErrorFormat,
+                )
+                .replace("{error}", &error.to_string()),
             );
         }
     }
 }
 
-fn show_compact_object_fields(ui: &mut egui::Ui, id: &str, form: &mut ObjectForm) {
+fn show_compact_object_fields(
+    ui: &mut egui::Ui,
+    catalog: Option<&LocalizationCatalog>,
+    id: &str,
+    form: &mut ObjectForm,
+) {
     if form.screen_exit.is_some() || form.screen_jump.is_some() {
-        ui.small("Select an ordinary Layer 2 object to edit semantic fields.");
+        ui.small(vanilla_text(
+            catalog,
+            ExtendedUiTextKey::VanillaLevelSelectOrdinaryLayer2Object,
+        ));
         return;
     }
     egui::Grid::new(id).show(ui, |ui| {
-        header_row(ui, "Command", &mut form.command_id, 0x3f);
-        header_row(ui, "Parameter", &mut form.parameter, 0xff);
-        header_row(ui, "Coordinate A", &mut form.first_coordinate, 0x0f);
-        header_row(ui, "Coordinate B", &mut form.second_coordinate, 0x0f);
-        ui.label("Advance screen");
+        header_row(
+            ui,
+            &vanilla_text(catalog, ExtendedUiTextKey::VanillaLevelCommand),
+            &mut form.command_id,
+            0x3f,
+        );
+        header_row(
+            ui,
+            &vanilla_text(catalog, ExtendedUiTextKey::VanillaLevelParameter),
+            &mut form.parameter,
+            0xff,
+        );
+        header_row(
+            ui,
+            &vanilla_text(catalog, ExtendedUiTextKey::VanillaLevelCoordinateA),
+            &mut form.first_coordinate,
+            0x0f,
+        );
+        header_row(
+            ui,
+            &vanilla_text(catalog, ExtendedUiTextKey::VanillaLevelCoordinateB),
+            &mut form.second_coordinate,
+            0x0f,
+        );
+        ui.label(vanilla_text(
+            catalog,
+            ExtendedUiTextKey::VanillaLevelAdvanceScreen,
+        ));
         ui.checkbox(&mut form.advances_screen, "");
         ui.end_row();
     });
 }
 
-fn show_modeless_sprite_properties(ui: &mut egui::Ui, form: &mut SpriteForm) {
+fn show_modeless_sprite_properties(
+    ui: &mut egui::Ui,
+    catalog: Option<&LocalizationCatalog>,
+    form: &mut SpriteForm,
+) {
     if !form.semantic_record {
-        ui.small("The selected sprite-stream control has no editable placement properties.");
+        ui.small(vanilla_text(
+            catalog,
+            ExtendedUiTextKey::VanillaLevelSpriteControlNoProperties,
+        ));
         return;
     }
     egui::Grid::new("modeless-sprite-properties").show(ui, |ui| {
-        header_row(ui, "Sprite number", &mut form.sprite_number, 0xff);
-        header_row(ui, "Screen", &mut form.screen, 0xff);
-        header_row(ui, "X", &mut form.x, 0x0f);
-        header_row(ui, "Y", &mut form.y_low, 0x0f);
-        header_row(ui, "Extra bits", &mut form.extra_bits, 0x0f);
+        header_row(
+            ui,
+            &vanilla_text(catalog, ExtendedUiTextKey::VanillaLevelSpriteNumber),
+            &mut form.sprite_number,
+            0xff,
+        );
+        header_row(
+            ui,
+            &vanilla_text(catalog, ExtendedUiTextKey::VanillaLevelScreen),
+            &mut form.screen,
+            0xff,
+        );
+        header_row(
+            ui,
+            &vanilla_text(catalog, ExtendedUiTextKey::VanillaLevelX),
+            &mut form.x,
+            0x0f,
+        );
+        header_row(
+            ui,
+            &vanilla_text(catalog, ExtendedUiTextKey::VanillaLevelY),
+            &mut form.y_low,
+            0x0f,
+        );
+        header_row(
+            ui,
+            &vanilla_text(catalog, ExtendedUiTextKey::VanillaLevelExtraBits),
+            &mut form.extra_bits,
+            0x0f,
+        );
     });
 }
 
-fn manual_record_field(ui: &mut egui::Ui, encoded: &mut String) {
+fn manual_record_field(
+    ui: &mut egui::Ui,
+    catalog: Option<&LocalizationCatalog>,
+    encoded: &mut String,
+) {
     ui.horizontal(|ui| {
-        ui.label("Bytes");
-        ui.text_edit_singleline(encoded)
-            .on_hover_text("Complete native record bytes separated by whitespace");
+        ui.label(vanilla_text(catalog, ExtendedUiTextKey::VanillaLevelBytes));
+        ui.text_edit_singleline(encoded).on_hover_text(vanilla_text(
+            catalog,
+            ExtendedUiTextKey::VanillaLevelNativeBytesHelp,
+        ));
     });
-    ui.small("The complete command-specific record is validated before any staged data changes.");
+    ui.small(vanilla_text(
+        catalog,
+        ExtendedUiTextKey::VanillaLevelRecordValidationHelp,
+    ));
 }
 
-fn show_raw_object_record(ui: &mut egui::Ui, id: &str, form: &mut ObjectForm) {
-    egui::CollapsingHeader::new("Raw native object record")
-        .id_salt(id)
-        .show(ui, |ui| {
-            ui.horizontal(|ui| {
-                ui.label("Bytes");
-                ui.text_edit_singleline(&mut form.encoded)
-                    .on_hover_text("Three to eight hexadecimal bytes separated by whitespace");
-            });
-            ui.small(
-                "Apply raw record preserves and exposes command-specific extension bytes. \
-                 The encoded command must declare exactly the supplied native record length.",
-            );
+fn show_raw_object_record(
+    ui: &mut egui::Ui,
+    catalog: Option<&LocalizationCatalog>,
+    id: &str,
+    form: &mut ObjectForm,
+) {
+    egui::CollapsingHeader::new(vanilla_text(
+        catalog,
+        ExtendedUiTextKey::VanillaLevelRawObjectRecord,
+    ))
+    .id_salt(id)
+    .show(ui, |ui| {
+        ui.horizontal(|ui| {
+            ui.label(vanilla_text(catalog, ExtendedUiTextKey::VanillaLevelBytes));
+            ui.text_edit_singleline(&mut form.encoded)
+                .on_hover_text(vanilla_text(
+                    catalog,
+                    ExtendedUiTextKey::VanillaLevelRawObjectBytesHelp,
+                ));
         });
+        ui.small(vanilla_text(
+            catalog,
+            ExtendedUiTextKey::VanillaLevelRawObjectPreservationHelp,
+        ));
+    });
 }
 
 #[allow(clippy::too_many_lines)]
 fn show_standard_object_resize_fields(
     ui: &mut egui::Ui,
+    catalog: Option<&LocalizationCatalog>,
     model: Option<lm_render::StandardObjectResizeModel>,
     form: &mut ObjectForm,
 ) {
@@ -16709,11 +16820,17 @@ fn show_standard_object_resize_fields(
         return;
     };
     ui.group(|ui| {
-        ui.label("Authenticated object size");
+        ui.label(vanilla_text(
+            catalog,
+            ExtendedUiTextKey::VanillaLevelAuthenticatedObjectSize,
+        ));
         egui::Grid::new(("standard-object-resize", ui.id())).show(ui, |ui| match model {
             lm_render::StandardObjectResizeModel::ParameterNibbles => {
                 let mut major = (form.parameter >> 4) + 1;
-                ui.label("Major-axis tiles");
+                ui.label(vanilla_text(
+                    catalog,
+                    ExtendedUiTextKey::VanillaLevelMajorAxisTiles,
+                ));
                 if ui
                     .add(egui::DragValue::new(&mut major).range(1..=16))
                     .changed()
@@ -16723,7 +16840,10 @@ fn show_standard_object_resize_fields(
                 }
                 ui.end_row();
                 let mut minor = (form.parameter & 0x0f) + 1;
-                ui.label("Minor-axis tiles");
+                ui.label(vanilla_text(
+                    catalog,
+                    ExtendedUiTextKey::VanillaLevelMinorAxisTiles,
+                ));
                 if ui
                     .add(egui::DragValue::new(&mut minor).range(1..=16))
                     .changed()
@@ -16736,7 +16856,10 @@ fn show_standard_object_resize_fields(
             }
             lm_render::StandardObjectResizeModel::SwappedParameterNibbles => {
                 let mut major = (form.parameter & 0x0f) + 1;
-                ui.label("Major-axis tiles");
+                ui.label(vanilla_text(
+                    catalog,
+                    ExtendedUiTextKey::VanillaLevelMajorAxisTiles,
+                ));
                 if ui
                     .add(egui::DragValue::new(&mut major).range(1..=16))
                     .changed()
@@ -16746,7 +16869,10 @@ fn show_standard_object_resize_fields(
                 }
                 ui.end_row();
                 let mut minor = (form.parameter >> 4) + 1;
-                ui.label("Minor-axis tiles");
+                ui.label(vanilla_text(
+                    catalog,
+                    ExtendedUiTextKey::VanillaLevelMinorAxisTiles,
+                ));
                 if ui
                     .add(egui::DragValue::new(&mut minor).range(1..=16))
                     .changed()
@@ -16759,7 +16885,10 @@ fn show_standard_object_resize_fields(
             }
             lm_render::StandardObjectResizeModel::MajorNibble => {
                 let mut major = (form.parameter >> 4) + 1;
-                ui.label("Major-axis tiles");
+                ui.label(vanilla_text(
+                    catalog,
+                    ExtendedUiTextKey::VanillaLevelMajorAxisTiles,
+                ));
                 if ui
                     .add(egui::DragValue::new(&mut major).range(1..=16))
                     .changed()
@@ -16768,16 +16897,31 @@ fn show_standard_object_resize_fields(
                         .expect("bounded major-axis control");
                 }
                 ui.end_row();
-                ui.label("Minor-axis tiles");
-                ui.label("1 (fixed)");
+                ui.label(vanilla_text(
+                    catalog,
+                    ExtendedUiTextKey::VanillaLevelMinorAxisTiles,
+                ));
+                ui.label(
+                    vanilla_text(catalog, ExtendedUiTextKey::VanillaLevelFixedFormat)
+                        .replace("{count}", "1"),
+                );
                 ui.end_row();
             }
             lm_render::StandardObjectResizeModel::MinorNibble { fixed_major_tiles } => {
-                ui.label("Major-axis tiles");
-                ui.label(format!("{fixed_major_tiles} (fixed)"));
+                ui.label(vanilla_text(
+                    catalog,
+                    ExtendedUiTextKey::VanillaLevelMajorAxisTiles,
+                ));
+                ui.label(
+                    vanilla_text(catalog, ExtendedUiTextKey::VanillaLevelFixedFormat)
+                        .replace("{count}", &fixed_major_tiles.to_string()),
+                );
                 ui.end_row();
                 let mut minor = (form.parameter & 0x0f) + 1;
-                ui.label("Minor-axis tiles");
+                ui.label(vanilla_text(
+                    catalog,
+                    ExtendedUiTextKey::VanillaLevelMinorAxisTiles,
+                ));
                 if ui
                     .add(egui::DragValue::new(&mut minor).range(1..=16))
                     .changed()
@@ -16790,7 +16934,10 @@ fn show_standard_object_resize_fields(
             }
             lm_render::StandardObjectResizeModel::MajorByte { fixed_minor_tiles } => {
                 let mut major = u16::from(form.parameter) + 1;
-                ui.label("Major-axis tiles");
+                ui.label(vanilla_text(
+                    catalog,
+                    ExtendedUiTextKey::VanillaLevelMajorAxisTiles,
+                ));
                 if ui
                     .add(egui::DragValue::new(&mut major).range(1..=256))
                     .changed()
@@ -16799,16 +16946,31 @@ fn show_standard_object_resize_fields(
                         .expect("bounded full-byte major-axis control");
                 }
                 ui.end_row();
-                ui.label("Minor-axis tiles");
-                ui.label(format!("{fixed_minor_tiles} (fixed)"));
+                ui.label(vanilla_text(
+                    catalog,
+                    ExtendedUiTextKey::VanillaLevelMinorAxisTiles,
+                ));
+                ui.label(
+                    vanilla_text(catalog, ExtendedUiTextKey::VanillaLevelFixedFormat)
+                        .replace("{count}", &fixed_minor_tiles.to_string()),
+                );
                 ui.end_row();
             }
             lm_render::StandardObjectResizeModel::MinorByte { fixed_major_tiles } => {
-                ui.label("Major-axis tiles");
-                ui.label(format!("{fixed_major_tiles} (fixed)"));
+                ui.label(vanilla_text(
+                    catalog,
+                    ExtendedUiTextKey::VanillaLevelMajorAxisTiles,
+                ));
+                ui.label(
+                    vanilla_text(catalog, ExtendedUiTextKey::VanillaLevelFixedFormat)
+                        .replace("{count}", &fixed_major_tiles.to_string()),
+                );
                 ui.end_row();
                 let mut minor = u16::from(form.parameter) + 1;
-                ui.label("Minor-axis tiles");
+                ui.label(vanilla_text(
+                    catalog,
+                    ExtendedUiTextKey::VanillaLevelMinorAxisTiles,
+                ));
                 if ui
                     .add(egui::DragValue::new(&mut minor).range(1..=256))
                     .changed()
@@ -16819,25 +16981,34 @@ fn show_standard_object_resize_fields(
                 ui.end_row();
             }
             lm_render::StandardObjectResizeModel::ExtendedCommand27Axes => {
-                let (mut horizontal, mut vertical) =
-                    form.extended_command27_size.unwrap_or((1, 1));
-                ui.label("Horizontal tiles");
+                let (mut horizontal, mut vertical) = form.extended_command27_size.unwrap_or((1, 1));
+                ui.label(vanilla_text(
+                    catalog,
+                    ExtendedUiTextKey::VanillaLevelHorizontalTiles,
+                ));
                 ui.add(egui::DragValue::new(&mut horizontal).range(1..=128));
                 ui.end_row();
-                ui.label("Vertical tiles");
+                ui.label(vanilla_text(
+                    catalog,
+                    ExtendedUiTextKey::VanillaLevelVerticalTiles,
+                ));
                 ui.add(egui::DragValue::new(&mut vertical).range(1..=128));
                 ui.end_row();
                 form.extended_command27_size = Some((horizontal, vertical));
             }
             lm_render::StandardObjectResizeModel::Fixed => {
-                ui.label("Size");
-                ui.label("fixed by active tileset handler");
+                ui.label(vanilla_text(catalog, ExtendedUiTextKey::VanillaLevelSize));
+                ui.label(vanilla_text(
+                    catalog,
+                    ExtendedUiTextKey::VanillaLevelFixedByHandler,
+                ));
                 ui.end_row();
             }
         });
-        ui.small(
-            "Size controls update only the authenticated native fields; use Apply object fields to commit.",
-        );
+        ui.small(vanilla_text(
+            catalog,
+            ExtendedUiTextKey::VanillaLevelResizeHelp,
+        ));
     });
 }
 
@@ -17877,6 +18048,41 @@ mod tests {
             assert!(
                 !sprite_actions.contains(literal),
                 "fixed-English sprite mutation action: {literal}"
+            );
+        }
+        let shared_entity_helpers = source
+            .split("fn sprite_save_constraint(")
+            .nth(1)
+            .unwrap()
+            .split("fn set_standard_object_major_tiles(")
+            .next()
+            .unwrap();
+        for literal in [
+            "Sprite stream: {original}",
+            "Sprite stream cannot be serialized:",
+            "small(\"Select an ordinary Layer 2 object",
+            "\"Command\"",
+            "\"Parameter\"",
+            "\"Coordinate A\"",
+            "\"Coordinate B\"",
+            "label(\"Advance screen\")",
+            "small(\"The selected sprite-stream control",
+            "label(\"Bytes\")",
+            "on_hover_text(\"Complete native record bytes",
+            "small(\"The complete command-specific record",
+            "CollapsingHeader::new(\"Raw native object record\")",
+            "on_hover_text(\"Three to eight hexadecimal bytes",
+            "label(\"Authenticated object size\")",
+            "label(\"Major-axis tiles\")",
+            "label(\"Minor-axis tiles\")",
+            "label(\"Horizontal tiles\")",
+            "label(\"Vertical tiles\")",
+            "label(\"Size\")",
+            "label(\"fixed by active tileset handler\")",
+        ] {
+            assert!(
+                !shared_entity_helpers.contains(literal),
+                "fixed-English shared entity helper control: {literal}"
             );
         }
         let sprite_semantic_form = source

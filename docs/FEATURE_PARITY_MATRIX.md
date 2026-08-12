@@ -2422,3 +2422,12 @@ fallback. Bounded shell and commit/history audits reject every former literal ca
 compilation, the focused audit, localization 28/28 active cases (one provenance ignore), and
 renderer 237/237 pass. Remaining vanilla/native forms and live translated language-DLL evidence
 keep Localization Partial, so aggregate parity remains 60/65.
+
+Localization coverage update (2026-08-12, complete shared vanilla entity forms): twenty-five
+typed `VanillaLevel*` keys replace fixed English across sprite-stream persistence status, compact
+object/modeless sprite properties, manual/raw records, and authenticated object resizing. Every
+Layer 1, Layer 2, sprite, properties, and manual-editor caller receives the active catalog. A
+complete helper audit rejects former literals, and the production-widget scan leaves only the
+intentional em-dash empty-value glyph. Native compilation, the focused audit, localization 28/28
+active cases (one provenance ignore), and renderer 237/237 pass. Other native forms and live
+translated language-DLL evidence keep Localization Partial, so aggregate parity remains 60/65.
