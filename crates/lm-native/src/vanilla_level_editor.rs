@@ -10688,7 +10688,7 @@ impl VanillaLevelEditor {
         self.sprite_catalog(ui, catalog);
         self.custom_sprite_catalog(ui, catalog, custom_sprites, external_assets, custom_map16);
         self.sprite_catalog_preview_area(ui, custom_sprites, external_assets, custom_map16);
-        self.sprite_form_controls(ui);
+        self.sprite_form_controls(ui, catalog);
         sprite_save_constraint(ui, self.controller.as_ref());
         self.sprite_editor_actions(ui, catalog, token_count);
         if self.paste_target == Some(EntityPasteTarget::Sprite)
@@ -11242,39 +11242,71 @@ impl VanillaLevelEditor {
         }
     }
 
-    fn sprite_form_controls(&mut self, ui: &mut egui::Ui) {
+    fn sprite_form_controls(&mut self, ui: &mut egui::Ui, catalog: Option<&LocalizationCatalog>) {
         egui::Grid::new("vanilla-sprite-fields").show(ui, |ui| {
             header_row(
                 ui,
-                "Sprite memory",
+                &vanilla_text(catalog, ExtendedUiTextKey::VanillaLevelSpriteMemory),
                 &mut self.sprite_form.sprite_memory,
                 lm_level::NativeSpriteHeader::MAX_MEMORY,
             );
-            ui.label("Sprite buoyancy 1");
+            ui.label(vanilla_text(
+                catalog,
+                ExtendedUiTextKey::VanillaLevelSpriteBuoyancy1,
+            ));
             ui.checkbox(
                 &mut self.sprite_form.sprite_buoyancy_1,
-                "Water/lava interaction",
+                vanilla_text(catalog, ExtendedUiTextKey::VanillaLevelWaterLavaInteraction),
             );
             ui.end_row();
-            ui.label("Sprite buoyancy 2");
+            ui.label(vanilla_text(
+                catalog,
+                ExtendedUiTextKey::VanillaLevelSpriteBuoyancy2,
+            ));
             ui.checkbox(
                 &mut self.sprite_form.sprite_buoyancy_2,
-                "Water/lava; disable Layer 2/3 interaction",
+                vanilla_text(
+                    catalog,
+                    ExtendedUiTextKey::VanillaLevelWaterLavaDisableLayerInteraction,
+                ),
             );
             ui.end_row();
-            ui.label("Record bytes");
+            ui.label(vanilla_text(
+                catalog,
+                ExtendedUiTextKey::VanillaLevelRecordBytes,
+            ));
             ui.text_edit_singleline(&mut self.sprite_form.encoded);
             ui.end_row();
             header_row(
                 ui,
-                "Sprite number",
+                &vanilla_text(catalog, ExtendedUiTextKey::VanillaLevelSpriteNumber),
                 &mut self.sprite_form.sprite_number,
                 0xff,
             );
-            header_row(ui, "Screen", &mut self.sprite_form.screen, 0x1f);
-            header_row(ui, "X", &mut self.sprite_form.x, 0x0f);
-            header_row(ui, "Y (low 5 bits)", &mut self.sprite_form.y_low, 0x1f);
-            header_row(ui, "Extra bits", &mut self.sprite_form.extra_bits, 3);
+            header_row(
+                ui,
+                &vanilla_text(catalog, ExtendedUiTextKey::VanillaLevelScreen),
+                &mut self.sprite_form.screen,
+                0x1f,
+            );
+            header_row(
+                ui,
+                &vanilla_text(catalog, ExtendedUiTextKey::VanillaLevelX),
+                &mut self.sprite_form.x,
+                0x0f,
+            );
+            header_row(
+                ui,
+                &vanilla_text(catalog, ExtendedUiTextKey::VanillaLevelYLowBits),
+                &mut self.sprite_form.y_low,
+                0x1f,
+            );
+            header_row(
+                ui,
+                &vanilla_text(catalog, ExtendedUiTextKey::VanillaLevelExtraBits),
+                &mut self.sprite_form.extra_bits,
+                3,
+            );
         });
     }
 
@@ -17761,6 +17793,31 @@ mod tests {
             assert!(
                 !sprite_actions.contains(literal),
                 "fixed-English sprite mutation action: {literal}"
+            );
+        }
+        let sprite_semantic_form = source
+            .split("    fn sprite_form_controls(")
+            .nth(1)
+            .unwrap()
+            .split("    fn apply_sprite_semantic_fields(")
+            .next()
+            .unwrap();
+        for literal in [
+            "\"Sprite memory\"",
+            "label(\"Sprite buoyancy 1\")",
+            "\"Water/lava interaction\"",
+            "label(\"Sprite buoyancy 2\")",
+            "\"Water/lava; disable Layer 2/3 interaction\"",
+            "label(\"Record bytes\")",
+            "\"Sprite number\"",
+            "\"Screen\"",
+            "\"X\"",
+            "\"Y (low 5 bits)\"",
+            "\"Extra bits\"",
+        ] {
+            assert!(
+                !sprite_semantic_form.contains(literal),
+                "fixed-English sprite-semantic control: {literal}"
             );
         }
         let layer2_editor = source

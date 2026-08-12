@@ -4063,10 +4063,20 @@ pub enum ExtendedUiTextKey {
     VanillaLevelPreviewZoomOut,
     VanillaLevelPreviewZoomIn,
     VanillaLevelPreviewZoomDefault,
+    VanillaLevelSpriteMemory,
+    VanillaLevelSpriteBuoyancy1,
+    VanillaLevelWaterLavaInteraction,
+    VanillaLevelSpriteBuoyancy2,
+    VanillaLevelWaterLavaDisableLayerInteraction,
+    VanillaLevelRecordBytes,
+    VanillaLevelSpriteNumber,
+    VanillaLevelX,
+    VanillaLevelYLowBits,
+    VanillaLevelExtraBits,
 }
 
 impl ExtendedUiTextKey {
-    pub const ALL: [Self; 2362] = [
+    pub const ALL: [Self; 2372] = [
         Self::MwlDocumentEditorTitle,
         Self::MwlDocumentVersionFormat,
         Self::MwlDocumentFlagsHex,
@@ -6429,6 +6439,16 @@ impl ExtendedUiTextKey {
         Self::VanillaLevelPreviewZoomOut,
         Self::VanillaLevelPreviewZoomIn,
         Self::VanillaLevelPreviewZoomDefault,
+        Self::VanillaLevelSpriteMemory,
+        Self::VanillaLevelSpriteBuoyancy1,
+        Self::VanillaLevelWaterLavaInteraction,
+        Self::VanillaLevelSpriteBuoyancy2,
+        Self::VanillaLevelWaterLavaDisableLayerInteraction,
+        Self::VanillaLevelRecordBytes,
+        Self::VanillaLevelSpriteNumber,
+        Self::VanillaLevelX,
+        Self::VanillaLevelYLowBits,
+        Self::VanillaLevelExtraBits,
     ];
 
     #[must_use]
@@ -9506,6 +9526,18 @@ impl ExtendedUiTextKey {
             Self::VanillaLevelPreviewZoomOut => "Zoom out",
             Self::VanillaLevelPreviewZoomIn => "Zoom in",
             Self::VanillaLevelPreviewZoomDefault => "Default 100%",
+            Self::VanillaLevelSpriteMemory => "Sprite memory",
+            Self::VanillaLevelSpriteBuoyancy1 => "Sprite buoyancy 1",
+            Self::VanillaLevelWaterLavaInteraction => "Water/lava interaction",
+            Self::VanillaLevelSpriteBuoyancy2 => "Sprite buoyancy 2",
+            Self::VanillaLevelWaterLavaDisableLayerInteraction => {
+                "Water/lava; disable Layer 2/3 interaction"
+            }
+            Self::VanillaLevelRecordBytes => "Record bytes",
+            Self::VanillaLevelSpriteNumber => "Sprite number",
+            Self::VanillaLevelX => "X",
+            Self::VanillaLevelYLowBits => "Y (low 5 bits)",
+            Self::VanillaLevelExtraBits => "Extra bits",
         }
     }
 

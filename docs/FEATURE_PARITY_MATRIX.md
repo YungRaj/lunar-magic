@@ -2405,3 +2405,11 @@ catalog preview zoom. A bounded source audit requires the typed family and rejec
 literal control. The focused native audit, localization 28/28 active cases (one provenance ignore),
 and renderer 237/237 pass. Remaining vanilla/native forms and live translated language-DLL
 evidence keep Localization Partial, so aggregate parity remains 60/65.
+
+Localization coverage update (2026-08-12, vanilla sprite semantic form): ten typed
+`VanillaLevel*` keys plus the existing Screen identity replace fixed English across sprite memory,
+both buoyancy controls, their interaction descriptions, record bytes, sprite number, and placement
+fields. A bounded form audit rejects every former literal caption. The focused native audit,
+localization 28/28 active cases (one provenance ignore), and renderer 237/237 pass. Remaining
+vanilla/native forms and live translated language-DLL evidence keep Localization Partial, so
+aggregate parity remains 60/65.

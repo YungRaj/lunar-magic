@@ -8275,3 +8275,12 @@ audit rejects every former fixed-English semantic and preview control. The focus
 passes, localization passes 28/28 active cases (one provenance ignore), and renderer remains
 237/237. Remaining vanilla/native forms and retained live language-DLL evidence keep Localization
 Partial; aggregate parity remains 60/65.
+
+Localization coverage update (2026-08-12, vanilla sprite semantic form): ten appended
+`VanillaLevel*` identities cover sprite memory, both buoyancy flags and their exact interaction
+descriptions, raw record bytes, sprite number, X, low Y, and extra bits; the existing Screen
+identity supplies the remaining coordinate. The live catalog reaches the complete semantic form,
+and a bounded audit rejects every former fixed-English caption. The focused native audit and
+localization 28/28 active cases (one provenance ignore) pass, while renderer remains 237/237.
+Remaining vanilla/native forms and retained live language-DLL evidence keep Localization Partial;
+aggregate parity remains 60/65.
