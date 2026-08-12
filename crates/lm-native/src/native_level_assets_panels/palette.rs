@@ -1,7 +1,10 @@
-use super::{AggregatePanels, PasteTarget, pasted_text};
+use super::{AggregatePanels, PasteTarget, pasted_text, text};
 use crate::native_clipboard;
 use eframe::egui;
-use lm_app::{NativeLevelAssetsControllerEdit, PaletteControllerEdit};
+use lm_app::{
+    ExtendedUiTextKey as Key, LocalizationCatalog, NativeLevelAssetsControllerEdit,
+    PaletteControllerEdit,
+};
 use lm_graphics::{Bgr555, PaletteChange, PaletteEntryOwner, PaletteOwnership, Rgb8};
 use lm_project::NativeLevelAssetsFile;
 
@@ -16,6 +19,7 @@ impl AggregatePanels {
         ui: &mut egui::Ui,
         file: &NativeLevelAssetsFile,
         ownership: &PaletteOwnership,
+        catalog: Option<&LocalizationCatalog>,
     ) -> Option<Result<NativeLevelAssetsControllerEdit, String>> {
         let colors = &file.assets.palette.colors;
         self.selected_color = self.selected_color.min(colors.len().saturating_sub(1));
@@ -24,10 +28,11 @@ impl AggregatePanels {
         let color = colors.get(self.selected_color).copied()?;
         let rgb = color.to_rgb8();
         let mut value = [rgb.red, rgb.green, rgb.blue];
-        ui.label(format!(
-            "Color {:03X} / {:04X}",
-            self.selected_color, color.0
-        ));
+        ui.label(
+            text(catalog, Key::NativeAssetsPaletteColorFormat)
+                .replace("{index}", &format!("{:03X}", self.selected_color))
+                .replace("{value}", &format!("{:04X}", color.0)),
+        );
         let owner = ownership.owner(self.selected_color);
         let editable = owner == Some(PaletteEntryOwner::Editable);
         let row = palette_row(colors, self.selected_color).ok();
@@ -49,22 +54,31 @@ impl AggregatePanels {
             }));
         }
         ui.label(match owner {
-            Some(PaletteEntryOwner::Editable) => "Ownership: editable".into(),
-            Some(PaletteEntryOwner::Fixed) => "Ownership: fixed (read-only)".into(),
-            Some(PaletteEntryOwner::ExAnimation { record }) => {
-                format!("Ownership: ExAnimation record {record:04X} (read-only)")
+            Some(PaletteEntryOwner::Editable) => {
+                text(catalog, Key::NativeAssetsPaletteOwnershipEditable)
             }
-            None => "Ownership: invalid (read-only)".into(),
+            Some(PaletteEntryOwner::Fixed) => text(catalog, Key::NativeAssetsPaletteOwnershipFixed),
+            Some(PaletteEntryOwner::ExAnimation { record }) => {
+                text(catalog, Key::NativeAssetsPaletteOwnershipExAnimationFormat)
+                    .replace("{record}", &format!("{record:04X}"))
+            }
+            None => text(catalog, Key::NativeAssetsPaletteOwnershipInvalid),
         });
         ui.horizontal(|ui| {
-            if ui.button("Copy color").clicked() {
+            if ui
+                .button(text(catalog, Key::NativeAssetsPaletteCopyColor))
+                .clicked()
+            {
                 copy_result = Some(native_clipboard::copy_palette_color_to_system(
                     ui.ctx(),
                     color,
                 ));
             }
             if ui
-                .add_enabled(editable, egui::Button::new("Paste color"))
+                .add_enabled(
+                    editable,
+                    egui::Button::new(text(catalog, Key::NativeAssetsPalettePasteColor)),
+                )
                 .clicked()
             {
                 match native_clipboard::request_palette_color_paste(ui.ctx()) {
@@ -79,7 +93,10 @@ impl AggregatePanels {
                 }
             }
             if ui
-                .add_enabled(row.is_some(), egui::Button::new("Copy row"))
+                .add_enabled(
+                    row.is_some(),
+                    egui::Button::new(text(catalog, Key::NativeAssetsPaletteCopyRow)),
+                )
                 .clicked()
             {
                 copy_result = Some(native_clipboard::copy_palette_row_to_system(
@@ -88,7 +105,10 @@ impl AggregatePanels {
                 ));
             }
             if ui
-                .add_enabled(row_editable, egui::Button::new("Paste row"))
+                .add_enabled(
+                    row_editable,
+                    egui::Button::new(text(catalog, Key::NativeAssetsPalettePasteRow)),
+                )
                 .clicked()
             {
                 match native_clipboard::request_palette_row_paste(ui.ctx()) {
@@ -104,7 +124,7 @@ impl AggregatePanels {
                 }
             }
         });
-        ui.small("Ctrl+left/right copies or pastes a color; add Alt for its complete row.");
+        ui.small(text(catalog, Key::NativeAssetsPaletteShortcutNotice));
         if let Some(result) = copy_result {
             match result {
                 Ok(()) => {}
@@ -261,6 +281,23 @@ mod tests {
     use super::palette_row_changes;
     use crate::native_clipboard;
     use lm_graphics::Bgr555;
+
+    #[test]
+    fn complete_aggregate_palette_panel_has_no_literal_widget_text() {
+        let source = include_str!("palette.rs");
+        for literal_widget in [
+            "ui.heading(\"",
+            "ui.label(\"",
+            "ui.button(\"",
+            "ui.small(\"",
+        ] {
+            assert!(
+                !source.contains(literal_widget),
+                "aggregate Palette panel regressed to fixed widget text: {literal_widget}"
+            );
+        }
+        assert_eq!(source.matches("Button::new(\"\")").count(), 1);
+    }
 
     #[test]
     fn aggregate_row_paste_is_aligned_and_complete() {

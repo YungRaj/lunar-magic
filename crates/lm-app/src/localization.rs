@@ -2082,6 +2082,16 @@ pub enum ExtendedUiTextKey {
     NativeAssetsSmartSpawn,
     NativeAssetsApplySpawn,
     NativeAssetsSpawnUnavailable,
+    NativeAssetsPaletteColorFormat,
+    NativeAssetsPaletteOwnershipEditable,
+    NativeAssetsPaletteOwnershipFixed,
+    NativeAssetsPaletteOwnershipExAnimationFormat,
+    NativeAssetsPaletteOwnershipInvalid,
+    NativeAssetsPaletteCopyColor,
+    NativeAssetsPalettePasteColor,
+    NativeAssetsPaletteCopyRow,
+    NativeAssetsPalettePasteRow,
+    NativeAssetsPaletteShortcutNotice,
     CustomSpriteEditorTitle,
     CustomSpritePlacementsFormat,
     CustomSpritePlacement,
@@ -3151,7 +3161,7 @@ pub enum ExtendedUiTextKey {
 }
 
 impl ExtendedUiTextKey {
-    pub const ALL: [Self; 1447] = [
+    pub const ALL: [Self; 1457] = [
         Self::MwlDocumentEditorTitle,
         Self::MwlDocumentVersionFormat,
         Self::MwlDocumentFlagsHex,
@@ -3533,6 +3543,16 @@ impl ExtendedUiTextKey {
         Self::NativeAssetsSmartSpawn,
         Self::NativeAssetsApplySpawn,
         Self::NativeAssetsSpawnUnavailable,
+        Self::NativeAssetsPaletteColorFormat,
+        Self::NativeAssetsPaletteOwnershipEditable,
+        Self::NativeAssetsPaletteOwnershipFixed,
+        Self::NativeAssetsPaletteOwnershipExAnimationFormat,
+        Self::NativeAssetsPaletteOwnershipInvalid,
+        Self::NativeAssetsPaletteCopyColor,
+        Self::NativeAssetsPalettePasteColor,
+        Self::NativeAssetsPaletteCopyRow,
+        Self::NativeAssetsPalettePasteRow,
+        Self::NativeAssetsPaletteShortcutNotice,
         Self::CustomSpriteEditorTitle,
         Self::CustomSpritePlacementsFormat,
         Self::CustomSpritePlacement,
@@ -5032,6 +5052,20 @@ impl ExtendedUiTextKey {
             Self::NativeAssetsApplySpawn => "Apply spawn settings",
             Self::NativeAssetsSpawnUnavailable => {
                 "Spawn settings require an authenticated current Lfix3 runtime."
+            }
+            Self::NativeAssetsPaletteColorFormat => "Color {index} / {value}",
+            Self::NativeAssetsPaletteOwnershipEditable => "Ownership: editable",
+            Self::NativeAssetsPaletteOwnershipFixed => "Ownership: fixed (read-only)",
+            Self::NativeAssetsPaletteOwnershipExAnimationFormat => {
+                "Ownership: ExAnimation record {record} (read-only)"
+            }
+            Self::NativeAssetsPaletteOwnershipInvalid => "Ownership: invalid (read-only)",
+            Self::NativeAssetsPaletteCopyColor => "Copy color",
+            Self::NativeAssetsPalettePasteColor => "Paste color",
+            Self::NativeAssetsPaletteCopyRow => "Copy row",
+            Self::NativeAssetsPalettePasteRow => "Paste row",
+            Self::NativeAssetsPaletteShortcutNotice => {
+                "Ctrl+left/right copies or pastes a color; add Alt for its complete row."
             }
             Self::CustomSpriteEditorTitle => "Custom Sprite Placement Editor",
             Self::CustomSpritePlacementsFormat => "Synchronized placements: {count}",

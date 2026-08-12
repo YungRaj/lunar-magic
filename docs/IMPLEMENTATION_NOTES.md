@@ -7175,6 +7175,15 @@ passes 28/28 active cases (one provenance ignore), native compile passes, and re
 237/237. The Layer 2, Palette, ExAnimation, and Settings aggregate domains remain, so Localization
 and aggregate parity stay Partial and 60/65 respectively.
 
+Localization coverage update (2026-08-12, aggregate Palette domain): ten appended
+`NativeAssetsPalette*` identities cover exact color/index summaries, editable/fixed/ExAnimation/
+invalid ownership status, color and complete-row clipboard actions, and modifier-key guidance.
+Dynamic indices, BGR555 values, and owning ExAnimation record IDs remain exact opaque substitutions.
+The panel audit rejects literal labels, buttons, and help text while explicitly allowing its one
+empty painted color-swatch button. The focused audit passes, localization passes 28/28 active cases
+(one provenance ignore), and renderer passes 237/237. Layer 2, ExAnimation, and Settings remain, so
+Localization stays Partial and aggregate parity remains 60/65.
+
 Localization coverage update (2026-08-12, lossless OSC custom-object metadata): seventeen
 appended `Osc*` keys cover the complete source editor, record diagnostics, history/save/dirty
 state, close confirmation, and error lifecycle, with the live catalog passed by the application

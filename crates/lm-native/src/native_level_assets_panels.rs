@@ -139,7 +139,7 @@ impl AggregatePanels {
         match (layer2, self.tab) {
             (_, 0) => self.level_panel(ui, file, sprite_lengths, catalog),
             (Some(layer2), 1) => self.layer2_panel(ui, layer2, layer2_descriptor, catalog),
-            (Some(_), 2) | (None, 1) => self.palette_panel(ui, file, ownership),
+            (Some(_), 2) | (None, 1) => self.palette_panel(ui, file, ownership, catalog),
             (Some(_), 3) | (None, 2) => self.animation_panel(ui, file, modes),
             _ => self.settings_panel(ui, file),
         }
