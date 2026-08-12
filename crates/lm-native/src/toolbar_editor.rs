@@ -131,14 +131,20 @@ impl ToolbarEditor {
                     ui.horizontal(|ui| {
                         show_item_selectors(ui, index, item, catalog);
                         if ui
-                            .add_enabled(index > 0, egui::Button::new("↑"))
+                            .add_enabled(
+                                index > 0,
+                                egui::Button::new(text(catalog, Key::ToolbarEditorMoveUp)),
+                            )
                             .on_hover_text(text(catalog, Key::ToolbarEditorMoveUp))
                             .clicked()
                         {
                             operation = Some(Operation::MoveUp(index));
                         }
                         if ui
-                            .add_enabled(index + 1 < item_count, egui::Button::new("↓"))
+                            .add_enabled(
+                                index + 1 < item_count,
+                                egui::Button::new(text(catalog, Key::ToolbarEditorMoveDown)),
+                            )
                             .on_hover_text(text(catalog, Key::ToolbarEditorMoveDown))
                             .clicked()
                         {

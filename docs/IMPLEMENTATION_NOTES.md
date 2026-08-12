@@ -7090,6 +7090,13 @@ passes, localization passes 28/28 active cases (one provenance ignore), native c
 and renderer remains 237/237. Operational status strings, other unaudited frontend modules, and
 retained live language-DLL evidence keep Localization Partial; aggregate parity remains 60/65.
 
+Localization coverage update (2026-08-12, toolbar reorder controls): the two remaining arrow-only
+reorder buttons now use the existing typed `ToolbarEditorMoveUp` and `ToolbarEditorMoveDown`
+captions, while retaining their localized hover text. This makes the complete toolbar-editor source
+audit truthful and improves accessibility without adding duplicate vocabulary. The focused audit
+and renderer 237/237 pass. Other unaudited frontend/status surfaces and retained live language-DLL
+evidence keep Localization Partial; aggregate parity remains 60/65.
+
 Localization coverage update (2026-08-12, custom-sprite placement library): twenty-nine appended
 `CustomSprite*` keys cover synchronized placement count/navigation, library header, Unicode
 search/descriptions, variable-width record groups, typed placement copy/paste,
