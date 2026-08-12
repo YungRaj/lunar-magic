@@ -168,6 +168,43 @@ fn edit_expands_dispatches_reloads_and_undoes_complete_set() {
 }
 
 #[test]
+fn map16_saves_semantically_after_independent_recovery_growth() {
+    let mut app = AppState::default();
+    app.load_rom(test_rom()).unwrap();
+    app.dispatch(Command::ShowMap16).unwrap();
+    let mut controller =
+        Map16Controller::decode(&app.controller_snapshot().unwrap(), layout()).unwrap();
+    controller
+        .apply_edits(&[Map16ControllerEdit::SetSubtile {
+            address: Map16Address { page: 1, tile: 9 },
+            quadrant: Map16Quadrant::TopLeft,
+            subtile: Subtile(0x3456),
+            resolution_limit: 512,
+        }])
+        .unwrap();
+    let baseline = app.project().unwrap().save_snapshot();
+    let mut staged = app.project().unwrap().clone();
+    staged
+        .expand_rom(Mapper::LoRom, 0x1_0000, 0xff, 0x7fdc)
+        .unwrap();
+    let mut grown_options = options();
+    grown_options.graphics_allocation.search = 0x1_0000..0x1_8000;
+    grown_options.acts_like_allocation.search = 0x1_0000..0x1_8000;
+    controller
+        .save_to_project(&mut staged, &grown_options)
+        .unwrap();
+
+    assert_eq!(staged.load_map16_set(layout()).unwrap(), *controller.set());
+    assert_eq!(staged.rom.logical_len(), 0x1_8000);
+    assert_eq!(app.project().unwrap().save_snapshot(), baseline);
+    let logical = staged.rom.logical_bytes();
+    assert_eq!(
+        lm_rom::SnesChecksum::decode(logical, 0x7fdc).unwrap(),
+        lm_rom::compute_snes_checksum(logical, 0x7fdc).unwrap()
+    );
+}
+
+#[test]
 fn owned_complete_set_commit_reclaims_every_snapshot_plane_and_undo_restores_it() {
     let (rom, manifest) = tagged_test_rom();
     let mut app = AppState::default();

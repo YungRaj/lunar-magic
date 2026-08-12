@@ -228,6 +228,51 @@ pub(crate) struct RomMap16Editor {
 }
 
 impl RomMap16Editor {
+    pub(crate) fn stage_recovery_on_project(
+        &self,
+        app: &AppState,
+        staged: &mut lm_project::Project,
+    ) -> Result<(), String> {
+        let workspace = self.workspace.as_ref().ok_or("Map16 workspace is closed")?;
+        if !workspace.controller.is_modified() {
+            return Err("Map16 workspace has no staged recovery edit".into());
+        }
+        if workspace.controller.revision() != app.project_revision() {
+            return Err("Map16 recovery controller was prepared from a stale revision".into());
+        }
+        match &workspace.controller {
+            Controller::Profile(controller) => {
+                let mut options = self.profile_save_options(workspace)?;
+                let search = crate::rom_allocation::parse_search_range(
+                    &self.search_start,
+                    &self.search_end,
+                )?;
+                let profile = workspace
+                    .profile
+                    .as_ref()
+                    .ok_or("revision profile is unavailable")?;
+                let allocation = profile
+                    .allocation_policy_for_rom(search, &staged.rom, workspace.internal_header)
+                    .map_err(|error| error.to_string())?;
+                options.graphics_allocation = allocation.clone();
+                options.acts_like_allocation = allocation;
+                controller
+                    .save_to_project(staged, &options)
+                    .map_err(|error| error.to_string())
+            }
+            Controller::Smw(controller) => {
+                let mut options = self.smw_save_options(workspace)?;
+                options.allocation.search = crate::rom_allocation::parse_search_range(
+                    &self.search_start,
+                    &self.search_end,
+                )?;
+                controller
+                    .save_to_project(staged, &options)
+                    .map_err(|error| error.to_string())
+            }
+        }
+    }
+
     pub(crate) fn staged_recovery_generation(&self, app: &AppState) -> Option<u64> {
         let workspace = self.workspace.as_ref()?;
         workspace.controller.is_modified().then(|| {

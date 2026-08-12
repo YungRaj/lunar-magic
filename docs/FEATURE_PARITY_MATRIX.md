@@ -617,6 +617,16 @@ ExAnimation allocation is disjoint, applies expanded settings last, reopens all 
 validates the final checksum, and retains a byte-identical live project. Other unrelated
 simultaneous staged-editor families remain an explicit Release-row gap.
 
+Crash-recovery evidence update (2026-08-11, installed palette plus Map16): these two independently
+allocating editors now serialize semantically onto one evolving recovery clone instead of rejecting
+simultaneous staged work. Palette allocation is derived against the live baseline; Map16 then
+derives its graphics and Acts-Like allocation policies against the palette result, preserving prior
+growth and ownership. `palette_saves_semantically_on_a_growing_recovery_project` and
+`map16_saves_semantically_after_independent_recovery_growth` prove exact semantic reopen, checksum
+validity, post-growth persistence, and byte-identical live application state. Native compilation
+binds those adapters to the two-editor coordinator, and all 237 renderer tests remain green. Other
+unlisted simultaneous staged-editor families remain explicitly rejected.
+
 The Patches/runtime row additionally routes authenticated SMW-US SA-1 sources through the recovered
 SA-1 expanded-settings hook and runtime family instead of rejecting their mapper. The native
 `InstallSettings` command preserves its revision gate and installs the owned allocation as one

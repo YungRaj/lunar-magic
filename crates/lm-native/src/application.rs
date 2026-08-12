@@ -2179,6 +2179,27 @@ impl eframe::App for NativeApplication {
                         )
                         .map_err(|error| error.to_string());
                 }
+                if staged_editors == 2
+                    && palette_recovery_revision.is_some()
+                    && map16_recovery_revision.is_some()
+                {
+                    let mut staged = self
+                        .app
+                        .project()
+                        .ok_or("open a supported ROM first")?
+                        .clone();
+                    self.rom_palette_editor
+                        .stage_recovery_on_project(&self.app, &mut staged)?;
+                    self.rom_map16_editor
+                        .stage_recovery_on_project(&self.app, &mut staged)?;
+                    return self
+                        .app
+                        .recovery_snapshot_with_current_rom(
+                            staged.save_snapshot(),
+                            self.app.current_level(),
+                        )
+                        .map_err(|error| error.to_string());
+                }
                 let staged_graphics_family = usize::from(graphics_recovery_revision.is_some())
                     + usize::from(exanimation_recovery_revision.is_some())
                     + usize::from(expanded_settings_recovery_revision.is_some());

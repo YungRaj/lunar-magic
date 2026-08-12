@@ -6707,6 +6707,15 @@ continues to validate overlap and repair the final checksum for same-size caller
 rejects raw growth that lacks semantic allocation information. Native compilation, all 237 renderer
 tests, and a fresh 488-image pristine corpus hash comparison pass.
 
+Installed palette and Map16 recovery use the same semantic composition rule. Each controller now
+has a save-to-project boundary; the native palette adapter derives its allocation policy against the
+recovery clone, and the Map16 adapter subsequently derives both definition and Acts-Like policies
+against that evolved image. The coordinator therefore preserves growth and allocation ownership
+without merging independently prepared mutations. `palette_saves_semantically_on_a_growing_`
+`recovery_project` and `map16_saves_semantically_after_independent_recovery_growth` prove exact
+reopen, checksum repair, growth retention, and live-project isolation. Native compilation and all
+237 renderer tests pass.
+
 ## Complete overworld palette and ExAnimation variant persistence
 
 `interactive_overworld_edits_match_every_supported_identity_and_layout_variant` now exercises the

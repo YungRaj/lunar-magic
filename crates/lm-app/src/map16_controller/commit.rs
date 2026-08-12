@@ -6,6 +6,27 @@ use lm_project::{
 use lm_rom::RomImage;
 
 impl Map16Controller {
+    /// Saves the staged complete Map16 set onto an evolving recovery project.
+    ///
+    /// # Errors
+    ///
+    /// Returns the same table, allocation, mapper, and checksum failures as ordinary publication.
+    pub fn save_to_project(
+        &self,
+        project: &mut Project,
+        options: &Map16SetSaveOptions,
+    ) -> Result<(), Map16ControllerError> {
+        project
+            .save_map16_set_with_checksum(
+                &self.set,
+                self.layout,
+                self.checksum_field_offset,
+                options,
+            )
+            .map(|_| ())
+            .map_err(Map16ControllerError::Io)
+    }
+
     /// Serializes all page pairs through the transactional allocator on a private project, repairs
     /// the checksum, and returns a compact application mutation.
     ///

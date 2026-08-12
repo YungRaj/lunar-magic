@@ -69,6 +69,42 @@ fn options() -> PaletteSaveOptions {
 }
 
 #[test]
+fn palette_saves_semantically_on_a_growing_recovery_project() {
+    let mut app = AppState::default();
+    app.load_rom(test_rom()).unwrap();
+    app.dispatch(Command::ShowPalette(1)).unwrap();
+    let mut palette_controller = PaletteController::decode(
+        &app.controller_snapshot().unwrap(),
+        layout(),
+        PaletteOwnership::editable(32),
+    )
+    .unwrap();
+    palette_controller
+        .apply_edits(&[PaletteControllerEdit::ReplaceRange {
+            start: 5,
+            colors: vec![Bgr555(0x1234)],
+        }])
+        .unwrap();
+    let baseline = app.project().unwrap().save_snapshot();
+    let mut staged = app.project().unwrap().clone();
+    palette_controller
+        .save_to_project(&mut staged, &options())
+        .unwrap();
+
+    assert!(staged.rom.logical_len() > baseline.len());
+    assert_eq!(
+        staged.load_palette(1, layout()).unwrap(),
+        *palette_controller.palette()
+    );
+    assert_eq!(app.project().unwrap().save_snapshot(), baseline);
+    let logical = staged.rom.logical_bytes();
+    assert_eq!(
+        lm_rom::SnesChecksum::decode(logical, 0x7fdc).unwrap(),
+        lm_rom::compute_snes_checksum(logical, 0x7fdc).unwrap()
+    );
+}
+
+#[test]
 fn exact_words_edit_expand_dispatch_reload_and_undo() {
     let mut app = AppState::default();
     app.load_rom(test_rom()).unwrap();

@@ -57,6 +57,41 @@ pub(crate) struct RomPaletteEditor {
 }
 
 impl RomPaletteEditor {
+    pub(crate) fn stage_recovery_on_project(
+        &self,
+        app: &AppState,
+        staged: &mut lm_project::Project,
+    ) -> Result<(), String> {
+        let workspace = self
+            .workspace
+            .as_ref()
+            .ok_or("palette workspace is closed")?;
+        if !workspace.controller.is_modified() {
+            return Err("palette workspace has no staged recovery edit".into());
+        }
+        if workspace.controller.revision() != app.project_revision() {
+            return Err("palette recovery controller was prepared from a stale revision".into());
+        }
+        let search =
+            crate::rom_allocation::parse_search_range(&self.search_start, &self.search_end)?;
+        let allocation = workspace
+            .profile
+            .allocation_policy_for_rom(search, &staged.rom, workspace.internal_header)
+            .map_err(|error| error.to_string())?;
+        workspace
+            .controller
+            .save_to_project(
+                staged,
+                &lm_project::PaletteSaveOptions {
+                    allocation,
+                    previous_block: None,
+                    reuse_identical: true,
+                    erase_fill: 0xff,
+                },
+            )
+            .map_err(|error| error.to_string())
+    }
+
     pub(crate) fn staged_recovery_mutation(
         &self,
         app: &AppState,

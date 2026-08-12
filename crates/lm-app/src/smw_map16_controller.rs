@@ -45,6 +45,63 @@ pub struct SmwMap16Controller {
 }
 
 impl SmwMap16Controller {
+    /// Saves the staged complete SMW Map16 planes onto an evolving recovery project.
+    ///
+    /// # Errors
+    ///
+    /// Rejects invalid page shapes, allocation failures, or a semantic reopen mismatch.
+    pub fn save_to_project(
+        &self,
+        project: &mut Project,
+        options: &SmwUsV1CompleteMap16SaveOptions,
+    ) -> Result<(), SmwMap16ControllerError> {
+        let (foreground, background, acts_like) = self.encoded_planes()?;
+        save_smw_us_v1_complete_map16(
+            project,
+            &foreground,
+            &background,
+            &acts_like,
+            self.checksum_field_offset,
+            options,
+        )
+        .map_err(SmwMap16ControllerError::Native)?;
+        let reopened =
+            load_smw_us_v1_complete_map16(project).map_err(SmwMap16ControllerError::Native)?;
+        if reopened.foreground.definitions != foreground
+            || reopened.background.definitions != background
+            || reopened.foreground.acts_like != acts_like
+        {
+            return Err(SmwMap16ControllerError::SemanticReopen);
+        }
+        Ok(())
+    }
+
+    fn encoded_planes(&self) -> Result<(Vec<u16>, Vec<u16>, Vec<u16>), SmwMap16ControllerError> {
+        if self.set.pages.len() != SMW_COMPLETE_MAP16_PAGES {
+            return Err(SmwMap16ControllerError::PageCount(self.set.pages.len()));
+        }
+        let mut foreground = Vec::with_capacity(0x20_000);
+        let mut background = Vec::with_capacity(0x20_000);
+        let mut acts_like = Vec::with_capacity(0x8000);
+        for (page_index, page) in self.set.pages.iter().enumerate() {
+            for tile in &page.tiles {
+                let definitions = if page_index < SMW_COMPLETE_MAP16_FOREGROUND_PAGES {
+                    acts_like.push(tile.acts_like);
+                    &mut foreground
+                } else {
+                    &mut background
+                };
+                definitions.extend([
+                    tile.top_left.0,
+                    tile.top_right.0,
+                    tile.bottom_left.0,
+                    tile.bottom_right.0,
+                ]);
+            }
+        }
+        Ok((foreground, background, acts_like))
+    }
+
     /// Decodes all foreground and background Map16 definitions plus foreground Acts-Like words.
     ///
     /// # Errors

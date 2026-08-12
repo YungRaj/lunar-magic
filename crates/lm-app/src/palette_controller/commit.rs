@@ -6,6 +6,28 @@ use lm_project::{
 use lm_rom::RomImage;
 
 impl PaletteController {
+    /// Saves the staged palette onto an evolving recovery project.
+    ///
+    /// # Errors
+    ///
+    /// Returns the same shape, allocation, mapper, and checksum failures as ordinary publication.
+    pub fn save_to_project(
+        &self,
+        project: &mut Project,
+        options: &PaletteSaveOptions,
+    ) -> Result<(), PaletteControllerError> {
+        project
+            .save_palette_with_checksum(
+                self.palette_number,
+                &self.palette,
+                self.layout,
+                self.checksum_field_offset,
+                options,
+            )
+            .map(|_| ())
+            .map_err(PaletteControllerError::Io)
+    }
+
     /// Allocates and repoints the exact palette on a private project, repairs the checksum, and
     /// returns one compact revision-bound mutation.
     ///
