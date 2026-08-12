@@ -2360,6 +2360,14 @@ pub enum ExtendedUiTextKey {
     RomOverworldToolNativeSprite,
     RomOverworldToolRouteSource,
     RomOverworldToolRouteDestination,
+    RomOverworldAnimationRate7_5,
+    RomOverworldAnimationRate15,
+    RomOverworldAnimationRate30,
+    RomOverworldAnimationRate60,
+    RomOverworldAnimationSubstep,
+    RomOverworldAnimationSubsteps,
+    RomOverworldAnimationTriggerPrefix,
+    RomOverworldAnimationManualFramePrefix,
     ExAnimationDocumentTitle,
     ExAnimationDocumentOpenTitle,
     ExAnimationDocumentMaximumRecords,
@@ -3522,7 +3530,7 @@ pub enum ExtendedUiTextKey {
 }
 
 impl ExtendedUiTextKey {
-    pub const ALL: [Self; 1818] = [
+    pub const ALL: [Self; 1826] = [
         Self::MwlDocumentEditorTitle,
         Self::MwlDocumentVersionFormat,
         Self::MwlDocumentFlagsHex,
@@ -4182,6 +4190,14 @@ impl ExtendedUiTextKey {
         Self::RomOverworldToolNativeSprite,
         Self::RomOverworldToolRouteSource,
         Self::RomOverworldToolRouteDestination,
+        Self::RomOverworldAnimationRate7_5,
+        Self::RomOverworldAnimationRate15,
+        Self::RomOverworldAnimationRate30,
+        Self::RomOverworldAnimationRate60,
+        Self::RomOverworldAnimationSubstep,
+        Self::RomOverworldAnimationSubsteps,
+        Self::RomOverworldAnimationTriggerPrefix,
+        Self::RomOverworldAnimationManualFramePrefix,
         Self::ExAnimationDocumentTitle,
         Self::ExAnimationDocumentOpenTitle,
         Self::ExAnimationDocumentMaximumRecords,
@@ -6183,6 +6199,14 @@ impl ExtendedUiTextKey {
             Self::RomOverworldToolNativeSprite => "Place/move native sprite",
             Self::RomOverworldToolRouteSource => "Set route source",
             Self::RomOverworldToolRouteDestination => "Set route destination",
+            Self::RomOverworldAnimationRate7_5 => "7.5 fps",
+            Self::RomOverworldAnimationRate15 => "15 fps",
+            Self::RomOverworldAnimationRate30 => "30 fps",
+            Self::RomOverworldAnimationRate60 => "60 fps",
+            Self::RomOverworldAnimationSubstep => "substep",
+            Self::RomOverworldAnimationSubsteps => "substeps",
+            Self::RomOverworldAnimationTriggerPrefix => "#",
+            Self::RomOverworldAnimationManualFramePrefix => "frame $",
             Self::ExAnimationDocumentTitle => "Portable ExAnimation Editor",
             Self::ExAnimationDocumentOpenTitle => "Open ExAnimation",
             Self::ExAnimationDocumentMaximumRecords => {

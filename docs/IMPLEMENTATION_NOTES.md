@@ -7949,3 +7949,12 @@ widgets in the main module. The focused audit passes, localization passes 28/28 
 provenance ignore), native compilation passes, and renderer remains 237/237. Residual animation
 unit/prefix vocabulary and non-widget diagnostics remain to be classified before Localization can
 be promoted; aggregate parity remains 60/65.
+
+Localization coverage update (2026-08-12, overworld animation vocabulary): eight appended
+`RomOverworldAnimation*` identities cover all four preview-rate choices, singular/plural substep
+units, the trigger index prefix, and the manual-frame prefix. Rate labels now resolve through typed
+keys instead of an embedded enum label, and the main-module regression audit rejects restoration of
+the migrated constants. The focused audit passes, localization passes 28/28 active cases (one
+provenance ignore), native compilation passes, and renderer remains 237/237. The retained live
+language-DLL Wine fixture and a whole-frontend fixed-widget audit remain required before the
+Localization row can pass; aggregate parity remains 60/65.

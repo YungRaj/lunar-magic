@@ -252,12 +252,12 @@ impl OverworldAnimationRate {
         }
     }
 
-    const fn label(self) -> &'static str {
+    const fn label_key(self) -> Key {
         match self {
-            Self::Fps7_5 => "7.5 fps",
-            Self::Fps15 => "15 fps",
-            Self::Fps30 => "30 fps",
-            Self::Fps60 => "60 fps",
+            Self::Fps7_5 => Key::RomOverworldAnimationRate7_5,
+            Self::Fps15 => Key::RomOverworldAnimationRate15,
+            Self::Fps30 => Key::RomOverworldAnimationRate30,
+            Self::Fps60 => Key::RomOverworldAnimationRate60,
         }
     }
 }
@@ -2964,14 +2964,14 @@ impl RomOverworldEditor {
                     .replace("{tick}", &self.animation_preview_tick.to_string()),
                 );
                 egui::ComboBox::from_id_salt("overworld-animation-preview-rate")
-                    .selected_text(self.animation_preview_rate.label())
+                    .selected_text(ow_text(catalog, self.animation_preview_rate.label_key()))
                     .show_ui(ui, |ui| {
                         for rate in OverworldAnimationRate::ALL {
                             if ui
                                 .selectable_value(
                                     &mut self.animation_preview_rate,
                                     rate,
-                                    rate.label(),
+                                    ow_text(catalog, rate.label_key()),
                                 )
                                 .changed()
                             {
@@ -2982,6 +2982,11 @@ impl RomOverworldEditor {
                         }
                     });
             });
+            let substep_unit = if self.animation_preview_rate.substeps_per_tick() == 1 {
+                Key::RomOverworldAnimationSubstep
+            } else {
+                Key::RomOverworldAnimationSubsteps
+            };
             ui.small(
                 ow_text(
                     catalog,
@@ -2991,14 +2996,7 @@ impl RomOverworldEditor {
                     "{count}",
                     &self.animation_preview_rate.substeps_per_tick().to_string(),
                 )
-                .replace(
-                    "{unit}",
-                    if self.animation_preview_rate.substeps_per_tick() == 1 {
-                        "substep"
-                    } else {
-                        "substeps"
-                    },
-                ),
+                .replace("{unit}", &ow_text(catalog, substep_unit)),
             );
             ui.horizontal(|ui| {
                 egui::ComboBox::from_id_salt("overworld-preview-trigger-kind")
@@ -3046,7 +3044,7 @@ impl RomOverworldEditor {
                 ui.add(
                     egui::DragValue::new(&mut self.animation_preview_trigger_index)
                         .range(0..=maximum)
-                        .prefix("#"),
+                        .prefix(ow_text(catalog, Key::RomOverworldAnimationTriggerPrefix)),
                 );
                 let changed = match self.animation_preview_trigger_kind {
                     0 => ui
@@ -3070,7 +3068,10 @@ impl RomOverworldEditor {
                                     [self.animation_preview_trigger_index],
                             )
                             .range(0..=u8::MAX)
-                            .prefix("frame $"),
+                            .prefix(ow_text(
+                                catalog,
+                                Key::RomOverworldAnimationManualFramePrefix,
+                            )),
                         )
                         .changed(),
                 };
@@ -3574,6 +3575,12 @@ mod canvas_tests {
             "MapPaintTool::NativeSprite, \"Place/move native sprite\"",
             "MapPaintTool::RouteSource, \"Set route source\"",
             "MapPaintTool::RouteDestination, \"Set route destination\"",
+            ".prefix(\"#\")",
+            ".prefix(\"frame $\")",
+            "=> \"7.5 fps\"",
+            "=> \"15 fps\"",
+            "=> \"30 fps\"",
+            "=> \"60 fps\"",
         ] {
             assert!(
                 !main.contains(migrated_literal),
