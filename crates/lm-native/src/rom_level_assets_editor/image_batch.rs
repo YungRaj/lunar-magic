@@ -1,5 +1,6 @@
 use super::{BatchImageSource, render_batch_level_canvas};
 use eframe::egui;
+use lm_app::{ExtendedUiTextKey as Key, LocalizationCatalog};
 use std::path::PathBuf;
 use std::sync::{
     Arc,
@@ -120,33 +121,39 @@ impl LevelImageBatchWorker {
     pub(super) fn show(
         &mut self,
         context: &egui::Context,
+        catalog: Option<&LocalizationCatalog>,
     ) -> Option<Result<Option<LevelImageBatchReport>, String>> {
         let completion = self.poll();
         if let Some(running) = &self.running {
             let completed = running.completed.load(Ordering::Relaxed);
             let cancellation_requested = running.cancelled.load(Ordering::Relaxed);
-            egui::Window::new("Exporting level images")
+            egui::Window::new(super::text(catalog, Key::RomNativeAssetsImageBatchTitle))
                 .collapsible(false)
                 .resizable(false)
                 .show(context, |ui| {
-                    ui.label(format!(
-                        "Staging numbered {} images from {}",
-                        running.format.extension().to_uppercase(),
-                        running.template.display()
-                    ));
+                    ui.label(
+                        super::text(catalog, Key::RomNativeAssetsImageBatchPathFormat)
+                            .replace("{format}", &running.format.extension().to_uppercase())
+                            .replace("{path}", &running.template.display().to_string()),
+                    );
                     ui.label(if running.options.modified_only {
-                        "Selection: levels whose Layer 1 data is in expanded ROM space"
+                        super::text(catalog, Key::RomNativeAssetsImageBatchModifiedSelection)
                     } else {
-                        "Selection: all level slots"
+                        super::text(catalog, Key::RomNativeAssetsImageBatchAllSelection)
                     });
                     ui.add(
-                        egui::ProgressBar::new(completed as f32 / running.total as f32)
-                            .text(format!("{completed} / {}", running.total)),
+                        egui::ProgressBar::new(completed as f32 / running.total as f32).text(
+                            super::text(catalog, Key::RomNativeAssetsImageBatchProgressFormat)
+                                .replace("{completed}", &completed.to_string())
+                                .replace("{total}", &running.total.to_string()),
+                        ),
                     );
-                    ui.label("Files become visible only after the complete batch is staged.");
+                    ui.label(super::text(catalog, Key::RomNativeAssetsImageBatchNotice));
                     if cancellation_requested {
-                        ui.label("Cancelling after the current level…");
-                    } else if ui.button("Cancel").clicked()
+                        ui.label(super::text(catalog, Key::RomNativeAssetsMwlBatchCancelling));
+                    } else if ui
+                        .button(super::text(catalog, Key::RomNativeAssetsCancel))
+                        .clicked()
                         || context.input(|input| input.key_pressed(egui::Key::Escape))
                     {
                         running.request_cancel();

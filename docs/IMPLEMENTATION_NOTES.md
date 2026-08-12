@@ -7867,3 +7867,13 @@ the family key-coverage and fixed-widget source audit. The focused audit passes,
 passes 28/28 active cases (one provenance ignore), and renderer remains 237/237. Image transfer,
 preview, commit, and Layer 2 mode-reset controls remain before the installed aggregate family is
 complete; Localization and aggregate parity remain Partial and 60/65 respectively.
+
+Localization coverage update (2026-08-12, installed-ROM level-image exports): fourteen appended
+`RomNativeAssetsImage*` identities cover the full-level image action, PNG/BMP batch actions,
+expanded-area and automatic-screen filters, path/result/cancellation statuses, and the complete
+cancellable progress dialog including selection, progress, staged-publication notice, and dynamic
+format/path values. The live catalog now reaches the image worker, which joins the family
+key-coverage and fixed-widget audit. The focused audit passes, localization passes 28/28 active
+cases (one provenance ignore), and renderer remains 237/237. Preview, commit, and Layer 2
+mode-reset controls remain before this installed aggregate family is complete; Localization and
+aggregate parity remain Partial and 60/65 respectively.

@@ -2210,6 +2210,20 @@ pub enum ExtendedUiTextKey {
     RomNativeAssetsMwlBatchPathFormat,
     RomNativeAssetsMwlBatchNotice,
     RomNativeAssetsMwlBatchCancelling,
+    RomNativeAssetsImageExportFull,
+    RomNativeAssetsImageExportPngBatch,
+    RomNativeAssetsImageExportBmpBatch,
+    RomNativeAssetsImageModifiedOnly,
+    RomNativeAssetsImageAutoScreens,
+    RomNativeAssetsImageExportedPathFormat,
+    RomNativeAssetsImageBatchResultFormat,
+    RomNativeAssetsImageBatchCancelled,
+    RomNativeAssetsImageBatchTitle,
+    RomNativeAssetsImageBatchPathFormat,
+    RomNativeAssetsImageBatchModifiedSelection,
+    RomNativeAssetsImageBatchAllSelection,
+    RomNativeAssetsImageBatchProgressFormat,
+    RomNativeAssetsImageBatchNotice,
     ExAnimationDocumentTitle,
     ExAnimationDocumentOpenTitle,
     ExAnimationDocumentMaximumRecords,
@@ -3372,7 +3386,7 @@ pub enum ExtendedUiTextKey {
 }
 
 impl ExtendedUiTextKey {
-    pub const ALL: [Self; 1668] = [
+    pub const ALL: [Self; 1682] = [
         Self::MwlDocumentEditorTitle,
         Self::MwlDocumentVersionFormat,
         Self::MwlDocumentFlagsHex,
@@ -3882,6 +3896,20 @@ impl ExtendedUiTextKey {
         Self::RomNativeAssetsMwlBatchPathFormat,
         Self::RomNativeAssetsMwlBatchNotice,
         Self::RomNativeAssetsMwlBatchCancelling,
+        Self::RomNativeAssetsImageExportFull,
+        Self::RomNativeAssetsImageExportPngBatch,
+        Self::RomNativeAssetsImageExportBmpBatch,
+        Self::RomNativeAssetsImageModifiedOnly,
+        Self::RomNativeAssetsImageAutoScreens,
+        Self::RomNativeAssetsImageExportedPathFormat,
+        Self::RomNativeAssetsImageBatchResultFormat,
+        Self::RomNativeAssetsImageBatchCancelled,
+        Self::RomNativeAssetsImageBatchTitle,
+        Self::RomNativeAssetsImageBatchPathFormat,
+        Self::RomNativeAssetsImageBatchModifiedSelection,
+        Self::RomNativeAssetsImageBatchAllSelection,
+        Self::RomNativeAssetsImageBatchProgressFormat,
+        Self::RomNativeAssetsImageBatchNotice,
         Self::ExAnimationDocumentTitle,
         Self::ExAnimationDocumentOpenTitle,
         Self::ExAnimationDocumentMaximumRecords,
@@ -5661,6 +5689,28 @@ impl ExtendedUiTextKey {
                 "Cancellation takes effect before grouped publication starts."
             }
             Self::RomNativeAssetsMwlBatchCancelling => "Cancelling after the current level…",
+            Self::RomNativeAssetsImageExportFull => "Export full level image…",
+            Self::RomNativeAssetsImageExportPngBatch => "Export multiple level PNGs…",
+            Self::RomNativeAssetsImageExportBmpBatch => "Export multiple level BMPs…",
+            Self::RomNativeAssetsImageModifiedOnly => "Only levels stored in expanded ROM space",
+            Self::RomNativeAssetsImageAutoScreens => "Auto-set image screen count",
+            Self::RomNativeAssetsImageExportedPathFormat => "Exported full level image to {path}.",
+            Self::RomNativeAssetsImageBatchResultFormat => {
+                "{exported} level images exported; {skipped} unrenderable levels skipped."
+            }
+            Self::RomNativeAssetsImageBatchCancelled => "Level image export cancelled.",
+            Self::RomNativeAssetsImageBatchTitle => "Exporting level images",
+            Self::RomNativeAssetsImageBatchPathFormat => {
+                "Staging numbered {format} images from {path}"
+            }
+            Self::RomNativeAssetsImageBatchModifiedSelection => {
+                "Selection: levels whose Layer 1 data is in expanded ROM space"
+            }
+            Self::RomNativeAssetsImageBatchAllSelection => "Selection: all level slots",
+            Self::RomNativeAssetsImageBatchProgressFormat => "{completed} / {total}",
+            Self::RomNativeAssetsImageBatchNotice => {
+                "Files become visible only after the complete batch is staged."
+            }
             Self::ExAnimationDocumentTitle => "Portable ExAnimation Editor",
             Self::ExAnimationDocumentOpenTitle => "Open ExAnimation",
             Self::ExAnimationDocumentMaximumRecords => {

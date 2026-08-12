@@ -796,15 +796,19 @@ impl RomLevelAssetsEditor {
                 Err(error) => self.error = Some(error),
             }
         }
-        if let Some(result) = self.image_batch_worker.show(context) {
+        if let Some(result) = self.image_batch_worker.show(context, catalog) {
             match result {
                 Ok(Some(report)) => {
-                    self.level_image_status = Some(format!(
-                        "{} level images exported; {} unrenderable levels skipped.",
-                        report.exported, report.skipped_unrenderable
-                    ));
+                    self.level_image_status = Some(
+                        text(catalog, Key::RomNativeAssetsImageBatchResultFormat)
+                            .replace("{exported}", &report.exported.to_string())
+                            .replace("{skipped}", &report.skipped_unrenderable.to_string()),
+                    );
                 }
-                Ok(None) => self.level_image_status = Some("Level image export cancelled.".into()),
+                Ok(None) => {
+                    self.level_image_status =
+                        Some(text(catalog, Key::RomNativeAssetsImageBatchCancelled));
+                }
                 Err(error) => self.error = Some(error),
             }
         }
@@ -1455,14 +1459,16 @@ impl RomLevelAssetsEditor {
         if ui
             .add_enabled(
                 !stale && !self.image_batch_worker.is_running() && !palette_busy,
-                egui::Button::new("Export full level image…"),
+                egui::Button::new(text(catalog, Key::RomNativeAssetsImageExportFull)),
             )
             .clicked()
         {
             match self.export_level_image(image_animation_phase, special_world_passed, visibility) {
                 Ok(Some(path)) => {
-                    self.level_image_status =
-                        Some(format!("Exported full level image to {}.", path.display()));
+                    self.level_image_status = Some(
+                        text(catalog, Key::RomNativeAssetsImageExportedPathFormat)
+                            .replace("{path}", &path.display().to_string()),
+                    );
                 }
                 Ok(None) => {}
                 Err(error) => self.error = Some(error),
@@ -1474,17 +1480,19 @@ impl RomLevelAssetsEditor {
                 && !self.image_batch_worker.is_running()
                 && !self.mwl_batch_worker.is_running()
                 && !palette_busy;
-            for (label, format) in [
+            for (key, format) in [
                 (
-                    "Export multiple level PNGs…",
+                    Key::RomNativeAssetsImageExportPngBatch,
                     image_batch::LevelImageFormat::Png,
                 ),
                 (
-                    "Export multiple level BMPs…",
+                    Key::RomNativeAssetsImageExportBmpBatch,
                     image_batch::LevelImageFormat::Bmp,
                 ),
             ] {
-                if ui.add_enabled(enabled, egui::Button::new(label)).clicked()
+                if ui
+                    .add_enabled(enabled, egui::Button::new(text(catalog, key)))
+                    .clicked()
                     && let Err(error) = self.start_level_image_batch(
                         format,
                         image_animation_phase,
@@ -1501,14 +1509,14 @@ impl RomLevelAssetsEditor {
                 !self.image_batch_worker.is_running(),
                 egui::Checkbox::new(
                     &mut self.image_batch_options.modified_only,
-                    "Only levels stored in expanded ROM space",
+                    text(catalog, Key::RomNativeAssetsImageModifiedOnly),
                 ),
             );
             ui.add_enabled(
                 !self.image_batch_worker.is_running(),
                 egui::Checkbox::new(
                     &mut self.image_batch_options.auto_set_screens,
-                    "Auto-set image screen count",
+                    text(catalog, Key::RomNativeAssetsImageAutoScreens),
                 ),
             );
         });
@@ -3663,7 +3671,9 @@ mod tests {
     fn rom_native_assets_shell_palette_and_lifecycle_use_every_typed_key() {
         let sources = [
             include_str!("rom_level_assets_editor.rs"),
+            include_str!("rom_level_assets_editor/image_batch.rs"),
             include_str!("rom_level_assets_editor/lifecycle.rs"),
+            include_str!("rom_level_assets_editor/image_batch.rs"),
             include_str!("rom_level_assets_editor/mwl.rs"),
             include_str!("rom_level_assets_editor/mwl_batch.rs"),
             include_str!("rom_level_assets_editor/palette_transfer.rs"),
