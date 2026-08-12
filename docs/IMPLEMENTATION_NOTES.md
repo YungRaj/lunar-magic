@@ -7641,3 +7641,15 @@ bounded English fallback. A five-module source audit prevents literal widget cap
 re-entering the workflow. Focused MWL and localization tests pass, and the clean-cache renderer
 gate remains 237/237. Other native forms and retained live language-DLL evidence keep Localization
 Partial; aggregate parity remains 60/65.
+
+## Native Map16 sidecar localization parity
+
+Thirty typed extension keys now cover the complete `.m16`/`.s16` window: format interpretation,
+kind/size diagnostics, raw dword selection and mutation, decoded definition preview,
+quadrant/subtile/palette/priority/flip editing, history, persistence state, dirty-close
+confirmation, and errors. The application host passes the active catalog while technical
+loader/parser errors remain untranslated payloads. Focused native UI tests pass 2/2; controller
+tests pass 5/5 across both canonical formats, edit atomicity, stale-revision/save rejection, save
+lifecycle, and Undo/Redo; localization model tests pass; and renderer remains 237/237. Other native
+forms and retained live language-DLL evidence keep Localization Partial; aggregate parity remains
+60/65.

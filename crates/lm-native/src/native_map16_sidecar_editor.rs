@@ -7,7 +7,8 @@ use crate::{
 };
 use eframe::egui;
 use lm_app::{
-    NativeMap16SidecarController, NativeMap16SidecarDocumentKind, NativeMap16SidecarEdit,
+    ExtendedUiTextKey as Key, LocalizationCatalog, NativeMap16SidecarController,
+    NativeMap16SidecarDocumentKind, NativeMap16SidecarEdit,
 };
 use lm_level::S16Sidecar;
 use std::path::PathBuf;
@@ -95,6 +96,7 @@ impl NativeMap16SidecarEditor {
         context: &egui::Context,
         foreground_texture: Option<&egui::TextureHandle>,
         sprite_texture: Option<&egui::TextureHandle>,
+        catalog: Option<&LocalizationCatalog>,
     ) -> bool {
         if let Some(result) = self.loader.show(context) {
             let kind = self.loading_kind.take();
@@ -127,25 +129,29 @@ impl NativeMap16SidecarEditor {
         {
             self.error = Some(error);
         }
-        self.show_open_configuration(context);
+        self.show_open_configuration(context, catalog);
         if self.controller.is_some() {
             self.clamp_and_load();
-            egui::Window::new("Native Map16 Sidecar Editor")
+            egui::Window::new(text(catalog, Key::Map16SidecarEditorTitle))
                 .default_size([540.0, 360.0])
                 .show(context, |ui| {
-                    self.contents(ui, foreground_texture, sprite_texture);
+                    self.contents(ui, foreground_texture, sprite_texture, catalog);
                 });
         }
-        let approved = self.show_close_confirmation(context);
-        self.show_error(context);
+        let approved = self.show_close_confirmation(context, catalog);
+        self.show_error(context, catalog);
         approved
     }
 
-    fn show_open_configuration(&mut self, context: &egui::Context) {
+    fn show_open_configuration(
+        &mut self,
+        context: &egui::Context,
+        catalog: Option<&LocalizationCatalog>,
+    ) {
         if self.pending_open.is_none() {
             return;
         }
-        egui::Window::new("Map16 sidecar interpretation")
+        egui::Window::new(text(catalog, Key::Map16SidecarInterpretTitle))
             .collapsible(false)
             .resizable(false)
             .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
@@ -154,19 +160,19 @@ impl NativeMap16SidecarEditor {
                     ui.radio_value(
                         &mut pending.kind,
                         NativeMap16SidecarDocumentKind::M16,
-                        ".m16 — exact 0x2000-byte custom-object table",
+                        text(catalog, Key::Map16SidecarM16Kind),
                     );
                     ui.radio_value(
                         &mut pending.kind,
                         NativeMap16SidecarDocumentKind::S16,
-                        ".s16 — sparse sprite Map16 workspace",
+                        text(catalog, Key::Map16SidecarS16Kind),
                     );
                 }
                 ui.horizontal(|ui| {
-                    if ui.button("Cancel").clicked() {
+                    if ui.button(text(catalog, Key::Map16SidecarCancel)).clicked() {
                         self.pending_open = None;
                     }
-                    if ui.button("Open").clicked() {
+                    if ui.button(text(catalog, Key::Map16SidecarOpen)).clicked() {
                         self.finish_open();
                     }
                 });
@@ -196,37 +202,46 @@ impl NativeMap16SidecarEditor {
         ui: &mut egui::Ui,
         foreground_texture: Option<&egui::TextureHandle>,
         sprite_texture: Option<&egui::TextureHandle>,
+        catalog: Option<&LocalizationCatalog>,
     ) {
-        self.toolbar(ui);
+        self.toolbar(ui, catalog);
         ui.separator();
         let Some(controller) = self.controller.as_ref() else {
             return;
         };
         let document_kind = controller.value().kind();
         let kind = match document_kind {
-            NativeMap16SidecarDocumentKind::M16 => ".m16 exact",
-            NativeMap16SidecarDocumentKind::S16 => ".s16 sparse canonical",
+            NativeMap16SidecarDocumentKind::M16 => text(catalog, Key::Map16SidecarM16Exact),
+            NativeMap16SidecarDocumentKind::S16 => text(catalog, Key::Map16SidecarS16Canonical),
         };
         let count = controller.value().entry_count();
         let tile_count = controller.value().tile_count();
         let encoded_len = controller.value().encode().len();
         let current_tile = controller.value().tile(self.form.entry / 2);
-        ui.label(format!(
-            "Kind: {kind}; raw dwords: {count}; 16×16 definitions: {tile_count}; save bytes: {encoded_len}"
-        ));
+        ui.label(
+            text(catalog, Key::Map16SidecarSummaryFormat)
+                .replace("{kind}", &kind)
+                .replace("{count}", &count.to_string())
+                .replace("{tile_count}", &tile_count.to_string())
+                .replace("{encoded_len}", &encoded_len.to_string()),
+        );
         let previous = self.form.entry;
         ui.add(
-            egui::Slider::new(&mut self.form.entry, 0..=count.saturating_sub(1)).text("Raw entry"),
+            egui::Slider::new(&mut self.form.entry, 0..=count.saturating_sub(1))
+                .text(text(catalog, Key::Map16SidecarRawEntry)),
         );
         if previous != self.form.entry {
             self.loaded_key = None;
             self.clamp_and_load();
         }
         ui.horizontal(|ui| {
-            ui.label("Raw little-endian dword (hex)");
+            ui.label(text(catalog, Key::Map16SidecarRawDword));
             ui.text_edit_singleline(&mut self.form.value);
         });
-        if ui.button("Apply raw entry").clicked() {
+        if ui
+            .button(text(catalog, Key::Map16SidecarApplyRaw))
+            .clicked()
+        {
             match self.form.edit() {
                 Ok(edit) => self.apply_edit(edit),
                 Err(error) => self.error = Some(error),
@@ -245,9 +260,10 @@ impl NativeMap16SidecarEditor {
                         sprite_texture.map(DefinitionTexture::Sprite)
                     }
                 },
+                catalog,
             );
             ui.horizontal(|ui| {
-                ui.label("Quadrant");
+                ui.label(text(catalog, Key::Map16SidecarQuadrant));
                 for index in 0..4 {
                     if ui
                         .selectable_value(
@@ -262,20 +278,35 @@ impl NativeMap16SidecarEditor {
                 }
             });
             ui.horizontal(|ui| {
-                ui.label("8×8 tile (hex)");
+                ui.label(text(catalog, Key::Map16SidecarTile));
                 ui.text_edit_singleline(&mut self.subtile.tile);
             });
-            ui.add(egui::Slider::new(&mut self.subtile.palette, 0..=7).text("Palette"));
-            ui.checkbox(&mut self.subtile.priority, "Priority");
-            ui.checkbox(&mut self.subtile.x_flip, "Horizontal flip");
-            ui.checkbox(&mut self.subtile.y_flip, "Vertical flip");
-            if ui.button("Apply decoded subtile").clicked() {
+            ui.add(
+                egui::Slider::new(&mut self.subtile.palette, 0..=7)
+                    .text(text(catalog, Key::Map16SidecarPalette)),
+            );
+            ui.checkbox(
+                &mut self.subtile.priority,
+                text(catalog, Key::Map16SidecarPriority),
+            );
+            ui.checkbox(
+                &mut self.subtile.x_flip,
+                text(catalog, Key::Map16SidecarHorizontalFlip),
+            );
+            ui.checkbox(
+                &mut self.subtile.y_flip,
+                text(catalog, Key::Map16SidecarVerticalFlip),
+            );
+            if ui
+                .button(text(catalog, Key::Map16SidecarApplySubtile))
+                .clicked()
+            {
                 self.apply_subtile();
             }
         }
     }
 
-    fn toolbar(&mut self, ui: &mut egui::Ui) {
+    fn toolbar(&mut self, ui: &mut egui::Ui, catalog: Option<&LocalizationCatalog>) {
         let Some(controller) = self.controller.as_ref() else {
             return;
         };
@@ -288,21 +319,34 @@ impl NativeMap16SidecarEditor {
         let mut save_requested = false;
         ui.horizontal(|ui| {
             if ui
-                .add_enabled(can_undo, egui::Button::new("Undo"))
+                .add_enabled(
+                    can_undo,
+                    egui::Button::new(text(catalog, Key::Map16SidecarUndo)),
+                )
                 .clicked()
             {
                 history = Some(true);
             }
             if ui
-                .add_enabled(can_redo, egui::Button::new("Redo"))
+                .add_enabled(
+                    can_redo,
+                    egui::Button::new(text(catalog, Key::Map16SidecarRedo)),
+                )
                 .clicked()
             {
                 history = Some(false);
             }
             save_requested = ui
-                .add_enabled(!self.persistence.is_running(), egui::Button::new("Save"))
+                .add_enabled(
+                    !self.persistence.is_running(),
+                    egui::Button::new(text(catalog, Key::Map16SidecarSave)),
+                )
                 .clicked();
-            ui.label(if modified { "Modified" } else { "Saved" });
+            ui.label(if modified {
+                text(catalog, Key::Map16SidecarModified)
+            } else {
+                text(catalog, Key::Map16SidecarSaved)
+            });
         });
         let mut changed = false;
         if let Some(controller) = self.controller.as_mut() {
@@ -386,22 +430,26 @@ impl NativeMap16SidecarEditor {
         }
     }
 
-    fn show_close_confirmation(&mut self, context: &egui::Context) -> bool {
+    fn show_close_confirmation(
+        &mut self,
+        context: &egui::Context,
+        catalog: Option<&LocalizationCatalog>,
+    ) -> bool {
         let Some(pending) = self.pending_close else {
             return false;
         };
         let mut approved = false;
-        egui::Window::new("Unsaved native Map16 sidecar")
+        egui::Window::new(text(catalog, Key::Map16SidecarDiscardTitle))
             .collapsible(false)
             .resizable(false)
             .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
             .show(context, |ui| {
-                ui.label("Discard unsaved raw-entry changes?");
+                ui.label(text(catalog, Key::Map16SidecarDiscardNotice));
                 ui.horizontal(|ui| {
-                    if ui.button("Cancel").clicked() {
+                    if ui.button(text(catalog, Key::Map16SidecarCancel)).clicked() {
                         self.pending_close = None;
                     }
-                    if ui.button("Discard").clicked() {
+                    if ui.button(text(catalog, Key::Map16SidecarDiscard)).clicked() {
                         self.clear();
                         approved = pending == PendingClose::Application;
                     }
@@ -410,14 +458,14 @@ impl NativeMap16SidecarEditor {
         approved
     }
 
-    fn show_error(&mut self, context: &egui::Context) {
+    fn show_error(&mut self, context: &egui::Context, catalog: Option<&LocalizationCatalog>) {
         if let Some(error) = self.error.clone() {
-            egui::Window::new("Native Map16 sidecar error")
+            egui::Window::new(text(catalog, Key::Map16SidecarErrorTitle))
                 .collapsible(false)
                 .resizable(false)
                 .show(context, |ui| {
                     ui.label(error);
-                    if ui.button("OK").clicked() {
+                    if ui.button(text(catalog, Key::Map16SidecarOk)).clicked() {
                         self.error = None;
                     }
                 });
@@ -437,9 +485,13 @@ fn show_definition_preview(
     index: usize,
     tile: lm_level::Map16Tile,
     texture: Option<DefinitionTexture<'_>>,
+    catalog: Option<&LocalizationCatalog>,
 ) {
     ui.separator();
-    ui.label(format!("Current decoded definition {index:04X}"));
+    ui.label(
+        text(catalog, Key::Map16SidecarDefinitionFormat)
+            .replace("{index}", &format!("{index:04X}")),
+    );
     if let Some(texture) = texture {
         let (response, painter) = ui.allocate_painter(egui::vec2(96.0, 96.0), egui::Sense::hover());
         match texture {
@@ -503,9 +555,33 @@ fn replace_subtile_word(entry: u32, half: usize, word: u16) -> u32 {
     (entry & !(0xffff_u32 << shift)) | (u32::from(word) << shift)
 }
 
+fn text(catalog: Option<&LocalizationCatalog>, key: Key) -> String {
+    catalog.map_or_else(
+        || key.english().to_owned(),
+        |catalog| catalog.extended_text(key).to_owned(),
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::replace_subtile_word;
+
+    #[test]
+    fn complete_sidecar_surface_has_no_literal_widget_text() {
+        let source = include_str!("native_map16_sidecar_editor.rs");
+        for literal in [
+            "egui::Window::new(\"",
+            "ui.button(\"",
+            "egui::Button::new(\"",
+            "ui.label(\"",
+            ".text(\"",
+        ] {
+            assert!(
+                !source.contains(literal),
+                "literal sidecar widget text: {literal}"
+            );
+        }
+    }
 
     #[test]
     fn semantic_subtile_edit_preserves_the_other_packed_word() {

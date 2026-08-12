@@ -2228,3 +2228,13 @@ five-module source audit prevents literal widget captions from re-entering this 
 focused behavior and source-audit tests pass, localization model tests pass, and renderer remains
 237/237 after a clean-cache rebuild. Other native forms and retained live language-DLL evidence
 keep Localization Partial; aggregate parity remains 60/65.
+
+Localization coverage update (2026-08-12, native Map16 sidecars): thirty typed extension keys now
+cover the complete `.m16`/`.s16` window: format interpretation, kind/size diagnostics, raw dword
+selection and mutation, decoded definition preview, quadrant/subtile/palette/priority/flip editing,
+history, persistence state, dirty-close confirmation, and errors. The application host passes the
+active catalog while technical loader/parser errors remain untranslated payloads. Focused native
+UI tests pass 2/2; controller tests pass 5/5 across both canonical formats, edit atomicity,
+stale-revision/save rejection, save lifecycle, and Undo/Redo; localization model tests pass; and
+renderer remains 237/237. Other native forms and retained live language-DLL evidence keep
+Localization Partial; aggregate parity remains 60/65.

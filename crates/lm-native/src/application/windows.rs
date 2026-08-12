@@ -79,6 +79,7 @@ impl NativeApplication {
             context,
             foreground_texture.as_ref(),
             sprite_texture.as_ref(),
+            self.app.localization(),
         ) {
             self.request_quit(context);
         }
