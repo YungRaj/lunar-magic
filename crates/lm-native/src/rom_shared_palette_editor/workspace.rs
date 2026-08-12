@@ -11,6 +11,21 @@ pub(super) struct Workspace {
 }
 
 impl Workspace {
+    pub(super) fn stage_recovery_on_project(
+        &self,
+        app: &AppState,
+        staged: &mut lm_project::Project,
+    ) -> Result<(), String> {
+        if self.revision != app.project_revision() {
+            return Err("stale shared-palette workspace cannot be recovered".into());
+        }
+        if !self.dirty() {
+            return Err("shared-palette workspace has no staged recovery edit".into());
+        }
+        lm_app::save_native_shared_palette_to_project(staged, &self.current)
+            .map_err(|error| error.to_string())
+    }
+
     pub(super) fn staged_recovery_generation(&self, app: &AppState) -> Option<u64> {
         self.dirty().then(|| {
             let mapper_revision = match self.mapper {
@@ -43,20 +58,9 @@ impl Workspace {
             return Ok(app.recovery_snapshot());
         }
         let mut staged = app.project().ok_or("open a supported ROM first")?.clone();
-        lm_app::save_native_shared_palette_to_project(&mut staged, &self.current)
-            .map_err(|error| error.to_string())?;
+        self.stage_recovery_on_project(app, &mut staged)?;
         app.recovery_snapshot_with_current_rom(staged.save_snapshot(), app.current_level())
             .map_err(|error| error.to_string())
-    }
-
-    pub(super) fn staged_recovery_palette<'a>(
-        &'a self,
-        app: &AppState,
-    ) -> Result<Option<&'a SmwPaletteFile>, String> {
-        if self.revision != app.project_revision() {
-            return Err("stale shared-palette workspace cannot be recovered".into());
-        }
-        Ok(self.dirty().then_some(&self.current))
     }
 
     pub(super) fn replace_file(&mut self, file: SmwPaletteFile) -> Result<(), String> {

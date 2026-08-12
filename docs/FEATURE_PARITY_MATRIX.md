@@ -1703,3 +1703,11 @@ remains byte-identical at SHA-256
 `254a1a050d12785973241910e26d8b7917a5cb5e2a56602a330fc6cbd833c04d`. The authenticated
 partition is now **262 routed / 55 pending**. The aggregate remains 59/65 because the
 configuration row is still Partial.
+
+Shared-palette recovery composition update (2026-08-11): shared/custom palette staging now joins
+the semantic fixed-ROM family, allowing any complete subset with installed palette, Map16,
+secondary exits, and Lunar Magic metadata to recover through one evolving clone. The dedicated
+metadata-plus-shared-palette gate reopens both exact semantic values, retains the selected level,
+validates the final checksum, and proves live ROM bytes and Undo history remain unchanged. Release
+remains Partial for the explicitly listed installer/update/publication and other recovery gaps;
+aggregate parity remains 60/65.

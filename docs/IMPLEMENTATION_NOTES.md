@@ -6962,3 +6962,14 @@ controller exposes an explicit `level_streams_modified` ownership predicate; ove
 growth reject visibly instead of restoring stale level streams or merging independently planned
 allocations. `level_and_asset_mutations_compose_disjoint_writes_and_reject_growth` covers successful
 composition and the growth boundary. Native compilation and the 237-test renderer gate pass.
+
+Crash-recovery composition update (2026-08-11, shared-palette fixed-ROM integration): the
+shared/custom palette editor is now a first-class member of the fixed-ROM recovery family instead
+of a special case limited to installed palette plus shared palette. Any complete subset of
+installed palette, shared palette, Map16, secondary exits, and Lunar Magic metadata is applied in
+deterministic semantic order on one evolving clone, so allocator and checksum changes made by an
+earlier domain are visible to every later domain. The
+`shared_palette_stages_after_fixed_metadata_and_reopens_both_without_live_mutation` gate proves
+exact metadata and palette reopen, valid checksum, selected-level retention, and unchanged live
+ROM/history. The Release row remains Partial for its separately listed distribution and remaining
+recovery gaps; aggregate parity remains 60/65.

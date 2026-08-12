@@ -2198,28 +2198,8 @@ impl eframe::App for NativeApplication {
                         )
                         .map_err(|error| error.to_string());
                 }
-                if staged_editors == 2
-                    && palette_recovery_revision.is_some()
-                    && shared_palette_recovery_revision.is_some()
-                {
-                    let mutation = self
-                        .rom_palette_editor
-                        .staged_recovery_mutation(&self.app)?
-                        .ok_or("staged installed-palette mutation disappeared")?;
-                    let shared = self
-                        .rom_shared_palette_editor
-                        .staged_recovery_palette(&self.app)?
-                        .ok_or("staged shared-palette table disappeared")?;
-                    return self
-                        .app
-                        .recovery_snapshot_with_palette_family(
-                            &mutation,
-                            shared,
-                            self.app.current_level(),
-                        )
-                        .map_err(|error| error.to_string());
-                }
                 let staged_fixed_rom_family = usize::from(palette_recovery_revision.is_some())
+                    + usize::from(shared_palette_recovery_revision.is_some())
                     + usize::from(map16_recovery_revision.is_some())
                     + usize::from(secondary_exit_recovery_revision.is_some())
                     + usize::from(metadata_recovery_revision.is_some());
@@ -2231,6 +2211,10 @@ impl eframe::App for NativeApplication {
                         .clone();
                     if palette_recovery_revision.is_some() {
                         self.rom_palette_editor
+                            .stage_recovery_on_project(&self.app, &mut staged)?;
+                    }
+                    if shared_palette_recovery_revision.is_some() {
+                        self.rom_shared_palette_editor
                             .stage_recovery_on_project(&self.app, &mut staged)?;
                     }
                     if map16_recovery_revision.is_some() {

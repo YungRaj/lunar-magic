@@ -55,14 +55,15 @@ pub(crate) struct RomSharedPaletteEditor {
 }
 
 impl RomSharedPaletteEditor {
-    pub(crate) fn staged_recovery_palette<'a>(
-        &'a self,
+    pub(crate) fn stage_recovery_on_project(
+        &self,
         app: &AppState,
-    ) -> Result<Option<&'a lm_graphics::SmwPaletteFile>, String> {
+        staged: &mut lm_project::Project,
+    ) -> Result<(), String> {
         self.workspace
             .as_ref()
             .ok_or_else(|| "shared-palette workspace is closed".to_owned())?
-            .staged_recovery_palette(app)
+            .stage_recovery_on_project(app, staged)
     }
 
     pub(crate) fn staged_recovery_generation(&self, app: &AppState) -> Option<u64> {
@@ -687,6 +688,81 @@ mod tests {
             .unwrap();
         assert_eq!(palette.backend(), SmwPaletteBackend::Legacy);
         assert_eq!(palette.palette().unwrap().colors[0x123], Bgr555(0x4567));
+    }
+
+    #[test]
+    fn shared_palette_stages_after_fixed_metadata_and_reopens_both_without_live_mutation() {
+        use lm_profile::smw_us_v1_lunar_magic_metadata_layout;
+        use lm_rom::LunarMagicRomMetadata;
+
+        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let fixture =
+            std::fs::read(root.join("oracle-work/lm363/pristine-us/level-save-000/after.smc"))
+                .unwrap();
+        let mut app = AppState::default();
+        app.load_rom(fixture).unwrap();
+        let baseline = app.project().unwrap().save_snapshot();
+        let mut editor = RomSharedPaletteEditor::default();
+        editor.open(&app);
+        editor
+            .workspace
+            .as_mut()
+            .unwrap()
+            .replace_color(0x123, Bgr555(0x4567))
+            .unwrap();
+
+        let layout = smw_us_v1_lunar_magic_metadata_layout();
+        let source = app
+            .project()
+            .unwrap()
+            .load_lunar_magic_rom_metadata(layout)
+            .unwrap()
+            .unwrap();
+        let mut attribution = *source.attribution();
+        attribution[0x9f] ^= 0x5a;
+        let metadata = LunarMagicRomMetadata::from_parts(
+            &attribution,
+            source.vram_version(),
+            source.feature_record(),
+        )
+        .unwrap();
+        let mut staged = app.project().unwrap().clone();
+        lm_app::save_lunar_magic_rom_metadata_to_project(&mut staged, &metadata).unwrap();
+        editor.stage_recovery_on_project(&app, &mut staged).unwrap();
+        let recovery = app
+            .recovery_snapshot_with_current_rom(staged.save_snapshot(), Some(0x105))
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(app.project().unwrap().save_snapshot(), baseline);
+        assert_eq!(app.project().unwrap().history.undo_len(), 0);
+        let mut reopened = AppState::default();
+        reopened.load_recovery(recovery).unwrap();
+        assert_eq!(reopened.current_level(), Some(0x105));
+        let project = reopened.project().unwrap();
+        assert_eq!(
+            project
+                .load_lunar_magic_rom_metadata(layout)
+                .unwrap()
+                .unwrap(),
+            metadata
+        );
+        assert_eq!(
+            project
+                .load_shared_palette(smw_us_v1_shared_palette_layout_for_mapper(
+                    lm_rom::Mapper::LoRom,
+                ))
+                .unwrap()
+                .palette()
+                .unwrap()
+                .colors[0x123],
+            Bgr555(0x4567)
+        );
+        let logical = project.rom.logical_bytes();
+        assert_eq!(
+            lm_rom::SnesChecksum::decode(logical, 0x7fdc).unwrap(),
+            lm_rom::compute_snes_checksum(logical, 0x7fdc).unwrap()
+        );
     }
 
     #[test]
