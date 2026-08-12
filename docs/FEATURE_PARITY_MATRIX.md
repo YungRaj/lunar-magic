@@ -1861,6 +1861,13 @@ Pristine semantic install and complete three-plane reopen, invalid/stale handlin
 recovery, and installed-table preservation remain proven. Localization model 28/28, special-event
 editor 5/5, and renderer 237/237 pass. Other native forms and retained live language-DLL evidence
 remain open; Localization stays Partial and aggregate parity remains 60/65.
+Localization coverage update (2026-08-11, overworld event reveals): the complete variable-length
+mixed-endian reveal-table editor now consumes seventeen typed extension keys plus shared
+fixed-prefix confirmation actions. A literal-widget audit covers the full surface. Growth to 200
+records with last-record semantic reopen, invalid/stale safety, pristine expanded-table recovery,
+and installed-table preservation remain proven. Localization model 28/28, event-reveal editor 5/5,
+and renderer 237/237 pass. Other native forms and retained live language-DLL evidence remain open;
+Localization stays Partial and aggregate parity remains 60/65.
 Localization coverage update (2026-08-11, overworld player starts): every visible control in the
 two-player coordinate/submap editor, including all seven submap choices and preserved-byte status,
 now uses twenty-six typed extension keys plus shared fixed-prefix confirmation actions. Source and

@@ -7169,3 +7169,13 @@ special-event editor 5/5—including pristine install and complete three-plane r
 handling, pristine recovery, and installed-table preservation—and renderer 237/237 pass.
 Localization stays Partial for remaining forms and live original language-DLL evidence; aggregate
 parity remains 60/65.
+
+Localization coverage update (2026-08-11, overworld event reveals): the complete variable-length
+mixed-endian reveal editor now uses seventeen typed extension keys for its window, table/count
+description, stale warning, index/source/destination/count fields, resize/load/apply/commit actions,
+staged state, unsaved confirmation, and errors. Shared Cancel/Discard/OK retain their fixed-prefix
+keys. A source audit rejects literal widget text and requires every `EventReveal*` key. Localization
+model 28/28, event-reveal editor 5/5—including growth to 200 records and last-record semantic
+reopen, invalid/stale safety, pristine expanded-table recovery, and installed-table preservation—
+and renderer 237/237 pass. Localization stays Partial for remaining forms and live original
+language-DLL evidence; aggregate parity remains 60/65.

@@ -1,6 +1,6 @@
 use crate::level_editor_forms::{parse_hex_u8, parse_hex_u16};
 use eframe::egui;
-use lm_app::{AppState, Command};
+use lm_app::{AppState, Command, ExtendedUiTextKey, LocalizationCatalog, UiTextKey};
 use lm_overworld::{EventReveal, EventRevealTable};
 use lm_profile::smw_us_v1_overworld_event_reveal_locator;
 
@@ -137,49 +137,66 @@ impl RomOverworldEventRevealEditor {
         &mut self,
         context: &egui::Context,
         revision: u64,
+        catalog: Option<&LocalizationCatalog>,
     ) -> (bool, Option<Command>) {
         let mut command = None;
         if self.workspace.is_some() {
-            egui::Window::new("ROM Overworld Event Reveals")
+            egui::Window::new(text(catalog, ExtendedUiTextKey::EventRevealEditorTitle))
                 .default_size([530.0, 330.0])
-                .show(context, |ui| command = self.contents(ui, revision));
+                .show(context, |ui| command = self.contents(ui, revision, catalog));
         }
-        let approved = self.close_confirmation(context);
-        self.show_error(context);
+        let approved = self.close_confirmation(context, catalog);
+        self.show_error(context, catalog);
         (approved, command)
     }
 
-    fn contents(&mut self, ui: &mut egui::Ui, revision: u64) -> Option<Command> {
+    fn contents(
+        &mut self,
+        ui: &mut egui::Ui,
+        revision: u64,
+        catalog: Option<&LocalizationCatalog>,
+    ) -> Option<Command> {
         let workspace = self.workspace.as_ref()?;
         let stale = workspace.revision != revision;
         let dirty = workspace.current != workspace.original;
-        ui.label("Complete mixed-endian source/destination reveal table. Hexadecimal.");
-        ui.label(format!(
-            "Staged reveal records: {}",
-            workspace.current.entries.len()
-        ));
+        ui.label(text(catalog, ExtendedUiTextKey::EventRevealDescription));
+        ui.label(
+            text(catalog, ExtendedUiTextKey::EventRevealCountFormat)
+                .replace("{count}", &workspace.current.entries.len().to_string()),
+        );
         if stale {
             ui.colored_label(
                 egui::Color32::YELLOW,
-                "The ROM changed after this table was opened. Reopen before committing.",
+                text(catalog, ExtendedUiTextKey::EventRevealStaleNotice),
             );
         }
         egui::Grid::new("rom-overworld-event-reveal-form")
             .striped(true)
             .show(ui, |ui| {
-                ui.label("Index");
+                ui.label(text(catalog, ExtendedUiTextKey::EventRevealIndex));
                 if ui.text_edit_singleline(&mut self.index).changed() {
                     self.loaded = None;
                 }
                 ui.end_row();
-                row(ui, "Source tile (000–7FF)", &mut self.source);
-                row(ui, "Destination tile", &mut self.destination);
+                row(
+                    ui,
+                    &text(catalog, ExtendedUiTextKey::EventRevealSourceTile),
+                    &mut self.source,
+                );
+                row(
+                    ui,
+                    &text(catalog, ExtendedUiTextKey::EventRevealDestinationTile),
+                    &mut self.destination,
+                );
             });
         ui.horizontal(|ui| {
-            ui.label("Table count (01–FF)");
+            ui.label(text(catalog, ExtendedUiTextKey::EventRevealTableCount));
             ui.text_edit_singleline(&mut self.count);
             if ui
-                .add_enabled(!stale, egui::Button::new("Resize table"))
+                .add_enabled(
+                    !stale,
+                    egui::Button::new(text(catalog, ExtendedUiTextKey::EventRevealResizeTable)),
+                )
                 .clicked()
                 && let Err(error) = self.resize()
             {
@@ -188,20 +205,28 @@ impl RomOverworldEventRevealEditor {
         });
         let mut command = None;
         ui.horizontal(|ui| {
-            if ui.button("Load reveal").clicked()
+            if ui
+                .button(text(catalog, ExtendedUiTextKey::EventRevealLoad))
+                .clicked()
                 && let Err(error) = self.load_selected()
             {
                 self.error = Some(error);
             }
             if ui
-                .add_enabled(!stale, egui::Button::new("Apply reveal"))
+                .add_enabled(
+                    !stale,
+                    egui::Button::new(text(catalog, ExtendedUiTextKey::EventRevealApply)),
+                )
                 .clicked()
                 && let Err(error) = self.apply_selected()
             {
                 self.error = Some(error);
             }
             if ui
-                .add_enabled(dirty && !stale, egui::Button::new("Commit reveals to ROM"))
+                .add_enabled(
+                    dirty && !stale,
+                    egui::Button::new(text(catalog, ExtendedUiTextKey::EventRevealCommit)),
+                )
                 .clicked()
             {
                 match self.prepare_commit(revision) {
@@ -209,7 +234,14 @@ impl RomOverworldEventRevealEditor {
                     Err(error) => self.error = Some(error),
                 }
             }
-            ui.label(if dirty { "Staged" } else { "Unchanged" });
+            ui.label(text(
+                catalog,
+                if dirty {
+                    ExtendedUiTextKey::EventRevealStaged
+                } else {
+                    ExtendedUiTextKey::EventRevealUnchanged
+                },
+            ));
         });
         command
     }
@@ -297,21 +329,37 @@ impl RomOverworldEventRevealEditor {
         }))
     }
 
-    fn close_confirmation(&mut self, context: &egui::Context) -> bool {
+    fn close_confirmation(
+        &mut self,
+        context: &egui::Context,
+        catalog: Option<&LocalizationCatalog>,
+    ) -> bool {
         let Some(pending) = self.pending_close else {
             return false;
         };
         let mut approved = false;
-        egui::Window::new("Discard event-reveal changes?")
+        egui::Window::new(text(catalog, ExtendedUiTextKey::EventRevealDiscardTitle))
             .collapsible(false)
             .resizable(false)
             .show(context, |ui| {
-                ui.label("The staged reveal table has not been committed.");
+                ui.label(text(catalog, ExtendedUiTextKey::EventRevealUnsavedNotice));
                 ui.horizontal(|ui| {
-                    if ui.button("Cancel").clicked() {
+                    if ui
+                        .button(crate::frontend_ui::localized_text(
+                            catalog,
+                            UiTextKey::CommonCancel,
+                        ))
+                        .clicked()
+                    {
                         self.pending_close = None;
                     }
-                    if ui.button("Discard").clicked() {
+                    if ui
+                        .button(crate::frontend_ui::localized_text(
+                            catalog,
+                            UiTextKey::UnsavedDiscard,
+                        ))
+                        .clicked()
+                    {
                         self.clear();
                         approved = pending == PendingClose::Application;
                     }
@@ -320,14 +368,23 @@ impl RomOverworldEventRevealEditor {
         approved
     }
 
-    fn show_error(&mut self, context: &egui::Context) {
+    fn show_error(&mut self, context: &egui::Context, catalog: Option<&LocalizationCatalog>) {
         if let Some(error) = self.error.clone() {
-            egui::Window::new("Event-reveal editor error").show(context, |ui| {
-                ui.label(error);
-                if ui.button("OK").clicked() {
-                    self.error = None;
-                }
-            });
+            egui::Window::new(text(catalog, ExtendedUiTextKey::EventRevealErrorTitle)).show(
+                context,
+                |ui| {
+                    ui.label(error);
+                    if ui
+                        .button(crate::frontend_ui::localized_text(
+                            catalog,
+                            UiTextKey::CommonOk,
+                        ))
+                        .clicked()
+                    {
+                        self.error = None;
+                    }
+                },
+            );
         }
     }
 
@@ -342,6 +399,10 @@ impl RomOverworldEventRevealEditor {
     }
 }
 
+fn text(catalog: Option<&LocalizationCatalog>, key: ExtendedUiTextKey) -> String {
+    crate::frontend_ui::extended_localized_text(catalog, key)
+}
+
 fn row(ui: &mut egui::Ui, label: &str, value: &mut String) {
     ui.label(label);
     ui.text_edit_singleline(value);
@@ -352,6 +413,28 @@ fn row(ui: &mut egui::Ui, label: &str, value: &mut String) {
 mod tests {
     use super::*;
     use std::path::PathBuf;
+
+    #[test]
+    fn event_reveal_editor_surface_has_no_literal_widget_text() {
+        let source = include_str!("reveals.rs");
+        for literal_widget in [
+            "egui::Window::new(\"",
+            "ui.button(\"",
+            "egui::Button::new(\"",
+            "ui.label(\"",
+        ] {
+            assert!(
+                !source.contains(literal_widget),
+                "event-reveal editor bypasses typed localization with {literal_widget}"
+            );
+        }
+        for key in ExtendedUiTextKey::ALL
+            .into_iter()
+            .filter(|key| format!("{key:?}").starts_with("EventReveal"))
+        {
+            assert!(source.contains(&format!("ExtendedUiTextKey::{key:?}")));
+        }
+    }
 
     #[test]
     fn pristine_table_grows_installs_and_reopens_last_record() {

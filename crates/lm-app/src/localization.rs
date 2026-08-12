@@ -1790,10 +1790,27 @@ pub enum ExtendedUiTextKey {
     SpecialEventDiscardTitle,
     SpecialEventUnsavedNotice,
     SpecialEventErrorTitle,
+    EventRevealEditorTitle,
+    EventRevealDescription,
+    EventRevealCountFormat,
+    EventRevealStaleNotice,
+    EventRevealIndex,
+    EventRevealSourceTile,
+    EventRevealDestinationTile,
+    EventRevealTableCount,
+    EventRevealResizeTable,
+    EventRevealLoad,
+    EventRevealApply,
+    EventRevealCommit,
+    EventRevealStaged,
+    EventRevealUnchanged,
+    EventRevealDiscardTitle,
+    EventRevealUnsavedNotice,
+    EventRevealErrorTitle,
 }
 
 impl ExtendedUiTextKey {
-    pub const ALL: [Self; 89] = [
+    pub const ALL: [Self; 106] = [
         Self::TilemapTitleScreenName,
         Self::TilemapCreditsName,
         Self::TilemapEditorTitleFormat,
@@ -1883,6 +1900,23 @@ impl ExtendedUiTextKey {
         Self::SpecialEventDiscardTitle,
         Self::SpecialEventUnsavedNotice,
         Self::SpecialEventErrorTitle,
+        Self::EventRevealEditorTitle,
+        Self::EventRevealDescription,
+        Self::EventRevealCountFormat,
+        Self::EventRevealStaleNotice,
+        Self::EventRevealIndex,
+        Self::EventRevealSourceTile,
+        Self::EventRevealDestinationTile,
+        Self::EventRevealTableCount,
+        Self::EventRevealResizeTable,
+        Self::EventRevealLoad,
+        Self::EventRevealApply,
+        Self::EventRevealCommit,
+        Self::EventRevealStaged,
+        Self::EventRevealUnchanged,
+        Self::EventRevealDiscardTitle,
+        Self::EventRevealUnsavedNotice,
+        Self::EventRevealErrorTitle,
     ];
 
     #[must_use]
@@ -2005,6 +2039,27 @@ impl ExtendedUiTextKey {
                 "The staged event table has not been committed to the ROM."
             }
             Self::SpecialEventErrorTitle => "Special-event editor error",
+            Self::EventRevealEditorTitle => "ROM Overworld Event Reveals",
+            Self::EventRevealDescription => {
+                "Complete mixed-endian source/destination reveal table. Hexadecimal."
+            }
+            Self::EventRevealCountFormat => "Staged reveal records: {count}",
+            Self::EventRevealStaleNotice => {
+                "The ROM changed after this table was opened. Reopen before committing."
+            }
+            Self::EventRevealIndex => "Index",
+            Self::EventRevealSourceTile => "Source tile (000–7FF)",
+            Self::EventRevealDestinationTile => "Destination tile",
+            Self::EventRevealTableCount => "Table count (01–FF)",
+            Self::EventRevealResizeTable => "Resize table",
+            Self::EventRevealLoad => "Load reveal",
+            Self::EventRevealApply => "Apply reveal",
+            Self::EventRevealCommit => "Commit reveals to ROM",
+            Self::EventRevealStaged => "Staged",
+            Self::EventRevealUnchanged => "Unchanged",
+            Self::EventRevealDiscardTitle => "Discard event-reveal changes?",
+            Self::EventRevealUnsavedNotice => "The staged reveal table has not been committed.",
+            Self::EventRevealErrorTitle => "Event-reveal editor error",
         }
     }
 
