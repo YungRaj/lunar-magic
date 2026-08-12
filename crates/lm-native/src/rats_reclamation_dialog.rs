@@ -2,7 +2,7 @@ mod workspace;
 
 use crate::rom_ownership::RomOwnershipLoader;
 use eframe::egui;
-use lm_app::{AppState, Command};
+use lm_app::{AppState, Command, ExtendedUiTextKey, LocalizationCatalog};
 use workspace::RatsReclamationWorkspace;
 
 #[derive(Default)]
@@ -25,6 +25,7 @@ impl RatsReclamationDialog {
     }
 
     pub(crate) fn show(&mut self, context: &egui::Context, app: &AppState) -> Option<Command> {
+        let catalog = app.localization();
         if let Some(result) = self.loader.show(context, app.project_revision()) {
             match result.and_then(|manifest| RatsReclamationWorkspace::load(app, manifest)) {
                 Ok(workspace) => {
@@ -36,49 +37,59 @@ impl RatsReclamationDialog {
         }
         let mut command = None;
         if self.workspace.is_some() {
-            egui::Window::new("Reclaim Owned RATS Blocks")
+            egui::Window::new(text(catalog, ExtendedUiTextKey::RatsReclaimTitle))
                 .collapsible(false)
                 .resizable(false)
                 .show(context, |ui| {
-                    command = self.contents(ui, app.project_revision());
+                    command = self.contents(ui, app.project_revision(), catalog);
                 });
         }
-        self.show_error(context);
+        self.show_error(context, catalog);
         command
     }
 
-    fn contents(&mut self, ui: &mut egui::Ui, project_revision: u64) -> Option<Command> {
+    fn contents(
+        &mut self,
+        ui: &mut egui::Ui,
+        project_revision: u64,
+        catalog: Option<&LocalizationCatalog>,
+    ) -> Option<Command> {
         let workspace = self.workspace.as_mut()?;
         let stale = workspace.is_stale(project_revision);
         let mut cancel = false;
-        ui.label("Only blocks explicitly owned and not retained by the manifest will be erased.");
-        ui.monospace(format!(
-            "reclaim={} blocks / {} bytes    retain={} blocks",
-            workspace.reclaimed_blocks, workspace.reclaimed_bytes, workspace.retained_blocks
-        ));
+        ui.label(text(catalog, ExtendedUiTextKey::RatsReclaimOwnershipNotice));
+        ui.monospace(
+            text(catalog, ExtendedUiTextKey::RatsReclaimSummaryFormat)
+                .replace("{blocks}", &workspace.reclaimed_blocks.to_string())
+                .replace("{bytes}", &workspace.reclaimed_bytes.to_string())
+                .replace("{retained}", &workspace.retained_blocks.to_string()),
+        );
         ui.horizontal(|ui| {
-            ui.label("Erase fill byte");
+            ui.label(text(catalog, ExtendedUiTextKey::RatsReclaimFillByte));
             ui.text_edit_singleline(&mut workspace.fill);
         });
-        ui.label(
-            "The manifest is revalidated against the current ROM. Erasure and checksum repair \
-             commit as one undoable project operation.",
-        );
+        ui.label(text(
+            catalog,
+            ExtendedUiTextKey::RatsReclaimTransactionNotice,
+        ));
         if stale {
             ui.colored_label(
                 egui::Color32::YELLOW,
-                "The ROM changed after this manifest was loaded.",
+                text(catalog, ExtendedUiTextKey::RatsReclaimStaleNotice),
             );
         }
         let mut command = None;
         ui.horizontal(|ui| {
-            if ui.button("Cancel").clicked() {
+            if ui
+                .button(text(catalog, ExtendedUiTextKey::RatsReclaimCancel))
+                .clicked()
+            {
                 cancel = true;
             }
             if ui
                 .add_enabled(
                     !stale && workspace.reclaimed_blocks != 0,
-                    egui::Button::new("Reclaim transactionally"),
+                    egui::Button::new(text(catalog, ExtendedUiTextKey::RatsReclaimAction)),
                 )
                 .clicked()
             {
@@ -94,14 +105,20 @@ impl RatsReclamationDialog {
         command
     }
 
-    fn show_error(&mut self, context: &egui::Context) {
+    fn show_error(&mut self, context: &egui::Context, catalog: Option<&LocalizationCatalog>) {
         if let Some(error) = self.error.clone() {
-            egui::Window::new("RATS reclamation error").show(context, |ui| {
-                ui.label(error);
-                if ui.button("OK").clicked() {
-                    self.error = None;
-                }
-            });
+            egui::Window::new(text(catalog, ExtendedUiTextKey::RatsReclaimErrorTitle)).show(
+                context,
+                |ui| {
+                    ui.label(error);
+                    if ui
+                        .button(text(catalog, ExtendedUiTextKey::RatsReclaimOk))
+                        .clicked()
+                    {
+                        self.error = None;
+                    }
+                },
+            );
         }
     }
 
@@ -110,9 +127,32 @@ impl RatsReclamationDialog {
     }
 }
 
+fn text(catalog: Option<&LocalizationCatalog>, key: ExtendedUiTextKey) -> String {
+    crate::frontend_ui::extended_localized_text(catalog, key)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn complete_rats_reclamation_form_uses_every_typed_key() {
+        let source = include_str!("rats_reclamation_dialog.rs");
+        for key in ExtendedUiTextKey::ALL
+            .into_iter()
+            .filter(|key| format!("{key:?}").starts_with("RatsReclaim"))
+        {
+            assert!(source.contains(&format!("ExtendedUiTextKey::{key:?}")));
+        }
+        for hard_coded_caption in [
+            "Window::new(\"Reclaim Owned RATS Blocks\")",
+            "ui.label(\"Erase fill byte\")",
+            "Button::new(\"Reclaim transactionally\")",
+            "Window::new(\"RATS reclamation error\")",
+        ] {
+            assert!(!source.contains(hard_coded_caption));
+        }
+    }
 
     #[test]
     fn successful_acknowledgement_clears_preview_state() {

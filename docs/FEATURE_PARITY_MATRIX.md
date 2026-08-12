@@ -2082,3 +2082,11 @@ creation, headerless-to-Lunar-Magic-coordinate normalization, input preservation
 rejection remain proven. The focused form passes 4/4, localization model 28/28, and renderer
 237/237. Other native forms and retained live language-DLL evidence remain open; Localization stays
 Partial and aggregate parity remains 60/65.
+
+Localization coverage update (2026-08-12, owned-RATS reclamation): the complete manifest-bound
+preview now uses ten typed extension keys for ownership guarantees, reclaim/retain counts, erase
+fill, checksum-repaired transaction guidance, stale state, actions, and errors. Preview/command
+manifest identity, invalid-fill and stale-revision rejection, and lifecycle cleanup remain proven.
+The focused form passes 3/3, localization model 28/28, and renderer 237/237. Other native forms and
+retained live language-DLL evidence remain open; Localization stays Partial and aggregate parity
+remains 60/65.

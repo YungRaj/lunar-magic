@@ -2408,10 +2408,20 @@ pub enum ExtendedUiTextKey {
     IpsCreateCompletedFormat,
     IpsCreateErrorTitle,
     IpsCreateOk,
+    RatsReclaimTitle,
+    RatsReclaimOwnershipNotice,
+    RatsReclaimSummaryFormat,
+    RatsReclaimFillByte,
+    RatsReclaimTransactionNotice,
+    RatsReclaimStaleNotice,
+    RatsReclaimCancel,
+    RatsReclaimAction,
+    RatsReclaimErrorTitle,
+    RatsReclaimOk,
 }
 
 impl ExtendedUiTextKey {
-    pub const ALL: [Self; 707] = [
+    pub const ALL: [Self; 717] = [
         Self::TilemapTitleScreenName,
         Self::TilemapCreditsName,
         Self::TilemapEditorTitleFormat,
@@ -3119,6 +3129,16 @@ impl ExtendedUiTextKey {
         Self::IpsCreateCompletedFormat,
         Self::IpsCreateErrorTitle,
         Self::IpsCreateOk,
+        Self::RatsReclaimTitle,
+        Self::RatsReclaimOwnershipNotice,
+        Self::RatsReclaimSummaryFormat,
+        Self::RatsReclaimFillByte,
+        Self::RatsReclaimTransactionNotice,
+        Self::RatsReclaimStaleNotice,
+        Self::RatsReclaimCancel,
+        Self::RatsReclaimAction,
+        Self::RatsReclaimErrorTitle,
+        Self::RatsReclaimOk,
     ];
 
     #[must_use]
@@ -4099,6 +4119,22 @@ impl ExtendedUiTextKey {
             Self::IpsCreateCompletedFormat => "Created {path} ({bytes} bytes).",
             Self::IpsCreateErrorTitle => "IPS creation error",
             Self::IpsCreateOk => "OK",
+            Self::RatsReclaimTitle => "Reclaim Owned RATS Blocks",
+            Self::RatsReclaimOwnershipNotice => {
+                "Only blocks explicitly owned and not retained by the manifest will be erased."
+            }
+            Self::RatsReclaimSummaryFormat => {
+                "reclaim={blocks} blocks / {bytes} bytes    retain={retained} blocks"
+            }
+            Self::RatsReclaimFillByte => "Erase fill byte",
+            Self::RatsReclaimTransactionNotice => {
+                "The manifest is revalidated against the current ROM. Erasure and checksum repair commit as one undoable project operation."
+            }
+            Self::RatsReclaimStaleNotice => "The ROM changed after this manifest was loaded.",
+            Self::RatsReclaimCancel => "Cancel",
+            Self::RatsReclaimAction => "Reclaim transactionally",
+            Self::RatsReclaimErrorTitle => "RATS reclamation error",
+            Self::RatsReclaimOk => "OK",
         }
     }
 

@@ -7428,3 +7428,13 @@ suite pass 4/4, proving exact round-trip creation, Lunar Magic's headered IPS-co
 input preservation, and alias/output-collision rejection; localization passes 28/28 and renderer
 passes 237/237. Localization remains Partial for other native forms and retained live language-DLL
 evidence; aggregate parity remains 60/65.
+
+Localization coverage update (2026-08-12, owned-RATS reclamation): ten appended `RatsReclaim*`
+keys cover the complete manifest-bound reclamation preview, including ownership safety, dynamic
+reclaim/retain counts, fill byte, manifest revalidation, atomic checksum-repaired commit, stale
+state, actions, and error lifecycle. Counts remain data substituted into a localized template;
+manifest/parser errors remain technical payloads. The complete-family source audit and workspace
+suite pass 3/3, including shared manifest identity between preview and command, invalid fill and
+stale-revision rejection, and acknowledgement cleanup. Localization passes 28/28 and renderer
+passes 237/237. Localization remains Partial for other native forms and retained live language-DLL
+evidence; aggregate parity remains 60/65.
