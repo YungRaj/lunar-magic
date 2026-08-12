@@ -218,7 +218,12 @@ impl VanillaGraphicsEditor {
                 *joined_graphics_files,
                 &snapshot,
             );
-            self.pixel_editor(&mut columns[1], &palette, !file_work_running);
+            self.pixel_editor(
+                &mut columns[1],
+                &palette,
+                !file_work_running,
+                app.localization(),
+            );
         });
         self.status.show(ui);
         if let Some(error) = &self.error {
@@ -729,6 +734,7 @@ impl VanillaGraphicsEditor {
         ui: &mut egui::Ui,
         palette: &PaletteInterchangeFile,
         edits_enabled: bool,
+        catalog: Option<&lm_app::LocalizationCatalog>,
     ) {
         let tile = self.edit_tile.clone().or_else(|| {
             self.internal_cache_unlocked
@@ -756,9 +762,14 @@ impl VanillaGraphicsEditor {
             self.color_map.open_dialog();
         }
         ui.label(format!("Tile {:03X}", self.selected_tile));
-        let clicked_mapping =
-            self.color_map
-                .show(ui, palette, self.display_palette, &tile, edits_enabled);
+        let clicked_mapping = self.color_map.show(
+            ui,
+            palette,
+            self.display_palette,
+            &tile,
+            edits_enabled,
+            catalog,
+        );
         let mapped = character_shortcut
             .filter(|shortcut| {
                 edits_enabled && *shortcut == GraphicsCharacterShortcut::ApplyColorMap

@@ -6812,3 +6812,15 @@ different workflows. A Unicode catalog encode/decode test covers the `$0411` bin
 fallback behavior; archive validation, associated-file restoration, failed-reversion recording,
 and atomic publication are unchanged. Localization remains `Partial` pending remaining mapped forms
 and retained live third-party language-DLL/Wine evidence.
+
+## Original graphics color-map filter template
+
+The standard, pristine-ROM, and installed-ROM graphics editors now pass the active application
+catalog into their shared transactional color-map form. That form consumes Lunar Magic 3.63
+resource `$0401` for its title, color-map selector label, original/mapped color headings, dynamic
+color caption, Reset, OK, and Cancel. The portable document editor retains built-in English because
+it has no application localization context. A Unicode catalog encode/decode test proves the mapped
+controls and independent fallbacks; the draft remains isolated until OK, Cancel still discards it,
+and applying a filter continues to mutate only the selected tile edit buffer before an eligible
+paste publishes backing graphics. Localization remains `Partial` pending remaining mapped forms and
+retained live third-party language-DLL/Wine evidence.

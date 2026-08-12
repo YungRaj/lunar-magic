@@ -1,7 +1,10 @@
 use eframe::egui;
+use lm_app::LocalizationCatalog;
 use lm_graphics::{
     GraphicsColorMapFilters, GraphicsTileOwner, IndexedTile, PaletteInterchangeFile, TileShift,
 };
+
+const ORIGINAL_COLOR_MAP_DIALOG_ID: u16 = 0x0401;
 
 pub(crate) const TILE_GRID_COLUMNS: usize = 16;
 const TILE_SHEET_CELL_SIDE: f32 = 16.0;
@@ -364,6 +367,7 @@ impl GraphicsColorMapEditor {
         display_palette: GraphicsDisplayPalette,
         tile: &IndexedTile,
         apply_enabled: bool,
+        catalog: Option<&LocalizationCatalog>,
     ) -> Option<IndexedTile> {
         let mut apply = false;
         ui.horizontal(|ui| {
@@ -375,7 +379,7 @@ impl GraphicsColorMapEditor {
                 .clicked();
             ui.monospace(format!("Filter {:X}", self.selected_filter));
         });
-        self.show_dialog(ui.ctx(), palette, display_palette);
+        self.show_dialog(ui.ctx(), palette, display_palette, catalog);
         apply
             .then(|| self.filters.apply(self.selected_filter, tile))
             .flatten()
@@ -386,6 +390,7 @@ impl GraphicsColorMapEditor {
         context: &egui::Context,
         palette: &PaletteInterchangeFile,
         display_palette: GraphicsDisplayPalette,
+        catalog: Option<&LocalizationCatalog>,
     ) {
         let Some(mut dialog) = self.dialog.take() else {
             return;
@@ -394,7 +399,7 @@ impl GraphicsColorMapEditor {
         let mut accepted = false;
         let mut cancelled = false;
         let mut selected_filter = self.selected_filter;
-        egui::Window::new("Graphics color-map filters")
+        egui::Window::new(color_map_dialog_title(catalog))
             .collapsible(false)
             .resizable(false)
             .open(&mut window_open)
@@ -407,6 +412,7 @@ impl GraphicsColorMapEditor {
                     &mut selected_filter,
                     &mut accepted,
                     &mut cancelled,
+                    catalog,
                 );
             });
         self.selected_filter = selected_filter;
@@ -441,19 +447,28 @@ fn show_color_map_dialog_contents(
     selected_filter: &mut usize,
     accepted: &mut bool,
     cancelled: &mut bool,
+    catalog: Option<&LocalizationCatalog>,
 ) {
-    egui::ComboBox::from_label("Filter")
-        .selected_text(format!("{selected_filter:X}"))
-        .show_ui(ui, |ui| {
-            for filter in 0..GraphicsColorMapFilters::FILTERS {
-                ui.selectable_value(
-                    selected_filter,
-                    filter,
-                    format!("Use color-map filter {filter:X}"),
-                );
-            }
-        });
-    ui.label("Source colors");
+    egui::ComboBox::from_label(color_map_dialog_text(
+        catalog,
+        0x19c,
+        "Color Map Number to use",
+    ))
+    .selected_text(format!("{selected_filter:X}"))
+    .show_ui(ui, |ui| {
+        for filter in 0..GraphicsColorMapFilters::FILTERS {
+            ui.selectable_value(
+                selected_filter,
+                filter,
+                format!("Use color-map filter {filter:X}"),
+            );
+        }
+    });
+    ui.label(color_map_dialog_text(
+        catalog,
+        0x1df,
+        "Original to Mapped Color",
+    ));
     ui.horizontal(|ui| {
         for source in 0_u8..16 {
             if color_map_button(
@@ -472,7 +487,11 @@ fn show_color_map_dialog_contents(
         .draft
         .destination(*selected_filter, dialog.source)
         .unwrap_or(dialog.source);
-    ui.label("Mapped colors");
+    ui.label(color_map_dialog_text(
+        catalog,
+        0x67,
+        "Original Colors to Mapped Colors",
+    ));
     ui.horizontal(|ui| {
         for source in 0_u8..16 {
             let mapped = dialog
@@ -492,7 +511,10 @@ fn show_color_map_dialog_contents(
             }
         }
     });
-    ui.label(format!("Destination for color {:X}", dialog.source));
+    ui.label(
+        color_map_dialog_text(catalog, 0x6a, "Color: 0")
+            .replace('0', &format!("{:X}", dialog.source)),
+    );
     ui.horizontal(|ui| {
         for color in 0_u8..16 {
             let selected = color == destination;
@@ -511,16 +533,42 @@ fn show_color_map_dialog_contents(
         }
     });
     ui.horizontal(|ui| {
-        if ui.button("Reset filter").clicked() {
+        if ui
+            .button(color_map_dialog_text(catalog, 6, "Reset"))
+            .clicked()
+        {
             let _ = dialog.draft.reset(*selected_filter);
         }
-        if ui.button("Cancel").clicked() {
+        if ui
+            .button(color_map_dialog_text(catalog, 2, "Cancel"))
+            .clicked()
+        {
             *cancelled = true;
         }
-        if ui.button("OK").clicked() {
+        if ui.button(color_map_dialog_text(catalog, 1, "OK")).clicked() {
             *accepted = true;
         }
     });
+}
+
+fn color_map_dialog_title(catalog: Option<&LocalizationCatalog>) -> String {
+    catalog
+        .and_then(|catalog| catalog.original_dialog_title(ORIGINAL_COLOR_MAP_DIALOG_ID))
+        .unwrap_or("Create Filter to Remap Colors in Tile")
+        .to_owned()
+}
+
+fn color_map_dialog_text(
+    catalog: Option<&LocalizationCatalog>,
+    control_id: u32,
+    fallback: &str,
+) -> String {
+    catalog
+        .and_then(|catalog| {
+            catalog.original_dialog_control_text(ORIGINAL_COLOR_MAP_DIALOG_ID, control_id)
+        })
+        .unwrap_or(fallback)
+        .to_owned()
 }
 
 fn color_map_button(
@@ -1529,6 +1577,68 @@ mod tests {
         accepted.draft.set_destination(4, 2, 11).unwrap();
         editor.finish_dialog(accepted, true);
         assert_eq!(editor.filters.destination(4, 2), Some(11));
+    }
+
+    #[test]
+    fn original_color_map_template_localizes_matching_controls_and_round_trips() {
+        use lm_app::{OriginalDialogTextKey, UiTextKey};
+
+        let catalog = LocalizationCatalog::new(
+            "fr-test",
+            UiTextKey::ALL.map(|key| (key, key.english().to_owned())),
+        )
+        .unwrap()
+        .with_original_dialog_texts([
+            (
+                OriginalDialogTextKey {
+                    dialog_id: ORIGINAL_COLOR_MAP_DIALOG_ID,
+                    item_index: u16::MAX,
+                    control_id: u32::MAX,
+                },
+                "Créer un filtre de couleurs".into(),
+            ),
+            (
+                OriginalDialogTextKey {
+                    dialog_id: ORIGINAL_COLOR_MAP_DIALOG_ID,
+                    item_index: 1,
+                    control_id: 0x19c,
+                },
+                "Numéro de palette à utiliser".into(),
+            ),
+            (
+                OriginalDialogTextKey {
+                    dialog_id: ORIGINAL_COLOR_MAP_DIALOG_ID,
+                    item_index: 2,
+                    control_id: 6,
+                },
+                "Réinitialiser".into(),
+            ),
+        ])
+        .unwrap();
+
+        assert_eq!(
+            color_map_dialog_title(Some(&catalog)),
+            "Créer un filtre de couleurs"
+        );
+        assert_eq!(
+            color_map_dialog_text(Some(&catalog), 0x19c, "fallback"),
+            "Numéro de palette à utiliser"
+        );
+        assert_eq!(
+            color_map_dialog_text(Some(&catalog), 6, "Reset"),
+            "Réinitialiser"
+        );
+        assert_eq!(color_map_dialog_text(Some(&catalog), 2, "Cancel"), "Cancel");
+        assert_eq!(
+            color_map_dialog_title(None),
+            "Create Filter to Remap Colors in Tile"
+        );
+
+        let reopened = LocalizationCatalog::decode(&catalog.encode().unwrap()).unwrap();
+        assert_eq!(
+            color_map_dialog_title(Some(&reopened)),
+            "Créer un filtre de couleurs"
+        );
     }
 
     #[test]

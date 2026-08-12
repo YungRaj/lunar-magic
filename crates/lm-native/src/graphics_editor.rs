@@ -476,9 +476,9 @@ impl GraphicsEditor {
             self.color_map.open_dialog();
         }
         ui.label(format!("Tile {:03X}", self.selected_tile));
-        let clicked_mapping = self
-            .color_map
-            .show(ui, palette, self.display_palette, &tile, true);
+        let clicked_mapping =
+            self.color_map
+                .show(ui, palette, self.display_palette, &tile, true, None);
         let mapped = character_shortcut
             .filter(|shortcut| *shortcut == GraphicsCharacterShortcut::ApplyColorMap)
             .and_then(|_| self.color_map.apply(&tile))

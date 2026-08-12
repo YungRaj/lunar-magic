@@ -821,6 +821,7 @@ impl RomGraphicsEditor {
                 &palette,
                 stale || file_work_running,
                 pasted.as_deref(),
+                app.localization(),
             );
         });
         self.status.show(ui);
@@ -1288,6 +1289,7 @@ impl RomGraphicsEditor {
         palette: &PaletteInterchangeFile,
         stale: bool,
         pasted: Option<&str>,
+        catalog: Option<&lm_app::LocalizationCatalog>,
     ) {
         let diagnostic = self.internal_cache_unlocked;
         if let Some(text) = pasted {
@@ -1358,9 +1360,14 @@ impl RomGraphicsEditor {
         if character_shortcut == Some(GraphicsCharacterShortcut::EditColorMap) {
             self.color_map.open_dialog();
         }
-        let clicked_mapping =
-            self.color_map
-                .show(ui, palette, self.display_palette, &tile, !stale && editable);
+        let clicked_mapping = self.color_map.show(
+            ui,
+            palette,
+            self.display_palette,
+            &tile,
+            !stale && editable,
+            catalog,
+        );
         let mapped = (character_shortcut == Some(GraphicsCharacterShortcut::ApplyColorMap)
             && !stale
             && editable)
