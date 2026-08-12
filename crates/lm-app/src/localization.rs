@@ -1701,6 +1701,24 @@ const RUST_UI_ITEM_INDEX: u16 = u16::MAX - 1;
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 #[repr(u32)]
 pub enum ExtendedUiTextKey {
+    DscEditorTitle,
+    DscSourceSummaryFormat,
+    DscSourceNotice,
+    DscReplaceSource,
+    DscDiagnosticsHeading,
+    DscParsedRecord,
+    DscNoRecoveredRecords,
+    DscUndo,
+    DscRedo,
+    DscSave,
+    DscModified,
+    DscSaved,
+    DscDiscardTitle,
+    DscUnsavedNotice,
+    DscCancel,
+    DscDiscard,
+    DscErrorTitle,
+    DscOk,
     TilemapTitleScreenName,
     TilemapCreditsName,
     TilemapEditorTitleFormat,
@@ -2566,7 +2584,25 @@ pub enum ExtendedUiTextKey {
 }
 
 impl ExtendedUiTextKey {
-    pub const ALL: [Self; 862] = [
+    pub const ALL: [Self; 880] = [
+        Self::DscEditorTitle,
+        Self::DscSourceSummaryFormat,
+        Self::DscSourceNotice,
+        Self::DscReplaceSource,
+        Self::DscDiagnosticsHeading,
+        Self::DscParsedRecord,
+        Self::DscNoRecoveredRecords,
+        Self::DscUndo,
+        Self::DscRedo,
+        Self::DscSave,
+        Self::DscModified,
+        Self::DscSaved,
+        Self::DscDiscardTitle,
+        Self::DscUnsavedNotice,
+        Self::DscCancel,
+        Self::DscDiscard,
+        Self::DscErrorTitle,
+        Self::DscOk,
         Self::TilemapTitleScreenName,
         Self::TilemapCreditsName,
         Self::TilemapEditorTitleFormat,
@@ -3434,6 +3470,30 @@ impl ExtendedUiTextKey {
     #[must_use]
     pub const fn english(self) -> &'static str {
         match self {
+            Self::DscEditorTitle => "Lossless DSC Sidecar Editor",
+            Self::DscSourceSummaryFormat => {
+                "Lossless source: {bytes} bytes; valid parsed records: {records}"
+            }
+            Self::DscSourceNotice => {
+                "Complete source bytes (malformed lines, BOM, line endings, and non-UTF-8 retained):"
+            }
+            Self::DscReplaceSource => "Replace complete lossless source",
+            Self::DscDiagnosticsHeading => "Read-only recovered-record diagnostics",
+            Self::DscParsedRecord => "Parsed record",
+            Self::DscNoRecoveredRecords => {
+                "No valid recovered records; all source bytes remain preserved."
+            }
+            Self::DscUndo => "Undo",
+            Self::DscRedo => "Redo",
+            Self::DscSave => "Save",
+            Self::DscModified => "Modified",
+            Self::DscSaved => "Saved",
+            Self::DscDiscardTitle => "Unsaved DSC sidecar",
+            Self::DscUnsavedNotice => "Discard unsaved lossless source changes?",
+            Self::DscCancel => "Cancel",
+            Self::DscDiscard => "Discard",
+            Self::DscErrorTitle => "DSC sidecar error",
+            Self::DscOk => "OK",
             Self::TilemapTitleScreenName => "Title-Screen Tilemap",
             Self::TilemapCreditsName => "Credits Tilemap",
             Self::TilemapEditorTitleFormat => "ROM {tilemap}",

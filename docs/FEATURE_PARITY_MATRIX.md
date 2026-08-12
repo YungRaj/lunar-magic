@@ -1255,6 +1255,13 @@ tamper rejection. The four-platform workflow builds it and the packager binds it
 manifest. Launcher 2/2, updater 11/11, packager 3/3, and renderer 237/237 pass. Native activation
 consent and retained cross-platform release execution remain missing, so Release stays Partial and
 aggregate parity remains 60/65.
+
+Localization coverage update (2026-08-12, lossless DSC sidecar): eighteen typed extension keys
+cover the complete binary-preserving source/diagnostic form with the live catalog routed from the
+application host. Exact BOM, mixed-line-ending, malformed, and non-UTF-8 preservation remains
+proven through revisioned replacement, Undo, and Redo. Focused DSC tests pass 4/4, localization
+passes 28/28 active cases, and renderer passes 237/237. Other native forms and retained
+language-DLL evidence keep Localization Partial, so aggregate parity remains 60/65.
 Localization coverage update (2026-08-11, installed-ROM Map16 main editor): fifty-one typed keys now
 cover its complete canvas/preview, grid/zoom/page display, rectangle selection, tile clipboard,
 history, subtile and Acts-Like semantics, protected pages, allocation/commit, staged state, discard,

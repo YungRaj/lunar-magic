@@ -5,7 +5,7 @@ use crate::{
     dsc_sidecar_editor_form::{DscSourceForm, diagnostic},
 };
 use eframe::egui;
-use lm_app::DscSidecarController;
+use lm_app::{DscSidecarController, ExtendedUiTextKey, LocalizationCatalog};
 use lm_level::{DscDescriptionStyle, DscResolvedTable, MAX_DSC_SOURCE_LEN};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -76,7 +76,11 @@ impl DscSidecarEditor {
         false
     }
 
-    pub(crate) fn show(&mut self, context: &egui::Context) -> bool {
+    pub(crate) fn show(
+        &mut self,
+        context: &egui::Context,
+        catalog: Option<&LocalizationCatalog>,
+    ) -> bool {
         if let Some(result) = self.loader.show(context) {
             match result.and_then(|mut loaded| {
                 let (path, bytes) = loaded
@@ -99,13 +103,13 @@ impl DscSidecarEditor {
         }
         if self.controller.is_some() {
             self.load_form();
-            egui::Window::new("Lossless DSC Sidecar Editor")
+            egui::Window::new(text(catalog, ExtendedUiTextKey::DscEditorTitle))
                 .default_size([800.0, 650.0])
                 .vscroll(true)
-                .show(context, |ui| self.contents(ui));
+                .show(context, |ui| self.contents(ui, catalog));
         }
-        let approved = self.show_close_confirmation(context);
-        self.show_error(context);
+        let approved = self.show_close_confirmation(context, catalog);
+        self.show_error(context, catalog);
         approved
     }
 
@@ -131,8 +135,8 @@ impl DscSidecarEditor {
         }
     }
 
-    fn contents(&mut self, ui: &mut egui::Ui) {
-        self.toolbar(ui);
+    fn contents(&mut self, ui: &mut egui::Ui, catalog: Option<&LocalizationCatalog>) {
+        self.toolbar(ui, catalog);
         ui.separator();
         let (source_len, entry_count, entry_diagnostic) = {
             let Some(controller) = self.controller.as_ref() else {
@@ -145,18 +149,21 @@ impl DscSidecarEditor {
                 value.entries().get(self.entry_index).map(diagnostic),
             )
         };
-        ui.label(format!(
-            "Lossless source: {source_len} bytes; valid parsed records: {entry_count}"
-        ));
         ui.label(
-            "Complete source bytes (malformed lines, BOM, line endings, and non-UTF-8 retained):",
+            text(catalog, ExtendedUiTextKey::DscSourceSummaryFormat)
+                .replace("{bytes}", &source_len.to_string())
+                .replace("{records}", &entry_count.to_string()),
         );
+        ui.label(text(catalog, ExtendedUiTextKey::DscSourceNotice));
         ui.add(
             egui::TextEdit::multiline(&mut self.form.bytes)
                 .desired_rows(16)
                 .code_editor(),
         );
-        if ui.button("Replace complete lossless source").clicked() {
+        if ui
+            .button(text(catalog, ExtendedUiTextKey::DscReplaceSource))
+            .clicked()
+        {
             match self.form.parse() {
                 Ok(bytes) => {
                     let Some(controller) = self.controller.as_mut() else {
@@ -172,19 +179,19 @@ impl DscSidecarEditor {
             }
         }
         ui.separator();
-        ui.heading("Read-only recovered-record diagnostics");
+        ui.heading(text(catalog, ExtendedUiTextKey::DscDiagnosticsHeading));
         ui.add(
             egui::Slider::new(&mut self.entry_index, 0..=entry_count.saturating_sub(1))
-                .text("Parsed record"),
+                .text(text(catalog, ExtendedUiTextKey::DscParsedRecord)),
         );
         if let Some(entry_diagnostic) = entry_diagnostic {
             ui.label(entry_diagnostic);
         } else {
-            ui.label("No valid recovered records; all source bytes remain preserved.");
+            ui.label(text(catalog, ExtendedUiTextKey::DscNoRecoveredRecords));
         }
     }
 
-    fn toolbar(&mut self, ui: &mut egui::Ui) {
+    fn toolbar(&mut self, ui: &mut egui::Ui, catalog: Option<&LocalizationCatalog>) {
         let Some(controller) = self.controller.as_ref() else {
             return;
         };
@@ -197,21 +204,37 @@ impl DscSidecarEditor {
         let mut save_requested = false;
         ui.horizontal(|ui| {
             if ui
-                .add_enabled(can_undo, egui::Button::new("Undo"))
+                .add_enabled(
+                    can_undo,
+                    egui::Button::new(text(catalog, ExtendedUiTextKey::DscUndo)),
+                )
                 .clicked()
             {
                 history = Some(true);
             }
             if ui
-                .add_enabled(can_redo, egui::Button::new("Redo"))
+                .add_enabled(
+                    can_redo,
+                    egui::Button::new(text(catalog, ExtendedUiTextKey::DscRedo)),
+                )
                 .clicked()
             {
                 history = Some(false);
             }
             save_requested = ui
-                .add_enabled(!self.persistence.is_running(), egui::Button::new("Save"))
+                .add_enabled(
+                    !self.persistence.is_running(),
+                    egui::Button::new(text(catalog, ExtendedUiTextKey::DscSave)),
+                )
                 .clicked();
-            ui.label(if modified { "Modified" } else { "Saved" });
+            ui.label(text(
+                catalog,
+                if modified {
+                    ExtendedUiTextKey::DscModified
+                } else {
+                    ExtendedUiTextKey::DscSaved
+                },
+            ));
         });
         let mut changed = false;
         if let Some(controller) = self.controller.as_mut() {
@@ -237,22 +260,32 @@ impl DscSidecarEditor {
         }
     }
 
-    fn show_close_confirmation(&mut self, context: &egui::Context) -> bool {
+    fn show_close_confirmation(
+        &mut self,
+        context: &egui::Context,
+        catalog: Option<&LocalizationCatalog>,
+    ) -> bool {
         let Some(pending) = self.pending_close else {
             return false;
         };
         let mut approved = false;
-        egui::Window::new("Unsaved DSC sidecar")
+        egui::Window::new(text(catalog, ExtendedUiTextKey::DscDiscardTitle))
             .collapsible(false)
             .resizable(false)
             .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
             .show(context, |ui| {
-                ui.label("Discard unsaved lossless source changes?");
+                ui.label(text(catalog, ExtendedUiTextKey::DscUnsavedNotice));
                 ui.horizontal(|ui| {
-                    if ui.button("Cancel").clicked() {
+                    if ui
+                        .button(text(catalog, ExtendedUiTextKey::DscCancel))
+                        .clicked()
+                    {
                         self.pending_close = None;
                     }
-                    if ui.button("Discard").clicked() {
+                    if ui
+                        .button(text(catalog, ExtendedUiTextKey::DscDiscard))
+                        .clicked()
+                    {
                         self.clear();
                         approved = pending == PendingClose::Application;
                     }
@@ -261,14 +294,14 @@ impl DscSidecarEditor {
         approved
     }
 
-    fn show_error(&mut self, context: &egui::Context) {
+    fn show_error(&mut self, context: &egui::Context, catalog: Option<&LocalizationCatalog>) {
         if let Some(error) = self.error.clone() {
-            egui::Window::new("DSC sidecar error")
+            egui::Window::new(text(catalog, ExtendedUiTextKey::DscErrorTitle))
                 .collapsible(false)
                 .resizable(false)
                 .show(context, |ui| {
                     ui.label(error);
-                    if ui.button("OK").clicked() {
+                    if ui.button(text(catalog, ExtendedUiTextKey::DscOk)).clicked() {
                         self.error = None;
                     }
                 });
@@ -280,5 +313,61 @@ impl DscSidecarEditor {
         self.resolved = None;
         self.loaded_revision = None;
         self.pending_close = None;
+    }
+}
+
+fn text(catalog: Option<&LocalizationCatalog>, key: ExtendedUiTextKey) -> String {
+    crate::frontend_ui::extended_localized_text(catalog, key)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn complete_dsc_sidecar_form_uses_every_typed_key_and_live_catalog() {
+        let source = include_str!("dsc_sidecar_editor.rs");
+        for key in ExtendedUiTextKey::ALL
+            .into_iter()
+            .filter(|key| format!("{key:?}").starts_with("Dsc"))
+        {
+            assert!(
+                source.contains(&format!("ExtendedUiTextKey::{key:?}")),
+                "missing DSC label {key:?}"
+            );
+        }
+        for literal in [
+            "Window::new(\"Lossless DSC Sidecar Editor\")",
+            "Window::new(\"Unsaved DSC sidecar\")",
+            "Window::new(\"DSC sidecar error\")",
+            "Button::new(\"Undo\")",
+            "Button::new(\"Save\")",
+            "ui.button(\"Replace complete lossless source\")",
+        ] {
+            assert!(
+                !source.contains(literal),
+                "fixed-English control: {literal}"
+            );
+        }
+        assert!(
+            include_str!("application/windows.rs")
+                .contains(".show(context, self.app.localization())")
+        );
+    }
+
+    #[test]
+    fn lossless_source_replacement_is_revisioned_and_undoable() {
+        let original = b"\xef\xbb\xbf0001\t20\tfirst\r\nmalformed\xff\n";
+        let replacement = b"0002\t21\tsecond\n# retained comment\r\n";
+        let mut controller = DscSidecarController::decode("sprites.dsc".into(), original).unwrap();
+        controller
+            .replace_source(controller.revision(), replacement)
+            .unwrap();
+        assert_eq!(controller.revision(), 1);
+        assert_eq!(controller.value().source(), replacement);
+        assert!(controller.undo(controller.revision()).unwrap());
+        assert_eq!(controller.value().source(), original);
+        assert!(controller.redo(controller.revision()).unwrap());
+        assert_eq!(controller.value().source(), replacement);
     }
 }

@@ -7120,6 +7120,16 @@ surface. Catalog migration retains each historical 19/183/184/199/201/212/230-ke
 prefix and appends English fallbacks into the new 238-key schema. Localization 26/26, focused
 palette-transfer 4/4, and renderer 237/237 gates pass. Remaining native forms and retained original
 language-DLL evidence keep Localization Partial; aggregate parity remains 60/65.
+
+Localization coverage update (2026-08-12, lossless DSC sidecar): eighteen appended `Dsc*` keys
+cover the complete source editor, including byte/record summary, preservation notice, complete
+source replacement, recovered-record diagnostics, history/save/dirty state, close confirmation,
+and error lifecycle. The application window loop passes the active catalog end to end. The source
+mutation remains revision-bound and preserves its real binary domain rather than normalizing text:
+a focused test proves BOM, CRLF/LF, malformed, and non-UTF-8 bytes across replacement, Undo, and
+Redo. The DSC editor/form suite passes 4/4, localization passes 28/28 active tests (one provenance
+ignore), and renderer passes 237/237. Other native forms and retained live language-DLL evidence
+keep Localization Partial; aggregate parity remains 60/65.
 Localization coverage update (2026-08-11, title/credits tilemap family): the first production use
 of `ExtendedUiTextKey` covers both installed ROM tilemap editors as one complete family. Typed
 extension text now controls title-versus-credits names, dynamic window/dimensions/confirmation/error
