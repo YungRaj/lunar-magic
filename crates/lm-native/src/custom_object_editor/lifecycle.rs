@@ -1,5 +1,6 @@
-use super::{CustomObjectEditor, PendingClose};
+use super::{CustomObjectEditor, PendingClose, text};
 use eframe::egui;
+use lm_app::{ExtendedUiTextKey, LocalizationCatalog};
 
 impl CustomObjectEditor {
     pub(crate) fn request_close(&mut self, application: bool) -> bool {
@@ -26,7 +27,11 @@ impl CustomObjectEditor {
         false
     }
 
-    pub(crate) fn show(&mut self, context: &egui::Context) -> bool {
+    pub(crate) fn show(
+        &mut self,
+        context: &egui::Context,
+        catalog: Option<&LocalizationCatalog>,
+    ) -> bool {
         if let Some(result) = self.loader.show(context) {
             match result.and_then(super::document_io::decode) {
                 Ok(controller) => {
@@ -44,31 +49,41 @@ impl CustomObjectEditor {
         if self.controller.is_some() {
             self.clamp_index();
             self.load_form();
-            egui::Window::new("Custom Object Library Editor")
+            egui::Window::new(text(catalog, ExtendedUiTextKey::CustomObjectEditorTitle))
                 .default_size([700.0, 580.0])
-                .show(context, |ui| self.contents(ui));
+                .show(context, |ui| self.contents(ui, catalog));
         }
-        let approved = self.show_close_confirmation(context);
-        self.show_error(context);
+        let approved = self.show_close_confirmation(context, catalog);
+        self.show_error(context, catalog);
         approved
     }
 
-    fn show_close_confirmation(&mut self, context: &egui::Context) -> bool {
+    fn show_close_confirmation(
+        &mut self,
+        context: &egui::Context,
+        catalog: Option<&LocalizationCatalog>,
+    ) -> bool {
         let Some(pending) = self.pending_close else {
             return false;
         };
         let mut approved = false;
-        egui::Window::new("Unsaved custom-object library")
+        egui::Window::new(text(catalog, ExtendedUiTextKey::CustomObjectDiscardTitle))
             .collapsible(false)
             .resizable(false)
             .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
             .show(context, |ui| {
-                ui.label("Discard unsaved synchronized library changes?");
+                ui.label(text(catalog, ExtendedUiTextKey::CustomObjectUnsavedNotice));
                 ui.horizontal(|ui| {
-                    if ui.button("Cancel").clicked() {
+                    if ui
+                        .button(text(catalog, ExtendedUiTextKey::CustomObjectCancel))
+                        .clicked()
+                    {
                         self.pending_close = None;
                     }
-                    if ui.button("Discard").clicked() {
+                    if ui
+                        .button(text(catalog, ExtendedUiTextKey::CustomObjectDiscard))
+                        .clicked()
+                    {
                         self.clear();
                         approved = pending == PendingClose::Application;
                     }
@@ -77,14 +92,17 @@ impl CustomObjectEditor {
         approved
     }
 
-    fn show_error(&mut self, context: &egui::Context) {
+    fn show_error(&mut self, context: &egui::Context, catalog: Option<&LocalizationCatalog>) {
         if let Some(error) = self.error.clone() {
-            egui::Window::new("Custom-object editor error")
+            egui::Window::new(text(catalog, ExtendedUiTextKey::CustomObjectErrorTitle))
                 .collapsible(false)
                 .resizable(false)
                 .show(context, |ui| {
                     ui.label(error);
-                    if ui.button("OK").clicked() {
+                    if ui
+                        .button(text(catalog, ExtendedUiTextKey::CustomObjectOk))
+                        .clicked()
+                    {
                         self.error = None;
                     }
                 });

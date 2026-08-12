@@ -771,6 +771,14 @@ sprites. Native tests pass 23/23, controller tests 5/5, localization 28/28 activ
 renderer 237/237. Other native forms and retained language-DLL evidence keep Localization Partial,
 so aggregate parity remains 60/65.
 
+Localization coverage update (2026-08-12, custom-object library): twenty-seven typed extension
+keys cover the complete synchronized paired-file editor, including multi-object groups, Unicode
+search/descriptions, typed clipboard, ordering edits, description framing, paired save, history,
+close, and errors with the live catalog. Exact data/description reopen with BOM, CRLF, trailing
+newline, ordering, and Undo/Redo is now explicit. Editor/form tests pass 7/7, controller 6/6,
+localization 28/28 active cases, and renderer 237/237. Other native forms and retained language-DLL
+evidence keep Localization Partial, so aggregate parity remains 60/65.
+
 Localization coverage update (2026-08-11, installed overworld animation options and preview):
 twenty-seven additional typed keys cover the installed editor's per-map feature switches, runtime
 installation guidance, preview transport and timer state, trigger controls, event state, and empty

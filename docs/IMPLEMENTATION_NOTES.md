@@ -7092,6 +7092,19 @@ preservation, and divergent history. Localization passes 28/28 active cases (one
 ignore), and renderer passes 237/237. Other native forms and retained language-DLL evidence keep
 Localization Partial; aggregate parity remains 60/65.
 
+Localization coverage update (2026-08-12, custom-object library): twenty-seven appended
+`CustomObject*` keys cover synchronized entry count/search/navigation, multi-object group bytes,
+Unicode descriptions, typed object copy/paste, replace/remove/insert/move, UTF-8 BOM and LF/CRLF
+framing, trailing newline, paired-file save, history/dirty state, close confirmation, and errors.
+The live catalog is routed through both the main form and its split lifecycle module. A complete
+paired-file test applies grouped and single objects with Unicode descriptions, reorders them and
+changes all framing fields in one revision, proves exact dual-file canonical reopen—including BOM,
+CRLF, and trailing newline—then Undo/Redo. Editor/form tests pass 7/7 and controller tests 6/6 for
+late-command rollback, stale revisions/tokens, aliased-path rejection, immutable snapshots,
+later-edit preservation, framing history, and overflow. Localization passes 28/28 active cases
+(one provenance ignore), and renderer passes 237/237. Other native forms and retained
+language-DLL evidence keep Localization Partial; aggregate parity remains 60/65.
+
 Cross-platform launcher-gate update (2026-08-11): every native portable-release matrix runner now
 executes the package, update, and launcher contract suites before publishing its bundle. The
 launcher suite no longer silently skips all process evidence on Windows: its Windows-only tests
