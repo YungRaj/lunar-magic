@@ -7067,6 +7067,18 @@ gates pass. Retained cross-platform release execution, hosted publication eviden
 and platform signing/notarization remain incomplete; Release stays Partial and aggregate parity
 remains 60/65.
 
+Localization coverage update (2026-08-12, portable Layer 3 document): twenty-five appended
+`Layer3Document*` keys cover four raw selectors, four graphics-file slots, sixteen reserved bytes,
+bounded tilemap/remap payloads, domain-authenticated clipboard actions, atomic apply, history/save,
+dirty-close, and error lifecycle. The application host passes the live catalog. A complete-form
+test applies every field as one revision, proves canonical save/reopen equality, then atomic
+Undo/Redo; form validation retains 12-bit graphics limits and exact reserved width. Focused form
+tests pass 6/6, the clipboard-domain test passes 1/1 (including crossed-envelope rejection), and
+controller tests pass 4/4 for state transitions, stale revisions/tokens, immutable snapshots,
+later-edit preservation, history divergence, and request overflow. Localization passes 28/28
+active cases (one provenance ignore), and renderer passes 237/237. Other native forms and retained
+language-DLL evidence keep Localization Partial; aggregate parity remains 60/65.
+
 Cross-platform launcher-gate update (2026-08-11): every native portable-release matrix runner now
 executes the package, update, and launcher contract suites before publishing its bundle. The
 launcher suite no longer silently skips all process evidence on Windows: its Windows-only tests

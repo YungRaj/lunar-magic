@@ -1278,6 +1278,14 @@ encode/reopen, Undo, and Redo. Native tests pass 9/9, controller tests 3/3, loca
 active cases, and renderer 237/237. Other native forms and retained language-DLL evidence keep
 Localization Partial, so aggregate parity remains 60/65.
 
+Localization coverage update (2026-08-12, portable Layer 3 document): twenty-five typed extension
+keys cover selectors, graphics slots, reserved/tilemap/remap data, typed clipboard routes, atomic
+apply, history/save, close, and errors with the live catalog. Full-form canonical reopen and
+Undo/Redo pass alongside native bounds and crossed clipboard-domain rejection. Form tests pass
+6/6, clipboard 1/1, controller 4/4, localization 28/28 active cases, and renderer 237/237. Other
+native forms and retained language-DLL evidence keep Localization Partial, so aggregate parity
+remains 60/65.
+
 Localization coverage update (2026-08-12, lossless SSC custom-sprite metadata): twenty typed
 extension keys cover the complete source, external-asset status, diagnostics, history/save, close,
 and error surface with the live catalog. Binary-preserving source history, nearest asset-directory

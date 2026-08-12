@@ -6,7 +6,7 @@ use crate::{
     native_clipboard,
 };
 use eframe::egui;
-use lm_app::Layer3DocumentController;
+use lm_app::{ExtendedUiTextKey, Layer3DocumentController, LocalizationCatalog};
 use lm_level::{Layer3Edit, Layer3File};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -78,7 +78,11 @@ impl Layer3Editor {
         false
     }
 
-    pub(crate) fn show(&mut self, context: &egui::Context) -> bool {
+    pub(crate) fn show(
+        &mut self,
+        context: &egui::Context,
+        catalog: Option<&LocalizationCatalog>,
+    ) -> bool {
         if let Some(result) = self.loader.show(context) {
             match result.and_then(|mut loaded| {
                 let (path, bytes) = loaded
@@ -101,13 +105,13 @@ impl Layer3Editor {
         }
         if self.controller.is_some() {
             self.load_form();
-            egui::Window::new("Portable Layer 3 Editor")
+            egui::Window::new(text(catalog, ExtendedUiTextKey::Layer3DocumentEditorTitle))
                 .default_size([760.0, 650.0])
                 .vscroll(true)
-                .show(context, |ui| self.contents(ui));
+                .show(context, |ui| self.contents(ui, catalog));
         }
-        let approved = self.show_close_confirmation(context);
-        self.show_error(context);
+        let approved = self.show_close_confirmation(context, catalog);
+        self.show_error(context, catalog);
         approved
     }
 
@@ -121,36 +125,55 @@ impl Layer3Editor {
         }
     }
 
-    fn contents(&mut self, ui: &mut egui::Ui) {
-        self.toolbar(ui);
+    fn contents(&mut self, ui: &mut egui::Ui, catalog: Option<&LocalizationCatalog>) {
+        self.toolbar(ui, catalog);
         ui.separator();
-        for (label, value) in ["Start position", "Tilemap size", "Liquid/type", "Raw flags"]
-            .into_iter()
-            .zip(self.form.selectors.iter_mut())
+        for (key, value) in [
+            ExtendedUiTextKey::Layer3DocumentStartPosition,
+            ExtendedUiTextKey::Layer3DocumentTilemapSize,
+            ExtendedUiTextKey::Layer3DocumentLiquidType,
+            ExtendedUiTextKey::Layer3DocumentRawFlags,
+        ]
+        .into_iter()
+        .zip(self.form.selectors.iter_mut())
         {
-            ui.add(egui::Slider::new(value, 0..=u8::MAX).text(label));
+            ui.add(egui::Slider::new(value, 0..=u8::MAX).text(text(catalog, key)));
         }
         for (slot, value) in self.form.graphics.iter_mut().enumerate() {
-            ui.add(egui::Slider::new(value, 0..=0x0fff).text(format!("Graphics {slot}")));
+            ui.add(
+                egui::Slider::new(value, 0..=0x0fff).text(
+                    text(catalog, ExtendedUiTextKey::Layer3DocumentGraphicsFormat)
+                        .replace("{slot}", &slot.to_string()),
+                ),
+            );
         }
-        ui.label("Reserved bytes (exactly 16 hexadecimal bytes):");
+        ui.label(text(
+            catalog,
+            ExtendedUiTextKey::Layer3DocumentReservedNotice,
+        ));
         ui.text_edit_singleline(&mut self.form.reserved);
-        ui.label("Raw tilemap bytes (maximum 0x2000):");
+        ui.label(text(
+            catalog,
+            ExtendedUiTextKey::Layer3DocumentTilemapNotice,
+        ));
         ui.add(
             egui::TextEdit::multiline(&mut self.form.tilemap)
                 .desired_rows(8)
                 .code_editor(),
         );
-        ui.label("Literal remap-command bytes (maximum 0x10000):");
+        ui.label(text(catalog, ExtendedUiTextKey::Layer3DocumentRemapNotice));
         ui.add(
             egui::TextEdit::multiline(&mut self.form.remap)
                 .desired_rows(8)
                 .code_editor(),
         );
-        if let Some(edit) = self.clipboard_controls(ui) {
+        if let Some(edit) = self.clipboard_controls(ui, catalog) {
             self.apply_edit(edit);
         }
-        if ui.button("Apply all Layer 3 fields atomically").clicked() {
+        if ui
+            .button(text(catalog, ExtendedUiTextKey::Layer3DocumentApplyAll))
+            .clicked()
+        {
             match self.form.edits() {
                 Ok(edits) => {
                     let Some(controller) = self.controller.as_mut() else {
@@ -167,23 +190,39 @@ impl Layer3Editor {
         }
     }
 
-    fn clipboard_controls(&mut self, ui: &mut egui::Ui) -> Option<Result<Layer3Edit, String>> {
+    fn clipboard_controls(
+        &mut self,
+        ui: &mut egui::Ui,
+        catalog: Option<&LocalizationCatalog>,
+    ) -> Option<Result<Layer3Edit, String>> {
         let value = self.controller.as_ref()?.value();
         let (tilemap, remap) = (value.0.tilemap.clone(), value.0.remap_commands.clone());
         let mut copy_result = None;
         ui.horizontal(|ui| {
-            if ui.button("Copy tilemap").clicked() {
+            if ui
+                .button(text(catalog, ExtendedUiTextKey::Layer3DocumentCopyTilemap))
+                .clicked()
+            {
                 copy_result = Some(native_clipboard::encode_layer3_tilemap(&tilemap));
             }
-            if ui.button("Paste tilemap").clicked() {
+            if ui
+                .button(text(catalog, ExtendedUiTextKey::Layer3DocumentPasteTilemap))
+                .clicked()
+            {
                 self.paste_target = Some(PasteTarget::Tilemap);
                 ui.ctx()
                     .send_viewport_cmd(egui::ViewportCommand::RequestPaste);
             }
-            if ui.button("Copy remap commands").clicked() {
+            if ui
+                .button(text(catalog, ExtendedUiTextKey::Layer3DocumentCopyRemap))
+                .clicked()
+            {
                 copy_result = Some(native_clipboard::encode_layer3_remap(&remap));
             }
-            if ui.button("Paste remap commands").clicked() {
+            if ui
+                .button(text(catalog, ExtendedUiTextKey::Layer3DocumentPasteRemap))
+                .clicked()
+            {
                 self.paste_target = Some(PasteTarget::Remap);
                 ui.ctx()
                     .send_viewport_cmd(egui::ViewportCommand::RequestPaste);
@@ -223,7 +262,7 @@ impl Layer3Editor {
         }
     }
 
-    fn toolbar(&mut self, ui: &mut egui::Ui) {
+    fn toolbar(&mut self, ui: &mut egui::Ui, catalog: Option<&LocalizationCatalog>) {
         let Some(controller) = self.controller.as_ref() else {
             return;
         };
@@ -236,21 +275,37 @@ impl Layer3Editor {
         let mut save_requested = false;
         ui.horizontal(|ui| {
             if ui
-                .add_enabled(can_undo, egui::Button::new("Undo"))
+                .add_enabled(
+                    can_undo,
+                    egui::Button::new(text(catalog, ExtendedUiTextKey::Layer3DocumentUndo)),
+                )
                 .clicked()
             {
                 history = Some(true);
             }
             if ui
-                .add_enabled(can_redo, egui::Button::new("Redo"))
+                .add_enabled(
+                    can_redo,
+                    egui::Button::new(text(catalog, ExtendedUiTextKey::Layer3DocumentRedo)),
+                )
                 .clicked()
             {
                 history = Some(false);
             }
             save_requested = ui
-                .add_enabled(!self.persistence.is_running(), egui::Button::new("Save"))
+                .add_enabled(
+                    !self.persistence.is_running(),
+                    egui::Button::new(text(catalog, ExtendedUiTextKey::Layer3DocumentSave)),
+                )
                 .clicked();
-            ui.label(if modified { "Modified" } else { "Saved" });
+            ui.label(text(
+                catalog,
+                if modified {
+                    ExtendedUiTextKey::Layer3DocumentModified
+                } else {
+                    ExtendedUiTextKey::Layer3DocumentSaved
+                },
+            ));
         });
         let mut changed = false;
         if let Some(controller) = self.controller.as_mut() {
@@ -276,22 +331,35 @@ impl Layer3Editor {
         }
     }
 
-    fn show_close_confirmation(&mut self, context: &egui::Context) -> bool {
+    fn show_close_confirmation(
+        &mut self,
+        context: &egui::Context,
+        catalog: Option<&LocalizationCatalog>,
+    ) -> bool {
         let Some(pending) = self.pending_close else {
             return false;
         };
         let mut approved = false;
-        egui::Window::new("Unsaved Layer 3 document")
+        egui::Window::new(text(catalog, ExtendedUiTextKey::Layer3DocumentDiscardTitle))
             .collapsible(false)
             .resizable(false)
             .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
             .show(context, |ui| {
-                ui.label("Discard unsaved Layer 3 changes?");
+                ui.label(text(
+                    catalog,
+                    ExtendedUiTextKey::Layer3DocumentUnsavedNotice,
+                ));
                 ui.horizontal(|ui| {
-                    if ui.button("Cancel").clicked() {
+                    if ui
+                        .button(text(catalog, ExtendedUiTextKey::Layer3DocumentCancel))
+                        .clicked()
+                    {
                         self.pending_close = None;
                     }
-                    if ui.button("Discard").clicked() {
+                    if ui
+                        .button(text(catalog, ExtendedUiTextKey::Layer3DocumentDiscard))
+                        .clicked()
+                    {
                         self.clear();
                         approved = pending == PendingClose::Application;
                     }
@@ -300,14 +368,17 @@ impl Layer3Editor {
         approved
     }
 
-    fn show_error(&mut self, context: &egui::Context) {
+    fn show_error(&mut self, context: &egui::Context, catalog: Option<&LocalizationCatalog>) {
         if let Some(error) = self.error.clone() {
-            egui::Window::new("Layer 3 editor error")
+            egui::Window::new(text(catalog, ExtendedUiTextKey::Layer3DocumentErrorTitle))
                 .collapsible(false)
                 .resizable(false)
                 .show(context, |ui| {
                     ui.label(error);
-                    if ui.button("OK").clicked() {
+                    if ui
+                        .button(text(catalog, ExtendedUiTextKey::Layer3DocumentOk))
+                        .clicked()
+                    {
                         self.error = None;
                     }
                 });
@@ -322,6 +393,10 @@ impl Layer3Editor {
     }
 }
 
+fn text(catalog: Option<&LocalizationCatalog>, key: ExtendedUiTextKey) -> String {
+    crate::frontend_ui::extended_localized_text(catalog, key)
+}
+
 fn pasted_text(ui: &egui::Ui) -> Option<String> {
     ui.input(|input| {
         input.events.iter().find_map(|event| match event {
@@ -329,4 +404,84 @@ fn pasted_text(ui: &egui::Ui) -> Option<String> {
             _ => None,
         })
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use lm_level::{Layer3Data, Layer3Settings};
+
+    fn controller() -> Layer3DocumentController {
+        Layer3DocumentController::decode(
+            "layer3.lmlayer3".into(),
+            &Layer3File(Layer3Data::default()).encode().unwrap(),
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn complete_layer3_document_form_uses_every_typed_key_and_live_catalog() {
+        let source = include_str!("layer3_editor.rs");
+        for key in ExtendedUiTextKey::ALL
+            .into_iter()
+            .filter(|key| format!("{key:?}").starts_with("Layer3Document"))
+        {
+            assert!(
+                source.contains(&format!("ExtendedUiTextKey::{key:?}")),
+                "missing Layer 3 document label {key:?}"
+            );
+        }
+        for literal in [
+            "Window::new(\"Portable Layer 3 Editor\")",
+            "Window::new(\"Unsaved Layer 3 document\")",
+            "Window::new(\"Layer 3 editor error\")",
+            "Button::new(\"Undo\")",
+            "Button::new(\"Save\")",
+            "ui.button(\"Copy tilemap\")",
+            "ui.button(\"Paste remap commands\")",
+        ] {
+            assert!(
+                !source.contains(literal),
+                "fixed-English control: {literal}"
+            );
+        }
+        assert!(
+            include_str!("application/windows.rs")
+                .contains(".show(context, self.app.localization())")
+        );
+    }
+
+    #[test]
+    fn complete_layer3_form_is_one_canonical_undoable_revision() {
+        let expected = Layer3Data {
+            settings: Layer3Settings {
+                start_position: 0xfe,
+                tilemap_size: 3,
+                liquid_type: 0x81,
+                flags: 0xa5,
+                graphics_files: [0, 0x123, 0xabc, 0xfff],
+                reserved: std::array::from_fn(|index| index as u8),
+            },
+            tilemap: vec![0, 1, 2, 0xff],
+            remap_commands: vec![0x80, 3, 4, 0xfe],
+        };
+        let mut controller = controller();
+        controller
+            .apply_edits(
+                controller.revision(),
+                &Layer3Form::load(&expected).edits().unwrap(),
+            )
+            .unwrap();
+        assert_eq!(controller.revision(), 1);
+        assert_eq!(controller.value().0, expected);
+
+        let snapshot = controller.begin_save().unwrap();
+        let reopened = Layer3File::decode(&snapshot.bytes).unwrap();
+        assert_eq!(reopened, *controller.value());
+        controller.cancel_save(snapshot.request_id).unwrap();
+        assert!(controller.undo(controller.revision()).unwrap());
+        assert_eq!(controller.value().0, Layer3Data::default());
+        assert!(controller.redo(controller.revision()).unwrap());
+        assert_eq!(controller.value(), &reopened);
+    }
 }
