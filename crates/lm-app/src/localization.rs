@@ -2487,10 +2487,38 @@ pub enum ExtendedUiTextKey {
     MwlImportClose,
     MwlImportInsertedFormat,
     MwlImportFailedFormat,
+    MwlBatchImportTitle,
+    MwlBatchImportDirectoryFormat,
+    MwlBatchImportSummaryFormat,
+    MwlBatchImportAllocationSearch,
+    MwlBatchImportRangeSeparator,
+    MwlBatchImportStart,
+    MwlBatchImportCancelNotice,
+    MwlBatchImportCancel,
+    MwlBatchImportClose,
+    MwlBatchImportCancelled,
+    MwlBatchImportCompleteFormat,
+    MwlBatchImportReadingFormat,
+    MwlBatchImportCommittingFormat,
+    MwlBatchImportPreparedFormat,
+    MwlBatchImportInsertedFormat,
+    MwlBatchImportReadFailedFormat,
+    MwlBatchImportInsertFailedFormat,
+    MwlBatchImportCommitFailedFormat,
+    MwlBatchImportDiscardedRead,
+    MwlBatchExportProgressTitle,
+    MwlBatchExportTemplateFormat,
+    MwlBatchExportAtomicNotice,
+    MwlBatchExportCancellationRequested,
+    MwlBatchExportCancel,
+    MwlBatchExportResultTitle,
+    MwlBatchExportCompletedFormat,
+    MwlBatchExportCancelled,
+    MwlBatchExportClose,
 }
 
 impl ExtendedUiTextKey {
-    pub const ALL: [Self; 786] = [
+    pub const ALL: [Self; 814] = [
         Self::TilemapTitleScreenName,
         Self::TilemapCreditsName,
         Self::TilemapEditorTitleFormat,
@@ -3277,6 +3305,34 @@ impl ExtendedUiTextKey {
         Self::MwlImportClose,
         Self::MwlImportInsertedFormat,
         Self::MwlImportFailedFormat,
+        Self::MwlBatchImportTitle,
+        Self::MwlBatchImportDirectoryFormat,
+        Self::MwlBatchImportSummaryFormat,
+        Self::MwlBatchImportAllocationSearch,
+        Self::MwlBatchImportRangeSeparator,
+        Self::MwlBatchImportStart,
+        Self::MwlBatchImportCancelNotice,
+        Self::MwlBatchImportCancel,
+        Self::MwlBatchImportClose,
+        Self::MwlBatchImportCancelled,
+        Self::MwlBatchImportCompleteFormat,
+        Self::MwlBatchImportReadingFormat,
+        Self::MwlBatchImportCommittingFormat,
+        Self::MwlBatchImportPreparedFormat,
+        Self::MwlBatchImportInsertedFormat,
+        Self::MwlBatchImportReadFailedFormat,
+        Self::MwlBatchImportInsertFailedFormat,
+        Self::MwlBatchImportCommitFailedFormat,
+        Self::MwlBatchImportDiscardedRead,
+        Self::MwlBatchExportProgressTitle,
+        Self::MwlBatchExportTemplateFormat,
+        Self::MwlBatchExportAtomicNotice,
+        Self::MwlBatchExportCancellationRequested,
+        Self::MwlBatchExportCancel,
+        Self::MwlBatchExportResultTitle,
+        Self::MwlBatchExportCompletedFormat,
+        Self::MwlBatchExportCancelled,
+        Self::MwlBatchExportClose,
     ];
 
     #[must_use]
@@ -4406,6 +4462,42 @@ impl ExtendedUiTextKey {
             Self::MwlImportClose => "Close",
             Self::MwlImportInsertedFormat => "Inserted level {level} from {path}",
             Self::MwlImportFailedFormat => "Failed to commit level {level} from {path}",
+            Self::MwlBatchImportTitle => "Insert Multiple MWL Levels",
+            Self::MwlBatchImportDirectoryFormat => "Directory: {path}",
+            Self::MwlBatchImportSummaryFormat => {
+                "Inserted: {inserted}   Failed: {failed}   Hidden skipped: {hidden}   Remaining: {remaining}"
+            }
+            Self::MwlBatchImportAllocationSearch => "Allocation search (logical PC hex)",
+            Self::MwlBatchImportRangeSeparator => "..",
+            Self::MwlBatchImportStart => "Start import",
+            Self::MwlBatchImportCancelNotice => {
+                "Press Escape or choose Cancel to stop after the current level."
+            }
+            Self::MwlBatchImportCancel => "Cancel",
+            Self::MwlBatchImportClose => "Close",
+            Self::MwlBatchImportCancelled => "Batch import cancelled.",
+            Self::MwlBatchImportCompleteFormat => {
+                "{inserted} levels inserted; {failed} failed; {hidden} hidden files skipped."
+            }
+            Self::MwlBatchImportReadingFormat => "Reading {path}",
+            Self::MwlBatchImportCommittingFormat => "Committing level {level} from {path}",
+            Self::MwlBatchImportPreparedFormat => "Prepared level {level} from {path}",
+            Self::MwlBatchImportInsertedFormat => "Inserted level {level} from {path}",
+            Self::MwlBatchImportReadFailedFormat => "Failed to start reading {path}: {error}",
+            Self::MwlBatchImportInsertFailedFormat => "Failed to insert {path}: {error}",
+            Self::MwlBatchImportCommitFailedFormat => "Failed to commit level {level} from {path}",
+            Self::MwlBatchImportDiscardedRead => "Discarded the completed read after cancellation.",
+            Self::MwlBatchExportProgressTitle => "Exporting Multiple MWL Levels",
+            Self::MwlBatchExportTemplateFormat => "Template: {path}",
+            Self::MwlBatchExportAtomicNotice => {
+                "Levels are prepared in the background and published as one group."
+            }
+            Self::MwlBatchExportCancellationRequested => "Cancellation requested…",
+            Self::MwlBatchExportCancel => "Cancel",
+            Self::MwlBatchExportResultTitle => "MWL Batch Export",
+            Self::MwlBatchExportCompletedFormat => "Exported {count} levels.",
+            Self::MwlBatchExportCancelled => "Batch MWL export cancelled.",
+            Self::MwlBatchExportClose => "Close",
         }
     }
 

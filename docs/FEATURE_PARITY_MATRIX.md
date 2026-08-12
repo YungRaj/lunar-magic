@@ -1449,6 +1449,14 @@ checksum, and headered/headerless equivalence. Localization model passes 28/28 a
 Other native forms and retained live language-DLL evidence keep Localization Partial, so aggregate
 parity remains 60/65.
 
+Localization coverage update (2026-08-12, batch MWL workflows): directory batch import and all-
+level export now use twenty-eight typed keys across allocation, counters, per-level progress/failure,
+cancellation, atomic group publication, and results. The paired suite passes 11/11, including stale
+and cancellation safety, modified-only export, no partial publication, all 512 builtin levels, and
+all 512 installed levels under both copier-header variants. Localization model passes 28/28 and
+renderer 237/237. Other native forms and retained live language-DLL evidence keep Localization
+Partial, so aggregate parity remains 60/65.
+
 Native update-consent update (2026-08-11): a localized Help-menu route now accepts an explicitly
 selected bounded local update manifest, resolves its declared same-directory archive, streams a
 complete preflight, and displays the verified offer before a distinct folder-selection/staging

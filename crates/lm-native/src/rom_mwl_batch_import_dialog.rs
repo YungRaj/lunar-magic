@@ -1,6 +1,6 @@
 use crate::document_loader::{BoundedRead, DocumentLoader, LoadedDocument};
 use eframe::egui;
-use lm_app::{AppState, Command};
+use lm_app::{AppState, Command, ExtendedUiTextKey, LocalizationCatalog};
 use lm_level::MwlFile;
 use std::collections::VecDeque;
 use std::ops::Range;
@@ -75,53 +75,83 @@ impl RomMwlBatchImportDialog {
     }
 
     pub(crate) fn show(&mut self, context: &egui::Context, app: &AppState) -> Option<Command> {
+        let catalog = app.localization();
         let directory = self.directory.clone()?;
         let loaded = self.loader.show(context);
         let mut start = false;
         let mut close = false;
         let mut cancel = false;
-        egui::Window::new("Insert Multiple MWL Levels")
+        egui::Window::new(text(catalog, ExtendedUiTextKey::MwlBatchImportTitle))
             .collapsible(false)
             .resizable(false)
             .show(context, |ui| {
-                ui.label(format!("Directory: {}", directory.display()));
-                ui.label(format!(
-                    "Inserted: {}   Failed: {}   Hidden skipped: {}   Remaining: {}",
-                    self.inserted,
-                    self.failed,
-                    self.hidden_skipped,
-                    self.paths.len()
-                        + usize::from(self.pending_commit.is_some())
-                        + usize::from(self.pending_read.is_some())
+                ui.label(format_text(
+                    catalog,
+                    ExtendedUiTextKey::MwlBatchImportDirectoryFormat,
+                    &[("{path}", directory.display().to_string())],
+                ));
+                ui.label(format_text(
+                    catalog,
+                    ExtendedUiTextKey::MwlBatchImportSummaryFormat,
+                    &[
+                        ("{inserted}", self.inserted.to_string()),
+                        ("{failed}", self.failed.to_string()),
+                        ("{hidden}", self.hidden_skipped.to_string()),
+                        (
+                            "{remaining}",
+                            (self.paths.len()
+                                + usize::from(self.pending_commit.is_some())
+                                + usize::from(self.pending_read.is_some()))
+                            .to_string(),
+                        ),
+                    ],
                 ));
                 if self.active_search.is_none()
                     && self.pending_commit.is_none()
                     && self.pending_read.is_none()
                 {
                     ui.horizontal(|ui| {
-                        ui.label("Allocation search (logical PC hex)");
+                        ui.label(text(
+                            catalog,
+                            ExtendedUiTextKey::MwlBatchImportAllocationSearch,
+                        ));
                         ui.text_edit_singleline(&mut self.search_start);
-                        ui.label("..");
+                        ui.label(text(
+                            catalog,
+                            ExtendedUiTextKey::MwlBatchImportRangeSeparator,
+                        ));
                         ui.text_edit_singleline(&mut self.search_end);
                     });
-                    if self.inserted + self.failed == 0 && ui.button("Start import").clicked() {
+                    if self.inserted + self.failed == 0
+                        && ui
+                            .button(text(catalog, ExtendedUiTextKey::MwlBatchImportStart))
+                            .clicked()
+                    {
                         start = true;
                     }
                 } else {
-                    ui.label("Press Escape or choose Cancel to stop after the current level.");
-                    if ui.button("Cancel").clicked() {
+                    ui.label(text(catalog, ExtendedUiTextKey::MwlBatchImportCancelNotice));
+                    if ui
+                        .button(text(catalog, ExtendedUiTextKey::MwlBatchImportCancel))
+                        .clicked()
+                    {
                         cancel = true;
                     }
                 }
                 if let Some(pending) = &self.pending_commit {
-                    ui.label(format!(
-                        "Committing level {:03X} from {}",
+                    ui.label(level_path_text(
+                        catalog,
+                        ExtendedUiTextKey::MwlBatchImportCommittingFormat,
                         pending.level,
-                        pending.path.display()
+                        &pending.path,
                     ));
                 }
                 if let Some(pending) = &self.pending_read {
-                    ui.label(format!("Reading {}", pending.path.display()));
+                    ui.label(format_text(
+                        catalog,
+                        ExtendedUiTextKey::MwlBatchImportReadingFormat,
+                        &[("{path}", pending.path.display().to_string())],
+                    ));
                 }
                 if let Some(diagnostic) = &self.last_diagnostic {
                     ui.label(diagnostic);
@@ -133,7 +163,11 @@ impl RomMwlBatchImportDialog {
                     && self.pending_commit.is_none()
                     && self.pending_read.is_none()
                     && (self.paths.is_empty() || self.inserted + self.failed != 0);
-                if (complete || self.total == 0) && ui.button("Close").clicked() {
+                if (complete || self.total == 0)
+                    && ui
+                        .button(text(catalog, ExtendedUiTextKey::MwlBatchImportClose))
+                        .clicked()
+                {
                     close = true;
                 }
             });
@@ -153,7 +187,7 @@ impl RomMwlBatchImportDialog {
         if cancel || context.input(|input| input.key_pressed(egui::Key::Escape)) {
             self.paths.clear();
             self.active_search = None;
-            self.last_diagnostic = Some("Batch import cancelled.".into());
+            self.last_diagnostic = Some(text(catalog, ExtendedUiTextKey::MwlBatchImportCancelled));
         }
         if let Some(result) = loaded {
             let command = self.finish_read(app, result);
@@ -164,18 +198,23 @@ impl RomMwlBatchImportDialog {
             && self.pending_commit.is_none()
             && self.pending_read.is_none()
         {
-            self.start_next_read(app);
+            self.start_next_read(app, catalog);
             context.request_repaint();
         }
         None
     }
 
-    fn start_next_read(&mut self, app: &AppState) {
+    fn start_next_read(&mut self, app: &AppState, catalog: Option<&LocalizationCatalog>) {
         let Some(path) = self.paths.pop_front() else {
             self.active_search = None;
-            self.last_diagnostic = Some(format!(
-                "{} levels inserted; {} failed; {} hidden files skipped.",
-                self.inserted, self.failed, self.hidden_skipped
+            self.last_diagnostic = Some(format_text(
+                catalog,
+                ExtendedUiTextKey::MwlBatchImportCompleteFormat,
+                &[
+                    ("{inserted}", self.inserted.to_string()),
+                    ("{failed}", self.failed.to_string()),
+                    ("{hidden}", self.hidden_skipped.to_string()),
+                ],
             ));
             return;
         };
@@ -192,9 +231,10 @@ impl RomMwlBatchImportDialog {
             }
             Err(error) => {
                 self.failed += 1;
-                self.last_diagnostic = Some(format!(
-                    "Failed to start reading {}: {error}",
-                    path.display()
+                self.last_diagnostic = Some(format_text(
+                    catalog,
+                    ExtendedUiTextKey::MwlBatchImportReadFailedFormat,
+                    &[("{path}", path.display().to_string()), ("{error}", error)],
                 ));
             }
         }
@@ -213,7 +253,10 @@ impl RomMwlBatchImportDialog {
             }
         };
         if self.active_search.is_none() {
-            self.last_diagnostic = Some("Discarded the completed read after cancellation.".into());
+            self.last_diagnostic = Some(text(
+                app.localization(),
+                ExtendedUiTextKey::MwlBatchImportDiscardedRead,
+            ));
             return None;
         }
         let result = result
@@ -239,50 +282,88 @@ impl RomMwlBatchImportDialog {
                     path: pending.path.clone(),
                     level,
                 });
-                self.last_diagnostic = Some(format!(
-                    "Prepared level {level:03X} from {}",
-                    pending.path.display()
+                self.last_diagnostic = Some(level_path_text(
+                    app.localization(),
+                    ExtendedUiTextKey::MwlBatchImportPreparedFormat,
+                    level,
+                    &pending.path,
                 ));
                 Some(prepared.into_command())
             }
             Err(error) => {
                 self.failed += 1;
-                self.last_diagnostic = Some(format!(
-                    "Failed to insert {}: {error}",
-                    pending.path.display()
+                self.last_diagnostic = Some(format_text(
+                    app.localization(),
+                    ExtendedUiTextKey::MwlBatchImportInsertFailedFormat,
+                    &[
+                        ("{path}", pending.path.display().to_string()),
+                        ("{error}", error),
+                    ],
                 ));
                 None
             }
         }
     }
 
-    pub(crate) fn commit_succeeded(&mut self) {
+    pub(crate) fn commit_succeeded(&mut self, catalog: Option<&LocalizationCatalog>) {
         let Some(pending) = self.pending_commit.take() else {
             return;
         };
         self.inserted += 1;
-        self.last_diagnostic = Some(format!(
-            "Inserted level {:03X} from {}",
+        self.last_diagnostic = Some(level_path_text(
+            catalog,
+            ExtendedUiTextKey::MwlBatchImportInsertedFormat,
             pending.level,
-            pending.path.display()
+            &pending.path,
         ));
     }
 
-    pub(crate) fn commit_failed(&mut self) {
+    pub(crate) fn commit_failed(&mut self, catalog: Option<&LocalizationCatalog>) {
         let Some(pending) = self.pending_commit.take() else {
             return;
         };
         self.failed += 1;
-        self.last_diagnostic = Some(format!(
-            "Failed to commit level {:03X} from {}",
+        self.last_diagnostic = Some(level_path_text(
+            catalog,
+            ExtendedUiTextKey::MwlBatchImportCommitFailedFormat,
             pending.level,
-            pending.path.display()
+            &pending.path,
         ));
     }
 
     fn clear(&mut self) {
         *self = Self::default();
     }
+}
+
+fn text(catalog: Option<&LocalizationCatalog>, key: ExtendedUiTextKey) -> String {
+    crate::frontend_ui::extended_localized_text(catalog, key)
+}
+fn format_text(
+    catalog: Option<&LocalizationCatalog>,
+    key: ExtendedUiTextKey,
+    replacements: &[(&str, String)],
+) -> String {
+    replacements
+        .iter()
+        .fold(text(catalog, key), |text, (placeholder, value)| {
+            text.replace(placeholder, value)
+        })
+}
+fn level_path_text(
+    catalog: Option<&LocalizationCatalog>,
+    key: ExtendedUiTextKey,
+    level: u16,
+    path: &std::path::Path,
+) -> String {
+    format_text(
+        catalog,
+        key,
+        &[
+            ("{level}", format!("{level:03X}")),
+            ("{path}", path.display().to_string()),
+        ],
+    )
 }
 
 #[cfg(test)]
@@ -292,6 +373,25 @@ mod tests {
     use std::sync::atomic::{AtomicU64, Ordering};
 
     static NEXT: AtomicU64 = AtomicU64::new(0);
+
+    #[test]
+    fn complete_batch_import_form_uses_every_typed_key() {
+        let source = include_str!("rom_mwl_batch_import_dialog.rs");
+        for key in ExtendedUiTextKey::ALL
+            .into_iter()
+            .filter(|key| format!("{key:?}").starts_with("MwlBatchImport"))
+        {
+            assert!(source.contains(&format!("ExtendedUiTextKey::{key:?}")));
+        }
+        for literal in [
+            "Window::new(\"Insert Multiple MWL Levels\")",
+            "ui.button(\"Start import\")",
+            "ui.button(\"Cancel\")",
+            "ui.button(\"Close\")",
+        ] {
+            assert!(!source.contains(literal));
+        }
+    }
 
     fn temporary_mwl() -> PathBuf {
         let path = std::env::temp_dir().join(format!(
@@ -317,14 +417,14 @@ mod tests {
             pending_commit: Some(pending(0x105)),
             ..RomMwlBatchImportDialog::default()
         };
-        dialog.commit_succeeded();
+        dialog.commit_succeeded(None);
         assert_eq!(dialog.inserted, 1);
         assert_eq!(dialog.failed, 0);
         assert!(dialog.pending_commit.is_none());
         assert!(dialog.last_diagnostic.as_deref().unwrap().contains("105"));
 
         dialog.pending_commit = Some(pending(0x106));
-        dialog.commit_failed();
+        dialog.commit_failed(None);
         assert_eq!(dialog.inserted, 1);
         assert_eq!(dialog.failed, 1);
         assert!(dialog.pending_commit.is_none());
@@ -357,7 +457,7 @@ mod tests {
             ..RomMwlBatchImportDialog::default()
         };
         let app = AppState::default();
-        dialog.start_next_read(&app);
+        dialog.start_next_read(&app, None);
         assert!(dialog.loader.is_running());
         assert_eq!(dialog.pending_read.as_ref().unwrap().path, path);
         assert_eq!(dialog.pending_read.as_ref().unwrap().revision, 0);

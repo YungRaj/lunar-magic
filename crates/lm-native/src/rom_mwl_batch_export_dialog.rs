@@ -1,5 +1,8 @@
 use eframe::egui;
-use lm_app::{AppState, ControllerSnapshot, MwlBatchExportMode, ProfiledControllerSnapshot};
+use lm_app::{
+    AppState, ControllerSnapshot, ExtendedUiTextKey, LocalizationCatalog, MwlBatchExportMode,
+    ProfiledControllerSnapshot,
+};
 use std::path::PathBuf;
 use std::sync::{
     Arc,
@@ -119,7 +122,7 @@ impl RomMwlBatchExportDialog {
         true
     }
 
-    pub(crate) fn show(&mut self, context: &egui::Context) {
+    pub(crate) fn show(&mut self, context: &egui::Context, catalog: Option<&LocalizationCatalog>) {
         if let Some(running) = &self.running {
             match running.result.try_recv() {
                 Ok(result) => {
@@ -136,36 +139,54 @@ impl RomMwlBatchExportDialog {
         let mut cancel = false;
         let mut close = false;
         if let Some(running) = &self.running {
-            egui::Window::new("Exporting Multiple MWL Levels")
-                .collapsible(false)
-                .resizable(false)
-                .show(context, |ui| {
-                    ui.label(format!("Template: {}", running.template.display()));
-                    ui.label("Levels are prepared in the background and published as one group.");
-                    if running.cancelled.load(Ordering::Relaxed) {
-                        ui.label("Cancellation requested…");
-                    } else if ui.button("Cancel").clicked() {
-                        cancel = true;
-                    }
-                });
+            egui::Window::new(text(
+                catalog,
+                ExtendedUiTextKey::MwlBatchExportProgressTitle,
+            ))
+            .collapsible(false)
+            .resizable(false)
+            .show(context, |ui| {
+                ui.label(
+                    text(catalog, ExtendedUiTextKey::MwlBatchExportTemplateFormat)
+                        .replace("{path}", &running.template.display().to_string()),
+                );
+                ui.label(text(catalog, ExtendedUiTextKey::MwlBatchExportAtomicNotice));
+                if running.cancelled.load(Ordering::Relaxed) {
+                    ui.label(text(
+                        catalog,
+                        ExtendedUiTextKey::MwlBatchExportCancellationRequested,
+                    ));
+                } else if ui
+                    .button(text(catalog, ExtendedUiTextKey::MwlBatchExportCancel))
+                    .clicked()
+                {
+                    cancel = true;
+                }
+            });
             cancel |= context.input(|input| input.key_pressed(egui::Key::Escape));
         } else if let Some(result) = &self.result {
-            egui::Window::new("MWL Batch Export")
+            egui::Window::new(text(catalog, ExtendedUiTextKey::MwlBatchExportResultTitle))
                 .collapsible(false)
                 .resizable(false)
                 .show(context, |ui| {
                     match result {
                         Ok(Some(count)) => {
-                            ui.label(format!("Exported {count} levels."));
+                            ui.label(
+                                text(catalog, ExtendedUiTextKey::MwlBatchExportCompletedFormat)
+                                    .replace("{count}", &count.to_string()),
+                            );
                         }
                         Ok(None) => {
-                            ui.label("Batch MWL export cancelled.");
+                            ui.label(text(catalog, ExtendedUiTextKey::MwlBatchExportCancelled));
                         }
                         Err(error) => {
                             ui.colored_label(egui::Color32::RED, error);
                         }
                     };
-                    if ui.button("Close").clicked() {
+                    if ui
+                        .button(text(catalog, ExtendedUiTextKey::MwlBatchExportClose))
+                        .clicked()
+                    {
                         close = true;
                     }
                 });
@@ -181,10 +202,17 @@ impl RomMwlBatchExportDialog {
     }
 }
 
+fn text(catalog: Option<&LocalizationCatalog>, key: ExtendedUiTextKey) -> String {
+    crate::frontend_ui::extended_localized_text(catalog, key)
+}
+
 #[cfg(test)]
 mod tests {
     use super::{BatchSource, RomMwlBatchExportDialog, run_export};
-    use lm_app::{ControllerSnapshot, EditorMode, MwlBatchExportMode, ProfiledControllerSnapshot};
+    use lm_app::{
+        ControllerSnapshot, EditorMode, ExtendedUiTextKey, MwlBatchExportMode,
+        ProfiledControllerSnapshot,
+    };
     use lm_project::{
         ExAnimationRomLayout, InstalledExAnimationRomLayout, InstalledLayout, LevelPointerTable,
     };
@@ -192,6 +220,25 @@ mod tests {
     use std::fs;
     use std::sync::atomic::AtomicBool;
     use std::time::{Duration, SystemTime, UNIX_EPOCH};
+
+    #[test]
+    fn complete_batch_export_form_uses_every_typed_key() {
+        let source = include_str!("rom_mwl_batch_export_dialog.rs");
+        for key in ExtendedUiTextKey::ALL
+            .into_iter()
+            .filter(|key| format!("{key:?}").starts_with("MwlBatchExport"))
+        {
+            assert!(source.contains(&format!("ExtendedUiTextKey::{key:?}")));
+        }
+        for literal in [
+            "Window::new(\"Exporting Multiple MWL Levels\")",
+            "Window::new(\"MWL Batch Export\")",
+            "ui.button(\"Cancel\")",
+            "ui.button(\"Close\")",
+        ] {
+            assert!(!source.contains(literal));
+        }
+    }
 
     fn installed_fixture(headered: bool) -> ProfiledControllerSnapshot {
         let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");

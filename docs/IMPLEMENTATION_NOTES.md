@@ -7444,6 +7444,18 @@ and headered/headerless logical equivalence. Localization passes 28/28 and rende
 Other native forms and retained live language-DLL evidence keep Localization Partial; aggregate
 parity remains 60/65.
 
+Localization coverage update (2026-08-12, batch MWL workflows): nineteen `MwlBatchImport*` and
+nine `MwlBatchExport*` keys cover directory/counter/allocation controls, per-file read/prepare/
+commit/failure diagnostics, cancellation and completion, export template/group-publication state,
+and result/error lifecycle. Paths, counts, level numbers, and technical errors remain substituted
+data. Commit acknowledgements and the export window now receive the active catalog from the host.
+The complete paired suite passes 11/11, including revision-bound nonblocking reads, stale/cancelled
+completion rejection, one-level acknowledgement progression, no partial publication on export
+cancellation, modified-only installed export, all 512 builtin levels, and all 512 installed levels
+across headered/headerless ROMs. Localization passes 28/28 and renderer passes 237/237. Other native
+forms and retained live language-DLL evidence keep Localization Partial; aggregate parity remains
+60/65.
+
 Localization coverage update (2026-08-12, IPS application): nine appended `IpsApply*` keys cover
 the complete revision-bound IPS application form: logical-offset/header preservation, dynamic
 source/target/change counts, identity and bank-shape requirements, stale state, transactional

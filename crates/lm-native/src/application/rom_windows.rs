@@ -458,13 +458,16 @@ impl NativeApplication {
         self.ips_create_dialog
             .show(context, self.app.localization());
         self.restore_point_dialog.show(context, &self.app);
-        self.rom_mwl_batch_export_dialog.show(context);
+        self.rom_mwl_batch_export_dialog
+            .show(context, self.app.localization());
         if let Some(command) = self.rom_mwl_batch_import_dialog.show(context, &self.app) {
             if self.try_dispatch(context, command) {
-                self.rom_mwl_batch_import_dialog.commit_succeeded();
+                self.rom_mwl_batch_import_dialog
+                    .commit_succeeded(self.app.localization());
                 self.renderer.invalidate();
             } else {
-                self.rom_mwl_batch_import_dialog.commit_failed();
+                self.rom_mwl_batch_import_dialog
+                    .commit_failed(self.app.localization());
             }
         }
         if let Some(command) = self.rom_mwl_import_dialog.show(context, &self.app) {
