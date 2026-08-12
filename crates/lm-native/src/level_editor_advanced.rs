@@ -1,6 +1,6 @@
 use crate::{level_editor_forms, native_clipboard};
 use eframe::egui;
-use lm_app::CompleteLevelDocumentEdit;
+use lm_app::{CompleteLevelDocumentEdit, ExtendedUiTextKey as Key, LocalizationCatalog};
 use lm_level::{CompleteLevelFile, ExpandedLevelHeader, Layer3Data, Layer3Edit, LevelPropertyEdit};
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -39,19 +39,24 @@ impl LevelAdvancedPanelState {
         ui: &mut egui::Ui,
         level: &CompleteLevelFile,
         revision: u64,
+        catalog: Option<&LocalizationCatalog>,
     ) -> Option<Result<Vec<CompleteLevelDocumentEdit>, String>> {
         ui.horizontal(|ui| {
             ui.selectable_value(
                 &mut self.panel,
                 AdvancedPanel::ExpandedHeader,
-                "Expanded header",
+                advanced_text(catalog, Key::LevelAdvancedExpandedHeader),
             );
-            ui.selectable_value(&mut self.panel, AdvancedPanel::Layer3, "Layer 3");
+            ui.selectable_value(
+                &mut self.panel,
+                AdvancedPanel::Layer3,
+                advanced_text(catalog, Key::LevelAdvancedLayer3),
+            );
         });
         ui.separator();
         match self.panel {
-            AdvancedPanel::ExpandedHeader => show_expanded_header(ui, level),
-            AdvancedPanel::Layer3 => self.show_layer3(ui, level, revision),
+            AdvancedPanel::ExpandedHeader => show_expanded_header(ui, level, catalog),
+            AdvancedPanel::Layer3 => self.show_layer3(ui, level, revision, catalog),
         }
     }
 
@@ -60,10 +65,11 @@ impl LevelAdvancedPanelState {
         ui: &mut egui::Ui,
         level: &CompleteLevelFile,
         revision: u64,
+        catalog: Option<&LocalizationCatalog>,
     ) -> Option<Result<Vec<CompleteLevelDocumentEdit>, String>> {
         let Some(layer3) = level.0.layer3.as_ref() else {
             return ui
-                .button("Enable Layer 3 with recovered defaults")
+                .button(advanced_text(catalog, Key::LevelAdvancedEnableLayer3))
                 .clicked()
                 .then(|| {
                     Ok(vec![CompleteLevelDocumentEdit::Layer3(Layer3Edit::Enable(
@@ -84,29 +90,43 @@ impl LevelAdvancedPanelState {
             self.remap = level_editor_forms::format_bytes(&layer3.remap_commands);
             self.loaded_layer3_revision = Some(revision);
         }
-        for (label, value) in ["Start position", "Tilemap size", "Liquid/type", "Flags"]
-            .into_iter()
-            .zip(self.selectors.iter_mut())
+        for (label, value) in [
+            Key::LevelAdvancedStartPosition,
+            Key::LevelAdvancedTilemapSize,
+            Key::LevelAdvancedLiquidType,
+            Key::LevelAdvancedFlags,
+        ]
+        .into_iter()
+        .zip(self.selectors.iter_mut())
         {
-            ui.add(egui::Slider::new(value, 0..=u8::MAX).text(label));
+            ui.add(egui::Slider::new(value, 0..=u8::MAX).text(advanced_text(catalog, label)));
         }
         for (slot, value) in self.graphics.iter_mut().enumerate() {
-            ui.add(egui::Slider::new(value, 0..=0x0fff).text(format!("Graphics {slot}")));
+            ui.add(
+                egui::Slider::new(value, 0..=0x0fff).text(
+                    advanced_text(catalog, Key::LevelAdvancedGraphicsFormat)
+                        .replace("{slot}", &slot.to_string()),
+                ),
+            );
         }
-        ui.label("Reserved bytes (exactly 16 hexadecimal bytes):");
+        ui.label(advanced_text(catalog, Key::LevelAdvancedReservedBytes));
         ui.text_edit_singleline(&mut self.reserved);
-        ui.label("Raw tilemap bytes:");
+        ui.label(advanced_text(catalog, Key::LevelAdvancedRawTilemap));
         ui.add(egui::TextEdit::multiline(&mut self.tilemap).desired_rows(5));
-        ui.label("Literal remap-command bytes:");
+        ui.label(advanced_text(catalog, Key::LevelAdvancedRemapBytes));
         ui.add(egui::TextEdit::multiline(&mut self.remap).desired_rows(5));
-        if let Some(edit) = self.clipboard_controls(ui, layer3) {
+        if let Some(edit) = self.clipboard_controls(ui, layer3, catalog) {
             return Some(edit);
         }
         let mut apply = false;
         let mut disable = false;
         ui.horizontal(|ui| {
-            apply = ui.button("Apply Layer 3").clicked();
-            disable = ui.button("Disable Layer 3").clicked();
+            apply = ui
+                .button(advanced_text(catalog, Key::LevelAdvancedApplyLayer3))
+                .clicked();
+            disable = ui
+                .button(advanced_text(catalog, Key::LevelAdvancedDisableLayer3))
+                .clicked();
         });
         if disable {
             Some(Ok(vec![CompleteLevelDocumentEdit::Layer3(
@@ -123,23 +143,36 @@ impl LevelAdvancedPanelState {
         &mut self,
         ui: &mut egui::Ui,
         layer3: &Layer3Data,
+        catalog: Option<&LocalizationCatalog>,
     ) -> Option<Result<Vec<CompleteLevelDocumentEdit>, String>> {
         let mut copy_result = None;
         ui.horizontal(|ui| {
-            if ui.button("Copy tilemap").clicked() {
+            if ui
+                .button(advanced_text(catalog, Key::LevelAdvancedCopyTilemap))
+                .clicked()
+            {
                 copy_result = Some(native_clipboard::encode_layer3_tilemap(&layer3.tilemap));
             }
-            if ui.button("Paste tilemap").clicked() {
+            if ui
+                .button(advanced_text(catalog, Key::LevelAdvancedPasteTilemap))
+                .clicked()
+            {
                 self.paste_target = Some(PasteTarget::Tilemap);
                 ui.ctx()
                     .send_viewport_cmd(egui::ViewportCommand::RequestPaste);
             }
-            if ui.button("Copy remap commands").clicked() {
+            if ui
+                .button(advanced_text(catalog, Key::LevelAdvancedCopyRemap))
+                .clicked()
+            {
                 copy_result = Some(native_clipboard::encode_layer3_remap(
                     &layer3.remap_commands,
                 ));
             }
-            if ui.button("Paste remap commands").clicked() {
+            if ui
+                .button(advanced_text(catalog, Key::LevelAdvancedPasteRemap))
+                .clicked()
+            {
                 self.paste_target = Some(PasteTarget::Remap);
                 ui.ctx()
                     .send_viewport_cmd(egui::ViewportCommand::RequestPaste);
@@ -216,10 +249,14 @@ fn pasted_text(ui: &egui::Ui) -> Option<String> {
 fn show_expanded_header(
     ui: &mut egui::Ui,
     level: &CompleteLevelFile,
+    catalog: Option<&LocalizationCatalog>,
 ) -> Option<Result<Vec<CompleteLevelDocumentEdit>, String>> {
     let mut enabled = level.0.header.expanded.is_some();
     if ui
-        .checkbox(&mut enabled, "Expanded header enabled")
+        .checkbox(
+            &mut enabled,
+            advanced_text(catalog, Key::LevelAdvancedExpandedEnabled),
+        )
         .changed()
     {
         let value = enabled.then(ExpandedLevelHeader::default);
@@ -228,15 +265,18 @@ fn show_expanded_header(
         )]));
     }
     let Some(header) = level.0.header.expanded else {
-        ui.label("Enable the exact 16-word expanded record to edit its opaque fields.");
+        ui.label(advanced_text(catalog, Key::LevelAdvancedExpandedNotice));
         return None;
     };
     let mut edited_header = header;
     let mut bypass = header.super_graphics_bypass();
     let mut changed = false;
-    ui.heading("Super GFX Bypass");
+    ui.heading(advanced_text(catalog, Key::LevelAdvancedSuperGfx));
     changed |= ui
-        .checkbox(&mut bypass.enabled, "Use per-level GFX/ExGFX files")
+        .checkbox(
+            &mut bypass.enabled,
+            advanced_text(catalog, Key::LevelAdvancedUsePerLevelGfx),
+        )
         .changed();
     egui::Grid::new("super-gfx-bypass")
         .num_columns(4)
@@ -275,13 +315,16 @@ fn show_expanded_header(
         .set_super_graphics_bypass(bypass)
         .expect("bounded Super GFX controls produce valid file numbers");
     ui.separator();
-    ui.label("Raw expanded words (unproven fields remain editable and lossless):");
+    ui.label(advanced_text(catalog, Key::LevelAdvancedRawExpandedWords));
     let mut fields = edited_header.fields;
     egui::Grid::new("expanded-level-header-fields")
         .num_columns(2)
         .show(ui, |ui| {
             for (index, value) in fields.iter_mut().enumerate() {
-                ui.label(format!("Field {index:02X}"));
+                ui.label(
+                    advanced_text(catalog, Key::LevelAdvancedFieldFormat)
+                        .replace("{index}", &format!("{index:02X}")),
+                );
                 changed |= ui
                     .add(egui::DragValue::new(value).hexadecimal(4, false, true))
                     .changed();
@@ -302,9 +345,42 @@ fn show_expanded_header(
     })
 }
 
+fn advanced_text(catalog: Option<&LocalizationCatalog>, key: Key) -> String {
+    catalog.map_or_else(
+        || key.english().to_owned(),
+        |catalog| catalog.extended_text(key).to_owned(),
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn complete_level_advanced_panel_has_no_literal_widget_text() {
+        let source = include_str!("level_editor_advanced.rs");
+        for literal_widget in [
+            "ui.button(\"",
+            "ui.label(\"",
+            "ui.heading(\"",
+            "Button::new(\"",
+            ".text(\"",
+        ] {
+            assert!(
+                !source.contains(literal_widget),
+                "level advanced panel bypasses typed localization with {literal_widget}"
+            );
+        }
+        for key in Key::ALL
+            .into_iter()
+            .filter(|key| format!("{key:?}").starts_with("LevelAdvanced"))
+        {
+            assert!(
+                source.contains(&format!("Key::{key:?}")),
+                "level advanced panel does not consume {key:?}"
+            );
+        }
+    }
 
     #[test]
     fn layer3_form_requires_exact_reserved_width() {

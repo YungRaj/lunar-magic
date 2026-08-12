@@ -8019,3 +8019,13 @@ complete panel audit rejects literal button, label, slider, and `Button` caption
 every family identity. Native compilation, the focused audit, localization 28/28 active cases (one
 provenance ignore), and renderer 237/237 pass. Other unaudited frontend modules and the retained
 translated language-DLL gesture keep Localization Partial; aggregate parity remains 60/65.
+
+Localization coverage update (2026-08-12, complete-level advanced panel): twenty-three appended
+`LevelAdvanced*` identities cover expanded-header and Layer 3 tabs, recovered-default enablement,
+all four Layer 3 selectors and dynamic graphics slots, reserved/tilemap/remap data, apply/disable
+and clipboard actions, exact expanded-record enablement, Super GFX bypass, and dynamic raw-field
+labels. The already-routed live catalog now reaches both advanced domains. A complete panel audit
+rejects literal button, label, heading, slider, and `Button` captions and requires every family
+identity. Native compilation, the focused audit, localization 28/28 active cases (one provenance
+ignore), and renderer 237/237 pass. Other unaudited frontend modules and the retained translated
+language-DLL gesture keep Localization Partial; aggregate parity remains 60/65.

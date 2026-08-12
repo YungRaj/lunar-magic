@@ -76,7 +76,7 @@ impl LevelPanelState {
             Panel::Sprites => self.show_sprites(ui, level, revision),
             Panel::Entrances => self.show_entrances(ui, level, revision),
             Panel::Auxiliary => self.auxiliary.show(ui, level, revision, catalog),
-            Panel::Advanced => self.advanced.show(ui, level, revision),
+            Panel::Advanced => self.advanced.show(ui, level, revision, catalog),
         }
     }
 
