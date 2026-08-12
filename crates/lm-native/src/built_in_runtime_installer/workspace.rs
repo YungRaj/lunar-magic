@@ -1,4 +1,4 @@
-use lm_app::{AppState, Command};
+use lm_app::{AppState, Command, ExtendedUiTextKey};
 use lm_rom::{Mapper, Region, SupportedGame};
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -17,56 +17,34 @@ pub(super) enum BuiltInRuntime {
 }
 
 impl BuiltInRuntime {
-    pub(super) const fn label(self) -> &'static str {
+    pub(super) const fn label_key(self) -> ExtendedUiTextKey {
         match self {
-            Self::ExpandedSettings => "Expanded level settings",
-            Self::CompleteLayer3 => "Complete Layer 3 family (includes expanded settings)",
-            Self::Lfix3Core => "Lfix3 core runtime and shared tables",
-            Self::Map16Runtime => "Complete Map16 runtime and auxiliary table",
-            Self::ExpandedExAnimation => "Expanded ExAnimation runtime",
-            Self::Layer2Runtime => "Layer 2 object-data runtime format $103",
-            Self::Sprite19Fix => "Sprite 19 ASM fix",
-            Self::SupportPatchB => "Level support patch B (custom time / scroll)",
-            Self::Lz2SpeedGraphics => "LZ2 Speed graphics decompressor",
-            Self::ExpandedSharedPalettes => "Expanded shared/custom palettes",
+            Self::ExpandedSettings => ExtendedUiTextKey::BuiltInRuntimeExpandedSettings,
+            Self::CompleteLayer3 => ExtendedUiTextKey::BuiltInRuntimeCompleteLayer3,
+            Self::Lfix3Core => ExtendedUiTextKey::BuiltInRuntimeLfix3,
+            Self::Map16Runtime => ExtendedUiTextKey::BuiltInRuntimeMap16,
+            Self::ExpandedExAnimation => ExtendedUiTextKey::BuiltInRuntimeExAnimation,
+            Self::Layer2Runtime => ExtendedUiTextKey::BuiltInRuntimeLayer2,
+            Self::Sprite19Fix => ExtendedUiTextKey::BuiltInRuntimeSprite19,
+            Self::SupportPatchB => ExtendedUiTextKey::BuiltInRuntimeSupportPatchB,
+            Self::Lz2SpeedGraphics => ExtendedUiTextKey::BuiltInRuntimeLz2Speed,
+            Self::ExpandedSharedPalettes => ExtendedUiTextKey::BuiltInRuntimeSharedPalettes,
         }
     }
 
-    pub(super) const fn description(self) -> &'static str {
+    pub(super) const fn description_key(self) -> ExtendedUiTextKey {
         match self {
-            Self::ExpandedSettings => {
-                "Install the recovered 512-record settings table and its exact runtime hooks."
-            }
-            Self::CompleteLayer3 => {
-                "Install all recovered Layer 3 runtime allocations, hooks, compatibility code, \
-                 and expanded settings as one transaction."
-            }
-            Self::Lfix3Core => {
-                "Install the recovered Lfix3 runtime, three initialized 512-entry tables, and all \
-                 fixed entry hooks."
-            }
-            Self::Map16Runtime => {
-                "Install the recovered fixed Map16 hooks and the relocated 32-KiB auxiliary table."
-            }
-            Self::ExpandedExAnimation => {
-                "Install the recovered expanded ExAnimation core, pointer table, graphics helpers, shared-palette helpers, and fixed hooks as one transaction."
-            }
-            Self::Layer2Runtime => {
-                "Migrate an authenticated format-$102 Layer 2 pointer/descriptor table and runtime hook to format $103."
-            }
-            Self::Sprite19Fix => {
-                "Install the recovered shared helper and branch patch that make sprite $19 safe on any level."
-            }
-            Self::SupportPatchB => {
-                "Install the recovered fixed runtime used by custom level time and separate scroll settings."
-            }
-            Self::Lz2SpeedGraphics => {
-                "Install Lunar Magic's fast LZ2 decompressor. LZ2 Orig and LZ2 Speed share the \
-                 same payload format, so graphics data is not recompressed."
-            }
+            Self::ExpandedSettings => ExtendedUiTextKey::BuiltInRuntimeExpandedSettingsDescription,
+            Self::CompleteLayer3 => ExtendedUiTextKey::BuiltInRuntimeCompleteLayer3Description,
+            Self::Lfix3Core => ExtendedUiTextKey::BuiltInRuntimeLfix3Description,
+            Self::Map16Runtime => ExtendedUiTextKey::BuiltInRuntimeMap16Description,
+            Self::ExpandedExAnimation => ExtendedUiTextKey::BuiltInRuntimeExAnimationDescription,
+            Self::Layer2Runtime => ExtendedUiTextKey::BuiltInRuntimeLayer2Description,
+            Self::Sprite19Fix => ExtendedUiTextKey::BuiltInRuntimeSprite19Description,
+            Self::SupportPatchB => ExtendedUiTextKey::BuiltInRuntimeSupportPatchBDescription,
+            Self::Lz2SpeedGraphics => ExtendedUiTextKey::BuiltInRuntimeLz2SpeedDescription,
             Self::ExpandedSharedPalettes => {
-                "Install the recovered shared-palette hooks, helpers, expanded table, and the \
-                 512-entry per-level custom-palette pointer table."
+                ExtendedUiTextKey::BuiltInRuntimeSharedPalettesDescription
             }
         }
     }
@@ -202,50 +180,50 @@ impl BuiltInRuntimeWorkspace {
         }
     }
 
-    pub(super) fn migration_description(&self) -> Option<&'static str> {
+    pub(super) fn migration_description_key(&self) -> Option<ExtendedUiTextKey> {
         if !self.selection_migrates_legacy_runtime() {
             return None;
         }
         Some(match self.runtime {
             BuiltInRuntime::Lfix3Core => match self.lfix3_generation {
                 lm_profile::SmwUsV1Lfix3Generation::Generation1 => {
-                    "The authenticated legacy Lfix3 generation 1 will be migrated to generation 3 while converting its live packed table into the current three-plane form."
+                    ExtendedUiTextKey::BuiltInRuntimeMigrateLfix3Gen1
                 }
                 lm_profile::SmwUsV1Lfix3Generation::Generation2 => {
-                    "The authenticated legacy Lfix3 generation 2 will be migrated to generation 3 while preserving all three live per-level tables."
+                    ExtendedUiTextKey::BuiltInRuntimeMigrateLfix3Gen2
                 }
                 _ => unreachable!(),
             },
             BuiltInRuntime::Map16Runtime => match self.map16_generation {
                 lm_profile::SmwUsV1Map16RuntimeGeneration::StageOneLegacy => {
-                    "The authenticated legacy Map16 stage $0100 runtime will be migrated to stage $0112 while leaving existing Map16 data and allocations untouched."
+                    ExtendedUiTextKey::BuiltInRuntimeMigrateMap16Stage1
                 }
                 lm_profile::SmwUsV1Map16RuntimeGeneration::StageTwoLegacy => {
-                    "The authenticated legacy Map16 stage $0101 runtime will be migrated to stage $0112 while leaving existing Map16 data and allocations untouched."
+                    ExtendedUiTextKey::BuiltInRuntimeMigrateMap16Stage2
                 }
                 lm_profile::SmwUsV1Map16RuntimeGeneration::StageThreeLegacy => {
-                    "The authenticated legacy Map16 stage $0111 runtime will be migrated to stage $0112 while leaving existing Map16 data and allocations untouched."
+                    ExtendedUiTextKey::BuiltInRuntimeMigrateMap16Stage3
                 }
                 _ => unreachable!(),
             },
             BuiltInRuntime::ExpandedExAnimation => match self.exanimation_generation {
                 lm_profile::SmwUsV1ExpandedExAnimationRuntimeGeneration::LegacyPointerHooks => {
-                    "The authenticated legacy ExAnimation pointer fragments will be migrated to the current bank and marker contract while preserving the existing runtime allocation."
+                    ExtendedUiTextKey::BuiltInRuntimeMigrateExAnimationPointers
                 }
                 lm_profile::SmwUsV1ExpandedExAnimationRuntimeGeneration::LegacyGlobalTable => {
-                    "The authenticated legacy 512-entry ExAnimation table will be converted into current compact per-level allocations together with the complete current runtime as one undoable transaction."
+                    ExtendedUiTextKey::BuiltInRuntimeMigrateExAnimationTable
                 }
                 _ => unreachable!(),
             },
             BuiltInRuntime::Layer2Runtime => match self.layer2_generation {
                 lm_profile::SmwUsV1Layer2RuntimeGeneration::Format100Legacy => {
-                    "The authenticated legacy Layer 2 format $100 pointer table and descriptors will be converted to format $103 together with the exact current runtime hook."
+                    ExtendedUiTextKey::BuiltInRuntimeMigrateLayer2Format100
                 }
                 lm_profile::SmwUsV1Layer2RuntimeGeneration::Format101Legacy => {
-                    "The authenticated legacy Layer 2 format $101 pointer table and descriptors will be converted to format $103 together with the exact current runtime hook."
+                    ExtendedUiTextKey::BuiltInRuntimeMigrateLayer2Format101
                 }
                 lm_profile::SmwUsV1Layer2RuntimeGeneration::Format102Legacy => {
-                    "The authenticated legacy Layer 2 format $102 pointer table and descriptors will be converted to format $103 together with the exact current runtime hook."
+                    ExtendedUiTextKey::BuiltInRuntimeMigrateLayer2Format102
                 }
                 _ => unreachable!(),
             },
@@ -430,7 +408,13 @@ mod tests {
             ),
         ] {
             workspace.lfix3_generation = generation;
-            assert!(workspace.migration_description().unwrap().contains(label));
+            assert!(
+                workspace
+                    .migration_description_key()
+                    .unwrap()
+                    .english()
+                    .contains(label)
+            );
         }
 
         workspace.runtime = BuiltInRuntime::Map16Runtime;
@@ -449,7 +433,13 @@ mod tests {
             ),
         ] {
             workspace.map16_generation = generation;
-            assert!(workspace.migration_description().unwrap().contains(label));
+            assert!(
+                workspace
+                    .migration_description_key()
+                    .unwrap()
+                    .english()
+                    .contains(label)
+            );
         }
 
         workspace.runtime = BuiltInRuntime::ExpandedExAnimation;
@@ -465,7 +455,13 @@ mod tests {
         ] {
             workspace.exanimation_generation = generation;
             assert!(workspace.selection_migrates_legacy_runtime());
-            assert!(workspace.migration_description().unwrap().contains(label));
+            assert!(
+                workspace
+                    .migration_description_key()
+                    .unwrap()
+                    .english()
+                    .contains(label)
+            );
         }
 
         workspace.runtime = BuiltInRuntime::Layer2Runtime;
@@ -484,7 +480,13 @@ mod tests {
             ),
         ] {
             workspace.layer2_generation = generation;
-            assert!(workspace.migration_description().unwrap().contains(label));
+            assert!(
+                workspace
+                    .migration_description_key()
+                    .unwrap()
+                    .english()
+                    .contains(label)
+            );
         }
     }
 }

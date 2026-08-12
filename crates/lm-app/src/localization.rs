@@ -2431,10 +2431,51 @@ pub enum ExtendedUiTextKey {
     RevisionPatchInstall,
     RevisionPatchErrorTitle,
     RevisionPatchOk,
+    BuiltInRuntimeTitle,
+    BuiltInRuntimeTarget,
+    BuiltInRuntimeFamily,
+    BuiltInRuntimeExpandedSettings,
+    BuiltInRuntimeCompleteLayer3,
+    BuiltInRuntimeLfix3,
+    BuiltInRuntimeMap16,
+    BuiltInRuntimeExAnimation,
+    BuiltInRuntimeLayer2,
+    BuiltInRuntimeSprite19,
+    BuiltInRuntimeSupportPatchB,
+    BuiltInRuntimeLz2Speed,
+    BuiltInRuntimeSharedPalettes,
+    BuiltInRuntimeExpandedSettingsDescription,
+    BuiltInRuntimeCompleteLayer3Description,
+    BuiltInRuntimeLfix3Description,
+    BuiltInRuntimeMap16Description,
+    BuiltInRuntimeExAnimationDescription,
+    BuiltInRuntimeLayer2Description,
+    BuiltInRuntimeSprite19Description,
+    BuiltInRuntimeSupportPatchBDescription,
+    BuiltInRuntimeLz2SpeedDescription,
+    BuiltInRuntimeSharedPalettesDescription,
+    BuiltInRuntimeAlreadyInstalled,
+    BuiltInRuntimeAtomicNotice,
+    BuiltInRuntimeStaleNotice,
+    BuiltInRuntimeCancel,
+    BuiltInRuntimeMigrate,
+    BuiltInRuntimeInstall,
+    BuiltInRuntimeErrorTitle,
+    BuiltInRuntimeOk,
+    BuiltInRuntimeMigrateLfix3Gen1,
+    BuiltInRuntimeMigrateLfix3Gen2,
+    BuiltInRuntimeMigrateMap16Stage1,
+    BuiltInRuntimeMigrateMap16Stage2,
+    BuiltInRuntimeMigrateMap16Stage3,
+    BuiltInRuntimeMigrateExAnimationPointers,
+    BuiltInRuntimeMigrateExAnimationTable,
+    BuiltInRuntimeMigrateLayer2Format100,
+    BuiltInRuntimeMigrateLayer2Format101,
+    BuiltInRuntimeMigrateLayer2Format102,
 }
 
 impl ExtendedUiTextKey {
-    pub const ALL: [Self; 730] = [
+    pub const ALL: [Self; 771] = [
         Self::TilemapTitleScreenName,
         Self::TilemapCreditsName,
         Self::TilemapEditorTitleFormat,
@@ -3165,6 +3206,47 @@ impl ExtendedUiTextKey {
         Self::RevisionPatchInstall,
         Self::RevisionPatchErrorTitle,
         Self::RevisionPatchOk,
+        Self::BuiltInRuntimeTitle,
+        Self::BuiltInRuntimeTarget,
+        Self::BuiltInRuntimeFamily,
+        Self::BuiltInRuntimeExpandedSettings,
+        Self::BuiltInRuntimeCompleteLayer3,
+        Self::BuiltInRuntimeLfix3,
+        Self::BuiltInRuntimeMap16,
+        Self::BuiltInRuntimeExAnimation,
+        Self::BuiltInRuntimeLayer2,
+        Self::BuiltInRuntimeSprite19,
+        Self::BuiltInRuntimeSupportPatchB,
+        Self::BuiltInRuntimeLz2Speed,
+        Self::BuiltInRuntimeSharedPalettes,
+        Self::BuiltInRuntimeExpandedSettingsDescription,
+        Self::BuiltInRuntimeCompleteLayer3Description,
+        Self::BuiltInRuntimeLfix3Description,
+        Self::BuiltInRuntimeMap16Description,
+        Self::BuiltInRuntimeExAnimationDescription,
+        Self::BuiltInRuntimeLayer2Description,
+        Self::BuiltInRuntimeSprite19Description,
+        Self::BuiltInRuntimeSupportPatchBDescription,
+        Self::BuiltInRuntimeLz2SpeedDescription,
+        Self::BuiltInRuntimeSharedPalettesDescription,
+        Self::BuiltInRuntimeAlreadyInstalled,
+        Self::BuiltInRuntimeAtomicNotice,
+        Self::BuiltInRuntimeStaleNotice,
+        Self::BuiltInRuntimeCancel,
+        Self::BuiltInRuntimeMigrate,
+        Self::BuiltInRuntimeInstall,
+        Self::BuiltInRuntimeErrorTitle,
+        Self::BuiltInRuntimeOk,
+        Self::BuiltInRuntimeMigrateLfix3Gen1,
+        Self::BuiltInRuntimeMigrateLfix3Gen2,
+        Self::BuiltInRuntimeMigrateMap16Stage1,
+        Self::BuiltInRuntimeMigrateMap16Stage2,
+        Self::BuiltInRuntimeMigrateMap16Stage3,
+        Self::BuiltInRuntimeMigrateExAnimationPointers,
+        Self::BuiltInRuntimeMigrateExAnimationTable,
+        Self::BuiltInRuntimeMigrateLayer2Format100,
+        Self::BuiltInRuntimeMigrateLayer2Format101,
+        Self::BuiltInRuntimeMigrateLayer2Format102,
     ];
 
     #[must_use]
@@ -4184,6 +4266,95 @@ impl ExtendedUiTextKey {
             Self::RevisionPatchInstall => "Install transactionally",
             Self::RevisionPatchErrorTitle => "Revision patch installation error",
             Self::RevisionPatchOk => "OK",
+            Self::BuiltInRuntimeTitle => "Install Built-in Runtime",
+            Self::BuiltInRuntimeTarget => "Target: Super Mario World (USA), revision 0, LoROM",
+            Self::BuiltInRuntimeFamily => "Recovered runtime family",
+            Self::BuiltInRuntimeExpandedSettings => "Expanded level settings",
+            Self::BuiltInRuntimeCompleteLayer3 => {
+                "Complete Layer 3 family (includes expanded settings)"
+            }
+            Self::BuiltInRuntimeLfix3 => "Lfix3 core runtime and shared tables",
+            Self::BuiltInRuntimeMap16 => "Complete Map16 runtime and auxiliary table",
+            Self::BuiltInRuntimeExAnimation => "Expanded ExAnimation runtime",
+            Self::BuiltInRuntimeLayer2 => "Layer 2 object-data runtime format $103",
+            Self::BuiltInRuntimeSprite19 => "Sprite 19 ASM fix",
+            Self::BuiltInRuntimeSupportPatchB => "Level support patch B (custom time / scroll)",
+            Self::BuiltInRuntimeLz2Speed => "LZ2 Speed graphics decompressor",
+            Self::BuiltInRuntimeSharedPalettes => "Expanded shared/custom palettes",
+            Self::BuiltInRuntimeExpandedSettingsDescription => {
+                "Install the recovered 512-record settings table and its exact runtime hooks."
+            }
+            Self::BuiltInRuntimeCompleteLayer3Description => {
+                "Install all recovered Layer 3 runtime allocations, hooks, compatibility code, and expanded settings as one transaction."
+            }
+            Self::BuiltInRuntimeLfix3Description => {
+                "Install the recovered Lfix3 runtime, three initialized 512-entry tables, and all fixed entry hooks."
+            }
+            Self::BuiltInRuntimeMap16Description => {
+                "Install the recovered fixed Map16 hooks and the relocated 32-KiB auxiliary table."
+            }
+            Self::BuiltInRuntimeExAnimationDescription => {
+                "Install the recovered expanded ExAnimation core, pointer table, graphics helpers, shared-palette helpers, and fixed hooks as one transaction."
+            }
+            Self::BuiltInRuntimeLayer2Description => {
+                "Migrate an authenticated legacy Layer 2 pointer/descriptor table and runtime hook to format $103."
+            }
+            Self::BuiltInRuntimeSprite19Description => {
+                "Install the recovered shared helper and branch patch that make sprite $19 safe on any level."
+            }
+            Self::BuiltInRuntimeSupportPatchBDescription => {
+                "Install the recovered fixed runtime used by custom level time and separate scroll settings."
+            }
+            Self::BuiltInRuntimeLz2SpeedDescription => {
+                "Install Lunar Magic's fast LZ2 decompressor. LZ2 Orig and LZ2 Speed share the same payload format, so graphics data is not recompressed."
+            }
+            Self::BuiltInRuntimeSharedPalettesDescription => {
+                "Install the recovered shared-palette hooks, helpers, expanded table, and the 512-entry per-level custom-palette pointer table."
+            }
+            Self::BuiltInRuntimeAlreadyInstalled => {
+                "The selected current runtime is already installed and authenticated."
+            }
+            Self::BuiltInRuntimeAtomicNotice => {
+                "Installation may expand the ROM. All allocations, hooks, checksum repair, and history changes commit atomically."
+            }
+            Self::BuiltInRuntimeStaleNotice => {
+                "The ROM changed after this installer opened. Reopen before installing."
+            }
+            Self::BuiltInRuntimeCancel => "Cancel",
+            Self::BuiltInRuntimeMigrate => "Migrate transactionally",
+            Self::BuiltInRuntimeInstall => "Install transactionally",
+            Self::BuiltInRuntimeErrorTitle => "Built-in runtime installation error",
+            Self::BuiltInRuntimeOk => "OK",
+            Self::BuiltInRuntimeMigrateLfix3Gen1 => {
+                "The authenticated legacy Lfix3 generation 1 will be migrated to generation 3 while converting its live packed table into the current three-plane form."
+            }
+            Self::BuiltInRuntimeMigrateLfix3Gen2 => {
+                "The authenticated legacy Lfix3 generation 2 will be migrated to generation 3 while preserving all three live per-level tables."
+            }
+            Self::BuiltInRuntimeMigrateMap16Stage1 => {
+                "The authenticated legacy Map16 stage $0100 runtime will be migrated to stage $0112 while leaving existing Map16 data and allocations untouched."
+            }
+            Self::BuiltInRuntimeMigrateMap16Stage2 => {
+                "The authenticated legacy Map16 stage $0101 runtime will be migrated to stage $0112 while leaving existing Map16 data and allocations untouched."
+            }
+            Self::BuiltInRuntimeMigrateMap16Stage3 => {
+                "The authenticated legacy Map16 stage $0111 runtime will be migrated to stage $0112 while leaving existing Map16 data and allocations untouched."
+            }
+            Self::BuiltInRuntimeMigrateExAnimationPointers => {
+                "The authenticated legacy ExAnimation pointer fragments will be migrated to the current bank and marker contract while preserving the existing runtime allocation."
+            }
+            Self::BuiltInRuntimeMigrateExAnimationTable => {
+                "The authenticated legacy 512-entry ExAnimation table will be converted into current compact per-level allocations together with the complete current runtime as one undoable transaction."
+            }
+            Self::BuiltInRuntimeMigrateLayer2Format100 => {
+                "The authenticated legacy Layer 2 format $100 pointer table and descriptors will be converted to format $103 together with the exact current runtime hook."
+            }
+            Self::BuiltInRuntimeMigrateLayer2Format101 => {
+                "The authenticated legacy Layer 2 format $101 pointer table and descriptors will be converted to format $103 together with the exact current runtime hook."
+            }
+            Self::BuiltInRuntimeMigrateLayer2Format102 => {
+                "The authenticated legacy Layer 2 format $102 pointer table and descriptors will be converted to format $103 together with the exact current runtime hook."
+            }
         }
     }
 

@@ -2,7 +2,7 @@ mod workspace;
 
 use crate::rom_legacy_graphics_bypass_editor::LegacyGraphicsBypassDomain;
 use eframe::egui;
-use lm_app::{AppState, Command};
+use lm_app::{AppState, Command, ExtendedUiTextKey, LocalizationCatalog};
 use workspace::{BuiltInRuntime, BuiltInRuntimeWorkspace};
 
 #[derive(Default)]
@@ -66,106 +66,85 @@ impl BuiltInRuntimeInstaller {
         &mut self,
         context: &egui::Context,
         project_revision: u64,
+        catalog: Option<&LocalizationCatalog>,
     ) -> Option<Command> {
         let mut command = None;
         if self.workspace.is_some() {
-            egui::Window::new("Install Built-in Runtime")
+            egui::Window::new(text(catalog, ExtendedUiTextKey::BuiltInRuntimeTitle))
                 .collapsible(false)
                 .resizable(false)
-                .show(context, |ui| command = self.contents(ui, project_revision));
+                .show(context, |ui| {
+                    command = self.contents(ui, project_revision, catalog)
+                });
         }
-        self.show_error(context);
+        self.show_error(context, catalog);
         command
     }
 
-    fn contents(&mut self, ui: &mut egui::Ui, project_revision: u64) -> Option<Command> {
+    fn contents(
+        &mut self,
+        ui: &mut egui::Ui,
+        project_revision: u64,
+        catalog: Option<&LocalizationCatalog>,
+    ) -> Option<Command> {
         let workspace = self.workspace.as_mut()?;
         let stale = workspace.is_stale(project_revision);
         let mut cancel = false;
-        ui.label("Target: Super Mario World (USA), revision 0, LoROM");
-        egui::ComboBox::from_label("Recovered runtime family")
-            .selected_text(workspace.runtime.label())
+        ui.label(text(catalog, ExtendedUiTextKey::BuiltInRuntimeTarget));
+        egui::ComboBox::from_label(text(catalog, ExtendedUiTextKey::BuiltInRuntimeFamily))
+            .selected_text(text(catalog, workspace.runtime.label_key()))
             .show_ui(ui, |ui| {
-                ui.selectable_value(
-                    &mut workspace.runtime,
+                for runtime in [
                     BuiltInRuntime::ExpandedSettings,
-                    BuiltInRuntime::ExpandedSettings.label(),
-                );
-                ui.selectable_value(
-                    &mut workspace.runtime,
                     BuiltInRuntime::CompleteLayer3,
-                    BuiltInRuntime::CompleteLayer3.label(),
-                );
-                ui.selectable_value(
-                    &mut workspace.runtime,
                     BuiltInRuntime::Lfix3Core,
-                    BuiltInRuntime::Lfix3Core.label(),
-                );
-                ui.selectable_value(
-                    &mut workspace.runtime,
                     BuiltInRuntime::Map16Runtime,
-                    BuiltInRuntime::Map16Runtime.label(),
-                );
-                ui.selectable_value(
-                    &mut workspace.runtime,
                     BuiltInRuntime::ExpandedExAnimation,
-                    BuiltInRuntime::ExpandedExAnimation.label(),
-                );
-                ui.selectable_value(
-                    &mut workspace.runtime,
                     BuiltInRuntime::Layer2Runtime,
-                    BuiltInRuntime::Layer2Runtime.label(),
-                );
-                ui.selectable_value(
-                    &mut workspace.runtime,
                     BuiltInRuntime::Sprite19Fix,
-                    BuiltInRuntime::Sprite19Fix.label(),
-                );
-                ui.selectable_value(
-                    &mut workspace.runtime,
                     BuiltInRuntime::SupportPatchB,
-                    BuiltInRuntime::SupportPatchB.label(),
-                );
-                ui.selectable_value(
-                    &mut workspace.runtime,
                     BuiltInRuntime::ExpandedSharedPalettes,
-                    BuiltInRuntime::ExpandedSharedPalettes.label(),
-                );
-                ui.selectable_value(
-                    &mut workspace.runtime,
                     BuiltInRuntime::Lz2SpeedGraphics,
-                    BuiltInRuntime::Lz2SpeedGraphics.label(),
-                );
+                ] {
+                    ui.selectable_value(
+                        &mut workspace.runtime,
+                        runtime,
+                        text(catalog, runtime.label_key()),
+                    );
+                }
             });
-        ui.label(workspace.runtime.description());
+        ui.label(text(catalog, workspace.runtime.description_key()));
         if workspace.selection_is_installed() {
-            ui.label("The selected current runtime is already installed and authenticated.");
+            ui.label(text(
+                catalog,
+                ExtendedUiTextKey::BuiltInRuntimeAlreadyInstalled,
+            ));
         }
-        if let Some(description) = workspace.migration_description() {
-            ui.label(description);
+        if let Some(key) = workspace.migration_description_key() {
+            ui.label(text(catalog, key));
         }
-        ui.label(
-            "Installation may expand the ROM. All allocations, hooks, checksum repair, and \
-             history changes commit atomically.",
-        );
+        ui.label(text(catalog, ExtendedUiTextKey::BuiltInRuntimeAtomicNotice));
         if stale {
             ui.colored_label(
                 egui::Color32::YELLOW,
-                "The ROM changed after this installer opened. Reopen before installing.",
+                text(catalog, ExtendedUiTextKey::BuiltInRuntimeStaleNotice),
             );
         }
         let mut command = None;
         ui.horizontal(|ui| {
-            if ui.button("Cancel").clicked() {
+            if ui
+                .button(text(catalog, ExtendedUiTextKey::BuiltInRuntimeCancel))
+                .clicked()
+            {
                 cancel = true;
             }
             if ui
                 .add_enabled(
                     !stale && !workspace.selection_is_installed(),
                     egui::Button::new(if workspace.selection_migrates_legacy_runtime() {
-                        "Migrate transactionally"
+                        text(catalog, ExtendedUiTextKey::BuiltInRuntimeMigrate)
                     } else {
-                        "Install transactionally"
+                        text(catalog, ExtendedUiTextKey::BuiltInRuntimeInstall)
                     }),
                 )
                 .clicked()
@@ -184,14 +163,20 @@ impl BuiltInRuntimeInstaller {
         command
     }
 
-    fn show_error(&mut self, context: &egui::Context) {
+    fn show_error(&mut self, context: &egui::Context, catalog: Option<&LocalizationCatalog>) {
         if let Some(error) = self.error.clone() {
-            egui::Window::new("Built-in runtime installation error").show(context, |ui| {
-                ui.label(error);
-                if ui.button("OK").clicked() {
-                    self.error = None;
-                }
-            });
+            egui::Window::new(text(catalog, ExtendedUiTextKey::BuiltInRuntimeErrorTitle)).show(
+                context,
+                |ui| {
+                    ui.label(error);
+                    if ui
+                        .button(text(catalog, ExtendedUiTextKey::BuiltInRuntimeOk))
+                        .clicked()
+                    {
+                        self.error = None;
+                    }
+                },
+            );
         }
     }
 
@@ -205,12 +190,39 @@ impl BuiltInRuntimeInstaller {
     }
 }
 
+fn text(catalog: Option<&LocalizationCatalog>, key: ExtendedUiTextKey) -> String {
+    crate::frontend_ui::extended_localized_text(catalog, key)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use lm_profile::{smw_us_v1_custom_palette_installation, smw_us_v1_expanded_settings_layout};
     use lm_rom::{CopierHeader, Mapper, RomImage};
     use std::{fs, path::PathBuf};
+
+    #[test]
+    fn complete_built_in_runtime_form_uses_every_typed_key() {
+        let sources = [
+            include_str!("built_in_runtime_installer.rs"),
+            include_str!("built_in_runtime_installer/workspace.rs"),
+        ]
+        .concat();
+        for key in ExtendedUiTextKey::ALL
+            .into_iter()
+            .filter(|key| format!("{key:?}").starts_with("BuiltInRuntime"))
+        {
+            assert!(sources.contains(&format!("ExtendedUiTextKey::{key:?}")));
+        }
+        for hard_coded_caption in [
+            "Window::new(\"Install Built-in Runtime\")",
+            "from_label(\"Recovered runtime family\")",
+            "ui.button(\"Cancel\")",
+            "Window::new(\"Built-in runtime installation error\")",
+        ] {
+            assert!(!sources.contains(hard_coded_caption));
+        }
+    }
 
     #[test]
     fn pristine_legacy_bypass_request_installs_then_opens_the_requested_editor() {

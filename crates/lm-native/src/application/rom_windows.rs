@@ -552,10 +552,11 @@ impl NativeApplication {
         show_project_operation!(self, context, rats_reclamation_dialog);
         show_project_operation!(self, context, ips_patch_dialog);
         show_project_operation!(self, context, copier_header_dialog);
-        if let Some(command) = self
-            .built_in_runtime_installer
-            .show(context, self.app.project_revision())
-            && self.try_dispatch(context, command)
+        if let Some(command) = self.built_in_runtime_installer.show(
+            context,
+            self.app.project_revision(),
+            self.app.localization(),
+        ) && self.try_dispatch(context, command)
         {
             let open_expanded_settings = self.built_in_runtime_installer.commit_succeeded();
             if open_expanded_settings

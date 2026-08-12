@@ -2098,3 +2098,12 @@ foreign-profile rejection, revision and allocation validation, and success lifec
 The focused installer passes 5/5, localization model 28/28, and renderer 237/237. Documented
 mapper/identity variants keep Runtime patches Partial; other native forms and retained live
 language-DLL evidence keep Localization Partial, so aggregate parity remains 60/65.
+
+Localization coverage update (2026-08-12, built-in runtime family): all ten runtime choices and
+their descriptions, target/authentication state, ten legacy-generation migration explanations,
+atomicity/stale guidance, actions, and errors now use forty-one typed extension keys. Exact routing,
+current-runtime authentication, migrations, header variants, occupied expansion, reopen, and Undo
+remain proven by 17/17 active focused tests with three explicit retained-ROM ignores. Localization
+model passes 28/28 and renderer 237/237. Documented mapper/identity variants keep Runtime patches
+Partial; remaining forms and live language-DLL evidence keep Localization Partial, so aggregate
+parity remains 60/65.

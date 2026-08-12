@@ -7408,6 +7408,19 @@ canonical-header suite passes 5/5, localization passes 28/28, and renderer passe
 Localization remains Partial for other native forms and retained live language-DLL evidence;
 aggregate parity remains 60/65.
 
+Localization coverage update (2026-08-12, built-in runtime family): forty-one appended
+`BuiltInRuntime*` keys cover the complete ten-family installer: selector names and descriptions,
+target identity, authenticated-current state, every Lfix3/Map16/ExAnimation/Layer-2 legacy
+generation explanation, atomic expansion/install guidance, stale state, install/migrate actions,
+and errors. Runtime identities and `$` format/version numbers remain intentional technical content
+inside localized strings. The workspace exposes typed keys rather than English text, and the host
+passes the active catalog. The complete-family source audit plus semantic suite pass 17/17 active
+with three explicit retained-ROM ignores, covering exact route selection, authentication,
+migration, header variants, occupied expansion, reopen, and byte-exact Undo. Localization passes
+28/28 and renderer passes 237/237. Runtime patches remain Partial for documented mapper/identity
+variants; Localization remains Partial for other native forms and retained live language-DLL
+evidence; aggregate parity remains 60/65.
+
 Localization coverage update (2026-08-12, IPS application): nine appended `IpsApply*` keys cover
 the complete revision-bound IPS application form: logical-offset/header preservation, dynamic
 source/target/change counts, identity and bank-shape requirements, stale state, transactional
