@@ -2268,3 +2268,13 @@ per-control English fallback. Technical scanner diagnostics and the canonical `L
 payload remain untranslated. Both focused localization/source-boundary tests pass, localization
 model tests pass, and renderer remains 237/237. Other native forms and retained live language-DLL
 evidence keep Localization Partial; aggregate parity remains 60/65.
+
+Localization coverage update (2026-08-12, graphics migration dialog): five typed extension keys
+now cover logical-PC allocation guidance, start/end fields, and the error lifecycle. Authenticated
+original dialog `$0416` continues to supply the title, codec selector, all three codec choices,
+migration notice, transactional action, and Cancel on a per-control basis. Allocation values and
+technical migration failures remain untranslated data. Focused lifecycle, original-control, LZ2
+Speed routing, and source-boundary tests pass 4/4; localization model tests pass and renderer
+remains 237/237. Historical compression runtime generations still keep Graphics Partial; other
+native forms and retained live language-DLL evidence keep Localization Partial; aggregate parity
+remains 60/65.

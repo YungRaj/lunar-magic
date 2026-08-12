@@ -1,6 +1,6 @@
 use crate::rom_allocation;
 use eframe::egui;
-use lm_app::{AppState, Command, LocalizationCatalog, UiTextKey};
+use lm_app::{AppState, Command, ExtendedUiTextKey as Key, LocalizationCatalog, UiTextKey};
 use lm_project::{GraphicsCompression, GraphicsMigrationOptions};
 use lm_rom::RomImage;
 
@@ -80,13 +80,13 @@ impl GraphicsMigrationDialog {
                                 target_name(catalog, GraphicsMigrationTarget::Lz3),
                             );
                         });
-                    ui.label("End-exclusive logical-PC allocation range (hexadecimal).");
+                    ui.label(text(catalog, Key::GraphicsMigrationAllocationNotice));
                     ui.horizontal(|ui| {
-                        ui.label("Start");
+                        ui.label(text(catalog, Key::GraphicsMigrationStart));
                         ui.text_edit_singleline(&mut self.allocation_start);
                     });
                     ui.horizontal(|ui| {
-                        ui.label("End");
+                        ui.label(text(catalog, Key::GraphicsMigrationEnd));
                         ui.text_edit_singleline(&mut self.allocation_end);
                     });
                     ui.horizontal(|ui| {
@@ -120,12 +120,15 @@ impl GraphicsMigrationDialog {
                 });
         }
         if let Some(error) = self.error.clone() {
-            egui::Window::new("Graphics migration error").show(context, |ui| {
-                ui.label(error);
-                if ui.button("OK").clicked() {
-                    self.error = None;
-                }
-            });
+            egui::Window::new(text(catalog, Key::GraphicsMigrationErrorTitle)).show(
+                context,
+                |ui| {
+                    ui.label(error);
+                    if ui.button(text(catalog, Key::GraphicsMigrationOk)).clicked() {
+                        self.error = None;
+                    }
+                },
+            );
         }
         command
     }
@@ -199,6 +202,13 @@ fn dialog_title(catalog: Option<&LocalizationCatalog>) -> String {
         .to_owned()
 }
 
+fn text(catalog: Option<&LocalizationCatalog>, key: Key) -> String {
+    catalog.map_or_else(
+        || key.english().to_owned(),
+        |catalog| catalog.extended_text(key).to_owned(),
+    )
+}
+
 fn dialog_control_text(
     catalog: Option<&LocalizationCatalog>,
     control_id: u32,
@@ -243,6 +253,18 @@ mod tests {
         assert!(dialog.open);
         dialog.commit_succeeded();
         assert!(!dialog.open);
+    }
+
+    #[test]
+    fn complete_graphics_migration_surface_has_no_literal_native_widget_text() {
+        let source = include_str!("graphics_migration_dialog.rs");
+        for literal in ["egui::Window::new(\"", "ui.button(\"", "ui.label(\""] {
+            assert!(
+                !source.contains(literal),
+                "literal migration widget text: {literal}"
+            );
+        }
+        assert!(source.contains("original_dialog_control_text"));
     }
 
     #[test]

@@ -1922,6 +1922,11 @@ pub enum ExtendedUiTextKey {
     LevelUsageCompleteTitle,
     LevelUsageErrorTitle,
     LevelUsageOk,
+    GraphicsMigrationAllocationNotice,
+    GraphicsMigrationStart,
+    GraphicsMigrationEnd,
+    GraphicsMigrationErrorTitle,
+    GraphicsMigrationOk,
     CustomSpriteEditorTitle,
     CustomSpritePlacementsFormat,
     CustomSpritePlacement,
@@ -2991,7 +2996,7 @@ pub enum ExtendedUiTextKey {
 }
 
 impl ExtendedUiTextKey {
-    pub const ALL: [Self; 1287] = [
+    pub const ALL: [Self; 1292] = [
         Self::MwlDocumentEditorTitle,
         Self::MwlDocumentVersionFormat,
         Self::MwlDocumentFlagsHex,
@@ -3213,6 +3218,11 @@ impl ExtendedUiTextKey {
         Self::LevelUsageCompleteTitle,
         Self::LevelUsageErrorTitle,
         Self::LevelUsageOk,
+        Self::GraphicsMigrationAllocationNotice,
+        Self::GraphicsMigrationStart,
+        Self::GraphicsMigrationEnd,
+        Self::GraphicsMigrationErrorTitle,
+        Self::GraphicsMigrationOk,
         Self::CustomSpriteEditorTitle,
         Self::CustomSpritePlacementsFormat,
         Self::CustomSpritePlacement,
@@ -4533,6 +4543,13 @@ impl ExtendedUiTextKey {
             Self::LevelUsageCompleteTitle => "Level usage analysis complete",
             Self::LevelUsageErrorTitle => "Level usage analysis error",
             Self::LevelUsageOk => "OK",
+            Self::GraphicsMigrationAllocationNotice => {
+                "End-exclusive logical-PC allocation range (hexadecimal)."
+            }
+            Self::GraphicsMigrationStart => "Start",
+            Self::GraphicsMigrationEnd => "End",
+            Self::GraphicsMigrationErrorTitle => "Graphics migration error",
+            Self::GraphicsMigrationOk => "OK",
             Self::CustomSpriteEditorTitle => "Custom Sprite Placement Editor",
             Self::CustomSpritePlacementsFormat => "Synchronized placements: {count}",
             Self::CustomSpritePlacement => "Placement",
