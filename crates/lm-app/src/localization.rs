@@ -1871,10 +1871,40 @@ pub enum ExtendedUiTextKey {
     SecondaryExitDiscardTitle,
     SecondaryExitUnsavedNotice,
     SecondaryExitErrorTitle,
+    SharedPaletteEditorTitle,
+    SharedPaletteSummaryFormat,
+    SharedPaletteStaleNotice,
+    SharedPaletteImport,
+    SharedPaletteExport,
+    SharedPaletteTransferNotice,
+    SharedPalettePage,
+    SharedPalettePageOfFormat,
+    SharedPaletteSelectedFormat,
+    SharedPaletteBgr555,
+    SharedPaletteDecodeRaw,
+    SharedPaletteRed,
+    SharedPaletteGreen,
+    SharedPaletteBlue,
+    SharedPalettePreview,
+    SharedPaletteApplyRgb,
+    SharedPaletteApplyRaw,
+    SharedPaletteCopyRow,
+    SharedPalettePasteRow,
+    SharedPaletteCopyColor,
+    SharedPalettePasteColor,
+    SharedPaletteClipboardNotice,
+    SharedPaletteAuxiliaryBytes,
+    SharedPaletteStageAuxiliary,
+    SharedPaletteCommit,
+    SharedPaletteStaged,
+    SharedPaletteUnchanged,
+    SharedPaletteDiscardTitle,
+    SharedPaletteUnsavedNotice,
+    SharedPaletteErrorTitle,
 }
 
 impl ExtendedUiTextKey {
-    pub const ALL: [Self; 170] = [
+    pub const ALL: [Self; 200] = [
         Self::TilemapTitleScreenName,
         Self::TilemapCreditsName,
         Self::TilemapEditorTitleFormat,
@@ -2045,6 +2075,36 @@ impl ExtendedUiTextKey {
         Self::SecondaryExitDiscardTitle,
         Self::SecondaryExitUnsavedNotice,
         Self::SecondaryExitErrorTitle,
+        Self::SharedPaletteEditorTitle,
+        Self::SharedPaletteSummaryFormat,
+        Self::SharedPaletteStaleNotice,
+        Self::SharedPaletteImport,
+        Self::SharedPaletteExport,
+        Self::SharedPaletteTransferNotice,
+        Self::SharedPalettePage,
+        Self::SharedPalettePageOfFormat,
+        Self::SharedPaletteSelectedFormat,
+        Self::SharedPaletteBgr555,
+        Self::SharedPaletteDecodeRaw,
+        Self::SharedPaletteRed,
+        Self::SharedPaletteGreen,
+        Self::SharedPaletteBlue,
+        Self::SharedPalettePreview,
+        Self::SharedPaletteApplyRgb,
+        Self::SharedPaletteApplyRaw,
+        Self::SharedPaletteCopyRow,
+        Self::SharedPalettePasteRow,
+        Self::SharedPaletteCopyColor,
+        Self::SharedPalettePasteColor,
+        Self::SharedPaletteClipboardNotice,
+        Self::SharedPaletteAuxiliaryBytes,
+        Self::SharedPaletteStageAuxiliary,
+        Self::SharedPaletteCommit,
+        Self::SharedPaletteStaged,
+        Self::SharedPaletteUnchanged,
+        Self::SharedPaletteDiscardTitle,
+        Self::SharedPaletteUnsavedNotice,
+        Self::SharedPaletteErrorTitle,
     ];
 
     #[must_use]
@@ -2276,6 +2336,46 @@ impl ExtendedUiTextKey {
                 "The staged global table has not been committed to the ROM."
             }
             Self::SecondaryExitErrorTitle => "Secondary-exit editor error",
+            Self::SharedPaletteEditorTitle => "Native Shared/Custom SMW Palettes",
+            Self::SharedPaletteSummaryFormat => {
+                "{backend} backend · {colors} colors · exact native .smwpal ordering"
+            }
+            Self::SharedPaletteStaleNotice => {
+                "The ROM changed after this palette was opened. Reopen before committing."
+            }
+            Self::SharedPaletteImport => "Import complete .smwpal…",
+            Self::SharedPaletteExport => "Export complete .smwpal…",
+            Self::SharedPaletteTransferNotice => {
+                "Complete transfer preserves exact legacy or expanded native byte ordering."
+            }
+            Self::SharedPalettePage => "Page",
+            Self::SharedPalettePageOfFormat => "of {last}",
+            Self::SharedPaletteSelectedFormat => "Selected color ${index}",
+            Self::SharedPaletteBgr555 => "SNES BGR555",
+            Self::SharedPaletteDecodeRaw => "Decode raw",
+            Self::SharedPaletteRed => "Red",
+            Self::SharedPaletteGreen => "Green",
+            Self::SharedPaletteBlue => "Blue",
+            Self::SharedPalettePreview => "████ Preview",
+            Self::SharedPaletteApplyRgb => "Apply RGB color",
+            Self::SharedPaletteApplyRaw => "Apply raw word",
+            Self::SharedPaletteCopyRow => "Copy row",
+            Self::SharedPalettePasteRow => "Paste row",
+            Self::SharedPaletteCopyColor => "Copy color",
+            Self::SharedPalettePasteColor => "Paste color",
+            Self::SharedPaletteClipboardNotice => {
+                "Ctrl+left/right uses the swatches; add Alt for a complete row."
+            }
+            Self::SharedPaletteAuxiliaryBytes => "Expanded auxiliary bytes",
+            Self::SharedPaletteStageAuxiliary => "Stage auxiliary bytes",
+            Self::SharedPaletteCommit => "Commit palette to ROM",
+            Self::SharedPaletteStaged => "Staged",
+            Self::SharedPaletteUnchanged => "Unchanged",
+            Self::SharedPaletteDiscardTitle => "Discard shared-palette changes?",
+            Self::SharedPaletteUnsavedNotice => {
+                "The staged shared/custom palette has not been committed to the ROM."
+            }
+            Self::SharedPaletteErrorTitle => "Shared-palette editor error",
         }
     }
 

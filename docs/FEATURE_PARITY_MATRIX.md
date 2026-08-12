@@ -1200,6 +1200,15 @@ both text sources. Final-entry pristine recovery, installed-table preservation, 
 handling, and exact clear-one/clear-all behavior remain proven. Localization model 28/28,
 secondary-exit editor 9/9, and renderer 237/237 pass. Other native forms and retained live
 language-DLL evidence remain open; Localization stays Partial and aggregate parity remains 60/65.
+Localization coverage update (2026-08-11, shared/custom palettes): the complete main editor and
+exact `.smwpal` transfer surface now consume thirty typed extension keys plus shared fixed-prefix
+confirmation actions. Dynamic backend/color/page/selection status, all raw/RGB and clipboard
+controls, expanded auxiliary bytes, transfer guidance, commit/discard, and errors are covered by a
+two-module source audit. Legacy/expanded backends, ExLoROM routing, exact native-file round trips,
+safe backend upgrade, RGB/raw and row edits, auxiliary preservation, commit/reopen/undo, and
+composed recovery remain proven. Localization model 28/28, shared-palette family 12/12, and renderer
+237/237 pass. Other native forms and retained live language-DLL evidence remain open; Localization
+stays Partial and aggregate parity remains 60/65.
 
 Localization coverage update (2026-08-11, current-level palette transfer): the full Raw 257-color,
 TPL v2, and RGB24 import/export chooser—including format guidance, `.palmask` behavior, actions, and

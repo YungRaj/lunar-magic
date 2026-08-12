@@ -3,7 +3,7 @@ use crate::{
     native_clipboard,
 };
 use eframe::egui;
-use lm_app::{AppState, Command};
+use lm_app::{AppState, Command, ExtendedUiTextKey, LocalizationCatalog, UiTextKey};
 use lm_graphics::{Bgr555, SmwPaletteBackend};
 use lm_profile::smw_us_v1_shared_palette_layout_for_mapper;
 
@@ -185,20 +185,28 @@ impl RomSharedPaletteEditor {
         &mut self,
         context: &egui::Context,
         project_revision: u64,
+        catalog: Option<&LocalizationCatalog>,
     ) -> (bool, Option<Command>) {
         self.poll_transfer_file_io(context, project_revision);
         let mut command = None;
         if self.workspace.is_some() {
-            egui::Window::new("Native Shared/Custom SMW Palettes")
+            egui::Window::new(text(catalog, ExtendedUiTextKey::SharedPaletteEditorTitle))
                 .default_size([690.0, 650.0])
-                .show(context, |ui| command = self.contents(ui, project_revision));
+                .show(context, |ui| {
+                    command = self.contents(ui, project_revision, catalog)
+                });
         }
-        let approved = self.close_confirmation(context);
-        self.show_error(context);
+        let approved = self.close_confirmation(context, catalog);
+        self.show_error(context, catalog);
         (approved, command)
     }
 
-    fn contents(&mut self, ui: &mut egui::Ui, project_revision: u64) -> Option<Command> {
+    fn contents(
+        &mut self,
+        ui: &mut egui::Ui,
+        project_revision: u64,
+        catalog: Option<&LocalizationCatalog>,
+    ) -> Option<Command> {
         let pasted = pasted_text(ui);
         let workspace = self.workspace.as_ref()?;
         let stale = workspace.revision != project_revision;
@@ -216,20 +224,23 @@ impl RomSharedPaletteEditor {
         let colors = palette.colors;
         let pages = colors.len().div_ceil(COLORS_PER_PAGE);
         self.page = self.page.min(pages.saturating_sub(1));
-        ui.label(format!(
-            "{backend:?} backend · {} colors · exact native .smwpal ordering",
-            colors.len()
-        ));
+        ui.label(
+            text(catalog, ExtendedUiTextKey::SharedPaletteSummaryFormat)
+                .replace("{backend}", &format!("{backend:?}"))
+                .replace("{colors}", &colors.len().to_string()),
+        );
         if stale {
             ui.colored_label(
                 egui::Color32::YELLOW,
-                "The ROM changed after this palette was opened. Reopen before committing.",
+                text(catalog, ExtendedUiTextKey::SharedPaletteStaleNotice),
             );
         }
-        self.complete_file_controls(ui, stale, project_revision);
+        self.complete_file_controls(ui, stale, project_revision, catalog);
         let palette_locked = stale || self.transfer_loader.is_running();
         ui.add_enabled_ui(!palette_locked, |ui| {
-            if let Some(result) = self.show_palette_grid(ui, &colors, pages, palette_locked) {
+            if let Some(result) =
+                self.show_palette_grid(ui, &colors, pages, palette_locked, catalog)
+            {
                 let result = result.and_then(|paste| match paste {
                     NativePaste::Color(color) => self.paste_color(color),
                     NativePaste::Row(colors) => self.paste_row(colors),
@@ -249,11 +260,11 @@ impl RomSharedPaletteEditor {
                     self.error = Some(error);
                 }
             }
-            self.show_color_form(ui, palette_locked);
+            self.show_color_form(ui, palette_locked, catalog);
         });
         if backend == SmwPaletteBackend::Expanded {
             ui.add_enabled_ui(!self.transfer_loader.is_running(), |ui| {
-                self.show_auxiliary_form(ui, stale);
+                self.show_auxiliary_form(ui, stale, catalog);
             });
         }
         ui.separator();
@@ -262,7 +273,7 @@ impl RomSharedPaletteEditor {
             if ui
                 .add_enabled(
                     dirty && !stale && !transfer_busy,
-                    egui::Button::new("Commit palette to ROM"),
+                    egui::Button::new(text(catalog, ExtendedUiTextKey::SharedPaletteCommit)),
                 )
                 .clicked()
             {
@@ -271,7 +282,14 @@ impl RomSharedPaletteEditor {
                     Err(error) => self.error = Some(error),
                 }
             }
-            ui.label(if dirty { "Staged" } else { "Unchanged" });
+            ui.label(text(
+                catalog,
+                if dirty {
+                    ExtendedUiTextKey::SharedPaletteStaged
+                } else {
+                    ExtendedUiTextKey::SharedPaletteUnchanged
+                },
+            ));
         });
         command
     }
@@ -282,16 +300,20 @@ impl RomSharedPaletteEditor {
         colors: &[Bgr555],
         pages: usize,
         stale: bool,
+        catalog: Option<&LocalizationCatalog>,
     ) -> Option<Result<NativePaste, String>> {
         let mut native_paste = None;
         ui.horizontal(|ui| {
-            ui.label("Page");
+            ui.label(text(catalog, ExtendedUiTextKey::SharedPalettePage));
             ui.add(
                 egui::DragValue::new(&mut self.page)
                     .range(0..=pages.saturating_sub(1))
                     .hexadecimal(1, false, true),
             );
-            ui.label(format!("of {}", pages.saturating_sub(1)));
+            ui.label(
+                text(catalog, ExtendedUiTextKey::SharedPalettePageOfFormat)
+                    .replace("{last}", &pages.saturating_sub(1).to_string()),
+            );
         });
         let start = self.page * COLORS_PER_PAGE;
         let end = (start + COLORS_PER_PAGE).min(colors.len());
@@ -367,27 +389,46 @@ impl RomSharedPaletteEditor {
         native_paste
     }
 
-    fn show_color_form(&mut self, ui: &mut egui::Ui, stale: bool) {
-        ui.label(format!("Selected color ${:03X}", self.selected));
+    fn show_color_form(
+        &mut self,
+        ui: &mut egui::Ui,
+        stale: bool,
+        catalog: Option<&LocalizationCatalog>,
+    ) {
+        ui.label(
+            text(catalog, ExtendedUiTextKey::SharedPaletteSelectedFormat)
+                .replace("{index}", &format!("{:03X}", self.selected)),
+        );
         egui::Grid::new("native-shared-palette-color-form")
             .striped(true)
             .show(ui, |ui| {
-                ui.label("SNES BGR555");
+                ui.label(text(catalog, ExtendedUiTextKey::SharedPaletteBgr555));
                 ui.add(
                     egui::DragValue::new(&mut self.form.word)
                         .range(0..=0x7fff)
                         .hexadecimal(4, false, true),
                 );
-                if ui.button("Decode raw").clicked()
+                if ui
+                    .button(text(catalog, ExtendedUiTextKey::SharedPaletteDecodeRaw))
+                    .clicked()
                     && let Err(error) = self.form.use_word()
                 {
                     self.error = Some(error);
                 }
                 ui.end_row();
                 for (label, channel) in [
-                    ("Red", &mut self.form.red),
-                    ("Green", &mut self.form.green),
-                    ("Blue", &mut self.form.blue),
+                    (
+                        text(catalog, ExtendedUiTextKey::SharedPaletteRed),
+                        &mut self.form.red,
+                    ),
+                    (
+                        text(catalog, ExtendedUiTextKey::SharedPaletteGreen),
+                        &mut self.form.green,
+                    ),
+                    (
+                        text(catalog, ExtendedUiTextKey::SharedPaletteBlue),
+                        &mut self.form.blue,
+                    ),
                 ] {
                     ui.label(label);
                     ui.add(egui::Slider::new(channel, 0..=255));
@@ -398,17 +439,23 @@ impl RomSharedPaletteEditor {
         ui.horizontal(|ui| {
             ui.colored_label(
                 egui::Color32::from_rgb(preview.red, preview.green, preview.blue),
-                "████ Preview",
+                text(catalog, ExtendedUiTextKey::SharedPalettePreview),
             );
             if ui
-                .add_enabled(!stale, egui::Button::new("Apply RGB color"))
+                .add_enabled(
+                    !stale,
+                    egui::Button::new(text(catalog, ExtendedUiTextKey::SharedPaletteApplyRgb)),
+                )
                 .clicked()
                 && let Err(error) = self.apply_rgb()
             {
                 self.error = Some(error);
             }
             if ui
-                .add_enabled(!stale, egui::Button::new("Apply raw word"))
+                .add_enabled(
+                    !stale,
+                    egui::Button::new(text(catalog, ExtendedUiTextKey::SharedPaletteApplyRaw)),
+                )
                 .clicked()
                 && let Err(error) = self.apply_raw()
             {
@@ -424,7 +471,10 @@ impl RomSharedPaletteEditor {
                         .and_then(|row| <[Bgr555; 16]>::try_from(row).ok())
                 });
             if ui
-                .add_enabled(row.is_some(), egui::Button::new("Copy row"))
+                .add_enabled(
+                    row.is_some(),
+                    egui::Button::new(text(catalog, ExtendedUiTextKey::SharedPaletteCopyRow)),
+                )
                 .clicked()
             {
                 if let Err(error) = native_clipboard::copy_palette_row_to_system(
@@ -435,7 +485,10 @@ impl RomSharedPaletteEditor {
                 }
             }
             if ui
-                .add_enabled(!stale && row.is_some(), egui::Button::new("Paste row"))
+                .add_enabled(
+                    !stale && row.is_some(),
+                    egui::Button::new(text(catalog, ExtendedUiTextKey::SharedPalettePasteRow)),
+                )
                 .clicked()
             {
                 match native_clipboard::request_palette_row_paste(ui.ctx()) {
@@ -450,7 +503,10 @@ impl RomSharedPaletteEditor {
             }
         });
         ui.horizontal(|ui| {
-            if ui.button("Copy color").clicked() {
+            if ui
+                .button(text(catalog, ExtendedUiTextKey::SharedPaletteCopyColor))
+                .clicked()
+            {
                 if let Err(error) =
                     native_clipboard::copy_palette_color_to_system(ui.ctx(), Bgr555(self.form.word))
                 {
@@ -458,7 +514,10 @@ impl RomSharedPaletteEditor {
                 }
             }
             if ui
-                .add_enabled(!stale, egui::Button::new("Paste color"))
+                .add_enabled(
+                    !stale,
+                    egui::Button::new(text(catalog, ExtendedUiTextKey::SharedPalettePasteColor)),
+                )
                 .clicked()
             {
                 match native_clipboard::request_palette_color_paste(ui.ctx()) {
@@ -471,16 +530,33 @@ impl RomSharedPaletteEditor {
                     Err(error) => self.error = Some(error),
                 }
             }
-            ui.small("Ctrl+left/right uses the swatches; add Alt for a complete row.");
+            ui.small(text(
+                catalog,
+                ExtendedUiTextKey::SharedPaletteClipboardNotice,
+            ));
         });
     }
 
-    fn show_auxiliary_form(&mut self, ui: &mut egui::Ui, stale: bool) {
+    fn show_auxiliary_form(
+        &mut self,
+        ui: &mut egui::Ui,
+        stale: bool,
+        catalog: Option<&LocalizationCatalog>,
+    ) {
         ui.separator();
-        ui.label("Expanded auxiliary bytes");
+        ui.label(text(
+            catalog,
+            ExtendedUiTextKey::SharedPaletteAuxiliaryBytes,
+        ));
         ui.text_edit_singleline(&mut self.auxiliary);
         if ui
-            .add_enabled(!stale, egui::Button::new("Stage auxiliary bytes"))
+            .add_enabled(
+                !stale,
+                egui::Button::new(text(
+                    catalog,
+                    ExtendedUiTextKey::SharedPaletteStageAuxiliary,
+                )),
+            )
             .clicked()
             && let Err(error) = self.apply_auxiliary()
         {
@@ -581,21 +657,37 @@ impl RomSharedPaletteEditor {
         }))
     }
 
-    fn close_confirmation(&mut self, context: &egui::Context) -> bool {
+    fn close_confirmation(
+        &mut self,
+        context: &egui::Context,
+        catalog: Option<&LocalizationCatalog>,
+    ) -> bool {
         let Some(pending) = self.pending_close else {
             return false;
         };
         let mut approved = false;
-        egui::Window::new("Discard shared-palette changes?")
+        egui::Window::new(text(catalog, ExtendedUiTextKey::SharedPaletteDiscardTitle))
             .collapsible(false)
             .resizable(false)
             .show(context, |ui| {
-                ui.label("The staged shared/custom palette has not been committed to the ROM.");
+                ui.label(text(catalog, ExtendedUiTextKey::SharedPaletteUnsavedNotice));
                 ui.horizontal(|ui| {
-                    if ui.button("Cancel").clicked() {
+                    if ui
+                        .button(crate::frontend_ui::localized_text(
+                            catalog,
+                            UiTextKey::CommonCancel,
+                        ))
+                        .clicked()
+                    {
                         self.pending_close = None;
                     }
-                    if ui.button("Discard").clicked() {
+                    if ui
+                        .button(crate::frontend_ui::localized_text(
+                            catalog,
+                            UiTextKey::UnsavedDiscard,
+                        ))
+                        .clicked()
+                    {
                         self.clear();
                         approved = pending == PendingClose::Application;
                     }
@@ -604,14 +696,23 @@ impl RomSharedPaletteEditor {
         approved
     }
 
-    fn show_error(&mut self, context: &egui::Context) {
+    fn show_error(&mut self, context: &egui::Context, catalog: Option<&LocalizationCatalog>) {
         if let Some(error) = self.error.clone() {
-            egui::Window::new("Shared-palette editor error").show(context, |ui| {
-                ui.label(error);
-                if ui.button("OK").clicked() {
-                    self.error = None;
-                }
-            });
+            egui::Window::new(text(catalog, ExtendedUiTextKey::SharedPaletteErrorTitle)).show(
+                context,
+                |ui| {
+                    ui.label(error);
+                    if ui
+                        .button(crate::frontend_ui::localized_text(
+                            catalog,
+                            UiTextKey::CommonOk,
+                        ))
+                        .clicked()
+                    {
+                        self.error = None;
+                    }
+                },
+            );
         }
     }
 
@@ -625,6 +726,10 @@ impl RomSharedPaletteEditor {
     pub(crate) fn commit_succeeded(&mut self) {
         self.clear();
     }
+}
+
+fn text(catalog: Option<&LocalizationCatalog>, key: ExtendedUiTextKey) -> String {
+    crate::frontend_ui::extended_localized_text(catalog, key)
 }
 
 fn palette_row(colors: &[Bgr555], selected: usize) -> Result<&[Bgr555], String> {
@@ -647,6 +752,41 @@ fn pasted_text(ui: &egui::Ui) -> Option<String> {
 mod tests {
     use super::*;
     use std::path::PathBuf;
+
+    #[test]
+    fn shared_palette_surface_uses_every_typed_extension_key() {
+        let source = include_str!("rom_shared_palette_editor.rs");
+        let transfer = include_str!("rom_shared_palette_editor/transfer.rs");
+        for key in ExtendedUiTextKey::ALL
+            .into_iter()
+            .filter(|key| format!("{key:?}").starts_with("SharedPalette"))
+        {
+            let needle = format!("ExtendedUiTextKey::{key:?}");
+            assert!(source.contains(&needle) || transfer.contains(&needle));
+        }
+        for bypass in [
+            "egui::Window::new(\"Native Shared/Custom SMW Palettes\")",
+            "egui::Button::new(\"Commit palette to ROM\")",
+            "ui.button(\"Decode raw\")",
+            "egui::Button::new(\"Apply RGB color\")",
+            "egui::Window::new(\"Discard shared-palette changes?\")",
+            "egui::Window::new(\"Shared-palette editor error\")",
+        ] {
+            assert!(
+                !source.contains(bypass),
+                "shared-palette surface bypasses typed localization with {bypass}"
+            );
+        }
+        for bypass in [
+            "egui::Button::new(\"Import complete .smwpal…\")",
+            "egui::Button::new(\"Export complete .smwpal…\")",
+        ] {
+            assert!(
+                !transfer.contains(bypass),
+                "shared-palette transfer bypasses typed localization with {bypass}"
+            );
+        }
+    }
 
     fn pristine_app() -> (AppState, Vec<u8>) {
         let _root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");

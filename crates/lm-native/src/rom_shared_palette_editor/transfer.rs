@@ -1,6 +1,7 @@
-use super::{ColorForm, RomSharedPaletteEditor, format_bytes};
+use super::{ColorForm, RomSharedPaletteEditor, format_bytes, text};
 use crate::{dialogs, document_loader::BoundedRead, persistence_worker::PersistenceTarget};
 use eframe::egui;
+use lm_app::{ExtendedUiTextKey, LocalizationCatalog};
 use lm_graphics::SmwPaletteFile;
 
 impl RomSharedPaletteEditor {
@@ -55,13 +56,19 @@ impl RomSharedPaletteEditor {
         }
     }
 
-    pub(super) fn complete_file_controls(&mut self, ui: &mut egui::Ui, stale: bool, revision: u64) {
+    pub(super) fn complete_file_controls(
+        &mut self,
+        ui: &mut egui::Ui,
+        stale: bool,
+        revision: u64,
+        catalog: Option<&LocalizationCatalog>,
+    ) {
         let busy = self.transfer_loader.is_running() || self.transfer_persistence.is_running();
         ui.horizontal(|ui| {
             if ui
                 .add_enabled(
                     !stale && !busy,
-                    egui::Button::new("Import complete .smwpal…"),
+                    egui::Button::new(text(catalog, ExtendedUiTextKey::SharedPaletteImport)),
                 )
                 .clicked()
             {
@@ -70,14 +77,17 @@ impl RomSharedPaletteEditor {
             if ui
                 .add_enabled(
                     !stale && !busy,
-                    egui::Button::new("Export complete .smwpal…"),
+                    egui::Button::new(text(catalog, ExtendedUiTextKey::SharedPaletteExport)),
                 )
                 .clicked()
             {
                 self.start_complete_export(revision);
             }
         });
-        ui.small("Complete transfer preserves exact legacy or expanded native byte ordering.");
+        ui.small(text(
+            catalog,
+            ExtendedUiTextKey::SharedPaletteTransferNotice,
+        ));
     }
 
     pub(super) fn start_complete_export(&mut self, revision: u64) {

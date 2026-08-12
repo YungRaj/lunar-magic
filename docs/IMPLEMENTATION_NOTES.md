@@ -7140,6 +7140,17 @@ rejects literal widget text and requires every `EventNumber*` key. Localization 
 event-number editor 5/5—including high-event install/reopen, invalid/stale handling, and pristine
 plus installed recovery—and renderer 237/237 pass. Localization stays Partial for remaining forms
 and live original language-DLL evidence; aggregate parity remains 60/65.
+
+Localization coverage update (2026-08-11, shared/custom palettes): the complete main editor and
+`.smwpal` transfer surface now use thirty typed extension keys for the window, dynamic backend/color
+summary, stale state, exact import/export guidance, page/selection templates, raw/RGB channels,
+preview, color/row clipboard actions, expanded auxiliary bytes, commit state, discard, and errors.
+Shared Cancel/Discard/OK retain fixed-prefix keys. A two-module source audit requires every
+`SharedPalette*` key and rejects representative literal bypasses. Localization model 28/28 and the
+shared-palette family 12/12 pass: legacy/expanded backends, ExLoROM routing, exact native-file round
+trips, safe backend upgrade, RGB/raw and row edits, auxiliary preservation, commit/reopen/undo, and
+composed recovery. Renderer parity remains 237/237. Localization stays Partial for remaining forms
+and live original language-DLL evidence; aggregate parity remains 60/65.
 Localization coverage update (2026-08-11, overworld level names): the complete lossless 19-tile
 name-table editor now uses fifteen typed extension keys for its window, record/count descriptions,
 stale warning, level/tile/value fields, load/apply/commit actions, staged state, unsaved confirmation,
