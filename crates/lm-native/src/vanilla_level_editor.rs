@@ -22640,6 +22640,24 @@ mod tests {
     }
 
     #[test]
+    fn inactive_application_pause_freezes_and_resumes_without_a_phase_jump() {
+        let mut editor = VanillaLevelEditor::default();
+        editor.set_application_animation_state(true, true);
+        assert!((editor.animation_seconds(1.0) - 1.0).abs() < f64::EPSILON);
+        editor.set_application_animation_state(false, true);
+        assert!((editor.animation_seconds(10.0) - 10.0).abs() < f64::EPSILON);
+        assert!((editor.animation_seconds(20.0) - 10.0).abs() < f64::EPSILON);
+        editor.set_application_animation_state(true, true);
+        assert!((editor.animation_seconds(30.0) - 10.0).abs() < f64::EPSILON);
+        assert!((editor.animation_seconds(31.0) - 11.0).abs() < f64::EPSILON);
+
+        let mut disabled = VanillaLevelEditor::default();
+        disabled.set_application_animation_state(false, false);
+        assert!((disabled.animation_seconds(10.0) - 10.0).abs() < f64::EPSILON);
+        assert!((disabled.animation_seconds(20.0) - 20.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
     fn toolbar_switch_commands_toggle_four_independent_default_on_states() {
         let mut editor = VanillaLevelEditor::default();
         assert_eq!(
