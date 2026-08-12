@@ -1,6 +1,9 @@
 use eframe::egui;
+use lm_app::{LocalizationCatalog, UiTextKey};
 use lm_update::{MAX_ARCHIVE_BYTES, MAX_MANIFEST_BYTES, UpdateManifest, Version};
 use std::{fs, path::PathBuf};
+
+use crate::frontend_ui::localized_text;
 
 struct Offer {
     manifest: UpdateManifest,
@@ -45,24 +48,46 @@ impl UpdateDialog {
         }
     }
 
-    pub(crate) fn show(&mut self, context: &egui::Context) {
+    pub(crate) fn show(&mut self, context: &egui::Context, catalog: Option<&LocalizationCatalog>) {
         if self.offer.is_some() {
             let mut cancel = false;
             let mut stage = false;
             let offer = self.offer.as_ref().unwrap();
-            egui::Window::new("Verified update available")
+            egui::Window::new(localized_text(catalog, UiTextKey::UpdateAvailableTitle))
                 .collapsible(false)
                 .resizable(false)
                 .show(context, |ui| {
-                    ui.label(format!("Version: {}", offer.manifest.version));
-                    ui.label(format!("Platform: {}", offer.manifest.target));
-                    ui.label(format!("Archive: {}", offer.manifest.archive));
-                    ui.label(format!("Size: {} bytes", offer.manifest.length));
-                    ui.label("The current application will not be replaced automatically.");
+                    ui.label(format_field(
+                        catalog,
+                        UiTextKey::UpdateVersionFormat,
+                        "{version}",
+                        &offer.manifest.version.to_string(),
+                    ));
+                    ui.label(format_field(
+                        catalog,
+                        UiTextKey::UpdatePlatformFormat,
+                        "{platform}",
+                        &offer.manifest.target,
+                    ));
+                    ui.label(format_field(
+                        catalog,
+                        UiTextKey::UpdateArchiveFormat,
+                        "{archive}",
+                        &offer.manifest.archive,
+                    ));
+                    ui.label(format_field(
+                        catalog,
+                        UiTextKey::UpdateSizeFormat,
+                        "{bytes}",
+                        &offer.manifest.length.to_string(),
+                    ));
+                    ui.label(localized_text(catalog, UiTextKey::UpdateRunningSafeNotice));
                     ui.horizontal(|ui| {
-                        cancel = ui.button("Cancel").clicked();
+                        cancel = ui
+                            .button(localized_text(catalog, UiTextKey::CommonCancel))
+                            .clicked();
                         stage = ui
-                            .button("Choose folder and stage verified archive")
+                            .button(localized_text(catalog, UiTextKey::UpdateChooseStageFolder))
                             .clicked();
                     });
                 });
@@ -89,16 +114,23 @@ impl UpdateDialog {
             let staged = self.staged.as_ref().unwrap();
             let mut close = false;
             let mut install = false;
-            egui::Window::new("Update staged")
+            egui::Window::new(localized_text(catalog, UiTextKey::UpdateStagedTitle))
                 .collapsible(false)
                 .resizable(false)
                 .show(context, |ui| {
-                    ui.label("The verified archive is ready for immutable installation.");
+                    ui.label(localized_text(catalog, UiTextKey::UpdateStagedReady));
                     ui.label(staged.archive.display().to_string());
-                    ui.label("Installation creates a new version directory and changes only the rollback-safe launcher selector.");
+                    ui.label(localized_text(
+                        catalog,
+                        UiTextKey::UpdateImmutableInstallNotice,
+                    ));
                     ui.horizontal(|ui| {
-                        close = ui.button("Keep staged only").clicked();
-                        install = ui.button("Choose install root and activate").clicked();
+                        close = ui
+                            .button(localized_text(catalog, UiTextKey::UpdateKeepStaged))
+                            .clicked();
+                        install = ui
+                            .button(localized_text(catalog, UiTextKey::UpdateChooseInstallRoot))
+                            .clicked();
                     });
                 });
             if close {
@@ -119,38 +151,59 @@ impl UpdateDialog {
         }
         if let Some(installed) = self.installed.as_ref() {
             let mut close = false;
-            egui::Window::new("Update activated")
+            egui::Window::new(localized_text(catalog, UiTextKey::UpdateActivatedTitle))
                 .collapsible(false)
                 .resizable(false)
                 .show(context, |ui| {
-                    ui.label("Exit this application, then restart through lm-launcher.");
-                    ui.label(format!(
-                        "Version directory: {}",
-                        installed.directory.display()
+                    ui.label(localized_text(catalog, UiTextKey::UpdateRestartNotice));
+                    ui.label(format_field(
+                        catalog,
+                        UiTextKey::UpdateVersionDirectoryFormat,
+                        "{path}",
+                        &installed.directory.display().to_string(),
                     ));
-                    ui.label(format!(
-                        "Selected executable: {}",
-                        installed.executable.display()
+                    ui.label(format_field(
+                        catalog,
+                        UiTextKey::UpdateSelectedExecutableFormat,
+                        "{path}",
+                        &installed.executable.display().to_string(),
                     ));
-                    ui.label("The previous selected version remains available for rollback.");
-                    close = ui.button("OK").clicked();
+                    ui.label(localized_text(catalog, UiTextKey::UpdateRollbackNotice));
+                    close = ui
+                        .button(localized_text(catalog, UiTextKey::CommonOk))
+                        .clicked();
                 });
             if close {
                 self.installed = None;
             }
         }
         if let Some(error) = self.error.clone() {
-            egui::Window::new("Update verification failed")
-                .collapsible(false)
-                .resizable(false)
-                .show(context, |ui| {
-                    ui.label(error);
-                    if ui.button("OK").clicked() {
-                        self.error = None;
-                    }
-                });
+            egui::Window::new(localized_text(
+                catalog,
+                UiTextKey::UpdateVerificationFailedTitle,
+            ))
+            .collapsible(false)
+            .resizable(false)
+            .show(context, |ui| {
+                ui.label(error);
+                if ui
+                    .button(localized_text(catalog, UiTextKey::CommonOk))
+                    .clicked()
+                {
+                    self.error = None;
+                }
+            });
         }
     }
+}
+
+fn format_field(
+    catalog: Option<&LocalizationCatalog>,
+    key: UiTextKey,
+    placeholder: &str,
+    value: &str,
+) -> String {
+    localized_text(catalog, key).replace(placeholder, value)
 }
 
 fn load_offer(path: PathBuf) -> Result<Offer, String> {
@@ -214,6 +267,66 @@ mod tests {
     use flate2::{Compression, write::GzEncoder};
     use sha2::{Digest, Sha256};
     use std::io::Write;
+
+    #[test]
+    fn update_dialog_surface_has_no_literal_widget_text() {
+        let source = include_str!("update_dialog.rs");
+        for literal_widget in [
+            "egui::Window::new(\"",
+            "ui.button(\"",
+            "egui::Button::new(\"",
+            "ui.label(\"",
+        ] {
+            assert!(
+                !source.contains(literal_widget),
+                "update dialog bypasses typed localization with {literal_widget}"
+            );
+        }
+        for key in [
+            UiTextKey::UpdateAvailableTitle,
+            UiTextKey::UpdateChooseStageFolder,
+            UiTextKey::UpdateStagedTitle,
+            UiTextKey::UpdateChooseInstallRoot,
+            UiTextKey::UpdateActivatedTitle,
+            UiTextKey::UpdateVerificationFailedTitle,
+        ] {
+            assert!(source.contains(&format!("UiTextKey::{key:?}")));
+        }
+    }
+
+    #[test]
+    fn update_dynamic_fields_use_installed_translation_templates() {
+        let catalog = LocalizationCatalog::new(
+            "zz-test",
+            UiTextKey::ALL.map(|key| {
+                let text = match key {
+                    UiTextKey::UpdateVersionFormat => "Versio={version}",
+                    UiTextKey::UpdateVersionDirectoryFormat => "Dosier={path}",
+                    _ => key.english(),
+                };
+                (key, text.to_owned())
+            }),
+        )
+        .unwrap();
+        assert_eq!(
+            format_field(
+                Some(&catalog),
+                UiTextKey::UpdateVersionFormat,
+                "{version}",
+                "2.4.0"
+            ),
+            "Versio=2.4.0"
+        );
+        assert_eq!(
+            format_field(
+                Some(&catalog),
+                UiTextKey::UpdateVersionDirectoryFormat,
+                "{path}",
+                "/versions/2.4.0"
+            ),
+            "Dosier=/versions/2.4.0"
+        );
+    }
 
     fn portable_bundle(native: &[u8]) -> Vec<u8> {
         fn octal(field: &mut [u8], value: u64) {

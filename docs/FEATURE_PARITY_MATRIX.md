@@ -1167,6 +1167,15 @@ manifest. Launcher 2/2, updater 11/11, packager 3/3, and renderer 237/237 pass. 
 consent and retained cross-platform release execution remain missing, so Release stays Partial and
 aggregate parity remains 60/65.
 
+Localization coverage update (2026-08-11, verified-update family): the complete offer, stage,
+install, activation, rollback guidance, and failure UI now uses eighteen typed catalog entries.
+Dynamic version/platform/archive/size/path values are substituted into translated templates, and a
+source audit prevents literal window, label, and button regressions. Catalog migration now proves
+that every accepted historical 19/183/184/199/201/212-key prefix remains translated while the new
+230-key suffix receives canonical English fallback. Localization 26/26 focused tests, updater 6/6,
+and renderer 237/237 pass. Other native forms and retained live language-DLL evidence remain open;
+Localization stays Partial and aggregate parity remains 60/65.
+
 Cross-platform release execution gate update (2026-08-11): the portable-release matrix now runs
 `lm-package`, `lm-update`, and `lm-launcher` contract tests on every native release runner instead
 of testing only the packager. Windows receives real process coverage by copying `cmd.exe` into two

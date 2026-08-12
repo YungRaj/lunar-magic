@@ -1816,7 +1816,7 @@ impl eframe::App for NativeApplication {
         self.diagnostics_dialog
             .show(context, self.app.localization());
         self.help_dialog.show(context, self.app.localization());
-        self.update_dialog.show(context);
+        self.update_dialog.show(context, self.app.localization());
         if let Some(level) = self
             .open_level_number_dialog
             .show(context, self.app.localization())

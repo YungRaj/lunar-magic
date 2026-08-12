@@ -7077,3 +7077,14 @@ tampering. Native Unix execution remains covered by its exact argument/exit/swit
 the Windows test target cross-compiles locally. The public workflow currently has no retained run,
 so hosted four-platform execution and a real tag publication remain required. Release stays Partial
 and aggregate parity remains 60/65.
+
+Localization coverage update (2026-08-11, verified-update family): all eighteen static and dynamic
+texts across offer review, staging, immutable installation, activation, restart/rollback guidance,
+and failure acknowledgement now route through typed `UiTextKey` entries and the active catalog.
+Version, target, archive, byte count, and installed paths use localized templates rather than
+concatenated English labels. Catalog decoding preserves each historical 19/183/184/199/201/212-key
+translated prefix and appends English fallbacks for the new 230-key schema. A source audit rejects
+literal window/button/label text in the complete update dialog, and a translated-template test
+proves dynamic replacement. Localization 26/26 focused tests, native updater 6/6, and renderer
+237/237 pass. Remaining native forms and retained original language-DLL behavior keep Localization
+Partial; aggregate parity remains 60/65.

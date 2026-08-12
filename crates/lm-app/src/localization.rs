@@ -20,8 +20,8 @@ const MAX_LOCALE_BYTES: usize = 64;
 const MAX_TEXT_BYTES: usize = 4096;
 const MAX_DIALOG_TEXT_ENTRIES: usize = 4096;
 const LEGACY_CHROME_KEY_COUNT: usize = 19;
-const PREVIOUS_COMPLETE_KEY_COUNT: usize = 201;
-const EARLIER_COMPLETE_KEY_COUNTS: [usize; 3] = [183, 184, 199];
+const PREVIOUS_COMPLETE_KEY_COUNT: usize = 212;
+const EARLIER_COMPLETE_KEY_COUNTS: [usize; 4] = [183, 184, 199, 201];
 const MAX_ENCODED_BYTES: usize = MAGIC.len()
     + 2
     + MAX_LOCALE_BYTES
@@ -1062,6 +1062,24 @@ pub enum UiTextKey {
     DeleteMultipleLevelsDependencyWarning,
     FileClearOriginalLevelArea,
     ClearOriginalLevelAreaDescription,
+    UpdateAvailableTitle,
+    UpdateVersionFormat,
+    UpdatePlatformFormat,
+    UpdateArchiveFormat,
+    UpdateSizeFormat,
+    UpdateRunningSafeNotice,
+    UpdateChooseStageFolder,
+    UpdateStagedTitle,
+    UpdateStagedReady,
+    UpdateImmutableInstallNotice,
+    UpdateKeepStaged,
+    UpdateChooseInstallRoot,
+    UpdateActivatedTitle,
+    UpdateRestartNotice,
+    UpdateVersionDirectoryFormat,
+    UpdateSelectedExecutableFormat,
+    UpdateRollbackNotice,
+    UpdateVerificationFailedTitle,
 }
 
 impl UiTextKey {
@@ -1322,10 +1340,34 @@ impl UiTextKey {
             Self::ClearOriginalLevelAreaDescription => {
                 "This will resave levels that have not been modified into the expanded ROM area, then clear the original level-data area for reuse."
             }
+            Self::UpdateAvailableTitle => "Verified update available",
+            Self::UpdateVersionFormat => "Version: {version}",
+            Self::UpdatePlatformFormat => "Platform: {platform}",
+            Self::UpdateArchiveFormat => "Archive: {archive}",
+            Self::UpdateSizeFormat => "Size: {bytes} bytes",
+            Self::UpdateRunningSafeNotice => {
+                "The current application will not be replaced automatically."
+            }
+            Self::UpdateChooseStageFolder => "Choose folder and stage verified archive",
+            Self::UpdateStagedTitle => "Update staged",
+            Self::UpdateStagedReady => "The verified archive is ready for immutable installation.",
+            Self::UpdateImmutableInstallNotice => {
+                "Installation creates a new version directory and changes only the rollback-safe launcher selector."
+            }
+            Self::UpdateKeepStaged => "Keep staged only",
+            Self::UpdateChooseInstallRoot => "Choose install root and activate",
+            Self::UpdateActivatedTitle => "Update activated",
+            Self::UpdateRestartNotice => "Exit this application, then restart through lm-launcher.",
+            Self::UpdateVersionDirectoryFormat => "Version directory: {path}",
+            Self::UpdateSelectedExecutableFormat => "Selected executable: {path}",
+            Self::UpdateRollbackNotice => {
+                "The previous selected version remains available for rollback."
+            }
+            Self::UpdateVerificationFailedTitle => "Update verification failed",
         }
     }
 
-    pub const ALL: [Self; 212] = [
+    pub const ALL: [Self; 230] = [
         Self::AppTitle,
         Self::FileOpen,
         Self::FileSave,
@@ -1538,6 +1580,24 @@ impl UiTextKey {
         Self::DeleteMultipleLevelsDependencyWarning,
         Self::FileClearOriginalLevelArea,
         Self::ClearOriginalLevelAreaDescription,
+        Self::UpdateAvailableTitle,
+        Self::UpdateVersionFormat,
+        Self::UpdatePlatformFormat,
+        Self::UpdateArchiveFormat,
+        Self::UpdateSizeFormat,
+        Self::UpdateRunningSafeNotice,
+        Self::UpdateChooseStageFolder,
+        Self::UpdateStagedTitle,
+        Self::UpdateStagedReady,
+        Self::UpdateImmutableInstallNotice,
+        Self::UpdateKeepStaged,
+        Self::UpdateChooseInstallRoot,
+        Self::UpdateActivatedTitle,
+        Self::UpdateRestartNotice,
+        Self::UpdateVersionDirectoryFormat,
+        Self::UpdateSelectedExecutableFormat,
+        Self::UpdateRollbackNotice,
+        Self::UpdateVerificationFailedTitle,
     ];
 
     fn from_byte(value: u8) -> Option<Self> {
@@ -2841,27 +2901,17 @@ mod tests {
             }
 
             let upgraded = LocalizationCatalog::decode(&bytes).unwrap();
-            assert_eq!(upgraded.text(UiTextKey::CommonApply), "viejo-CommonApply");
-            assert_eq!(
-                upgraded.text(UiTextKey::ToolsLiveEmulator),
-                if count > UiTextKey::ToolsLiveEmulator as usize {
-                    "viejo-ToolsLiveEmulator"
-                } else {
-                    "Live ROM Test (Libretro)…"
-                }
-            );
-            assert_eq!(
-                upgraded.text(UiTextKey::FileExtractOldBypassList),
-                if count > UiTextKey::FileExtractOldBypassList as usize {
-                    "viejo-FileExtractOldBypassList"
-                } else {
-                    "Extract Old Bypass List from ROM…"
-                }
-            );
-            assert_eq!(
-                upgraded.text(UiTextKey::FileDeleteMultipleLevels),
-                "Delete Multiple Levels from ROM…"
-            );
+            for (index, key) in UiTextKey::ALL.into_iter().enumerate() {
+                assert_eq!(
+                    upgraded.text(key),
+                    if index < count {
+                        format!("viejo-{key:?}")
+                    } else {
+                        key.english().to_owned()
+                    },
+                    "wrong migration at key {key:?} for historical count {count}"
+                );
+            }
             assert_eq!(
                 LocalizationCatalog::decode(&upgraded.encode().unwrap()).unwrap(),
                 upgraded
