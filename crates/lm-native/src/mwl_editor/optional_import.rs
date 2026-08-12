@@ -1,33 +1,43 @@
-use super::{BoundedRead, MwlEditor, OptionalAssetsInterpretation, PendingLoad, dialogs};
+use super::{
+    BoundedRead, MwlEditor, OptionalAssetsInterpretation, OptionalCatalogText, PendingLoad, dialogs,
+};
 use crate::{animation_modes, document_loader::LoadedDocument};
 use eframe::egui;
-use lm_app::MwlDocumentController;
+use lm_app::{ExtendedUiTextKey as Key, LocalizationCatalog, MwlDocumentController};
 use lm_level::MwlFile;
 use lm_project::MwlOptionalLevelAssets;
 
 impl MwlEditor {
-    pub(super) fn optional_assets_import_controls(&mut self, ui: &mut egui::Ui) {
-        ui.label("Typed palette and ExAnimation import");
+    pub(super) fn optional_assets_import_controls(
+        &mut self,
+        ui: &mut egui::Ui,
+        catalog: Option<&LocalizationCatalog>,
+    ) {
+        ui.label(catalog.extended_text(Key::MwlOptionalImportHeading));
         ui.horizontal(|ui| {
-            ui.label("Maximum ExAnimation records:");
+            ui.label(catalog.extended_text(Key::MwlOptionalMaximumRecords));
             ui.text_edit_singleline(&mut self.optional_maximum_records);
             let enabled = !self.loader.is_running() && !self.persistence.is_running();
             if ui
-                .add_enabled(enabled, egui::Button::new("Import from MWL…"))
+                .add_enabled(
+                    enabled,
+                    egui::Button::new(catalog.extended_text(Key::MwlOptionalImport)),
+                )
                 .clicked()
             {
                 self.begin_optional_assets_import();
             }
             if ui
-                .add_enabled(enabled, egui::Button::new("Interpret current sections…"))
+                .add_enabled(
+                    enabled,
+                    egui::Button::new(catalog.extended_text(Key::MwlOptionalInterpret)),
+                )
                 .clicked()
             {
                 self.begin_optional_assets_interpretation();
             }
         });
-        ui.label(
-            "Select a source MWL and its exact 256-byte size-mode table. Other target sections are preserved.",
-        );
+        ui.label(catalog.extended_text(Key::MwlOptionalImportNotice));
     }
 
     fn begin_optional_assets_interpretation(&mut self) {

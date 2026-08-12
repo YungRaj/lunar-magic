@@ -2,10 +2,10 @@ use crate::{
     dialogs,
     document_loader::{BoundedRead, DocumentLoader},
     document_persistence::DocumentPersistence,
-    mwl_editor_form::{MwlForm, SECTION_NAMES},
+    mwl_editor_form::MwlForm,
 };
 use eframe::egui;
-use lm_app::{MwlDocumentController, MwlDocumentEdit};
+use lm_app::{ExtendedUiTextKey, LocalizationCatalog, MwlDocumentController, MwlDocumentEdit};
 use lm_level::MwlFile;
 
 mod object_panel;
@@ -118,7 +118,11 @@ impl MwlEditor {
         false
     }
 
-    pub(crate) fn show(&mut self, context: &egui::Context) -> bool {
+    pub(crate) fn show(
+        &mut self,
+        context: &egui::Context,
+        catalog: Option<&LocalizationCatalog>,
+    ) -> bool {
         self.poll_load(context);
         if let Some(controller) = self.controller.as_mut()
             && let Some(Err(error)) = self.persistence.show(context, controller)
@@ -127,13 +131,13 @@ impl MwlEditor {
         }
         if self.controller.is_some() {
             self.load_form();
-            egui::Window::new("Portable MWL Editor")
+            egui::Window::new(text(catalog, ExtendedUiTextKey::MwlDocumentEditorTitle))
                 .default_size([800.0, 650.0])
                 .vscroll(true)
-                .show(context, |ui| self.contents(ui));
+                .show(context, |ui| self.contents(ui, catalog));
         }
-        let approved = self.show_close_confirmation(context);
-        self.show_error(context);
+        let approved = self.show_close_confirmation(context, catalog);
+        self.show_error(context, catalog);
         approved
     }
 
@@ -163,16 +167,26 @@ impl MwlEditor {
         }
     }
 
-    fn contents(&mut self, ui: &mut egui::Ui) {
-        self.toolbar(ui);
+    fn contents(&mut self, ui: &mut egui::Ui, catalog: Option<&LocalizationCatalog>) {
+        self.toolbar(ui, catalog);
         ui.separator();
         let version = self
             .controller
             .as_ref()
             .map_or(0, |controller| controller.value().version);
-        ui.label(format!("Preserved MWL version: {version:04X}"));
-        text_field(ui, "Flags (hex)", &mut self.form.flags);
-        ui.label("Attribution (exactly 48 hexadecimal bytes):");
+        ui.label(
+            text(catalog, ExtendedUiTextKey::MwlDocumentVersionFormat)
+                .replace("{version}", &format!("{version:04X}")),
+        );
+        text_field(
+            ui,
+            &text(catalog, ExtendedUiTextKey::MwlDocumentFlagsHex),
+            &mut self.form.flags,
+        );
+        ui.label(text(
+            catalog,
+            ExtendedUiTextKey::MwlDocumentAttributionNotice,
+        ));
         ui.add(
             egui::TextEdit::multiline(&mut self.form.attribution)
                 .desired_rows(3)
@@ -180,25 +194,28 @@ impl MwlEditor {
         );
         text_field(
             ui,
-            "Level number (hex; blank if header is not exact 64 bytes)",
+            &text(catalog, ExtendedUiTextKey::MwlDocumentLevelNumberNotice),
             &mut self.form.level_number,
         );
-        self.entrance_settings(ui);
-        if ui.button("Apply recovered MWL header fields").clicked() {
+        self.entrance_settings(ui, catalog);
+        if ui
+            .button(text(catalog, ExtendedUiTextKey::MwlDocumentApplyHeader))
+            .clicked()
+        {
             match self.form.header_edits() {
                 Ok(edits) => self.apply_edits(&edits),
                 Err(error) => self.error = Some(error),
             }
         }
-        self.layer3_settings_panel(ui);
+        self.layer3_settings_panel(ui, catalog);
         ui.separator();
-        self.optional_assets_import_controls(ui);
-        self.show_optional_assets_panel(ui);
+        self.optional_assets_import_controls(ui, catalog);
+        self.show_optional_assets_panel(ui, catalog);
         ui.separator();
         let object_result = self
             .controller
             .as_mut()
-            .map(|controller| self.object_panel.show(ui, controller));
+            .map(|controller| self.object_panel.show(ui, controller, catalog));
         match object_result {
             Some(Ok(true)) => self.invalidate(),
             Some(Err(error)) => self.error = Some(error),
@@ -208,7 +225,7 @@ impl MwlEditor {
         let sprite_result = self
             .controller
             .as_mut()
-            .map(|controller| self.sprite_panel.show(ui, controller));
+            .map(|controller| self.sprite_panel.show(ui, controller, catalog));
         match sprite_result {
             Some(Ok(true)) => self.invalidate(),
             Some(Err(error)) => self.error = Some(error),
@@ -216,10 +233,11 @@ impl MwlEditor {
         }
         ui.separator();
         let previous_section = self.form.section_index;
+        let section_names = mwl_section_names(catalog);
         egui::ComboBox::from_id_salt("mwl-section")
-            .selected_text(SECTION_NAMES[self.form.section_index])
+            .selected_text(&section_names[self.form.section_index])
             .show_ui(ui, |ui| {
-                for (index, name) in SECTION_NAMES.into_iter().enumerate() {
+                for (index, name) in section_names.iter().enumerate() {
                     ui.selectable_value(&mut self.form.section_index, index, name);
                 }
             });
@@ -232,14 +250,20 @@ impl MwlEditor {
                 .bytes
                 .len()
         });
-        ui.label(format!("Current section length: {section_len} bytes"));
-        ui.label("Opaque section bytes:");
+        ui.label(
+            text(catalog, ExtendedUiTextKey::MwlDocumentSectionLengthFormat)
+                .replace("{length}", &section_len.to_string()),
+        );
+        ui.label(text(catalog, ExtendedUiTextKey::MwlDocumentSectionBytes));
         ui.add(
             egui::TextEdit::multiline(&mut self.form.section_bytes)
                 .desired_rows(14)
                 .code_editor(),
         );
-        if ui.button("Replace selected section atomically").clicked() {
+        if ui
+            .button(text(catalog, ExtendedUiTextKey::MwlDocumentReplaceSection))
+            .clicked()
+        {
             match self.form.section_edit() {
                 Ok(edit) => self.apply_edits(std::slice::from_ref(&edit)),
                 Err(error) => self.error = Some(error),
@@ -247,121 +271,148 @@ impl MwlEditor {
         }
     }
 
-    fn layer3_settings_panel(&mut self, ui: &mut egui::Ui) {
+    fn layer3_settings_panel(&mut self, ui: &mut egui::Ui, catalog: Option<&LocalizationCatalog>) {
         let available = self
             .controller
             .as_ref()
             .is_some_and(|controller| controller.value().expanded_settings_section().is_ok());
-        ui.collapsing("Layer 3 expanded settings", |ui| {
-            if !available {
-                ui.label("This MWL has no exact expanded-settings section.");
-                return;
-            }
-            ui.checkbox(
-                &mut self.layer3_settings.layer3_enabled,
-                "Enable custom Layer 3 tilemap",
-            );
-            text_field(ui, "GFX/ExGFX file", &mut self.layer3_settings.layer3_file);
-            ui.add(
-                egui::Slider::new(&mut self.layer3_settings.layer3_length_selector, 0..=3)
-                    .text("Length selector"),
-            );
-            ui.add(
-                egui::Slider::new(&mut self.layer3_settings.layer3_offset_selector, 0..=3)
-                    .text("Destination selector"),
-            );
-            text_field(
-                ui,
-                "Expanded mode (8 hex digits)",
-                &mut self.layer3_settings.layer3_expanded_mode,
-            );
-            if ui.button("Apply Layer 3 expanded settings").clicked() {
-                match apply_layer3_settings_form(
-                    self.controller.as_mut().expect("availability checked"),
-                    &self.layer3_settings,
-                ) {
-                    Ok(()) => self.invalidate(),
-                    Err(error) => self.error = Some(error),
+        ui.collapsing(
+            text(catalog, ExtendedUiTextKey::MwlDocumentLayer3Heading),
+            |ui| {
+                if !available {
+                    ui.label(text(
+                        catalog,
+                        ExtendedUiTextKey::MwlDocumentLayer3Unavailable,
+                    ));
+                    return;
                 }
-            }
-        });
+                ui.checkbox(
+                    &mut self.layer3_settings.layer3_enabled,
+                    text(catalog, ExtendedUiTextKey::MwlDocumentLayer3Enable),
+                );
+                text_field(
+                    ui,
+                    &text(catalog, ExtendedUiTextKey::MwlDocumentLayer3File),
+                    &mut self.layer3_settings.layer3_file,
+                );
+                ui.add(
+                    egui::Slider::new(&mut self.layer3_settings.layer3_length_selector, 0..=3)
+                        .text(text(catalog, ExtendedUiTextKey::MwlDocumentLengthSelector)),
+                );
+                ui.add(
+                    egui::Slider::new(&mut self.layer3_settings.layer3_offset_selector, 0..=3)
+                        .text(text(
+                            catalog,
+                            ExtendedUiTextKey::MwlDocumentDestinationSelector,
+                        )),
+                );
+                text_field(
+                    ui,
+                    &text(catalog, ExtendedUiTextKey::MwlDocumentExpandedMode),
+                    &mut self.layer3_settings.layer3_expanded_mode,
+                );
+                if ui
+                    .button(text(catalog, ExtendedUiTextKey::MwlDocumentApplyLayer3))
+                    .clicked()
+                {
+                    match apply_layer3_settings_form(
+                        self.controller.as_mut().expect("availability checked"),
+                        &self.layer3_settings,
+                    ) {
+                        Ok(()) => self.invalidate(),
+                        Err(error) => self.error = Some(error),
+                    }
+                }
+            },
+        );
     }
 
-    fn entrance_settings(&mut self, ui: &mut egui::Ui) {
-        ui.collapsing("Packed entrance settings", |ui| {
-            ui.label(
-                "Lossless Lunar Magic fields. Bit meanings vary by level mode and installed runtime.",
-            );
-            egui::Grid::new("mwl-main-entrance").show(ui, |ui| {
-                for (label, value) in [
-                    "Main position",
-                    "Main vertical settings",
-                    "Main screen/method",
-                    "Main level mode/screen",
-                    "Main flags",
-                    "Main high position",
-                    "Main additional flags",
-                ]
-                .into_iter()
-                .zip(&mut self.form.main_entrance)
-                {
-                    ui.label(label);
-                    ui.text_edit_singleline(value);
+    fn entrance_settings(&mut self, ui: &mut egui::Ui, catalog: Option<&LocalizationCatalog>) {
+        ui.collapsing(
+            text(catalog, ExtendedUiTextKey::MwlDocumentEntranceHeading),
+            |ui| {
+                ui.label(text(catalog, ExtendedUiTextKey::MwlDocumentEntranceNotice));
+                egui::Grid::new("mwl-main-entrance").show(ui, |ui| {
+                    for (key, value) in [
+                        ExtendedUiTextKey::MwlDocumentMainPosition,
+                        ExtendedUiTextKey::MwlDocumentMainVertical,
+                        ExtendedUiTextKey::MwlDocumentMainScreenMethod,
+                        ExtendedUiTextKey::MwlDocumentMainModeScreen,
+                        ExtendedUiTextKey::MwlDocumentMainFlags,
+                        ExtendedUiTextKey::MwlDocumentMainHighPosition,
+                        ExtendedUiTextKey::MwlDocumentMainAdditionalFlags,
+                    ]
+                    .into_iter()
+                    .zip(&mut self.form.main_entrance)
+                    {
+                        ui.label(text(catalog, key));
+                        ui.text_edit_singleline(value);
+                        ui.end_row();
+                    }
+                    for (key, value) in [
+                        ExtendedUiTextKey::MwlDocumentMidwayPosition,
+                        ExtendedUiTextKey::MwlDocumentMidwayFlags,
+                        ExtendedUiTextKey::MwlDocumentMidwayHighPosition,
+                        ExtendedUiTextKey::MwlDocumentMidwayAdditionalFlags,
+                    ]
+                    .into_iter()
+                    .zip(&mut self.form.midway_entrance)
+                    {
+                        ui.label(text(catalog, key));
+                        ui.text_edit_singleline(value);
+                        ui.end_row();
+                    }
+                });
+                ui.separator();
+                ui.checkbox(
+                    &mut self.form.separate_layer2_scroll,
+                    text(catalog, ExtendedUiTextKey::MwlDocumentSeparateLayer2Scroll),
+                );
+                egui::Grid::new("mwl-layer2-scroll").show(ui, |ui| {
+                    ui.label(text(
+                        catalog,
+                        ExtendedUiTextKey::MwlDocumentOriginalScrollPreset,
+                    ));
+                    ui.add_enabled(
+                        !self.form.separate_layer2_scroll,
+                        egui::DragValue::new(&mut self.form.layer2_original_scroll).range(0..=15),
+                    );
                     ui.end_row();
-                }
-                for (label, value) in [
-                    "Midway position",
-                    "Midway flags",
-                    "Midway high position",
-                    "Midway additional flags",
-                ]
-                .into_iter()
-                .zip(&mut self.form.midway_entrance)
-                {
-                    ui.label(label);
-                    ui.text_edit_singleline(value);
+                    ui.label(text(
+                        catalog,
+                        ExtendedUiTextKey::MwlDocumentHorizontalSelector,
+                    ));
+                    ui.add_enabled(
+                        self.form.separate_layer2_scroll,
+                        egui::DragValue::new(&mut self.form.layer2_horizontal_scroll).range(0..=31),
+                    );
                     ui.end_row();
-                }
-            });
-            ui.separator();
-            ui.checkbox(
-                &mut self.form.separate_layer2_scroll,
-                "Use separate Layer 2 scroll settings",
-            );
-            egui::Grid::new("mwl-layer2-scroll").show(ui, |ui| {
-                ui.label("Original paired preset");
-                ui.add_enabled(
-                    !self.form.separate_layer2_scroll,
-                    egui::DragValue::new(&mut self.form.layer2_original_scroll).range(0..=15),
+                    ui.label(text(
+                        catalog,
+                        ExtendedUiTextKey::MwlDocumentVerticalSelector,
+                    ));
+                    ui.add_enabled(
+                        self.form.separate_layer2_scroll,
+                        egui::DragValue::new(&mut self.form.layer2_vertical_scroll).range(0..=31),
+                    );
+                    ui.end_row();
+                });
+                ui.separator();
+                ui.heading(text(catalog, ExtendedUiTextKey::MwlDocumentSpriteSpawning));
+                ui.add(
+                    egui::Slider::new(&mut self.form.sprite_vertical_spawn_range, 0..=3).text(
+                        text(catalog, ExtendedUiTextKey::MwlDocumentVerticalSpawnRange),
+                    ),
                 );
-                ui.end_row();
-                ui.label("Horizontal selector");
-                ui.add_enabled(
-                    self.form.separate_layer2_scroll,
-                    egui::DragValue::new(&mut self.form.layer2_horizontal_scroll).range(0..=31),
+                ui.checkbox(
+                    &mut self.form.sprite_smart_spawn,
+                    text(catalog, ExtendedUiTextKey::MwlDocumentSmartSpawn),
                 );
-                ui.end_row();
-                ui.label("Vertical selector");
-                ui.add_enabled(
-                    self.form.separate_layer2_scroll,
-                    egui::DragValue::new(&mut self.form.layer2_vertical_scroll).range(0..=31),
-                );
-                ui.end_row();
-            });
-            ui.separator();
-            ui.heading("Sprite spawning");
-            ui.add(
-                egui::Slider::new(&mut self.form.sprite_vertical_spawn_range, 0..=3)
-                    .text("Vertical spawn range for horizontal levels"),
-            );
-            ui.checkbox(
-                &mut self.form.sprite_smart_spawn,
-                "Enable Smart Spawn (spawn on scroll)",
-            );
-        });
+            },
+        );
     }
 
-    fn toolbar(&mut self, ui: &mut egui::Ui) {
+    fn toolbar(&mut self, ui: &mut egui::Ui, catalog: Option<&LocalizationCatalog>) {
         let Some(controller) = self.controller.as_ref() else {
             return;
         };
@@ -374,21 +425,37 @@ impl MwlEditor {
         let mut save_requested = false;
         ui.horizontal(|ui| {
             if ui
-                .add_enabled(can_undo, egui::Button::new("Undo"))
+                .add_enabled(
+                    can_undo,
+                    egui::Button::new(text(catalog, ExtendedUiTextKey::MwlDocumentUndo)),
+                )
                 .clicked()
             {
                 history = Some(true);
             }
             if ui
-                .add_enabled(can_redo, egui::Button::new("Redo"))
+                .add_enabled(
+                    can_redo,
+                    egui::Button::new(text(catalog, ExtendedUiTextKey::MwlDocumentRedo)),
+                )
                 .clicked()
             {
                 history = Some(false);
             }
             save_requested = ui
-                .add_enabled(!self.persistence.is_running(), egui::Button::new("Save"))
+                .add_enabled(
+                    !self.persistence.is_running(),
+                    egui::Button::new(text(catalog, ExtendedUiTextKey::MwlDocumentSave)),
+                )
                 .clicked();
-            ui.label(if modified { "Modified" } else { "Saved" });
+            ui.label(text(
+                catalog,
+                if modified {
+                    ExtendedUiTextKey::MwlDocumentModified
+                } else {
+                    ExtendedUiTextKey::MwlDocumentSaved
+                },
+            ));
         });
         let mut changed = false;
         if let Some(controller) = self.controller.as_mut() {
@@ -432,22 +499,32 @@ impl MwlEditor {
         self.sprite_panel.invalidate();
     }
 
-    fn show_close_confirmation(&mut self, context: &egui::Context) -> bool {
+    fn show_close_confirmation(
+        &mut self,
+        context: &egui::Context,
+        catalog: Option<&LocalizationCatalog>,
+    ) -> bool {
         let Some(pending) = self.pending_close else {
             return false;
         };
         let mut approved = false;
-        egui::Window::new("Unsaved MWL document")
+        egui::Window::new(text(catalog, ExtendedUiTextKey::MwlDocumentDiscardTitle))
             .collapsible(false)
             .resizable(false)
             .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
             .show(context, |ui| {
-                ui.label("Discard unsaved MWL changes?");
+                ui.label(text(catalog, ExtendedUiTextKey::MwlDocumentUnsavedNotice));
                 ui.horizontal(|ui| {
-                    if ui.button("Cancel").clicked() {
+                    if ui
+                        .button(text(catalog, ExtendedUiTextKey::MwlDocumentCancel))
+                        .clicked()
+                    {
                         self.pending_close = None;
                     }
-                    if ui.button("Discard").clicked() {
+                    if ui
+                        .button(text(catalog, ExtendedUiTextKey::MwlDocumentDiscard))
+                        .clicked()
+                    {
                         self.clear();
                         approved = pending == PendingClose::Application;
                     }
@@ -456,14 +533,17 @@ impl MwlEditor {
         approved
     }
 
-    fn show_error(&mut self, context: &egui::Context) {
+    fn show_error(&mut self, context: &egui::Context, catalog: Option<&LocalizationCatalog>) {
         if let Some(error) = self.error.clone() {
-            egui::Window::new("MWL editor error")
+            egui::Window::new(text(catalog, ExtendedUiTextKey::MwlDocumentErrorTitle))
                 .collapsible(false)
                 .resizable(false)
                 .show(context, |ui| {
                     ui.label(error);
-                    if ui.button("OK").clicked() {
+                    if ui
+                        .button(text(catalog, ExtendedUiTextKey::MwlDocumentOk))
+                        .clicked()
+                    {
                         self.error = None;
                     }
                 });
@@ -480,6 +560,34 @@ impl MwlEditor {
         self.sprite_panel.invalidate();
         self.invalidate();
     }
+}
+
+pub(super) fn text(catalog: Option<&LocalizationCatalog>, key: ExtendedUiTextKey) -> String {
+    crate::frontend_ui::extended_localized_text(catalog, key)
+}
+
+trait OptionalCatalogText {
+    fn extended_text(&self, key: ExtendedUiTextKey) -> &str;
+}
+
+impl OptionalCatalogText for Option<&LocalizationCatalog> {
+    fn extended_text(&self, key: ExtendedUiTextKey) -> &str {
+        self.map_or_else(|| key.english(), |catalog| catalog.extended_text(key))
+    }
+}
+
+fn mwl_section_names(catalog: Option<&LocalizationCatalog>) -> [String; 8] {
+    [
+        ExtendedUiTextKey::MwlDocumentSectionLevelHeader,
+        ExtendedUiTextKey::MwlDocumentSectionLayer1,
+        ExtendedUiTextKey::MwlDocumentSectionLayer2,
+        ExtendedUiTextKey::MwlDocumentSectionSprites,
+        ExtendedUiTextKey::MwlDocumentSectionPalette,
+        ExtendedUiTextKey::MwlDocumentSectionSecondaryExits,
+        ExtendedUiTextKey::MwlDocumentSectionExAnimation,
+        ExtendedUiTextKey::MwlDocumentSectionExpandedHeader,
+    ]
+    .map(|key| text(catalog, key))
 }
 
 fn text_field(ui: &mut egui::Ui, label: &str, value: &mut String) {
@@ -503,6 +611,32 @@ fn apply_layer3_settings_form(
 mod tests {
     use super::*;
     use lm_level::ExpandedLevelSettingsRecord;
+
+    #[test]
+    fn complete_mwl_editor_surface_has_no_literal_widget_text() {
+        let sources = [
+            include_str!("mwl_editor.rs"),
+            include_str!("mwl_editor/object_panel.rs"),
+            include_str!("mwl_editor/sprite_panel.rs"),
+            include_str!("mwl_editor/optional_import.rs"),
+            include_str!("mwl_editor/optional_panel.rs"),
+        ]
+        .join("\n");
+        for literal_widget in [
+            "ui.heading(\"",
+            "ui.label(\"",
+            "ui.button(\"",
+            "egui::Button::new(\"",
+            ".text(\"",
+            ".prefix(\"",
+            "ui.selectable_value(&mut self.tab, 0, \"",
+        ] {
+            assert!(
+                !sources.contains(literal_widget),
+                "MWL editor regressed to literal widget text: {literal_widget}"
+            );
+        }
+    }
 
     #[test]
     fn layer3_native_form_edits_complete_mwl_settings_and_reloads_losslessly() {

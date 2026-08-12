@@ -7629,3 +7629,15 @@ allocation/fill validation, and commit-only closure; localization passes 28/28 a
 237/237. The runtime-patch row remains Partial for its documented mapper/identity variants, and
 Localization remains Partial for other native forms and retained live language-DLL evidence;
 aggregate parity remains 60/65.
+## Portable MWL document localization parity
+
+The complete portable level document window now uses 139 typed extension keys across
+recovered header and entrance fields, Layer 3 settings, all eight sections, exact Layer 1 object
+header/records/semantic fields, legacy and expanded sprite streams, record-length interpretation,
+palette and ExAnimation import, palette metadata/colors, Super GFX Bypass animation options,
+ExAnimation globals/triggers/records/frames, history, persistence, dirty-close confirmation, and
+errors. The application host carries the active catalog while standalone hosting retains the same
+bounded English fallback. A five-module source audit prevents literal widget captions from
+re-entering the workflow. Focused MWL and localization tests pass, and the clean-cache renderer
+gate remains 237/237. Other native forms and retained live language-DLL evidence keep Localization
+Partial; aggregate parity remains 60/65.

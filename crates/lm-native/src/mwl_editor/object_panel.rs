@@ -1,6 +1,7 @@
+use super::OptionalCatalogText;
 use crate::level_editor_forms;
 use eframe::egui;
-use lm_app::MwlDocumentController;
+use lm_app::{ExtendedUiTextKey as Key, LocalizationCatalog, MwlDocumentController};
 use lm_level::{
     LegacyLevelHeader, LevelObjectData, ObjectCoordinateNibbles, ObjectEdit, ObjectRecord,
 };
@@ -30,10 +31,11 @@ impl MwlObjectPanel {
         &mut self,
         ui: &mut egui::Ui,
         controller: &mut MwlDocumentController,
+        catalog: Option<&LocalizationCatalog>,
     ) -> Result<bool, String> {
-        ui.collapsing("Typed Layer 1 objects", |ui| {
+        ui.collapsing(catalog.extended_text(Key::MwlObjectHeading), |ui| {
             self.ensure_loaded(controller)?;
-            self.contents(ui, controller)
+            self.contents(ui, controller, catalog)
         })
         .body_returned
         .transpose()
@@ -55,6 +57,7 @@ impl MwlObjectPanel {
         &mut self,
         ui: &mut egui::Ui,
         controller: &mut MwlDocumentController,
+        catalog: Option<&LocalizationCatalog>,
     ) -> Result<bool, String> {
         let count = self
             .layer1
@@ -63,12 +66,17 @@ impl MwlObjectPanel {
             .objects
             .records
             .len();
-        ui.label(format!(
-            "{count} ordered standard/extended/custom object records"
-        ));
-        ui.label("Exact five-byte legacy level header:");
+        ui.label(
+            catalog
+                .extended_text(Key::MwlObjectCountFormat)
+                .replace("{count}", &count.to_string()),
+        );
+        ui.label(catalog.extended_text(Key::MwlObjectHeader));
         ui.text_edit_singleline(&mut self.header);
-        if ui.button("Stage exact header").clicked() {
+        if ui
+            .button(catalog.extended_text(Key::MwlObjectStageHeader))
+            .clicked()
+        {
             self.stage_header()?;
         }
 
@@ -98,14 +106,17 @@ impl MwlObjectPanel {
             self.load_form();
         }
 
-        ui.label("Object record (3–8 hexadecimal bytes):");
+        ui.label(catalog.extended_text(Key::MwlObjectRecord));
         ui.text_edit_singleline(&mut self.record);
-        self.record_controls(ui)?;
-        self.reorder_controls(ui)?;
-        self.semantic_controls(ui)?;
+        self.record_controls(ui, catalog)?;
+        self.reorder_controls(ui, catalog)?;
+        self.semantic_controls(ui, catalog)?;
 
         let mut committed = false;
-        if ui.button("Commit typed Layer 1 objects").clicked() {
+        if ui
+            .button(catalog.extended_text(Key::MwlObjectCommit))
+            .clicked()
+        {
             controller
                 .replace_layer1(
                     controller.revision(),
@@ -118,18 +129,44 @@ impl MwlObjectPanel {
         Ok(committed)
     }
 
-    fn semantic_controls(&mut self, ui: &mut egui::Ui) -> Result<(), String> {
-        ui.label("Recovered packed fields (hex; coordinates are orientation-neutral nibbles):");
+    fn semantic_controls(
+        &mut self,
+        ui: &mut egui::Ui,
+        catalog: Option<&LocalizationCatalog>,
+    ) -> Result<(), String> {
+        ui.label(catalog.extended_text(Key::MwlObjectRecoveredFields));
         egui::Grid::new("mwl-object-semantic-fields")
             .num_columns(2)
             .show(ui, |ui| {
-                field(ui, "Command ID", &mut self.command_id);
-                field(ui, "Parameter", &mut self.parameter);
-                field(ui, "First coordinate", &mut self.first_coordinate);
-                field(ui, "Second coordinate", &mut self.second_coordinate);
+                field(
+                    ui,
+                    catalog.extended_text(Key::MwlObjectCommandId),
+                    &mut self.command_id,
+                );
+                field(
+                    ui,
+                    catalog.extended_text(Key::MwlObjectParameter),
+                    &mut self.parameter,
+                );
+                field(
+                    ui,
+                    catalog.extended_text(Key::MwlObjectFirstCoordinate),
+                    &mut self.first_coordinate,
+                );
+                field(
+                    ui,
+                    catalog.extended_text(Key::MwlObjectSecondCoordinate),
+                    &mut self.second_coordinate,
+                );
             });
-        ui.checkbox(&mut self.advances_screen, "Advances screen");
-        if ui.button("Stage recovered fields").clicked() {
+        ui.checkbox(
+            &mut self.advances_screen,
+            catalog.extended_text(Key::MwlObjectAdvancesScreen),
+        );
+        if ui
+            .button(catalog.extended_text(Key::MwlObjectStageFields))
+            .clicked()
+        {
             self.stage_semantic_fields()?;
         }
         let jump = self
@@ -138,21 +175,30 @@ impl MwlObjectPanel {
             .and_then(|layer| layer.objects.records.get(self.selected))
             .and_then(ObjectRecord::screen_jump);
         if let Some(jump) = jump {
-            ui.label(format!("Screen-jump encoding: {:?}", jump.encoding));
-            ui.label(format!(
-                "Resolved screen: {:02X}{}",
-                jump.resolved_screen(),
-                if jump.resolved_screen() <= 0x1f {
-                    ""
-                } else {
-                    " (outside 00-1F; retained losslessly)"
-                }
-            ));
+            ui.label(
+                catalog
+                    .extended_text(Key::MwlObjectJumpEncodingFormat)
+                    .replace("{encoding}", &format!("{:?}", jump.encoding)),
+            );
+            let suffix = if jump.resolved_screen() <= 0x1f {
+                ""
+            } else {
+                catalog.extended_text(Key::MwlObjectOutsideScreenSuffix)
+            };
+            ui.label(
+                catalog
+                    .extended_text(Key::MwlObjectResolvedScreenFormat)
+                    .replace("{screen}", &format!("{:02X}", jump.resolved_screen()))
+                    .replace("{suffix}", suffix),
+            );
             ui.horizontal(|ui| {
-                ui.label("Packed jump target (hex)");
+                ui.label(catalog.extended_text(Key::MwlObjectJumpTarget));
                 ui.text_edit_singleline(&mut self.jump_target);
             });
-            if ui.button("Stage screen-jump target").clicked() {
+            if ui
+                .button(catalog.extended_text(Key::MwlObjectStageJumpTarget))
+                .clicked()
+            {
                 let packed_target =
                     level_editor_forms::parse_hex_u16(&self.jump_target, "screen-jump target")?;
                 self.apply_object_edit(ObjectEdit::SetScreenJumpTarget {
@@ -215,9 +261,16 @@ impl MwlObjectPanel {
             .map_err(|error| error.to_string())
     }
 
-    fn record_controls(&mut self, ui: &mut egui::Ui) -> Result<(), String> {
+    fn record_controls(
+        &mut self,
+        ui: &mut egui::Ui,
+        catalog: Option<&LocalizationCatalog>,
+    ) -> Result<(), String> {
         ui.horizontal(|ui| -> Result<(), String> {
-            if ui.button("Insert before").clicked() {
+            if ui
+                .button(catalog.extended_text(Key::MwlInsertBefore))
+                .clicked()
+            {
                 let record = self.form_record()?;
                 let layer1 = self.layer1.as_mut().expect("loaded Layer 1");
                 let index = self.selected.min(layer1.objects.records.len());
@@ -228,7 +281,7 @@ impl MwlObjectPanel {
                 self.selected = index;
                 self.load_form();
             }
-            if ui.button("Replace").clicked() {
+            if ui.button(catalog.extended_text(Key::MwlReplace)).clicked() {
                 let record = self.form_record()?;
                 let layer1 = self.layer1.as_mut().expect("loaded Layer 1");
                 if self.selected >= layer1.objects.records.len() {
@@ -243,7 +296,7 @@ impl MwlObjectPanel {
                     .map_err(|error| error.to_string())?;
                 self.load_form();
             }
-            if ui.button("Delete").clicked() {
+            if ui.button(catalog.extended_text(Key::MwlDelete)).clicked() {
                 let layer1 = self.layer1.as_mut().expect("loaded Layer 1");
                 layer1
                     .objects
@@ -261,9 +314,13 @@ impl MwlObjectPanel {
         .inner
     }
 
-    fn reorder_controls(&mut self, ui: &mut egui::Ui) -> Result<(), String> {
+    fn reorder_controls(
+        &mut self,
+        ui: &mut egui::Ui,
+        catalog: Option<&LocalizationCatalog>,
+    ) -> Result<(), String> {
         ui.horizontal(|ui| -> Result<(), String> {
-            if ui.button("Move up").clicked() && self.selected > 0 {
+            if ui.button(catalog.extended_text(Key::MwlMoveUp)).clicked() && self.selected > 0 {
                 let before = self.selected - 1;
                 self.layer1
                     .as_mut()
@@ -283,7 +340,9 @@ impl MwlObjectPanel {
                 .objects
                 .records
                 .len();
-            if ui.button("Move down").clicked() && self.selected + 1 < len {
+            if ui.button(catalog.extended_text(Key::MwlMoveDown)).clicked()
+                && self.selected + 1 < len
+            {
                 self.layer1
                     .as_mut()
                     .expect("loaded Layer 1")

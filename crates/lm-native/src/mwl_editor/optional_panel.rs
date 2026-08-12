@@ -1,7 +1,7 @@
-use super::MwlEditor;
+use super::{MwlEditor, OptionalCatalogText};
 use crate::exanimation_form::{self, GlobalForm, RecordForm};
 use eframe::egui;
-use lm_app::MwlOptionalAssetsEdit;
+use lm_app::{ExtendedUiTextKey as Key, LocalizationCatalog, MwlOptionalAssetsEdit};
 use lm_graphics::{
     CompactExAnimation, ExAnimationFeature, ExAnimationFeatureOptions, ExAnimationFrame, Rgb8,
     exanimation_frames,
@@ -80,18 +80,27 @@ impl MwlOptionalAssetsPanel {
         revision: u64,
         assets: &MwlOptionalLevelAssets,
         modes: &[bool; 256],
+        catalog: Option<&LocalizationCatalog>,
     ) -> Option<Result<MwlOptionalAssetsEdit, String>> {
         self.load(revision, assets, modes);
         ui.separator();
-        ui.heading("Typed MWL optional assets");
+        ui.heading(catalog.extended_text(Key::MwlOptionalHeading));
         ui.horizontal(|ui| {
-            ui.selectable_value(&mut self.tab, 0, "Palette");
-            ui.selectable_value(&mut self.tab, 1, "ExAnimation");
+            ui.selectable_value(
+                &mut self.tab,
+                0,
+                catalog.extended_text(Key::MwlOptionalPalette),
+            );
+            ui.selectable_value(
+                &mut self.tab,
+                1,
+                catalog.extended_text(Key::MwlOptionalExAnimation),
+            );
         });
         if self.tab == 0 {
-            self.palette(ui, assets)
+            self.palette(ui, assets, catalog)
         } else {
-            self.animation(ui, assets, modes)
+            self.animation(ui, assets, modes, catalog)
         }
     }
 
@@ -99,9 +108,14 @@ impl MwlOptionalAssetsPanel {
         &mut self,
         ui: &mut egui::Ui,
         assets: &MwlOptionalLevelAssets,
+        catalog: Option<&LocalizationCatalog>,
     ) -> Option<Result<MwlOptionalAssetsEdit, String>> {
-        if let Some(metadata) = metadata_fields(ui, "Palette metadata", &mut self.palette_metadata)
-        {
+        if let Some(metadata) = metadata_fields(
+            ui,
+            catalog.extended_text(Key::MwlOptionalPaletteMetadata),
+            &mut self.palette_metadata,
+            catalog,
+        ) {
             return Some(metadata.map(MwlOptionalAssetsEdit::SetPaletteMetadata));
         }
         let colors = &assets.palette.colors;
@@ -127,10 +141,12 @@ impl MwlOptionalAssetsPanel {
         let color = colors.get(self.selected_color).copied()?;
         let rgb = color.to_rgb8();
         let mut value = [rgb.red, rgb.green, rgb.blue];
-        ui.label(format!(
-            "Color {:03X} / BGR555 {:04X}",
-            self.selected_color, color.0
-        ));
+        ui.label(
+            catalog
+                .extended_text(Key::MwlOptionalColorFormat)
+                .replace("{index}", &format!("{:03X}", self.selected_color))
+                .replace("{value}", &format!("{:04X}", color.0)),
+        );
         ui.color_edit_button_srgb(&mut value).changed().then(|| {
             Ok(MwlOptionalAssetsEdit::SetPaletteColor {
                 index: self.selected_color,
@@ -148,56 +164,88 @@ impl MwlOptionalAssetsPanel {
         ui: &mut egui::Ui,
         assets: &MwlOptionalLevelAssets,
         modes: &[bool; 256],
+        catalog: Option<&LocalizationCatalog>,
     ) -> Option<Result<MwlOptionalAssetsEdit, String>> {
-        if let Some(metadata) =
-            metadata_fields(ui, "ExAnimation metadata", &mut self.exanimation_metadata)
-        {
+        if let Some(metadata) = metadata_fields(
+            ui,
+            catalog.extended_text(Key::MwlOptionalExAnimationMetadata),
+            &mut self.exanimation_metadata,
+            catalog,
+        ) {
             return Some(metadata.map(MwlOptionalAssetsEdit::SetExAnimationMetadata));
         }
         if let Some(features) = &mut self.exanimation_features {
-            ui.heading("Super GFX Bypass animation options");
+            ui.heading(catalog.extended_text(Key::MwlOptionalFeaturesHeading));
             for (feature, label) in [
-                (ExAnimationFeature::PaletteAnimation, "Palette animation"),
+                (
+                    ExAnimationFeature::PaletteAnimation,
+                    Key::MwlOptionalPaletteAnimation,
+                ),
                 (
                     ExAnimationFeature::VanillaAnimation,
-                    "Vanilla animated tiles",
+                    Key::MwlOptionalVanillaAnimation,
                 ),
-                (ExAnimationFeature::GlobalExAnimation, "Global ExAnimation"),
-                (ExAnimationFeature::LevelExAnimation, "Level ExAnimation"),
+                (
+                    ExAnimationFeature::GlobalExAnimation,
+                    Key::MwlOptionalGlobalAnimation,
+                ),
+                (
+                    ExAnimationFeature::LevelExAnimation,
+                    Key::MwlOptionalLevelAnimation,
+                ),
             ] {
                 let mut enabled = features.enabled(feature);
-                if ui.checkbox(&mut enabled, label).changed() {
+                if ui
+                    .checkbox(&mut enabled, catalog.extended_text(label))
+                    .changed()
+                {
                     features.set_enabled(feature, enabled);
                 }
             }
-            if ui.button("Apply animation options").clicked() {
+            if ui
+                .button(catalog.extended_text(Key::MwlOptionalApplyFeatures))
+                .clicked()
+            {
                 return Some(Ok(MwlOptionalAssetsEdit::SetExAnimationFeatures(*features)));
             }
-            ui.small(format!(
-                "Preserved unrelated low nibble: {:X}",
-                features.preserved_low_nibble
-            ));
+            ui.small(
+                catalog
+                    .extended_text(Key::MwlOptionalPreservedNibbleFormat)
+                    .replace("{value}", &format!("{:X}", features.preserved_low_nibble)),
+            );
         }
         let Some(animation) = assets.exanimation.as_ref() else {
             return ui
-                .button("Create empty ExAnimation section")
+                .button(catalog.extended_text(Key::MwlOptionalCreateAnimation))
                 .clicked()
                 .then_some(Ok(MwlOptionalAssetsEdit::CreateExAnimation));
         };
-        if let Some(edit) = self.animation_header(ui, animation) {
+        if let Some(edit) = self.animation_header(ui, animation, catalog) {
             return Some(edit);
         }
-        self.animation_records(ui, animation, modes)
+        self.animation_records(ui, animation, modes, catalog)
     }
 
     fn animation_header(
         &mut self,
         ui: &mut egui::Ui,
         animation: &CompactExAnimation,
+        catalog: Option<&LocalizationCatalog>,
     ) -> Option<Result<MwlOptionalAssetsEdit, String>> {
-        text_field(ui, "Setting", &mut self.global.setting);
-        text_field(ui, "Header", &mut self.global.header);
-        if ui.button("Apply ExAnimation globals").clicked() {
+        text_field(
+            ui,
+            catalog.extended_text(Key::MwlOptionalSetting),
+            &mut self.global.setting,
+        );
+        text_field(
+            ui,
+            catalog.extended_text(Key::MwlOptionalHeader),
+            &mut self.global.header,
+        );
+        if ui
+            .button(catalog.extended_text(Key::MwlOptionalApplyGlobals))
+            .clicked()
+        {
             return Some(self.global.parse().map(|(setting, header_value)| {
                 MwlOptionalAssetsEdit::SetExAnimationGlobals {
                     setting,
@@ -206,26 +254,34 @@ impl MwlOptionalAssetsPanel {
             }));
         }
         let previous_trigger = self.trigger_index;
-        ui.add(egui::Slider::new(&mut self.trigger_index, 0..=15).text("Trigger"));
+        ui.add(
+            egui::Slider::new(&mut self.trigger_index, 0..=15)
+                .text(catalog.extended_text(Key::MwlOptionalTrigger)),
+        );
         if previous_trigger != self.trigger_index {
             self.load_trigger(animation);
         }
-        ui.checkbox(&mut self.trigger_enabled, "Trigger enabled");
+        ui.checkbox(
+            &mut self.trigger_enabled,
+            catalog.extended_text(Key::MwlOptionalTriggerEnabled),
+        );
         ui.add_enabled(
             self.trigger_enabled,
             egui::TextEdit::singleline(&mut self.trigger_value),
         );
-        ui.button("Apply trigger").clicked().then(|| {
-            let value = if self.trigger_enabled {
-                exanimation_form::hex_u8(&self.trigger_value, "trigger value")
-            } else {
-                Ok(0)
-            };
-            value.map(|value| MwlOptionalAssetsEdit::SetTrigger {
-                index: self.trigger_index,
-                value: self.trigger_enabled.then_some(value),
+        ui.button(catalog.extended_text(Key::MwlOptionalApplyTrigger))
+            .clicked()
+            .then(|| {
+                let value = if self.trigger_enabled {
+                    exanimation_form::hex_u8(&self.trigger_value, "trigger value")
+                } else {
+                    Ok(0)
+                };
+                value.map(|value| MwlOptionalAssetsEdit::SetTrigger {
+                    index: self.trigger_index,
+                    value: self.trigger_enabled.then_some(value),
+                })
             })
-        })
     }
 
     fn animation_records(
@@ -233,6 +289,7 @@ impl MwlOptionalAssetsPanel {
         ui: &mut egui::Ui,
         animation: &CompactExAnimation,
         modes: &[bool; 256],
+        catalog: Option<&LocalizationCatalog>,
     ) -> Option<Result<MwlOptionalAssetsEdit, String>> {
         ui.separator();
         let len = animation.records.len();
@@ -242,14 +299,17 @@ impl MwlOptionalAssetsPanel {
             self.load_record(animation, modes);
         }
         for (label, field) in [
-            ("Kind", &mut self.record.kind),
-            ("Trigger", &mut self.record.size_mode),
-            ("Destination", &mut self.record.destination),
+            (Key::MwlOptionalKind, &mut self.record.kind),
+            (Key::MwlOptionalTrigger, &mut self.record.size_mode),
+            (Key::MwlOptionalDestination, &mut self.record.destination),
         ] {
-            text_field(ui, label, field);
+            text_field(ui, catalog.extended_text(label), field);
         }
-        ui.checkbox(&mut self.record.destination_flag, "Destination flag");
-        ui.label("Source words, one frame per line");
+        ui.checkbox(
+            &mut self.record.destination_flag,
+            catalog.extended_text(Key::MwlOptionalDestinationFlag),
+        );
+        ui.label(catalog.extended_text(Key::MwlOptionalSourceWords));
         ui.add(
             egui::TextEdit::multiline(&mut self.record.frames)
                 .desired_rows(5)
@@ -257,17 +317,26 @@ impl MwlOptionalAssetsPanel {
         );
         let mut action = None;
         ui.horizontal(|ui| {
-            if ui.button("Append record").clicked() {
+            if ui
+                .button(catalog.extended_text(Key::MwlOptionalAppendRecord))
+                .clicked()
+            {
                 action = Some(0);
             }
             if ui
-                .add_enabled(self.record_index < len, egui::Button::new("Replace record"))
+                .add_enabled(
+                    self.record_index < len,
+                    egui::Button::new(catalog.extended_text(Key::MwlOptionalReplaceRecord)),
+                )
                 .clicked()
             {
                 action = Some(1);
             }
             if ui
-                .add_enabled(self.record_index < len, egui::Button::new("Remove record"))
+                .add_enabled(
+                    self.record_index < len,
+                    egui::Button::new(catalog.extended_text(Key::MwlOptionalRemoveRecord)),
+                )
                 .clicked()
             {
                 action = Some(2);
@@ -292,7 +361,7 @@ impl MwlOptionalAssetsPanel {
                     },
                 })
             })
-            .or_else(|| self.animation_frame(ui, animation, modes))
+            .or_else(|| self.animation_frame(ui, animation, modes, catalog))
     }
 
     fn animation_frame(
@@ -300,12 +369,13 @@ impl MwlOptionalAssetsPanel {
         ui: &mut egui::Ui,
         animation: &CompactExAnimation,
         modes: &[bool; 256],
+        catalog: Option<&LocalizationCatalog>,
     ) -> Option<Result<MwlOptionalAssetsEdit, String>> {
         let record = animation.records.get(self.record_index)?;
         let frames = exanimation_frames(record, modes[usize::from(record.size_mode())]).ok()?;
         let previous = self.frame_index;
         ui.separator();
-        ui.label("Semantic frame edit");
+        ui.label(catalog.extended_text(Key::MwlOptionalFrameHeading));
         ui.add(egui::DragValue::new(&mut self.frame_index).range(0..=frames.len()));
         if previous != self.frame_index {
             self.frame_words = frames
@@ -313,21 +383,28 @@ impl MwlOptionalAssetsPanel {
                 .map(format_frame)
                 .unwrap_or_default();
         }
-        text_field(ui, "Source word(s)", &mut self.frame_words);
+        text_field(
+            ui,
+            catalog.extended_text(Key::MwlOptionalSourceWordList),
+            &mut self.frame_words,
+        );
         ui.add(
             egui::DragValue::new(&mut self.frame_move_before)
                 .range(0..=frames.len())
-                .prefix("Move before "),
+                .prefix(catalog.extended_text(Key::MwlOptionalMoveBefore)),
         );
         let mut action = None;
         ui.horizontal(|ui| {
-            if ui.button("Insert frame").clicked() {
+            if ui
+                .button(catalog.extended_text(Key::MwlOptionalInsertFrame))
+                .clicked()
+            {
                 action = Some(0);
             }
             if ui
                 .add_enabled(
                     self.frame_index < frames.len(),
-                    egui::Button::new("Replace frame"),
+                    egui::Button::new(catalog.extended_text(Key::MwlOptionalReplaceFrame)),
                 )
                 .clicked()
             {
@@ -336,7 +413,7 @@ impl MwlOptionalAssetsPanel {
             if ui
                 .add_enabled(
                     self.frame_index < frames.len(),
-                    egui::Button::new("Remove frame"),
+                    egui::Button::new(catalog.extended_text(Key::MwlOptionalRemoveFrame)),
                 )
                 .clicked()
             {
@@ -345,7 +422,7 @@ impl MwlOptionalAssetsPanel {
             if ui
                 .add_enabled(
                     self.frame_index < frames.len(),
-                    egui::Button::new("Move frame"),
+                    egui::Button::new(catalog.extended_text(Key::MwlOptionalMoveFrame)),
                 )
                 .clicked()
             {
@@ -382,7 +459,11 @@ impl MwlOptionalAssetsPanel {
 }
 
 impl MwlEditor {
-    pub(super) fn show_optional_assets_panel(&mut self, ui: &mut egui::Ui) {
+    pub(super) fn show_optional_assets_panel(
+        &mut self,
+        ui: &mut egui::Ui,
+        catalog: Option<&LocalizationCatalog>,
+    ) {
         let Some(interpretation) = self.optional_interpretation.as_ref() else {
             return;
         };
@@ -395,7 +476,13 @@ impl MwlEditor {
             .map_err(|error| error.to_string());
             assets.and_then(|assets| {
                 self.optional_panel
-                    .show(ui, controller.revision(), &assets, &interpretation.modes)
+                    .show(
+                        ui,
+                        controller.revision(),
+                        &assets,
+                        &interpretation.modes,
+                        catalog,
+                    )
                     .transpose()
             })
         });
@@ -432,16 +519,27 @@ fn metadata_fields(
     ui: &mut egui::Ui,
     label: &str,
     fields: &mut [String; 2],
+    catalog: Option<&LocalizationCatalog>,
 ) -> Option<Result<[u32; 2], String>> {
     ui.label(label);
-    text_field(ui, "Word 0", &mut fields[0]);
-    text_field(ui, "Word 1", &mut fields[1]);
-    ui.button("Apply metadata").clicked().then(|| {
-        Ok([
-            parse_hex_u32(&fields[0], "metadata word 0")?,
-            parse_hex_u32(&fields[1], "metadata word 1")?,
-        ])
-    })
+    text_field(
+        ui,
+        catalog.extended_text(Key::MwlOptionalWord0),
+        &mut fields[0],
+    );
+    text_field(
+        ui,
+        catalog.extended_text(Key::MwlOptionalWord1),
+        &mut fields[1],
+    );
+    ui.button(catalog.extended_text(Key::MwlOptionalApplyMetadata))
+        .clicked()
+        .then(|| {
+            Ok([
+                parse_hex_u32(&fields[0], "metadata word 0")?,
+                parse_hex_u32(&fields[1], "metadata word 1")?,
+            ])
+        })
 }
 
 fn text_field(ui: &mut egui::Ui, label: &str, value: &mut String) {

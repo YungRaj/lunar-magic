@@ -2216,3 +2216,15 @@ undo/redo, asynchronous persistence, and dirty-close semantics remain proven. Fo
 tests pass 41/41 active cases, localization passes 28/28 active cases, and renderer passes
 237/237. Other native forms and retained language-DLL evidence keep Localization Partial, so
 aggregate parity remains 60/65.
+
+Localization coverage update (2026-08-12, portable MWL document): the complete portable level
+document window now uses 139 typed extension keys across recovered header and entrance
+fields, Layer 3 settings, all eight sections, exact Layer 1 object header/records/semantic fields,
+legacy and expanded sprite streams, record-length interpretation, palette and ExAnimation import,
+palette metadata/colors, Super GFX Bypass animation options, ExAnimation globals/triggers/records/
+frames, history, persistence, dirty-close confirmation, and errors. The application host carries
+the active catalog while standalone hosting retains the same bounded English fallback. A complete
+five-module source audit prevents literal widget captions from re-entering this workflow. MWL
+focused behavior and source-audit tests pass, localization model tests pass, and renderer remains
+237/237 after a clean-cache rebuild. Other native forms and retained live language-DLL evidence
+keep Localization Partial; aggregate parity remains 60/65.

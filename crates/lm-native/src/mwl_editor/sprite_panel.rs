@@ -1,9 +1,10 @@
+use super::OptionalCatalogText;
 use crate::{
     level_editor_forms,
     native_level_document_form::{NativeSpriteHeaderForm, show_sprite_header_form},
 };
 use eframe::egui;
-use lm_app::MwlDocumentController;
+use lm_app::{ExtendedUiTextKey as Key, LocalizationCatalog, MwlDocumentController};
 use lm_level::{
     NativeSpriteRecordFields, NativeSpriteStream, SpriteLengthTable, SpriteRecord, SpriteToken,
 };
@@ -67,17 +68,21 @@ impl MwlSpritePanel {
         &mut self,
         ui: &mut egui::Ui,
         controller: &mut MwlDocumentController,
+        catalog: Option<&LocalizationCatalog>,
     ) -> Result<bool, String> {
-        ui.collapsing("Typed sprite stream", |ui| {
+        ui.collapsing(catalog.extended_text(Key::MwlSpriteHeading), |ui| {
             let changed = ui
-                .checkbox(&mut self.expanded, "Expanded sprite framing")
+                .checkbox(
+                    &mut self.expanded,
+                    catalog.extended_text(Key::MwlSpriteExpanded),
+                )
                 .changed();
             if changed {
                 self.invalidate();
             }
-            self.length_controls(ui)?;
+            self.length_controls(ui, catalog)?;
             self.ensure_loaded(controller)?;
-            self.contents(ui, controller)
+            self.contents(ui, controller, catalog)
         })
         .body_returned
         .transpose()
@@ -103,14 +108,19 @@ impl MwlSpritePanel {
         &mut self,
         ui: &mut egui::Ui,
         controller: &mut MwlDocumentController,
+        catalog: Option<&LocalizationCatalog>,
     ) -> Result<bool, String> {
         let stream = self.stream.as_ref().expect("loaded sprite stream");
-        ui.label(format!(
-            "{} tokens; revision length-table interpretation",
-            stream.tokens.len()
-        ));
+        ui.label(
+            catalog
+                .extended_text(Key::MwlSpriteTokenCountFormat)
+                .replace("{count}", &stream.tokens.len().to_string()),
+        );
         show_sprite_header_form(ui, "mwl-sprite-header", &mut self.header);
-        if ui.button("Stage header").clicked() {
+        if ui
+            .button(catalog.extended_text(Key::MwlSpriteStageHeader))
+            .clicked()
+        {
             self.stream.as_mut().expect("loaded sprite stream").header =
                 self.header.header().map_err(|error| error.to_string())?;
         }
@@ -148,22 +158,37 @@ impl MwlSpritePanel {
 
         egui::ComboBox::from_id_salt("mwl-sprite-token-kind")
             .selected_text(match self.kind {
-                TokenKind::Record => "Record bytes",
-                TokenKind::Screen => "Upper-Y token",
-                TokenKind::Control => "Control token",
+                TokenKind::Record => catalog.extended_text(Key::MwlSpriteRecordBytes),
+                TokenKind::Screen => catalog.extended_text(Key::MwlSpriteUpperYToken),
+                TokenKind::Control => catalog.extended_text(Key::MwlSpriteControlToken),
             })
             .show_ui(ui, |ui| {
-                ui.selectable_value(&mut self.kind, TokenKind::Record, "Record bytes");
-                ui.selectable_value(&mut self.kind, TokenKind::Screen, "Upper-Y token");
-                ui.selectable_value(&mut self.kind, TokenKind::Control, "Control token");
+                ui.selectable_value(
+                    &mut self.kind,
+                    TokenKind::Record,
+                    catalog.extended_text(Key::MwlSpriteRecordBytes),
+                );
+                ui.selectable_value(
+                    &mut self.kind,
+                    TokenKind::Screen,
+                    catalog.extended_text(Key::MwlSpriteUpperYToken),
+                );
+                ui.selectable_value(
+                    &mut self.kind,
+                    TokenKind::Control,
+                    catalog.extended_text(Key::MwlSpriteControlToken),
+                );
             });
         ui.text_edit_singleline(&mut self.value);
-        self.token_controls(ui)?;
-        self.reorder_controls(ui)?;
-        self.semantic_controls(ui)?;
+        self.token_controls(ui, catalog)?;
+        self.reorder_controls(ui, catalog)?;
+        self.semantic_controls(ui, catalog)?;
 
         let mut committed = false;
-        if ui.button("Commit typed sprite stream").clicked() {
+        if ui
+            .button(catalog.extended_text(Key::MwlSpriteCommit))
+            .clicked()
+        {
             controller
                 .replace_sprites(
                     controller.revision(),
@@ -177,16 +202,24 @@ impl MwlSpritePanel {
         Ok(committed)
     }
 
-    fn length_controls(&mut self, ui: &mut egui::Ui) -> Result<(), String> {
-        ui.label("Sprite record-length interpretation (table, sprite ID, bytes; hex):");
+    fn length_controls(
+        &mut self,
+        ui: &mut egui::Ui,
+        catalog: Option<&LocalizationCatalog>,
+    ) -> Result<(), String> {
+        ui.label(catalog.extended_text(Key::MwlSpriteLengthNotice));
         let mut apply = false;
         let mut reset = false;
         ui.horizontal(|ui| {
             ui.text_edit_singleline(&mut self.length_table);
             ui.text_edit_singleline(&mut self.length_id);
             ui.text_edit_singleline(&mut self.length_value);
-            apply = ui.button("Set length").clicked();
-            reset = ui.button("Reset standard lengths").clicked();
+            apply = ui
+                .button(catalog.extended_text(Key::MwlSpriteSetLength))
+                .clicked();
+            reset = ui
+                .button(catalog.extended_text(Key::MwlSpriteResetLengths))
+                .clicked();
         });
         if apply {
             self.apply_length_form()?;
@@ -209,7 +242,11 @@ impl MwlSpritePanel {
             .map_err(|error| error.to_string())
     }
 
-    fn semantic_controls(&mut self, ui: &mut egui::Ui) -> Result<(), String> {
+    fn semantic_controls(
+        &mut self,
+        ui: &mut egui::Ui,
+        catalog: Option<&LocalizationCatalog>,
+    ) -> Result<(), String> {
         if !matches!(
             self.stream
                 .as_ref()
@@ -218,17 +255,36 @@ impl MwlSpritePanel {
         ) {
             return Ok(());
         }
-        ui.label("Recovered `yyyyEESY / XXXXssss / NNNNNNNN` fields (hex):");
+        ui.label(catalog.extended_text(Key::MwlSpriteRecoveredFields));
         egui::Grid::new("mwl-sprite-semantic-fields")
             .num_columns(2)
             .show(ui, |ui| {
-                field(ui, "Y low 5 bits", &mut self.y_low);
-                field(ui, "Extra bits", &mut self.extra_bits);
-                field(ui, "Screen", &mut self.screen);
-                field(ui, "X", &mut self.x);
-                field(ui, "Sprite number", &mut self.sprite_number);
+                field(
+                    ui,
+                    catalog.extended_text(Key::MwlSpriteYLow),
+                    &mut self.y_low,
+                );
+                field(
+                    ui,
+                    catalog.extended_text(Key::MwlSpriteExtraBits),
+                    &mut self.extra_bits,
+                );
+                field(
+                    ui,
+                    catalog.extended_text(Key::MwlSpriteScreen),
+                    &mut self.screen,
+                );
+                field(ui, catalog.extended_text(Key::MwlSpriteX), &mut self.x);
+                field(
+                    ui,
+                    catalog.extended_text(Key::MwlSpriteNumber),
+                    &mut self.sprite_number,
+                );
             });
-        if ui.button("Stage recovered sprite fields").clicked() {
+        if ui
+            .button(catalog.extended_text(Key::MwlSpriteStageFields))
+            .clicked()
+        {
             self.stage_semantic_fields()?;
             self.load_form();
         }
@@ -257,9 +313,16 @@ impl MwlSpritePanel {
             .map_err(|error| error.to_string())
     }
 
-    fn token_controls(&mut self, ui: &mut egui::Ui) -> Result<(), String> {
+    fn token_controls(
+        &mut self,
+        ui: &mut egui::Ui,
+        catalog: Option<&LocalizationCatalog>,
+    ) -> Result<(), String> {
         ui.horizontal(|ui| -> Result<(), String> {
-            if ui.button("Insert before").clicked() {
+            if ui
+                .button(catalog.extended_text(Key::MwlInsertBefore))
+                .clicked()
+            {
                 let token = self.form_token()?;
                 let stream = self.stream.as_mut().expect("loaded sprite stream");
                 let index = self.selected.min(stream.tokens.len());
@@ -269,7 +332,7 @@ impl MwlSpritePanel {
                 self.selected = index;
                 self.load_form();
             }
-            if ui.button("Replace").clicked() {
+            if ui.button(catalog.extended_text(Key::MwlReplace)).clicked() {
                 let token = self.form_token()?;
                 let stream = self.stream.as_mut().expect("loaded sprite stream");
                 if self.selected >= stream.tokens.len() {
@@ -283,7 +346,7 @@ impl MwlSpritePanel {
                     .map_err(|error| error.to_string())?;
                 self.load_form();
             }
-            if ui.button("Delete").clicked() {
+            if ui.button(catalog.extended_text(Key::MwlDelete)).clicked() {
                 let stream = self.stream.as_mut().expect("loaded sprite stream");
                 stream
                     .remove(self.selected)
@@ -297,9 +360,13 @@ impl MwlSpritePanel {
         Ok(())
     }
 
-    fn reorder_controls(&mut self, ui: &mut egui::Ui) -> Result<(), String> {
+    fn reorder_controls(
+        &mut self,
+        ui: &mut egui::Ui,
+        catalog: Option<&LocalizationCatalog>,
+    ) -> Result<(), String> {
         ui.horizontal(|ui| -> Result<(), String> {
-            if ui.button("Move up").clicked() && self.selected > 0 {
+            if ui.button(catalog.extended_text(Key::MwlMoveUp)).clicked() && self.selected > 0 {
                 let before = self.selected - 1;
                 self.stream
                     .as_mut()
@@ -314,7 +381,9 @@ impl MwlSpritePanel {
                 .expect("loaded sprite stream")
                 .tokens
                 .len();
-            if ui.button("Move down").clicked() && self.selected + 1 < len {
+            if ui.button(catalog.extended_text(Key::MwlMoveDown)).clicked()
+                && self.selected + 1 < len
+            {
                 let destination = self.selected + 2;
                 self.stream
                     .as_mut()
