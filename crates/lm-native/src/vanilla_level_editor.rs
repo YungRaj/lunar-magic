@@ -957,7 +957,8 @@ impl VanillaLevelEditor {
             self.external_sprite_textures.clear();
         }
 
-        self.show_layer2_mode_reset_confirmation(ui.ctx());
+        let catalog = app.localization();
+        self.show_layer2_mode_reset_confirmation(ui.ctx(), catalog);
 
         ui.heading(format!("Level {level:03X} — built-in SMW editor"));
         if let Some(address) = self.raw_layer1_pc_address {
@@ -980,7 +981,6 @@ impl VanillaLevelEditor {
                 Err(error) => self.error = Some(error),
             }
         }
-        let catalog = app.localization();
         self.show_zoom_popup(ui.ctx(), catalog);
         self.show_conditional_direct_map16_dialog(ui.ctx(), catalog);
         self.show_direct_map16_remap_dialog(ui.ctx(), catalog);
@@ -1073,7 +1073,7 @@ impl VanillaLevelEditor {
                             ))
                             .default_open(requested_tool_panel == Some(LevelToolPanel::Settings))
                             .show(ui, |ui| {
-                                self.show_header_editor(ui, object_count, sprite_count);
+                                self.show_header_editor(ui, catalog, object_count, sprite_count);
                                 if self.raw_layer1_pc_address.is_none() && pending_command.is_none()
                                 {
                                     pending_command = self.show_entrance_editor(ui, level);
@@ -1853,29 +1853,68 @@ impl VanillaLevelEditor {
         }
     }
 
-    fn show_header_editor(&mut self, ui: &mut egui::Ui, objects: usize, sprites: usize) {
-        ui.label(format!("{objects} objects, {sprites} sprite records"));
+    fn show_header_editor(
+        &mut self,
+        ui: &mut egui::Ui,
+        catalog: Option<&LocalizationCatalog>,
+        objects: usize,
+        sprites: usize,
+    ) {
+        ui.label(
+            vanilla_text(catalog, ExtendedUiTextKey::VanillaLevelHeaderCountsFormat)
+                .replace("{objects}", &objects.to_string())
+                .replace("{sprites}", &sprites.to_string()),
+        );
         egui::Grid::new("vanilla-level-header").show(ui, |ui| {
-            header_row(ui, "Level mode", &mut self.form.level_mode, 31);
             header_row(
                 ui,
-                "Background palette",
+                &vanilla_text(catalog, ExtendedUiTextKey::VanillaLevelMode),
+                &mut self.form.level_mode,
+                31,
+            );
+            header_row(
+                ui,
+                &vanilla_text(catalog, ExtendedUiTextKey::VanillaLevelBackgroundPalette),
                 &mut self.form.background_palette,
                 7,
             );
-            header_row(ui, "Last screen", &mut self.form.last_screen, 31);
-            header_row(ui, "Background color", &mut self.form.background_color, 7);
-            header_row(ui, "Sprite tileset", &mut self.form.sprite_tileset, 15);
             header_row(
                 ui,
-                "Default music selector",
+                &vanilla_text(catalog, ExtendedUiTextKey::VanillaLevelLastScreen),
+                &mut self.form.last_screen,
+                31,
+            );
+            header_row(
+                ui,
+                &vanilla_text(catalog, ExtendedUiTextKey::VanillaLevelBackgroundColor),
+                &mut self.form.background_color,
+                7,
+            );
+            header_row(
+                ui,
+                &vanilla_text(catalog, ExtendedUiTextKey::VanillaLevelSpriteTileset),
+                &mut self.form.sprite_tileset,
+                15,
+            );
+            header_row(
+                ui,
+                &vanilla_text(catalog, ExtendedUiTextKey::VanillaLevelDefaultMusic),
                 &mut self.form.default_music_selector,
                 7,
             );
-            ui.label("Custom music bypass");
-            ui.checkbox(&mut self.form.custom_music_enabled, "Enabled");
+            ui.label(vanilla_text(
+                catalog,
+                ExtendedUiTextKey::VanillaLevelCustomMusicBypass,
+            ));
+            ui.checkbox(
+                &mut self.form.custom_music_enabled,
+                vanilla_text(catalog, ExtendedUiTextKey::VanillaLevelEnabled),
+            );
             ui.end_row();
-            ui.label("Custom music track (hex)");
+            ui.label(vanilla_text(
+                catalog,
+                ExtendedUiTextKey::VanillaLevelCustomMusicTrack,
+            ));
             ui.add_enabled(
                 self.form.custom_music_enabled,
                 egui::DragValue::new(&mut self.form.custom_music_track)
@@ -1885,14 +1924,23 @@ impl VanillaLevelEditor {
             ui.end_row();
             header_row(
                 ui,
-                "Time limit selector",
+                &vanilla_text(catalog, ExtendedUiTextKey::VanillaLevelTimeLimit),
                 &mut self.form.time_limit_selector,
                 3,
             );
-            ui.label("Custom time bypass");
-            ui.checkbox(&mut self.form.custom_time_enabled, "Enabled");
+            ui.label(vanilla_text(
+                catalog,
+                ExtendedUiTextKey::VanillaLevelCustomTimeBypass,
+            ));
+            ui.checkbox(
+                &mut self.form.custom_time_enabled,
+                vanilla_text(catalog, ExtendedUiTextKey::VanillaLevelEnabled),
+            );
             ui.end_row();
-            ui.label("Custom time (hex)");
+            ui.label(vanilla_text(
+                catalog,
+                ExtendedUiTextKey::VanillaLevelCustomTime,
+            ));
             ui.add_enabled(
                 self.form.custom_time_enabled,
                 egui::DragValue::new(&mut self.form.custom_time_value)
@@ -1900,7 +1948,10 @@ impl VanillaLevelEditor {
                     .hexadecimal(3, false, true),
             );
             ui.end_row();
-            ui.label("Force time reset");
+            ui.label(vanilla_text(
+                catalog,
+                ExtendedUiTextKey::VanillaLevelForceTimeReset,
+            ));
             ui.add_enabled(
                 self.form.custom_time_enabled,
                 egui::Checkbox::without_text(&mut self.form.force_time_reset),
@@ -1908,15 +1959,25 @@ impl VanillaLevelEditor {
             ui.end_row();
             header_row(
                 ui,
-                "Foreground palette",
+                &vanilla_text(catalog, ExtendedUiTextKey::VanillaLevelForegroundPalette),
                 &mut self.form.foreground_palette,
                 7,
             );
-            header_row(ui, "Sprite palette", &mut self.form.sprite_palette, 7);
-            header_row(ui, "Object tileset", &mut self.form.object_tileset, 15);
             header_row(
                 ui,
-                "Layer 1 vertical scroll",
+                &vanilla_text(catalog, ExtendedUiTextKey::VanillaLevelSpritePalette),
+                &mut self.form.sprite_palette,
+                7,
+            );
+            header_row(
+                ui,
+                &vanilla_text(catalog, ExtendedUiTextKey::VanillaLevelObjectTileset),
+                &mut self.form.object_tileset,
+                15,
+            );
+            header_row(
+                ui,
+                &vanilla_text(catalog, ExtendedUiTextKey::VanillaLevelLayer1VerticalScroll),
                 &mut self.form.layer1_vertical_scroll,
                 3,
             );
@@ -1939,7 +2000,13 @@ impl VanillaLevelEditor {
             );
         }
         ui.horizontal_wrapped(|ui| {
-            if ui.button("Stage header changes").clicked() {
+            if ui
+                .button(vanilla_text(
+                    catalog,
+                    ExtendedUiTextKey::VanillaLevelStageHeader,
+                ))
+                .clicked()
+            {
                 let controller = self
                     .controller
                     .as_ref()
@@ -1971,7 +2038,13 @@ impl VanillaLevelEditor {
                     Err(error) => self.error = Some(error),
                 }
             }
-            if ui.button("Reset staged values").clicked() {
+            if ui
+                .button(vanilla_text(
+                    catalog,
+                    ExtendedUiTextKey::VanillaLevelResetStagedValues,
+                ))
+                .clicked()
+            {
                 self.form = HeaderForm::from_controller(
                     self.controller
                         .as_ref()
@@ -1982,7 +2055,11 @@ impl VanillaLevelEditor {
         });
     }
 
-    fn show_layer2_mode_reset_confirmation(&mut self, context: &egui::Context) {
+    fn show_layer2_mode_reset_confirmation(
+        &mut self,
+        context: &egui::Context,
+        catalog: Option<&LocalizationCatalog>,
+    ) {
         let Some(form) = self.pending_layer2_mode_reset else {
             return;
         };
@@ -1990,56 +2067,72 @@ impl VanillaLevelEditor {
             controller.level().layer1.header.level_mode()
         });
         let target_mode = lm_level::lunar_magic_canonical_level_mode(form.level_mode);
-        egui::Window::new("Reset Layer 2 for level mode change?")
-            .collapsible(false)
-            .resizable(false)
-            .show(context, |ui| {
-                ui.label(format!(
-                    "Changing level mode ${source_mode:02X} to ${target_mode:02X} switches Layer 2 storage formats."
-                ));
-                ui.label(
-                    "Lunar Magic clears the tilemap workspace when entering a tilemap-backed mode. Object-backed data remains available if you switch back before saving.",
-                );
-                ui.horizontal(|ui| {
-                    if ui.button("Cancel").clicked() {
-                        self.pending_layer2_mode_reset = None;
-                    }
-                    if ui.button("Reset Layer 2 and stage changes").clicked() {
-                        let result = form.edits().map_err(|error| error.to_string()).and_then(
-                            |edits| {
+        egui::Window::new(vanilla_text(
+            catalog,
+            ExtendedUiTextKey::VanillaLevelResetLayer2Title,
+        ))
+        .collapsible(false)
+        .resizable(false)
+        .show(context, |ui| {
+            ui.label(
+                vanilla_text(catalog, ExtendedUiTextKey::VanillaLevelResetLayer2Format)
+                    .replace("{source}", &format!("{source_mode:02X}"))
+                    .replace("{target}", &format!("{target_mode:02X}")),
+            );
+            ui.label(vanilla_text(
+                catalog,
+                ExtendedUiTextKey::VanillaLevelResetLayer2Help,
+            ));
+            ui.horizontal(|ui| {
+                if ui
+                    .button(vanilla_text(catalog, ExtendedUiTextKey::VanillaLevelCancel))
+                    .clicked()
+                {
+                    self.pending_layer2_mode_reset = None;
+                }
+                if ui
+                    .button(vanilla_text(
+                        catalog,
+                        ExtendedUiTextKey::VanillaLevelResetLayer2Apply,
+                    ))
+                    .clicked()
+                {
+                    let result =
+                        form.edits()
+                            .map_err(|error| error.to_string())
+                            .and_then(|edits| {
                                 self.controller
                                     .as_mut()
                                     .ok_or_else(|| "level workspace is closed".to_owned())?
                                     .apply_edits_with_layer2_reset(&edits, true)
                                     .map_err(|error| error.to_string())
-                            },
-                        );
-                        self.pending_layer2_mode_reset = None;
-                        match result {
-                            Ok(()) => {
-                                self.error = None;
-                                if let Some(controller) = &self.controller {
-                                    self.form = HeaderForm::from_controller(controller);
-                                }
-                                self.selected_layer2_tile = 0;
-                                self.layer2_word = self
-                                    .controller
-                                    .as_ref()
-                                    .and_then(LevelController::layer2)
-                                    .and_then(|layer2| match layer2 {
-                                        lm_level::NativeLayer2Data::Tilemap(bytes) => bytes
-                                            .get(..2)
-                                            .map(|word| u16::from_le_bytes([word[0], word[1]])),
-                                        lm_level::NativeLayer2Data::Objects(_) => None,
-                                    })
-                                    .unwrap_or_default();
-                                self.reload_layer2_object_form();
+                            });
+                    self.pending_layer2_mode_reset = None;
+                    match result {
+                        Ok(()) => {
+                            self.error = None;
+                            if let Some(controller) = &self.controller {
+                                self.form = HeaderForm::from_controller(controller);
                             }
-                            Err(error) => self.error = Some(error),
+                            self.selected_layer2_tile = 0;
+                            self.layer2_word = self
+                                .controller
+                                .as_ref()
+                                .and_then(LevelController::layer2)
+                                .and_then(|layer2| match layer2 {
+                                    lm_level::NativeLayer2Data::Tilemap(bytes) => bytes
+                                        .get(..2)
+                                        .map(|word| u16::from_le_bytes([word[0], word[1]])),
+                                    lm_level::NativeLayer2Data::Objects(_) => None,
+                                })
+                                .unwrap_or_default();
+                            self.reload_layer2_object_form();
                         }
+                        Err(error) => self.error = Some(error),
                     }
-                });
+                }
             });
+        });
     }
 
     fn show_entrance_editor(&mut self, ui: &mut egui::Ui, level: u16) -> Option<Command> {
@@ -17287,6 +17380,30 @@ mod tests {
                 "fixed-English Layer 2 object action: {literal}"
             );
         }
+        let header_editor = source
+            .split("    fn show_header_editor(")
+            .nth(1)
+            .unwrap()
+            .split("    fn show_entrance_editor(")
+            .next()
+            .unwrap();
+        for literal in [
+            "format!(\"{objects} objects, {sprites} sprite records\")",
+            "label(\"Custom music bypass\")",
+            "label(\"Custom music track (hex)\")",
+            "label(\"Custom time bypass\")",
+            "label(\"Custom time (hex)\")",
+            "label(\"Force time reset\")",
+            "button(\"Stage header changes\")",
+            "button(\"Reset staged values\")",
+            "Window::new(\"Reset Layer 2 for level mode change?\")",
+            "button(\"Reset Layer 2 and stage changes\")",
+        ] {
+            assert!(
+                !header_editor.contains(literal),
+                "fixed-English header control: {literal}"
+            );
+        }
         let modeless_editors = source
             .split("    fn show_modeless_entity_edit_windows(")
             .nth(1)
@@ -17338,6 +17455,18 @@ mod tests {
             vanilla_text(None, ExtendedUiTextKey::VanillaLevelSpriteTokenFormat)
                 .replace("{index}", "7"),
             "Sprite token 7"
+        );
+        assert_eq!(
+            vanilla_text(None, ExtendedUiTextKey::VanillaLevelHeaderCountsFormat)
+                .replace("{objects}", "3")
+                .replace("{sprites}", "5"),
+            "3 objects, 5 sprite records"
+        );
+        assert_eq!(
+            vanilla_text(None, ExtendedUiTextKey::VanillaLevelResetLayer2Format)
+                .replace("{source}", "00")
+                .replace("{target}", "01"),
+            "Changing level mode $00 to $01 switches Layer 2 storage formats."
         );
     }
 

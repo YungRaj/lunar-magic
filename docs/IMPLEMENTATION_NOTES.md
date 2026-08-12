@@ -7100,6 +7100,15 @@ ignore), native compilation passes, and renderer remains 237/237. Vanilla-level 
 shared progress windows, and retained live language-DLL evidence keep Localization Partial;
 aggregate parity remains 60/65.
 
+Localization coverage update (2026-08-12, vanilla level header and mode reset): twenty-four
+additional `VanillaLevel*` identities cover object/sprite counts, all ordinary header selectors,
+custom music and time bypass fields, stage/reset actions, and the complete Layer 2 storage-format
+reset confirmation. Dynamic counts and hexadecimal source/target modes use localized templates.
+The live catalog now enters the header editor and confirmation before any controls render. A
+bounded source audit rejects former fixed-English labels/actions and proves both templates. Focused
+native and localization tests pass, and renderer remains 237/237. Entrance controls and other
+vanilla/native forms keep Localization Partial; aggregate parity remains 60/65.
+
 Localization coverage update (2026-08-12, vanilla Layer 2 object actions): two additional
 `VanillaLevel*` identities plus the shared object-action vocabulary cover canvas placement,
 insertion, semantic/raw application, removal, stream ordering, copy, and paste for decoded Layer 2

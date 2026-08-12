@@ -3957,10 +3957,34 @@ pub enum ExtendedUiTextKey {
     VanillaLevelPasteRecordAfterSelection,
     VanillaLevelPlaceOnCanvas,
     VanillaLevelApplyFields,
+    VanillaLevelHeaderCountsFormat,
+    VanillaLevelMode,
+    VanillaLevelBackgroundPalette,
+    VanillaLevelLastScreen,
+    VanillaLevelBackgroundColor,
+    VanillaLevelSpriteTileset,
+    VanillaLevelDefaultMusic,
+    VanillaLevelCustomMusicBypass,
+    VanillaLevelEnabled,
+    VanillaLevelCustomMusicTrack,
+    VanillaLevelTimeLimit,
+    VanillaLevelCustomTimeBypass,
+    VanillaLevelCustomTime,
+    VanillaLevelForceTimeReset,
+    VanillaLevelForegroundPalette,
+    VanillaLevelSpritePalette,
+    VanillaLevelObjectTileset,
+    VanillaLevelLayer1VerticalScroll,
+    VanillaLevelStageHeader,
+    VanillaLevelResetStagedValues,
+    VanillaLevelResetLayer2Title,
+    VanillaLevelResetLayer2Format,
+    VanillaLevelResetLayer2Help,
+    VanillaLevelResetLayer2Apply,
 }
 
 impl ExtendedUiTextKey {
-    pub const ALL: [Self; 2256] = [
+    pub const ALL: [Self; 2280] = [
         Self::MwlDocumentEditorTitle,
         Self::MwlDocumentVersionFormat,
         Self::MwlDocumentFlagsHex,
@@ -6217,6 +6241,30 @@ impl ExtendedUiTextKey {
         Self::VanillaLevelPasteRecordAfterSelection,
         Self::VanillaLevelPlaceOnCanvas,
         Self::VanillaLevelApplyFields,
+        Self::VanillaLevelHeaderCountsFormat,
+        Self::VanillaLevelMode,
+        Self::VanillaLevelBackgroundPalette,
+        Self::VanillaLevelLastScreen,
+        Self::VanillaLevelBackgroundColor,
+        Self::VanillaLevelSpriteTileset,
+        Self::VanillaLevelDefaultMusic,
+        Self::VanillaLevelCustomMusicBypass,
+        Self::VanillaLevelEnabled,
+        Self::VanillaLevelCustomMusicTrack,
+        Self::VanillaLevelTimeLimit,
+        Self::VanillaLevelCustomTimeBypass,
+        Self::VanillaLevelCustomTime,
+        Self::VanillaLevelForceTimeReset,
+        Self::VanillaLevelForegroundPalette,
+        Self::VanillaLevelSpritePalette,
+        Self::VanillaLevelObjectTileset,
+        Self::VanillaLevelLayer1VerticalScroll,
+        Self::VanillaLevelStageHeader,
+        Self::VanillaLevelResetStagedValues,
+        Self::VanillaLevelResetLayer2Title,
+        Self::VanillaLevelResetLayer2Format,
+        Self::VanillaLevelResetLayer2Help,
+        Self::VanillaLevelResetLayer2Apply,
     ];
 
     #[must_use]
@@ -9142,6 +9190,34 @@ impl ExtendedUiTextKey {
             Self::VanillaLevelPasteRecordAfterSelection => "Paste record after selection",
             Self::VanillaLevelPlaceOnCanvas => "Place on canvas",
             Self::VanillaLevelApplyFields => "Apply fields",
+            Self::VanillaLevelHeaderCountsFormat => "{objects} objects, {sprites} sprite records",
+            Self::VanillaLevelMode => "Level mode",
+            Self::VanillaLevelBackgroundPalette => "Background palette",
+            Self::VanillaLevelLastScreen => "Last screen",
+            Self::VanillaLevelBackgroundColor => "Background color",
+            Self::VanillaLevelSpriteTileset => "Sprite tileset",
+            Self::VanillaLevelDefaultMusic => "Default music selector",
+            Self::VanillaLevelCustomMusicBypass => "Custom music bypass",
+            Self::VanillaLevelEnabled => "Enabled",
+            Self::VanillaLevelCustomMusicTrack => "Custom music track (hex)",
+            Self::VanillaLevelTimeLimit => "Time limit selector",
+            Self::VanillaLevelCustomTimeBypass => "Custom time bypass",
+            Self::VanillaLevelCustomTime => "Custom time (hex)",
+            Self::VanillaLevelForceTimeReset => "Force time reset",
+            Self::VanillaLevelForegroundPalette => "Foreground palette",
+            Self::VanillaLevelSpritePalette => "Sprite palette",
+            Self::VanillaLevelObjectTileset => "Object tileset",
+            Self::VanillaLevelLayer1VerticalScroll => "Layer 1 vertical scroll",
+            Self::VanillaLevelStageHeader => "Stage header changes",
+            Self::VanillaLevelResetStagedValues => "Reset staged values",
+            Self::VanillaLevelResetLayer2Title => "Reset Layer 2 for level mode change?",
+            Self::VanillaLevelResetLayer2Format => {
+                "Changing level mode ${source} to ${target} switches Layer 2 storage formats."
+            }
+            Self::VanillaLevelResetLayer2Help => {
+                "Lunar Magic clears the tilemap workspace when entering a tilemap-backed mode. Object-backed data remains available if you switch back before saving."
+            }
+            Self::VanillaLevelResetLayer2Apply => "Reset Layer 2 and stage changes",
         }
     }
 
