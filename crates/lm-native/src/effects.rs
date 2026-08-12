@@ -108,7 +108,7 @@ impl EffectState {
     }
 
     pub(crate) fn show_external_tools(&mut self, context: &egui::Context, app: &mut AppState) {
-        if let Some(result) = self.external_tools.show(context) {
+        if let Some(result) = self.external_tools.show(context, app.localization()) {
             match result {
                 Ok(status) => app.status = status,
                 Err(error) => self.error = Some(error),

@@ -7720,3 +7720,14 @@ controller transaction tests pass, including reciprocal validation, failure atom
 canonical save, and stale-save rejection; localization model tests pass and renderer remains
 237/237. Other native forms and retained live language-DLL evidence keep Localization Partial;
 aggregate parity remains 60/65.
+
+## External-tool lifecycle localization parity
+
+Fourteen typed extension keys now cover permission, running-state, stop/deny/run actions,
+direct-argument guidance, and completion status. Tool IDs, quoted arguments,
+executable/working-directory paths, process IDs, and worker errors remain exact opaque data
+substituted into localized templates. The active catalog now flows through the effect host. All 11
+focused tests pass for bounded queueing, permission lifecycle, no-shell expansion, cancellation,
+missing executables, multiple/focused instances, completion, and private emulator-workspace
+cleanup; the source audit, localization model, and renderer 237/237 also pass. Other native forms
+and retained live language-DLL evidence keep Localization Partial; aggregate parity remains 60/65.

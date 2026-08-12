@@ -2,7 +2,10 @@
 
 use crate::external_tools;
 use eframe::egui;
-use lm_app::{EmulatorTestRequest, LunarMagicNotification, ToolContext, ToolInvocation};
+use lm_app::{
+    EmulatorTestRequest, ExtendedUiTextKey as Key, LocalizationCatalog, LunarMagicNotification,
+    ToolContext, ToolInvocation,
+};
 use std::collections::VecDeque;
 use std::fs;
 use std::io::Write;
@@ -225,22 +228,32 @@ impl ExternalToolLauncher {
     }
 
     /// Draws permission/running state and returns one completed launch result, if available.
-    pub(crate) fn show(&mut self, context: &egui::Context) -> Option<Result<String, String>> {
-        let completion = self.poll();
+    pub(crate) fn show(
+        &mut self,
+        context: &egui::Context,
+        catalog: Option<&LocalizationCatalog>,
+    ) -> Option<Result<String, String>> {
+        let completion = self.poll(catalog);
         for running in &self.running {
-            egui::Window::new(format!("External tool {:?} running", running.tool_id))
-                .id(egui::Id::new((
-                    "external-tool-running",
-                    running.instance_id,
-                )))
-                .collapsible(false)
-                .resizable(false)
-                .show(context, |ui| {
-                    ui.label(format!("Waiting for external tool {:?}", running.tool_id));
-                    if ui.button("Stop").clicked() {
-                        let _cancelled = running.cancel.send(());
-                    }
-                });
+            egui::Window::new(
+                text(catalog, Key::ExternalToolRunningTitleFormat)
+                    .replace("{tool}", &format!("{:?}", running.tool_id)),
+            )
+            .id(egui::Id::new((
+                "external-tool-running",
+                running.instance_id,
+            )))
+            .collapsible(false)
+            .resizable(false)
+            .show(context, |ui| {
+                ui.label(
+                    text(catalog, Key::ExternalToolWaitingFormat)
+                        .replace("{tool}", &format!("{:?}", running.tool_id)),
+                );
+                if ui.button(text(catalog, Key::ExternalToolStop)).clicked() {
+                    let _cancelled = running.cancel.send(());
+                }
+            });
             context.request_repaint_after(std::time::Duration::from_millis(100));
         }
 
@@ -250,27 +263,38 @@ impl ExternalToolLauncher {
         let invocation = &pending.invocation;
         let mut approve = false;
         let mut deny = false;
-        egui::Window::new("Allow external tool?")
+        egui::Window::new(text(catalog, Key::ExternalToolAllowTitle))
             .collapsible(false)
             .resizable(true)
             .show(context, |ui| {
-                ui.label(format!("Tool ID: {:?}", invocation.tool_id));
-                ui.label(format!("Executable: {}", invocation.executable.display()));
-                ui.label(format!(
-                    "Working directory: {}",
-                    invocation
-                        .working_directory
-                        .as_deref()
-                        .map_or_else(|| "<inherited>".into(), |path| path.display().to_string())
-                ));
+                ui.label(
+                    text(catalog, Key::ExternalToolIdFormat)
+                        .replace("{tool}", &format!("{:?}", invocation.tool_id)),
+                );
+                ui.label(
+                    text(catalog, Key::ExternalToolExecutableFormat)
+                        .replace("{path}", &invocation.executable.display().to_string()),
+                );
+                let directory = invocation.working_directory.as_deref().map_or_else(
+                    || text(catalog, Key::ExternalToolInherited),
+                    |path| path.display().to_string(),
+                );
+                ui.label(
+                    text(catalog, Key::ExternalToolWorkingDirectoryFormat)
+                        .replace("{path}", &directory),
+                );
                 ui.separator();
-                ui.label("Arguments are passed directly without a command shell:");
+                ui.label(text(catalog, Key::ExternalToolArgumentsNotice));
                 for (index, argument) in invocation.arguments.iter().enumerate() {
-                    ui.monospace(format!("argument[{index}] = {argument:?}"));
+                    ui.monospace(
+                        text(catalog, Key::ExternalToolArgumentFormat)
+                            .replace("{index}", &index.to_string())
+                            .replace("{argument}", &format!("{argument:?}")),
+                    );
                 }
                 ui.horizontal(|ui| {
-                    deny = ui.button("Deny").clicked();
-                    approve = ui.button("Run").clicked();
+                    deny = ui.button(text(catalog, Key::ExternalToolDeny)).clicked();
+                    approve = ui.button(text(catalog, Key::ExternalToolRun)).clicked();
                 });
             });
         if deny {
@@ -325,18 +349,22 @@ impl ExternalToolLauncher {
         Ok(())
     }
 
-    fn poll(&mut self) -> Option<Result<String, String>> {
+    fn poll(&mut self, catalog: Option<&LocalizationCatalog>) -> Option<Result<String, String>> {
         self.refresh_process_ids();
         for index in 0..self.running.len() {
             match self.running[index].result.try_recv() {
                 Ok(result) => {
                     let tool_id = self.running.swap_remove(index).tool_id;
-                    return Some(result.map(|completion| match completion {
-                        external_tools::ProcessCompletion::Exited => {
-                            format!("External tool {tool_id:?} completed successfully")
-                        }
-                        external_tools::ProcessCompletion::Stopped => {
-                            format!("External tool {tool_id:?} stopped")
+                    return Some(result.map(|completion| {
+                        match completion {
+                            external_tools::ProcessCompletion::Exited => {
+                                text(catalog, Key::ExternalToolCompletedFormat)
+                                    .replace("{tool}", &format!("{tool_id:?}"))
+                            }
+                            external_tools::ProcessCompletion::Stopped => {
+                                text(catalog, Key::ExternalToolStoppedFormat)
+                                    .replace("{tool}", &format!("{tool_id:?}"))
+                            }
                         }
                     }));
                 }
@@ -363,11 +391,29 @@ impl ExternalToolLauncher {
     }
 }
 
+fn text(catalog: Option<&LocalizationCatalog>, key: Key) -> String {
+    catalog.map_or_else(
+        || key.english().to_owned(),
+        |catalog| catalog.extended_text(key).to_owned(),
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use lm_app::ExternalTool;
     use std::path::PathBuf;
+
+    #[test]
+    fn complete_external_tool_surface_has_no_literal_widget_text() {
+        let source = include_str!("external_tool_launcher.rs");
+        for literal in ["egui::Window::new(\"", "ui.button(\"", "ui.label(\""] {
+            assert!(
+                !source.contains(literal),
+                "literal external-tool widget text: {literal}"
+            );
+        }
+    }
 
     fn invocation(index: usize) -> ToolInvocation {
         ToolInvocation {
@@ -429,7 +475,7 @@ mod tests {
             #[cfg(windows)]
             notification_path_window: None,
         };
-        assert!(matches!(launcher.poll(), Some(Err(error)) if error.contains("emu")));
+        assert!(matches!(launcher.poll(None), Some(Err(error)) if error.contains("emu")));
         assert!(launcher.running.is_empty());
     }
 

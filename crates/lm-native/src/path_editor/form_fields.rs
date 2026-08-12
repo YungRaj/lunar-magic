@@ -19,7 +19,7 @@ pub(super) fn node_fields(
             ui.text_edit_singleline(field);
         });
     }
-    submap_combo(ui, &mut form.submap, "path-node-submap");
+    submap_combo(ui, &mut form.submap, "path-node-submap", catalog);
 }
 
 pub(super) fn edge_fields(
@@ -85,7 +85,12 @@ fn text(catalog: Option<&LocalizationCatalog>, key: Key) -> String {
     )
 }
 
-fn submap_combo(ui: &mut egui::Ui, value: &mut usize, id: &str) {
+fn submap_combo(
+    ui: &mut egui::Ui,
+    value: &mut usize,
+    id: &str,
+    catalog: Option<&LocalizationCatalog>,
+) {
     egui::ComboBox::from_id_salt(id)
         .selected_text(submap_names(catalog)[(*value).min(6)].clone())
         .show_ui(ui, |ui| {
