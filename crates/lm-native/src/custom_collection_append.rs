@@ -1,5 +1,6 @@
 use crate::vanilla_level_editor::CustomCollectionSelection;
 use eframe::egui;
+use lm_app::LocalizationCatalog;
 use lm_level::{
     CustomObjectEntry, CustomObjectLibrary, CustomSpriteEntry, CustomSpriteLibrary,
     DescriptionFormat, SpriteLengthTable,
@@ -9,6 +10,7 @@ use std::path::Path;
 const FAILURE_STATUS: &str = "Nothing selected or couldn't open file.";
 const OBJECT_SUCCESS_STATUS: &str = "Saved selected objects to Custom Collection of Objects file.";
 const SPRITE_SUCCESS_STATUS: &str = "Saved selected sprites to Custom Collection of Sprites file.";
+const ORIGINAL_SPRITE_DIALOG_ID: u16 = 0x040a;
 
 #[derive(Clone, Debug)]
 pub(crate) struct CustomCollectionAppendDialog {
@@ -44,23 +46,34 @@ impl CustomCollectionAppendDialog {
         &mut self,
         context: &egui::Context,
         rom_path: Option<&Path>,
+        catalog: Option<&LocalizationCatalog>,
     ) -> Option<String> {
         if !self.open {
             return None;
         }
         let mut save = false;
         let mut cancel = false;
-        egui::Window::new("Add to Custom Collection")
+        let sprite_dialog = matches!(self.selection, Some(CustomCollectionSelection::Sprites(..)));
+        egui::Window::new(collection_dialog_title(catalog, sprite_dialog))
             .collapsible(false)
             .resizable(false)
             .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
             .show(context, |ui| {
-                ui.label("Description");
+                ui.label(collection_dialog_instruction(catalog, sprite_dialog));
                 let response = ui.text_edit_singleline(&mut self.description);
                 response.request_focus();
                 ui.horizontal(|ui| {
-                    save = ui.button("Save").clicked();
-                    cancel = ui.button("Cancel").clicked();
+                    save = ui
+                        .button(collection_dialog_control(catalog, sprite_dialog, 1, "Save"))
+                        .clicked();
+                    cancel = ui
+                        .button(collection_dialog_control(
+                            catalog,
+                            sprite_dialog,
+                            2,
+                            "Cancel",
+                        ))
+                        .clicked();
                 });
             });
         if cancel {
@@ -81,6 +94,51 @@ impl CustomCollectionAppendDialog {
             append_selection(rom_path, selection, &self.description)
                 .unwrap_or_else(|_| FAILURE_STATUS.into()),
         )
+    }
+}
+
+fn collection_dialog_title(catalog: Option<&LocalizationCatalog>, sprite_dialog: bool) -> String {
+    if sprite_dialog {
+        catalog
+            .and_then(|catalog| catalog.original_dialog_title(ORIGINAL_SPRITE_DIALOG_ID))
+            .unwrap_or("Add to Custom Collection of Sprites")
+            .to_owned()
+    } else {
+        "Add to Custom Collection of Objects".to_owned()
+    }
+}
+
+fn collection_dialog_instruction(
+    catalog: Option<&LocalizationCatalog>,
+    sprite_dialog: bool,
+) -> String {
+    collection_dialog_control(
+        catalog,
+        sprite_dialog,
+        0x66,
+        if sprite_dialog {
+            "Enter a short description for the selected sprite."
+        } else {
+            "Enter a short description for the selected objects."
+        },
+    )
+}
+
+fn collection_dialog_control(
+    catalog: Option<&LocalizationCatalog>,
+    sprite_dialog: bool,
+    control_id: u32,
+    fallback: &str,
+) -> String {
+    if sprite_dialog {
+        catalog
+            .and_then(|catalog| {
+                catalog.original_dialog_control_text(ORIGINAL_SPRITE_DIALOG_ID, control_id)
+            })
+            .unwrap_or(fallback)
+            .to_owned()
+    } else {
+        fallback.to_owned()
     }
 }
 
@@ -205,6 +263,7 @@ fn persist_pair(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use lm_app::{OriginalDialogTextKey, UiTextKey};
     use lm_level::{ObjectRecord, SpriteRecord};
     use std::path::PathBuf;
 
@@ -322,5 +381,65 @@ mod tests {
         assert!(dialog.description.is_empty());
         assert_eq!(std::fs::read(data).unwrap(), b"malformed");
         assert_eq!(std::fs::read(text).unwrap(), b"old");
+    }
+
+    #[test]
+    fn original_sprite_collection_template_localizes_only_the_matching_native_form() {
+        let catalog = LocalizationCatalog::new(
+            "fr-test",
+            UiTextKey::ALL.map(|key| (key, key.english().to_owned())),
+        )
+        .unwrap()
+        .with_original_dialog_texts([
+            (
+                OriginalDialogTextKey {
+                    dialog_id: ORIGINAL_SPRITE_DIALOG_ID,
+                    item_index: u16::MAX,
+                    control_id: u32::MAX,
+                },
+                "Ajouter à la collection de sprites".into(),
+            ),
+            (
+                OriginalDialogTextKey {
+                    dialog_id: ORIGINAL_SPRITE_DIALOG_ID,
+                    item_index: 1,
+                    control_id: 0x66,
+                },
+                "Saisissez une courte description.".into(),
+            ),
+            (
+                OriginalDialogTextKey {
+                    dialog_id: ORIGINAL_SPRITE_DIALOG_ID,
+                    item_index: 2,
+                    control_id: 1,
+                },
+                "Valider".into(),
+            ),
+        ])
+        .unwrap();
+
+        assert_eq!(
+            collection_dialog_title(Some(&catalog), true),
+            "Ajouter à la collection de sprites"
+        );
+        assert_eq!(
+            collection_dialog_instruction(Some(&catalog), true),
+            "Saisissez une courte description."
+        );
+        assert_eq!(
+            collection_dialog_control(Some(&catalog), true, 1, "Save"),
+            "Valider"
+        );
+        assert_eq!(
+            collection_dialog_title(Some(&catalog), false),
+            "Add to Custom Collection of Objects"
+        );
+
+        let reopened = LocalizationCatalog::decode(&catalog.encode().unwrap()).unwrap();
+        assert_eq!(
+            collection_dialog_title(Some(&reopened), true),
+            "Ajouter à la collection de sprites"
+        );
+        assert_eq!(collection_dialog_control(None, true, 2, "Cancel"), "Cancel");
     }
 }

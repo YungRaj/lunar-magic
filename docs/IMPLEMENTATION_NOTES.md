@@ -6739,3 +6739,18 @@ canonical catalog encode/decode preserves every dialog-text key, and absent-temp
 the family-specific English behavior. This advances template application but does not close the
 Localization row: remaining mapped native forms and a retained live third-party language-DLL Wine
 gesture are still required.
+
+## Original animation-rate and custom-sprite collection templates
+
+The native animation-rate form now consumes Lunar Magic 3.63 dialog resource `$0410` for its
+title, computational-cost explanation, four exact rate captions, and OK/Cancel controls. The
+native rate model remains the already authenticated 120/60/30/15-millisecond cadence; localization
+changes presentation only. Missing template entries independently fall back to the built-in English
+caption instead of making the form incomplete.
+
+The Add to Custom Collection workflow now applies resource `$040A` to the matching sprite form:
+title, original description instruction, OK, and Cancel. The Rust-only grouped-object extension
+keeps its distinct object wording and deliberately does not misapply the sprite resource. Synthetic
+Unicode catalogs and canonical encode/decode tests bind both forms through the same catalog used by
+the running application. Localization remains `Partial` pending the remaining mapped native forms
+and a retained live third-party language-DLL Wine gesture.

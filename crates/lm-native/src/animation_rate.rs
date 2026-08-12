@@ -1,4 +1,7 @@
 use eframe::egui;
+use lm_app::LocalizationCatalog;
+
+const ORIGINAL_DIALOG_ID: u16 = 0x0410;
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub(crate) enum AnimationRate {
@@ -69,28 +72,36 @@ impl AnimationRateDialog {
         self.open = true;
     }
 
-    pub(crate) fn show(&mut self, context: &egui::Context) -> Option<AnimationRate> {
+    pub(crate) fn show(
+        &mut self,
+        context: &egui::Context,
+        catalog: Option<&LocalizationCatalog>,
+    ) -> Option<AnimationRate> {
         if !self.open {
             return None;
         }
         let mut accepted = None;
         let mut open = self.open;
         let mut close = false;
-        egui::Window::new("Change Animation Rate")
+        egui::Window::new(dialog_title(catalog))
             .collapsible(false)
             .resizable(false)
             .open(&mut open)
             .show(context, |ui| {
-                ui.label("Animation rate");
+                ui.label(dialog_text(
+                    catalog,
+                    0x66,
+                    "Each faster setting requires more computing power.",
+                ));
                 for rate in AnimationRate::ALL {
-                    ui.radio_value(&mut self.draft, rate, rate.label());
+                    ui.radio_value(&mut self.draft, rate, rate_label(catalog, rate));
                 }
                 ui.horizontal(|ui| {
-                    if ui.button("Apply").clicked() {
+                    if ui.button(dialog_text(catalog, 1, "OK")).clicked() {
                         accepted = Some(self.draft);
                         close = true;
                     }
-                    if ui.button("Cancel").clicked() {
+                    if ui.button(dialog_text(catalog, 2, "Cancel")).clicked() {
                         close = true;
                     }
                 });
@@ -103,6 +114,30 @@ impl AnimationRateDialog {
     pub(crate) const fn is_open(&self) -> bool {
         self.open
     }
+}
+
+fn dialog_title(catalog: Option<&LocalizationCatalog>) -> String {
+    catalog
+        .and_then(|catalog| catalog.original_dialog_title(ORIGINAL_DIALOG_ID))
+        .unwrap_or("Change Animation Rate")
+        .to_owned()
+}
+
+fn dialog_text(catalog: Option<&LocalizationCatalog>, control_id: u32, fallback: &str) -> String {
+    catalog
+        .and_then(|catalog| catalog.original_dialog_control_text(ORIGINAL_DIALOG_ID, control_id))
+        .unwrap_or(fallback)
+        .to_owned()
+}
+
+fn rate_label(catalog: Option<&LocalizationCatalog>, rate: AnimationRate) -> String {
+    let control_id = match rate {
+        AnimationRate::Fps7_5 => 0x68,
+        AnimationRate::Fps15 => 0x69,
+        AnimationRate::Fps30 => 0x6a,
+        AnimationRate::Fps60 => 0x67,
+    };
+    dialog_text(catalog, control_id, rate.label())
 }
 
 pub(crate) fn encode_preference(rate: AnimationRate) -> String {
@@ -123,6 +158,42 @@ pub(crate) fn decode_preference(encoded: &str) -> Result<AnimationRate, String> 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use lm_app::{OriginalDialogTextKey, UiTextKey};
+
+    fn localized_catalog() -> LocalizationCatalog {
+        LocalizationCatalog::new(
+            "fr-test",
+            UiTextKey::ALL.map(|key| (key, key.english().to_owned())),
+        )
+        .unwrap()
+        .with_original_dialog_texts([
+            (
+                OriginalDialogTextKey {
+                    dialog_id: ORIGINAL_DIALOG_ID,
+                    item_index: u16::MAX,
+                    control_id: u32::MAX,
+                },
+                "Vitesse d’animation".into(),
+            ),
+            (
+                OriginalDialogTextKey {
+                    dialog_id: ORIGINAL_DIALOG_ID,
+                    item_index: 1,
+                    control_id: 0x68,
+                },
+                "Basse (7,5 ips)".into(),
+            ),
+            (
+                OriginalDialogTextKey {
+                    dialog_id: ORIGINAL_DIALOG_ID,
+                    item_index: 2,
+                    control_id: 1,
+                },
+                "Valider".into(),
+            ),
+        ])
+        .unwrap()
+    }
 
     #[test]
     fn original_rates_have_exact_cadence_default_and_persistence() {
@@ -147,5 +218,25 @@ mod tests {
                 "accepted {malformed}"
             );
         }
+    }
+
+    #[test]
+    fn original_dialog_template_localizes_title_controls_and_rate_labels_with_fallbacks() {
+        let catalog = localized_catalog();
+        assert_eq!(dialog_title(Some(&catalog)), "Vitesse d’animation");
+        assert_eq!(
+            rate_label(Some(&catalog), AnimationRate::Fps7_5),
+            "Basse (7,5 ips)"
+        );
+        assert_eq!(dialog_text(Some(&catalog), 1, "OK"), "Valider");
+        assert_eq!(
+            rate_label(Some(&catalog), AnimationRate::Fps60),
+            AnimationRate::Fps60.label()
+        );
+        assert_eq!(dialog_title(None), "Change Animation Rate");
+
+        let reopened = LocalizationCatalog::decode(&catalog.encode().unwrap()).unwrap();
+        assert_eq!(dialog_title(Some(&reopened)), "Vitesse d’animation");
+        assert_eq!(dialog_text(Some(&reopened), 1, "OK"), "Valider");
     }
 }

@@ -1650,10 +1650,11 @@ impl eframe::App for NativeApplication {
         self.show_same_name_ips_warning(context);
         self.show_two_bpp_view_confirmation(context);
         self.show_truncate_level_confirmation(context);
-        if let Some(status) = self
-            .custom_collection_append_dialog
-            .show(context, self.app.document_path.as_deref())
-        {
+        if let Some(status) = self.custom_collection_append_dialog.show(
+            context,
+            self.app.document_path.as_deref(),
+            self.app.localization(),
+        ) {
             self.app.status = status;
         }
         if let Some((level, command)) = self.level_deletion_dialog.show(context, &self.app)
@@ -1733,7 +1734,10 @@ impl eframe::App for NativeApplication {
                 Err(error) => self.effects.error = Some(error.to_string()),
             }
         }
-        if let Some(rate) = self.animation_rate_dialog.show(context) {
+        if let Some(rate) = self
+            .animation_rate_dialog
+            .show(context, self.app.localization())
+        {
             self.animation_rate = rate;
             self.renderer.invalidate();
             self.vanilla_level_editor.invalidate_graphics_preview();
