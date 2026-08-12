@@ -39,6 +39,12 @@ staging folder. Merely selecting an offer creates no files. The editor does not 
 executable or relaunch automatically; the staged archive is ready for manual installation after
 exit.
 
+The extraction core installs a verified bundle into a brand-new
+`lunar-magic-rust-VERSION-TARGET` directory. It never edits the running version in place. Only flat
+regular files below that exact archive prefix are accepted; links, devices, traversal, nested paths,
+duplicates, invalid tar checksums/sizes, decompression overflow, and missing required executables
+fail with complete cleanup of the new directory. An existing version directory is preserved.
+
 ## Build and verify locally
 
 For a native Linux x86-64 build, run:

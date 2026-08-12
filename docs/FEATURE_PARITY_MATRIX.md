@@ -1158,6 +1158,14 @@ live ROM and Undo history remain unchanged. The Release row remains Partial for 
 listed installer, update, publication, signing, and remaining recovery gaps; aggregate parity stays
 60/65.
 
+Transactional update-extraction update (2026-08-11): verified portable archives now extract only
+into a create-new version/target sibling directory. The bounded gzip/tar decoder validates headers,
+checksums, sizes, a single exact top-level prefix, flat portable regular-file names, uniqueness,
+decompression limits, and all required runtime payloads. Any failure removes the new directory and
+collisions preserve the installed version. The update core passes 9/9. Launcher switching/relaunch,
+signing, and live platform proof remain missing, so Release stays Partial and aggregate parity
+remains 60/65.
+
 Crash-recovery evidence update (2026-08-11, title family): independently staged title-screen
 recording, title tilemap, and credits tilemap edits now compose on one isolated project clone for
 every two- and three-domain combination. Revision validation occurs at each semantic adapter before

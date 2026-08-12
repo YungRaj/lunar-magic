@@ -1,15 +1,19 @@
 #![forbid(unsafe_code)]
 
+use flate2::read::GzDecoder;
 use sha2::{Digest, Sha256};
 use std::{
     cmp::Ordering,
+    collections::BTreeSet,
     fmt, fs,
-    io::{Read, Write as _},
+    io::{Read, Write},
     path::{Path, PathBuf},
 };
 
 pub const MAX_MANIFEST_BYTES: usize = 16 * 1024;
 pub const MAX_ARCHIVE_BYTES: u64 = 512 * 1024 * 1024;
+pub const MAX_EXTRACTED_BYTES: u64 = 768 * 1024 * 1024;
+const TAR_BLOCK: usize = 512;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct UpdateManifest {
@@ -216,6 +220,162 @@ impl UpdateManifest {
         }
         Ok(())
     }
+
+    /// Extracts a staged portable bundle into one brand-new versioned directory.
+    pub fn extract_staged_archive(
+        &self,
+        staged_archive: &Path,
+        install_root: &Path,
+    ) -> Result<PathBuf, UpdateError> {
+        let prefix = format!("lunar-magic-rust-{}-{}", self.version, self.target);
+        let destination = install_root.join(&prefix);
+        fs::create_dir(&destination).map_err(|error| UpdateError::InstallIo(error.to_string()))?;
+        let result = self.extract_into(staged_archive, &destination, &prefix);
+        if let Err(error) = result {
+            let _cleanup = fs::remove_dir_all(&destination);
+            return Err(error);
+        }
+        Ok(destination)
+    }
+
+    fn extract_into(
+        &self,
+        staged_archive: &Path,
+        destination: &Path,
+        prefix: &str,
+    ) -> Result<(), UpdateError> {
+        let file = fs::File::open(staged_archive)
+            .map_err(|error| UpdateError::InstallIo(error.to_string()))?;
+        let mut tar = GzDecoder::new(file);
+        let mut seen = BTreeSet::new();
+        let mut total = 0_u64;
+        loop {
+            let mut header = [0_u8; TAR_BLOCK];
+            tar.read_exact(&mut header)
+                .map_err(|error| UpdateError::InstallArchive(error.to_string()))?;
+            if header.iter().all(|byte| *byte == 0) {
+                let mut second = [0_u8; TAR_BLOCK];
+                tar.read_exact(&mut second)
+                    .map_err(|error| UpdateError::InstallArchive(error.to_string()))?;
+                if second.iter().any(|byte| *byte != 0) {
+                    return Err(UpdateError::InstallArchive("invalid tar terminator".into()));
+                }
+                break;
+            }
+            validate_tar_checksum(&header)?;
+            if header[156] != b'0' && header[156] != 0 {
+                return Err(UpdateError::InstallArchive("non-regular tar entry".into()));
+            }
+            let name = tar_text(&header[..100])?;
+            let child = name
+                .strip_prefix(prefix)
+                .and_then(|suffix| suffix.strip_prefix('/'))
+                .filter(|child| !child.is_empty() && !child.contains('/'))
+                .ok_or_else(|| UpdateError::InstallArchive("entry escapes bundle prefix".into()))?;
+            portable_component("bundle entry", child)?;
+            if !seen.insert(child.to_owned()) {
+                return Err(UpdateError::InstallArchive("duplicate tar entry".into()));
+            }
+            let size = tar_octal(&header[124..136])?;
+            total = total.checked_add(size).ok_or(UpdateError::InstallLimit)?;
+            if size > MAX_ARCHIVE_BYTES || total > MAX_EXTRACTED_BYTES {
+                return Err(UpdateError::InstallLimit);
+            }
+            let path = destination.join(child);
+            let mut output = fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(&path)
+                .map_err(|error| UpdateError::InstallIo(error.to_string()))?;
+            copy_exact(&mut tar, &mut output, size)?;
+            output
+                .sync_all()
+                .map_err(|error| UpdateError::InstallIo(error.to_string()))?;
+            let padding = (TAR_BLOCK as u64 - size % TAR_BLOCK as u64) % TAR_BLOCK as u64;
+            discard_exact(&mut tar, padding)?;
+        }
+        let suffix = if self.target.contains("windows") {
+            ".exe"
+        } else {
+            ""
+        };
+        for required in [
+            format!("lm-native{suffix}"),
+            format!("lm-cli{suffix}"),
+            format!("lm-libretro{suffix}"),
+            "RELEASE-MANIFEST.txt".into(),
+        ] {
+            if !seen.contains(&required) {
+                return Err(UpdateError::InstallArchive(format!(
+                    "missing required entry {required}"
+                )));
+            }
+        }
+        Ok(())
+    }
+}
+
+fn tar_text(field: &[u8]) -> Result<&str, UpdateError> {
+    let end = field
+        .iter()
+        .position(|byte| *byte == 0)
+        .unwrap_or(field.len());
+    std::str::from_utf8(&field[..end])
+        .map_err(|_| UpdateError::InstallArchive("non-UTF-8 tar name".into()))
+}
+
+fn tar_octal(field: &[u8]) -> Result<u64, UpdateError> {
+    let text = tar_text(field)?.trim().trim_start_matches('0');
+    if text.is_empty() {
+        return Ok(0);
+    }
+    u64::from_str_radix(text, 8).map_err(|_| UpdateError::InstallArchive("invalid tar size".into()))
+}
+
+fn validate_tar_checksum(header: &[u8; TAR_BLOCK]) -> Result<(), UpdateError> {
+    let expected = tar_octal(&header[148..156])?;
+    let actual: u64 = header
+        .iter()
+        .enumerate()
+        .map(|(index, byte)| {
+            if (148..156).contains(&index) {
+                u64::from(b' ')
+            } else {
+                u64::from(*byte)
+            }
+        })
+        .sum();
+    if expected != actual {
+        return Err(UpdateError::InstallArchive("invalid tar checksum".into()));
+    }
+    Ok(())
+}
+
+fn copy_exact(
+    input: &mut impl Read,
+    output: &mut impl Write,
+    mut remaining: u64,
+) -> Result<(), UpdateError> {
+    let mut buffer = [0_u8; 64 * 1024];
+    while remaining != 0 {
+        let request = usize::try_from(remaining.min(buffer.len() as u64))
+            .map_err(|_| UpdateError::InstallLimit)?;
+        let read = input
+            .read(&mut buffer[..request])
+            .map_err(|error| UpdateError::InstallArchive(error.to_string()))?;
+        if read == 0 {
+            return Err(UpdateError::InstallArchive("truncated tar entry".into()));
+        }
+        output
+            .write_all(&buffer[..read])
+            .map_err(|error| UpdateError::InstallIo(error.to_string()))?;
+        remaining -= u64::try_from(read).unwrap_or(u64::MAX);
+    }
+    Ok(())
+}
+
+fn discard_exact(input: &mut impl Read, size: u64) -> Result<(), UpdateError> {
+    copy_exact(input, &mut std::io::sink(), size)
 }
 
 fn one_field<'a>(
@@ -316,6 +476,9 @@ pub enum UpdateError {
     ArchiveLength,
     Digest,
     ArchiveRead(String),
+    InstallArchive(String),
+    InstallIo(String),
+    InstallLimit,
     StageDirectory,
     StageIo {
         operation: &'static str,
@@ -342,6 +505,7 @@ impl std::error::Error for UpdateError {}
 #[cfg(test)]
 mod tests {
     use super::*;
+    use flate2::{Compression, write::GzEncoder};
 
     fn manifest(version: &str, target: &str, archive: &[u8]) -> Vec<u8> {
         format!(
@@ -505,6 +669,88 @@ mod tests {
                     )
                     .is_err()
             );
+        }
+    }
+
+    fn bundle(entries: &[(&str, &[u8])]) -> Vec<u8> {
+        fn octal(field: &mut [u8], value: u64) {
+            let text = format!("{value:o}");
+            field.fill(b'0');
+            let start = field.len() - text.len() - 1;
+            field[start..start + text.len()].copy_from_slice(text.as_bytes());
+            field[field.len() - 1] = 0;
+        }
+        let mut tar = Vec::new();
+        for (name, bytes) in entries {
+            let mut header = [0_u8; TAR_BLOCK];
+            header[..name.len()].copy_from_slice(name.as_bytes());
+            octal(&mut header[100..108], 0o644);
+            octal(&mut header[124..136], bytes.len() as u64);
+            header[148..156].fill(b' ');
+            header[156] = b'0';
+            header[257..263].copy_from_slice(b"ustar\0");
+            header[263..265].copy_from_slice(b"00");
+            let sum: u64 = header.iter().map(|byte| u64::from(*byte)).sum();
+            let checksum = format!("{sum:06o}");
+            header[148..154].copy_from_slice(checksum.as_bytes());
+            header[154] = 0;
+            header[155] = b' ';
+            tar.extend_from_slice(&header);
+            tar.extend_from_slice(bytes);
+            tar.resize(tar.len().next_multiple_of(TAR_BLOCK), 0);
+        }
+        tar.resize(tar.len() + TAR_BLOCK * 2, 0);
+        let mut gzip = GzEncoder::new(Vec::new(), Compression::fast());
+        gzip.write_all(&tar).unwrap();
+        gzip.finish().unwrap()
+    }
+
+    #[test]
+    fn portable_bundle_extracts_into_one_create_new_version_directory() {
+        let prefix = "lunar-magic-rust-2.0.0-target-a";
+        let bytes = bundle(&[
+            (&format!("{prefix}/lm-native"), b"native"),
+            (&format!("{prefix}/lm-cli"), b"cli"),
+            (&format!("{prefix}/lm-libretro"), b"backend"),
+            (&format!("{prefix}/RELEASE-MANIFEST.txt"), b"manifest"),
+        ]);
+        let source = tempfile::tempdir().unwrap();
+        let archive = source.path().join("bundle.tar.gz");
+        fs::write(&archive, bytes).unwrap();
+        let root = tempfile::tempdir().unwrap();
+        let parsed = UpdateManifest::decode(&manifest("2.0.0", "target-a", b"x")).unwrap();
+        let installed = parsed
+            .extract_staged_archive(&archive, root.path())
+            .unwrap();
+        assert_eq!(fs::read(installed.join("lm-native")).unwrap(), b"native");
+        assert!(
+            parsed
+                .extract_staged_archive(&archive, root.path())
+                .is_err()
+        );
+        assert_eq!(fs::read(installed.join("lm-native")).unwrap(), b"native");
+    }
+
+    #[test]
+    fn invalid_bundle_path_or_missing_runtime_cleans_install_directory() {
+        let parsed = UpdateManifest::decode(&manifest("2.0.0", "target-a", b"x")).unwrap();
+        for entries in [
+            vec![("../escape", b"bad".as_slice())],
+            vec![(
+                "lunar-magic-rust-2.0.0-target-a/lm-native",
+                b"only".as_slice(),
+            )],
+        ] {
+            let source = tempfile::tempdir().unwrap();
+            let archive = source.path().join("bundle.tar.gz");
+            fs::write(&archive, bundle(&entries)).unwrap();
+            let root = tempfile::tempdir().unwrap();
+            assert!(
+                parsed
+                    .extract_staged_archive(&archive, root.path())
+                    .is_err()
+            );
+            assert_eq!(fs::read_dir(root.path()).unwrap().count(), 0);
         }
     }
 }

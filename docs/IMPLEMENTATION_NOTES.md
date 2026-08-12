@@ -7021,3 +7021,14 @@ running application is never replaced automatically. Native gates prove exact st
 and tamper rejection before consent; the menu localization invariant, native build, 7/7 trust-core
 tests, and 237/237 renderer tests pass. Network discovery and platform replacement/relaunch remain
 incomplete; Release stays Partial and aggregate parity remains 60/65.
+
+Transactional update-extraction update (2026-08-11): a staged portable archive can now be decoded
+into one create-new version/target directory without modifying the running installation. The
+bounded gzip/tar reader accepts only regular files directly beneath the exact expected bundle
+prefix, validates every tar checksum and octal size, rejects links/devices/nesting/traversal and
+duplicates, limits individual and aggregate decompression, writes each file create-new and synced,
+and requires `lm-native`, `lm-cli`, `lm-libretro`, and `RELEASE-MANIFEST.txt` (with Windows suffixes
+where applicable). Any failure removes the new version directory; a destination collision preserves
+the existing installation. Valid extraction, collision, traversal, missing-runtime, and cleanup
+tests raise the update core to 9/9. Launcher switch/relaunch and retained platform evidence remain
+incomplete; Release stays Partial and aggregate parity remains 60/65.
