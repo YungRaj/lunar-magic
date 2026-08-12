@@ -7190,6 +7190,15 @@ preservation, and divergent history. Localization passes 28/28 active cases (one
 ignore), and renderer passes 237/237. Other native forms and retained language-DLL evidence keep
 Localization Partial; aggregate parity remains 60/65.
 
+Localization coverage update (2026-08-12, vanilla Layer 1 object mutation actions): eleven
+additional `VanillaLevel*` identities cover insert-after-selection, semantic screen-jump/screen-exit
+or ordinary-field application, raw-record replacement, removal, stream reordering, copy, record
+paste, and Map16 rectangle placement. The live catalog already threaded through the Layer 1 editor
+now reaches every action and preserves enablement and mutation behavior. The bounded source audit
+rejects all former fixed-English action controls. Focused native and localization tests pass, and
+renderer remains 237/237. Layer 2 mutation actions and other vanilla/native forms remain, so
+Localization stays Partial and aggregate parity remains 60/65.
+
 Localization coverage update (2026-08-12, vanilla object-placement catalogs): fifteen additional
 `VanillaLevel*` identities cover the shared Layer 1/Layer 2 catalogs for structures and platforms,
 blocks/coins/doors/small extended objects, and custom OSC objects. Filter and clear controls,

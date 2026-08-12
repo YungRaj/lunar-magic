@@ -9123,7 +9123,7 @@ impl VanillaLevelEditor {
             show_standard_object_resize_fields(ui, resize_model, &mut self.object_form);
         }
         show_raw_object_record(ui, "vanilla-layer1-raw-object", &mut self.object_form);
-        self.object_action_buttons(ui, record_count, has_selection);
+        self.object_action_buttons(ui, catalog, record_count, has_selection);
         self.handle_object_paste(ui, record_count);
     }
 
@@ -9803,22 +9803,29 @@ impl VanillaLevelEditor {
     fn object_action_buttons(
         &mut self,
         ui: &mut egui::Ui,
+        catalog: Option<&LocalizationCatalog>,
         record_count: usize,
         has_selection: bool,
     ) {
         ui.horizontal_wrapped(|ui| {
-            if ui.button("Insert after selection").clicked() {
+            if ui
+                .button(vanilla_text(
+                    catalog,
+                    ExtendedUiTextKey::VanillaLevelInsertAfterSelection,
+                ))
+                .clicked()
+            {
                 self.insert_object_after_selection(record_count);
             }
             if ui
                 .add_enabled(
                     has_selection,
                     egui::Button::new(if self.object_form.screen_jump.is_some() {
-                        "Apply screen jump"
+                        vanilla_text(catalog, ExtendedUiTextKey::VanillaLevelApplyScreenJump)
                     } else if self.object_form.screen_exit.is_some() {
-                        "Apply screen exit"
+                        vanilla_text(catalog, ExtendedUiTextKey::VanillaLevelApplyScreenExit)
                     } else {
-                        "Apply object fields"
+                        vanilla_text(catalog, ExtendedUiTextKey::VanillaLevelApplyObjectFields)
                     }),
                 )
                 .clicked()
@@ -9841,7 +9848,13 @@ impl VanillaLevelEditor {
                 }
             }
             if ui
-                .add_enabled(has_selection, egui::Button::new("Apply raw record"))
+                .add_enabled(
+                    has_selection,
+                    egui::Button::new(vanilla_text(
+                        catalog,
+                        ExtendedUiTextKey::VanillaLevelApplyRawRecord,
+                    )),
+                )
                 .clicked()
             {
                 let edit = self.object_form.raw_record().map(|record| {
@@ -9853,26 +9866,47 @@ impl VanillaLevelEditor {
                 self.apply_object_result(edit);
             }
             if ui
-                .add_enabled(has_selection, egui::Button::new("Remove object"))
+                .add_enabled(
+                    has_selection,
+                    egui::Button::new(vanilla_text(
+                        catalog,
+                        ExtendedUiTextKey::VanillaLevelRemoveObject,
+                    )),
+                )
                 .clicked()
             {
                 self.apply_object_result(Ok(NativeLevelEdit::Objects(vec![ObjectEdit::Remove {
                     index: self.selected_object,
                 }])));
             }
-            self.object_move_buttons(ui, record_count);
+            self.object_move_buttons(ui, catalog, record_count);
             if ui
-                .add_enabled(has_selection, egui::Button::new("Copy"))
+                .add_enabled(
+                    has_selection,
+                    egui::Button::new(vanilla_text(catalog, ExtendedUiTextKey::VanillaLevelCopy)),
+                )
                 .clicked()
             {
                 self.copy_object(ui);
             }
-            if ui.button("Paste after selection").clicked() {
+            if ui
+                .button(vanilla_text(
+                    catalog,
+                    ExtendedUiTextKey::VanillaLevelPasteAfterSelection,
+                ))
+                .clicked()
+            {
                 self.paste_target = Some(EntityPasteTarget::Object);
                 ui.ctx()
                     .send_viewport_cmd(egui::ViewportCommand::RequestPaste);
             }
-            if ui.button("Paste Map16 rectangle for placement").clicked() {
+            if ui
+                .button(vanilla_text(
+                    catalog,
+                    ExtendedUiTextKey::VanillaLevelPasteMap16Rectangle,
+                ))
+                .clicked()
+            {
                 match (self.key, self.controller.as_ref()) {
                     (Some(key), Some(controller)) => {
                         self.paste_target = Some(EntityPasteTarget::DirectMap16Rectangle {
@@ -10964,9 +10998,17 @@ impl VanillaLevelEditor {
         }
     }
 
-    fn object_move_buttons(&mut self, ui: &mut egui::Ui, record_count: usize) {
+    fn object_move_buttons(
+        &mut self,
+        ui: &mut egui::Ui,
+        catalog: Option<&LocalizationCatalog>,
+        record_count: usize,
+    ) {
         if ui
-            .add_enabled(self.selected_object > 0, egui::Button::new("Move up"))
+            .add_enabled(
+                self.selected_object > 0,
+                egui::Button::new(vanilla_text(catalog, ExtendedUiTextKey::VanillaLevelMoveUp)),
+            )
             .clicked()
         {
             self.move_object(record_count, false);
@@ -10974,7 +11016,10 @@ impl VanillaLevelEditor {
         if ui
             .add_enabled(
                 self.selected_object.saturating_add(1) < record_count,
-                egui::Button::new("Move down"),
+                egui::Button::new(vanilla_text(
+                    catalog,
+                    ExtendedUiTextKey::VanillaLevelMoveDown,
+                )),
             )
             .clicked()
         {
@@ -16987,6 +17032,29 @@ mod tests {
             assert!(
                 !utility_dialogs.contains(literal),
                 "fixed-English utility-dialog control: {literal}"
+            );
+        }
+        let layer1_actions = source
+            .split("    fn object_action_buttons(")
+            .nth(1)
+            .unwrap()
+            .split("    fn stage_direct_map16_rectangle(")
+            .next()
+            .unwrap();
+        for literal in [
+            "button(\"Insert after selection\")",
+            "Button::new(\"Apply screen jump\")",
+            "Button::new(\"Apply screen exit\")",
+            "Button::new(\"Apply object fields\")",
+            "Button::new(\"Apply raw record\")",
+            "Button::new(\"Remove object\")",
+            "Button::new(\"Copy\")",
+            "button(\"Paste after selection\")",
+            "button(\"Paste Map16 rectangle for placement\")",
+        ] {
+            assert!(
+                !layer1_actions.contains(literal),
+                "fixed-English placement action: {literal}"
             );
         }
         let placement_catalogs = source

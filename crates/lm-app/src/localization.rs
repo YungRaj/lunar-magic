@@ -3928,10 +3928,21 @@ pub enum ExtendedUiTextKey {
     VanillaLevelChooseExtendedObject,
     VanillaLevelExtendedDefinitionsUnavailable,
     VanillaLevelExtendedObject,
+    VanillaLevelInsertAfterSelection,
+    VanillaLevelApplyScreenJump,
+    VanillaLevelApplyScreenExit,
+    VanillaLevelApplyObjectFields,
+    VanillaLevelApplyRawRecord,
+    VanillaLevelRemoveObject,
+    VanillaLevelMoveUp,
+    VanillaLevelMoveDown,
+    VanillaLevelCopy,
+    VanillaLevelPasteAfterSelection,
+    VanillaLevelPasteMap16Rectangle,
 }
 
 impl ExtendedUiTextKey {
-    pub const ALL: [Self; 2227] = [
+    pub const ALL: [Self; 2238] = [
         Self::MwlDocumentEditorTitle,
         Self::MwlDocumentVersionFormat,
         Self::MwlDocumentFlagsHex,
@@ -6159,6 +6170,17 @@ impl ExtendedUiTextKey {
         Self::VanillaLevelChooseExtendedObject,
         Self::VanillaLevelExtendedDefinitionsUnavailable,
         Self::VanillaLevelExtendedObject,
+        Self::VanillaLevelInsertAfterSelection,
+        Self::VanillaLevelApplyScreenJump,
+        Self::VanillaLevelApplyScreenExit,
+        Self::VanillaLevelApplyObjectFields,
+        Self::VanillaLevelApplyRawRecord,
+        Self::VanillaLevelRemoveObject,
+        Self::VanillaLevelMoveUp,
+        Self::VanillaLevelMoveDown,
+        Self::VanillaLevelCopy,
+        Self::VanillaLevelPasteAfterSelection,
+        Self::VanillaLevelPasteMap16Rectangle,
     ];
 
     #[must_use]
@@ -9047,6 +9069,17 @@ impl ExtendedUiTextKey {
                 "The recovered extended-object definitions are unavailable."
             }
             Self::VanillaLevelExtendedObject => "Extended object",
+            Self::VanillaLevelInsertAfterSelection => "Insert after selection",
+            Self::VanillaLevelApplyScreenJump => "Apply screen jump",
+            Self::VanillaLevelApplyScreenExit => "Apply screen exit",
+            Self::VanillaLevelApplyObjectFields => "Apply object fields",
+            Self::VanillaLevelApplyRawRecord => "Apply raw record",
+            Self::VanillaLevelRemoveObject => "Remove object",
+            Self::VanillaLevelMoveUp => "Move up",
+            Self::VanillaLevelMoveDown => "Move down",
+            Self::VanillaLevelCopy => "Copy",
+            Self::VanillaLevelPasteAfterSelection => "Paste after selection",
+            Self::VanillaLevelPasteMap16Rectangle => "Paste Map16 rectangle for placement",
         }
     }
 

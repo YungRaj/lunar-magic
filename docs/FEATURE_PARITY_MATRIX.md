@@ -787,6 +787,13 @@ Undo/Redo are explicit. Editor/form tests pass 6/6, controller 5/5, localization
 cases, and renderer 237/237. Other native forms and retained language-DLL evidence keep
 Localization Partial, so aggregate parity remains 60/65.
 
+Localization coverage update (2026-08-12, vanilla Layer 1 object mutation actions): eleven typed
+`VanillaLevel*` keys cover insert, semantic/raw application, removal, stream movement, copy/paste,
+and Map16 rectangle placement without changing enablement or mutation semantics. A bounded source
+audit rejects the former literal controls; focused native, localization 28/28 active tests (one
+provenance ignore), and renderer 237/237 pass. Layer 2 actions and other vanilla/native surfaces
+keep Localization Partial, so aggregate parity remains 60/65.
+
 Localization coverage update (2026-08-12, vanilla modeless entity editors): eleven typed
 `VanillaLevel*` keys now cover both object/sprite property and manual-record windows, including
 dynamic entity identities, selection constraints, guidance, and apply actions. A bounded source
