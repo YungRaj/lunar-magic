@@ -1244,6 +1244,7 @@ impl RomOverworldEditor {
                     &file.data.palette,
                     &ownership,
                     &animation_ownership.palette,
+                    catalog,
                 );
                 if let Some(owner) = self.palette.take_navigation() {
                     self.panel = Panel::Animation;

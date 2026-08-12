@@ -127,6 +127,7 @@ impl OverworldEditor {
                 &document.controller.value().data.palette,
                 &document.ownership,
                 &animation_ownership.palette,
+                catalog,
             ),
             Panel::Animation => self.animation.show(
                 ui,

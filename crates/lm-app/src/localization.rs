@@ -2383,6 +2383,17 @@ pub enum ExtendedUiTextKey {
     ExternalToolConfigRomOpened,
     ExternalToolConfigRomSaved,
     ExternalToolConfigLevelChanged,
+    OverworldPaletteColorFormat,
+    OverworldPaletteAnimationOwnerFormat,
+    OverworldPaletteEditable,
+    OverworldPaletteFixed,
+    OverworldPaletteExAnimationFormat,
+    OverworldPaletteInvalid,
+    OverworldPaletteCopyColor,
+    OverworldPalettePasteColor,
+    OverworldPaletteCopyRow,
+    OverworldPalettePasteRow,
+    OverworldPaletteGestureNotice,
     ExAnimationDocumentTitle,
     ExAnimationDocumentOpenTitle,
     ExAnimationDocumentMaximumRecords,
@@ -3545,7 +3556,7 @@ pub enum ExtendedUiTextKey {
 }
 
 impl ExtendedUiTextKey {
-    pub const ALL: [Self; 1841] = [
+    pub const ALL: [Self; 1852] = [
         Self::MwlDocumentEditorTitle,
         Self::MwlDocumentVersionFormat,
         Self::MwlDocumentFlagsHex,
@@ -4228,6 +4239,17 @@ impl ExtendedUiTextKey {
         Self::ExternalToolConfigRomOpened,
         Self::ExternalToolConfigRomSaved,
         Self::ExternalToolConfigLevelChanged,
+        Self::OverworldPaletteColorFormat,
+        Self::OverworldPaletteAnimationOwnerFormat,
+        Self::OverworldPaletteEditable,
+        Self::OverworldPaletteFixed,
+        Self::OverworldPaletteExAnimationFormat,
+        Self::OverworldPaletteInvalid,
+        Self::OverworldPaletteCopyColor,
+        Self::OverworldPalettePasteColor,
+        Self::OverworldPaletteCopyRow,
+        Self::OverworldPalettePasteRow,
+        Self::OverworldPaletteGestureNotice,
         Self::ExAnimationDocumentTitle,
         Self::ExAnimationDocumentOpenTitle,
         Self::ExAnimationDocumentMaximumRecords,
@@ -6254,6 +6276,23 @@ impl ExtendedUiTextKey {
             Self::ExternalToolConfigRomOpened => "ROM opened",
             Self::ExternalToolConfigRomSaved => "ROM saved",
             Self::ExternalToolConfigLevelChanged => "Level changed",
+            Self::OverworldPaletteColorFormat => "Color {index} — BGR555 {color}",
+            Self::OverworldPaletteAnimationOwnerFormat => {
+                "Animation ownership: {domain} record {record} (Ctrl+Shift+click to navigate)"
+            }
+            Self::OverworldPaletteEditable => "Ownership: editable",
+            Self::OverworldPaletteFixed => "Ownership: fixed (read-only)",
+            Self::OverworldPaletteExAnimationFormat => {
+                "Ownership: ExAnimation record {record} (read-only)"
+            }
+            Self::OverworldPaletteInvalid => "Ownership: invalid (read-only)",
+            Self::OverworldPaletteCopyColor => "Copy color",
+            Self::OverworldPalettePasteColor => "Paste color",
+            Self::OverworldPaletteCopyRow => "Copy row",
+            Self::OverworldPalettePasteRow => "Paste row",
+            Self::OverworldPaletteGestureNotice => {
+                "Ctrl+left/right copies or pastes a color; add Alt for its complete row."
+            }
             Self::ExAnimationDocumentTitle => "Portable ExAnimation Editor",
             Self::ExAnimationDocumentOpenTitle => "Open ExAnimation",
             Self::ExAnimationDocumentMaximumRecords => {

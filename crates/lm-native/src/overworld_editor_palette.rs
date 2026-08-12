@@ -1,6 +1,6 @@
 use crate::{native_clipboard, overworld_editor_render::OverworldAnimationOwner};
 use eframe::egui;
-use lm_app::OverworldControllerEdit;
+use lm_app::{ExtendedUiTextKey as Key, LocalizationCatalog, OverworldControllerEdit};
 use lm_graphics::{Bgr555, Palette, PaletteChange, PaletteEntryOwner, PaletteOwnership, Rgb8};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -28,16 +28,18 @@ impl OverworldPalettePanel {
         palette: &Palette,
         ownership: &PaletteOwnership,
         animation_ownership: &[Option<OverworldAnimationOwner>],
+        catalog: Option<&LocalizationCatalog>,
     ) -> Option<Result<OverworldControllerEdit, String>> {
         self.selected = self.selected.min(palette.colors.len().saturating_sub(1));
         let (mut copy_result, grid_paste) =
             self.palette_clipboard_grid(ui, palette, animation_ownership);
         let mut native_paste = None;
         let color = palette.colors.get(self.selected).copied()?;
-        ui.label(format!(
-            "Color {:03X} — BGR555 {:04X}",
-            self.selected, color.0
-        ));
+        ui.label(
+            palette_text(catalog, Key::OverworldPaletteColorFormat)
+                .replace("{index}", &format!("{:03X}", self.selected))
+                .replace("{color}", &format!("{:04X}", color.0)),
+        );
         let owner = ownership.owner(self.selected);
         let animation_owner = animation_ownership.get(self.selected).copied().flatten();
         let editable = owner == Some(PaletteEntryOwner::Editable);
@@ -60,28 +62,36 @@ impl OverworldPalettePanel {
             }));
         }
         ui.label(match animation_owner {
-            Some(owner) => format!(
-                "Animation ownership: {:?} record {:02X} (Ctrl+Shift+click to navigate)",
-                owner.domain, owner.record
-            ),
+            Some(owner) => palette_text(catalog, Key::OverworldPaletteAnimationOwnerFormat)
+                .replace("{domain}", &format!("{:?}", owner.domain))
+                .replace("{record}", &format!("{:02X}", owner.record)),
             None => match owner {
-                Some(PaletteEntryOwner::Editable) => "Ownership: editable".into(),
-                Some(PaletteEntryOwner::Fixed) => "Ownership: fixed (read-only)".into(),
-                Some(PaletteEntryOwner::ExAnimation { record }) => {
-                    format!("Ownership: ExAnimation record {record:04X} (read-only)")
+                Some(PaletteEntryOwner::Editable) => {
+                    palette_text(catalog, Key::OverworldPaletteEditable)
                 }
-                None => "Ownership: invalid (read-only)".into(),
+                Some(PaletteEntryOwner::Fixed) => palette_text(catalog, Key::OverworldPaletteFixed),
+                Some(PaletteEntryOwner::ExAnimation { record }) => {
+                    palette_text(catalog, Key::OverworldPaletteExAnimationFormat)
+                        .replace("{record}", &format!("{record:04X}"))
+                }
+                None => palette_text(catalog, Key::OverworldPaletteInvalid),
             },
         });
         ui.horizontal(|ui| {
-            if ui.button("Copy color").clicked() {
+            if ui
+                .button(palette_text(catalog, Key::OverworldPaletteCopyColor))
+                .clicked()
+            {
                 copy_result = Some(native_clipboard::copy_palette_color_to_system(
                     ui.ctx(),
                     color,
                 ));
             }
             if ui
-                .add_enabled(editable, egui::Button::new("Paste color"))
+                .add_enabled(
+                    editable,
+                    egui::Button::new(palette_text(catalog, Key::OverworldPalettePasteColor)),
+                )
                 .clicked()
             {
                 match native_clipboard::request_palette_color_paste(ui.ctx()) {
@@ -96,7 +106,10 @@ impl OverworldPalettePanel {
                 }
             }
             if ui
-                .add_enabled(row.is_some(), egui::Button::new("Copy row"))
+                .add_enabled(
+                    row.is_some(),
+                    egui::Button::new(palette_text(catalog, Key::OverworldPaletteCopyRow)),
+                )
                 .clicked()
             {
                 copy_result = Some(native_clipboard::copy_palette_row_to_system(
@@ -105,7 +118,10 @@ impl OverworldPalettePanel {
                 ));
             }
             if ui
-                .add_enabled(row_editable, egui::Button::new("Paste row"))
+                .add_enabled(
+                    row_editable,
+                    egui::Button::new(palette_text(catalog, Key::OverworldPalettePasteRow)),
+                )
                 .clicked()
             {
                 match native_clipboard::request_palette_row_paste(ui.ctx()) {
@@ -121,7 +137,7 @@ impl OverworldPalettePanel {
                 }
             }
         });
-        ui.small("Ctrl+left/right copies or pastes a color; add Alt for its complete row.");
+        ui.small(palette_text(catalog, Key::OverworldPaletteGestureNotice));
         if let Some(result) = copy_result {
             match result {
                 Ok(()) => {}
@@ -243,6 +259,13 @@ impl OverworldPalettePanel {
     }
 }
 
+fn palette_text(catalog: Option<&LocalizationCatalog>, key: Key) -> String {
+    catalog.map_or_else(
+        || key.english().to_owned(),
+        |catalog| catalog.extended_text(key).to_owned(),
+    )
+}
+
 fn palette_row(colors: &[Bgr555], selected: usize) -> Result<&[Bgr555], String> {
     let start = selected / 16 * 16;
     colors
@@ -292,9 +315,35 @@ fn pasted_text(ui: &egui::Ui) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::palette_row_changes;
+    use super::{Key, palette_row_changes};
     use crate::native_clipboard;
     use lm_graphics::Bgr555;
+
+    #[test]
+    fn complete_overworld_palette_panel_has_no_literal_widget_text() {
+        let source = include_str!("overworld_editor_palette.rs");
+        for literal_widget in ["ui.button(\"", "ui.label(\"", "ui.small(\""] {
+            assert!(
+                !source.contains(literal_widget),
+                "overworld palette panel bypasses typed localization with {literal_widget}"
+            );
+        }
+        assert_eq!(
+            source.matches("Button::new(\"").count(),
+            1,
+            "overworld palette panel contains an unexpected literal button caption"
+        );
+        assert!(source.contains("Button::new(\"  \")"));
+        for key in Key::ALL
+            .into_iter()
+            .filter(|key| format!("{key:?}").starts_with("OverworldPalette"))
+        {
+            assert!(
+                source.contains(&format!("Key::{key:?}")),
+                "overworld palette panel does not consume {key:?}"
+            );
+        }
+    }
 
     #[test]
     fn overworld_row_paste_is_aligned_and_complete() {

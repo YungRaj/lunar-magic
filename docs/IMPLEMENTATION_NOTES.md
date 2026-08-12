@@ -7978,3 +7978,13 @@ requires every family key. Native compilation, the focused audit, localization 2
 (one provenance ignore), and renderer 237/237 pass. Other unaudited frontend modules and the
 retained translated language-DLL gesture keep Localization Partial; aggregate parity remains
 60/65.
+
+Localization coverage update (2026-08-12, overworld palette panel): eleven appended
+`OverworldPalette*` identities cover dynamic color/BGR555 selection, animation and fixed/editable/
+invalid ownership summaries, ExAnimation record attribution, color/row clipboard actions, and the
+complete gesture notice. The live catalog now reaches the shared panel in both portable and
+installed overworld editors. A complete surface audit rejects caption-bearing literal widgets,
+requires every family identity, and explicitly permits only the two-space color-swatch glyph as
+layout data. Native compilation, the focused audit, localization 28/28 active cases (one provenance
+ignore), and renderer 237/237 pass. Other unaudited frontend modules and the retained translated
+language-DLL gesture keep Localization Partial; aggregate parity remains 60/65.
