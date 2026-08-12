@@ -7189,3 +7189,14 @@ retain fixed-prefix keys. A source audit rejects literal widget text and require
 exact primary-high/secondary-high reopen, bounds/stale safety, complete three-plane recovery, and
 installed-plane preservation—and renderer 237/237 pass. Localization stays Partial for remaining
 forms and live original language-DLL evidence; aggregate parity remains 60/65.
+
+Localization coverage update (2026-08-11, overworld global settings): the complete seven-record
+raw and semantic Layer 3 editor now uses twenty-six typed extension keys for its window, installed/
+pristine runtime state, stale warning, submap selection, dynamic word/GFX labels, semantic fields,
+preservation guidance, apply/commit actions, staged state, unsaved confirmation, and errors. Shared
+Cancel/Discard/OK retain fixed-prefix keys. A source audit rejects literal window/button/label/
+small/header text and requires every `OverworldSettings*` key. Localization model 28/28 and the
+settings family 7/7 pass: all-record install/reopen, malformed/stale safety, semantic Layer 3
+install/reopen/undo, opaque flag/byte/high-nibble preservation, and pristine/installed recovery.
+Renderer parity remains 237/237. Localization stays Partial for remaining forms and live original
+language-DLL evidence; aggregate parity remains 60/65.

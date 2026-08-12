@@ -1,6 +1,6 @@
 use crate::expanded_settings_editor_form::ExpandedSettingsForm;
 use eframe::egui;
-use lm_app::{AppState, Command};
+use lm_app::{AppState, Command, ExtendedUiTextKey, LocalizationCatalog, UiTextKey};
 use lm_level::ExpandedOverworldSettings;
 use lm_overworld::{OverworldLayer3SettingsRecord, OverworldLayer3SettingsTable};
 use lm_profile::load_smw_us_v1_overworld_settings;
@@ -143,36 +143,53 @@ impl RomOverworldSettingsEditor {
         &mut self,
         context: &egui::Context,
         project_revision: u64,
+        catalog: Option<&LocalizationCatalog>,
     ) -> (bool, Option<Command>) {
         let mut command = None;
         if self.workspace.is_some() {
-            egui::Window::new("ROM Overworld Global Settings")
-                .default_size([620.0, 600.0])
-                .show(context, |ui| command = self.contents(ui, project_revision));
+            egui::Window::new(text(
+                catalog,
+                ExtendedUiTextKey::OverworldSettingsEditorTitle,
+            ))
+            .default_size([620.0, 600.0])
+            .show(context, |ui| {
+                command = self.contents(ui, project_revision, catalog)
+            });
         }
-        let approved = self.close_confirmation(context);
-        self.show_error(context);
+        let approved = self.close_confirmation(context, catalog);
+        self.show_error(context, catalog);
         (approved, command)
     }
 
-    fn contents(&mut self, ui: &mut egui::Ui, project_revision: u64) -> Option<Command> {
+    fn contents(
+        &mut self,
+        ui: &mut egui::Ui,
+        project_revision: u64,
+        catalog: Option<&LocalizationCatalog>,
+    ) -> Option<Command> {
         let workspace = self.workspace.as_ref()?;
         let stale = workspace.revision != project_revision;
         let dirty = workspace.current != workspace.original;
-        ui.label("Seven lossless 16-word special settings records. Values are hexadecimal.");
+        ui.label(text(
+            catalog,
+            ExtendedUiTextKey::OverworldSettingsDescription,
+        ));
         ui.label(if workspace.installed {
-            "Expanded settings are installed."
+            text(catalog, ExtendedUiTextKey::OverworldSettingsInstalled)
         } else {
-            "Pristine defaults; committing installs the recovered expanded-settings runtime."
+            text(catalog, ExtendedUiTextKey::OverworldSettingsPristine)
         });
         if stale {
             ui.colored_label(
                 egui::Color32::YELLOW,
-                "The ROM changed after these settings were opened. Reopen before committing.",
+                text(catalog, ExtendedUiTextKey::OverworldSettingsStaleNotice),
             );
         }
         ui.horizontal(|ui| {
-            ui.label("Submap record");
+            ui.label(text(
+                catalog,
+                ExtendedUiTextKey::OverworldSettingsSubmapRecord,
+            ));
             egui::ComboBox::from_id_salt("rom-overworld-settings-submap")
                 .selected_text(format!("{}", self.submap))
                 .show_ui(ui, |ui| {
@@ -185,7 +202,9 @@ impl RomOverworldSettingsEditor {
                         }
                     }
                 });
-            if ui.button("Load").clicked()
+            if ui
+                .button(text(catalog, ExtendedUiTextKey::OverworldSettingsLoad))
+                .clicked()
                 && let Err(error) = self.load_selected()
             {
                 self.error = Some(error);
@@ -196,25 +215,37 @@ impl RomOverworldSettingsEditor {
             .striped(true)
             .show(ui, |ui| {
                 for index in 0..self.form.words.len() {
-                    ui.label(format!("Word {index:X}"));
+                    ui.label(
+                        text(catalog, ExtendedUiTextKey::OverworldSettingsWordFormat)
+                            .replace("{index}", &format!("{index:X}")),
+                    );
                     ui.text_edit_singleline(&mut self.form.words[index]);
                     if index % 2 == 1 {
                         ui.end_row();
                     }
                 }
             });
-        self.show_layer3_form(ui, stale);
+        self.show_layer3_form(ui, stale, catalog);
         let mut command = None;
         ui.horizontal(|ui| {
             if ui
-                .add_enabled(!stale, egui::Button::new("Apply record"))
+                .add_enabled(
+                    !stale,
+                    egui::Button::new(text(
+                        catalog,
+                        ExtendedUiTextKey::OverworldSettingsApplyRecord,
+                    )),
+                )
                 .clicked()
                 && let Err(error) = self.apply_selected()
             {
                 self.error = Some(error);
             }
             if ui
-                .add_enabled(dirty && !stale, egui::Button::new("Commit settings to ROM"))
+                .add_enabled(
+                    dirty && !stale,
+                    egui::Button::new(text(catalog, ExtendedUiTextKey::OverworldSettingsCommit)),
+                )
                 .clicked()
             {
                 match self.prepare_commit(project_revision) {
@@ -222,83 +253,120 @@ impl RomOverworldSettingsEditor {
                     Err(error) => self.error = Some(error),
                 }
             }
-            ui.label(if dirty { "Staged" } else { "Unchanged" });
+            ui.label(text(
+                catalog,
+                if dirty {
+                    ExtendedUiTextKey::OverworldSettingsStaged
+                } else {
+                    ExtendedUiTextKey::OverworldSettingsUnchanged
+                },
+            ));
         });
         command
     }
 
-    fn show_layer3_form(&mut self, ui: &mut egui::Ui, stale: bool) {
-        egui::CollapsingHeader::new("Semantic Layer 3 settings")
-            .default_open(true)
-            .show(ui, |ui| {
-                egui::Grid::new("rom-overworld-layer3-semantic-fields")
-                    .striped(true)
-                    .show(ui, |ui| {
-                        ui.label("Use custom tilemap");
-                        ui.checkbox(&mut self.layer3_form.uses_custom_tilemap, "");
-                        ui.end_row();
-                        ui.label("Use custom graphics");
-                        ui.checkbox(&mut self.layer3_form.uses_custom_graphics, "");
-                        ui.end_row();
-                        ui.label("Tilemap file");
-                        ui.add(
-                            egui::DragValue::new(&mut self.layer3_form.tilemap_file)
-                                .range(0..=0x0fff)
-                                .hexadecimal(3, false, true),
-                        );
-                        ui.end_row();
-                        ui.label("Tilemap size");
-                        ui.add(
-                            egui::DragValue::new(&mut self.layer3_form.tilemap_size).range(0..=3),
-                        );
-                        ui.end_row();
-                        ui.label("Tilemap position");
-                        ui.add(
-                            egui::DragValue::new(&mut self.layer3_form.tilemap_position)
-                                .range(0..=3),
-                        );
-                        ui.end_row();
-                    });
-                ui.label("Address-layout words");
-                egui::Grid::new("rom-overworld-layer3-layout-words")
-                    .num_columns(4)
-                    .show(ui, |ui| {
-                        for (index, value) in
-                            self.layer3_form.layout_words.iter_mut().enumerate()
-                        {
-                            ui.label(format!("{index}"));
-                            ui.add(
-                                egui::DragValue::new(value).hexadecimal(4, false, true),
-                            );
-                            if index % 2 == 1 {
-                                ui.end_row();
-                            }
+    fn show_layer3_form(
+        &mut self,
+        ui: &mut egui::Ui,
+        stale: bool,
+        catalog: Option<&LocalizationCatalog>,
+    ) {
+        egui::CollapsingHeader::new(text(
+            catalog,
+            ExtendedUiTextKey::OverworldSettingsLayer3Header,
+        ))
+        .default_open(true)
+        .show(ui, |ui| {
+            egui::Grid::new("rom-overworld-layer3-semantic-fields")
+                .striped(true)
+                .show(ui, |ui| {
+                    ui.label(text(
+                        catalog,
+                        ExtendedUiTextKey::OverworldSettingsUseCustomTilemap,
+                    ));
+                    ui.checkbox(&mut self.layer3_form.uses_custom_tilemap, "");
+                    ui.end_row();
+                    ui.label(text(
+                        catalog,
+                        ExtendedUiTextKey::OverworldSettingsUseCustomGraphics,
+                    ));
+                    ui.checkbox(&mut self.layer3_form.uses_custom_graphics, "");
+                    ui.end_row();
+                    ui.label(text(
+                        catalog,
+                        ExtendedUiTextKey::OverworldSettingsTilemapFile,
+                    ));
+                    ui.add(
+                        egui::DragValue::new(&mut self.layer3_form.tilemap_file)
+                            .range(0..=0x0fff)
+                            .hexadecimal(3, false, true),
+                    );
+                    ui.end_row();
+                    ui.label(text(
+                        catalog,
+                        ExtendedUiTextKey::OverworldSettingsTilemapSize,
+                    ));
+                    ui.add(egui::DragValue::new(&mut self.layer3_form.tilemap_size).range(0..=3));
+                    ui.end_row();
+                    ui.label(text(
+                        catalog,
+                        ExtendedUiTextKey::OverworldSettingsTilemapPosition,
+                    ));
+                    ui.add(
+                        egui::DragValue::new(&mut self.layer3_form.tilemap_position).range(0..=3),
+                    );
+                    ui.end_row();
+                });
+            ui.label(text(
+                catalog,
+                ExtendedUiTextKey::OverworldSettingsAddressLayoutWords,
+            ));
+            egui::Grid::new("rom-overworld-layer3-layout-words")
+                .num_columns(4)
+                .show(ui, |ui| {
+                    for (index, value) in self.layer3_form.layout_words.iter_mut().enumerate() {
+                        ui.label(format!("{index}"));
+                        ui.add(egui::DragValue::new(value).hexadecimal(4, false, true));
+                        if index % 2 == 1 {
+                            ui.end_row();
                         }
-                    });
-                ui.label("Graphics files");
-                ui.horizontal(|ui| {
-                    for (index, value) in
-                        self.layer3_form.graphics_files.iter_mut().enumerate()
-                    {
-                        ui.label(format!("GFX {index}"));
-                        ui.add(
-                            egui::DragValue::new(value)
-                                .range(0..=0x0fff)
-                                .hexadecimal(3, false, true),
-                        );
                     }
                 });
-                if ui
-                    .add_enabled(!stale, egui::Button::new("Apply Layer 3 fields"))
-                    .clicked()
-                    && let Err(error) = self.apply_layer3_selected()
-                {
-                    self.error = Some(error);
+            ui.label(text(
+                catalog,
+                ExtendedUiTextKey::OverworldSettingsGraphicsFiles,
+            ));
+            ui.horizontal(|ui| {
+                for (index, value) in self.layer3_form.graphics_files.iter_mut().enumerate() {
+                    ui.label(
+                        text(catalog, ExtendedUiTextKey::OverworldSettingsGfxFormat)
+                            .replace("{index}", &index.to_string()),
+                    );
+                    ui.add(
+                        egui::DragValue::new(value)
+                            .range(0..=0x0fff)
+                            .hexadecimal(3, false, true),
+                    );
                 }
-                ui.small(
-                    "Semantic edits preserve opaque feature bits, reserved bytes, and high graphics-word nibbles.",
-                );
             });
+            if ui
+                .add_enabled(
+                    !stale,
+                    egui::Button::new(text(
+                        catalog,
+                        ExtendedUiTextKey::OverworldSettingsApplyLayer3,
+                    )),
+                )
+                .clicked()
+                && let Err(error) = self.apply_layer3_selected()
+            {
+                self.error = Some(error);
+            }
+            ui.small(text(
+                catalog,
+                ExtendedUiTextKey::OverworldSettingsPreservationNotice,
+            ));
+        });
     }
 
     fn load_selected(&mut self) -> Result<(), String> {
@@ -388,34 +456,66 @@ impl RomOverworldSettingsEditor {
         }))
     }
 
-    fn close_confirmation(&mut self, context: &egui::Context) -> bool {
+    fn close_confirmation(
+        &mut self,
+        context: &egui::Context,
+        catalog: Option<&LocalizationCatalog>,
+    ) -> bool {
         let Some(pending) = self.pending_close else {
             return false;
         };
         let mut approved = false;
-        egui::Window::new("Discard overworld-settings changes?")
-            .collapsible(false)
-            .resizable(false)
-            .show(context, |ui| {
-                ui.label("The staged settings have not been committed to the ROM.");
-                ui.horizontal(|ui| {
-                    if ui.button("Cancel").clicked() {
-                        self.pending_close = None;
-                    }
-                    if ui.button("Discard").clicked() {
-                        self.clear();
-                        approved = pending == PendingClose::Application;
-                    }
-                });
+        egui::Window::new(text(
+            catalog,
+            ExtendedUiTextKey::OverworldSettingsDiscardTitle,
+        ))
+        .collapsible(false)
+        .resizable(false)
+        .show(context, |ui| {
+            ui.label(text(
+                catalog,
+                ExtendedUiTextKey::OverworldSettingsUnsavedNotice,
+            ));
+            ui.horizontal(|ui| {
+                if ui
+                    .button(crate::frontend_ui::localized_text(
+                        catalog,
+                        UiTextKey::CommonCancel,
+                    ))
+                    .clicked()
+                {
+                    self.pending_close = None;
+                }
+                if ui
+                    .button(crate::frontend_ui::localized_text(
+                        catalog,
+                        UiTextKey::UnsavedDiscard,
+                    ))
+                    .clicked()
+                {
+                    self.clear();
+                    approved = pending == PendingClose::Application;
+                }
             });
+        });
         approved
     }
 
-    fn show_error(&mut self, context: &egui::Context) {
+    fn show_error(&mut self, context: &egui::Context, catalog: Option<&LocalizationCatalog>) {
         if let Some(error) = self.error.clone() {
-            egui::Window::new("Overworld-settings editor error").show(context, |ui| {
+            egui::Window::new(text(
+                catalog,
+                ExtendedUiTextKey::OverworldSettingsErrorTitle,
+            ))
+            .show(context, |ui| {
                 ui.label(error);
-                if ui.button("OK").clicked() {
+                if ui
+                    .button(crate::frontend_ui::localized_text(
+                        catalog,
+                        UiTextKey::CommonOk,
+                    ))
+                    .clicked()
+                {
                     self.error = None;
                 }
             });
@@ -433,10 +533,38 @@ impl RomOverworldSettingsEditor {
     }
 }
 
+fn text(catalog: Option<&LocalizationCatalog>, key: ExtendedUiTextKey) -> String {
+    crate::frontend_ui::extended_localized_text(catalog, key)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::path::PathBuf;
+
+    #[test]
+    fn overworld_settings_editor_surface_has_no_literal_widget_text() {
+        let source = include_str!("rom_overworld_settings_editor.rs");
+        for literal_widget in [
+            "egui::Window::new(\"",
+            "ui.button(\"",
+            "egui::Button::new(\"",
+            "ui.label(\"",
+            "ui.small(\"",
+            "egui::CollapsingHeader::new(\"",
+        ] {
+            assert!(
+                !source.contains(literal_widget),
+                "overworld-settings editor bypasses typed localization with {literal_widget}"
+            );
+        }
+        for key in ExtendedUiTextKey::ALL
+            .into_iter()
+            .filter(|key| format!("{key:?}").starts_with("OverworldSettings"))
+        {
+            assert!(source.contains(&format!("ExtendedUiTextKey::{key:?}")));
+        }
+    }
 
     fn pristine_app() -> AppState {
         let _root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");

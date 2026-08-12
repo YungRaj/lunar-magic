@@ -1827,10 +1827,36 @@ pub enum ExtendedUiTextKey {
     EventTilemapDiscardTitle,
     EventTilemapUnsavedNotice,
     EventTilemapErrorTitle,
+    OverworldSettingsEditorTitle,
+    OverworldSettingsDescription,
+    OverworldSettingsInstalled,
+    OverworldSettingsPristine,
+    OverworldSettingsStaleNotice,
+    OverworldSettingsSubmapRecord,
+    OverworldSettingsLoad,
+    OverworldSettingsWordFormat,
+    OverworldSettingsLayer3Header,
+    OverworldSettingsUseCustomTilemap,
+    OverworldSettingsUseCustomGraphics,
+    OverworldSettingsTilemapFile,
+    OverworldSettingsTilemapSize,
+    OverworldSettingsTilemapPosition,
+    OverworldSettingsAddressLayoutWords,
+    OverworldSettingsGraphicsFiles,
+    OverworldSettingsGfxFormat,
+    OverworldSettingsApplyLayer3,
+    OverworldSettingsPreservationNotice,
+    OverworldSettingsApplyRecord,
+    OverworldSettingsCommit,
+    OverworldSettingsStaged,
+    OverworldSettingsUnchanged,
+    OverworldSettingsDiscardTitle,
+    OverworldSettingsUnsavedNotice,
+    OverworldSettingsErrorTitle,
 }
 
 impl ExtendedUiTextKey {
-    pub const ALL: [Self; 126] = [
+    pub const ALL: [Self; 152] = [
         Self::TilemapTitleScreenName,
         Self::TilemapCreditsName,
         Self::TilemapEditorTitleFormat,
@@ -1957,6 +1983,32 @@ impl ExtendedUiTextKey {
         Self::EventTilemapDiscardTitle,
         Self::EventTilemapUnsavedNotice,
         Self::EventTilemapErrorTitle,
+        Self::OverworldSettingsEditorTitle,
+        Self::OverworldSettingsDescription,
+        Self::OverworldSettingsInstalled,
+        Self::OverworldSettingsPristine,
+        Self::OverworldSettingsStaleNotice,
+        Self::OverworldSettingsSubmapRecord,
+        Self::OverworldSettingsLoad,
+        Self::OverworldSettingsWordFormat,
+        Self::OverworldSettingsLayer3Header,
+        Self::OverworldSettingsUseCustomTilemap,
+        Self::OverworldSettingsUseCustomGraphics,
+        Self::OverworldSettingsTilemapFile,
+        Self::OverworldSettingsTilemapSize,
+        Self::OverworldSettingsTilemapPosition,
+        Self::OverworldSettingsAddressLayoutWords,
+        Self::OverworldSettingsGraphicsFiles,
+        Self::OverworldSettingsGfxFormat,
+        Self::OverworldSettingsApplyLayer3,
+        Self::OverworldSettingsPreservationNotice,
+        Self::OverworldSettingsApplyRecord,
+        Self::OverworldSettingsCommit,
+        Self::OverworldSettingsStaged,
+        Self::OverworldSettingsUnchanged,
+        Self::OverworldSettingsDiscardTitle,
+        Self::OverworldSettingsUnsavedNotice,
+        Self::OverworldSettingsErrorTitle,
     ];
 
     #[must_use]
@@ -2126,6 +2178,42 @@ impl ExtendedUiTextKey {
                 "The staged tilemap buffers have not been committed."
             }
             Self::EventTilemapErrorTitle => "Event-tilemap editor error",
+            Self::OverworldSettingsEditorTitle => "ROM Overworld Global Settings",
+            Self::OverworldSettingsDescription => {
+                "Seven lossless 16-word special settings records. Values are hexadecimal."
+            }
+            Self::OverworldSettingsInstalled => "Expanded settings are installed.",
+            Self::OverworldSettingsPristine => {
+                "Pristine defaults; committing installs the recovered expanded-settings runtime."
+            }
+            Self::OverworldSettingsStaleNotice => {
+                "The ROM changed after these settings were opened. Reopen before committing."
+            }
+            Self::OverworldSettingsSubmapRecord => "Submap record",
+            Self::OverworldSettingsLoad => "Load",
+            Self::OverworldSettingsWordFormat => "Word {index}",
+            Self::OverworldSettingsLayer3Header => "Semantic Layer 3 settings",
+            Self::OverworldSettingsUseCustomTilemap => "Use custom tilemap",
+            Self::OverworldSettingsUseCustomGraphics => "Use custom graphics",
+            Self::OverworldSettingsTilemapFile => "Tilemap file",
+            Self::OverworldSettingsTilemapSize => "Tilemap size",
+            Self::OverworldSettingsTilemapPosition => "Tilemap position",
+            Self::OverworldSettingsAddressLayoutWords => "Address-layout words",
+            Self::OverworldSettingsGraphicsFiles => "Graphics files",
+            Self::OverworldSettingsGfxFormat => "GFX {index}",
+            Self::OverworldSettingsApplyLayer3 => "Apply Layer 3 fields",
+            Self::OverworldSettingsPreservationNotice => {
+                "Semantic edits preserve opaque feature bits, reserved bytes, and high graphics-word nibbles."
+            }
+            Self::OverworldSettingsApplyRecord => "Apply record",
+            Self::OverworldSettingsCommit => "Commit settings to ROM",
+            Self::OverworldSettingsStaged => "Staged",
+            Self::OverworldSettingsUnchanged => "Unchanged",
+            Self::OverworldSettingsDiscardTitle => "Discard overworld-settings changes?",
+            Self::OverworldSettingsUnsavedNotice => {
+                "The staged settings have not been committed to the ROM."
+            }
+            Self::OverworldSettingsErrorTitle => "Overworld-settings editor error",
         }
     }
 

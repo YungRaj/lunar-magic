@@ -1183,6 +1183,15 @@ secondary-high reopen, bounds/stale safety, complete three-plane recovery, and i
 preservation remain proven. Localization model 28/28, event-tilemap editor 5/5, and renderer
 237/237 pass. Other native forms and retained live language-DLL evidence remain open; Localization
 stays Partial and aggregate parity remains 60/65.
+Localization coverage update (2026-08-11, overworld global settings): the complete seven-record raw
+and semantic Layer 3 editor now consumes twenty-six typed extension keys, including installed versus
+pristine runtime state, dynamic word/GFX labels, every semantic field, and preservation guidance,
+plus shared fixed-prefix confirmation actions. A literal-widget/header audit covers the full
+surface. All-record install/reopen, malformed/stale safety, semantic Layer 3 install/reopen/undo,
+opaque flag/byte/high-nibble preservation, and pristine/installed recovery remain proven.
+Localization model 28/28, settings family 7/7, and renderer 237/237 pass. Other native forms and
+retained live language-DLL evidence remain open; Localization stays Partial and aggregate parity
+remains 60/65.
 
 Localization coverage update (2026-08-11, current-level palette transfer): the full Raw 257-color,
 TPL v2, and RGB24 import/export chooser—including format guidance, `.palmask` behavior, actions, and
