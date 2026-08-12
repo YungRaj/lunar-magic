@@ -16,7 +16,7 @@ impl NativeApplication {
         if self.palette_editor.show(context, &self.main_toolbar_images) {
             self.request_quit(context);
         }
-        if self.graphics_editor.show(context) {
+        if self.graphics_editor.show(context, self.app.localization()) {
             self.request_quit(context);
         }
         if self.map16_editor.show(context, &self.main_toolbar_images) {

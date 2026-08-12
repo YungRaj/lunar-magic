@@ -16,7 +16,7 @@ use crate::{
     native_clipboard,
 };
 use eframe::egui;
-use lm_app::GraphicsDocumentController;
+use lm_app::{ExtendedUiTextKey, GraphicsDocumentController, LocalizationCatalog};
 use lm_graphics::{PaletteInterchangeFile, TileShift};
 
 mod document_io;
@@ -103,7 +103,11 @@ impl GraphicsEditor {
         false
     }
 
-    pub(crate) fn show(&mut self, context: &egui::Context) -> bool {
+    pub(crate) fn show(
+        &mut self,
+        context: &egui::Context,
+        catalog: Option<&LocalizationCatalog>,
+    ) -> bool {
         if let Some(result) = self.loader.show(context) {
             match result.and_then(decode_documents) {
                 Ok(document) => {
@@ -122,34 +126,49 @@ impl GraphicsEditor {
         self.poll_save(context);
         let mut quit_approved = false;
         if self.document.is_some() {
-            egui::Window::new("Portable Graphics Editor")
-                .default_size([760.0, 620.0])
-                .show(context, |ui| self.contents(ui));
+            egui::Window::new(text(
+                catalog,
+                ExtendedUiTextKey::PortableGraphicsEditorTitle,
+            ))
+            .default_size([760.0, 620.0])
+            .show(context, |ui| self.contents(ui, catalog));
         }
         if let Some(pending) = self.pending_close {
-            egui::Window::new("Unsaved graphics")
-                .collapsible(false)
-                .resizable(false)
-                .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
-                .show(context, |ui| {
-                    ui.label("Discard unsaved graphics changes?");
-                    ui.horizontal(|ui| {
-                        if ui.button("Cancel").clicked() {
-                            self.pending_close = None;
-                        }
-                        if ui.button("Discard").clicked() {
-                            self.document = None;
-                            self.pending_close = None;
-                            quit_approved = pending == PendingClose::Application;
-                        }
-                    });
+            egui::Window::new(text(
+                catalog,
+                ExtendedUiTextKey::PortableGraphicsDiscardTitle,
+            ))
+            .collapsible(false)
+            .resizable(false)
+            .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+            .show(context, |ui| {
+                ui.label(text(
+                    catalog,
+                    ExtendedUiTextKey::PortableGraphicsUnsavedNotice,
+                ));
+                ui.horizontal(|ui| {
+                    if ui
+                        .button(text(catalog, ExtendedUiTextKey::PortableGraphicsCancel))
+                        .clicked()
+                    {
+                        self.pending_close = None;
+                    }
+                    if ui
+                        .button(text(catalog, ExtendedUiTextKey::PortableGraphicsDiscard))
+                        .clicked()
+                    {
+                        self.document = None;
+                        self.pending_close = None;
+                        quit_approved = pending == PendingClose::Application;
+                    }
                 });
+            });
         }
-        self.show_error(context);
+        self.show_error(context, catalog);
         quit_approved
     }
 
-    fn contents(&mut self, ui: &mut egui::Ui) {
+    fn contents(&mut self, ui: &mut egui::Ui, catalog: Option<&LocalizationCatalog>) {
         take_graphics_refresh_shortcut(ui);
         let pasted = ui.input(|input| {
             input.events.iter().find_map(|event| match event {
@@ -158,7 +177,7 @@ impl GraphicsEditor {
             })
         });
         let save_requested = take_graphics_save_shortcut(ui);
-        self.toolbar(ui, save_requested);
+        self.toolbar(ui, save_requested, catalog);
         if let Some(text) = pasted {
             self.paste_tile(&text);
         }
@@ -168,13 +187,13 @@ impl GraphicsEditor {
         ui.separator();
         let rows = document.palette.palette.colors.len() / 16;
         let previous_display_palette = self.display_palette;
-        egui::ComboBox::from_label("Palette row")
+        egui::ComboBox::from_label(text(catalog, ExtendedUiTextKey::GraphicsPaletteRow))
             .selected_text(self.display_palette.label())
             .show_ui(ui, |ui| {
                 ui.selectable_value(
                     &mut self.display_palette,
                     GraphicsDisplayPalette::Default,
-                    "Default",
+                    text(catalog, ExtendedUiTextKey::GraphicsDefaultPalette),
                 );
                 for row in 0..rows {
                     ui.selectable_value(
@@ -192,13 +211,18 @@ impl GraphicsEditor {
         self.color_picker(ui, &palette);
         ui.separator();
         ui.columns(2, |columns| {
-            self.tile_list(&mut columns[0], &palette);
-            self.pixel_editor(&mut columns[1], &palette);
+            self.tile_list(&mut columns[0], &palette, catalog);
+            self.pixel_editor(&mut columns[1], &palette, catalog);
         });
         self.status.show(ui);
     }
 
-    fn toolbar(&mut self, ui: &mut egui::Ui, save_requested: bool) {
+    fn toolbar(
+        &mut self,
+        ui: &mut egui::Ui,
+        save_requested: bool,
+        catalog: Option<&LocalizationCatalog>,
+    ) {
         let save_available = !self.save_worker.is_running();
         let Some(document) = self.document.as_mut() else {
             return;
@@ -207,33 +231,47 @@ impl GraphicsEditor {
         let revision = controller.revision();
         ui.horizontal(|ui| {
             if ui
-                .add_enabled(controller.can_undo(), egui::Button::new("Undo"))
+                .add_enabled(
+                    controller.can_undo(),
+                    egui::Button::new(text(catalog, ExtendedUiTextKey::PortableGraphicsUndo)),
+                )
                 .clicked()
                 && let Err(error) = controller.undo(revision)
             {
                 self.error = Some(error.to_string());
             }
             if ui
-                .add_enabled(controller.can_redo(), egui::Button::new("Redo"))
+                .add_enabled(
+                    controller.can_redo(),
+                    egui::Button::new(text(catalog, ExtendedUiTextKey::PortableGraphicsRedo)),
+                )
                 .clicked()
                 && let Err(error) = controller.redo(revision)
             {
                 self.error = Some(error.to_string());
             }
             let save_clicked = ui
-                .add_enabled(save_available, egui::Button::new("Save"))
+                .add_enabled(
+                    save_available,
+                    egui::Button::new(text(catalog, ExtendedUiTextKey::PortableGraphicsSave)),
+                )
                 .clicked();
             if save_available && (save_clicked || save_requested) {
                 document_io::begin_save(controller, &mut self.save_worker, &mut self.error);
             }
-            if ui.button("Copy tile").clicked()
+            if ui
+                .button(text(catalog, ExtendedUiTextKey::PortableGraphicsCopyTile))
+                .clicked()
                 && let Some(tile) = controller.value().graphics.tiles.get(self.selected_tile)
             {
                 if let Err(error) = native_clipboard::copy_graphics_tile_to_system(ui.ctx(), tile) {
                     self.error = Some(error);
                 }
             }
-            if ui.button("Paste tile").clicked() {
+            if ui
+                .button(text(catalog, ExtendedUiTextKey::PortableGraphicsPasteTile))
+                .clicked()
+            {
                 match native_clipboard::request_graphics_tile_paste(ui.ctx()) {
                     Ok(Some(tile)) => {
                         let target = self.selected_tile;
@@ -247,11 +285,14 @@ impl GraphicsEditor {
                     Err(error) => self.error = Some(error),
                 }
             }
-            ui.label(if controller.is_modified() {
-                "Modified"
-            } else {
-                "Saved"
-            });
+            ui.label(text(
+                catalog,
+                if controller.is_modified() {
+                    ExtendedUiTextKey::PortableGraphicsModified
+                } else {
+                    ExtendedUiTextKey::PortableGraphicsSaved
+                },
+            ));
         });
     }
 
@@ -299,7 +340,12 @@ impl GraphicsEditor {
         }
     }
 
-    fn tile_list(&mut self, ui: &mut egui::Ui, palette: &PaletteInterchangeFile) {
+    fn tile_list(
+        &mut self,
+        ui: &mut egui::Ui,
+        palette: &PaletteInterchangeFile,
+        catalog: Option<&LocalizationCatalog>,
+    ) {
         let Some(document) = &self.document else {
             return;
         };
@@ -317,7 +363,7 @@ impl GraphicsEditor {
         let mut paste_status = None;
         let row_count = palette.palette.colors.len() / 16;
         let (page_control, palette_control) =
-            graphics_navigation_controls(ui, tile_count > 0, row_count > 0);
+            graphics_navigation_controls(ui, tile_count > 0, row_count > 0, catalog);
         egui::ScrollArea::vertical().show(ui, |ui| {
             egui::Grid::new("portable-graphics-tiles")
                 .spacing([0.0, 0.0])
@@ -439,7 +485,12 @@ impl GraphicsEditor {
         }
     }
 
-    fn pixel_editor(&mut self, ui: &mut egui::Ui, palette: &PaletteInterchangeFile) {
+    fn pixel_editor(
+        &mut self,
+        ui: &mut egui::Ui,
+        palette: &PaletteInterchangeFile,
+        catalog: Option<&LocalizationCatalog>,
+    ) {
         let Some(document) = self.document.as_mut() else {
             return;
         };
@@ -451,7 +502,7 @@ impl GraphicsEditor {
             .get(self.selected_tile)
             .cloned()
         else {
-            ui.label("No graphics tiles");
+            ui.label(text(catalog, ExtendedUiTextKey::PortableGraphicsNoTiles));
             return;
         };
         if let Some(direction) = self.pending_shift.take() {
@@ -475,10 +526,13 @@ impl GraphicsEditor {
         if character_shortcut == Some(GraphicsCharacterShortcut::EditColorMap) {
             self.color_map.open_dialog();
         }
-        ui.label(format!("Tile {:03X}", self.selected_tile));
+        ui.label(
+            text(catalog, ExtendedUiTextKey::PortableGraphicsTileFormat)
+                .replace("{tile}", &format!("{:03X}", self.selected_tile)),
+        );
         let clicked_mapping =
             self.color_map
-                .show(ui, palette, self.display_palette, &tile, true, None);
+                .show(ui, palette, self.display_palette, &tile, true, catalog);
         let mapped = character_shortcut
             .filter(|shortcut| *shortcut == GraphicsCharacterShortcut::ApplyColorMap)
             .and_then(|_| self.color_map.apply(&tile))
@@ -500,7 +554,7 @@ impl GraphicsEditor {
                 tile = current.clone();
             }
         }
-        let clicked_transform = graphics_transform_controls(ui, true);
+        let clicked_transform = graphics_transform_controls(ui, true, catalog);
         let transform = shortcut_transform(character_shortcut).or(clicked_transform);
         if let Some(transform) = transform {
             match transform {
@@ -584,14 +638,17 @@ impl GraphicsEditor {
         }
     }
 
-    fn show_error(&mut self, context: &egui::Context) {
+    fn show_error(&mut self, context: &egui::Context, catalog: Option<&LocalizationCatalog>) {
         if let Some(error) = self.error.clone() {
-            egui::Window::new("Graphics error")
+            egui::Window::new(text(catalog, ExtendedUiTextKey::PortableGraphicsErrorTitle))
                 .collapsible(false)
                 .resizable(false)
                 .show(context, |ui| {
                     ui.label(error);
-                    if ui.button("OK").clicked() {
+                    if ui
+                        .button(text(catalog, ExtendedUiTextKey::PortableGraphicsOk))
+                        .clicked()
+                    {
                         self.error = None;
                     }
                 });
@@ -626,6 +683,10 @@ impl GraphicsEditor {
     }
 }
 
+fn text(catalog: Option<&LocalizationCatalog>, key: ExtendedUiTextKey) -> String {
+    crate::frontend_ui::extended_localized_text(catalog, key)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -642,6 +703,55 @@ mod tests {
         };
         GraphicsDocumentController::decode("graphics.lmgfx".into(), &file.encode().unwrap())
             .unwrap()
+    }
+
+    #[test]
+    fn complete_portable_graphics_form_uses_every_typed_key_and_live_catalog() {
+        let editor_source = include_str!("graphics_editor.rs");
+        let painter_source = include_str!("graphics_painter.rs");
+        let application_source = include_str!("application/windows.rs");
+        for key in ExtendedUiTextKey::ALL.into_iter().filter(|key| {
+            let name = format!("{key:?}");
+            name.starts_with("PortableGraphics")
+                || matches!(
+                    key,
+                    ExtendedUiTextKey::GraphicsRotateClockwise
+                        | ExtendedUiTextKey::GraphicsFlipHorizontal
+                        | ExtendedUiTextKey::GraphicsFlipVertical
+                        | ExtendedUiTextKey::GraphicsPreviousPage
+                        | ExtendedUiTextKey::GraphicsNextPage
+                        | ExtendedUiTextKey::GraphicsPreviousPalette
+                        | ExtendedUiTextKey::GraphicsNextPalette
+                        | ExtendedUiTextKey::GraphicsColorMapFilters
+                        | ExtendedUiTextKey::GraphicsApplyColorMapFilter
+                        | ExtendedUiTextKey::GraphicsFilterFormat
+                )
+        }) {
+            let source = if format!("{key:?}").starts_with("PortableGraphics") {
+                editor_source
+            } else {
+                painter_source
+            };
+            assert!(
+                source.contains(&format!("ExtendedUiTextKey::{key:?}")),
+                "missing typed graphics label {key:?}"
+            );
+        }
+        for literal in [
+            "Window::new(\"Portable Graphics Editor\")",
+            "Window::new(\"Unsaved graphics\")",
+            "Window::new(\"Graphics error\")",
+            "Button::new(\"Undo\")",
+            "Button::new(\"Save\")",
+            "ui.button(\"Copy tile\")",
+            "ui.button(\"Paste tile\")",
+        ] {
+            assert!(
+                !editor_source.contains(literal),
+                "fixed-English control: {literal}"
+            );
+        }
+        assert!(application_source.contains(".show(context, self.app.localization())"));
     }
 
     #[test]

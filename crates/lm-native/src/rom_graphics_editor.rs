@@ -1013,7 +1013,7 @@ impl RomGraphicsEditor {
         let mut paste_status = None;
         let row_count = palette.palette.colors.len() / 16;
         let (page_control, palette_control) =
-            graphics_navigation_controls(ui, tile_count > 0, row_count > 0);
+            graphics_navigation_controls(ui, tile_count > 0, row_count > 0, catalog);
         egui::ScrollArea::vertical()
             .max_height(420.0)
             .show(ui, |ui| {
@@ -1534,7 +1534,7 @@ impl RomGraphicsEditor {
             ));
         }
         let enabled = !stale && editable;
-        let clicked_transform = graphics_transform_controls(ui, enabled);
+        let clicked_transform = graphics_transform_controls(ui, enabled, catalog);
         let transform = shortcut_transform(character_shortcut)
             .filter(|_| enabled)
             .or(clicked_transform);

@@ -2145,3 +2145,13 @@ and import/export errors now use five typed extension keys. Native I/O passes 3/
 validation, prerequisite installation, commit/reopen/re-export equality, and Undo. Localization
 model passes 28/28 and renderer 237/237. Other native forms and retained live language-DLL evidence
 keep Localization Partial, so aggregate parity remains 60/65.
+
+Localization coverage update (2026-08-12, portable graphics document): the complete window and
+its shared tile-navigation, palette-navigation, transform, and color-map controls now use
+twenty-six typed extension keys with the live catalog passed from the application host. The same
+shared labels are catalog-aware in pristine and installed graphics editors, preventing a
+mixed-language sub-workflow. Controller-revisioned pixel/tile editing, clipboard validation,
+undo/redo, asynchronous persistence, and dirty-close semantics remain proven. Focused graphics
+tests pass 41/41 active cases, localization passes 28/28 active cases, and renderer passes
+237/237. Other native forms and retained language-DLL evidence keep Localization Partial, so
+aggregate parity remains 60/65.

@@ -25,7 +25,8 @@ use crate::{
 };
 use eframe::egui;
 use lm_app::{
-    AppState, Command, EditorMode, GraphicsController, GraphicsControllerEdit, RomExpansionCommand,
+    AppState, Command, EditorMode, GraphicsController, GraphicsControllerEdit, LocalizationCatalog,
+    RomExpansionCommand,
 };
 use lm_graphics::{
     Bgr555, GraphicsTileChange, IndexedTile, Palette, PaletteInterchangeFile, TileShift,
@@ -217,6 +218,7 @@ impl VanillaGraphicsEditor {
                 !file_work_running && app.current_level().is_some(),
                 *joined_graphics_files,
                 &snapshot,
+                app.localization(),
             );
             self.pixel_editor(
                 &mut columns[1],
@@ -520,6 +522,7 @@ impl VanillaGraphicsEditor {
         level_export_enabled: bool,
         joined_graphics_files: bool,
         snapshot: &lm_app::ControllerSnapshot,
+        catalog: Option<&LocalizationCatalog>,
     ) {
         let Some(controller) = &self.controller else {
             return;
@@ -559,7 +562,7 @@ impl VanillaGraphicsEditor {
         let mut paste_status = None;
         let row_count = palette.palette.colors.len() / 16;
         let (page_control, palette_control) =
-            graphics_navigation_controls(ui, tile_count > 0, row_count > 0);
+            graphics_navigation_controls(ui, tile_count > 0, row_count > 0, catalog);
         egui::ScrollArea::vertical()
             .max_height(430.0)
             .show(ui, |ui| {
@@ -780,7 +783,7 @@ impl VanillaGraphicsEditor {
             tile = mapped;
             self.stage_tile(tile.clone());
         }
-        let clicked_transform = graphics_transform_controls(ui, edits_enabled);
+        let clicked_transform = graphics_transform_controls(ui, edits_enabled, catalog);
         let transform = shortcut_transform(character_shortcut)
             .filter(|_| edits_enabled)
             .or(clicked_transform);

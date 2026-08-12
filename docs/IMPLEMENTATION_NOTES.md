@@ -7312,6 +7312,19 @@ eligibility, confirmation, and lifecycle evidence passes in the expansion suite 
 localization model 28/28 and renderer 237/237. Localization remains Partial for other native forms;
 aggregate parity remains 60/65.
 
+Localization coverage update (2026-08-12, portable graphics document): twenty-six appended typed
+keys cover the complete portable graphics-document window and shared tile controls: title,
+palette selection, undo/redo/save, typed copy/paste, dirty state, tile identity/empty state,
+page and palette navigation, rotation/flips, color-map launch/application, close confirmation, and
+error lifecycle. The application window loop now passes the active catalog end to end, and the
+shared navigation/transform/color-map controls receive the same catalog across portable,
+pristine-ROM, and installed-ROM graphics editors. Mutation and persistence behavior is unchanged:
+pixel edits, shifts, transforms, color maps, typed clipboard paste, history, dirty close, and
+bounded asynchronous save remain controller-revisioned. The focused graphics suite passes 41/41
+active tests (one retained-ROM provenance ignore), localization passes 28/28 active tests (one
+provenance ignore), and renderer passes 237/237. Other native forms and retained live
+language-DLL evidence keep Localization Partial; aggregate parity remains 60/65.
+
 Localization coverage update (2026-08-11, level-access restriction): twenty typed extension keys
 cover every Rust-only stage around the original `$03FF` dialog: acknowledgement, restore-point
 policy, persistence before IPS, IPS choice, completion, save-and-close retries, and errors. The

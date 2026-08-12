@@ -1,5 +1,5 @@
 use eframe::egui;
-use lm_app::LocalizationCatalog;
+use lm_app::{ExtendedUiTextKey, LocalizationCatalog};
 use lm_graphics::{
     GraphicsColorMapFilters, GraphicsTileOwner, IndexedTile, PaletteInterchangeFile, TileShift,
 };
@@ -261,20 +261,39 @@ pub(crate) enum GraphicsTileTransform {
 pub(crate) fn graphics_transform_controls(
     ui: &mut egui::Ui,
     enabled: bool,
+    catalog: Option<&LocalizationCatalog>,
 ) -> Option<GraphicsTileTransform> {
     ui.horizontal(|ui| {
         if ui
-            .add_enabled(enabled, egui::Button::new("Rotate 90°"))
+            .add_enabled(
+                enabled,
+                egui::Button::new(graphics_text(
+                    catalog,
+                    ExtendedUiTextKey::GraphicsRotateClockwise,
+                )),
+            )
             .clicked()
         {
             Some(GraphicsTileTransform::RotateClockwise)
         } else if ui
-            .add_enabled(enabled, egui::Button::new("Flip horizontal"))
+            .add_enabled(
+                enabled,
+                egui::Button::new(graphics_text(
+                    catalog,
+                    ExtendedUiTextKey::GraphicsFlipHorizontal,
+                )),
+            )
             .clicked()
         {
             Some(GraphicsTileTransform::FlipHorizontal)
         } else if ui
-            .add_enabled(enabled, egui::Button::new("Flip vertical"))
+            .add_enabled(
+                enabled,
+                egui::Button::new(graphics_text(
+                    catalog,
+                    ExtendedUiTextKey::GraphicsFlipVertical,
+                )),
+            )
             .clicked()
         {
             Some(GraphicsTileTransform::FlipVertical)
@@ -289,15 +308,25 @@ pub(crate) fn graphics_navigation_controls(
     ui: &mut egui::Ui,
     pages_enabled: bool,
     palettes_enabled: bool,
+    catalog: Option<&LocalizationCatalog>,
 ) -> (Option<TileNavigation>, Option<PaletteStep>) {
     ui.horizontal(|ui| {
         let page = if ui
-            .add_enabled(pages_enabled, egui::Button::new("Previous page"))
+            .add_enabled(
+                pages_enabled,
+                egui::Button::new(graphics_text(
+                    catalog,
+                    ExtendedUiTextKey::GraphicsPreviousPage,
+                )),
+            )
             .clicked()
         {
             Some(TileNavigation::PreviousPage)
         } else if ui
-            .add_enabled(pages_enabled, egui::Button::new("Next page"))
+            .add_enabled(
+                pages_enabled,
+                egui::Button::new(graphics_text(catalog, ExtendedUiTextKey::GraphicsNextPage)),
+            )
             .clicked()
         {
             Some(TileNavigation::NextPage)
@@ -306,12 +335,24 @@ pub(crate) fn graphics_navigation_controls(
         };
         ui.separator();
         let palette = if ui
-            .add_enabled(palettes_enabled, egui::Button::new("Previous palette"))
+            .add_enabled(
+                palettes_enabled,
+                egui::Button::new(graphics_text(
+                    catalog,
+                    ExtendedUiTextKey::GraphicsPreviousPalette,
+                )),
+            )
             .clicked()
         {
             Some(PaletteStep::Previous)
         } else if ui
-            .add_enabled(palettes_enabled, egui::Button::new("Next palette"))
+            .add_enabled(
+                palettes_enabled,
+                egui::Button::new(graphics_text(
+                    catalog,
+                    ExtendedUiTextKey::GraphicsNextPalette,
+                )),
+            )
             .clicked()
         {
             Some(PaletteStep::Next)
@@ -371,13 +412,28 @@ impl GraphicsColorMapEditor {
     ) -> Option<IndexedTile> {
         let mut apply = false;
         ui.horizontal(|ui| {
-            if ui.button("Color-map filters…").clicked() {
+            if ui
+                .button(graphics_text(
+                    catalog,
+                    ExtendedUiTextKey::GraphicsColorMapFilters,
+                ))
+                .clicked()
+            {
                 self.begin_dialog();
             }
             apply = ui
-                .add_enabled(apply_enabled, egui::Button::new("Apply color-map filter"))
+                .add_enabled(
+                    apply_enabled,
+                    egui::Button::new(graphics_text(
+                        catalog,
+                        ExtendedUiTextKey::GraphicsApplyColorMapFilter,
+                    )),
+                )
                 .clicked();
-            ui.monospace(format!("Filter {:X}", self.selected_filter));
+            ui.monospace(
+                graphics_text(catalog, ExtendedUiTextKey::GraphicsFilterFormat)
+                    .replace("{filter}", &format!("{:X}", self.selected_filter)),
+            );
         });
         self.show_dialog(ui.ctx(), palette, display_palette, catalog);
         apply
@@ -437,6 +493,10 @@ impl GraphicsColorMapEditor {
             self.filters = dialog.draft;
         }
     }
+}
+
+fn graphics_text(catalog: Option<&LocalizationCatalog>, key: ExtendedUiTextKey) -> String {
+    crate::frontend_ui::extended_localized_text(catalog, key)
 }
 
 fn show_color_map_dialog_contents(
