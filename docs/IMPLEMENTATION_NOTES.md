@@ -7097,6 +7097,18 @@ audit truthful and improves accessibility without adding duplicate vocabulary. T
 and renderer 237/237 pass. Other unaudited frontend/status surfaces and retained live language-DLL
 evidence keep Localization Partial; aggregate parity remains 60/65.
 
+Localization coverage update (2026-08-12, ROM overworld navigation links): thirty-seven appended
+`Navigation*` identities cover the path- and warp-link window titles, lossless format guidance,
+dynamic staged counts, stale-ROM warning, table limits/resizing, load/apply/commit lifecycle,
+dirty state, every source/destination/target coordinate field, dirty-close confirmation, and error
+acknowledgement. The ROM-window dispatcher now supplies the live catalog to both editors; the path
+index invalidation uses explicit field identity rather than comparing a translated caption. A joint
+two-module audit rejects literal window, button, label, and `Button` captions and requires every
+family identity. Focused audits pass 2/2, localization passes 28/28 active cases (one provenance
+ignore), native compilation passes, and renderer remains 237/237. Other unaudited frontend/status
+surfaces and retained live language-DLL evidence keep Localization Partial; aggregate parity remains
+60/65.
+
 Localization coverage update (2026-08-12, custom-sprite placement library): twenty-nine appended
 `CustomSprite*` keys cover synchronized placement count/navigation, library header, Unicode
 search/descriptions, variable-width record groups, typed placement copy/paste,

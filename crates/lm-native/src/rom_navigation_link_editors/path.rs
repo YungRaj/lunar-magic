@@ -1,6 +1,6 @@
 use crate::level_editor_forms::{parse_hex_u8, parse_hex_u16};
 use eframe::egui;
-use lm_app::{AppState, Command};
+use lm_app::{AppState, Command, ExtendedUiTextKey as Key, LocalizationCatalog};
 use lm_overworld::{
     OverworldEndpoint, OverworldPathLink, OverworldPathLinkTable, OverworldPathTarget,
 };
@@ -155,39 +155,48 @@ impl RomOverworldPathLinkEditor {
         &mut self,
         context: &egui::Context,
         revision: u64,
+        catalog: Option<&LocalizationCatalog>,
     ) -> (bool, Option<Command>) {
         let mut command = None;
         if self.workspace.is_some() {
-            egui::Window::new("ROM Overworld Path Links")
+            egui::Window::new(text(catalog, Key::NavigationPathTitle))
                 .default_size([600.0, 470.0])
-                .show(context, |ui| command = self.contents(ui, revision));
+                .show(context, |ui| command = self.contents(ui, revision, catalog));
         }
-        let approved = self.close_confirmation(context);
-        self.show_error(context);
+        let approved = self.close_confirmation(context, catalog);
+        self.show_error(context, catalog);
         (approved, command)
     }
 
-    fn contents(&mut self, ui: &mut egui::Ui, revision: u64) -> Option<Command> {
+    fn contents(
+        &mut self,
+        ui: &mut egui::Ui,
+        revision: u64,
+        catalog: Option<&LocalizationCatalog>,
+    ) -> Option<Command> {
         let workspace = self.workspace.as_ref()?;
         let stale = workspace.revision != revision;
         let dirty = workspace.current != workspace.original;
-        ui.label("Lossless source/destination endpoints and engine target bytes. Hexadecimal.");
-        ui.label(format!(
-            "Staged path links: {}",
-            workspace.current.links.len()
-        ));
+        ui.label(text(catalog, Key::NavigationPathNotice));
+        ui.label(
+            text(catalog, Key::NavigationPathCountFormat)
+                .replace("{count}", &workspace.current.links.len().to_string()),
+        );
         if stale {
             ui.colored_label(
                 egui::Color32::YELLOW,
-                "The ROM changed after this table was opened. Reopen before committing.",
+                text(catalog, Key::NavigationStaleNotice),
             );
         }
-        self.form_ui(ui);
+        self.form_ui(ui, catalog);
         ui.horizontal(|ui| {
-            ui.label("Table count (00–80)");
+            ui.label(text(catalog, Key::NavigationPathTableCount));
             ui.text_edit_singleline(&mut self.count);
             if ui
-                .add_enabled(!stale, egui::Button::new("Resize table"))
+                .add_enabled(
+                    !stale,
+                    egui::Button::new(text(catalog, Key::NavigationResizeTable)),
+                )
                 .clicked()
                 && let Err(error) = self.resize()
             {
@@ -196,20 +205,26 @@ impl RomOverworldPathLinkEditor {
         });
         let mut command = None;
         ui.horizontal(|ui| {
-            if ui.button("Load link").clicked()
+            if ui.button(text(catalog, Key::NavigationLoadLink)).clicked()
                 && let Err(error) = self.load_selected()
             {
                 self.error = Some(error);
             }
             if ui
-                .add_enabled(!stale, egui::Button::new("Apply link"))
+                .add_enabled(
+                    !stale,
+                    egui::Button::new(text(catalog, Key::NavigationApplyLink)),
+                )
                 .clicked()
                 && let Err(error) = self.apply_selected()
             {
                 self.error = Some(error);
             }
             if ui
-                .add_enabled(dirty && !stale, egui::Button::new("Commit links to ROM"))
+                .add_enabled(
+                    dirty && !stale,
+                    egui::Button::new(text(catalog, Key::NavigationCommitLinks)),
+                )
                 .clicked()
             {
                 match self.prepare_commit(revision) {
@@ -217,53 +232,84 @@ impl RomOverworldPathLinkEditor {
                     Err(error) => self.error = Some(error),
                 }
             }
-            ui.label(if dirty { "Staged" } else { "Unchanged" });
+            ui.label(text(
+                catalog,
+                if dirty {
+                    Key::NavigationStaged
+                } else {
+                    Key::NavigationUnchanged
+                },
+            ));
         });
         command
     }
 
-    fn form_ui(&mut self, ui: &mut egui::Ui) {
+    fn form_ui(&mut self, ui: &mut egui::Ui, catalog: Option<&LocalizationCatalog>) {
         egui::Grid::new("rom-overworld-path-link-form")
             .striped(true)
             .show(ui, |ui| {
-                form_row(ui, "Index", &mut self.form.index, &mut self.form.loaded);
-                form_row(ui, "Source X", &mut self.form.source_x, &mut None::<usize>);
-                form_row(ui, "Source Y", &mut self.form.source_y, &mut None::<usize>);
                 form_row(
                     ui,
-                    "Source submap",
+                    &text(catalog, Key::NavigationIndex),
+                    &mut self.form.index,
+                    &mut self.form.loaded,
+                    true,
+                );
+                form_row(
+                    ui,
+                    &text(catalog, Key::NavigationSourceX),
+                    &mut self.form.source_x,
+                    &mut None::<usize>,
+                    false,
+                );
+                form_row(
+                    ui,
+                    &text(catalog, Key::NavigationSourceY),
+                    &mut self.form.source_y,
+                    &mut None::<usize>,
+                    false,
+                );
+                form_row(
+                    ui,
+                    &text(catalog, Key::NavigationSourceSubmap),
                     &mut self.form.source_submap,
                     &mut None::<usize>,
+                    false,
                 );
                 form_row(
                     ui,
-                    "Destination X",
+                    &text(catalog, Key::NavigationDestinationX),
                     &mut self.form.destination_x,
                     &mut None::<usize>,
+                    false,
                 );
                 form_row(
                     ui,
-                    "Destination Y",
+                    &text(catalog, Key::NavigationDestinationY),
                     &mut self.form.destination_y,
                     &mut None::<usize>,
+                    false,
                 );
                 form_row(
                     ui,
-                    "Destination submap",
+                    &text(catalog, Key::NavigationDestinationSubmap),
                     &mut self.form.destination_submap,
                     &mut None::<usize>,
+                    false,
                 );
                 form_row(
                     ui,
-                    "Target X tile",
+                    &text(catalog, Key::NavigationTargetXTile),
                     &mut self.form.target_x,
                     &mut None::<usize>,
+                    false,
                 );
                 form_row(
                     ui,
-                    "Target Y tile",
+                    &text(catalog, Key::NavigationTargetYTile),
                     &mut self.form.target_y,
                     &mut None::<usize>,
+                    false,
                 );
             });
     }
@@ -343,21 +389,25 @@ impl RomOverworldPathLinkEditor {
         }))
     }
 
-    fn close_confirmation(&mut self, context: &egui::Context) -> bool {
+    fn close_confirmation(
+        &mut self,
+        context: &egui::Context,
+        catalog: Option<&LocalizationCatalog>,
+    ) -> bool {
         let Some(pending) = self.pending_close else {
             return false;
         };
         let mut approved = false;
-        egui::Window::new("Discard path-link changes?")
+        egui::Window::new(text(catalog, Key::NavigationPathDiscardTitle))
             .collapsible(false)
             .resizable(false)
             .show(context, |ui| {
-                ui.label("The staged path-link table has not been committed.");
+                ui.label(text(catalog, Key::NavigationPathDiscardNotice));
                 ui.horizontal(|ui| {
-                    if ui.button("Cancel").clicked() {
+                    if ui.button(text(catalog, Key::NavigationCancel)).clicked() {
                         self.pending_close = None;
                     }
-                    if ui.button("Discard").clicked() {
+                    if ui.button(text(catalog, Key::NavigationDiscard)).clicked() {
                         self.clear();
                         approved = pending == PendingClose::Application;
                     }
@@ -366,11 +416,11 @@ impl RomOverworldPathLinkEditor {
         approved
     }
 
-    fn show_error(&mut self, context: &egui::Context) {
+    fn show_error(&mut self, context: &egui::Context, catalog: Option<&LocalizationCatalog>) {
         if let Some(error) = self.error.clone() {
-            egui::Window::new("Path-link editor error").show(context, |ui| {
+            egui::Window::new(text(catalog, Key::NavigationPathErrorTitle)).show(context, |ui| {
                 ui.label(error);
-                if ui.button("OK").clicked() {
+                if ui.button(text(catalog, Key::NavigationOk)).clicked() {
                     self.error = None;
                 }
             });
@@ -421,12 +471,25 @@ impl PathLinkForm {
     }
 }
 
-fn form_row(ui: &mut egui::Ui, label: &str, value: &mut String, loaded: &mut Option<usize>) {
+fn form_row(
+    ui: &mut egui::Ui,
+    label: &str,
+    value: &mut String,
+    loaded: &mut Option<usize>,
+    is_index: bool,
+) {
     ui.label(label);
-    if ui.text_edit_singleline(value).changed() && label == "Index" {
+    if ui.text_edit_singleline(value).changed() && is_index {
         *loaded = None;
     }
     ui.end_row();
+}
+
+fn text(catalog: Option<&LocalizationCatalog>, key: Key) -> String {
+    catalog.map_or_else(
+        || key.english().to_owned(),
+        |catalog| catalog.extended_text(key).to_owned(),
+    )
 }
 
 fn blank_path_link() -> OverworldPathLink {
@@ -452,6 +515,22 @@ fn blank_path_link() -> OverworldPathLink {
 mod tests {
     use super::*;
     use std::path::PathBuf;
+
+    #[test]
+    fn path_link_editor_has_no_literal_widget_text() {
+        let source = include_str!("path.rs");
+        for literal in [
+            "ui.button(\"",
+            "ui.label(\"",
+            "Button::new(\"",
+            "Window::new(\"",
+        ] {
+            assert!(
+                !source.contains(literal),
+                "path-link editor bypasses localization with {literal}"
+            );
+        }
+    }
 
     #[test]
     fn pristine_table_grows_installs_and_reopens_exact_link() {

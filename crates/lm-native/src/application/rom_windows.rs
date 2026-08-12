@@ -4,6 +4,23 @@ use crate::level_access_restriction_dialog::LevelAccessRestrictionAction;
 use eframe::egui;
 
 macro_rules! show_rom_editor {
+    ($self:expr, $context:expr, $editor:ident, $notification:expr, catalog) => {{
+        let (quit, command) = $self.$editor.show(
+            $context,
+            $self.app.project_revision(),
+            $self.app.localization(),
+        );
+        if let Some(command) = command {
+            if $self.try_dispatch($context, command) {
+                $self.$editor.commit_succeeded();
+                $self.mark_user_toolbar_save_notification($notification);
+                $self.renderer.invalidate();
+            }
+        }
+        if quit {
+            $self.request_quit($context);
+        }
+    }};
     ($self:expr, $context:expr, $editor:ident) => {{
         let (quit, command) = $self.$editor.show($context, $self.app.project_revision());
         if let Some(command) = command {
@@ -149,13 +166,15 @@ impl NativeApplication {
             self,
             context,
             rom_overworld_path_link_editor,
-            lm_app::LunarMagicNotificationKind::SaveOverworld
+            lm_app::LunarMagicNotificationKind::SaveOverworld,
+            catalog
         );
         show_rom_editor!(
             self,
             context,
             rom_overworld_warp_link_editor,
-            lm_app::LunarMagicNotificationKind::SaveOverworld
+            lm_app::LunarMagicNotificationKind::SaveOverworld,
+            catalog
         );
         let (quit, command) = self.rom_secondary_exit_editor.show(
             context,

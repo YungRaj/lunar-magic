@@ -1,6 +1,6 @@
 use crate::level_editor_forms::{parse_hex_u8, parse_hex_u16};
 use eframe::egui;
-use lm_app::{AppState, Command};
+use lm_app::{AppState, Command, ExtendedUiTextKey as Key, LocalizationCatalog};
 use lm_overworld::{OverworldWarpEndpoint, OverworldWarpLink, OverworldWarpLinkTable};
 use lm_profile::smw_us_v1_overworld_warp_patch_locator;
 
@@ -141,39 +141,48 @@ impl RomOverworldWarpLinkEditor {
         &mut self,
         context: &egui::Context,
         revision: u64,
+        catalog: Option<&LocalizationCatalog>,
     ) -> (bool, Option<Command>) {
         let mut command = None;
         if self.workspace.is_some() {
-            egui::Window::new("ROM Overworld Warp Links")
+            egui::Window::new(text(catalog, Key::NavigationWarpTitle))
                 .default_size([560.0, 390.0])
-                .show(context, |ui| command = self.contents(ui, revision));
+                .show(context, |ui| command = self.contents(ui, revision, catalog));
         }
-        let approved = self.close_confirmation(context);
-        self.show_error(context);
+        let approved = self.close_confirmation(context, catalog);
+        self.show_error(context, catalog);
         (approved, command)
     }
 
-    fn contents(&mut self, ui: &mut egui::Ui, revision: u64) -> Option<Command> {
+    fn contents(
+        &mut self,
+        ui: &mut egui::Ui,
+        revision: u64,
+        catalog: Option<&LocalizationCatalog>,
+    ) -> Option<Command> {
         let workspace = self.workspace.as_ref()?;
         let stale = workspace.revision != revision;
         let dirty = workspace.current != workspace.original;
-        ui.label("Four lossless coordinate words per warp. Packed vertical fields remain opaque.");
-        ui.label(format!(
-            "Staged warp links: {}",
-            workspace.current.links.len()
-        ));
+        ui.label(text(catalog, Key::NavigationWarpNotice));
+        ui.label(
+            text(catalog, Key::NavigationWarpCountFormat)
+                .replace("{count}", &workspace.current.links.len().to_string()),
+        );
         if stale {
             ui.colored_label(
                 egui::Color32::YELLOW,
-                "The ROM changed after this table was opened. Reopen before committing.",
+                text(catalog, Key::NavigationStaleNotice),
             );
         }
-        self.form_ui(ui);
+        self.form_ui(ui, catalog);
         ui.horizontal(|ui| {
-            ui.label("Table count (000–100)");
+            ui.label(text(catalog, Key::NavigationWarpTableCount));
             ui.text_edit_singleline(&mut self.count);
             if ui
-                .add_enabled(!stale, egui::Button::new("Resize table"))
+                .add_enabled(
+                    !stale,
+                    egui::Button::new(text(catalog, Key::NavigationResizeTable)),
+                )
                 .clicked()
                 && let Err(error) = self.resize()
             {
@@ -182,20 +191,26 @@ impl RomOverworldWarpLinkEditor {
         });
         let mut command = None;
         ui.horizontal(|ui| {
-            if ui.button("Load link").clicked()
+            if ui.button(text(catalog, Key::NavigationLoadLink)).clicked()
                 && let Err(error) = self.load_selected()
             {
                 self.error = Some(error);
             }
             if ui
-                .add_enabled(!stale, egui::Button::new("Apply link"))
+                .add_enabled(
+                    !stale,
+                    egui::Button::new(text(catalog, Key::NavigationApplyLink)),
+                )
                 .clicked()
                 && let Err(error) = self.apply_selected()
             {
                 self.error = Some(error);
             }
             if ui
-                .add_enabled(dirty && !stale, egui::Button::new("Commit links to ROM"))
+                .add_enabled(
+                    dirty && !stale,
+                    egui::Button::new(text(catalog, Key::NavigationCommitLinks)),
+                )
                 .clicked()
             {
                 match self.prepare_commit(revision) {
@@ -203,34 +218,45 @@ impl RomOverworldWarpLinkEditor {
                     Err(error) => self.error = Some(error),
                 }
             }
-            ui.label(if dirty { "Staged" } else { "Unchanged" });
+            ui.label(text(
+                catalog,
+                if dirty {
+                    Key::NavigationStaged
+                } else {
+                    Key::NavigationUnchanged
+                },
+            ));
         });
         command
     }
 
-    fn form_ui(&mut self, ui: &mut egui::Ui) {
+    fn form_ui(&mut self, ui: &mut egui::Ui, catalog: Option<&LocalizationCatalog>) {
         egui::Grid::new("rom-overworld-warp-link-form")
             .striped(true)
             .show(ui, |ui| {
-                ui.label("Index");
+                ui.label(text(catalog, Key::NavigationIndex));
                 if ui.text_edit_singleline(&mut self.form.index).changed() {
                     self.form.loaded = None;
                 }
                 ui.end_row();
-                word_row(ui, "Source packed vertical", &mut self.form.source_vertical);
                 word_row(
                     ui,
-                    "Source horizontal tile",
+                    &text(catalog, Key::NavigationSourcePackedVertical),
+                    &mut self.form.source_vertical,
+                );
+                word_row(
+                    ui,
+                    &text(catalog, Key::NavigationSourceHorizontalTile),
                     &mut self.form.source_horizontal,
                 );
                 word_row(
                     ui,
-                    "Destination packed vertical",
+                    &text(catalog, Key::NavigationDestinationPackedVertical),
                     &mut self.form.destination_vertical,
                 );
                 word_row(
                     ui,
-                    "Destination horizontal tile",
+                    &text(catalog, Key::NavigationDestinationHorizontalTile),
                     &mut self.form.destination_horizontal,
                 );
             });
@@ -311,21 +337,25 @@ impl RomOverworldWarpLinkEditor {
         }))
     }
 
-    fn close_confirmation(&mut self, context: &egui::Context) -> bool {
+    fn close_confirmation(
+        &mut self,
+        context: &egui::Context,
+        catalog: Option<&LocalizationCatalog>,
+    ) -> bool {
         let Some(pending) = self.pending_close else {
             return false;
         };
         let mut approved = false;
-        egui::Window::new("Discard warp-link changes?")
+        egui::Window::new(text(catalog, Key::NavigationWarpDiscardTitle))
             .collapsible(false)
             .resizable(false)
             .show(context, |ui| {
-                ui.label("The staged warp-link table has not been committed.");
+                ui.label(text(catalog, Key::NavigationWarpDiscardNotice));
                 ui.horizontal(|ui| {
-                    if ui.button("Cancel").clicked() {
+                    if ui.button(text(catalog, Key::NavigationCancel)).clicked() {
                         self.pending_close = None;
                     }
-                    if ui.button("Discard").clicked() {
+                    if ui.button(text(catalog, Key::NavigationDiscard)).clicked() {
                         self.clear();
                         approved = pending == PendingClose::Application;
                     }
@@ -334,11 +364,11 @@ impl RomOverworldWarpLinkEditor {
         approved
     }
 
-    fn show_error(&mut self, context: &egui::Context) {
+    fn show_error(&mut self, context: &egui::Context, catalog: Option<&LocalizationCatalog>) {
         if let Some(error) = self.error.clone() {
-            egui::Window::new("Warp-link editor error").show(context, |ui| {
+            egui::Window::new(text(catalog, Key::NavigationWarpErrorTitle)).show(context, |ui| {
                 ui.label(error);
-                if ui.button("OK").clicked() {
+                if ui.button(text(catalog, Key::NavigationOk)).clicked() {
                     self.error = None;
                 }
             });
@@ -391,6 +421,13 @@ fn word_row(ui: &mut egui::Ui, label: &str, value: &mut String) {
     ui.end_row();
 }
 
+fn text(catalog: Option<&LocalizationCatalog>, key: Key) -> String {
+    catalog.map_or_else(
+        || key.english().to_owned(),
+        |catalog| catalog.extended_text(key).to_owned(),
+    )
+}
+
 fn blank_warp_link() -> OverworldWarpLink {
     OverworldWarpLink {
         source: OverworldWarpEndpoint {
@@ -408,6 +445,32 @@ fn blank_warp_link() -> OverworldWarpLink {
 mod tests {
     use super::*;
     use std::path::PathBuf;
+
+    #[test]
+    fn warp_link_editor_has_no_literal_widget_text_and_consumes_navigation_vocabulary() {
+        let sources = [include_str!("path.rs"), include_str!("warp.rs")];
+        for literal in [
+            "ui.button(\"",
+            "ui.label(\"",
+            "Button::new(\"",
+            "Window::new(\"",
+        ] {
+            assert!(
+                sources.iter().all(|source| !source.contains(literal)),
+                "navigation-link editor bypasses localization with {literal}"
+            );
+        }
+        let joined = sources.join("\n");
+        for key in Key::ALL
+            .into_iter()
+            .filter(|key| format!("{key:?}").starts_with("Navigation"))
+        {
+            assert!(
+                joined.contains(&format!("Key::{key:?}")),
+                "navigation-link editors do not consume {key:?}"
+            );
+        }
+    }
 
     #[test]
     fn pristine_table_grows_installs_and_reopens_exact_link() {
