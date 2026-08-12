@@ -940,16 +940,21 @@ impl VanillaLevelEditor {
         {
             return Some(command);
         }
-        if let Some(command) = self.show_screen_exit_follow_confirmation(ui.ctx(), &snapshot) {
+        if let Some(command) =
+            self.show_screen_exit_follow_confirmation(ui.ctx(), app.localization(), &snapshot)
+        {
             match self.request_exit_scan_before_save(&snapshot, custom_dsc, command) {
                 Ok(Some(command)) => return Some(command),
                 Ok(None) => {}
                 Err(error) => self.error = Some(error),
             }
         }
-        if let Some(command) =
-            self.show_editor_transition_confirmation(ui.ctx(), &snapshot, custom_dsc)
-        {
+        if let Some(command) = self.show_editor_transition_confirmation(
+            ui.ctx(),
+            app.localization(),
+            &snapshot,
+            custom_dsc,
+        ) {
             return Some(command);
         }
         if self.external_asset_revision != external_asset_revision {
@@ -4074,14 +4079,35 @@ impl VanillaLevelEditor {
             .collapsible(false)
             .resizable(false)
             .show(context, |ui| {
-                ui.label(format!("There is at least 1 object that is placing tiles beyond the {edge} screen in the level. This can corrupt SNES RAM during gameplay."));
-                ui.label(format!("To disable this warning, turn off “{option}” in Tools."));
-                ui.label("Save the level anyway?");
+                ui.label(
+                    vanilla_text(
+                        catalog,
+                        ExtendedUiTextKey::VanillaLevelObjectPlacementWarningFormat,
+                    )
+                    .replace("{edge}", edge),
+                );
+                ui.label(
+                    vanilla_text(catalog, ExtendedUiTextKey::VanillaLevelDisableWarningFormat)
+                        .replace("{option}", option),
+                );
+                ui.label(vanilla_text(
+                    catalog,
+                    ExtendedUiTextKey::VanillaLevelSaveAnywayQuestion,
+                ));
                 ui.horizontal(|ui| {
-                    if ui.button("Save Anyway").clicked() {
+                    if ui
+                        .button(vanilla_text(
+                            catalog,
+                            ExtendedUiTextKey::VanillaLevelSaveAnyway,
+                        ))
+                        .clicked()
+                    {
                         save_anyway = true;
                     }
-                    if ui.button("Cancel").clicked() {
+                    if ui
+                        .button(vanilla_text(catalog, ExtendedUiTextKey::VanillaLevelCancel))
+                        .clicked()
+                    {
                         cancel = true;
                     }
                 });
@@ -4141,18 +4167,37 @@ impl VanillaLevelEditor {
             .collapsible(false)
             .resizable(false)
             .show(context, |ui| {
-                ui.label(format!(
-                    "You currently have {} sprites in the level (limit is usually around {}).",
-                    warning.count, warning.limit
+                ui.label(
+                    vanilla_text(catalog, ExtendedUiTextKey::VanillaLevelSpriteCountFormat)
+                        .replace("{count}", &warning.count.to_string())
+                        .replace("{limit}", &warning.limit.to_string()),
+                );
+                ui.label(vanilla_text(
+                    catalog,
+                    ExtendedUiTextKey::VanillaLevelSpriteCountWarning,
                 ));
-                ui.label("Exceeding the maximum limit may cause extra sprites to not appear, or the game could freeze or display random sprites when the player reaches the affected screen.");
-                ui.label(format!("To disable this warning, turn off “{option}” in Tools."));
-                ui.label("Save the level anyway?");
+                ui.label(
+                    vanilla_text(catalog, ExtendedUiTextKey::VanillaLevelDisableWarningFormat)
+                        .replace("{option}", option),
+                );
+                ui.label(vanilla_text(
+                    catalog,
+                    ExtendedUiTextKey::VanillaLevelSaveAnywayQuestion,
+                ));
                 ui.horizontal(|ui| {
-                    if ui.button("Save Anyway").clicked() {
+                    if ui
+                        .button(vanilla_text(
+                            catalog,
+                            ExtendedUiTextKey::VanillaLevelSaveAnyway,
+                        ))
+                        .clicked()
+                    {
                         save_anyway = true;
                     }
-                    if ui.button("Cancel").clicked() {
+                    if ui
+                        .button(vanilla_text(catalog, ExtendedUiTextKey::VanillaLevelCancel))
+                        .clicked()
+                    {
                         cancel = true;
                     }
                 });
@@ -4208,14 +4253,32 @@ impl VanillaLevelEditor {
             .collapsible(false)
             .resizable(false)
             .show(context, |ui| {
-                ui.label("Sprite 33 (vertical fireball) is used in this level, but sprite buoyancy is not enabled. This will usually cause the game to freeze.");
-                ui.label(format!("To disable this warning, turn off “{option}” in Tools."));
-                ui.label("Save the level anyway?");
+                ui.label(vanilla_text(
+                    catalog,
+                    ExtendedUiTextKey::VanillaLevelVerticalFireballWarning,
+                ));
+                ui.label(
+                    vanilla_text(catalog, ExtendedUiTextKey::VanillaLevelDisableWarningFormat)
+                        .replace("{option}", option),
+                );
+                ui.label(vanilla_text(
+                    catalog,
+                    ExtendedUiTextKey::VanillaLevelSaveAnywayQuestion,
+                ));
                 ui.horizontal(|ui| {
-                    if ui.button("Save Anyway").clicked() {
+                    if ui
+                        .button(vanilla_text(
+                            catalog,
+                            ExtendedUiTextKey::VanillaLevelSaveAnyway,
+                        ))
+                        .clicked()
+                    {
                         save_anyway = true;
                     }
-                    if ui.button("Cancel").clicked() {
+                    if ui
+                        .button(vanilla_text(catalog, ExtendedUiTextKey::VanillaLevelCancel))
+                        .clicked()
+                    {
                         cancel = true;
                     }
                 });
@@ -4417,6 +4480,7 @@ impl VanillaLevelEditor {
     fn show_editor_transition_confirmation(
         &mut self,
         context: &egui::Context,
+        catalog: Option<&LocalizationCatalog>,
         snapshot: &lm_app::ControllerSnapshot,
         custom_dsc: Option<&lm_level::DscResolvedTable>,
     ) -> Option<Command> {
@@ -4426,23 +4490,41 @@ impl VanillaLevelEditor {
             return self.resolve_editor_transition_choice(Some(0), snapshot, custom_dsc);
         }
         let mut choice = None;
-        egui::Window::new("Save level to ROM?")
-            .collapsible(false)
-            .resizable(false)
-            .show(context, |ui| {
-                ui.label("The current level has staged changes. Save before continuing?");
-                ui.horizontal(|ui| {
-                    if ui.button("Save").clicked() {
-                        choice = Some(0_u8);
-                    }
-                    if ui.button("Discard").clicked() {
-                        choice = Some(1);
-                    }
-                    if ui.button("Cancel").clicked() {
-                        choice = Some(2);
-                    }
-                });
+        egui::Window::new(vanilla_text(
+            catalog,
+            ExtendedUiTextKey::VanillaLevelSaveTitle,
+        ))
+        .collapsible(false)
+        .resizable(false)
+        .show(context, |ui| {
+            ui.label(vanilla_text(
+                catalog,
+                ExtendedUiTextKey::VanillaLevelSaveBeforeContinuing,
+            ));
+            ui.horizontal(|ui| {
+                if ui
+                    .button(vanilla_text(catalog, ExtendedUiTextKey::VanillaLevelSave))
+                    .clicked()
+                {
+                    choice = Some(0_u8);
+                }
+                if ui
+                    .button(vanilla_text(
+                        catalog,
+                        ExtendedUiTextKey::VanillaLevelDiscard,
+                    ))
+                    .clicked()
+                {
+                    choice = Some(1);
+                }
+                if ui
+                    .button(vanilla_text(catalog, ExtendedUiTextKey::VanillaLevelCancel))
+                    .clicked()
+                {
+                    choice = Some(2);
+                }
             });
+        });
         self.resolve_editor_transition_choice(choice, snapshot, custom_dsc)
     }
 
@@ -4519,29 +4601,46 @@ impl VanillaLevelEditor {
     fn show_screen_exit_follow_confirmation(
         &mut self,
         context: &egui::Context,
+        catalog: Option<&LocalizationCatalog>,
         snapshot: &lm_app::ControllerSnapshot,
     ) -> Option<Command> {
         let destination = self.screen_exit_follow_prompt?;
         let mut choice = None;
-        egui::Window::new("Save level to ROM?")
-            .collapsible(false)
-            .resizable(false)
-            .show(context, |ui| {
-                ui.label(format!(
-                    "The current level has staged changes. Save before following this exit to level {destination:03X}?"
-                ));
-                ui.horizontal(|ui| {
-                    if ui.button("Save").clicked() {
-                        choice = Some(0_u8);
-                    }
-                    if ui.button("Discard").clicked() {
-                        choice = Some(1);
-                    }
-                    if ui.button("Cancel").clicked() {
-                        choice = Some(2);
-                    }
-                });
+        egui::Window::new(vanilla_text(
+            catalog,
+            ExtendedUiTextKey::VanillaLevelSaveTitle,
+        ))
+        .collapsible(false)
+        .resizable(false)
+        .show(context, |ui| {
+            ui.label(
+                vanilla_text(catalog, ExtendedUiTextKey::VanillaLevelSaveBeforeExitFormat)
+                    .replace("{destination}", &format!("{destination:03X}")),
+            );
+            ui.horizontal(|ui| {
+                if ui
+                    .button(vanilla_text(catalog, ExtendedUiTextKey::VanillaLevelSave))
+                    .clicked()
+                {
+                    choice = Some(0_u8);
+                }
+                if ui
+                    .button(vanilla_text(
+                        catalog,
+                        ExtendedUiTextKey::VanillaLevelDiscard,
+                    ))
+                    .clicked()
+                {
+                    choice = Some(1);
+                }
+                if ui
+                    .button(vanilla_text(catalog, ExtendedUiTextKey::VanillaLevelCancel))
+                    .clicked()
+                {
+                    choice = Some(2);
+                }
             });
+        });
         match choice {
             Some(0) => {
                 let controller = self.controller.as_ref()?;
@@ -17733,6 +17832,44 @@ mod tests {
                 "fixed-English canvas control: {literal}"
             );
         }
+        let save_safety = source
+            .split("    fn show_object_placement_save_warning(")
+            .nth(1)
+            .unwrap()
+            .split("    fn resolve_editor_transition_choice(")
+            .next()
+            .unwrap();
+        let exit_follow = source
+            .split("    fn show_screen_exit_follow_confirmation(")
+            .nth(1)
+            .unwrap()
+            .split("    fn request_editor_transition(")
+            .next()
+            .unwrap();
+        for literal in [
+            "label(\"Exceeding the maximum limit",
+            "label(\"Sprite 33 (vertical fireball)",
+            "label(\"Save the level anyway?\")",
+            "button(\"Save Anyway\")",
+            "Window::new(\"Save level to ROM?\")",
+            "button(\"Save\")",
+            "button(\"Discard\")",
+        ] {
+            assert!(
+                !save_safety.contains(literal),
+                "fixed-English save control: {literal}"
+            );
+        }
+        for literal in [
+            "Window::new(\"Save level to ROM?\")",
+            "button(\"Save\")",
+            "button(\"Discard\")",
+        ] {
+            assert!(
+                !exit_follow.contains(literal),
+                "fixed-English exit-follow control: {literal}"
+            );
+        }
         let modeless_editors = source
             .split("    fn show_modeless_entity_edit_windows(")
             .nth(1)
@@ -18251,7 +18388,7 @@ mod tests {
         assert!(editor.request_save_prompt_transition(transition.clone()));
         editor.auto_confirm_pending_transition_save();
         let commit = editor
-            .show_editor_transition_confirmation(&egui::Context::default(), &snapshot, None)
+            .show_editor_transition_confirmation(&egui::Context::default(), None, &snapshot, None)
             .expect("gesture auto-save must emit the ordinary checked level commit");
         assert!(!editor.auto_confirm_editor_transition_save);
         app.dispatch(commit).unwrap();

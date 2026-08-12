@@ -1310,6 +1310,13 @@ manifest. Launcher 2/2, updater 11/11, packager 3/3, and renderer 237/237 pass. 
 consent and retained cross-platform release execution remain missing, so Release stays Partial and
 aggregate parity remains 60/65.
 
+Localization coverage update (2026-08-12, vanilla save safety and dirty transitions): nine new
+typed keys plus shared warning/action keys cover object placement, sprite count, buoyancy, editor
+transition, and exit-follow decisions with localized dynamic templates. Bounded source audits
+reject former literals; focused native, localization 28/28 active tests (one provenance ignore),
+and renderer 237/237 pass. Other vanilla/native surfaces keep Localization Partial, so aggregate
+parity remains 60/65.
+
 Localization coverage update (2026-08-12, vanilla canvas interaction): twenty typed keys cover
 guidance, duplicate/delete, game/live preview toggles, all placement tools, zoom/reset, and camera
 screen/entrance controls. A bounded source audit rejects former literals; focused native,

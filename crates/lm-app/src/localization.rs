@@ -4040,10 +4040,19 @@ pub enum ExtendedUiTextKey {
     VanillaLevelScreenMinus,
     VanillaLevelScreenPlus,
     VanillaLevelEntrance,
+    VanillaLevelObjectPlacementWarningFormat,
+    VanillaLevelSpriteCountFormat,
+    VanillaLevelSpriteCountWarning,
+    VanillaLevelVerticalFireballWarning,
+    VanillaLevelSaveTitle,
+    VanillaLevelSaveBeforeContinuing,
+    VanillaLevelSave,
+    VanillaLevelDiscard,
+    VanillaLevelSaveBeforeExitFormat,
 }
 
 impl ExtendedUiTextKey {
-    pub const ALL: [Self; 2339] = [
+    pub const ALL: [Self; 2348] = [
         Self::MwlDocumentEditorTitle,
         Self::MwlDocumentVersionFormat,
         Self::MwlDocumentFlagsHex,
@@ -6383,6 +6392,15 @@ impl ExtendedUiTextKey {
         Self::VanillaLevelScreenMinus,
         Self::VanillaLevelScreenPlus,
         Self::VanillaLevelEntrance,
+        Self::VanillaLevelObjectPlacementWarningFormat,
+        Self::VanillaLevelSpriteCountFormat,
+        Self::VanillaLevelSpriteCountWarning,
+        Self::VanillaLevelVerticalFireballWarning,
+        Self::VanillaLevelSaveTitle,
+        Self::VanillaLevelSaveBeforeContinuing,
+        Self::VanillaLevelSave,
+        Self::VanillaLevelDiscard,
+        Self::VanillaLevelSaveBeforeExitFormat,
     ];
 
     #[must_use]
@@ -9423,6 +9441,27 @@ impl ExtendedUiTextKey {
             Self::VanillaLevelScreenMinus => "Screen −",
             Self::VanillaLevelScreenPlus => "Screen +",
             Self::VanillaLevelEntrance => "Entrance",
+            Self::VanillaLevelObjectPlacementWarningFormat => {
+                "There is at least 1 object that is placing tiles beyond the {edge} screen in the level. This can corrupt SNES RAM during gameplay."
+            }
+            Self::VanillaLevelSpriteCountFormat => {
+                "You currently have {count} sprites in the level (limit is usually around {limit})."
+            }
+            Self::VanillaLevelSpriteCountWarning => {
+                "Exceeding the maximum limit may cause extra sprites to not appear, or the game could freeze or display random sprites when the player reaches the affected screen."
+            }
+            Self::VanillaLevelVerticalFireballWarning => {
+                "Sprite 33 (vertical fireball) is used in this level, but sprite buoyancy is not enabled. This will usually cause the game to freeze."
+            }
+            Self::VanillaLevelSaveTitle => "Save level to ROM?",
+            Self::VanillaLevelSaveBeforeContinuing => {
+                "The current level has staged changes. Save before continuing?"
+            }
+            Self::VanillaLevelSave => "Save",
+            Self::VanillaLevelDiscard => "Discard",
+            Self::VanillaLevelSaveBeforeExitFormat => {
+                "The current level has staged changes. Save before following this exit to level {destination}?"
+            }
         }
     }
 

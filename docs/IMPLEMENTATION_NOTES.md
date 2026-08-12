@@ -7100,6 +7100,15 @@ ignore), native compilation passes, and renderer remains 237/237. Vanilla-level 
 shared progress windows, and retained live language-DLL evidence keep Localization Partial;
 aggregate parity remains 60/65.
 
+Localization coverage update (2026-08-12, vanilla save safety and dirty transitions): nine
+additional `VanillaLevel*` identities plus shared warning/action keys cover object-boundary,
+sprite-count, vertical-fireball buoyancy, editor-transition, and screen-exit-follow decisions.
+Dynamic edge, count/limit, original-option, and destination values use localized templates while
+authenticated option titles remain authoritative. The live catalog now reaches both dirty-transition
+confirmations. Bounded source audits reject former fixed-English warnings/actions. Focused native
+and localization tests pass, and renderer remains 237/237. Other vanilla/native forms keep
+Localization Partial; aggregate parity remains 60/65.
+
 Localization coverage update (2026-08-12, vanilla canvas interaction): twenty additional
 `VanillaLevel*` identities cover selection/placement guidance, duplicate/delete actions, game-pixel
 and 256×224 preview modes, live-frame selection overlay and help, every canvas tool, zoom/reset,
