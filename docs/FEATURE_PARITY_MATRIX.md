@@ -763,6 +763,14 @@ localization model 28/28, and renderer 237/237. Per-map options, live preview co
 profile variants remain; the overworld palette/ExAnimation row stays Partial and aggregate parity
 remains 60/65.
 
+Localization coverage update (2026-08-12, portable entity appearances): twenty-eight typed
+extension keys cover all three source domains, IDs, signed offsets, palette/flips, complete
+painter-order mutation, history/save, close, and errors with the live catalog. One revision now
+has explicit canonical reopen and Undo/Redo evidence across Layer 1 objects, Layer 2 objects, and
+sprites. Native tests pass 23/23, controller tests 5/5, localization 28/28 active cases, and
+renderer 237/237. Other native forms and retained language-DLL evidence keep Localization Partial,
+so aggregate parity remains 60/65.
+
 Localization coverage update (2026-08-11, installed overworld animation options and preview):
 twenty-seven additional typed keys cover the installed editor's per-map feature switches, runtime
 installation guidance, preview transport and timer state, trigger controls, event state, and empty

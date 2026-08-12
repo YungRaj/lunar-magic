@@ -7079,6 +7079,19 @@ later-edit preservation, history divergence, and request overflow. Localization 
 active cases (one provenance ignore), and renderer passes 237/237. Other native forms and retained
 language-DLL evidence keep Localization Partial; aggregate parity remains 60/65.
 
+Localization coverage update (2026-08-12, portable entity appearances): twenty-eight appended
+`Appearance*` keys cover Layer 1 object, Layer 2 object, and sprite source choices; full-width
+source/tile identifiers; signed offsets; palette/flips; painter-order selection, replacement,
+removal, insertion and movement; history/save/dirty state; close confirmation; and errors. The
+application host passes the live catalog and the obsolete fixed-English source-name array was
+removed. A complete-workflow test applies all three source domains with full-width IDs and signed
+offsets, reorders them in one revision, proves canonical save/reopen equality, then atomic
+Undo/Redo. Focused native tests pass 23/23; controller tests pass 5/5 for ordered mixed edits,
+late-command/file-validation rollback, stale revisions, immutable save snapshots, later-edit
+preservation, and divergent history. Localization passes 28/28 active cases (one provenance
+ignore), and renderer passes 237/237. Other native forms and retained language-DLL evidence keep
+Localization Partial; aggregate parity remains 60/65.
+
 Cross-platform launcher-gate update (2026-08-11): every native portable-release matrix runner now
 executes the package, update, and launcher contract suites before publishing its bundle. The
 launcher suite no longer silently skips all process evidence on Windows: its Windows-only tests

@@ -51,8 +51,6 @@ impl AppearanceForm {
     }
 }
 
-pub(crate) const SOURCE_NAMES: [&str; 3] = ["Layer 1 object", "Layer 2 object", "Sprite"];
-
 fn parse_hex<T>(text: &str, name: &str) -> Result<T, String>
 where
     T: TryFrom<u64>,

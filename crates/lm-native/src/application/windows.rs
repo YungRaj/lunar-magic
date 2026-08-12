@@ -40,7 +40,10 @@ impl NativeApplication {
         if self.metadata_editor.show(context, self.app.localization()) {
             self.request_quit(context);
         }
-        if self.appearance_editor.show(context) {
+        if self
+            .appearance_editor
+            .show(context, self.app.localization())
+        {
             self.request_quit(context);
         }
         if self.overworld_appearance_editor.show(context) {

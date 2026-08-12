@@ -1,11 +1,14 @@
 use crate::{
-    appearance_editor_form::{AppearanceForm, SOURCE_NAMES},
+    appearance_editor_form::AppearanceForm,
     dialogs,
     document_loader::{BoundedRead, DocumentLoader},
     document_persistence::DocumentPersistence,
 };
 use eframe::egui;
-use lm_app::{EntityAppearanceDocumentController, EntityAppearanceDocumentEdit};
+use lm_app::{
+    EntityAppearanceDocumentController, EntityAppearanceDocumentEdit, ExtendedUiTextKey,
+    LocalizationCatalog,
+};
 use lm_level::EntityAppearanceFile;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -73,7 +76,11 @@ impl AppearanceEditor {
         false
     }
 
-    pub(crate) fn show(&mut self, context: &egui::Context) -> bool {
+    pub(crate) fn show(
+        &mut self,
+        context: &egui::Context,
+        catalog: Option<&LocalizationCatalog>,
+    ) -> bool {
         if let Some(result) = self.loader.show(context) {
             match result.and_then(|mut loaded| {
                 let (path, bytes) = loaded
@@ -97,24 +104,30 @@ impl AppearanceEditor {
         }
         if self.controller.is_some() {
             self.clamp_indices();
-            egui::Window::new("Portable Entity Appearance Editor")
+            egui::Window::new(text(catalog, ExtendedUiTextKey::AppearanceEditorTitle))
                 .default_size([650.0, 500.0])
-                .show(context, |ui| self.contents(ui));
+                .show(context, |ui| self.contents(ui, catalog));
         }
-        let approved = self.show_close_confirmation(context);
-        self.show_error(context);
+        let approved = self.show_close_confirmation(context, catalog);
+        self.show_error(context, catalog);
         approved
     }
 
-    fn contents(&mut self, ui: &mut egui::Ui) {
-        self.toolbar(ui);
+    fn contents(&mut self, ui: &mut egui::Ui, catalog: Option<&LocalizationCatalog>) {
+        self.toolbar(ui, catalog);
         ui.separator();
         let Some(controller) = self.controller.as_ref() else {
             return;
         };
         let len = controller.value().appearances.len();
-        ui.label(format!("Painter-ordered records: {len}"));
-        ui.add(egui::Slider::new(&mut self.index, 0..=len.saturating_sub(1)).text("Selected"));
+        ui.label(
+            text(catalog, ExtendedUiTextKey::AppearancePainterRecordsFormat)
+                .replace("{count}", &len.to_string()),
+        );
+        ui.add(
+            egui::Slider::new(&mut self.index, 0..=len.saturating_sub(1))
+                .text(text(catalog, ExtendedUiTextKey::AppearanceSelected)),
+        );
         if self.form_key != Some((controller.revision(), self.index)) {
             self.form = controller
                 .value()
@@ -124,12 +137,15 @@ impl AppearanceEditor {
                 .map_or_else(AppearanceForm::default, AppearanceForm::load);
             self.form_key = Some((controller.revision(), self.index));
         }
-        appearance_fields(ui, &mut self.form);
+        appearance_fields(ui, &mut self.form, catalog);
         ui.separator();
         let mut edit = None;
         ui.horizontal(|ui| {
             if ui
-                .add_enabled(len > 0, egui::Button::new("Replace selected"))
+                .add_enabled(
+                    len > 0,
+                    egui::Button::new(text(catalog, ExtendedUiTextKey::AppearanceReplaceSelected)),
+                )
                 .clicked()
             {
                 edit = Some(
@@ -142,7 +158,10 @@ impl AppearanceEditor {
                 );
             }
             if ui
-                .add_enabled(len > 0, egui::Button::new("Remove selected"))
+                .add_enabled(
+                    len > 0,
+                    egui::Button::new(text(catalog, ExtendedUiTextKey::AppearanceRemoveSelected)),
+                )
                 .clicked()
             {
                 edit = Some(Ok(EntityAppearanceDocumentEdit::Remove {
@@ -152,7 +171,10 @@ impl AppearanceEditor {
         });
         ui.horizontal(|ui| {
             ui.add(egui::DragValue::new(&mut self.insert_index).range(0..=len));
-            if ui.button("Insert form before index").clicked() {
+            if ui
+                .button(text(catalog, ExtendedUiTextKey::AppearanceInsertBefore))
+                .clicked()
+            {
                 edit = Some(
                     self.form
                         .parse()
@@ -166,7 +188,10 @@ impl AppearanceEditor {
         ui.horizontal(|ui| {
             ui.add(egui::DragValue::new(&mut self.move_before).range(0..=len.saturating_sub(1)));
             if ui
-                .add_enabled(len > 1, egui::Button::new("Move selected before index"))
+                .add_enabled(
+                    len > 1,
+                    egui::Button::new(text(catalog, ExtendedUiTextKey::AppearanceMoveBefore)),
+                )
                 .clicked()
             {
                 edit = Some(Ok(EntityAppearanceDocumentEdit::MoveBefore {
@@ -183,7 +208,7 @@ impl AppearanceEditor {
         }
     }
 
-    fn toolbar(&mut self, ui: &mut egui::Ui) {
+    fn toolbar(&mut self, ui: &mut egui::Ui, catalog: Option<&LocalizationCatalog>) {
         let Some(controller) = self.controller.as_ref() else {
             return;
         };
@@ -196,21 +221,37 @@ impl AppearanceEditor {
         let mut save_requested = false;
         ui.horizontal(|ui| {
             if ui
-                .add_enabled(can_undo, egui::Button::new("Undo"))
+                .add_enabled(
+                    can_undo,
+                    egui::Button::new(text(catalog, ExtendedUiTextKey::AppearanceUndo)),
+                )
                 .clicked()
             {
                 history = Some(true);
             }
             if ui
-                .add_enabled(can_redo, egui::Button::new("Redo"))
+                .add_enabled(
+                    can_redo,
+                    egui::Button::new(text(catalog, ExtendedUiTextKey::AppearanceRedo)),
+                )
                 .clicked()
             {
                 history = Some(false);
             }
             save_requested = ui
-                .add_enabled(!self.persistence.is_running(), egui::Button::new("Save"))
+                .add_enabled(
+                    !self.persistence.is_running(),
+                    egui::Button::new(text(catalog, ExtendedUiTextKey::AppearanceSave)),
+                )
                 .clicked();
-            ui.label(if modified { "Modified" } else { "Saved" });
+            ui.label(text(
+                catalog,
+                if modified {
+                    ExtendedUiTextKey::AppearanceModified
+                } else {
+                    ExtendedUiTextKey::AppearanceSaved
+                },
+            ));
         });
         let mut changed = false;
         if let Some(controller) = self.controller.as_mut() {
@@ -263,22 +304,32 @@ impl AppearanceEditor {
         self.form_key = None;
     }
 
-    fn show_close_confirmation(&mut self, context: &egui::Context) -> bool {
+    fn show_close_confirmation(
+        &mut self,
+        context: &egui::Context,
+        catalog: Option<&LocalizationCatalog>,
+    ) -> bool {
         let Some(pending) = self.pending_close else {
             return false;
         };
         let mut approved = false;
-        egui::Window::new("Unsaved entity appearances")
+        egui::Window::new(text(catalog, ExtendedUiTextKey::AppearanceDiscardTitle))
             .collapsible(false)
             .resizable(false)
             .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
             .show(context, |ui| {
-                ui.label("Discard unsaved appearance changes?");
+                ui.label(text(catalog, ExtendedUiTextKey::AppearanceUnsavedNotice));
                 ui.horizontal(|ui| {
-                    if ui.button("Cancel").clicked() {
+                    if ui
+                        .button(text(catalog, ExtendedUiTextKey::AppearanceCancel))
+                        .clicked()
+                    {
                         self.pending_close = None;
                     }
-                    if ui.button("Discard").clicked() {
+                    if ui
+                        .button(text(catalog, ExtendedUiTextKey::AppearanceDiscard))
+                        .clicked()
+                    {
                         self.clear();
                         approved = pending == PendingClose::Application;
                     }
@@ -287,14 +338,17 @@ impl AppearanceEditor {
         approved
     }
 
-    fn show_error(&mut self, context: &egui::Context) {
+    fn show_error(&mut self, context: &egui::Context, catalog: Option<&LocalizationCatalog>) {
         if let Some(error) = self.error.clone() {
-            egui::Window::new("Appearance editor error")
+            egui::Window::new(text(catalog, ExtendedUiTextKey::AppearanceErrorTitle))
                 .collapsible(false)
                 .resizable(false)
                 .show(context, |ui| {
                     ui.label(error);
-                    if ui.button("OK").clicked() {
+                    if ui
+                        .button(text(catalog, ExtendedUiTextKey::AppearanceOk))
+                        .clicked()
+                    {
                         self.error = None;
                     }
                 });
@@ -308,32 +362,161 @@ impl AppearanceEditor {
     }
 }
 
-fn appearance_fields(ui: &mut egui::Ui, form: &mut AppearanceForm) {
+fn appearance_fields(
+    ui: &mut egui::Ui,
+    form: &mut AppearanceForm,
+    catalog: Option<&LocalizationCatalog>,
+) {
+    let source_names = [
+        ExtendedUiTextKey::AppearanceSourceLayer1,
+        ExtendedUiTextKey::AppearanceSourceLayer2,
+        ExtendedUiTextKey::AppearanceSourceSprite,
+    ]
+    .map(|key| text(catalog, key));
     egui::ComboBox::from_id_salt("appearance-source-kind")
-        .selected_text(SOURCE_NAMES[form.source_kind.min(2)])
+        .selected_text(&source_names[form.source_kind.min(2)])
         .show_ui(ui, |ui| {
-            for (index, name) in SOURCE_NAMES.into_iter().enumerate() {
+            for (index, name) in source_names.iter().enumerate() {
                 ui.selectable_value(&mut form.source_kind, index, name);
             }
         });
-    for (label, field) in [
-        ("Source ID (hex)", &mut form.source_id),
-        ("Tile index (hex)", &mut form.tile_index),
-        ("X offset (decimal)", &mut form.x),
-        ("Y offset (decimal)", &mut form.y),
+    for (key, field) in [
+        (
+            ExtendedUiTextKey::AppearanceSourceIdHex,
+            &mut form.source_id,
+        ),
+        (
+            ExtendedUiTextKey::AppearanceTileIndexHex,
+            &mut form.tile_index,
+        ),
+        (ExtendedUiTextKey::AppearanceXOffsetDecimal, &mut form.x),
+        (ExtendedUiTextKey::AppearanceYOffsetDecimal, &mut form.y),
     ] {
         ui.horizontal(|ui| {
-            ui.label(label);
+            ui.label(text(catalog, key));
             ui.text_edit_singleline(field);
         });
     }
-    ui.add(egui::Slider::new(&mut form.palette_index, 0..=7).text("Palette row"));
+    ui.add(
+        egui::Slider::new(&mut form.palette_index, 0..=7)
+            .text(text(catalog, ExtendedUiTextKey::AppearancePaletteRow)),
+    );
     ui.horizontal(|ui| {
-        ui.checkbox(&mut form.x_flip, "Horizontal flip");
-        ui.checkbox(&mut form.y_flip, "Vertical flip");
+        ui.checkbox(
+            &mut form.x_flip,
+            text(catalog, ExtendedUiTextKey::AppearanceHorizontalFlip),
+        );
+        ui.checkbox(
+            &mut form.y_flip,
+            text(catalog, ExtendedUiTextKey::AppearanceVerticalFlip),
+        );
     });
+}
+
+fn text(catalog: Option<&LocalizationCatalog>, key: ExtendedUiTextKey) -> String {
+    crate::frontend_ui::extended_localized_text(catalog, key)
 }
 
 fn clamp(index: usize, len: usize) -> usize {
     if len == 0 { 0 } else { index.min(len - 1) }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use lm_level::{AppearanceSource, EntityAppearanceRecord};
+
+    fn record(source: AppearanceSource, tile: u16, x: i32) -> EntityAppearanceRecord {
+        EntityAppearanceRecord {
+            source,
+            tile_index: tile,
+            palette_index: 7,
+            x,
+            y: -24,
+            x_flip: true,
+            y_flip: false,
+        }
+    }
+
+    fn controller() -> EntityAppearanceDocumentController {
+        EntityAppearanceDocumentController::decode(
+            "entities.lmentapp".into(),
+            &EntityAppearanceFile {
+                appearances: vec![record(AppearanceSource::Sprite(1), 1, 10)],
+            }
+            .encode()
+            .unwrap(),
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn complete_appearance_form_uses_every_typed_key_and_live_catalog() {
+        let source = include_str!("appearance_editor.rs");
+        for key in ExtendedUiTextKey::ALL
+            .into_iter()
+            .filter(|key| format!("{key:?}").starts_with("Appearance"))
+        {
+            assert!(
+                source.contains(&format!("ExtendedUiTextKey::{key:?}")),
+                "missing appearance label {key:?}"
+            );
+        }
+        for literal in [
+            "Window::new(\"Portable Entity Appearance Editor\")",
+            "Window::new(\"Unsaved entity appearances\")",
+            "Window::new(\"Appearance editor error\")",
+            "Button::new(\"Replace selected\")",
+            "Button::new(\"Undo\")",
+            "Button::new(\"Save\")",
+        ] {
+            assert!(
+                !source.contains(literal),
+                "fixed-English control: {literal}"
+            );
+        }
+        assert!(
+            include_str!("application/windows.rs")
+                .contains(".show(context, self.app.localization())")
+        );
+    }
+
+    #[test]
+    fn all_source_kinds_and_painter_order_round_trip_as_one_undoable_revision() {
+        let mut controller = controller();
+        let layer1 = record(AppearanceSource::Layer1Object(0xfeed_beef), 0x123, -100);
+        let layer2 = record(AppearanceSource::Layer2Object(0x1234_5678), 0x456, 200);
+        let sprite = record(AppearanceSource::Sprite(0xdead_beef), 0x789, 300);
+        let original = controller.value().clone();
+        controller
+            .apply_edits(
+                0,
+                &[
+                    EntityAppearanceDocumentEdit::Replace {
+                        index: 0,
+                        value: layer1,
+                    },
+                    EntityAppearanceDocumentEdit::Insert {
+                        index: 1,
+                        value: layer2,
+                    },
+                    EntityAppearanceDocumentEdit::Insert {
+                        index: 2,
+                        value: sprite,
+                    },
+                    EntityAppearanceDocumentEdit::MoveBefore { from: 2, before: 0 },
+                ],
+            )
+            .unwrap();
+        assert_eq!(controller.revision(), 1);
+        assert_eq!(controller.value().appearances, [sprite, layer1, layer2]);
+        let snapshot = controller.begin_save().unwrap();
+        let reopened = EntityAppearanceFile::decode(&snapshot.bytes).unwrap();
+        assert_eq!(reopened, *controller.value());
+        controller.cancel_save(snapshot.request_id).unwrap();
+        assert!(controller.undo(controller.revision()).unwrap());
+        assert_eq!(controller.value(), &original);
+        assert!(controller.redo(controller.revision()).unwrap());
+        assert_eq!(controller.value(), &reopened);
+    }
 }
