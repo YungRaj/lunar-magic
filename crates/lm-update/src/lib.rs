@@ -4,7 +4,7 @@ use sha2::{Digest, Sha256};
 use std::{
     cmp::Ordering,
     fmt, fs,
-    io::Write as _,
+    io::{Read, Write as _},
     path::{Path, PathBuf},
 };
 
@@ -58,18 +58,7 @@ impl UpdateManifest {
         target: &str,
         archive: &[u8],
     ) -> Result<(), UpdateError> {
-        if self.target != target {
-            return Err(UpdateError::Target {
-                expected: target.to_owned(),
-                actual: self.target.clone(),
-            });
-        }
-        if self.version <= current {
-            return Err(UpdateError::NotNewer {
-                current,
-                offered: self.version,
-            });
-        }
+        self.verify_offer(current, target)?;
         if u64::try_from(archive.len()).ok() != Some(self.length) {
             return Err(UpdateError::ArchiveLength);
         }
@@ -90,6 +79,18 @@ impl UpdateManifest {
         directory: &Path,
     ) -> Result<PathBuf, UpdateError> {
         self.verify_archive(current, target, archive)?;
+        self.stage_archive_reader(current, target, std::io::Cursor::new(archive), directory)
+    }
+
+    /// Streams one verified archive into durable create-new storage without buffering it whole.
+    pub fn stage_archive_reader(
+        &self,
+        current: Version,
+        target: &str,
+        mut archive: impl Read,
+        directory: &Path,
+    ) -> Result<PathBuf, UpdateError> {
+        self.verify_offer(current, target)?;
         let metadata = fs::metadata(directory).map_err(|error| UpdateError::StageIo {
             operation: "inspect destination directory",
             message: error.to_string(),
@@ -106,13 +107,45 @@ impl UpdateManifest {
                 operation: "create staged archive",
                 message: error.to_string(),
             })?;
-        if let Err(error) = file.write_all(archive).and_then(|()| file.sync_all()) {
+        let mut hasher = Sha256::new();
+        let mut remaining = self.length;
+        let mut buffer = [0_u8; 64 * 1024];
+        let write_result = (|| {
+            while remaining != 0 {
+                let request = usize::try_from(remaining.min(buffer.len() as u64))
+                    .map_err(|_| std::io::Error::other("update read size overflow"))?;
+                let read = archive.read(&mut buffer[..request])?;
+                if read == 0 {
+                    return Err(std::io::Error::new(
+                        std::io::ErrorKind::UnexpectedEof,
+                        "update archive ended before its declared length",
+                    ));
+                }
+                file.write_all(&buffer[..read])?;
+                hasher.update(&buffer[..read]);
+                remaining -= u64::try_from(read).unwrap_or(u64::MAX);
+            }
+            let mut trailing = [0_u8; 1];
+            if archive.read(&mut trailing)? != 0 {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    "update archive exceeds its declared length",
+                ));
+            }
+            file.sync_all()
+        })();
+        if let Err(error) = write_result {
             drop(file);
             let _cleanup = fs::remove_file(&destination);
             return Err(UpdateError::StageIo {
                 operation: "write staged archive",
                 message: error.to_string(),
             });
+        }
+        if <[u8; 32]>::from(hasher.finalize()) != self.sha256 {
+            drop(file);
+            let _cleanup = fs::remove_file(&destination);
+            return Err(UpdateError::Digest);
         }
         drop(file);
         let reopened = match fs::read(&destination) {
@@ -130,6 +163,22 @@ impl UpdateManifest {
             return Err(error);
         }
         Ok(destination)
+    }
+
+    fn verify_offer(&self, current: Version, target: &str) -> Result<(), UpdateError> {
+        if self.target != target {
+            return Err(UpdateError::Target {
+                expected: target.to_owned(),
+                actual: self.target.clone(),
+            });
+        }
+        if self.version <= current {
+            return Err(UpdateError::NotNewer {
+                current,
+                offered: self.version,
+            });
+        }
+        Ok(())
     }
 }
 
@@ -368,5 +417,29 @@ mod tests {
             Err(UpdateError::StageDirectory)
         );
         assert_eq!(fs::read(not_directory).unwrap(), b"preserve");
+    }
+
+    #[test]
+    fn streamed_staging_rejects_truncation_trailing_bytes_and_equal_length_tampering() {
+        let archive = b"complete verified archive";
+        let parsed = UpdateManifest::decode(&manifest("2.0.0", "target-a", archive)).unwrap();
+        for rejected in [
+            archive[..archive.len() - 1].to_vec(),
+            [archive.as_slice(), b"x"].concat(),
+            vec![b'x'; archive.len()],
+        ] {
+            let directory = tempfile::tempdir().unwrap();
+            assert!(
+                parsed
+                    .stage_archive_reader(
+                        "1.0.0".parse().unwrap(),
+                        "target-a",
+                        std::io::Cursor::new(rejected),
+                        directory.path(),
+                    )
+                    .is_err()
+            );
+            assert_eq!(fs::read_dir(directory.path()).unwrap().count(), 0);
+        }
     }
 }

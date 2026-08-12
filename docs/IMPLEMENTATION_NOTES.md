@@ -7002,3 +7002,11 @@ failure removes only that newly created file; pre-verification failure creates n
 collision preserves the existing file byte-for-byte. Five trust-core tests plus three packager tests
 pass. Discovery, consent UI, extraction/replacement/relaunch, signing, and live update evidence
 remain incomplete; Release stays Partial and aggregate parity remains 60/65.
+
+Streaming-update staging update (2026-08-11): durable update staging no longer requires buffering
+an archive of up to 512 MiB in memory. The production path incrementally reads at most 64 KiB,
+writes and hashes exactly the declared length, explicitly probes for forbidden trailing bytes,
+syncs, reopens, and performs the complete verification again. Truncation, one-byte extension, and
+equal-length tampering all remove the newly created destination and leave the staging directory
+empty. The byte-slice entry point is now a thin wrapper over this same path. The update trust core
+passes 6/6; Release remains Partial and aggregate parity remains 60/65.

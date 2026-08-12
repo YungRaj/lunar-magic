@@ -1189,6 +1189,13 @@ existing file; later failures clean up only the newly created file. The update t
 5/5 and the producer passes 3/3. Discovery, consent UI, replacement/relaunch, signing, and live
 proof remain missing, so Release remains Partial and aggregate parity remains 60/65.
 
+Streaming-update staging update (2026-08-11): verified archives are now staged through a bounded
+64-KiB streaming loop rather than whole-archive buffering. It hashes exactly the declared length,
+rejects truncation and any trailing byte, syncs, reopens, and re-verifies before success; all failure
+paths remove only the create-new destination. The trust core passes 6/6. Native discovery/consent,
+replacement/relaunch, signing, and live proof remain missing, so Release stays Partial and aggregate
+parity remains 60/65.
+
 Crash-recovery evidence update (2026-08-11, fixed-ROM family): palette, Map16, secondary-exit,
 and Lunar Magic metadata staging now accepts every complete two-, three-, or four-editor subset on
 one evolving project clone, superseding the former pair-only coordinator branches. Deterministic
