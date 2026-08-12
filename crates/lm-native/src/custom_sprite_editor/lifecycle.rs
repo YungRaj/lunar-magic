@@ -1,5 +1,6 @@
-use super::{CustomSpriteEditor, PendingClose};
+use super::{CustomSpriteEditor, PendingClose, text};
 use eframe::egui;
+use lm_app::{ExtendedUiTextKey, LocalizationCatalog};
 
 impl CustomSpriteEditor {
     pub(crate) fn request_close(&mut self, application: bool) -> bool {
@@ -26,7 +27,11 @@ impl CustomSpriteEditor {
         false
     }
 
-    pub(crate) fn show(&mut self, context: &egui::Context) -> bool {
+    pub(crate) fn show(
+        &mut self,
+        context: &egui::Context,
+        catalog: Option<&LocalizationCatalog>,
+    ) -> bool {
         if let Some(result) = self.loader.show(context) {
             match result.and_then(super::document_io::decode) {
                 Ok(controller) => {
@@ -44,32 +49,42 @@ impl CustomSpriteEditor {
         if self.controller.is_some() {
             self.clamp_index();
             self.load_form();
-            egui::Window::new("Custom Sprite Placement Editor")
+            egui::Window::new(text(catalog, ExtendedUiTextKey::CustomSpriteEditorTitle))
                 .default_size([720.0, 650.0])
                 .vscroll(true)
-                .show(context, |ui| self.contents(ui));
+                .show(context, |ui| self.contents(ui, catalog));
         }
-        let approved = self.show_close_confirmation(context);
-        self.show_error(context);
+        let approved = self.show_close_confirmation(context, catalog);
+        self.show_error(context, catalog);
         approved
     }
 
-    fn show_close_confirmation(&mut self, context: &egui::Context) -> bool {
+    fn show_close_confirmation(
+        &mut self,
+        context: &egui::Context,
+        catalog: Option<&LocalizationCatalog>,
+    ) -> bool {
         let Some(pending) = self.pending_close else {
             return false;
         };
         let mut approved = false;
-        egui::Window::new("Unsaved custom-sprite library")
+        egui::Window::new(text(catalog, ExtendedUiTextKey::CustomSpriteDiscardTitle))
             .collapsible(false)
             .resizable(false)
             .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
             .show(context, |ui| {
-                ui.label("Discard unsaved synchronized placement changes?");
+                ui.label(text(catalog, ExtendedUiTextKey::CustomSpriteUnsavedNotice));
                 ui.horizontal(|ui| {
-                    if ui.button("Cancel").clicked() {
+                    if ui
+                        .button(text(catalog, ExtendedUiTextKey::CustomSpriteCancel))
+                        .clicked()
+                    {
                         self.pending_close = None;
                     }
-                    if ui.button("Discard").clicked() {
+                    if ui
+                        .button(text(catalog, ExtendedUiTextKey::CustomSpriteDiscard))
+                        .clicked()
+                    {
                         self.clear();
                         approved = pending == PendingClose::Application;
                     }
@@ -78,14 +93,17 @@ impl CustomSpriteEditor {
         approved
     }
 
-    fn show_error(&mut self, context: &egui::Context) {
+    fn show_error(&mut self, context: &egui::Context, catalog: Option<&LocalizationCatalog>) {
         if let Some(error) = self.error.clone() {
-            egui::Window::new("Custom-sprite editor error")
+            egui::Window::new(text(catalog, ExtendedUiTextKey::CustomSpriteErrorTitle))
                 .collapsible(false)
                 .resizable(false)
                 .show(context, |ui| {
                     ui.label(error);
-                    if ui.button("OK").clicked() {
+                    if ui
+                        .button(text(catalog, ExtendedUiTextKey::CustomSpriteOk))
+                        .clicked()
+                    {
                         self.error = None;
                     }
                 });

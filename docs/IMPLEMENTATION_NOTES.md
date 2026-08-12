@@ -7079,6 +7079,20 @@ later-edit preservation, history divergence, and request overflow. Localization 
 active cases (one provenance ignore), and renderer passes 237/237. Other native forms and retained
 language-DLL evidence keep Localization Partial; aggregate parity remains 60/65.
 
+Localization coverage update (2026-08-12, custom-sprite placement library): twenty-nine appended
+`CustomSprite*` keys cover synchronized placement count/navigation, library header, Unicode
+search/descriptions, variable-width record groups, typed placement copy/paste,
+replace/remove/insert/move, BOM and LF/CRLF/trailing-newline framing, paired save, history/dirty
+state, close confirmation, and errors. The live catalog crosses both main and lifecycle modules.
+A complete paired-file test uses mixed placement records under the controller's immutable
+sprite-length table, changes header/order/framing in one revision, proves dual-file canonical
+reopen including BOM/CRLF/trailing newline, then Undo/Redo while retaining the exact length table.
+Editor/form tests pass 6/6 and controller tests 5/5 for width mismatch and late-command rollback,
+stale revisions/tokens, aliases/overlapping saves, immutable snapshots, and history divergence.
+Localization passes 28/28 active cases (one provenance ignore), and renderer passes 237/237. Other
+native forms and retained language-DLL evidence keep Localization Partial; aggregate parity
+remains 60/65.
+
 Localization coverage update (2026-08-12, portable entity appearances): twenty-eight appended
 `Appearance*` keys cover Layer 1 object, Layer 2 object, and sprite source choices; full-width
 source/tile identifiers; signed offsets; palette/flips; painter-order selection, replacement,

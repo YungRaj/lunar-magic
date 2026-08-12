@@ -779,6 +779,14 @@ newline, ordering, and Undo/Redo is now explicit. Editor/form tests pass 7/7, co
 localization 28/28 active cases, and renderer 237/237. Other native forms and retained language-DLL
 evidence keep Localization Partial, so aggregate parity remains 60/65.
 
+Localization coverage update (2026-08-12, custom-sprite placement library): twenty-nine typed
+extension keys cover header, length-aware variable-width placement groups, Unicode descriptions,
+typed clipboard, ordering, text framing, paired save, history, close, and errors with the live
+catalog. Exact paired reopen, BOM/CRLF/trailing newline, immutable length interpretation, and
+Undo/Redo are explicit. Editor/form tests pass 6/6, controller 5/5, localization 28/28 active
+cases, and renderer 237/237. Other native forms and retained language-DLL evidence keep
+Localization Partial, so aggregate parity remains 60/65.
+
 Localization coverage update (2026-08-11, installed overworld animation options and preview):
 twenty-seven additional typed keys cover the installed editor's per-map feature switches, runtime
 installation guidance, preview transport and timer state, trigger controls, event state, and empty
