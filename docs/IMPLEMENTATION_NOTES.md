@@ -6765,3 +6765,14 @@ Each missing template field falls back independently, and a Unicode catalog enco
 proves the resource survives persisted configuration before application. The irreversible mutation,
 restore-point policy, IPS offer, persistence, and close sequencing are unchanged. Localization
 remains `Partial` pending the remaining mapped native forms and retained live language-DLL evidence.
+
+## Original level-resource analysis template
+
+The native LevelAnalysis workflow now consumes Lunar Magic 3.63 dialog resource `$0425` for its
+title, Map16 analysis switch, defined-but-unused filter, graphics analysis switch,
+inserted-but-unloaded filter, sprite and music switches, and OK/Cancel controls. Dynamic output
+paths, progress, completion statistics, and diagnostics remain runtime data rather than translated
+resource literals. The running application passes its active catalog into the actual background
+analysis workflow, and a Unicode catalog encode/decode test proves every mapped key remains
+available after persistence. Localization remains `Partial` pending the remaining native forms and
+retained live third-party language-DLL/Wine evidence.

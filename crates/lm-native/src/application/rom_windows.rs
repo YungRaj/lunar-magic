@@ -228,7 +228,8 @@ impl NativeApplication {
             self.mark_user_toolbar_save_notification(lm_app::LunarMagicNotificationKind::SaveLevel);
             self.renderer.invalidate();
         }
-        self.level_usage_dialog.show(context);
+        self.level_usage_dialog
+            .show(context, self.app.localization());
         self.rom_user_area_scan_dialog.show(context);
         self.ips_create_dialog.show(context);
         self.restore_point_dialog.show(context, &self.app);

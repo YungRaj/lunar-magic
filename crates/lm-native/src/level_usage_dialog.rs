@@ -2,12 +2,14 @@ use chrono::{Datelike as _, Timelike as _};
 use eframe::egui;
 use lm_app::{
     AppState, ControllerSnapshot, LevelUsageScanOptions, LevelUsageScanProgress,
-    LevelUsageTimestamp, ProfiledControllerSnapshot,
+    LevelUsageTimestamp, LocalizationCatalog, ProfiledControllerSnapshot,
 };
 use std::ops::ControlFlow;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, mpsc};
+
+const ORIGINAL_DIALOG_ID: u16 = 0x0425;
 
 enum ScanSource {
     BuiltIn(ControllerSnapshot),
@@ -80,47 +82,71 @@ impl LevelUsageDialog {
         Ok(())
     }
 
-    pub(crate) fn show(&mut self, context: &egui::Context) {
+    pub(crate) fn show(&mut self, context: &egui::Context, catalog: Option<&LocalizationCatalog>) {
         self.poll();
-        self.show_options(context);
+        self.show_options(context, catalog);
         self.show_progress(context);
         self.show_completion(context);
         self.show_error(context);
     }
 
-    fn show_options(&mut self, context: &egui::Context) {
+    fn show_options(&mut self, context: &egui::Context, catalog: Option<&LocalizationCatalog>) {
         let Some(pending) = self.pending.as_mut() else {
             return;
         };
         let mut open = true;
         let mut analyze = false;
         let mut cancel = false;
-        egui::Window::new("Analyze Level Usage")
+        egui::Window::new(level_usage_dialog_title(catalog))
             .collapsible(false)
             .resizable(false)
             .open(&mut open)
             .show(context, |ui| {
-                ui.checkbox(&mut pending.options.map16, "Analyze Map16 tiles");
+                ui.checkbox(
+                    &mut pending.options.map16,
+                    level_usage_dialog_text(catalog, 0x72, "Analyze Map16."),
+                );
                 ui.add_enabled_ui(pending.options.map16, |ui| {
                     ui.checkbox(
                         &mut pending.options.only_unused_defined_map16,
-                        "Only report tiles that are defined but not used",
+                        level_usage_dialog_text(
+                            catalog,
+                            0x73,
+                            "Only report if tile defined but not used.",
+                        ),
                     );
                 });
-                ui.checkbox(&mut pending.options.graphics, "Analyze graphics files");
+                ui.checkbox(
+                    &mut pending.options.graphics,
+                    level_usage_dialog_text(catalog, 0x74, "Analyze Graphics."),
+                );
                 ui.add_enabled_ui(pending.options.graphics, |ui| {
                     ui.checkbox(
                         &mut pending.options.only_unused_inserted_graphics,
-                        "Only report files that are inserted but not loaded",
+                        level_usage_dialog_text(
+                            catalog,
+                            0x75,
+                            "Only report if file inserted but not loaded.",
+                        ),
                     );
                 });
-                ui.checkbox(&mut pending.options.sprites, "Analyze sprites");
-                ui.checkbox(&mut pending.options.music, "Analyze music");
+                ui.checkbox(
+                    &mut pending.options.sprites,
+                    level_usage_dialog_text(catalog, 0x76, "Analyze Sprites."),
+                );
+                ui.checkbox(
+                    &mut pending.options.music,
+                    level_usage_dialog_text(catalog, 0x65, "Analyze Music."),
+                );
                 ui.separator();
                 ui.label(format!("Output: {}", pending.output.display()));
                 ui.horizontal(|ui| {
-                    analyze = ui.button("Analyze").clicked();
-                    cancel = ui.button("Cancel").clicked();
+                    analyze = ui
+                        .button(level_usage_dialog_text(catalog, 1, "OK"))
+                        .clicked();
+                    cancel = ui
+                        .button(level_usage_dialog_text(catalog, 2, "Cancel"))
+                        .clicked();
                 });
             });
         if !open || cancel {
@@ -295,6 +321,24 @@ impl LevelUsageDialog {
     }
 }
 
+fn level_usage_dialog_title(catalog: Option<&LocalizationCatalog>) -> String {
+    catalog
+        .and_then(|catalog| catalog.original_dialog_title(ORIGINAL_DIALOG_ID))
+        .unwrap_or("Analyze Resources in Levels")
+        .to_owned()
+}
+
+fn level_usage_dialog_text(
+    catalog: Option<&LocalizationCatalog>,
+    control_id: u32,
+    fallback: &str,
+) -> String {
+    catalog
+        .and_then(|catalog| catalog.original_dialog_control_text(ORIGINAL_DIALOG_ID, control_id))
+        .unwrap_or(fallback)
+        .to_owned()
+}
+
 fn local_timestamp() -> LevelUsageTimestamp {
     let now = chrono::Local::now();
     LevelUsageTimestamp {
@@ -304,5 +348,71 @@ fn local_timestamp() -> LevelUsageTimestamp {
         hour: u8::try_from(now.hour()).unwrap_or_default(),
         minute: u8::try_from(now.minute()).unwrap_or_default(),
         second: u8::try_from(now.second()).unwrap_or_default(),
+    }
+}
+
+#[cfg(test)]
+mod localization_tests {
+    use super::*;
+    use lm_app::{OriginalDialogTextKey, UiTextKey};
+
+    #[test]
+    fn original_resource_analysis_template_localizes_all_matching_options_and_round_trips() {
+        let catalog = LocalizationCatalog::new(
+            "fr-test",
+            UiTextKey::ALL.map(|key| (key, key.english().to_owned())),
+        )
+        .unwrap()
+        .with_original_dialog_texts([
+            (
+                OriginalDialogTextKey {
+                    dialog_id: ORIGINAL_DIALOG_ID,
+                    item_index: u16::MAX,
+                    control_id: u32::MAX,
+                },
+                "Analyser les ressources des niveaux".into(),
+            ),
+            (
+                OriginalDialogTextKey {
+                    dialog_id: ORIGINAL_DIALOG_ID,
+                    item_index: 1,
+                    control_id: 0x72,
+                },
+                "Analyser Map16.".into(),
+            ),
+            (
+                OriginalDialogTextKey {
+                    dialog_id: ORIGINAL_DIALOG_ID,
+                    item_index: 2,
+                    control_id: 1,
+                },
+                "Valider".into(),
+            ),
+        ])
+        .unwrap();
+
+        assert_eq!(
+            level_usage_dialog_title(Some(&catalog)),
+            "Analyser les ressources des niveaux"
+        );
+        assert_eq!(
+            level_usage_dialog_text(Some(&catalog), 0x72, "fallback"),
+            "Analyser Map16."
+        );
+        assert_eq!(level_usage_dialog_text(Some(&catalog), 1, "OK"), "Valider");
+        assert_eq!(
+            level_usage_dialog_text(Some(&catalog), 0x76, "Analyze Sprites."),
+            "Analyze Sprites."
+        );
+        assert_eq!(
+            level_usage_dialog_title(None),
+            "Analyze Resources in Levels"
+        );
+
+        let reopened = LocalizationCatalog::decode(&catalog.encode().unwrap()).unwrap();
+        assert_eq!(
+            level_usage_dialog_title(Some(&reopened)),
+            "Analyser les ressources des niveaux"
+        );
     }
 }
