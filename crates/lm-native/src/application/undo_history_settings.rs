@@ -24,6 +24,7 @@ pub(super) struct GeneralOptions {
     pub prefer_past_2mb: bool,
     pub remember_window_size: bool,
     pub allow_control_wheel_zoom: bool,
+    pub rom_file_name_in_title: bool,
     pub show_add_editor_ids: bool,
     pub auto_deselect: bool,
     pub correct_fatal_errors: bool,
@@ -151,6 +152,13 @@ impl UndoHistorySettings {
                     0x2299,
                     "Allow Control + Mouse Wheel to Zoom",
                     &mut self.draft.allow_control_wheel_zoom,
+                );
+                option(
+                    ui,
+                    catalog,
+                    0x229f,
+                    "ROM File Name in Main Window Title Bar",
+                    &mut self.draft.rom_file_name_in_title,
                 );
                 option(
                     ui,
@@ -368,6 +376,7 @@ mod tests {
             prefer_past_2mb: false,
             remember_window_size: false,
             allow_control_wheel_zoom: false,
+            rom_file_name_in_title: false,
             show_add_editor_ids: false,
             auto_deselect: true,
             correct_fatal_errors: false,

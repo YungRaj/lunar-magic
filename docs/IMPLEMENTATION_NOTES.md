@@ -6880,3 +6880,6 @@ graphics workers, pending warnings, and persisted state change together; Cancel 
 The recovered `$2299` Allow Control + Mouse Wheel to Zoom choice is now separately persisted,
 staged in that dialog, and consumed at the installed level-assets canvas's pointer-anchored wheel
 route. Disabling it suppresses only modified-wheel zoom; explicit zoom controls remain available.
+The `$229F` ROM File Name in Main Window Title Bar choice is likewise staged and persisted. When
+enabled, the localized application title appends only the current ROM's final path component; when
+disabled or no ROM is open, the base localized title remains unchanged.

@@ -230,6 +230,7 @@ pub(crate) struct NativeApplication {
     background_editor_owned: Option<bool>,
     remember_window_size: Option<bool>,
     allow_control_wheel_zoom: Option<bool>,
+    rom_file_name_in_title: Option<bool>,
     scan_exits_on_save: Option<bool>,
     count_sprites_on_save: Option<bool>,
     check_object_placement_on_save: Option<bool>,
@@ -324,6 +325,7 @@ impl NativeApplication {
             prefer_past_2mb: self.prioritize_allocations_past_2mb.unwrap_or(true),
             remember_window_size: self.remember_window_size.unwrap_or(true),
             allow_control_wheel_zoom: self.allow_control_wheel_zoom.unwrap_or(true),
+            rom_file_name_in_title: self.rom_file_name_in_title.unwrap_or(true),
             show_add_editor_ids: self.show_add_editor_ids.unwrap_or(true),
             auto_deselect: self.auto_deselect_on_editor_select,
             correct_fatal_errors: self.correct_fatal_errors.unwrap_or(true),
@@ -358,6 +360,7 @@ impl NativeApplication {
             .set_prioritize_allocations_past_2mb(options.prefer_past_2mb);
         self.set_remember_window_size(options.remember_window_size);
         self.allow_control_wheel_zoom = Some(options.allow_control_wheel_zoom);
+        self.rom_file_name_in_title = Some(options.rom_file_name_in_title);
         self.set_show_add_editor_ids(options.show_add_editor_ids);
         self.set_auto_deselect_on_editor_select(options.auto_deselect);
         self.set_correct_fatal_errors(options.correct_fatal_errors);
@@ -395,6 +398,8 @@ impl NativeApplication {
         "lunar_magic_rust.remember_window_size.v1";
     const ALLOW_CONTROL_WHEEL_ZOOM_STORAGE_KEY: &'static str =
         "lunar_magic_rust.allow_control_wheel_zoom.v1";
+    const ROM_FILE_NAME_IN_TITLE_STORAGE_KEY: &'static str =
+        "lunar_magic_rust.rom_file_name_in_title.v1";
     const SCAN_EXITS_ON_SAVE_STORAGE_KEY: &'static str = "lunar_magic_rust.scan_exits_on_save.v1";
     const COUNT_SPRITES_ON_SAVE_STORAGE_KEY: &'static str =
         "lunar_magic_rust.count_sprites_on_save.v1";
@@ -752,6 +757,12 @@ impl NativeApplication {
         if let Some(encoded) = storage.get_string(Self::ALLOW_CONTROL_WHEEL_ZOOM_STORAGE_KEY) {
             match decode_enabled_preference(&encoded, "control-wheel zoom") {
                 Ok(enabled) => self.allow_control_wheel_zoom = Some(enabled),
+                Err(error) => self.effects.error = Some(error),
+            }
+        }
+        if let Some(encoded) = storage.get_string(Self::ROM_FILE_NAME_IN_TITLE_STORAGE_KEY) {
+            match decode_enabled_preference(&encoded, "ROM filename in title") {
+                Ok(enabled) => self.rom_file_name_in_title = Some(enabled),
                 Err(error) => self.effects.error = Some(error),
             }
         }
@@ -1209,9 +1220,21 @@ impl NativeApplication {
     }
 
     fn synchronize_localized_chrome(&self, context: &egui::Context) {
-        context.send_viewport_cmd(egui::ViewportCommand::Title(
-            self.localized(UiTextKey::AppTitle, "Lunar Magic Rust"),
-        ));
+        context.send_viewport_cmd(egui::ViewportCommand::Title(self.main_window_title()));
+    }
+
+    fn main_window_title(&self) -> String {
+        let title = self.localized(UiTextKey::AppTitle, "Lunar Magic Rust");
+        if !self.rom_file_name_in_title.unwrap_or(true) {
+            return title;
+        }
+        self.app
+            .document_path
+            .as_deref()
+            .and_then(std::path::Path::file_name)
+            .map_or(title.clone(), |name| {
+                format!("{title} - {}", name.to_string_lossy())
+            })
     }
 
     fn prepare_frame(&mut self, context: &egui::Context) {
@@ -1464,6 +1487,10 @@ impl eframe::App for NativeApplication {
         storage.set_string(
             Self::ALLOW_CONTROL_WHEEL_ZOOM_STORAGE_KEY,
             encode_enabled_preference(self.allow_control_wheel_zoom.unwrap_or(true)),
+        );
+        storage.set_string(
+            Self::ROM_FILE_NAME_IN_TITLE_STORAGE_KEY,
+            encode_enabled_preference(self.rom_file_name_in_title.unwrap_or(true)),
         );
         storage.set_string(
             Self::SCAN_EXITS_ON_SAVE_STORAGE_KEY,
