@@ -43,7 +43,7 @@ jobs:
           cargo build --locked --release --target ${{ matrix.target }}
           -p lm-native -p lm-cli -p lm-libretro -p lm-launcher
       - name: Test the portable packager
-        run: cargo test --locked -p lm-package
+        run: cargo test --locked -p lm-package -p lm-update -p lm-launcher
       - name: Create deterministic bundle
         run: >-
           cargo run --locked --release -p lm-package --

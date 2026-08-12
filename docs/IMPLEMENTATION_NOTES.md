@@ -7066,3 +7066,14 @@ selector. Native updater 4/4, launcher 2/2, update core 11/11, packager 3/3, and
 gates pass. Retained cross-platform release execution, hosted publication evidence, installers,
 and platform signing/notarization remain incomplete; Release stays Partial and aggregate parity
 remains 60/65.
+
+Cross-platform launcher-gate update (2026-08-11): every native portable-release matrix runner now
+executes the package, update, and launcher contract suites before publishing its bundle. The
+launcher suite no longer silently skips all process evidence on Windows: its Windows-only tests
+copy the platform command processor into two immutable version directories, activate each through
+the production checksummed selector, execute it through the production launcher boundary, verify
+exact exit-status propagation, roll back to the prior selector, and reject post-activation binary
+tampering. Native Unix execution remains covered by its exact argument/exit/switch/rollback tests;
+the Windows test target cross-compiles locally. The public workflow currently has no retained run,
+so hosted four-platform execution and a real tag publication remain required. Release stays Partial
+and aggregate parity remains 60/65.

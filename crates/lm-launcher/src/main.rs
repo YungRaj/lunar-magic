@@ -63,6 +63,22 @@ mod tests {
         directory
     }
 
+    #[cfg(windows)]
+    fn version(root: &Path, name: &str) -> std::path::PathBuf {
+        let directory = root.join(name);
+        fs::create_dir(&directory).unwrap();
+        let command = std::env::var_os("ComSpec")
+            .map(std::path::PathBuf::from)
+            .unwrap_or_else(|| std::path::PathBuf::from(r"C:\Windows\System32\cmd.exe"));
+        fs::copy(command, directory.join("lm-native.exe")).unwrap();
+        directory
+    }
+
+    #[cfg(windows)]
+    fn command_exit(code: u8) -> [std::ffi::OsString; 3] {
+        ["/D".into(), "/C".into(), format!("exit /B {code}").into()]
+    }
+
     #[test]
     #[cfg(unix)]
     fn process_switch_rollback_and_arguments_are_exact() {
@@ -108,6 +124,30 @@ mod tests {
         let selected = version(root.path(), "version-1", "0");
         lm_update::activate_version(root.path(), &selected).unwrap();
         fs::write(selected.join("lm-native"), b"tampered").unwrap();
+        assert!(launch_from(root.path(), std::iter::empty()).is_err());
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn windows_process_switch_rollback_and_exit_status_are_exact() {
+        let root = tempfile::tempdir().unwrap();
+        let first = version(root.path(), "version-1");
+        let second = version(root.path(), "version-2");
+        lm_update::activate_version(root.path(), &first).unwrap();
+        assert_eq!(launch_from(root.path(), command_exit(3)).unwrap(), 3);
+        lm_update::activate_version(root.path(), &second).unwrap();
+        assert_eq!(launch_from(root.path(), command_exit(7)).unwrap(), 7);
+        lm_update::rollback_current(root.path()).unwrap();
+        assert_eq!(launch_from(root.path(), command_exit(5)).unwrap(), 5);
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn windows_process_launch_rejects_tampered_selected_executable() {
+        let root = tempfile::tempdir().unwrap();
+        let selected = version(root.path(), "version-1");
+        lm_update::activate_version(root.path(), &selected).unwrap();
+        fs::write(selected.join("lm-native.exe"), b"tampered").unwrap();
         assert!(launch_from(root.path(), std::iter::empty()).is_err());
     }
 }

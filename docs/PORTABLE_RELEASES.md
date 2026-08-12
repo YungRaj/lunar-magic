@@ -87,7 +87,10 @@ On Windows, compare `Get-FileHash -Algorithm SHA256` with the first field of the
 ## Continuous integration scope
 
 The portable-release workflow builds Linux x86-64, Windows x86-64, macOS Apple Silicon, and macOS
-Intel bundles. Manual runs produce `0.1.0-dev` CI artifacts retained for 14 days. A pushed `v*` tag
+Intel bundles. Each native runner executes the packager, updater, and launcher contract tests before
+packaging; the Windows launcher gate uses a real copied `cmd.exe` payload to prove selector
+switching, rollback, process execution, and exit-status propagation, while all platforms compile
+the same tamper-checking path. Manual runs produce `0.1.0-dev` CI artifacts retained for 14 days. A pushed `v*` tag
 instead derives the version from that tag and, only after all four matrix builds succeed, downloads
 the complete set, verifies every checksum with strict parsing, attests the artifacts, and creates
 the matching GitHub Release with generated notes. The release job has scoped `contents: write`,

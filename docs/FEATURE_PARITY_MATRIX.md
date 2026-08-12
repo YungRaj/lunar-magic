@@ -1167,6 +1167,16 @@ manifest. Launcher 2/2, updater 11/11, packager 3/3, and renderer 237/237 pass. 
 consent and retained cross-platform release execution remain missing, so Release stays Partial and
 aggregate parity remains 60/65.
 
+Cross-platform release execution gate update (2026-08-11): the portable-release matrix now runs
+`lm-package`, `lm-update`, and `lm-launcher` contract tests on every native release runner instead
+of testing only the packager. Windows receives real process coverage by copying `cmd.exe` into two
+immutable selected-version directories, switching and rolling back via production selectors,
+checking child exit statuses, and rejecting a selected executable modified after activation. Unix
+retains its exact argument-forwarding/process/rollback tests, and the Windows-only path passes a
+local cross-target compile. The hosted workflow presently has no retained execution, so this adds
+the required gate but does not claim four-platform evidence until a run exists. Release remains
+Partial and aggregate parity remains 60/65.
+
 Native release-update activation update (2026-08-11): the graphical editor now carries a verified
 staged offer across a separate install-consent boundary. The user may retain the archive without
 mutation or select an install root; only the latter extracts a brand-new immutable version,
