@@ -555,6 +555,7 @@ pub(crate) struct VanillaLevelEditor {
     selected_sprite_group: Vec<usize>,
     sprite_form: SpriteForm,
     dragging_sprite: Option<usize>,
+    dragging_main_entrance: bool,
     secondary_duplicate_drag: bool,
     mouse_gestures: Option<bool>,
     convert_berry_gfx_tile: Option<bool>,
@@ -6621,6 +6622,15 @@ impl VanillaLevelEditor {
                 }
             }
         }
+        if self.handle_main_entrance_drag(
+            response,
+            rect,
+            cell,
+            vertical,
+            lm_profile::smw_us_v1_level_mode(level_mode).alternate_layer_layout,
+        ) {
+            return;
+        }
         self.handle_canvas_interaction(
             response,
             hit.body,
@@ -6635,6 +6645,70 @@ impl VanillaLevelEditor {
             vertical,
             visibility,
         );
+    }
+
+    fn handle_main_entrance_drag(
+        &mut self,
+        response: &egui::Response,
+        canvas: egui::Rect,
+        cell: f32,
+        vertical: bool,
+        alternate_vertical_layout: bool,
+    ) -> bool {
+        if self.raw_layer1_pc_address.is_some() || !self.entrance_overlay_visibility.primary {
+            self.dragging_main_entrance = false;
+            return false;
+        }
+        let marker = if vertical {
+            vertical_primary_entrance_marker_pixels(self.entrance_form, alternate_vertical_layout)
+        } else {
+            horizontal_primary_entrance_marker_pixels(self.entrance_form)
+        };
+        let scale = cell / 16.0;
+        let marker_rect = egui::Rect::from_min_size(
+            canvas.min
+                + egui::vec2(
+                    f32::from(marker.0) * scale,
+                    f32::from(marker.1.saturating_add(2)) * scale,
+                ),
+            egui::vec2(16.0 * scale, 32.0 * scale),
+        );
+        let pressed = response.ctx.input(|input| {
+            response.hovered()
+                && input.pointer.button_pressed(egui::PointerButton::Primary)
+                && input
+                    .pointer
+                    .interact_pos()
+                    .is_some_and(|point| marker_rect.contains(point))
+        });
+        if pressed {
+            self.dragging_main_entrance = true;
+            response.request_focus();
+        }
+        if !self.dragging_main_entrance {
+            return false;
+        }
+        if let Some(point) = response.interact_pointer_pos() {
+            let x = ((point.x - canvas.min.x) / scale).round().max(0.0) as u16;
+            let y = ((point.y - canvas.min.y) / scale).round().max(0.0) as u16;
+            self.entrance_form = main_entrance_at_marker(
+                self.entrance_form,
+                x,
+                y.saturating_sub(2),
+                vertical,
+                alternate_vertical_layout,
+            );
+        }
+        if response
+            .ctx
+            .input(|input| input.pointer.button_released(egui::PointerButton::Primary))
+        {
+            self.dragging_main_entrance = false;
+            if let Some(controller) = &mut self.entrance_controller {
+                controller.set_entrance(self.entrance_form);
+            }
+        }
+        true
     }
 
     #[allow(clippy::too_many_arguments, clippy::too_many_lines)]
