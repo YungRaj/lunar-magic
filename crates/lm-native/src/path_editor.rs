@@ -4,7 +4,7 @@ use crate::{
     path_editor_forms::{EdgeForm, NodeForm},
 };
 use eframe::egui;
-use lm_app::OverworldPathController;
+use lm_app::{ExtendedUiTextKey as Key, LocalizationCatalog, OverworldPathController};
 use lm_overworld::PathGraphEdit;
 use std::path::PathBuf;
 
@@ -82,7 +82,11 @@ impl PathEditor {
         false
     }
 
-    pub(crate) fn show(&mut self, context: &egui::Context) -> bool {
+    pub(crate) fn show(
+        &mut self,
+        context: &egui::Context,
+        catalog: Option<&LocalizationCatalog>,
+    ) -> bool {
         if let Some(result) = self.loader.show(context) {
             match result.and_then(document_io::pending_open) {
                 Ok(pending) => self.pending_open = Some(pending),
@@ -94,23 +98,27 @@ impl PathEditor {
         {
             self.error = Some(error);
         }
-        self.show_open_configuration(context);
+        self.show_open_configuration(context, catalog);
         if self.controller.is_some() {
             self.load_forms();
-            egui::Window::new("Portable Overworld Path Editor")
+            egui::Window::new(text(catalog, Key::PathEditorTitle))
                 .default_size([700.0, 560.0])
-                .show(context, |ui| self.contents(ui));
+                .show(context, |ui| self.contents(ui, catalog));
         }
-        let approved = self.show_close_confirmation(context);
-        self.show_error(context);
+        let approved = self.show_close_confirmation(context, catalog);
+        self.show_error(context, catalog);
         approved
     }
 
-    fn show_open_configuration(&mut self, context: &egui::Context) {
+    fn show_open_configuration(
+        &mut self,
+        context: &egui::Context,
+        catalog: Option<&LocalizationCatalog>,
+    ) {
         if self.pending_open.is_none() {
             return;
         }
-        egui::Window::new("Path validation policy")
+        egui::Window::new(text(catalog, Key::PathEditorPolicyTitle))
             .collapsible(false)
             .resizable(false)
             .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
@@ -118,31 +126,39 @@ impl PathEditor {
                 if let Some(pending) = self.pending_open.as_mut() {
                     ui.checkbox(
                         &mut pending.require_reciprocal,
-                        "Require reciprocal edges unless explicitly one-way",
+                        text(catalog, Key::PathEditorReciprocalPolicy),
                     );
                 }
                 ui.horizontal(|ui| {
-                    if ui.button("Cancel").clicked() {
+                    if ui.button(text(catalog, Key::PathEditorCancel)).clicked() {
                         self.pending_open = None;
                     }
-                    if ui.button("Open").clicked() {
+                    if ui.button(text(catalog, Key::PathEditorOpen)).clicked() {
                         self.finish_open();
                     }
                 });
             });
     }
 
-    fn contents(&mut self, ui: &mut egui::Ui) {
-        self.toolbar(ui);
+    fn contents(&mut self, ui: &mut egui::Ui, catalog: Option<&LocalizationCatalog>) {
+        self.toolbar(ui, catalog);
         ui.separator();
         ui.horizontal(|ui| {
-            ui.selectable_value(&mut self.panel, Panel::Nodes, "Nodes");
-            ui.selectable_value(&mut self.panel, Panel::Edges, "Edges");
+            ui.selectable_value(
+                &mut self.panel,
+                Panel::Nodes,
+                text(catalog, Key::PathEditorNodes),
+            );
+            ui.selectable_value(
+                &mut self.panel,
+                Panel::Edges,
+                text(catalog, Key::PathEditorEdges),
+            );
         });
         ui.separator();
         let edit = match self.panel {
-            Panel::Nodes => self.show_nodes(ui),
-            Panel::Edges => self.show_edges(ui),
+            Panel::Nodes => self.show_nodes(ui, catalog),
+            Panel::Edges => self.show_edges(ui, catalog),
         };
         if let Some(edit) = edit {
             match edit {
@@ -152,7 +168,7 @@ impl PathEditor {
         }
     }
 
-    fn toolbar(&mut self, ui: &mut egui::Ui) {
+    fn toolbar(&mut self, ui: &mut egui::Ui, catalog: Option<&LocalizationCatalog>) {
         let Some(controller) = self.controller.as_ref() else {
             return;
         };
@@ -163,24 +179,37 @@ impl PathEditor {
         let mut save_requested = false;
         ui.horizontal(|ui| {
             if ui
-                .add_enabled(can_undo, egui::Button::new("Undo"))
+                .add_enabled(
+                    can_undo,
+                    egui::Button::new(text(catalog, Key::PathEditorUndo)),
+                )
                 .clicked()
             {
                 history = Some(true);
             }
             if ui
-                .add_enabled(can_redo, egui::Button::new("Redo"))
+                .add_enabled(
+                    can_redo,
+                    egui::Button::new(text(catalog, Key::PathEditorRedo)),
+                )
                 .clicked()
             {
                 history = Some(false);
             }
             if ui
-                .add_enabled(!self.persistence.is_running(), egui::Button::new("Save"))
+                .add_enabled(
+                    !self.persistence.is_running(),
+                    egui::Button::new(text(catalog, Key::PathEditorSave)),
+                )
                 .clicked()
             {
                 save_requested = true;
             }
-            ui.label(if modified { "Modified" } else { "Saved" });
+            ui.label(if modified {
+                text(catalog, Key::PathEditorModified)
+            } else {
+                text(catalog, Key::PathEditorSaved)
+            });
         });
         let mut changed = false;
         if let Some(controller) = self.controller.as_mut() {
@@ -207,14 +236,19 @@ impl PathEditor {
         }
     }
 
-    fn show_nodes(&mut self, ui: &mut egui::Ui) -> Option<Result<Vec<PathGraphEdit>, String>> {
+    fn show_nodes(
+        &mut self,
+        ui: &mut egui::Ui,
+        catalog: Option<&LocalizationCatalog>,
+    ) -> Option<Result<Vec<PathGraphEdit>, String>> {
         let controller = self.controller.as_ref()?;
         let nodes = &controller.graph().nodes;
         if !nodes.is_empty() {
             self.node_index = self.node_index.min(nodes.len() - 1);
         }
         ui.add(
-            egui::Slider::new(&mut self.node_index, 0..=nodes.len().saturating_sub(1)).text("Node"),
+            egui::Slider::new(&mut self.node_index, 0..=nodes.len().saturating_sub(1))
+                .text(text(catalog, Key::PathEditorNode)),
         );
         if self.node_key != Some((controller.revision(), self.node_index)) {
             self.node = nodes
@@ -223,13 +257,18 @@ impl PathEditor {
                 .map_or_else(NodeForm::default, NodeForm::load);
             self.node_key = Some((controller.revision(), self.node_index));
         }
-        node_fields(ui, &mut self.node);
+        node_fields(ui, &mut self.node, catalog);
         let mut upsert = false;
         let mut remove = false;
         ui.horizontal(|ui| {
-            upsert = ui.button("Upsert node").clicked();
+            upsert = ui
+                .button(text(catalog, Key::PathEditorUpsertNode))
+                .clicked();
             remove = ui
-                .add_enabled(!nodes.is_empty(), egui::Button::new("Remove selected"))
+                .add_enabled(
+                    !nodes.is_empty(),
+                    egui::Button::new(text(catalog, Key::PathEditorRemoveSelected)),
+                )
                 .clicked();
         });
         if upsert {
@@ -247,14 +286,19 @@ impl PathEditor {
         }
     }
 
-    fn show_edges(&mut self, ui: &mut egui::Ui) -> Option<Result<Vec<PathGraphEdit>, String>> {
+    fn show_edges(
+        &mut self,
+        ui: &mut egui::Ui,
+        catalog: Option<&LocalizationCatalog>,
+    ) -> Option<Result<Vec<PathGraphEdit>, String>> {
         let controller = self.controller.as_ref()?;
         let edges = &controller.graph().edges;
         if !edges.is_empty() {
             self.edge_index = self.edge_index.min(edges.len() - 1);
         }
         ui.add(
-            egui::Slider::new(&mut self.edge_index, 0..=edges.len().saturating_sub(1)).text("Edge"),
+            egui::Slider::new(&mut self.edge_index, 0..=edges.len().saturating_sub(1))
+                .text(text(catalog, Key::PathEditorEdge)),
         );
         if self.edge_key != Some((controller.revision(), self.edge_index)) {
             self.edge = edges
@@ -265,13 +309,18 @@ impl PathEditor {
                 });
             self.edge_key = Some((controller.revision(), self.edge_index));
         }
-        edge_fields(ui, &mut self.edge);
+        edge_fields(ui, &mut self.edge, catalog);
         let mut upsert = false;
         let mut remove = false;
         ui.horizontal(|ui| {
-            upsert = ui.button("Upsert edge").clicked();
+            upsert = ui
+                .button(text(catalog, Key::PathEditorUpsertEdge))
+                .clicked();
             remove = ui
-                .add_enabled(!edges.is_empty(), egui::Button::new("Remove selected"))
+                .add_enabled(
+                    !edges.is_empty(),
+                    egui::Button::new(text(catalog, Key::PathEditorRemoveSelected)),
+                )
                 .clicked();
         });
         if upsert {
@@ -326,22 +375,26 @@ impl PathEditor {
         self.edge_key = None;
     }
 
-    fn show_close_confirmation(&mut self, context: &egui::Context) -> bool {
+    fn show_close_confirmation(
+        &mut self,
+        context: &egui::Context,
+        catalog: Option<&LocalizationCatalog>,
+    ) -> bool {
         let Some(pending) = self.pending_close else {
             return false;
         };
         let mut approved = false;
-        egui::Window::new("Unsaved overworld paths")
+        egui::Window::new(text(catalog, Key::PathEditorDiscardTitle))
             .collapsible(false)
             .resizable(false)
             .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
             .show(context, |ui| {
-                ui.label("Discard unsaved path changes?");
+                ui.label(text(catalog, Key::PathEditorDiscardNotice));
                 ui.horizontal(|ui| {
-                    if ui.button("Cancel").clicked() {
+                    if ui.button(text(catalog, Key::PathEditorCancel)).clicked() {
                         self.pending_close = None;
                     }
-                    if ui.button("Discard").clicked() {
+                    if ui.button(text(catalog, Key::PathEditorDiscard)).clicked() {
                         self.clear();
                         approved = pending == PendingClose::Application;
                     }
@@ -350,14 +403,14 @@ impl PathEditor {
         approved
     }
 
-    fn show_error(&mut self, context: &egui::Context) {
+    fn show_error(&mut self, context: &egui::Context, catalog: Option<&LocalizationCatalog>) {
         if let Some(error) = self.error.clone() {
-            egui::Window::new("Path editor error")
+            egui::Window::new(text(catalog, Key::PathEditorErrorTitle))
                 .collapsible(false)
                 .resizable(false)
                 .show(context, |ui| {
                     ui.label(error);
-                    if ui.button("OK").clicked() {
+                    if ui.button(text(catalog, Key::PathEditorOk)).clicked() {
                         self.error = None;
                     }
                 });
@@ -369,5 +422,36 @@ impl PathEditor {
         self.pending_open = None;
         self.pending_close = None;
         self.invalidate();
+    }
+}
+
+fn text(catalog: Option<&LocalizationCatalog>, key: Key) -> String {
+    catalog.map_or_else(
+        || key.english().to_owned(),
+        |catalog| catalog.extended_text(key).to_owned(),
+    )
+}
+
+#[cfg(test)]
+mod localization_tests {
+    #[test]
+    fn complete_path_editor_surface_has_no_literal_widget_text() {
+        let sources = [
+            include_str!("path_editor.rs"),
+            include_str!("path_editor/form_fields.rs"),
+        ]
+        .join("\n");
+        for literal in [
+            "egui::Window::new(\"",
+            "ui.button(\"",
+            "egui::Button::new(\"",
+            "ui.label(\"",
+            ".text(\"",
+        ] {
+            assert!(
+                !sources.contains(literal),
+                "literal path widget text: {literal}"
+            );
+        }
     }
 }

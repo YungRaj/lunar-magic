@@ -7708,3 +7708,15 @@ Canonical portable gesture tokens, modifier names, key names, and `+` framing re
 persistence syntax. Focused parser, ordering, duplicate-rejection, typed-action, and source-boundary
 tests pass 5/5; localization model tests pass and renderer remains 237/237. Other native forms and
 retained live language-DLL evidence keep Localization Partial; aggregate parity remains 60/65.
+
+## Portable overworld-path localization parity
+
+Thirty-eight typed extension keys now cover validation policy, Nodes/Edges navigation,
+history/save state, every node and edge field, reciprocal/one-way mutation, direction choices,
+create/remove actions, dirty-close, and errors. The seven submap choices reuse the existing typed
+metadata vocabulary rather than creating parallel translations. Hex values, stable IDs, and
+technical parser/controller errors remain data. Focused native form/source tests and the four
+controller transaction tests pass, including reciprocal validation, failure atomicity, history,
+canonical save, and stale-save rejection; localization model tests pass and renderer remains
+237/237. Other native forms and retained live language-DLL evidence keep Localization Partial;
+aggregate parity remains 60/65.

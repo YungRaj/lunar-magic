@@ -34,7 +34,7 @@ impl NativeApplication {
         {
             self.request_quit(context);
         }
-        if self.path_editor.show(context) {
+        if self.path_editor.show(context, self.app.localization()) {
             self.request_quit(context);
         }
         if self.metadata_editor.show(context, self.app.localization()) {
