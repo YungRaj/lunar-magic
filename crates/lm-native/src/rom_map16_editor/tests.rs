@@ -6,10 +6,10 @@ fn rom_map16_main_and_lifecycle_surfaces_use_every_typed_key() {
         include_str!("../rom_map16_editor.rs"),
         include_str!("lifecycle.rs"),
     ];
-    for key in ExtendedUiTextKey::ALL
-        .into_iter()
-        .filter(|key| format!("{key:?}").starts_with("RomMap16"))
-    {
+    for key in ExtendedUiTextKey::ALL.into_iter().filter(|key| {
+        let name = format!("{key:?}");
+        name.starts_with("RomMap16") && !name.starts_with("RomMap16Transfer")
+    }) {
         let needle = format!("ExtendedUiTextKey::{key:?}");
         assert!(sources.iter().any(|source| source.contains(&needle)));
     }
@@ -20,6 +20,32 @@ fn rom_map16_main_and_lifecycle_surfaces_use_every_typed_key() {
         "egui::Button::new(\"Commit complete Map16 set to ROM\")",
         "egui::Window::new(\"Discard staged Map16 changes?\")",
         "egui::Window::new(\"ROM Map16 error\")",
+    ] {
+        assert!(!sources.iter().any(|source| source.contains(bypass)));
+    }
+}
+
+#[test]
+fn rom_map16_exact_transfer_surfaces_use_every_typed_key() {
+    let sources = [
+        include_str!("complete_file.rs"),
+        include_str!("selected_file.rs"),
+        include_str!("legacy_page.rs"),
+    ];
+    for key in ExtendedUiTextKey::ALL
+        .into_iter()
+        .filter(|key| format!("{key:?}").starts_with("RomMap16Transfer"))
+    {
+        let needle = format!("ExtendedUiTextKey::{key:?}");
+        assert!(sources.iter().any(|source| source.contains(&needle)));
+    }
+    for bypass in [
+        "egui::Button::new(\"Import complete .map16…\")",
+        "egui::Button::new(\"Import selected .map16…\")",
+        "egui::Button::new(\"Copy rectangle\")",
+        "egui::Button::new(\"Import legacy page pair…\")",
+        "egui::Button::new(\"Import legacy foreground pair…\")",
+        "egui::Button::new(\"Import legacy background…\")",
     ] {
         assert!(!sources.iter().any(|source| source.contains(bypass)));
     }

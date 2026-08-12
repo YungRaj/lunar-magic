@@ -456,8 +456,15 @@ impl RomMap16Editor {
                 || self.snes_tileset_loader.is_running()
                 || self.snes_tileset_preview.is_some(),
             project_revision,
+            catalog,
         );
-        self.selected_file_controls(ui, edit_blocked, project_revision, pasted.as_deref());
+        self.selected_file_controls(
+            ui,
+            edit_blocked,
+            project_revision,
+            pasted.as_deref(),
+            catalog,
+        );
         self.legacy_page_controls(
             ui,
             stale
@@ -472,6 +479,7 @@ impl RomMap16Editor {
                 || self.snes_tileset_loader.is_running()
                 || self.snes_tileset_preview.is_some(),
             project_revision,
+            catalog,
         );
         self.bitmap_import_controls(ui, edit_blocked, project_revision);
         self.snes_tileset_controls(ui, edit_blocked, project_revision);

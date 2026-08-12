@@ -1,9 +1,10 @@
-use super::{Map16ControllerEdit, RomMap16Editor};
+use super::{Map16ControllerEdit, RomMap16Editor, text};
 use crate::{
     dialogs,
     document_loader::{BoundedRead, LoadedDocument},
 };
 use eframe::egui;
+use lm_app::{ExtendedUiTextKey, LocalizationCatalog};
 use lm_level::{Map16Address, Map16Page, Map16Tile};
 use std::path::{Path, PathBuf};
 
@@ -96,6 +97,7 @@ impl RomMap16Editor {
         ui: &mut egui::Ui,
         stale: bool,
         project_revision: u64,
+        catalog: Option<&LocalizationCatalog>,
     ) {
         let busy = self.complete_loader.is_running()
             || self.complete_persistence.is_running()
@@ -108,7 +110,7 @@ impl RomMap16Editor {
             if ui
                 .add_enabled(
                     supported && !stale && !busy,
-                    egui::Button::new("Import legacy page pair…"),
+                    egui::Button::new(text(catalog, ExtendedUiTextKey::RomMap16TransferImportPage)),
                 )
                 .clicked()
                 && let Some(definitions_path) = dialogs::choose_legacy_map16_page_document()
@@ -139,7 +141,7 @@ impl RomMap16Editor {
             if ui
                 .add_enabled(
                     supported && !stale && !busy,
-                    egui::Button::new("Export legacy page pair…"),
+                    egui::Button::new(text(catalog, ExtendedUiTextKey::RomMap16TransferExportPage)),
                 )
                 .clicked()
                 && let Some(definitions_path) = dialogs::choose_legacy_map16_page_save_path()
@@ -172,14 +174,23 @@ impl RomMap16Editor {
             }
         });
         if supported {
-            ui.small("Legacy transfer atomically reads or creates Map16Page.bin (definitions) and Map16PageG.bin (Acts Like) for the selected foreground page.");
+            ui.small(text(catalog, ExtendedUiTextKey::RomMap16TransferPageNotice));
         } else {
-            ui.small("Legacy page pairs apply only to editable foreground pages 02–7F; built-in pages 00–01 and background pages use other Lunar Magic boundaries.");
+            ui.small(text(
+                catalog,
+                ExtendedUiTextKey::RomMap16TransferPageUnsupportedNotice,
+            ));
         }
         ui.horizontal_wrapped(|ui| {
             let enabled = !stale && !busy && self.workspace.is_some();
             if ui
-                .add_enabled(enabled, egui::Button::new("Import legacy foreground pair…"))
+                .add_enabled(
+                    enabled,
+                    egui::Button::new(text(
+                        catalog,
+                        ExtendedUiTextKey::RomMap16TransferImportForeground,
+                    )),
+                )
                 .clicked()
                 && let Some(definitions_path) = dialogs::choose_legacy_map16_foreground_document()
             {
@@ -206,7 +217,13 @@ impl RomMap16Editor {
                 }
             }
             if ui
-                .add_enabled(enabled, egui::Button::new("Export legacy foreground pair…"))
+                .add_enabled(
+                    enabled,
+                    egui::Button::new(text(
+                        catalog,
+                        ExtendedUiTextKey::RomMap16TransferExportForeground,
+                    )),
+                )
                 .clicked()
                 && let Some(definitions_path) = dialogs::choose_legacy_map16_foreground_save_path()
             {
@@ -232,7 +249,13 @@ impl RomMap16Editor {
                 }
             }
             if ui
-                .add_enabled(enabled, egui::Button::new("Import legacy background…"))
+                .add_enabled(
+                    enabled,
+                    egui::Button::new(text(
+                        catalog,
+                        ExtendedUiTextKey::RomMap16TransferImportBackground,
+                    )),
+                )
                 .clicked()
                 && let Some(path) = dialogs::choose_legacy_map16_background_document()
             {
@@ -250,7 +273,13 @@ impl RomMap16Editor {
                 }
             }
             if ui
-                .add_enabled(enabled, egui::Button::new("Export legacy background…"))
+                .add_enabled(
+                    enabled,
+                    egui::Button::new(text(
+                        catalog,
+                        ExtendedUiTextKey::RomMap16TransferExportBackground,
+                    )),
+                )
                 .clicked()
                 && let Some(path) = dialogs::choose_legacy_map16_background_save_path()
             {
@@ -271,7 +300,10 @@ impl RomMap16Editor {
                 }
             }
         });
-        ui.small("Legacy complete transfer uses Map16FG.bin/Map16FGG.bin for all 128 foreground pages and Map16BG.bin for all 128 background pages.");
+        ui.small(text(
+            catalog,
+            ExtendedUiTextKey::RomMap16TransferLegacyCompleteNotice,
+        ));
     }
 }
 

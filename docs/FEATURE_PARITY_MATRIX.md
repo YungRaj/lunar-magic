@@ -1942,3 +1942,12 @@ reserved-option preservation, invalid/stale handling, and exact two-player recov
 Localization model 28/28, player-start editor 5/5, and renderer 237/237 pass. Other native forms and
 retained live language-DLL evidence remain open; Localization stays Partial and aggregate parity
 remains 60/65.
+
+Localization coverage update (2026-08-11, Map16 exact transfers): the complete `.map16` file,
+selected rectangular range/clipboard, legacy page pair, foreground pair, and background transfer
+surfaces now use twenty-one typed extension keys. Exact-domain and template-byte preservation,
+protected-page semantics, target-bound asynchronous imports, legacy companion naming, keyboard
+contracts, and complete GUI commit/reopen remain proven. Localization model 28/28, focused Map16
+editor 69/69, and renderer 237/237 pass. Bitmap conversion, associated sidecar, and SNES tileset
+subdialogs remain the next localization slice; Localization stays Partial and aggregate parity
+remains 60/65.

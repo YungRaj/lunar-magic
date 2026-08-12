@@ -1,6 +1,7 @@
-use super::{Map16ControllerEdit, RomMap16Editor};
+use super::{Map16ControllerEdit, RomMap16Editor, text};
 use crate::{dialogs, document_loader::BoundedRead, persistence_worker::PersistenceTarget};
 use eframe::egui;
+use lm_app::{ExtendedUiTextKey, LocalizationCatalog};
 use lm_level::{
     Lm16Map16File, Lm16Map16SectionKind, Map16Address, Map16Page, Map16Set, Map16Tile, Subtile,
 };
@@ -45,6 +46,7 @@ impl RomMap16Editor {
         ui: &mut egui::Ui,
         stale: bool,
         project_revision: u64,
+        catalog: Option<&LocalizationCatalog>,
     ) {
         let busy = self.complete_loader.is_running() || self.complete_persistence.is_running();
         let supported = self
@@ -55,7 +57,10 @@ impl RomMap16Editor {
             if ui
                 .add_enabled(
                     supported && !stale && !busy,
-                    egui::Button::new("Import complete .map16…"),
+                    egui::Button::new(text(
+                        catalog,
+                        ExtendedUiTextKey::RomMap16TransferImportComplete,
+                    )),
                 )
                 .clicked()
                 && let Some(path) = dialogs::choose_complete_map16_document()
@@ -72,7 +77,10 @@ impl RomMap16Editor {
             if ui
                 .add_enabled(
                     supported && !stale && !busy,
-                    egui::Button::new("Export complete .map16…"),
+                    egui::Button::new(text(
+                        catalog,
+                        ExtendedUiTextKey::RomMap16TransferExportComplete,
+                    )),
                 )
                 .clicked()
                 && let Some(path) = dialogs::choose_complete_map16_save_path()
@@ -97,14 +105,16 @@ impl RomMap16Editor {
             }
         });
         if self.complete_template.is_some() {
-            ui.small(
-                "Export preserves auxiliary and editor-state sections from the imported file.",
-            );
+            ui.small(text(
+                catalog,
+                ExtendedUiTextKey::RomMap16TransferTemplateNotice,
+            ));
         }
         if !supported {
-            ui.small(
-                "Complete Lunar Magic .map16 transfer requires the native 256-page SMW workspace.",
-            );
+            ui.small(text(
+                catalog,
+                ExtendedUiTextKey::RomMap16TransferNativeOnlyNotice,
+            ));
         }
     }
 }

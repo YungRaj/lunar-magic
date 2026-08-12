@@ -2029,10 +2029,31 @@ pub enum ExtendedUiTextKey {
     RomMap16DiscardTitle,
     RomMap16UnsavedNotice,
     RomMap16ErrorTitle,
+    RomMap16TransferImportComplete,
+    RomMap16TransferExportComplete,
+    RomMap16TransferTemplateNotice,
+    RomMap16TransferNativeOnlyNotice,
+    RomMap16TransferSelectedWidth,
+    RomMap16TransferSelectedHeight,
+    RomMap16TransferFileOrigin,
+    RomMap16TransferImportSelected,
+    RomMap16TransferExportSelected,
+    RomMap16TransferCopyRectangle,
+    RomMap16TransferPasteRectangle,
+    RomMap16TransferSelectedNotice,
+    RomMap16TransferImportPage,
+    RomMap16TransferExportPage,
+    RomMap16TransferPageNotice,
+    RomMap16TransferPageUnsupportedNotice,
+    RomMap16TransferImportForeground,
+    RomMap16TransferExportForeground,
+    RomMap16TransferImportBackground,
+    RomMap16TransferExportBackground,
+    RomMap16TransferLegacyCompleteNotice,
 }
 
 impl ExtendedUiTextKey {
-    pub const ALL: [Self; 328] = [
+    pub const ALL: [Self; 349] = [
         Self::TilemapTitleScreenName,
         Self::TilemapCreditsName,
         Self::TilemapEditorTitleFormat,
@@ -2361,6 +2382,27 @@ impl ExtendedUiTextKey {
         Self::RomMap16DiscardTitle,
         Self::RomMap16UnsavedNotice,
         Self::RomMap16ErrorTitle,
+        Self::RomMap16TransferImportComplete,
+        Self::RomMap16TransferExportComplete,
+        Self::RomMap16TransferTemplateNotice,
+        Self::RomMap16TransferNativeOnlyNotice,
+        Self::RomMap16TransferSelectedWidth,
+        Self::RomMap16TransferSelectedHeight,
+        Self::RomMap16TransferFileOrigin,
+        Self::RomMap16TransferImportSelected,
+        Self::RomMap16TransferExportSelected,
+        Self::RomMap16TransferCopyRectangle,
+        Self::RomMap16TransferPasteRectangle,
+        Self::RomMap16TransferSelectedNotice,
+        Self::RomMap16TransferImportPage,
+        Self::RomMap16TransferExportPage,
+        Self::RomMap16TransferPageNotice,
+        Self::RomMap16TransferPageUnsupportedNotice,
+        Self::RomMap16TransferImportForeground,
+        Self::RomMap16TransferExportForeground,
+        Self::RomMap16TransferImportBackground,
+        Self::RomMap16TransferExportBackground,
+        Self::RomMap16TransferLegacyCompleteNotice,
     ];
 
     #[must_use]
@@ -2808,6 +2850,39 @@ impl ExtendedUiTextKey {
                 "These Map16 changes or bitmap import have not been committed to the ROM."
             }
             Self::RomMap16ErrorTitle => "ROM Map16 error",
+            Self::RomMap16TransferImportComplete => "Import complete .map16…",
+            Self::RomMap16TransferExportComplete => "Export complete .map16…",
+            Self::RomMap16TransferTemplateNotice => {
+                "Export preserves auxiliary and editor-state sections from the imported file."
+            }
+            Self::RomMap16TransferNativeOnlyNotice => {
+                "Complete Lunar Magic .map16 transfer requires the native 256-page SMW workspace."
+            }
+            Self::RomMap16TransferSelectedWidth => "Selected range width",
+            Self::RomMap16TransferSelectedHeight => "height",
+            Self::RomMap16TransferFileOrigin => "Import at file origin",
+            Self::RomMap16TransferImportSelected => "Import selected .map16…",
+            Self::RomMap16TransferExportSelected => "Export selected .map16…",
+            Self::RomMap16TransferCopyRectangle => "Copy rectangle",
+            Self::RomMap16TransferPasteRectangle => "Paste rectangle",
+            Self::RomMap16TransferSelectedNotice => {
+                "Selected .map16 ranges use Lunar Magic's compact LM16 width, height, origin, band flags, definitions, and Acts Like sections. Width and height are hexadecimal; disable file-origin import to place at the selected tile."
+            }
+            Self::RomMap16TransferImportPage => "Import legacy page pair…",
+            Self::RomMap16TransferExportPage => "Export legacy page pair…",
+            Self::RomMap16TransferPageNotice => {
+                "Legacy transfer atomically reads or creates Map16Page.bin (definitions) and Map16PageG.bin (Acts Like) for the selected foreground page."
+            }
+            Self::RomMap16TransferPageUnsupportedNotice => {
+                "Legacy page pairs apply only to editable foreground pages 02–7F; built-in pages 00–01 and background pages use other Lunar Magic boundaries."
+            }
+            Self::RomMap16TransferImportForeground => "Import legacy foreground pair…",
+            Self::RomMap16TransferExportForeground => "Export legacy foreground pair…",
+            Self::RomMap16TransferImportBackground => "Import legacy background…",
+            Self::RomMap16TransferExportBackground => "Export legacy background…",
+            Self::RomMap16TransferLegacyCompleteNotice => {
+                "Legacy complete transfer uses Map16FG.bin/Map16FGG.bin for all 128 foreground pages and Map16BG.bin for all 128 background pages."
+            }
         }
     }
 

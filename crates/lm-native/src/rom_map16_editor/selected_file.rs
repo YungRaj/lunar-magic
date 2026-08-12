@@ -1,6 +1,7 @@
-use super::{Map16ControllerEdit, RomMap16Editor};
+use super::{Map16ControllerEdit, RomMap16Editor, text};
 use crate::{dialogs, document_loader::BoundedRead, persistence_worker::PersistenceTarget};
 use eframe::egui;
+use lm_app::{ExtendedUiTextKey, LocalizationCatalog};
 use lm_level::{Lm16Map16File, Map16Address, Map16Page, Map16Set, Map16Tile};
 
 const PROTECTED_FOREGROUND_TILES: usize = 0x200;
@@ -60,6 +61,7 @@ impl RomMap16Editor {
         blocked: bool,
         project_revision: u64,
         pasted: Option<&str>,
+        catalog: Option<&LocalizationCatalog>,
     ) {
         let busy = self.complete_loader.is_running()
             || self.complete_persistence.is_running()
@@ -72,17 +74,30 @@ impl RomMap16Editor {
             || self.bitmap_session.is_some();
         let shortcut = take_selected_file_shortcut(ui);
         ui.horizontal(|ui| {
-            ui.label("Selected range width");
+            ui.label(text(
+                catalog,
+                ExtendedUiTextKey::RomMap16TransferSelectedWidth,
+            ));
             ui.text_edit_singleline(&mut self.selected_width);
-            ui.label("height");
+            ui.label(text(
+                catalog,
+                ExtendedUiTextKey::RomMap16TransferSelectedHeight,
+            ));
             ui.text_edit_singleline(&mut self.selected_height);
-            ui.checkbox(&mut self.selected_use_file_origin, "Import at file origin");
+            ui.checkbox(
+                &mut self.selected_use_file_origin,
+                text(catalog, ExtendedUiTextKey::RomMap16TransferFileOrigin),
+            );
         });
         ui.horizontal(|ui| {
             let import_clicked = ui
                 .add_enabled(
                     !blocked && !busy,
-                    egui::Button::new("Import selected .map16…").shortcut_text("F3"),
+                    egui::Button::new(text(
+                        catalog,
+                        ExtendedUiTextKey::RomMap16TransferImportSelected,
+                    ))
+                    .shortcut_text("F3"),
                 )
                 .clicked();
             if !blocked
@@ -109,7 +124,11 @@ impl RomMap16Editor {
             let export_clicked = ui
                 .add_enabled(
                     !blocked && !busy,
-                    egui::Button::new("Export selected .map16…").shortcut_text("F2"),
+                    egui::Button::new(text(
+                        catalog,
+                        ExtendedUiTextKey::RomMap16TransferExportSelected,
+                    ))
+                    .shortcut_text("F2"),
                 )
                 .clicked();
             if !blocked
@@ -142,7 +161,13 @@ impl RomMap16Editor {
         });
         ui.horizontal(|ui| {
             if ui
-                .add_enabled(!blocked && !busy, egui::Button::new("Copy rectangle"))
+                .add_enabled(
+                    !blocked && !busy,
+                    egui::Button::new(text(
+                        catalog,
+                        ExtendedUiTextKey::RomMap16TransferCopyRectangle,
+                    )),
+                )
                 .clicked()
             {
                 let result = parse_dimensions(&self.selected_width, &self.selected_height)
@@ -172,7 +197,13 @@ impl RomMap16Editor {
                 }
             }
             if ui
-                .add_enabled(!blocked && !busy, egui::Button::new("Paste rectangle"))
+                .add_enabled(
+                    !blocked && !busy,
+                    egui::Button::new(text(
+                        catalog,
+                        ExtendedUiTextKey::RomMap16TransferPasteRectangle,
+                    )),
+                )
                 .clicked()
             {
                 self.clipboard_paste_target = None;
@@ -202,7 +233,10 @@ impl RomMap16Editor {
                 self.error = Some(error);
             }
         }
-        ui.small("Selected .map16 ranges use Lunar Magic's compact LM16 width, height, origin, band flags, definitions, and Acts Like sections. Width and height are hexadecimal; disable file-origin import to place at the selected tile.");
+        ui.small(text(
+            catalog,
+            ExtendedUiTextKey::RomMap16TransferSelectedNotice,
+        ));
     }
 
     pub(super) fn paste_rectangle_at(

@@ -7266,3 +7266,13 @@ settings family 7/7 pass: all-record install/reopen, malformed/stale safety, sem
 install/reopen/undo, opaque flag/byte/high-nibble preservation, and pristine/installed recovery.
 Renderer parity remains 237/237. Localization stays Partial for remaining forms and live original
 language-DLL evidence; aggregate parity remains 60/65.
+
+Localization coverage update (2026-08-11, Map16 exact transfers): twenty-one typed extension keys
+now cover the complete-file core/template notices, selected-range dimensions and file origin,
+rectangle clipboard actions, legacy page import/export, foreground/background pairs, and their
+compatibility boundaries. The focused source audit separates these keys from the main Map16 editor
+surface and rejects representative literal bypasses. Exact complete-file/template, selected-range,
+legacy-plane, asynchronous revision binding, shortcuts, GUI commit/reopen, and recovery evidence
+passes in the Map16 editor suite (69/69); localization model 28/28 and renderer 237/237 also pass.
+Localization remains Partial pending the Map16 bitmap, sidecar, and SNES tileset subdialogs and
+other native forms; aggregate parity remains 60/65.
