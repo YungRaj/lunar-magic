@@ -181,28 +181,39 @@ impl AppState {
         if identity.game != SupportedGame::SuperMarioWorld
             || identity.region != Region::NorthAmerica
             || identity.revision != 0
-            || !matches!(identity.mapper, Mapper::LoRom | Mapper::Sa1)
+            || !matches!(
+                identity.mapper,
+                Mapper::LoRom | Mapper::ExLoRom | Mapper::Sa1
+            )
         {
             return Err(AppError::ExpandedSettingsIdentityMismatch);
         }
-        if identity.mapper == Mapper::Sa1 {
-            let ram_remap = project
-                .load_lunar_magic_rom_metadata(
-                    lm_profile::smw_us_v1_lunar_magic_metadata_layout_for_mapper(Mapper::Sa1),
-                )?
-                .is_some_and(|metadata| metadata.sa1_ram_remap());
-            let plan =
-                lm_profile::smw_us_v1_sa1_expanded_settings_installation_plan_with_ram_remap(
-                    ram_remap,
+        match identity.mapper {
+            Mapper::Sa1 => {
+                let ram_remap = project
+                    .load_lunar_magic_rom_metadata(
+                        lm_profile::smw_us_v1_lunar_magic_metadata_layout_for_mapper(Mapper::Sa1),
+                    )?
+                    .is_some_and(|metadata| metadata.sa1_ram_remap());
+                let plan =
+                    lm_profile::smw_us_v1_sa1_expanded_settings_installation_plan_with_ram_remap(
+                        ram_remap,
+                    )?;
+                project.install_relocatable_patch(&plan)?;
+            }
+            Mapper::ExLoRom => {
+                let plan = lm_profile::smw_us_v1_exlorom_expanded_settings_installation_plan()?;
+                project.install_relocatable_patch(&plan)?;
+            }
+            Mapper::LoRom => {
+                let plan = lm_profile::smw_us_v1_expanded_settings_installation_plan_for_rom(
+                    &project.rom,
                 )?;
-            project.install_relocatable_patch(&plan)?;
-        } else {
-            let plan =
-                lm_profile::smw_us_v1_expanded_settings_installation_plan_for_rom(&project.rom)?;
-            project.install_relocatable_patch_with_expansion_retry(
-                &plan,
-                lm_profile::SMW_US_V1_EXPANDED_SETTINGS_MAXIMUM_LOROM_LEN,
-            )?;
+                project.install_relocatable_patch_with_expansion_retry(
+                    &plan,
+                    lm_profile::SMW_US_V1_EXPANDED_SETTINGS_MAXIMUM_LOROM_LEN,
+                )?;
+            }
         }
         self.advance_project_revision()?;
         let description = "Install SMW US expanded level settings".to_owned();
@@ -1547,6 +1558,51 @@ mod tests {
         );
         app.dispatch(Command::Undo).unwrap();
         assert_eq!(app.project().unwrap().save_snapshot(), original);
+    }
+
+    #[test]
+    fn application_installs_exlorom_settings_across_header_variants_and_undoes_exactly() {
+        for headered in [false, true] {
+            let original = mapper_exanimation_fixture(Mapper::ExLoRom, false, headered);
+            let mut app = AppState::default();
+            app.load_rom(original.clone()).unwrap();
+
+            let effects = app.dispatch(Command::InstallSettings { rev: 0 }).unwrap();
+            assert_eq!(effects.len(), 1);
+            assert_eq!(app.controller_snapshot().unwrap().revision, 1);
+            assert_eq!(app.project().unwrap().history.undo_len(), 1);
+            assert_eq!(
+                app.project().unwrap().identity.as_ref().unwrap().mapper,
+                Mapper::ExLoRom
+            );
+            assert_eq!(
+                app.project().unwrap().rom.read(0x48_7ff8, 4).unwrap(),
+                b"STAR"
+            );
+            let layout =
+                lm_profile::smw_us_v1_installed_expanded_settings_layout(app.project().unwrap())
+                    .unwrap()
+                    .unwrap();
+            assert_eq!(layout.mapper, Mapper::ExLoRom);
+            assert_eq!(layout.table_offset, 0x48_ad00);
+            assert!(
+                lm_rom::detect_identity(&app.project().unwrap().rom)
+                    .unwrap()
+                    .checksum_matches()
+            );
+            assert_eq!(
+                app.project().unwrap().rom.copier_header_bytes().is_some(),
+                headered
+            );
+            let installed = app.project().unwrap().save_snapshot();
+            assert!(matches!(
+                app.dispatch(Command::InstallSettings { rev: 1 }),
+                Err(AppError::RevisionPatch(_))
+            ));
+            assert_eq!(app.project().unwrap().save_snapshot(), installed);
+            app.dispatch(Command::Undo).unwrap();
+            assert_eq!(app.project().unwrap().save_snapshot(), original);
+        }
     }
 
     #[test]

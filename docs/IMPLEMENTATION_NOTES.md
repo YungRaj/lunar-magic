@@ -8338,3 +8338,14 @@ The focused family audit and localization 28/28 active cases (one provenance ign
 renderer remains 237/237. The complete runtime GUI caption inventory is therefore catalog-driven;
 retained live language-DLL oracle and variant evidence still keep Localization Partial and
 aggregate parity at 60/65.
+
+Expanded-settings variant completion (2026-08-12): the application now accepts converted ExLoROM
+for the already-authenticated relocated-body installation plan instead of rejecting it at the
+identity gate. Every fixed runtime write and the `$6E00` allocation follow logical `+$400000`,
+ExLoROM pointer encoding remains canonical, and converted zero/`$FF` free space is accepted.
+`application_installs_exlorom_settings_across_header_variants_and_undoes_exactly` proves both
+copier-header forms, checksum-valid ExLoROM identity, installed-layout reopen at `$48AD00`,
+duplicate rejection without mutation, one application revision, and byte-exact Undo. Together
+with the existing LoROM size/header/allocation/historical-generation product and SA-1 header/RAM-
+remap variants, every supported SMW-US revision-0 mapper and framing variant is explicit. The
+expanded-settings/Layer 3/palette-runtimes row is now Pass; aggregate parity advances to 61/65.
