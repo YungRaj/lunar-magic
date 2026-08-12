@@ -1,6 +1,6 @@
 use crate::level_editor_forms::parse_hex_u8;
 use eframe::egui;
-use lm_app::{AppState, Command};
+use lm_app::{AppState, Command, ExtendedUiTextKey, LocalizationCatalog, UiTextKey};
 use lm_overworld::EventNumberMap;
 use lm_profile::smw_us_v1_overworld_event_number_map_locator;
 
@@ -131,61 +131,107 @@ impl RomOverworldEventNumberEditor {
         &mut self,
         context: &egui::Context,
         project_revision: u64,
+        catalog: Option<&LocalizationCatalog>,
     ) -> (bool, Option<Command>) {
         let mut command = None;
         if self.workspace.is_some() {
-            egui::Window::new("ROM Overworld Event-Number Map")
-                .default_size([500.0, 300.0])
-                .show(context, |ui| command = self.contents(ui, project_revision));
+            egui::Window::new(crate::frontend_ui::extended_localized_text(
+                catalog,
+                ExtendedUiTextKey::EventNumberEditorTitle,
+            ))
+            .default_size([500.0, 300.0])
+            .show(context, |ui| {
+                command = self.contents(ui, project_revision, catalog)
+            });
         }
-        let approved = self.close_confirmation(context);
-        self.show_error(context);
+        let approved = self.close_confirmation(context, catalog);
+        self.show_error(context, catalog);
         (approved, command)
     }
 
-    fn contents(&mut self, ui: &mut egui::Ui, project_revision: u64) -> Option<Command> {
+    fn contents(
+        &mut self,
+        ui: &mut egui::Ui,
+        project_revision: u64,
+        catalog: Option<&LocalizationCatalog>,
+    ) -> Option<Command> {
         let workspace = self.workspace.as_ref()?;
         let stale = workspace.revision != project_revision;
         let dirty = workspace.current != workspace.original;
-        ui.label("Complete 256-entry event-number mapping. Values are hexadecimal bytes.");
-        ui.label(format!(
-            "Current native stored length: {:02X}",
-            workspace.current.stored_len()
+        ui.label(crate::frontend_ui::extended_localized_text(
+            catalog,
+            ExtendedUiTextKey::EventNumberDescription,
         ));
+        ui.label(
+            crate::frontend_ui::extended_localized_text(
+                catalog,
+                ExtendedUiTextKey::EventNumberStoredLengthFormat,
+            )
+            .replace(
+                "{length}",
+                &format!("{:02X}", workspace.current.stored_len()),
+            ),
+        );
         if stale {
             ui.colored_label(
                 egui::Color32::YELLOW,
-                "The ROM changed after this map was opened. Reopen before committing.",
+                crate::frontend_ui::extended_localized_text(
+                    catalog,
+                    ExtendedUiTextKey::EventNumberStaleNotice,
+                ),
             );
         }
         egui::Grid::new("rom-overworld-event-number-form")
             .striped(true)
             .show(ui, |ui| {
-                ui.label("Event");
+                ui.label(crate::frontend_ui::extended_localized_text(
+                    catalog,
+                    ExtendedUiTextKey::EventNumberEvent,
+                ));
                 if ui.text_edit_singleline(&mut self.event).changed() {
                     self.loaded_event = None;
                 }
                 ui.end_row();
-                ui.label("Mapped event");
+                ui.label(crate::frontend_ui::extended_localized_text(
+                    catalog,
+                    ExtendedUiTextKey::EventNumberMappedEvent,
+                ));
                 ui.text_edit_singleline(&mut self.mapped);
                 ui.end_row();
             });
         let mut command = None;
         ui.horizontal(|ui| {
-            if ui.button("Load entry").clicked()
+            if ui
+                .button(crate::frontend_ui::extended_localized_text(
+                    catalog,
+                    ExtendedUiTextKey::EventNumberLoadEntry,
+                ))
+                .clicked()
                 && let Err(error) = self.load_selected()
             {
                 self.error = Some(error);
             }
             if ui
-                .add_enabled(!stale, egui::Button::new("Apply entry"))
+                .add_enabled(
+                    !stale,
+                    egui::Button::new(crate::frontend_ui::extended_localized_text(
+                        catalog,
+                        ExtendedUiTextKey::EventNumberApplyEntry,
+                    )),
+                )
                 .clicked()
                 && let Err(error) = self.apply_selected()
             {
                 self.error = Some(error);
             }
             if ui
-                .add_enabled(dirty && !stale, egui::Button::new("Commit map to ROM"))
+                .add_enabled(
+                    dirty && !stale,
+                    egui::Button::new(crate::frontend_ui::extended_localized_text(
+                        catalog,
+                        ExtendedUiTextKey::EventNumberCommit,
+                    )),
+                )
                 .clicked()
             {
                 match self.prepare_commit(project_revision) {
@@ -193,7 +239,14 @@ impl RomOverworldEventNumberEditor {
                     Err(error) => self.error = Some(error),
                 }
             }
-            ui.label(if dirty { "Staged" } else { "Unchanged" });
+            ui.label(crate::frontend_ui::extended_localized_text(
+                catalog,
+                if dirty {
+                    ExtendedUiTextKey::EventNumberStaged
+                } else {
+                    ExtendedUiTextKey::EventNumberUnchanged
+                },
+            ));
         });
         command
     }
@@ -244,34 +297,66 @@ impl RomOverworldEventNumberEditor {
         }))
     }
 
-    fn close_confirmation(&mut self, context: &egui::Context) -> bool {
+    fn close_confirmation(
+        &mut self,
+        context: &egui::Context,
+        catalog: Option<&LocalizationCatalog>,
+    ) -> bool {
         let Some(pending) = self.pending_close else {
             return false;
         };
         let mut approved = false;
-        egui::Window::new("Discard event-number changes?")
-            .collapsible(false)
-            .resizable(false)
-            .show(context, |ui| {
-                ui.label("The staged mapping has not been committed to the ROM.");
-                ui.horizontal(|ui| {
-                    if ui.button("Cancel").clicked() {
-                        self.pending_close = None;
-                    }
-                    if ui.button("Discard").clicked() {
-                        self.clear();
-                        approved = pending == PendingClose::Application;
-                    }
-                });
+        egui::Window::new(crate::frontend_ui::extended_localized_text(
+            catalog,
+            ExtendedUiTextKey::EventNumberDiscardTitle,
+        ))
+        .collapsible(false)
+        .resizable(false)
+        .show(context, |ui| {
+            ui.label(crate::frontend_ui::extended_localized_text(
+                catalog,
+                ExtendedUiTextKey::EventNumberUnsavedNotice,
+            ));
+            ui.horizontal(|ui| {
+                if ui
+                    .button(crate::frontend_ui::localized_text(
+                        catalog,
+                        UiTextKey::CommonCancel,
+                    ))
+                    .clicked()
+                {
+                    self.pending_close = None;
+                }
+                if ui
+                    .button(crate::frontend_ui::localized_text(
+                        catalog,
+                        UiTextKey::UnsavedDiscard,
+                    ))
+                    .clicked()
+                {
+                    self.clear();
+                    approved = pending == PendingClose::Application;
+                }
             });
+        });
         approved
     }
 
-    fn show_error(&mut self, context: &egui::Context) {
+    fn show_error(&mut self, context: &egui::Context, catalog: Option<&LocalizationCatalog>) {
         if let Some(error) = self.error.clone() {
-            egui::Window::new("Event-number editor error").show(context, |ui| {
+            egui::Window::new(crate::frontend_ui::extended_localized_text(
+                catalog,
+                ExtendedUiTextKey::EventNumberErrorTitle,
+            ))
+            .show(context, |ui| {
                 ui.label(error);
-                if ui.button("OK").clicked() {
+                if ui
+                    .button(crate::frontend_ui::localized_text(
+                        catalog,
+                        UiTextKey::CommonOk,
+                    ))
+                    .clicked()
+                {
                     self.error = None;
                 }
             });
@@ -293,6 +378,28 @@ impl RomOverworldEventNumberEditor {
 mod tests {
     use super::*;
     use std::path::PathBuf;
+
+    #[test]
+    fn event_number_editor_surface_has_no_literal_widget_text() {
+        let source = include_str!("rom_overworld_event_number_editor.rs");
+        for literal_widget in [
+            "egui::Window::new(\"",
+            "ui.button(\"",
+            "egui::Button::new(\"",
+            "ui.label(\"",
+        ] {
+            assert!(
+                !source.contains(literal_widget),
+                "event-number editor bypasses typed localization with {literal_widget}"
+            );
+        }
+        for key in ExtendedUiTextKey::ALL
+            .into_iter()
+            .filter(|key| format!("{key:?}").starts_with("EventNumber"))
+        {
+            assert!(source.contains(&format!("ExtendedUiTextKey::{key:?}")));
+        }
+    }
 
     fn pristine_app() -> AppState {
         let _root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");

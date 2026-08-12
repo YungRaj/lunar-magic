@@ -1720,10 +1720,24 @@ pub enum ExtendedUiTextKey {
     TilemapDiscardTitleFormat,
     TilemapUnsavedNotice,
     TilemapErrorTitleFormat,
+    EventNumberEditorTitle,
+    EventNumberDescription,
+    EventNumberStoredLengthFormat,
+    EventNumberStaleNotice,
+    EventNumberEvent,
+    EventNumberMappedEvent,
+    EventNumberLoadEntry,
+    EventNumberApplyEntry,
+    EventNumberCommit,
+    EventNumberStaged,
+    EventNumberUnchanged,
+    EventNumberDiscardTitle,
+    EventNumberUnsavedNotice,
+    EventNumberErrorTitle,
 }
 
 impl ExtendedUiTextKey {
-    pub const ALL: [Self; 19] = [
+    pub const ALL: [Self; 33] = [
         Self::TilemapTitleScreenName,
         Self::TilemapCreditsName,
         Self::TilemapEditorTitleFormat,
@@ -1743,6 +1757,20 @@ impl ExtendedUiTextKey {
         Self::TilemapDiscardTitleFormat,
         Self::TilemapUnsavedNotice,
         Self::TilemapErrorTitleFormat,
+        Self::EventNumberEditorTitle,
+        Self::EventNumberDescription,
+        Self::EventNumberStoredLengthFormat,
+        Self::EventNumberStaleNotice,
+        Self::EventNumberEvent,
+        Self::EventNumberMappedEvent,
+        Self::EventNumberLoadEntry,
+        Self::EventNumberApplyEntry,
+        Self::EventNumberCommit,
+        Self::EventNumberStaged,
+        Self::EventNumberUnchanged,
+        Self::EventNumberDiscardTitle,
+        Self::EventNumberUnsavedNotice,
+        Self::EventNumberErrorTitle,
     ];
 
     #[must_use]
@@ -1771,6 +1799,26 @@ impl ExtendedUiTextKey {
             Self::TilemapDiscardTitleFormat => "Discard {tilemap} changes?",
             Self::TilemapUnsavedNotice => "The staged tilemap has not been committed to the ROM.",
             Self::TilemapErrorTitleFormat => "{tilemap} editor error",
+            Self::EventNumberEditorTitle => "ROM Overworld Event-Number Map",
+            Self::EventNumberDescription => {
+                "Complete 256-entry event-number mapping. Values are hexadecimal bytes."
+            }
+            Self::EventNumberStoredLengthFormat => "Current native stored length: {length}",
+            Self::EventNumberStaleNotice => {
+                "The ROM changed after this map was opened. Reopen before committing."
+            }
+            Self::EventNumberEvent => "Event",
+            Self::EventNumberMappedEvent => "Mapped event",
+            Self::EventNumberLoadEntry => "Load entry",
+            Self::EventNumberApplyEntry => "Apply entry",
+            Self::EventNumberCommit => "Commit map to ROM",
+            Self::EventNumberStaged => "Staged",
+            Self::EventNumberUnchanged => "Unchanged",
+            Self::EventNumberDiscardTitle => "Discard event-number changes?",
+            Self::EventNumberUnsavedNotice => {
+                "The staged mapping has not been committed to the ROM."
+            }
+            Self::EventNumberErrorTitle => "Event-number editor error",
         }
     }
 

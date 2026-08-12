@@ -7131,3 +7131,12 @@ extension keys is consumed and rejects literal window/button/label text. Localiz
 tilemap editor 7/7 (including install/reopen and recovery), and renderer 237/237 pass. Localization
 stays Partial for remaining forms and live original language-DLL evidence; aggregate parity remains
 60/65.
+Localization coverage update (2026-08-11, overworld event-number map): the complete 256-entry
+installed ROM editor now consumes fourteen typed extension keys for its window, semantic/storage
+description, dynamic stored-length template, stale warning, event/mapped-event fields, load/apply/
+commit actions, staged state, unsaved confirmation, and errors; shared Cancel/Discard/OK remain in
+the fixed catalog. Its active-catalog call path is isolated from other ROM editors. A source audit
+rejects literal widget text and requires every `EventNumber*` key. Localization model 28/28,
+event-number editor 5/5—including high-event install/reopen, invalid/stale handling, and pristine
+plus installed recovery—and renderer 237/237 pass. Localization stays Partial for remaining forms
+and live original language-DLL evidence; aggregate parity remains 60/65.

@@ -1840,3 +1840,10 @@ requires every extension key and prohibits literal window/button/label text; exi
 install/reopen, stale-close, and crash-recovery tests remain green. Localization model 28/28,
 tilemap editor 7/7, and renderer 237/237 pass. Other native forms and retained live language-DLL
 evidence remain open; Localization stays Partial and aggregate parity remains 60/65.
+Localization coverage update (2026-08-11, overworld event-number map): all visible controls and
+dynamic status in the complete 256-entry mapping editor now use fourteen typed extension keys plus
+shared fixed-prefix confirmation actions. A source audit prevents literal widget regressions.
+Existing high-event semantic install/reopen, malformed/stale retention, and both pristine/installed
+crash-recovery gates remain green. Localization model 28/28, event-number editor 5/5, and renderer
+237/237 pass. Other native forms and retained live language-DLL evidence remain open; Localization
+stays Partial and aggregate parity remains 60/65.
