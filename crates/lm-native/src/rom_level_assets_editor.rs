@@ -1,9 +1,9 @@
 use crate::{document_loader::DocumentLoader, native_level_assets_panels::AggregatePanels};
 use eframe::egui;
 use lm_app::{
-    AppState, Command, NativeLevelAssetsController, NativeLevelAssetsControllerEdit,
-    NativeLevelAssetsControllerError, ProfiledControllerSnapshot, RevisionProfile,
-    RevisionProfileControllers,
+    AppState, Command, LocalizationCatalog, NativeLevelAssetsController,
+    NativeLevelAssetsControllerEdit, NativeLevelAssetsControllerError, ProfiledControllerSnapshot,
+    RevisionProfile, RevisionProfileControllers,
 };
 use lm_graphics::PaletteOwnership;
 use lm_level::{Map16Set, NativeLayer2Data, ObjectStream};
@@ -779,6 +779,7 @@ impl RomLevelAssetsEditor {
         visibility: crate::application::LevelViewVisibility,
         animation_rate: crate::animation_rate::AnimationRate,
         allow_control_wheel_zoom: bool,
+        catalog: Option<&LocalizationCatalog>,
     ) -> (bool, Option<Command>) {
         self.poll_palette_file_io(context, project_revision);
         if let Some(result) = self.mwl_batch_worker.show(context) {
@@ -852,6 +853,7 @@ impl RomLevelAssetsEditor {
                         command.is_some(),
                         animation_rate,
                         allow_control_wheel_zoom,
+                        catalog,
                     ) {
                         command = Some(ui_command);
                     }
@@ -874,6 +876,7 @@ impl RomLevelAssetsEditor {
         rom_command_pending: bool,
         animation_rate: crate::animation_rate::AnimationRate,
         allow_control_wheel_zoom: bool,
+        catalog: Option<&LocalizationCatalog>,
     ) -> Option<Command> {
         let stale = self.workspace.as_ref()?.controller.revision() != project_revision;
         let palette_busy =
@@ -969,6 +972,7 @@ impl RomLevelAssetsEditor {
                     &workspace.profile.exanimation_double_size_modes,
                     &workspace.ownership,
                     workspace.controller.sprite_lengths(),
+                    catalog,
                 )
             })
             .inner;

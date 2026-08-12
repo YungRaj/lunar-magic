@@ -110,7 +110,10 @@ impl NativeApplication {
         {
             self.request_quit(context);
         }
-        if self.native_level_assets_editor.show(context) {
+        if self
+            .native_level_assets_editor
+            .show(context, self.app.localization())
+        {
             self.request_quit(context);
         }
         self.show_rom_editors(context);

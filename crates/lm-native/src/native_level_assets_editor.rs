@@ -5,7 +5,7 @@ use crate::{
     native_level_assets_panels::AggregatePanels,
 };
 use eframe::egui;
-use lm_app::NativeLevelAssetsDocumentController;
+use lm_app::{ExtendedUiTextKey as Key, LocalizationCatalog, NativeLevelAssetsDocumentController};
 use lm_graphics::PaletteOwnership;
 use lm_level::SpriteLengthTable;
 use lm_project::NativeLevelAssetsFile;
@@ -105,7 +105,11 @@ impl NativeLevelAssetsEditor {
         false
     }
 
-    pub(crate) fn show(&mut self, context: &egui::Context) -> bool {
+    pub(crate) fn show(
+        &mut self,
+        context: &egui::Context,
+        catalog: Option<&LocalizationCatalog>,
+    ) -> bool {
         if let Some(result) = self.loader.show(context) {
             match result.and_then(pending_from_loaded) {
                 Ok(pending) => self.pending_open = Some(pending),
@@ -117,36 +121,40 @@ impl NativeLevelAssetsEditor {
         {
             self.error = Some(error);
         }
-        self.open_configuration(context);
+        self.open_configuration(context, catalog);
         if self.document.is_some() {
-            egui::Window::new("Native Level Assets Editor")
+            egui::Window::new(text(catalog, Key::NativeAssetsTitle))
                 .default_size([860.0, 680.0])
                 .vscroll(true)
-                .show(context, |ui| self.contents(ui));
+                .show(context, |ui| self.contents(ui, catalog));
         }
-        let approved = self.close_confirmation(context);
-        self.show_error(context);
+        let approved = self.close_confirmation(context, catalog);
+        self.show_error(context, catalog);
         approved
     }
 
-    fn open_configuration(&mut self, context: &egui::Context) {
+    fn open_configuration(
+        &mut self,
+        context: &egui::Context,
+        catalog: Option<&LocalizationCatalog>,
+    ) {
         if self.pending_open.is_none() {
             return;
         }
-        egui::Window::new("Open native level assets")
+        egui::Window::new(text(catalog, Key::NativeAssetsOpenTitle))
             .collapsible(false)
             .resizable(false)
             .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
             .show(context, |ui| {
-                ui.label("Maximum ExAnimation records from the matching revision profile:");
+                ui.label(text(catalog, Key::NativeAssetsMaximumRecordsNotice));
                 if let Some(pending) = self.pending_open.as_mut() {
                     ui.text_edit_singleline(&mut pending.maximum_records);
                 }
                 ui.horizontal(|ui| {
-                    if ui.button("Cancel").clicked() {
+                    if ui.button(text(catalog, Key::NativeAssetsCancel)).clicked() {
                         self.pending_open = None;
                     }
-                    if ui.button("Open").clicked() {
+                    if ui.button(text(catalog, Key::NativeAssetsOpen)).clicked() {
                         self.finish_open();
                     }
                 });
@@ -183,8 +191,8 @@ impl NativeLevelAssetsEditor {
         }
     }
 
-    fn contents(&mut self, ui: &mut egui::Ui) {
-        self.toolbar(ui);
+    fn contents(&mut self, ui: &mut egui::Ui, catalog: Option<&LocalizationCatalog>) {
+        self.toolbar(ui, catalog);
         ui.separator();
         let edit = self.document.as_ref().and_then(|document| {
             self.panels.show(
@@ -197,6 +205,7 @@ impl NativeLevelAssetsEditor {
                 &document.modes,
                 &document.ownership,
                 document.controller.sprite_lengths(),
+                catalog,
             )
         });
         if let Some(edit) = edit {
@@ -207,7 +216,7 @@ impl NativeLevelAssetsEditor {
         }
     }
 
-    fn toolbar(&mut self, ui: &mut egui::Ui) {
+    fn toolbar(&mut self, ui: &mut egui::Ui, catalog: Option<&LocalizationCatalog>) {
         let Some(document) = self.document.as_ref() else {
             return;
         };
@@ -219,22 +228,41 @@ impl NativeLevelAssetsEditor {
         let mut action = None;
         let mut save = false;
         ui.horizontal(|ui| {
-            if ui.add_enabled(undo, egui::Button::new("Undo")).clicked() {
+            if ui
+                .add_enabled(
+                    undo,
+                    egui::Button::new(text(catalog, Key::NativeAssetsUndo)),
+                )
+                .clicked()
+            {
                 action = Some(true);
             }
-            if ui.add_enabled(redo, egui::Button::new("Redo")).clicked() {
+            if ui
+                .add_enabled(
+                    redo,
+                    egui::Button::new(text(catalog, Key::NativeAssetsRedo)),
+                )
+                .clicked()
+            {
                 action = Some(false);
             }
             if ui
                 .add_enabled(
                     !self.persistence.is_running(),
-                    egui::Button::new("Save aggregate"),
+                    egui::Button::new(text(catalog, Key::NativeAssetsSaveAggregate)),
                 )
                 .clicked()
             {
                 save = true;
             }
-            ui.label(if modified { "Modified" } else { "Saved" });
+            ui.label(text(
+                catalog,
+                if modified {
+                    Key::NativeAssetsModified
+                } else {
+                    Key::NativeAssetsSaved
+                },
+            ));
         });
         if let (Some(undo), Some(document)) = (action, self.document.as_mut()) {
             let revision = document.controller.revision();
@@ -279,21 +307,25 @@ impl NativeLevelAssetsEditor {
         }
     }
 
-    fn close_confirmation(&mut self, context: &egui::Context) -> bool {
+    fn close_confirmation(
+        &mut self,
+        context: &egui::Context,
+        catalog: Option<&LocalizationCatalog>,
+    ) -> bool {
         let Some(pending) = self.pending_close else {
             return false;
         };
         let mut approved = false;
-        egui::Window::new("Unsaved native assets")
+        egui::Window::new(text(catalog, Key::NativeAssetsDiscardTitle))
             .collapsible(false)
             .resizable(false)
             .show(context, |ui| {
-                ui.label("Discard changes across all native level-asset domains?");
+                ui.label(text(catalog, Key::NativeAssetsDiscardNotice));
                 ui.horizontal(|ui| {
-                    if ui.button("Cancel").clicked() {
+                    if ui.button(text(catalog, Key::NativeAssetsCancel)).clicked() {
                         self.pending_close = None;
                     }
-                    if ui.button("Discard").clicked() {
+                    if ui.button(text(catalog, Key::NativeAssetsDiscard)).clicked() {
                         self.clear();
                         approved = pending == PendingClose::Application;
                     }
@@ -302,11 +334,11 @@ impl NativeLevelAssetsEditor {
         approved
     }
 
-    fn show_error(&mut self, context: &egui::Context) {
+    fn show_error(&mut self, context: &egui::Context, catalog: Option<&LocalizationCatalog>) {
         if let Some(error) = self.error.clone() {
-            egui::Window::new("Native-assets editor error").show(context, |ui| {
+            egui::Window::new(text(catalog, Key::NativeAssetsErrorTitle)).show(context, |ui| {
                 ui.label(error);
-                if ui.button("OK").clicked() {
+                if ui.button(text(catalog, Key::NativeAssetsOk)).clicked() {
                     self.error = None;
                 }
             });
@@ -318,6 +350,10 @@ impl NativeLevelAssetsEditor {
         self.pending_close = None;
         self.panels.invalidate();
     }
+}
+
+fn text(catalog: Option<&LocalizationCatalog>, key: Key) -> String {
+    crate::frontend_ui::extended_localized_text(catalog, key)
 }
 
 fn pending_from_loaded(loaded: LoadedDocument) -> Result<PendingOpen, String> {
@@ -355,6 +391,44 @@ fn decode(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn native_assets_shell_uses_every_shell_key_and_no_fixed_widget_text() {
+        let source = include_str!("native_level_assets_editor.rs");
+        for key in [
+            Key::NativeAssetsTitle,
+            Key::NativeAssetsOpenTitle,
+            Key::NativeAssetsMaximumRecordsNotice,
+            Key::NativeAssetsCancel,
+            Key::NativeAssetsOpen,
+            Key::NativeAssetsUndo,
+            Key::NativeAssetsRedo,
+            Key::NativeAssetsSaveAggregate,
+            Key::NativeAssetsModified,
+            Key::NativeAssetsSaved,
+            Key::NativeAssetsDiscardTitle,
+            Key::NativeAssetsDiscardNotice,
+            Key::NativeAssetsDiscard,
+            Key::NativeAssetsErrorTitle,
+            Key::NativeAssetsOk,
+        ] {
+            assert!(
+                source.contains(&format!("Key::{key:?}")),
+                "missing native-assets shell label {key:?}"
+            );
+        }
+        for literal_widget in [
+            "Window::new(\"",
+            "ui.label(\"",
+            "ui.button(\"",
+            "Button::new(\"",
+        ] {
+            assert!(
+                !source.contains(literal_widget),
+                "native-assets shell regressed to fixed widget text: {literal_widget}"
+            );
+        }
+    }
 
     #[test]
     fn loaded_group_binds_all_revision_interpretation_inputs() {

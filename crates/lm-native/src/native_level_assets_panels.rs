@@ -6,7 +6,7 @@ mod settings;
 
 use crate::{exanimation_form, native_level_document_form};
 use eframe::egui;
-use lm_app::NativeLevelAssetsControllerEdit;
+use lm_app::{ExtendedUiTextKey as Key, LocalizationCatalog, NativeLevelAssetsControllerEdit};
 use lm_graphics::{ExAnimationFeatureOptions, PaletteOwnership};
 use lm_project::{LoadedExAnimationFeatures, NativeLevelAssetsFile};
 
@@ -110,17 +110,29 @@ impl AggregatePanels {
         modes: &[bool; 256],
         ownership: &PaletteOwnership,
         sprite_lengths: &lm_level::SpriteLengthTable,
+        catalog: Option<&LocalizationCatalog>,
     ) -> Option<Result<NativeLevelAssetsControllerEdit, String>> {
         let (layer2, layer2_descriptor) = layer2;
         self.load(revision, file, layer2, features, lfix3_fields, modes);
         ui.horizontal(|ui| {
             let tabs = if layer2.is_some() {
-                &["Level", "Layer 2", "Palette", "ExAnimation", "Settings"][..]
+                &[
+                    Key::NativeAssetsTabLevel,
+                    Key::NativeAssetsTabLayer2,
+                    Key::NativeAssetsTabPalette,
+                    Key::NativeAssetsTabExAnimation,
+                    Key::NativeAssetsTabSettings,
+                ][..]
             } else {
-                &["Level", "Palette", "ExAnimation", "Settings"][..]
+                &[
+                    Key::NativeAssetsTabLevel,
+                    Key::NativeAssetsTabPalette,
+                    Key::NativeAssetsTabExAnimation,
+                    Key::NativeAssetsTabSettings,
+                ][..]
             };
-            for (index, name) in tabs.iter().enumerate() {
-                ui.selectable_value(&mut self.tab, index, *name);
+            for (index, key) in tabs.iter().enumerate() {
+                ui.selectable_value(&mut self.tab, index, text(catalog, *key));
             }
         });
         ui.separator();
@@ -235,6 +247,10 @@ impl AggregatePanels {
     }
 }
 
+pub(super) fn text(catalog: Option<&LocalizationCatalog>, key: Key) -> String {
+    crate::frontend_ui::extended_localized_text(catalog, key)
+}
+
 pub(super) fn pasted_text(ui: &egui::Ui) -> Option<String> {
     ui.input(|input| {
         input.events.iter().find_map(|event| match event {
@@ -277,6 +293,21 @@ mod tests {
         SpriteRecord, SpriteToken,
     };
     use lm_project::LoadedLevelSlot;
+
+    #[test]
+    fn aggregate_tab_dispatch_uses_typed_localization() {
+        let source = include_str!("native_level_assets_panels.rs");
+        for key in [
+            Key::NativeAssetsTabLevel,
+            Key::NativeAssetsTabLayer2,
+            Key::NativeAssetsTabPalette,
+            Key::NativeAssetsTabExAnimation,
+            Key::NativeAssetsTabSettings,
+        ] {
+            assert!(source.contains(&format!("Key::{key:?}")));
+        }
+        assert!(!source.contains("&[\"Level\""));
+    }
 
     fn object(bytes: [u8; 3]) -> ObjectRecord {
         ObjectRecord::new(bytes.to_vec()).unwrap()

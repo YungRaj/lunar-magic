@@ -2036,6 +2036,26 @@ pub enum ExtendedUiTextKey {
     NativeLevelDocumentSpriteInteraction,
     NativeLevelDocumentSpriteBuoyancy2,
     NativeLevelDocumentSpriteDisableLayerInteraction,
+    NativeAssetsTitle,
+    NativeAssetsOpenTitle,
+    NativeAssetsMaximumRecordsNotice,
+    NativeAssetsCancel,
+    NativeAssetsOpen,
+    NativeAssetsUndo,
+    NativeAssetsRedo,
+    NativeAssetsSaveAggregate,
+    NativeAssetsModified,
+    NativeAssetsSaved,
+    NativeAssetsDiscardTitle,
+    NativeAssetsDiscardNotice,
+    NativeAssetsDiscard,
+    NativeAssetsErrorTitle,
+    NativeAssetsOk,
+    NativeAssetsTabLevel,
+    NativeAssetsTabLayer2,
+    NativeAssetsTabPalette,
+    NativeAssetsTabExAnimation,
+    NativeAssetsTabSettings,
     CustomSpriteEditorTitle,
     CustomSpritePlacementsFormat,
     CustomSpritePlacement,
@@ -3105,7 +3125,7 @@ pub enum ExtendedUiTextKey {
 }
 
 impl ExtendedUiTextKey {
-    pub const ALL: [Self; 1401] = [
+    pub const ALL: [Self; 1421] = [
         Self::MwlDocumentEditorTitle,
         Self::MwlDocumentVersionFormat,
         Self::MwlDocumentFlagsHex,
@@ -3441,6 +3461,26 @@ impl ExtendedUiTextKey {
         Self::NativeLevelDocumentSpriteInteraction,
         Self::NativeLevelDocumentSpriteBuoyancy2,
         Self::NativeLevelDocumentSpriteDisableLayerInteraction,
+        Self::NativeAssetsTitle,
+        Self::NativeAssetsOpenTitle,
+        Self::NativeAssetsMaximumRecordsNotice,
+        Self::NativeAssetsCancel,
+        Self::NativeAssetsOpen,
+        Self::NativeAssetsUndo,
+        Self::NativeAssetsRedo,
+        Self::NativeAssetsSaveAggregate,
+        Self::NativeAssetsModified,
+        Self::NativeAssetsSaved,
+        Self::NativeAssetsDiscardTitle,
+        Self::NativeAssetsDiscardNotice,
+        Self::NativeAssetsDiscard,
+        Self::NativeAssetsErrorTitle,
+        Self::NativeAssetsOk,
+        Self::NativeAssetsTabLevel,
+        Self::NativeAssetsTabLayer2,
+        Self::NativeAssetsTabPalette,
+        Self::NativeAssetsTabExAnimation,
+        Self::NativeAssetsTabSettings,
         Self::CustomSpriteEditorTitle,
         Self::CustomSpritePlacementsFormat,
         Self::CustomSpritePlacement,
@@ -4889,6 +4929,30 @@ impl ExtendedUiTextKey {
             Self::NativeLevelDocumentSpriteDisableLayerInteraction => {
                 "Water/lava; disable Layer 2/3 interaction"
             }
+            Self::NativeAssetsTitle => "Native Level Assets Editor",
+            Self::NativeAssetsOpenTitle => "Open native level assets",
+            Self::NativeAssetsMaximumRecordsNotice => {
+                "Maximum ExAnimation records from the matching revision profile:"
+            }
+            Self::NativeAssetsCancel => "Cancel",
+            Self::NativeAssetsOpen => "Open",
+            Self::NativeAssetsUndo => "Undo",
+            Self::NativeAssetsRedo => "Redo",
+            Self::NativeAssetsSaveAggregate => "Save aggregate",
+            Self::NativeAssetsModified => "Modified",
+            Self::NativeAssetsSaved => "Saved",
+            Self::NativeAssetsDiscardTitle => "Unsaved native assets",
+            Self::NativeAssetsDiscardNotice => {
+                "Discard changes across all native level-asset domains?"
+            }
+            Self::NativeAssetsDiscard => "Discard",
+            Self::NativeAssetsErrorTitle => "Native-assets editor error",
+            Self::NativeAssetsOk => "OK",
+            Self::NativeAssetsTabLevel => "Level",
+            Self::NativeAssetsTabLayer2 => "Layer 2",
+            Self::NativeAssetsTabPalette => "Palette",
+            Self::NativeAssetsTabExAnimation => "ExAnimation",
+            Self::NativeAssetsTabSettings => "Settings",
             Self::CustomSpriteEditorTitle => "Custom Sprite Placement Editor",
             Self::CustomSpritePlacementsFormat => "Synchronized placements: {count}",
             Self::CustomSpritePlacement => "Placement",

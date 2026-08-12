@@ -7741,3 +7741,13 @@ typed key and reject literal window, heading, label, button, and `Button` text. 
 28/28 active cases (one provenance ignore), native-level document tests pass 17/17, and renderer
 passes 237/237. Other native forms and retained live language-DLL evidence keep Localization
 Partial; aggregate parity remains 60/65.
+
+Localization infrastructure update (2026-08-12, native level-assets aggregate routing): twenty
+appended `NativeAssets*` identities cover the portable aggregate shell, open configuration,
+history/save state, close/error dialogs, and five-domain tab strip. The live catalog now reaches the
+shared aggregate panel dispatcher from both the portable native-assets document and installed-ROM
+level-assets editor, preventing divergent localization between the two consumers. Shell and tab
+source audits pass, localization passes 28/28 active cases (one provenance ignore), native compile
+passes, and renderer passes 237/237. The Level, Layer 2, Palette, ExAnimation, and Settings panel
+captions still require conversion, so aggregate localization and the overall Localization row stay
+Partial; aggregate parity remains 60/65.

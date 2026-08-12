@@ -344,6 +344,7 @@ impl NativeApplication {
             self.level_view_visibility,
             self.animation_rate,
             self.allow_control_wheel_zoom.unwrap_or(true),
+            self.app.localization(),
         );
         let command = command.and_then(|command| {
             let result = self
