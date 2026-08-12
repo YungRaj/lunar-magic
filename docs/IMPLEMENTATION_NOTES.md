@@ -7163,6 +7163,18 @@ remain language-neutral symbols with localized hover guidance. The complete Laye
 localization 28/28 active cases (one provenance ignore), native compile, and renderer 237/237 pass.
 ExAnimation and Settings remain, so Localization stays Partial and aggregate parity remains 60/65.
 
+Localization coverage update (2026-08-12, complete native level-assets aggregate): nineteen
+appended `NativeAssetsAnimation*` identities cover slot globals, triggers, record semantics,
+append/replace/remove, and record/frame clipboard workflows. Twenty-eight appended
+`NativeAssetsSettings*` identities cover custom Layer 3 graphics and expanded mode, Super GFX
+Bypass, sprite boundary interaction, all sixteen lossless raw words, and installed palette/vanilla/
+global/level animation features. Stable slot names (`FG1`–`BG3`, `SP1`–`SP4`) remain hardware
+identifiers rather than prose. Per-domain audits reject literal widget text, and a whole-surface
+audit requires every `NativeAssets*` key across the shell and all five panels. Aggregate audits pass
+6/6, localization passes 28/28 active cases (one provenance ignore), native compile passes, and
+renderer passes 237/237. Other native forms and retained live language-DLL evidence keep
+Localization Partial; aggregate parity remains 60/65.
+
 Localization coverage update (2026-08-11, verified-update family): all eighteen static and dynamic
 texts across offer review, staging, immutable installation, activation, restart/rollback guidance,
 and failure acknowledgement now route through typed `UiTextKey` entries and the active catalog.
