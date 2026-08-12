@@ -539,8 +539,8 @@ impl NativeApplication {
                 .clicked()
             {
                 ui.close_menu();
-                self.undo_history_settings
-                    .open(self.app.undo_snapshot_limit());
+                let options = self.general_options();
+                self.undo_history_settings.open(options);
             }
             ui.menu_button(self.menu_text(UiTextKey::ToolsAnimationRate), |ui| {
                 for rate in crate::animation_rate::AnimationRate::ALL {

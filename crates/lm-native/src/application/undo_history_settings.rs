@@ -8,11 +8,24 @@ const ORIGINAL_DIALOG_ID: u16 = 0x041f;
 #[derive(Default)]
 pub(super) struct UndoHistorySettings {
     open: bool,
-    draft: usize,
+    draft: GeneralOptions,
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub(super) struct GeneralOptions {
+    pub undo_limit: usize,
+    pub mouse_gestures: bool,
+    pub save_mouse_gestures: bool,
+    pub maintain_checksum: bool,
+    pub silently_add_header: bool,
+    pub save_prompt: bool,
+    pub joined_graphics: bool,
+    pub gfx_bypass_lists: bool,
+    pub prefer_past_2mb: bool,
 }
 
 impl UndoHistorySettings {
-    pub(super) fn open(&mut self, current: usize) {
+    pub(super) fn open(&mut self, current: GeneralOptions) {
         self.draft = current;
         self.open = true;
     }
@@ -22,11 +35,16 @@ impl UndoHistorySettings {
         self.open
     }
 
+    #[cfg(test)]
+    pub(super) const fn draft(&self) -> GeneralOptions {
+        self.draft
+    }
+
     pub(super) fn show(
         &mut self,
         context: &egui::Context,
         catalog: Option<&LocalizationCatalog>,
-    ) -> Option<usize> {
+    ) -> Option<GeneralOptions> {
         if !self.open {
             return None;
         }
@@ -44,10 +62,70 @@ impl UndoHistorySettings {
                     UiTextKey::UndoHistorySnapshotsLabel,
                 ));
                 ui.add(
-                    egui::DragValue::new(&mut self.draft)
+                    egui::DragValue::new(&mut self.draft.undo_limit)
                         .range(0..=AppState::MAX_UNDO_SNAPSHOT_LIMIT),
                 );
                 ui.small(localized_text(catalog, UiTextKey::UndoHistoryHint));
+                ui.separator();
+                option(
+                    ui,
+                    catalog,
+                    0x2292,
+                    "Mouse Gestures",
+                    &mut self.draft.mouse_gestures,
+                );
+                ui.add_enabled_ui(self.draft.mouse_gestures, |ui| {
+                    option(
+                        ui,
+                        catalog,
+                        0x2293,
+                        "Auto-Save on Mouse Gestures",
+                        &mut self.draft.save_mouse_gestures,
+                    );
+                });
+                ui.separator();
+                option(
+                    ui,
+                    catalog,
+                    0x22a2,
+                    "Maintain ROM Checksum",
+                    &mut self.draft.maintain_checksum,
+                );
+                option(
+                    ui,
+                    catalog,
+                    0x22a7,
+                    "Silently Add Header to ROM",
+                    &mut self.draft.silently_add_header,
+                );
+                option(
+                    ui,
+                    catalog,
+                    0x22a8,
+                    "Save Prompt",
+                    &mut self.draft.save_prompt,
+                );
+                option(
+                    ui,
+                    catalog,
+                    0x22a4,
+                    "Use Joined GFX Files",
+                    &mut self.draft.joined_graphics,
+                );
+                option(
+                    ui,
+                    catalog,
+                    0x2297,
+                    "Standard GFX Bypass Dialogs",
+                    &mut self.draft.gfx_bypass_lists,
+                );
+                option(
+                    ui,
+                    catalog,
+                    0x22a6,
+                    "Prefer Saving in 2MB+ ROM Area",
+                    &mut self.draft.prefer_past_2mb,
+                );
                 ui.horizontal(|ui| {
                     if ui
                         .button(dialog_control_text(catalog, 1, UiTextKey::CommonApply))
@@ -67,6 +145,19 @@ impl UndoHistorySettings {
         self.open = open && !close;
         accepted
     }
+}
+
+fn option(
+    ui: &mut egui::Ui,
+    catalog: Option<&LocalizationCatalog>,
+    control_id: u32,
+    fallback: &str,
+    value: &mut bool,
+) {
+    let label = catalog
+        .and_then(|catalog| catalog.original_dialog_control_text(ORIGINAL_DIALOG_ID, control_id))
+        .unwrap_or(fallback);
+    ui.checkbox(value, label);
 }
 
 fn dialog_title(catalog: Option<&LocalizationCatalog>) -> String {
@@ -171,5 +262,24 @@ mod tests {
             dialog_control_text(Some(&catalog), 2, UiTextKey::CommonCancel),
             UiTextKey::CommonCancel.english()
         );
+    }
+
+    #[test]
+    fn general_options_snapshot_retains_every_staged_field() {
+        let options = GeneralOptions {
+            undo_limit: 17,
+            mouse_gestures: false,
+            save_mouse_gestures: true,
+            maintain_checksum: false,
+            silently_add_header: false,
+            save_prompt: false,
+            joined_graphics: true,
+            gfx_bypass_lists: false,
+            prefer_past_2mb: false,
+        };
+        let mut dialog = UndoHistorySettings::default();
+        dialog.open(options);
+        assert!(dialog.is_open());
+        assert_eq!(dialog.draft(), options);
     }
 }

@@ -679,9 +679,9 @@ impl NativeApplication {
                     .open(&self.app, self.pending_vram_patch_selection);
             }
             UserToolbarNativeAction::InstallVramPatch => {
-                let current = self.pending_vram_patch_selection.or_else(|| {
-                    crate::vram_patch_options_dialog::effective_selection(&self.app)
-                });
+                let current = self
+                    .pending_vram_patch_selection
+                    .or_else(|| crate::vram_patch_options_dialog::effective_selection(&self.app));
                 let enabled = !matches!(
                     current,
                     Some(crate::vram_patch_options_dialog::VramPatchSelection::Normal)
@@ -761,8 +761,8 @@ impl NativeApplication {
                 self.graphics_migration_dialog.open(&self.app);
             }
             UserToolbarNativeAction::GeneralOptions => {
-                self.undo_history_settings
-                    .open(self.app.undo_snapshot_limit());
+                let options = self.general_options();
+                self.undo_history_settings.open(options);
             }
             UserToolbarNativeAction::RestoreOptions => {
                 self.restore_point_dialog.open_automatic_policy();
@@ -3333,12 +3333,19 @@ mod user_toolbar_tests {
     #[test]
     fn general_options_toolbar_route_opens_the_native_resource_041f_dialog() {
         let mut native = NativeApplication::default();
+        native.mouse_gestures = Some(false);
+        native.save_mouse_gestures = Some(true);
+        native.joined_graphics_files = true;
         assert!(!native.undo_history_settings.is_open());
         native.apply_user_toolbar_native_action(
             &egui::Context::default(),
             UserToolbarNativeAction::GeneralOptions,
         );
         assert!(native.undo_history_settings.is_open());
+        assert_eq!(
+            native.undo_history_settings.draft(),
+            native.general_options()
+        );
     }
 
     #[test]

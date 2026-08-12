@@ -6867,3 +6867,8 @@ The same surface now exposes the remaining three directly implemented ROM-editin
 from that dialog: Standard GFX Bypass Dialogs `$2297`, Use Joined GFX Files `$22A4`, and Prefer
 Saving in 2MB+ ROM Area `$22A6`. They update the canonical persisted state consumed respectively by
 the legacy bypass editors, every standard-GFX batch route, and the ROM allocator.
+Original toolbar command `LM_OPTIONS_GENERAL` `$24D7` no longer opens a misleading one-field
+undo dialog. The resource-`$041F` Apply/Cancel workspace now stages the undo limit plus all eight
+currently authenticated Program/ROM choices together. Cancel remains mutation-free; Apply updates
+the canonical editor and application consumers in one publication point. Both the Tools entry and
+the authenticated toolbar command seed that form from the same live preference snapshot.

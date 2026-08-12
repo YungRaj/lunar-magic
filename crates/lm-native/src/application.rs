@@ -7,10 +7,10 @@ use crate::{
         LoadedConfiguration,
     },
     copier_header_dialog::CopierHeaderDialog,
-    custom_object_editor::CustomObjectEditor,
-    custom_sprite_editor::CustomSpriteEditor,
     current_level_palette_transfer::CurrentLevelPaletteTransfer,
     custom_collection_append::CustomCollectionAppendDialog,
+    custom_object_editor::CustomObjectEditor,
+    custom_sprite_editor::CustomSpriteEditor,
     dsc_sidecar_editor::DscSidecarEditor,
     editor_view,
     effects::Confirmation,
@@ -26,12 +26,12 @@ use crate::{
     legacy_graphics_bypass_transfer::LegacyGraphicsBypassTransfer,
     level_access_restriction_dialog::LevelAccessRestrictionDialog,
     level_deletion_dialog::LevelDeletionDialog,
-    multiple_level_deletion_dialog::MultipleLevelDeletionDialog,
     level_editor::LevelEditor,
     level_usage_dialog::LevelUsageDialog,
     map16_editor::Map16Editor,
     map16_set_editor::Map16SetEditor,
     metadata_editor::MetadataEditor,
+    multiple_level_deletion_dialog::MultipleLevelDeletionDialog,
     mwl_editor::MwlEditor,
     native_level_assets_editor::NativeLevelAssetsEditor,
     native_level_document_editor::NativeLevelDocumentEditor,
@@ -310,6 +310,43 @@ pub(crate) struct NativeApplication {
 }
 
 impl NativeApplication {
+    fn general_options(&self) -> undo_history_settings::GeneralOptions {
+        undo_history_settings::GeneralOptions {
+            undo_limit: self.app.undo_snapshot_limit(),
+            mouse_gestures: self.mouse_gestures.unwrap_or(true),
+            save_mouse_gestures: self.save_mouse_gestures.unwrap_or(false),
+            maintain_checksum: self.maintain_checksum.unwrap_or(true),
+            silently_add_header: self.silently_add_copier_header.unwrap_or(true),
+            save_prompt: self.save_prompt.unwrap_or(true),
+            joined_graphics: self.joined_graphics_files,
+            gfx_bypass_lists: self.gfx_bypass_list_dialogs.unwrap_or(true),
+            prefer_past_2mb: self.prioritize_allocations_past_2mb.unwrap_or(true),
+        }
+    }
+
+    fn apply_general_options(
+        &mut self,
+        options: undo_history_settings::GeneralOptions,
+    ) -> Result<(), lm_app::UndoHistoryLimitError> {
+        self.app.set_undo_snapshot_limit(options.undo_limit)?;
+        self.mouse_gestures = Some(options.mouse_gestures);
+        self.save_mouse_gestures = Some(options.save_mouse_gestures);
+        self.vanilla_level_editor
+            .set_mouse_gestures(options.mouse_gestures);
+        self.maintain_checksum = Some(options.maintain_checksum);
+        self.app.set_maintain_checksum(options.maintain_checksum);
+        self.silently_add_copier_header = Some(options.silently_add_header);
+        self.app
+            .set_silently_add_copier_header(options.silently_add_header);
+        self.save_prompt = Some(options.save_prompt);
+        self.joined_graphics_files = options.joined_graphics;
+        self.set_gfx_bypass_list_dialogs(options.gfx_bypass_lists);
+        self.prioritize_allocations_past_2mb = Some(options.prefer_past_2mb);
+        self.app
+            .set_prioritize_allocations_past_2mb(options.prefer_past_2mb);
+        Ok(())
+    }
+
     const RESTORE_POLICY_STORAGE_KEY: &'static str = "lunar_magic_rust.restore_policy.v1";
     const SHORTCUT_STORAGE_KEY: &'static str = "lunar_magic_rust.shortcuts.v1";
     const TOOLBAR_STORAGE_KEY: &'static str = "lunar_magic_rust.toolbar.v1";
@@ -1665,9 +1702,7 @@ impl eframe::App for NativeApplication {
             self.mark_user_toolbar_level_deleted(level);
             self.dispatch(context, Command::Save);
         }
-        if let Some(request) = self
-            .multiple_level_deletion_dialog
-            .show(context, &self.app)
+        if let Some(request) = self.multiple_level_deletion_dialog.show(context, &self.app)
             && self.try_dispatch(context, request.command)
         {
             self.renderer.invalidate();
@@ -1720,15 +1755,16 @@ impl eframe::App for NativeApplication {
                 }
             }
         }
-        if let Some(limit) = self
+        if let Some(options) = self
             .undo_history_settings
             .show(context, self.app.localization())
         {
-            match self.app.set_undo_snapshot_limit(limit) {
+            match self.apply_general_options(options) {
                 Ok(()) => {
                     self.app.status = format!(
                         "Undo history retains {limit} snapshots ({} undo operations)",
-                        limit.saturating_sub(1)
+                        options.undo_limit.saturating_sub(1),
+                        limit = options.undo_limit,
                     );
                 }
                 Err(error) => self.effects.error = Some(error.to_string()),
