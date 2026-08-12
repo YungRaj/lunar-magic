@@ -35,9 +35,12 @@ created staged file.
 
 In the native editor, choose **Help → Stage verified update…**, select the `.update` file beside
 its declared archive, review the verified version/platform/name/size, then explicitly choose a
-staging folder. Merely selecting an offer creates no files. The editor does not replace its running
-executable or relaunch automatically; the staged archive is ready for manual installation after
-exit.
+staging folder. Merely selecting an offer creates no files. Once staging succeeds, either keep the
+verified archive only or explicitly choose an install root. The latter extracts a new immutable
+version directory, atomically activates its checksummed selector, and reports the exact executable
+the launcher will use. An activation failure removes the newly extracted directory and leaves no
+new selector. The editor never replaces its running executable or relaunches implicitly: exit and
+restart through `lm-launcher`, with the prior selector retained for rollback.
 
 The extraction core installs a verified bundle into a brand-new
 `lunar-magic-rust-VERSION-TARGET` directory. It never edits the running version in place. Only flat

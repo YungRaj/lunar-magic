@@ -7053,3 +7053,16 @@ observe distinct exit codes, roll back to the first version, and reject post-sel
 matrix targets build it. Launcher 2/2, update 11/11, packager 3/3, and renderer 237/237 gates pass.
 Native extraction/activation consent and retained cross-platform release execution remain
 incomplete; Release stays Partial and aggregate parity remains 60/65.
+
+Native update-activation update (2026-08-11): after explicit staging consent, the native editor
+now offers a second explicit choice to keep the archive only or select an install root. Installation
+uses the bounded extractor to create one immutable version directory and publishes the checksummed
+rollback-safe launcher selector; it never replaces or relaunches the running editor. The completion
+dialog identifies both the installed directory and launcher-selected executable and instructs the
+user to exit and restart through `lm-launcher`. A native end-to-end test builds a structurally real
+portable gzip/tar bundle, installs it, resolves its selected executable, and verifies its exact
+contents; a negative test proves activation failure removes the new directory and publishes no
+selector. Native updater 4/4, launcher 2/2, update core 11/11, packager 3/3, and renderer 237/237
+gates pass. Retained cross-platform release execution, hosted publication evidence, installers,
+and platform signing/notarization remain incomplete; Release stays Partial and aggregate parity
+remains 60/65.

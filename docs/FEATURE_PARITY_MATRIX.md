@@ -1167,6 +1167,16 @@ manifest. Launcher 2/2, updater 11/11, packager 3/3, and renderer 237/237 pass. 
 consent and retained cross-platform release execution remain missing, so Release stays Partial and
 aggregate parity remains 60/65.
 
+Native release-update activation update (2026-08-11): the graphical editor now carries a verified
+staged offer across a separate install-consent boundary. The user may retain the archive without
+mutation or select an install root; only the latter extracts a brand-new immutable version,
+atomically activates the checksummed launcher selector, and reports the exact selected executable.
+It neither replaces nor relaunches the running process. Positive and failure-path native tests prove
+full bundle extraction/selection and cleanup-without-selector respectively. Native updater 4/4,
+launcher 2/2, update core 11/11, packager 3/3, and renderer 237/237 pass. The Release row remains
+Partial pending retained cross-platform execution/publication, installers, and signing/notarization;
+aggregate parity remains 60/65.
+
 Transactional update-extraction update (2026-08-11): verified portable archives now extract only
 into a create-new version/target sibling directory. The bounded gzip/tar decoder validates headers,
 checksums, sizes, a single exact top-level prefix, flat portable regular-file names, uniqueness,

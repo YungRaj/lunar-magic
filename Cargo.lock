@@ -1898,6 +1898,7 @@ dependencies = [
  "cpal",
  "directories",
  "eframe",
+ "flate2",
  "fs2",
  "lm-app",
  "lm-graphics",
@@ -1914,6 +1915,7 @@ dependencies = [
  "lm-windows",
  "png 0.17.16",
  "rfd",
+ "sha2",
  "tempfile",
 ]
 

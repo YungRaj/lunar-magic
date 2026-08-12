@@ -34,8 +34,10 @@ cpal = "0.15"
 lm-windows = { path = "../lm-windows" }
 
 [dev-dependencies]
+flate2 = "1"
 lm-oracle = { path = "../lm-oracle" }
 lm-profile = { path = "../lm-profile", features = ["test-support"] }
+sha2 = "0.10.9"
 
 [lints]
 workspace = true
