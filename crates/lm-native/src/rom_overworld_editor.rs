@@ -1191,10 +1191,26 @@ impl RomOverworldEditor {
         ui.separator();
         let previous_panel = self.panel;
         ui.horizontal(|ui| {
-            ui.selectable_value(&mut self.panel, Panel::Records, "Records");
-            ui.selectable_value(&mut self.panel, Panel::Palette, "Palette");
-            ui.selectable_value(&mut self.panel, Panel::Animation, "Animation");
-            ui.selectable_value(&mut self.panel, Panel::NativeSprites, "Native sprites");
+            ui.selectable_value(
+                &mut self.panel,
+                Panel::Records,
+                ow_text(catalog, Key::RomOverworldTabRecords),
+            );
+            ui.selectable_value(
+                &mut self.panel,
+                Panel::Palette,
+                ow_text(catalog, Key::RomOverworldTabPalette),
+            );
+            ui.selectable_value(
+                &mut self.panel,
+                Panel::Animation,
+                ow_text(catalog, Key::RomOverworldTabAnimation),
+            );
+            ui.selectable_value(
+                &mut self.panel,
+                Panel::NativeSprites,
+                ow_text(catalog, Key::RomOverworldTabNativeSprites),
+            );
         });
         if previous_panel != self.panel && self.panel != Panel::NativeSprites {
             if self.paint_tool == MapPaintTool::NativeSprite {
@@ -1237,7 +1253,7 @@ impl RomOverworldEditor {
                 )
             }
             Panel::NativeSprites => {
-                self.native_sprite_controls(ui, editing_blocked);
+                self.native_sprite_controls(ui, editing_blocked, catalog);
                 None
             }
         };
@@ -1254,22 +1270,28 @@ impl RomOverworldEditor {
         if runtime_command.is_some() {
             return runtime_command;
         }
-        self.show_native_sprite_property_dialog(ui.ctx(), mutation_blocked);
+        self.show_native_sprite_property_dialog(ui.ctx(), mutation_blocked, catalog);
         self.commit_controls(ui, editing_blocked, revision)
     }
 
-    fn native_sprite_controls(&mut self, ui: &mut egui::Ui, blocked: bool) {
+    fn native_sprite_controls(
+        &mut self,
+        ui: &mut egui::Ui,
+        blocked: bool,
+        catalog: Option<&LocalizationCatalog>,
+    ) {
         let counts = self.workspace.as_ref().map(|workspace| {
             std::array::from_fn::<_, 7, _>(|map| workspace.native_sprites.table().maps[map].len())
         });
         let Some(counts) = counts else { return };
-        ui.heading("Native custom overworld sprite stream");
-        ui.small("Seven map-local lists, variable record widths, and Lunar Magic's 24-sprite-per-map limit.");
-        ui.small(
-            "Canvas: Ctrl/Command-click toggles, drag empty space selects, Ctrl/Command+A selects all, Delete removes, right-drag duplicates the selected group, and Alt-right-click edits one sprite.",
-        );
+        ui.heading(ow_text(catalog, Key::RomOverworldSpriteTitle));
+        ui.small(ow_text(catalog, Key::RomOverworldSpriteNotice));
+        ui.small(ow_text(catalog, Key::RomOverworldSpriteCanvasNotice));
         let previous_map = self.native_sprite.map;
-        ui.add(egui::Slider::new(&mut self.native_sprite.map, 0..=6).text("Map"));
+        ui.add(
+            egui::Slider::new(&mut self.native_sprite.map, 0..=6)
+                .text(ow_text(catalog, Key::RomOverworldSpriteMap)),
+        );
         if self.native_sprite.map != previous_map {
             self.native_sprite_selection.clear();
             self.native_sprite_drag = None;
@@ -1278,28 +1300,51 @@ impl RomOverworldEditor {
         let count = counts[self.native_sprite.map];
         ui.add(
             egui::Slider::new(&mut self.native_sprite.index, 0..=count)
-                .text("Record / insertion index"),
+                .text(ow_text(catalog, Key::RomOverworldSpriteIndex)),
         );
         egui::Grid::new("native-custom-overworld-sprite-form")
             .striped(true)
             .show(ui, |ui| {
-                path_form_row(ui, "ID (hex)", &mut self.native_sprite.id);
-                path_form_row(ui, "X pixels (hex)", &mut self.native_sprite.x);
-                path_form_row(ui, "Y pixels (hex)", &mut self.native_sprite.y);
-                path_form_row(ui, "Screen (hex)", &mut self.native_sprite.screen);
-                path_form_row(ui, "Extension bytes (hex)", &mut self.native_sprite.extra);
+                path_form_row(
+                    ui,
+                    &ow_text(catalog, Key::RomOverworldSpriteId),
+                    &mut self.native_sprite.id,
+                );
+                path_form_row(
+                    ui,
+                    &ow_text(catalog, Key::RomOverworldSpriteX),
+                    &mut self.native_sprite.x,
+                );
+                path_form_row(
+                    ui,
+                    &ow_text(catalog, Key::RomOverworldSpriteY),
+                    &mut self.native_sprite.y,
+                );
+                path_form_row(
+                    ui,
+                    &ow_text(catalog, Key::RomOverworldSpriteScreen),
+                    &mut self.native_sprite.screen,
+                );
+                path_form_row(
+                    ui,
+                    &ow_text(catalog, Key::RomOverworldSpriteExtension),
+                    &mut self.native_sprite.extra,
+                );
             });
         ui.horizontal(|ui| {
             if ui
                 .add_enabled(
                     self.native_sprite.index < count,
-                    egui::Button::new("Load selected"),
+                    egui::Button::new(ow_text(catalog, Key::RomOverworldSpriteLoad)),
                 )
                 .clicked()
             {
                 self.load_native_sprite_form();
             }
-            if ui.button("Use canvas selection").clicked() {
+            if ui
+                .button(ow_text(catalog, Key::RomOverworldSpriteUseCanvas))
+                .clicked()
+            {
                 match native_sprite_canvas_position(self.native_sprite.map, self.x, self.y) {
                     Some((x, y)) => {
                         self.native_sprite.x = format!("{x:04X}");
@@ -1312,7 +1357,10 @@ impl RomOverworldEditor {
                 }
             }
             if ui
-                .add_enabled(!blocked, egui::Button::new("Place at canvas cursor"))
+                .add_enabled(
+                    !blocked,
+                    egui::Button::new(ow_text(catalog, Key::RomOverworldSpritePlace)),
+                )
                 .clicked()
                 && let Err(error) = self.place_native_sprite_at_canvas((self.x, self.y))
             {
@@ -1326,10 +1374,15 @@ impl RomOverworldEditor {
                 .and_then(|workspace| workspace.native_sprites.required_extra_len(id))
         {
             ui.horizontal(|ui| {
-                ui.label(format!(
-                    "ID {id:02X} requires {required} extension byte(s)."
-                ));
-                if ui.button("Fill extension with zeroes").clicked() {
+                ui.label(
+                    ow_text(catalog, Key::RomOverworldSpriteRequiredFormat)
+                        .replace("{id}", &format!("{id:02X}"))
+                        .replace("{count}", &required.to_string()),
+                );
+                if ui
+                    .button(ow_text(catalog, Key::RomOverworldSpriteFillExtension))
+                    .clicked()
+                {
                     self.native_sprite.extra = std::iter::repeat_n("00", required)
                         .collect::<Vec<_>>()
                         .join(" ");
@@ -1339,7 +1392,10 @@ impl RomOverworldEditor {
         let mut edit = None;
         ui.horizontal(|ui| {
             if ui
-                .add_enabled(!blocked, egui::Button::new("Insert"))
+                .add_enabled(
+                    !blocked,
+                    egui::Button::new(ow_text(catalog, Key::RomOverworldSpriteInsert)),
+                )
                 .clicked()
             {
                 edit = Some(
@@ -1355,7 +1411,7 @@ impl RomOverworldEditor {
             if ui
                 .add_enabled(
                     !blocked && self.native_sprite.index < count,
-                    egui::Button::new("Replace"),
+                    egui::Button::new(ow_text(catalog, Key::RomOverworldSpriteReplace)),
                 )
                 .clicked()
             {
@@ -1372,7 +1428,7 @@ impl RomOverworldEditor {
             if ui
                 .add_enabled(
                     !blocked && self.native_sprite.index < count,
-                    egui::Button::new("Delete"),
+                    egui::Button::new(ow_text(catalog, Key::RomOverworldSpriteDelete)),
                 )
                 .clicked()
             {
@@ -1384,7 +1440,7 @@ impl RomOverworldEditor {
             if ui
                 .add_enabled(
                     !blocked && self.native_sprite.index > 0 && self.native_sprite.index < count,
-                    egui::Button::new("Move up"),
+                    egui::Button::new(ow_text(catalog, Key::RomOverworldSpriteMoveUp)),
                 )
                 .clicked()
             {
@@ -1397,7 +1453,7 @@ impl RomOverworldEditor {
             if ui
                 .add_enabled(
                     !blocked && self.native_sprite.index < count.saturating_sub(1),
-                    egui::Button::new("Move down"),
+                    egui::Button::new(ow_text(catalog, Key::RomOverworldSpriteMoveDown)),
                 )
                 .clicked()
             {
@@ -1427,11 +1483,15 @@ impl RomOverworldEditor {
                 Err(error) => self.error = Some(error),
             }
         }
-        ui.label(format!(
-            "Map {}: {count}/24 records; {} selected",
-            self.native_sprite.map,
-            self.native_sprite_selection.len()
-        ));
+        ui.label(
+            ow_text(catalog, Key::RomOverworldSpriteCountFormat)
+                .replace("{map}", &self.native_sprite.map.to_string())
+                .replace("{count}", &count.to_string())
+                .replace(
+                    "{selected}",
+                    &self.native_sprite_selection.len().to_string(),
+                ),
+        );
     }
 
     fn load_native_sprite_form(&mut self) {
@@ -1461,36 +1521,67 @@ impl RomOverworldEditor {
         parse_native_sprite_form(&self.native_sprite)
     }
 
-    fn show_native_sprite_property_dialog(&mut self, context: &egui::Context, blocked: bool) {
+    fn show_native_sprite_property_dialog(
+        &mut self,
+        context: &egui::Context,
+        blocked: bool,
+        catalog: Option<&LocalizationCatalog>,
+    ) {
         let Some(mut dialog) = self.native_sprite_property_dialog.take() else {
             return;
         };
         let mut open = true;
         let mut accepted = false;
         let mut cancelled = false;
-        egui::Window::new("Custom overworld sprite properties")
+        egui::Window::new(ow_text(catalog, Key::RomOverworldSpritePropertiesTitle))
             .collapsible(false)
             .resizable(false)
             .open(&mut open)
             .show(context, |ui| {
-                ui.label(format!(
-                    "Map {} record {}",
-                    dialog.form.map, dialog.form.index
-                ));
+                ui.label(
+                    ow_text(catalog, Key::RomOverworldSpriteRecordFormat)
+                        .replace("{map}", &dialog.form.map.to_string())
+                        .replace("{record}", &dialog.form.index.to_string()),
+                );
                 egui::Grid::new("native-custom-overworld-sprite-property-dialog")
                     .striped(true)
                     .show(ui, |ui| {
-                        path_form_row(ui, "ID (hex)", &mut dialog.form.id);
-                        path_form_row(ui, "X pixels (hex)", &mut dialog.form.x);
-                        path_form_row(ui, "Y pixels (hex)", &mut dialog.form.y);
-                        path_form_row(ui, "Screen (hex)", &mut dialog.form.screen);
-                        path_form_row(ui, "Extension bytes (hex)", &mut dialog.form.extra);
+                        path_form_row(
+                            ui,
+                            &ow_text(catalog, Key::RomOverworldSpriteId),
+                            &mut dialog.form.id,
+                        );
+                        path_form_row(
+                            ui,
+                            &ow_text(catalog, Key::RomOverworldSpriteX),
+                            &mut dialog.form.x,
+                        );
+                        path_form_row(
+                            ui,
+                            &ow_text(catalog, Key::RomOverworldSpriteY),
+                            &mut dialog.form.y,
+                        );
+                        path_form_row(
+                            ui,
+                            &ow_text(catalog, Key::RomOverworldSpriteScreen),
+                            &mut dialog.form.screen,
+                        );
+                        path_form_row(
+                            ui,
+                            &ow_text(catalog, Key::RomOverworldSpriteExtension),
+                            &mut dialog.form.extra,
+                        );
                     });
                 ui.horizontal(|ui| {
                     accepted = ui
-                        .add_enabled(!blocked, egui::Button::new("Apply"))
+                        .add_enabled(
+                            !blocked,
+                            egui::Button::new(ow_text(catalog, Key::RomOverworldSpriteApply)),
+                        )
                         .clicked();
-                    cancelled = ui.button("Cancel").clicked();
+                    cancelled = ui
+                        .button(ow_text(catalog, Key::RomOverworldCancel))
+                        .clicked();
                 });
             });
         if accepted {

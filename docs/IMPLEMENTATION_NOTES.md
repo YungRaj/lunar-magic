@@ -7919,3 +7919,13 @@ vocabulary is reused for choices rather than duplicated. The overworld family ke
 localization passes 28/28 active cases (one provenance ignore), native compilation passes, and
 renderer remains 237/237. Custom sprite, general tile/preview, save-transition, and aggregate commit
 controls remain; Localization and aggregate parity remain Partial and 60/65 respectively.
+
+Localization coverage update (2026-08-12, native custom overworld sprites): twenty-eight appended
+`RomOverworld*` identities cover all four aggregate tabs plus the complete seven-map native-sprite
+stream form, canvas selection/placement guidance, required extension-byte summary and fill action,
+insert/replace/delete/reorder controls, dynamic map/count/selection status, and modal property
+editing. The same typed field vocabulary is shared by the main form and property dialog. The
+overworld family key audit passes, localization passes 28/28 active cases (one provenance ignore),
+native compilation passes, and renderer remains 237/237. General tile/preview, save-transition,
+and aggregate commit controls remain; Localization and aggregate parity remain Partial and 60/65
+respectively.
