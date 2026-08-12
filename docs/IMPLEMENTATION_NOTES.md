@@ -7438,3 +7438,15 @@ suite pass 3/3, including shared manifest identity between preview and command, 
 stale-revision rejection, and acknowledgement cleanup. Localization passes 28/28 and renderer
 passes 237/237. Localization remains Partial for other native forms and retained live language-DLL
 evidence; aggregate parity remains 60/65.
+
+Localization coverage update (2026-08-12, revision-patch installation): thirteen appended
+`RevisionPatch*` keys cover the complete profile-bound installer surface, including template
+identity, payload/guarded-write counts, logical-PC allocation range, fill, protected-metadata and
+atomic-install guarantees, stale state, actions, and error lifecycle. Template names and typed
+game/region/mapper identities remain technical data substituted into localized templates. The
+application host now passes the active catalog. The complete-family source audit and installer
+suite pass 5/5, including bounded canonical decode, foreign-profile rejection, revision binding,
+allocation/fill validation, and commit-only closure; localization passes 28/28 and renderer passes
+237/237. The runtime-patch row remains Partial for its documented mapper/identity variants, and
+Localization remains Partial for other native forms and retained live language-DLL evidence;
+aggregate parity remains 60/65.

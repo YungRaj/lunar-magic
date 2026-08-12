@@ -581,10 +581,11 @@ impl NativeApplication {
             }
             self.renderer.invalidate();
         }
-        if let Some(command) = self
-            .revision_patch_installer
-            .show(context, self.app.project_revision())
-            && self.try_dispatch(context, command)
+        if let Some(command) = self.revision_patch_installer.show(
+            context,
+            self.app.project_revision(),
+            self.app.localization(),
+        ) && self.try_dispatch(context, command)
         {
             self.revision_patch_installer.commit_succeeded();
             self.renderer.invalidate();

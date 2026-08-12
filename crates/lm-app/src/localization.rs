@@ -2418,10 +2418,23 @@ pub enum ExtendedUiTextKey {
     RatsReclaimAction,
     RatsReclaimErrorTitle,
     RatsReclaimOk,
+    RevisionPatchTitle,
+    RevisionPatchIdentityFormat,
+    RevisionPatchPayloadSummaryFormat,
+    RevisionPatchRangeNotice,
+    RevisionPatchSearchStart,
+    RevisionPatchSearchEnd,
+    RevisionPatchExpansionFill,
+    RevisionPatchAtomicNotice,
+    RevisionPatchStaleNotice,
+    RevisionPatchCancel,
+    RevisionPatchInstall,
+    RevisionPatchErrorTitle,
+    RevisionPatchOk,
 }
 
 impl ExtendedUiTextKey {
-    pub const ALL: [Self; 717] = [
+    pub const ALL: [Self; 730] = [
         Self::TilemapTitleScreenName,
         Self::TilemapCreditsName,
         Self::TilemapEditorTitleFormat,
@@ -3139,6 +3152,19 @@ impl ExtendedUiTextKey {
         Self::RatsReclaimAction,
         Self::RatsReclaimErrorTitle,
         Self::RatsReclaimOk,
+        Self::RevisionPatchTitle,
+        Self::RevisionPatchIdentityFormat,
+        Self::RevisionPatchPayloadSummaryFormat,
+        Self::RevisionPatchRangeNotice,
+        Self::RevisionPatchSearchStart,
+        Self::RevisionPatchSearchEnd,
+        Self::RevisionPatchExpansionFill,
+        Self::RevisionPatchAtomicNotice,
+        Self::RevisionPatchStaleNotice,
+        Self::RevisionPatchCancel,
+        Self::RevisionPatchInstall,
+        Self::RevisionPatchErrorTitle,
+        Self::RevisionPatchOk,
     ];
 
     #[must_use]
@@ -4135,6 +4161,29 @@ impl ExtendedUiTextKey {
             Self::RatsReclaimAction => "Reclaim transactionally",
             Self::RatsReclaimErrorTitle => "RATS reclamation error",
             Self::RatsReclaimOk => "OK",
+            Self::RevisionPatchTitle => "Install Revision Patch",
+            Self::RevisionPatchIdentityFormat => {
+                "Identity: {game} / {region} / revision {revision} / {mapper}"
+            }
+            Self::RevisionPatchPayloadSummaryFormat => {
+                "Payloads: {payloads}    Guarded writes: {writes}"
+            }
+            Self::RevisionPatchRangeNotice => {
+                "End-exclusive logical-PC allocation range (hexadecimal)."
+            }
+            Self::RevisionPatchSearchStart => "Search start",
+            Self::RevisionPatchSearchEnd => "Search end",
+            Self::RevisionPatchExpansionFill => "Expansion fill",
+            Self::RevisionPatchAtomicNotice => {
+                "The audited profile supplies protected metadata ranges. Allocation, guarded writes, fixups, expansion, checksum repair, and undo history commit atomically."
+            }
+            Self::RevisionPatchStaleNotice => {
+                "The ROM or profile changed after this template was loaded."
+            }
+            Self::RevisionPatchCancel => "Cancel",
+            Self::RevisionPatchInstall => "Install transactionally",
+            Self::RevisionPatchErrorTitle => "Revision patch installation error",
+            Self::RevisionPatchOk => "OK",
         }
     }
 

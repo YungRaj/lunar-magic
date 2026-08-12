@@ -2090,3 +2090,11 @@ manifest identity, invalid-fill and stale-revision rejection, and lifecycle clea
 The focused form passes 3/3, localization model 28/28, and renderer 237/237. Other native forms and
 retained live language-DLL evidence remain open; Localization stays Partial and aggregate parity
 remains 60/65.
+
+Localization coverage update (2026-08-12, revision-patch installation): the full profile-bound
+installer now uses thirteen typed extension keys for template identity and counts, allocation/fill,
+protected ranges, atomic installation, stale state, actions, and errors. Bounded canonical decode,
+foreign-profile rejection, revision and allocation validation, and success lifecycle remain proven.
+The focused installer passes 5/5, localization model 28/28, and renderer 237/237. Documented
+mapper/identity variants keep Runtime patches Partial; other native forms and retained live
+language-DLL evidence keep Localization Partial, so aggregate parity remains 60/65.

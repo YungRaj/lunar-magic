@@ -5,7 +5,7 @@ use crate::{
     document_loader::{BoundedRead, DocumentLoader, LoadedDocument},
 };
 use eframe::egui;
-use lm_app::{AppState, Command, RevisionProfile};
+use lm_app::{AppState, Command, ExtendedUiTextKey, LocalizationCatalog, RevisionProfile};
 use lm_profile::RevisionPatchTemplate;
 use workspace::RevisionPatchWorkspace;
 
@@ -52,16 +52,19 @@ impl RevisionPatchInstaller {
         &mut self,
         context: &egui::Context,
         project_revision: u64,
+        catalog: Option<&LocalizationCatalog>,
     ) -> Option<Command> {
         self.poll_loader(context);
         let mut command = None;
         if self.workspace.is_some() {
-            egui::Window::new("Install Revision Patch")
+            egui::Window::new(text(catalog, ExtendedUiTextKey::RevisionPatchTitle))
                 .collapsible(false)
                 .resizable(false)
-                .show(context, |ui| command = self.contents(ui, project_revision));
+                .show(context, |ui| {
+                    command = self.contents(ui, project_revision, catalog)
+                });
         }
-        self.show_error(context);
+        self.show_error(context, catalog);
         command
     }
 
@@ -82,52 +85,63 @@ impl RevisionPatchInstaller {
         }
     }
 
-    fn contents(&mut self, ui: &mut egui::Ui, project_revision: u64) -> Option<Command> {
+    fn contents(
+        &mut self,
+        ui: &mut egui::Ui,
+        project_revision: u64,
+        catalog: Option<&LocalizationCatalog>,
+    ) -> Option<Command> {
         let workspace = self.workspace.as_mut()?;
         let stale = workspace.is_stale(project_revision);
         let mut cancel = false;
         ui.heading(&workspace.template.name);
-        ui.label(format!(
-            "Identity: {:?} / {:?} / revision {} / {:?}",
-            workspace.template.game,
-            workspace.template.region,
-            workspace.template.revision,
-            workspace.template.mapper
-        ));
-        ui.label(format!(
-            "Payloads: {}    Guarded writes: {}",
-            workspace.template.payloads.len(),
-            workspace.template.writes.len()
-        ));
-        ui.label("End-exclusive logical-PC allocation range (hexadecimal).");
+        ui.label(
+            text(catalog, ExtendedUiTextKey::RevisionPatchIdentityFormat)
+                .replace("{game}", &format!("{:?}", workspace.template.game))
+                .replace("{region}", &format!("{:?}", workspace.template.region))
+                .replace("{revision}", &workspace.template.revision.to_string())
+                .replace("{mapper}", &format!("{:?}", workspace.template.mapper)),
+        );
+        ui.label(
+            text(
+                catalog,
+                ExtendedUiTextKey::RevisionPatchPayloadSummaryFormat,
+            )
+            .replace("{payloads}", &workspace.template.payloads.len().to_string())
+            .replace("{writes}", &workspace.template.writes.len().to_string()),
+        );
+        ui.label(text(catalog, ExtendedUiTextKey::RevisionPatchRangeNotice));
         egui::Grid::new("revision-patch-install-fields").show(ui, |ui| {
-            ui.label("Search start");
+            ui.label(text(catalog, ExtendedUiTextKey::RevisionPatchSearchStart));
             ui.text_edit_singleline(&mut workspace.search_start);
             ui.end_row();
-            ui.label("Search end");
+            ui.label(text(catalog, ExtendedUiTextKey::RevisionPatchSearchEnd));
             ui.text_edit_singleline(&mut workspace.search_end);
             ui.end_row();
-            ui.label("Expansion fill");
+            ui.label(text(catalog, ExtendedUiTextKey::RevisionPatchExpansionFill));
             ui.text_edit_singleline(&mut workspace.fill);
             ui.end_row();
         });
-        ui.label(
-            "The audited profile supplies protected metadata ranges. Allocation, guarded writes, \
-             fixups, expansion, checksum repair, and undo history commit atomically.",
-        );
+        ui.label(text(catalog, ExtendedUiTextKey::RevisionPatchAtomicNotice));
         if stale {
             ui.colored_label(
                 egui::Color32::YELLOW,
-                "The ROM or profile changed after this template was loaded.",
+                text(catalog, ExtendedUiTextKey::RevisionPatchStaleNotice),
             );
         }
         let mut command = None;
         ui.horizontal(|ui| {
-            if ui.button("Cancel").clicked() {
+            if ui
+                .button(text(catalog, ExtendedUiTextKey::RevisionPatchCancel))
+                .clicked()
+            {
                 cancel = true;
             }
             if ui
-                .add_enabled(!stale, egui::Button::new("Install transactionally"))
+                .add_enabled(
+                    !stale,
+                    egui::Button::new(text(catalog, ExtendedUiTextKey::RevisionPatchInstall)),
+                )
                 .clicked()
             {
                 match workspace.prepare(project_revision) {
@@ -142,20 +156,30 @@ impl RevisionPatchInstaller {
         command
     }
 
-    fn show_error(&mut self, context: &egui::Context) {
+    fn show_error(&mut self, context: &egui::Context, catalog: Option<&LocalizationCatalog>) {
         if let Some(error) = self.error.clone() {
-            egui::Window::new("Revision patch installation error").show(context, |ui| {
-                ui.label(error);
-                if ui.button("OK").clicked() {
-                    self.error = None;
-                }
-            });
+            egui::Window::new(text(catalog, ExtendedUiTextKey::RevisionPatchErrorTitle)).show(
+                context,
+                |ui| {
+                    ui.label(error);
+                    if ui
+                        .button(text(catalog, ExtendedUiTextKey::RevisionPatchOk))
+                        .clicked()
+                    {
+                        self.error = None;
+                    }
+                },
+            );
         }
     }
 
     pub(crate) fn commit_succeeded(&mut self) {
         self.workspace = None;
     }
+}
+
+fn text(catalog: Option<&LocalizationCatalog>, key: ExtendedUiTextKey) -> String {
+    crate::frontend_ui::extended_localized_text(catalog, key)
 }
 
 fn decode_template(loaded: LoadedDocument) -> Result<RevisionPatchTemplate, String> {
@@ -168,6 +192,25 @@ mod tests {
     use super::*;
     use lm_project::{PatchPayload, PatchWrite};
     use std::path::PathBuf;
+
+    #[test]
+    fn complete_revision_patch_form_uses_every_typed_key() {
+        let source = include_str!("revision_patch_installer.rs");
+        for key in ExtendedUiTextKey::ALL
+            .into_iter()
+            .filter(|key| format!("{key:?}").starts_with("RevisionPatch"))
+        {
+            assert!(source.contains(&format!("ExtendedUiTextKey::{key:?}")));
+        }
+        for hard_coded_caption in [
+            "Window::new(\"Install Revision Patch\")",
+            "ui.label(\"Search start\")",
+            "Button::new(\"Install transactionally\")",
+            "Window::new(\"Revision patch installation error\")",
+        ] {
+            assert!(!source.contains(hard_coded_caption));
+        }
+    }
 
     fn loaded(bytes: Vec<u8>) -> LoadedDocument {
         LoadedDocument {
