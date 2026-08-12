@@ -2185,10 +2185,26 @@ pub enum ExtendedUiTextKey {
     RomExpandedSettingsDiscard,
     RomExpandedSettingsErrorTitle,
     RomExpandedSettingsOk,
+    ExpandedSettingsDocumentTitle,
+    ExpandedSettingsRecoveredNotice,
+    ExpandedSettingsApplyLayer3,
+    ExpandedSettingsApplyExpandedMode,
+    ExpandedSettingsApplyBypass,
+    ExpandedSettingsApplyBoundary,
+    ExpandedSettingsWordsNotice,
+    ExpandedSettingsApplyWords,
+    ExpandedSettingsUndo,
+    ExpandedSettingsRedo,
+    ExpandedSettingsSave,
+    ExpandedSettingsModified,
+    ExpandedSettingsSaved,
+    ExpandedSettingsUnsavedTitle,
+    ExpandedSettingsDiscardQuestion,
+    ExpandedSettingsErrorTitle,
 }
 
 impl ExtendedUiTextKey {
-    pub const ALL: [Self; 484] = [
+    pub const ALL: [Self; 500] = [
         Self::TilemapTitleScreenName,
         Self::TilemapCreditsName,
         Self::TilemapEditorTitleFormat,
@@ -2673,6 +2689,22 @@ impl ExtendedUiTextKey {
         Self::RomExpandedSettingsDiscard,
         Self::RomExpandedSettingsErrorTitle,
         Self::RomExpandedSettingsOk,
+        Self::ExpandedSettingsDocumentTitle,
+        Self::ExpandedSettingsRecoveredNotice,
+        Self::ExpandedSettingsApplyLayer3,
+        Self::ExpandedSettingsApplyExpandedMode,
+        Self::ExpandedSettingsApplyBypass,
+        Self::ExpandedSettingsApplyBoundary,
+        Self::ExpandedSettingsWordsNotice,
+        Self::ExpandedSettingsApplyWords,
+        Self::ExpandedSettingsUndo,
+        Self::ExpandedSettingsRedo,
+        Self::ExpandedSettingsSave,
+        Self::ExpandedSettingsModified,
+        Self::ExpandedSettingsSaved,
+        Self::ExpandedSettingsUnsavedTitle,
+        Self::ExpandedSettingsDiscardQuestion,
+        Self::ExpandedSettingsErrorTitle,
     ];
 
     #[must_use]
@@ -3342,6 +3374,24 @@ impl ExtendedUiTextKey {
             Self::RomExpandedSettingsDiscard => "Discard",
             Self::RomExpandedSettingsErrorTitle => "ROM expanded-settings error",
             Self::RomExpandedSettingsOk => "OK",
+            Self::ExpandedSettingsDocumentTitle => "Expanded Settings Editor",
+            Self::ExpandedSettingsRecoveredNotice => "Recovered Layer 3 tilemap settings",
+            Self::ExpandedSettingsApplyLayer3 => "Apply Layer 3 settings",
+            Self::ExpandedSettingsApplyExpandedMode => "Apply Layer 3 expanded mode",
+            Self::ExpandedSettingsApplyBypass => "Apply Super GFX bypass",
+            Self::ExpandedSettingsApplyBoundary => "Apply sprite boundary interaction",
+            Self::ExpandedSettingsWordsNotice => {
+                "All values below are exact native 16-bit words; unknown meanings are preserved."
+            }
+            Self::ExpandedSettingsApplyWords => "Apply all sixteen words atomically",
+            Self::ExpandedSettingsUndo => "Undo",
+            Self::ExpandedSettingsRedo => "Redo",
+            Self::ExpandedSettingsSave => "Save",
+            Self::ExpandedSettingsModified => "Modified",
+            Self::ExpandedSettingsSaved => "Saved",
+            Self::ExpandedSettingsUnsavedTitle => "Unsaved expanded settings",
+            Self::ExpandedSettingsDiscardQuestion => "Discard unsaved expanded-settings changes?",
+            Self::ExpandedSettingsErrorTitle => "Expanded-settings editor error",
         }
     }
 

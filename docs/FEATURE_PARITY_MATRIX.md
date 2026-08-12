@@ -738,6 +738,13 @@ commit/reopen/checksum/undo, stale rejection, and crash recovery remain proven. 
 localization model 28/28, and renderer 237/237 pass. Broader mapper/runtime variant evidence still
 keeps the patch row Partial; aggregate parity remains 60/65.
 
+Localization coverage update (2026-08-11, expanded-settings documents): the standalone exact
+32-byte settings editor now shares the complete semantic catalog with the ROM-backed form and adds
+sixteen typed document keys for apply actions, undo/redo, save, modified/saved state, unsaved-close
+confirmation, and errors. Exact semantic/raw edits, shared history, and persisted document state
+remain proven. Expanded-settings family 10/10, localization model 28/28, and renderer 237/237 pass.
+Broader runtime variants still keep the patch row Partial; aggregate parity remains 60/65.
+
 Converted catalogs now preserve the complete safely decoded literal dialog inventory in a bounded,
 optional `LMDLG001` extension keyed by dialog ID, exact item position, and 32-bit control ID.
 Historical catalogs without the extension remain byte-identical, duplicate control IDs survive by

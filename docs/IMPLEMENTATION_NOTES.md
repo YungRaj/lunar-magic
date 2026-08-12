@@ -7320,3 +7320,11 @@ rejects representative literal regressions. Semantic commit/reopen/checksum/Undo
 recovery pass in the focused suite (3/3); localization model 28/28 and renderer 237/237 also pass.
 The broader runtime-patch row remains Partial for its documented mapper/identity variants, leaving
 aggregate parity at 60/65.
+
+Localization coverage update (2026-08-11, expanded-settings documents): sixteen document-specific
+typed keys plus the shared ROM semantic keys cover the standalone 32-byte editor, including apply,
+Undo/Redo, Save, modified state, close confirmation, and error lifecycle. Its source audit requires
+every `ExpandedSettings*` key and rejects representative literal regressions. Exact semantic/raw
+editing, history, and save-state evidence passes with both editor forms in the family suite (10/10),
+alongside localization model 28/28 and renderer 237/237. The runtime-patch row remains Partial for
+documented mapper/identity gaps; aggregate parity remains 60/65.

@@ -5,7 +5,7 @@ use crate::{
     expanded_settings_editor_form::ExpandedSettingsForm,
 };
 use eframe::egui;
-use lm_app::ExpandedSettingsDocumentController;
+use lm_app::{ExpandedSettingsDocumentController, ExtendedUiTextKey, LocalizationCatalog};
 use lm_level::ExpandedLevelSettingsRecord;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -70,7 +70,11 @@ impl ExpandedSettingsEditor {
         false
     }
 
-    pub(crate) fn show(&mut self, context: &egui::Context) -> bool {
+    pub(crate) fn show(
+        &mut self,
+        context: &egui::Context,
+        catalog: Option<&LocalizationCatalog>,
+    ) -> bool {
         if let Some(result) = self.loader.show(context) {
             match result.and_then(|mut loaded| {
                 let (path, bytes) = loaded
@@ -94,12 +98,15 @@ impl ExpandedSettingsEditor {
         }
         if self.controller.is_some() {
             self.load_form();
-            egui::Window::new("Expanded Settings Editor")
-                .default_size([460.0, 560.0])
-                .show(context, |ui| self.contents(ui));
+            egui::Window::new(text(
+                catalog,
+                ExtendedUiTextKey::ExpandedSettingsDocumentTitle,
+            ))
+            .default_size([460.0, 560.0])
+            .show(context, |ui| self.contents(ui, catalog));
         }
-        let approved = self.show_close_confirmation(context);
-        self.show_error(context);
+        let approved = self.show_close_confirmation(context, catalog);
+        self.show_error(context, catalog);
         approved
     }
 
@@ -113,47 +120,76 @@ impl ExpandedSettingsEditor {
         }
     }
 
-    fn contents(&mut self, ui: &mut egui::Ui) {
-        self.toolbar(ui);
+    fn contents(&mut self, ui: &mut egui::Ui, catalog: Option<&LocalizationCatalog>) {
+        self.toolbar(ui, catalog);
         ui.separator();
-        ui.label("Recovered Layer 3 tilemap settings");
+        ui.label(text(
+            catalog,
+            ExtendedUiTextKey::ExpandedSettingsRecoveredNotice,
+        ));
         ui.checkbox(
             &mut self.form.layer3_enabled,
-            "Enable custom Layer 3 tilemap",
+            text(catalog, ExtendedUiTextKey::RomExpandedSettingsLayer3Enable),
         );
         ui.horizontal(|ui| {
-            ui.label("GFX/ExGFX file");
+            ui.label(text(catalog, ExtendedUiTextKey::RomExpandedSettingsGfxFile));
             ui.text_edit_singleline(&mut self.form.layer3_file);
         });
         ui.add(
-            egui::Slider::new(&mut self.form.layer3_length_selector, 0..=3).text("Length selector"),
+            egui::Slider::new(&mut self.form.layer3_length_selector, 0..=3).text(text(
+                catalog,
+                ExtendedUiTextKey::RomExpandedSettingsLengthSelector,
+            )),
         );
         ui.add(
-            egui::Slider::new(&mut self.form.layer3_offset_selector, 0..=3)
-                .text("Destination selector"),
+            egui::Slider::new(&mut self.form.layer3_offset_selector, 0..=3).text(text(
+                catalog,
+                ExtendedUiTextKey::RomExpandedSettingsDestinationSelector,
+            )),
         );
-        if ui.button("Apply Layer 3 settings").clicked() {
+        if ui
+            .button(text(
+                catalog,
+                ExtendedUiTextKey::ExpandedSettingsApplyLayer3,
+            ))
+            .clicked()
+        {
             match self.form.layer3_edits() {
                 Ok(edits) => self.apply_edits(&edits),
                 Err(error) => self.error = Some(error),
             }
         }
         ui.horizontal(|ui| {
-            ui.label("Expanded mode");
+            ui.label(text(
+                catalog,
+                ExtendedUiTextKey::RomExpandedSettingsExpandedMode,
+            ));
             ui.text_edit_singleline(&mut self.form.layer3_expanded_mode);
         });
-        ui.small("Exact 32-bit mode packed from the high nibbles of words 8–F.");
-        if ui.button("Apply Layer 3 expanded mode").clicked() {
+        ui.small(text(
+            catalog,
+            ExtendedUiTextKey::RomExpandedSettingsExpandedModeNotice,
+        ));
+        if ui
+            .button(text(
+                catalog,
+                ExtendedUiTextKey::ExpandedSettingsApplyExpandedMode,
+            ))
+            .clicked()
+        {
             match self.form.layer3_expanded_mode_edits() {
                 Ok(edits) => self.apply_edits(&edits),
                 Err(error) => self.error = Some(error),
             }
         }
         ui.separator();
-        ui.label("Super GFX Bypass");
+        ui.label(text(
+            catalog,
+            ExtendedUiTextKey::RomExpandedSettingsBypassHeading,
+        ));
         ui.checkbox(
             &mut self.form.bypass_enabled,
-            "Use per-level GFX/ExGFX files",
+            text(catalog, ExtendedUiTextKey::RomExpandedSettingsBypassEnable),
         );
         egui::Grid::new("expanded-settings-super-gfx")
             .num_columns(4)
@@ -184,37 +220,61 @@ impl ExpandedSettingsEditor {
                     }
                 }
             });
-        if ui.button("Apply Super GFX bypass").clicked() {
+        if ui
+            .button(text(
+                catalog,
+                ExtendedUiTextKey::ExpandedSettingsApplyBypass,
+            ))
+            .clicked()
+        {
             match self.form.super_graphics_bypass_edits() {
                 Ok(edits) => self.apply_edits(&edits),
                 Err(error) => self.error = Some(error),
             }
         }
         ui.separator();
-        ui.label("Sprite boundary interaction");
+        ui.label(text(
+            catalog,
+            ExtendedUiTextKey::RomExpandedSettingsBoundaryHeading,
+        ));
         ui.checkbox(
             &mut self.form.sprites_beyond_boundaries_use_air,
-            "Sprites beyond level boundaries interact with air instead of water",
+            text(catalog, ExtendedUiTextKey::RomExpandedSettingsBoundaryAir),
         );
-        if ui.button("Apply sprite boundary interaction").clicked() {
+        if ui
+            .button(text(
+                catalog,
+                ExtendedUiTextKey::ExpandedSettingsApplyBoundary,
+            ))
+            .clicked()
+        {
             match self.form.sprite_boundary_edits() {
                 Ok(edits) => self.apply_edits(&edits),
                 Err(error) => self.error = Some(error),
             }
         }
         ui.separator();
-        ui.label("All values below are exact native 16-bit words; unknown meanings are preserved.");
+        ui.label(text(
+            catalog,
+            ExtendedUiTextKey::ExpandedSettingsWordsNotice,
+        ));
         egui::Grid::new("expanded-settings-words")
             .num_columns(2)
             .striped(true)
             .show(ui, |ui| {
                 for (index, value) in self.form.words.iter_mut().enumerate() {
-                    ui.label(format!("Word {index:X}"));
+                    ui.label(
+                        text(catalog, ExtendedUiTextKey::RomExpandedSettingsWord)
+                            .replace("{index}", &format!("{index:X}")),
+                    );
                     ui.text_edit_singleline(value);
                     ui.end_row();
                 }
             });
-        if ui.button("Apply all sixteen words atomically").clicked() {
+        if ui
+            .button(text(catalog, ExtendedUiTextKey::ExpandedSettingsApplyWords))
+            .clicked()
+        {
             match self.form.edits() {
                 Ok(edits) => {
                     self.apply_edits(&edits);
@@ -235,7 +295,7 @@ impl ExpandedSettingsEditor {
         }
     }
 
-    fn toolbar(&mut self, ui: &mut egui::Ui) {
+    fn toolbar(&mut self, ui: &mut egui::Ui, catalog: Option<&LocalizationCatalog>) {
         let Some(controller) = self.controller.as_ref() else {
             return;
         };
@@ -248,21 +308,37 @@ impl ExpandedSettingsEditor {
         let mut save_requested = false;
         ui.horizontal(|ui| {
             if ui
-                .add_enabled(can_undo, egui::Button::new("Undo"))
+                .add_enabled(
+                    can_undo,
+                    egui::Button::new(text(catalog, ExtendedUiTextKey::ExpandedSettingsUndo)),
+                )
                 .clicked()
             {
                 history = Some(true);
             }
             if ui
-                .add_enabled(can_redo, egui::Button::new("Redo"))
+                .add_enabled(
+                    can_redo,
+                    egui::Button::new(text(catalog, ExtendedUiTextKey::ExpandedSettingsRedo)),
+                )
                 .clicked()
             {
                 history = Some(false);
             }
             save_requested = ui
-                .add_enabled(!self.persistence.is_running(), egui::Button::new("Save"))
+                .add_enabled(
+                    !self.persistence.is_running(),
+                    egui::Button::new(text(catalog, ExtendedUiTextKey::ExpandedSettingsSave)),
+                )
                 .clicked();
-            ui.label(if modified { "Modified" } else { "Saved" });
+            ui.label(text(
+                catalog,
+                if modified {
+                    ExtendedUiTextKey::ExpandedSettingsModified
+                } else {
+                    ExtendedUiTextKey::ExpandedSettingsSaved
+                },
+            ));
         });
         let mut changed = false;
         if let Some(controller) = self.controller.as_mut() {
@@ -288,38 +364,57 @@ impl ExpandedSettingsEditor {
         }
     }
 
-    fn show_close_confirmation(&mut self, context: &egui::Context) -> bool {
+    fn show_close_confirmation(
+        &mut self,
+        context: &egui::Context,
+        catalog: Option<&LocalizationCatalog>,
+    ) -> bool {
         let Some(pending) = self.pending_close else {
             return false;
         };
         let mut approved = false;
-        egui::Window::new("Unsaved expanded settings")
-            .collapsible(false)
-            .resizable(false)
-            .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
-            .show(context, |ui| {
-                ui.label("Discard unsaved expanded-settings changes?");
-                ui.horizontal(|ui| {
-                    if ui.button("Cancel").clicked() {
-                        self.pending_close = None;
-                    }
-                    if ui.button("Discard").clicked() {
-                        self.clear();
-                        approved = pending == PendingClose::Application;
-                    }
-                });
+        egui::Window::new(text(
+            catalog,
+            ExtendedUiTextKey::ExpandedSettingsUnsavedTitle,
+        ))
+        .collapsible(false)
+        .resizable(false)
+        .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+        .show(context, |ui| {
+            ui.label(text(
+                catalog,
+                ExtendedUiTextKey::ExpandedSettingsDiscardQuestion,
+            ));
+            ui.horizontal(|ui| {
+                if ui
+                    .button(text(catalog, ExtendedUiTextKey::RomExpandedSettingsCancel))
+                    .clicked()
+                {
+                    self.pending_close = None;
+                }
+                if ui
+                    .button(text(catalog, ExtendedUiTextKey::RomExpandedSettingsDiscard))
+                    .clicked()
+                {
+                    self.clear();
+                    approved = pending == PendingClose::Application;
+                }
             });
+        });
         approved
     }
 
-    fn show_error(&mut self, context: &egui::Context) {
+    fn show_error(&mut self, context: &egui::Context, catalog: Option<&LocalizationCatalog>) {
         if let Some(error) = self.error.clone() {
-            egui::Window::new("Expanded-settings editor error")
+            egui::Window::new(text(catalog, ExtendedUiTextKey::ExpandedSettingsErrorTitle))
                 .collapsible(false)
                 .resizable(false)
                 .show(context, |ui| {
                     ui.label(error);
-                    if ui.button("OK").clicked() {
+                    if ui
+                        .button(text(catalog, ExtendedUiTextKey::RomExpandedSettingsOk))
+                        .clicked()
+                    {
                         self.error = None;
                     }
                 });
@@ -333,10 +428,33 @@ impl ExpandedSettingsEditor {
     }
 }
 
+fn text(catalog: Option<&LocalizationCatalog>, key: ExtendedUiTextKey) -> String {
+    crate::frontend_ui::extended_localized_text(catalog, key)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use lm_level::{ExpandedLevelHeader, ExpandedLevelSettingsRecord, SuperGraphicsBypass};
+
+    #[test]
+    fn complete_document_expanded_settings_surface_uses_every_typed_key() {
+        let source = include_str!("expanded_settings_editor.rs");
+        for key in ExtendedUiTextKey::ALL
+            .into_iter()
+            .filter(|key| format!("{key:?}").starts_with("ExpandedSettings"))
+        {
+            assert!(source.contains(&format!("ExtendedUiTextKey::{key:?}")));
+        }
+        for bypass in [
+            "egui::Window::new(\"Expanded Settings Editor\")",
+            "ui.button(\"Apply Layer 3 settings\")",
+            "egui::Button::new(\"Save\")",
+            "egui::Window::new(\"Unsaved expanded settings\")",
+        ] {
+            assert!(!source.contains(bypass));
+        }
+    }
 
     #[test]
     fn standalone_semantic_controls_share_history_and_save_exact_state() {

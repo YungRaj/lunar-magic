@@ -52,7 +52,10 @@ impl NativeApplication {
         if self.mwl_editor.show(context) {
             self.request_quit(context);
         }
-        if self.expanded_settings_editor.show(context) {
+        if self
+            .expanded_settings_editor
+            .show(context, self.app.localization())
+        {
             self.request_quit(context);
         }
         if self.custom_object_editor.show(context) {
