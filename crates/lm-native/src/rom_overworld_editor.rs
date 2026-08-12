@@ -1237,7 +1237,7 @@ impl RomOverworldEditor {
         };
         let mut runtime_command = None;
         let edit = match self.panel {
-            Panel::Records => self.records.show(ui, &file, controller_revision),
+            Panel::Records => self.records.show(ui, &file, controller_revision, catalog),
             Panel::Palette => {
                 let edit = self.palette.show(
                     ui,

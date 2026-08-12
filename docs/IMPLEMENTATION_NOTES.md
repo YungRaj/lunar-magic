@@ -7988,3 +7988,13 @@ requires every family identity, and explicitly permits only the two-space color-
 layout data. Native compilation, the focused audit, localization 28/28 active cases (one provenance
 ignore), and renderer 237/237 pass. Other unaudited frontend modules and the retained translated
 language-DLL gesture keep Localization Partial; aggregate parity remains 60/65.
+
+Localization coverage update (2026-08-12, overworld record panels): thirty-seven appended
+`OverworldRecords*` identities cover all four shared tabs plus event-reveal editing and seam-aware
+bulk relocation, endpoints, message tile/clipboard editing, sprite fields/extension bytes and
+clipboard editing, every fixed-shape empty state, and all field/prefix/action guidance. The live
+catalog reaches the shared panel from both portable and installed overworld editors. A complete
+surface audit rejects literal button, label, small-text, slider, and prefix captions and requires
+every family identity. Native compilation, the focused audit, localization 28/28 active cases (one
+provenance ignore), and renderer 237/237 pass. Other unaudited frontend modules and the retained
+translated language-DLL gesture keep Localization Partial; aggregate parity remains 60/65.

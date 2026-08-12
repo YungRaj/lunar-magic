@@ -121,7 +121,9 @@ impl OverworldEditor {
             document.controller.value().data.palette.colors.len(),
         );
         let result = match self.panel {
-            Panel::Records => self.records.show(ui, document.controller.value(), revision),
+            Panel::Records => self
+                .records
+                .show(ui, document.controller.value(), revision, catalog),
             Panel::Palette => self.palette.show(
                 ui,
                 &document.controller.value().data.palette,
