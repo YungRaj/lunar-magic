@@ -2200,6 +2200,27 @@ impl eframe::App for NativeApplication {
                         )
                         .map_err(|error| error.to_string());
                 }
+                if staged_editors == 2
+                    && secondary_exit_recovery_revision.is_some()
+                    && metadata_recovery_revision.is_some()
+                {
+                    let mut staged = self
+                        .app
+                        .project()
+                        .ok_or("open a supported ROM first")?
+                        .clone();
+                    self.rom_secondary_exit_editor
+                        .stage_recovery_on_project(&self.app, &mut staged)?;
+                    self.rom_lunar_magic_metadata_editor
+                        .stage_recovery_on_project(&self.app, &mut staged)?;
+                    return self
+                        .app
+                        .recovery_snapshot_with_current_rom(
+                            staged.save_snapshot(),
+                            self.app.current_level(),
+                        )
+                        .map_err(|error| error.to_string());
+                }
                 let staged_graphics_family = usize::from(graphics_recovery_revision.is_some())
                     + usize::from(exanimation_recovery_revision.is_some())
                     + usize::from(expanded_settings_recovery_revision.is_some());

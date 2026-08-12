@@ -21,6 +21,26 @@ pub(crate) struct RomLunarMagicMetadataEditor {
 }
 
 impl RomLunarMagicMetadataEditor {
+    pub(crate) fn stage_recovery_on_project(
+        &self,
+        app: &AppState,
+        staged: &mut lm_project::Project,
+    ) -> Result<(), String> {
+        let workspace = self
+            .workspace
+            .as_ref()
+            .ok_or("Lunar Magic metadata workspace is closed")?;
+        if workspace.is_stale(app.project_revision()) {
+            return Err("stale Lunar Magic metadata workspace cannot be recovered".into());
+        }
+        if !workspace.is_dirty() {
+            return Err("Lunar Magic metadata workspace has no staged recovery edit".into());
+        }
+        lm_app::save_lunar_magic_rom_metadata_to_project(staged, workspace.metadata())
+            .map(|_| ())
+            .map_err(|error| error.to_string())
+    }
+
     pub(crate) fn staged_recovery_generation(&self, app: &AppState) -> Option<u64> {
         let workspace = self.workspace.as_ref()?;
         if !workspace.is_dirty() {
@@ -57,8 +77,7 @@ impl RomLunarMagicMetadataEditor {
             return Ok(app.recovery_snapshot());
         }
         let mut staged = app.project().ok_or("open a supported ROM first")?.clone();
-        lm_app::save_lunar_magic_rom_metadata_to_project(&mut staged, workspace.metadata())
-            .map_err(|error| error.to_string())?;
+        self.stage_recovery_on_project(app, &mut staged)?;
         app.recovery_snapshot_with_current_rom(staged.save_snapshot(), app.current_level())
             .map_err(|error| error.to_string())
     }

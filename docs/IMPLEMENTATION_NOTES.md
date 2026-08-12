@@ -6718,6 +6718,14 @@ reopen, checksum repair, growth retention, and live-project isolation. Native co
 both controllers on the same clone, forces allocation beyond the original image, reopens both exact
 semantic results, validates the final checksum, and proves the live application bytes never change.
 
+Secondary exits and fixed Lunar Magic metadata form another non-overlapping recovery family. Their
+native adapters now expose semantic save-to-project operations, and the coordinator installs or
+updates the complete exit table before applying attribution, VRAM-version, and feature-record bytes
+on the evolved clone. `secondary_exits_and_metadata_share_one_recovery_project` exercises a retained
+Lunar Magic 3.63 ROM, the final exit-table entry, all three metadata regions, exact semantic reopen,
+checksum validity, and unchanged live bytes/history. Native compilation and all 237 renderer tests
+pass.
+
 ## Complete overworld palette and ExAnimation variant persistence
 
 `interactive_overworld_edits_match_every_supported_identity_and_layout_variant` now exercises the

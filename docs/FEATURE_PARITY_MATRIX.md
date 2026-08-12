@@ -630,6 +630,15 @@ order, both reopen exactly after growth, the final checksum is valid, and the li
 byte-identical. All 237 renderer tests remain green. Other
 unlisted simultaneous staged-editor families remain explicitly rejected.
 
+Crash-recovery evidence update (2026-08-11, secondary exits plus LM metadata): the global 8,192
+entry secondary-exit editor and authenticated fixed Lunar Magic metadata editor now stage
+sequentially on one recovery clone. Secondary-exit first-time installation or installed-table
+replacement completes before attribution, VRAM-version, and feature-record publication; both routes
+semantically reopen before the recovery record is accepted. `secondary_exits_and_metadata_share_`
+`one_recovery_project` uses a retained Lunar Magic 3.63 modified ROM, changes the final exit entry
+plus all three metadata regions, reopens both exact results, validates the checksum, and proves the
+live project and its history remain untouched. Native compilation and all 237 renderer tests pass.
+
 The Patches/runtime row additionally routes authenticated SMW-US SA-1 sources through the recovered
 SA-1 expanded-settings hook and runtime family instead of rejecting their mapper. The native
 `InstallSettings` command preserves its revision gate and installs the owned allocation as one

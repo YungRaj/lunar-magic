@@ -86,6 +86,65 @@ pub fn save_native_secondary_exits_to_project(
 }
 
 #[cfg(test)]
+mod recovery_composition_tests {
+    use super::*;
+    use crate::save_lunar_magic_rom_metadata_to_project;
+    use lm_profile::{smw_us_v1_lunar_magic_metadata_layout, smw_us_v1_secondary_exit_locator};
+    use lm_rom::{LunarMagicRomMetadata, RomImage};
+    use std::{fs, path::PathBuf};
+
+    #[test]
+    fn secondary_exits_and_metadata_share_one_recovery_project() {
+        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let bytes =
+            fs::read(root.join("oracle-work/lm363/pristine-us/level-save-000/after.smc")).unwrap();
+        let live = Project::open_supported(RomImage::from_bytes(bytes).unwrap()).unwrap();
+        let baseline = live.save_snapshot();
+        let mut table = live
+            .load_secondary_exit_table_detected(smw_us_v1_secondary_exit_locator())
+            .unwrap()
+            .table;
+        table.entries[0x1fff].destination_level = 0x105;
+        table.entries[0x1fff].screen = 0x1f;
+        let layout = smw_us_v1_lunar_magic_metadata_layout();
+        let source_metadata = live.load_lunar_magic_rom_metadata(layout).unwrap().unwrap();
+        let mut attribution = *source_metadata.attribution();
+        attribution[0x9f] ^= 0x5a;
+        let mut feature = *source_metadata.feature_record();
+        feature[0x17] ^= 0x5a;
+        let metadata = LunarMagicRomMetadata::from_parts(
+            &attribution,
+            source_metadata.vram_version().wrapping_add(1),
+            &feature,
+        )
+        .unwrap();
+
+        let mut staged = live.clone();
+        save_native_secondary_exits_to_project(&mut staged, &table).unwrap();
+        save_lunar_magic_rom_metadata_to_project(&mut staged, &metadata).unwrap();
+
+        assert_eq!(
+            staged
+                .load_secondary_exit_table_detected(smw_us_v1_secondary_exit_locator())
+                .unwrap()
+                .table,
+            table
+        );
+        assert_eq!(
+            staged.load_lunar_magic_rom_metadata(layout).unwrap(),
+            Some(metadata)
+        );
+        assert_eq!(live.save_snapshot(), baseline);
+        assert_eq!(live.history.undo_len(), 0);
+        let logical = staged.rom.logical_bytes();
+        assert_eq!(
+            lm_rom::SnesChecksum::decode(logical, 0x7fdc).unwrap(),
+            lm_rom::compute_snes_checksum(logical, 0x7fdc).unwrap()
+        );
+    }
+}
+
+#[cfg(test)]
 mod tests {
     use super::*;
     use crate::Command;

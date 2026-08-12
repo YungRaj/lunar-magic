@@ -28,6 +28,34 @@ pub(crate) struct RomSecondaryExitEditor {
 }
 
 impl RomSecondaryExitEditor {
+    pub(crate) fn stage_recovery_on_project(
+        &self,
+        app: &AppState,
+        staged: &mut lm_project::Project,
+    ) -> Result<(), String> {
+        let workspace = self
+            .workspace
+            .as_ref()
+            .ok_or("secondary-exit workspace is closed")?;
+        if workspace.revision != app.project_revision() {
+            return Err("stale secondary-exit workspace cannot be recovered".into());
+        }
+        if workspace.table == workspace.original {
+            return Err("secondary-exit workspace has no staged recovery edit".into());
+        }
+        lm_app::save_native_secondary_exits_to_project(staged, &workspace.table)
+            .map_err(|error| error.to_string())?;
+        if staged
+            .load_secondary_exit_table_detected(smw_us_v1_secondary_exit_locator())
+            .map_err(|error| error.to_string())?
+            .table
+            != workspace.table
+        {
+            return Err("recovered secondary-exit table did not reopen exactly".into());
+        }
+        Ok(())
+    }
+
     pub(crate) fn staged_recovery_generation(&self, app: &AppState) -> Option<u64> {
         let workspace = self.workspace.as_ref()?;
         (workspace.table != workspace.original).then(|| {
@@ -73,16 +101,7 @@ impl RomSecondaryExitEditor {
             return Ok(app.recovery_snapshot());
         }
         let mut staged = app.project().ok_or("open a supported ROM first")?.clone();
-        lm_app::save_native_secondary_exits_to_project(&mut staged, &workspace.table)
-            .map_err(|error| error.to_string())?;
-        if staged
-            .load_secondary_exit_table_detected(smw_us_v1_secondary_exit_locator())
-            .map_err(|error| error.to_string())?
-            .table
-            != workspace.table
-        {
-            return Err("recovered secondary-exit table did not reopen exactly".into());
-        }
+        self.stage_recovery_on_project(app, &mut staged)?;
         app.recovery_snapshot_with_current_rom(staged.save_snapshot(), app.current_level())
             .map_err(|error| error.to_string())
     }
