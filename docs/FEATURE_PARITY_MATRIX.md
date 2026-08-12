@@ -2278,3 +2278,12 @@ Speed routing, and source-boundary tests pass 4/4; localization model tests pass
 remains 237/237. Historical compression runtime generations still keep Graphics Partial; other
 native forms and retained live language-DLL evidence keep Localization Partial; aggregate parity
 remains 60/65.
+
+Localization coverage update (2026-08-12, keyboard shortcuts): eight typed extension keys now
+cover the window guidance, portable-primary explanation, row removal, creation, apply, clear-all,
+and cancel actions. All twelve action choices now share their existing typed File/Edit/View keys
+with the active catalog instead of a parallel English table. Canonical portable gesture tokens,
+modifier names, key names, and `+` framing remain untranslated persistence syntax. Focused parser,
+ordering, duplicate-rejection, typed-action, and source-boundary tests pass 5/5; localization model
+tests pass and renderer remains 237/237. Other native forms and retained live language-DLL
+evidence keep Localization Partial; aggregate parity remains 60/65.

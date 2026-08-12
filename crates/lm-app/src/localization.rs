@@ -1927,6 +1927,14 @@ pub enum ExtendedUiTextKey {
     GraphicsMigrationEnd,
     GraphicsMigrationErrorTitle,
     GraphicsMigrationOk,
+    ShortcutEditorTitle,
+    ShortcutEditorGestureNotice,
+    ShortcutEditorPrimaryNotice,
+    ShortcutEditorRemove,
+    ShortcutEditorAdd,
+    ShortcutEditorApply,
+    ShortcutEditorClearAll,
+    ShortcutEditorCancel,
     CustomSpriteEditorTitle,
     CustomSpritePlacementsFormat,
     CustomSpritePlacement,
@@ -2996,7 +3004,7 @@ pub enum ExtendedUiTextKey {
 }
 
 impl ExtendedUiTextKey {
-    pub const ALL: [Self; 1292] = [
+    pub const ALL: [Self; 1300] = [
         Self::MwlDocumentEditorTitle,
         Self::MwlDocumentVersionFormat,
         Self::MwlDocumentFlagsHex,
@@ -3223,6 +3231,14 @@ impl ExtendedUiTextKey {
         Self::GraphicsMigrationEnd,
         Self::GraphicsMigrationErrorTitle,
         Self::GraphicsMigrationOk,
+        Self::ShortcutEditorTitle,
+        Self::ShortcutEditorGestureNotice,
+        Self::ShortcutEditorPrimaryNotice,
+        Self::ShortcutEditorRemove,
+        Self::ShortcutEditorAdd,
+        Self::ShortcutEditorApply,
+        Self::ShortcutEditorClearAll,
+        Self::ShortcutEditorCancel,
         Self::CustomSpriteEditorTitle,
         Self::CustomSpritePlacementsFormat,
         Self::CustomSpritePlacement,
@@ -4550,6 +4566,18 @@ impl ExtendedUiTextKey {
             Self::GraphicsMigrationEnd => "End",
             Self::GraphicsMigrationErrorTitle => "Graphics migration error",
             Self::GraphicsMigrationOk => "OK",
+            Self::ShortcutEditorTitle => "Keyboard Shortcuts",
+            Self::ShortcutEditorGestureNotice => {
+                "Use portable gestures such as primary+s, primary+shift+s, alt+f4, or escape."
+            }
+            Self::ShortcutEditorPrimaryNotice => {
+                "Primary means Command on macOS and Ctrl on other platforms."
+            }
+            Self::ShortcutEditorRemove => "Remove",
+            Self::ShortcutEditorAdd => "Add shortcut",
+            Self::ShortcutEditorApply => "Apply",
+            Self::ShortcutEditorClearAll => "Clear All",
+            Self::ShortcutEditorCancel => "Cancel",
             Self::CustomSpriteEditorTitle => "Custom Sprite Placement Editor",
             Self::CustomSpritePlacementsFormat => "Synchronized placements: {count}",
             Self::CustomSpritePlacement => "Placement",

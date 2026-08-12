@@ -1,22 +1,23 @@
 use eframe::egui;
 use lm_app::{
-    ShortcutBinding, ShortcutConfig, ShortcutGesture, ShortcutKey, ShortcutModifiers, ToolbarAction,
+    ExtendedUiTextKey as Key, LocalizationCatalog, ShortcutBinding, ShortcutConfig,
+    ShortcutGesture, ShortcutKey, ShortcutModifiers, ToolbarAction, UiTextKey,
 };
 use std::collections::BTreeSet;
 
-const ACTIONS: [(ToolbarAction, &str); 12] = [
-    (ToolbarAction::Open, "Open"),
-    (ToolbarAction::Save, "Save"),
-    (ToolbarAction::SaveAs, "Save As"),
-    (ToolbarAction::Undo, "Undo"),
-    (ToolbarAction::Redo, "Redo"),
-    (ToolbarAction::Copy, "Copy"),
-    (ToolbarAction::Cut, "Cut"),
-    (ToolbarAction::Paste, "Paste"),
-    (ToolbarAction::ShowOverworld, "Show Overworld"),
-    (ToolbarAction::ShowMap16, "Show Map16"),
-    (ToolbarAction::LevelBack, "Previous Level"),
-    (ToolbarAction::LevelForward, "Next Level"),
+const ACTIONS: [(ToolbarAction, UiTextKey); 12] = [
+    (ToolbarAction::Open, UiTextKey::FileOpen),
+    (ToolbarAction::Save, UiTextKey::FileSave),
+    (ToolbarAction::SaveAs, UiTextKey::FileSaveAs),
+    (ToolbarAction::Undo, UiTextKey::EditUndo),
+    (ToolbarAction::Redo, UiTextKey::EditRedo),
+    (ToolbarAction::Copy, UiTextKey::EditCopy),
+    (ToolbarAction::Cut, UiTextKey::EditCut),
+    (ToolbarAction::Paste, UiTextKey::EditPaste),
+    (ToolbarAction::ShowOverworld, UiTextKey::ViewOverworld),
+    (ToolbarAction::ShowMap16, UiTextKey::ViewMap16),
+    (ToolbarAction::LevelBack, UiTextKey::ViewLevel),
+    (ToolbarAction::LevelForward, UiTextKey::ViewLevel),
 ];
 
 #[derive(Clone)]
@@ -50,22 +51,24 @@ impl ShortcutEditor {
         self.open
     }
 
-    pub(crate) fn show(&mut self, context: &egui::Context) -> Option<ShortcutConfig> {
+    pub(crate) fn show(
+        &mut self,
+        context: &egui::Context,
+        catalog: Option<&LocalizationCatalog>,
+    ) -> Option<ShortcutConfig> {
         if !self.open {
             return None;
         }
         let mut result = None;
         let mut open = self.open;
-        egui::Window::new("Keyboard Shortcuts")
+        egui::Window::new(text(catalog, Key::ShortcutEditorTitle))
             .open(&mut open)
             .collapsible(false)
             .resizable(true)
             .default_width(520.0)
             .show(context, |ui| {
-                ui.label(
-                    "Use portable gestures such as primary+s, primary+shift+s, alt+f4, or escape.",
-                );
-                ui.label("Primary means Command on macOS and Ctrl on other platforms.");
+                ui.label(text(catalog, Key::ShortcutEditorGestureNotice));
+                ui.label(text(catalog, Key::ShortcutEditorPrimaryNotice));
                 ui.separator();
 
                 let mut remove = None;
@@ -79,14 +82,21 @@ impl ShortcutEditor {
                                     egui::TextEdit::singleline(&mut binding.gesture),
                                 );
                                 egui::ComboBox::from_id_salt(("shortcut-action", index))
-                                    .selected_text(action_label(binding.action))
+                                    .selected_text(action_label(catalog, binding.action))
                                     .width(165.0)
                                     .show_ui(ui, |ui| {
-                                        for (action, label) in ACTIONS {
-                                            ui.selectable_value(&mut binding.action, action, label);
+                                        for (action, key) in ACTIONS {
+                                            ui.selectable_value(
+                                                &mut binding.action,
+                                                action,
+                                                localized_ui_text(catalog, key),
+                                            );
                                         }
                                     });
-                                if ui.small_button("Remove").clicked() {
+                                if ui
+                                    .small_button(text(catalog, Key::ShortcutEditorRemove))
+                                    .clicked()
+                                {
                                     remove = Some(index);
                                 }
                             });
@@ -95,7 +105,7 @@ impl ShortcutEditor {
                 if let Some(index) = remove {
                     self.bindings.remove(index);
                 }
-                if ui.button("Add shortcut").clicked() {
+                if ui.button(text(catalog, Key::ShortcutEditorAdd)).clicked() {
                     self.bindings.push(BindingForm {
                         gesture: String::new(),
                         action: ToolbarAction::Open,
@@ -106,7 +116,7 @@ impl ShortcutEditor {
                 }
                 ui.separator();
                 ui.horizontal(|ui| {
-                    if ui.button("Apply").clicked() {
+                    if ui.button(text(catalog, Key::ShortcutEditorApply)).clicked() {
                         match build_config(&self.bindings) {
                             Ok(config) => {
                                 result = Some(config);
@@ -116,11 +126,17 @@ impl ShortcutEditor {
                             Err(error) => self.error = Some(error),
                         }
                     }
-                    if ui.button("Clear All").clicked() {
+                    if ui
+                        .button(text(catalog, Key::ShortcutEditorClearAll))
+                        .clicked()
+                    {
                         self.bindings.clear();
                         self.error = None;
                     }
-                    if ui.button("Cancel").clicked() {
+                    if ui
+                        .button(text(catalog, Key::ShortcutEditorCancel))
+                        .clicked()
+                    {
                         self.open = false;
                     }
                 });
@@ -284,11 +300,29 @@ fn format_gesture(gesture: ShortcutGesture) -> String {
     parts.join("+")
 }
 
-fn action_label(action: ToolbarAction) -> &'static str {
+fn action_key(action: ToolbarAction) -> UiTextKey {
     ACTIONS
         .iter()
-        .find_map(|(candidate, label)| (*candidate == action).then_some(*label))
+        .find_map(|(candidate, key)| (*candidate == action).then_some(*key))
         .expect("every toolbar action has a shortcut-editor label")
+}
+
+fn action_label(catalog: Option<&LocalizationCatalog>, action: ToolbarAction) -> String {
+    localized_ui_text(catalog, action_key(action))
+}
+
+fn localized_ui_text(catalog: Option<&LocalizationCatalog>, key: UiTextKey) -> String {
+    catalog.map_or_else(
+        || key.english().to_owned(),
+        |catalog| catalog.text(key).to_owned(),
+    )
+}
+
+fn text(catalog: Option<&LocalizationCatalog>, key: Key) -> String {
+    catalog.map_or_else(
+        || key.english().to_owned(),
+        |catalog| catalog.extended_text(key).to_owned(),
+    )
 }
 
 #[cfg(test)]
@@ -365,9 +399,27 @@ mod tests {
     }
 
     #[test]
-    fn every_action_has_a_stable_label() {
+    fn every_action_has_a_stable_typed_label() {
         for (action, expected) in ACTIONS {
-            assert_eq!(action_label(action), expected);
+            assert_eq!(action_key(action), expected);
+            assert_eq!(action_label(None, action), expected.english());
         }
+    }
+
+    #[test]
+    fn complete_shortcut_editor_surface_has_no_literal_widget_text() {
+        let source = include_str!("shortcut_editor.rs");
+        for literal in [
+            "egui::Window::new(\"",
+            "ui.button(\"",
+            "ui.label(\"",
+            "ui.small_button(\"",
+        ] {
+            assert!(
+                !source.contains(literal),
+                "literal shortcut widget text: {literal}"
+            );
+        }
+        assert!(source.contains("catalog.text(key)"));
     }
 }

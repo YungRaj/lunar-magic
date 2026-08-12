@@ -1838,7 +1838,7 @@ impl eframe::App for NativeApplication {
                 Err(error) => self.effects.error = Some(error),
             }
         }
-        if let Some(shortcuts) = self.shortcut_editor.show(context) {
+        if let Some(shortcuts) = self.shortcut_editor.show(context, self.app.localization()) {
             match self.app.set_shortcuts(shortcuts) {
                 Ok(()) => self.app.status = "Updated keyboard shortcuts".into(),
                 Err(error) => self.effects.error = Some(error.to_string()),
