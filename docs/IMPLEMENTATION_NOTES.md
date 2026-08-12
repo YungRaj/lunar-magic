@@ -7100,6 +7100,15 @@ ignore), native compilation passes, and renderer remains 237/237. Vanilla-level 
 shared progress windows, and retained live language-DLL evidence keep Localization Partial;
 aggregate parity remains 60/65.
 
+Localization coverage update (2026-08-12, vanilla sprite mutation actions): six additional
+`VanillaLevel*` identities, together with the shared insert and move identities, cover sprite-header
+staging, insertion, raw replacement, semantic-field application, removal, stream ordering,
+record copying, and record paste. The live catalog threaded through the sprite editor reaches every
+mutation control without changing enablement, token classification, clipboard encoding, or edit
+semantics. A bounded source audit rejects the former fixed-English action controls. Focused native
+and localization tests pass, and renderer remains 237/237. Remaining sprite field labels and other
+vanilla/native forms keep Localization Partial; aggregate parity remains 60/65.
+
 Localization coverage update (2026-08-12, native overworld appearance controls): thirty-nine
 additional `OverworldAppearance*` identities cover native-pair save and dynamic record summary,
 sprite selection, tooltip enablement/text behavior, graphics and palette range tables, display

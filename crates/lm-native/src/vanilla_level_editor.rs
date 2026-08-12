@@ -10174,7 +10174,7 @@ impl VanillaLevelEditor {
         self.sprite_catalog_preview_area(ui, custom_sprites, external_assets, custom_map16);
         self.sprite_form_controls(ui);
         sprite_save_constraint(ui, self.controller.as_ref());
-        self.sprite_editor_actions(ui, token_count);
+        self.sprite_editor_actions(ui, catalog, token_count);
         if self.paste_target == Some(EntityPasteTarget::Sprite)
             && let Some(text) = pasted_text(ui)
         {
@@ -10183,9 +10183,19 @@ impl VanillaLevelEditor {
         }
     }
 
-    fn sprite_editor_actions(&mut self, ui: &mut egui::Ui, token_count: usize) {
+    fn sprite_editor_actions(
+        &mut self,
+        ui: &mut egui::Ui,
+        catalog: Option<&LocalizationCatalog>,
+        token_count: usize,
+    ) {
         ui.horizontal_wrapped(|ui| {
-            if ui.button("Stage sprite header").clicked()
+            if ui
+                .button(vanilla_text(
+                    catalog,
+                    ExtendedUiTextKey::VanillaLevelStageSpriteHeader,
+                ))
+                .clicked()
                 && let Some(controller) = self.controller.as_mut()
             {
                 let result = self.sprite_form.semantic_header().and_then(|header| {
@@ -10205,13 +10215,22 @@ impl VanillaLevelEditor {
                     Err(error) => self.error = Some(error),
                 }
             }
-            if ui.button("Insert after selection").clicked() {
+            if ui
+                .button(vanilla_text(
+                    catalog,
+                    ExtendedUiTextKey::VanillaLevelInsertAfterSelection,
+                ))
+                .clicked()
+            {
                 self.insert_sprite(token_count);
             }
             if ui
                 .add_enabled(
                     self.selected_sprite < token_count,
-                    egui::Button::new("Replace record"),
+                    egui::Button::new(vanilla_text(
+                        catalog,
+                        ExtendedUiTextKey::VanillaLevelReplaceRecord,
+                    )),
                 )
                 .clicked()
             {
@@ -10227,7 +10246,10 @@ impl VanillaLevelEditor {
             if ui
                 .add_enabled(
                     self.selected_sprite < token_count && self.sprite_form.semantic_record,
-                    egui::Button::new("Apply sprite fields"),
+                    egui::Button::new(vanilla_text(
+                        catalog,
+                        ExtendedUiTextKey::VanillaLevelApplySpriteFields,
+                    )),
                 )
                 .clicked()
             {
@@ -10236,7 +10258,10 @@ impl VanillaLevelEditor {
             if ui
                 .add_enabled(
                     self.selected_sprite < token_count,
-                    egui::Button::new("Remove sprite"),
+                    egui::Button::new(vanilla_text(
+                        catalog,
+                        ExtendedUiTextKey::VanillaLevelRemoveSprite,
+                    )),
                 )
                 .clicked()
                 && let Some(controller) = self.controller.as_mut()
@@ -10256,7 +10281,7 @@ impl VanillaLevelEditor {
                     Err(error) => self.error = Some(error.to_string()),
                 }
             }
-            self.sprite_move_buttons(ui, token_count);
+            self.sprite_move_buttons(ui, catalog, token_count);
             let selected_record = self
                 .controller
                 .as_ref()
@@ -10266,7 +10291,13 @@ impl VanillaLevelEditor {
                     SpriteToken::Screen(_) | SpriteToken::Control(_) => None,
                 });
             if ui
-                .add_enabled(selected_record.is_some(), egui::Button::new("Copy record"))
+                .add_enabled(
+                    selected_record.is_some(),
+                    egui::Button::new(vanilla_text(
+                        catalog,
+                        ExtendedUiTextKey::VanillaLevelCopyRecord,
+                    )),
+                )
                 .clicked()
                 && let Some(record) = selected_record
             {
@@ -10275,7 +10306,13 @@ impl VanillaLevelEditor {
                     Err(error) => self.error = Some(error),
                 }
             }
-            if ui.button("Paste record after selection").clicked() {
+            if ui
+                .button(vanilla_text(
+                    catalog,
+                    ExtendedUiTextKey::VanillaLevelPasteRecordAfterSelection,
+                ))
+                .clicked()
+            {
                 self.paste_target = Some(EntityPasteTarget::Sprite);
                 ui.ctx()
                     .send_viewport_cmd(egui::ViewportCommand::RequestPaste);
@@ -11136,9 +11173,17 @@ impl VanillaLevelEditor {
         }
     }
 
-    fn sprite_move_buttons(&mut self, ui: &mut egui::Ui, token_count: usize) {
+    fn sprite_move_buttons(
+        &mut self,
+        ui: &mut egui::Ui,
+        catalog: Option<&LocalizationCatalog>,
+        token_count: usize,
+    ) {
         if ui
-            .add_enabled(self.selected_sprite > 0, egui::Button::new("Move up"))
+            .add_enabled(
+                self.selected_sprite > 0,
+                egui::Button::new(vanilla_text(catalog, ExtendedUiTextKey::VanillaLevelMoveUp)),
+            )
             .clicked()
         {
             self.move_sprite(token_count, false);
@@ -11146,7 +11191,10 @@ impl VanillaLevelEditor {
         if ui
             .add_enabled(
                 self.selected_sprite.saturating_add(1) < token_count,
-                egui::Button::new("Move down"),
+                egui::Button::new(vanilla_text(
+                    catalog,
+                    ExtendedUiTextKey::VanillaLevelMoveDown,
+                )),
             )
             .clicked()
         {
@@ -17142,6 +17190,27 @@ mod tests {
             assert!(
                 !sprite_catalogs.contains(literal),
                 "fixed-English sprite-catalog control: {literal}"
+            );
+        }
+        let sprite_actions = source
+            .split("    fn sprite_editor_actions(")
+            .nth(1)
+            .unwrap()
+            .split("    fn sprite_catalog(")
+            .next()
+            .unwrap();
+        for literal in [
+            "button(\"Stage sprite header\")",
+            "button(\"Insert after selection\")",
+            "Button::new(\"Replace record\")",
+            "Button::new(\"Apply sprite fields\")",
+            "Button::new(\"Remove sprite\")",
+            "Button::new(\"Copy record\")",
+            "button(\"Paste record after selection\")",
+        ] {
+            assert!(
+                !sprite_actions.contains(literal),
+                "fixed-English sprite mutation action: {literal}"
             );
         }
         let modeless_editors = source

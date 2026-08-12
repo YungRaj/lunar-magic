@@ -3949,10 +3949,16 @@ pub enum ExtendedUiTextKey {
     VanillaLevelChooseStandardSprite,
     VanillaLevelStandardSprite,
     VanillaLevelAddCustomSprites,
+    VanillaLevelStageSpriteHeader,
+    VanillaLevelReplaceRecord,
+    VanillaLevelApplySpriteFields,
+    VanillaLevelRemoveSprite,
+    VanillaLevelCopyRecord,
+    VanillaLevelPasteRecordAfterSelection,
 }
 
 impl ExtendedUiTextKey {
-    pub const ALL: [Self; 2248] = [
+    pub const ALL: [Self; 2254] = [
         Self::MwlDocumentEditorTitle,
         Self::MwlDocumentVersionFormat,
         Self::MwlDocumentFlagsHex,
@@ -6201,6 +6207,12 @@ impl ExtendedUiTextKey {
         Self::VanillaLevelChooseStandardSprite,
         Self::VanillaLevelStandardSprite,
         Self::VanillaLevelAddCustomSprites,
+        Self::VanillaLevelStageSpriteHeader,
+        Self::VanillaLevelReplaceRecord,
+        Self::VanillaLevelApplySpriteFields,
+        Self::VanillaLevelRemoveSprite,
+        Self::VanillaLevelCopyRecord,
+        Self::VanillaLevelPasteRecordAfterSelection,
     ];
 
     #[must_use]
@@ -9118,6 +9130,12 @@ impl ExtendedUiTextKey {
             }
             Self::VanillaLevelStandardSprite => "Standard sprite",
             Self::VanillaLevelAddCustomSprites => "Add custom enemies and sprites",
+            Self::VanillaLevelStageSpriteHeader => "Stage sprite header",
+            Self::VanillaLevelReplaceRecord => "Replace record",
+            Self::VanillaLevelApplySpriteFields => "Apply sprite fields",
+            Self::VanillaLevelRemoveSprite => "Remove sprite",
+            Self::VanillaLevelCopyRecord => "Copy record",
+            Self::VanillaLevelPasteRecordAfterSelection => "Paste record after selection",
         }
     }
 

@@ -1310,6 +1310,12 @@ manifest. Launcher 2/2, updater 11/11, packager 3/3, and renderer 237/237 pass. 
 consent and retained cross-platform release execution remain missing, so Release stays Partial and
 aggregate parity remains 60/65.
 
+Localization coverage update (2026-08-12, vanilla sprite mutation actions): six new typed keys plus
+shared insert/move keys cover header staging, insert, raw/semantic replacement, removal, ordering,
+copy, and paste. A bounded source audit rejects the former literal controls; focused native,
+localization 28/28 active tests (one provenance ignore), and renderer 237/237 pass. Remaining
+vanilla/native surfaces keep Localization Partial, so aggregate parity remains 60/65.
+
 Localization coverage update (2026-08-12, lossless DSC sidecar): eighteen typed extension keys
 cover the complete binary-preserving source/diagnostic form with the live catalog routed from the
 application host. Exact BOM, mixed-line-ending, malformed, and non-UTF-8 preservation remains
