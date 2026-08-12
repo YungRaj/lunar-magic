@@ -5012,6 +5012,21 @@ function at PE address `$004B2440`; it is not the expanded level-ExAnimation run
 LoROM payload. Mapper-conditioned targets append `$20` bytes from `$005B5754`, but pristine
 SMW-US LoROM takes neither that suffix nor any IRAM conversion branch.
 
+Live Ghidra revalidation on 2026-08-12 recovered the mapper branch at instruction level. The
+optional-runtime predicate is exactly
+`(DAT_00E278FC && DAT_00E27901) || (DAT_00E278FD && DAT_00E27903)`, and changes the allocation from
+`$C20` to `$C40`. The appended `$20` bytes are the same authenticated mapping helper used by the
+expanded level-ExAnimation installer. For the SA-1 branch, eight runtime words at `+$76B`, `+$774`,
+`+$78F`, `+$7A7`, `+$824`, `+$894`, `+$8E3`, and `+$8F4` must each be at most `$1FFF` before Lunar
+Magic adds `$6000`; the compact value at `+$7D1` must be at most `$FF` before it adds `$3000`.
+ExLoROM routes those same nine sites through `PatchExLoRomRelocationValue` (`$00441F30`) instead.
+After those conversions, the suffix-present branch passes the mapped allocation address of core
+`+$C20` to `StoreMappedRelocationScalar` (`$00441AD0`). Instruction-level stream tracing proves its
+destination is core `+$8F6`: the immediately preceding conversion seeks to `+$8F4`, reads and writes
+one word, and leaves the stream positioned at `+$8F6`. Rust now models this exact SA-1 `$C40`
+payload and canonical 24-bit suffix pointer while retaining an explicit fail-closed ExLoROM branch
+until the replacement semantics of `PatchExLoRomRelocationValue` are independently authenticated.
+
 The ordinary path allocates three independent RATS owners in order: the `$C20` runtime, a
 `$15`-byte auxiliary initialized with `$FF` at every third byte, and the seven zeroed option
 bytes. It installs JSL hooks at logical `$020086` and `$0024E3`, redirects the operand at

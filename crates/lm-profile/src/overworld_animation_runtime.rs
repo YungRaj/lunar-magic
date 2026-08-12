@@ -8,6 +8,7 @@ use std::fmt;
 use crate::SMW_US_V1_CHECKSUM_FIELD;
 
 pub const SMW_US_V1_OVERWORLD_ANIMATION_RUNTIME_LEN: usize = 0xc20;
+pub const SMW_US_V1_OVERWORLD_ANIMATION_MAPPER_RUNTIME_LEN: usize = 0xc40;
 pub const SMW_US_V1_OVERWORLD_ANIMATION_AUXILIARY_LEN: usize = 0x15;
 pub const SMW_US_V1_OVERWORLD_ANIMATION_OPTIONS_LEN: usize = 7;
 pub const SMW_US_V1_OVERWORLD_ANIMATION_SEARCH_START: usize = 0x0008_0000;
@@ -24,11 +25,20 @@ const FIXED_HELPER: usize = 0x0000_360c;
 
 const LOCAL_WORD_TABLE_OFFSET: usize = 0xb3b;
 const LOCAL_WORD_TABLE_ENTRIES: usize = 108;
+const SA1_IRAM_WORD_OFFSETS: [usize; 8] = [0x76b, 0x774, 0x78f, 0x7a7, 0x824, 0x894, 0x8e3, 0x8f4];
+const SA1_IRAM_BYTE_OFFSET: usize = 0x7d1;
+const MAPPER_SUFFIX_POINTER_OFFSET: usize = 0x8f6;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum SmwUsV1OverworldAnimationRuntimeError {
     InvalidBase64,
     WrongTemplateLength(usize),
+    WrongMapperTemplateLength(usize),
+    MapperIramWordOutOfRange {
+        offset: usize,
+        value: u16,
+    },
+    MapperSuffix(crate::ExpandedExAnimationRuntimeError),
     FixedAddress,
     LocalWordBelowRuntime {
         index: usize,
@@ -160,12 +170,73 @@ fn write_fixed_low(
     Ok(())
 }
 
+fn pointer_encoding(mapper: Mapper) -> PatchFixupEncoding {
+    if mapper == Mapper::LoRom {
+        PatchFixupEncoding::Long24LowBank
+    } else {
+        PatchFixupEncoding::Long24
+    }
+}
+
+fn relocate_sa1_iram(bytes: &mut [u8]) -> Result<(), SmwUsV1OverworldAnimationRuntimeError> {
+    if bytes.len() != SMW_US_V1_OVERWORLD_ANIMATION_RUNTIME_LEN {
+        return Err(SmwUsV1OverworldAnimationRuntimeError::WrongMapperTemplateLength(bytes.len()));
+    }
+    for offset in SA1_IRAM_WORD_OFFSETS {
+        let value = u16::from_le_bytes([bytes[offset], bytes[offset + 1]]);
+        if value > 0x1fff {
+            return Err(
+                SmwUsV1OverworldAnimationRuntimeError::MapperIramWordOutOfRange { offset, value },
+            );
+        }
+    }
+    let byte = bytes[SA1_IRAM_BYTE_OFFSET];
+    for offset in SA1_IRAM_WORD_OFFSETS {
+        let value = u16::from_le_bytes([bytes[offset], bytes[offset + 1]]) + 0x6000;
+        bytes[offset..offset + 2].copy_from_slice(&value.to_le_bytes());
+    }
+    let relocated = u16::from(byte) + 0x3000;
+    bytes[SA1_IRAM_BYTE_OFFSET..SA1_IRAM_BYTE_OFFSET + 2].copy_from_slice(&relocated.to_le_bytes());
+    Ok(())
+}
+
 fn runtime_payload() -> Result<PatchPayload, SmwUsV1OverworldAnimationRuntimeError> {
+    runtime_payload_for_mapper(Mapper::LoRom, false)
+}
+
+/// Builds the exact mapper-conditioned overworld-animation payload recovered from
+/// `InstallExAnimationRomPatch` (`$004B2440`). SA-1 applies the eight word and one compact-byte
+/// IRAM conversions before appending the shared `$20` compatibility suffix. ExLoROM's distinct
+/// conversion helper remains rejected until its replacement values are independently authenticated.
+pub fn smw_us_v1_overworld_animation_runtime_payload_for_mapper(
+    mapper: Mapper,
+    mapper_runtime: bool,
+) -> Result<PatchPayload, SmwUsV1OverworldAnimationRuntimeError> {
+    runtime_payload_for_mapper(mapper, mapper_runtime)
+}
+
+fn runtime_payload_for_mapper(
+    mapper: Mapper,
+    mapper_runtime: bool,
+) -> Result<PatchPayload, SmwUsV1OverworldAnimationRuntimeError> {
     let mut bytes = smw_us_v1_overworld_animation_runtime_template()?;
 
     // Ordinary LoROM selects mapping byte zero and skips every mapper-only IRAM conversion.
     bytes[0x58] = 0;
     bytes[0x61..0x63].copy_from_slice(&0_u16.to_le_bytes());
+    if mapper_runtime {
+        match mapper {
+            Mapper::Sa1 => relocate_sa1_iram(&mut bytes)?,
+            Mapper::ExLoRom => {
+                return Err(SmwUsV1OverworldAnimationRuntimeError::FixedAddress);
+            }
+            Mapper::LoRom => {}
+        }
+        bytes.extend(
+            crate::expanded_exanimation_runtime_optional_suffix()
+                .map_err(SmwUsV1OverworldAnimationRuntimeError::MapperSuffix)?,
+        );
+    }
 
     for (offset, target) in [
         (0xb1, FIXED_OW_TABLE),
@@ -189,7 +260,7 @@ fn runtime_payload() -> Result<PatchPayload, SmwUsV1OverworldAnimationRuntimeErr
         write_fixed_low(&mut bytes, offset, target)?;
     }
 
-    let long = PatchFixupEncoding::Long24LowBank;
+    let long = pointer_encoding(mapper);
     let low = PatchFixupEncoding::Low16;
     let mut fixups = vec![
         PatchFixup {
@@ -360,6 +431,14 @@ fn runtime_payload() -> Result<PatchPayload, SmwUsV1OverworldAnimationRuntimeErr
             target_payload: 0,
             target_addend: 0x500 + relative,
             encoding: low,
+        });
+    }
+    if mapper_runtime {
+        fixups.push(PatchFixup {
+            offset: MAPPER_SUFFIX_POINTER_OFFSET,
+            target_payload: 0,
+            target_addend: SMW_US_V1_OVERWORLD_ANIMATION_RUNTIME_LEN,
+            encoding: long,
         });
     }
     Ok(PatchPayload { bytes, fixups })
@@ -652,6 +731,53 @@ mod tests {
             format!("{:x}", Sha256::digest(&bytes)),
             "e4a615bc2d0cb5306bc719b1f3527a40cb61458522cd4c485437a7c12bd7ff02"
         );
+    }
+
+    #[test]
+    fn sa1_mapper_payload_applies_every_recovered_iram_conversion_and_suffix_pointer() {
+        let ordinary = smw_us_v1_overworld_animation_runtime_template().unwrap();
+        let payload =
+            smw_us_v1_overworld_animation_runtime_payload_for_mapper(Mapper::Sa1, true).unwrap();
+        assert_eq!(
+            payload.bytes.len(),
+            SMW_US_V1_OVERWORLD_ANIMATION_MAPPER_RUNTIME_LEN
+        );
+        for offset in SA1_IRAM_WORD_OFFSETS {
+            let before = u16::from_le_bytes([ordinary[offset], ordinary[offset + 1]]);
+            let after = u16::from_le_bytes([payload.bytes[offset], payload.bytes[offset + 1]]);
+            assert_eq!(after, before + 0x6000, "IRAM word at +{offset:#x}");
+        }
+        assert_eq!(
+            u16::from_le_bytes([
+                payload.bytes[SA1_IRAM_BYTE_OFFSET],
+                payload.bytes[SA1_IRAM_BYTE_OFFSET + 1],
+            ]),
+            u16::from(ordinary[SA1_IRAM_BYTE_OFFSET]) + 0x3000
+        );
+        assert_eq!(
+            &payload.bytes[SMW_US_V1_OVERWORLD_ANIMATION_RUNTIME_LEN..],
+            crate::expanded_exanimation_runtime_optional_suffix()
+                .unwrap()
+                .as_slice()
+        );
+        assert!(payload.fixups.iter().any(|fixup| {
+            fixup.offset == MAPPER_SUFFIX_POINTER_OFFSET
+                && fixup.target_payload == 0
+                && fixup.target_addend == SMW_US_V1_OVERWORLD_ANIMATION_RUNTIME_LEN
+                && fixup.encoding == PatchFixupEncoding::Long24
+        }));
+    }
+
+    #[test]
+    fn mapper_payload_keeps_lorom_ordinary_and_rejects_unauthenticated_exlorom_conversion() {
+        assert_eq!(
+            smw_us_v1_overworld_animation_runtime_payload_for_mapper(Mapper::LoRom, false).unwrap(),
+            runtime_payload().unwrap()
+        );
+        assert!(matches!(
+            smw_us_v1_overworld_animation_runtime_payload_for_mapper(Mapper::ExLoRom, true),
+            Err(SmwUsV1OverworldAnimationRuntimeError::FixedAddress)
+        ));
     }
 
     #[test]
