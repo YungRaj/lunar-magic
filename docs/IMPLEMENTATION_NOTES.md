@@ -6788,3 +6788,15 @@ line from shifting labels onto unrelated calculated values. Unicode catalog pers
 fallback tests cover that boundary; addresses, counts, detected version, and conflict-log results
 remain untranslated runtime data. Localization remains `Partial` pending the remaining forms and
 retained live third-party language-DLL/Wine evidence.
+
+## Original multiple-level deletion template
+
+The native multiple-level deletion workflow now consumes Lunar Magic 3.63 resource `$042C` for
+its title, level-selection group label, modified/unmodified/all radio captions, clear-original-data
+option, TEST-level replacement warning, and OK/Cancel controls. Dynamic category counts remain
+runtime values appended to the translated captions, while the separate Rust clear-only entry point
+retains its purpose-specific typed-catalog wording rather than misapplying the original deletion
+form. Canonical Unicode catalog encode/decode and fallback tests cover the template boundary; exact
+sorted selection, clear-area eligibility, revision binding, Undo, and deletion persistence are
+unchanged. Localization remains `Partial` pending remaining mapped forms and retained live
+third-party language-DLL/Wine evidence.

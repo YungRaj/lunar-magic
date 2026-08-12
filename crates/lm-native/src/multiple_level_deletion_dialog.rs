@@ -1,5 +1,7 @@
 use eframe::egui;
-use lm_app::{AppState, Command, LevelDeletionPartition, UiTextKey};
+use lm_app::{AppState, Command, LevelDeletionPartition, LocalizationCatalog, UiTextKey};
+
+const ORIGINAL_DIALOG_ID: u16 = 0x042c;
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 enum DeletionMode {
@@ -95,7 +97,10 @@ impl MultipleLevelDeletionDialog {
         let title = if self.clear_only {
             localize(UiTextKey::FileClearOriginalLevelArea)
         } else {
-            localize(UiTextKey::DeleteMultipleLevelsWindowTitle)
+            original_dialog_title(
+                app.localization(),
+                localize(UiTextKey::DeleteMultipleLevelsWindowTitle),
+            )
         };
         egui::Window::new(title)
             .collapsible(false)
@@ -105,14 +110,22 @@ impl MultipleLevelDeletionDialog {
                 if self.clear_only {
                     ui.label(localize(UiTextKey::ClearOriginalLevelAreaDescription));
                 } else {
-                    ui.label(localize(UiTextKey::DeleteMultipleLevelsDescription));
+                    ui.label(original_dialog_text(
+                        app.localization(),
+                        0x65,
+                        localize(UiTextKey::DeleteMultipleLevelsDescription),
+                    ));
                     ui.separator();
                     ui.radio_value(
                         &mut self.mode,
                         DeletionMode::Modified,
                         format!(
                             "{} ({})",
-                            localize(UiTextKey::DeleteMultipleLevelsModified),
+                            original_dialog_text(
+                                app.localization(),
+                                0x294,
+                                localize(UiTextKey::DeleteMultipleLevelsModified),
+                            ),
                             counts.0
                         ),
                     );
@@ -121,7 +134,11 @@ impl MultipleLevelDeletionDialog {
                         DeletionMode::Unmodified,
                         format!(
                             "{} ({})",
-                            localize(UiTextKey::DeleteMultipleLevelsUnmodified),
+                            original_dialog_text(
+                                app.localization(),
+                                0x295,
+                                localize(UiTextKey::DeleteMultipleLevelsUnmodified),
+                            ),
                             counts.1
                         ),
                     );
@@ -130,7 +147,11 @@ impl MultipleLevelDeletionDialog {
                         DeletionMode::All,
                         format!(
                             "{} ({})",
-                            localize(UiTextKey::DeleteMultipleLevelsAll),
+                            original_dialog_text(
+                                app.localization(),
+                                0x296,
+                                localize(UiTextKey::DeleteMultipleLevelsAll),
+                            ),
                             counts.2
                         ),
                     );
@@ -141,20 +162,32 @@ impl MultipleLevelDeletionDialog {
                     ui.add_enabled_ui(can_clear, |ui| {
                         ui.checkbox(
                             &mut self.clear_original_level_area,
-                            localize(UiTextKey::DeleteMultipleLevelsClearOriginal),
+                            original_dialog_text(
+                                app.localization(),
+                                0x66,
+                                localize(UiTextKey::DeleteMultipleLevelsClearOriginal),
+                            ),
                         );
                     });
                 }
                 ui.separator();
                 if !self.clear_only {
-                    ui.label(localize(UiTextKey::DeleteMultipleLevelsDependencyWarning));
+                    ui.label(original_dialog_text(
+                        app.localization(),
+                        0x69,
+                        localize(UiTextKey::DeleteMultipleLevelsDependencyWarning),
+                    ));
                 }
                 let selected = self.selected_levels();
                 ui.horizontal(|ui| {
                     if ui
                         .add_enabled(
                             !selected.is_empty(),
-                            egui::Button::new(localize(UiTextKey::CommonDelete)),
+                            egui::Button::new(original_dialog_text(
+                                app.localization(),
+                                1,
+                                localize(UiTextKey::CommonDelete),
+                            )),
                         )
                         .clicked()
                     {
@@ -167,7 +200,18 @@ impl MultipleLevelDeletionDialog {
                             levels: selected,
                         });
                     }
-                    if ui.button(localize(UiTextKey::CommonCancel)).clicked() {
+                    if ui
+                        .button(if self.clear_only {
+                            localize(UiTextKey::CommonCancel)
+                        } else {
+                            original_dialog_text(
+                                app.localization(),
+                                2,
+                                localize(UiTextKey::CommonCancel),
+                            )
+                        })
+                        .clicked()
+                    {
                         self.open = false;
                     }
                 });
@@ -179,9 +223,28 @@ impl MultipleLevelDeletionDialog {
     }
 }
 
+fn original_dialog_title(catalog: Option<&LocalizationCatalog>, fallback: String) -> String {
+    catalog
+        .and_then(|catalog| catalog.original_dialog_title(ORIGINAL_DIALOG_ID))
+        .map(str::to_owned)
+        .unwrap_or(fallback)
+}
+
+fn original_dialog_text(
+    catalog: Option<&LocalizationCatalog>,
+    control_id: u32,
+    fallback: String,
+) -> String {
+    catalog
+        .and_then(|catalog| catalog.original_dialog_control_text(ORIGINAL_DIALOG_ID, control_id))
+        .map(str::to_owned)
+        .unwrap_or(fallback)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use lm_app::OriginalDialogTextKey;
 
     #[test]
     fn category_selection_is_exact_sorted_and_clear_is_never_attached_to_modified_only() {
@@ -200,5 +263,65 @@ mod tests {
         assert_eq!(dialog.selected_levels(), vec![1, 0x100]);
         dialog.mode = DeletionMode::All;
         assert_eq!(dialog.selected_levels(), vec![0, 1, 0x100, 0x101]);
+    }
+
+    #[test]
+    fn original_multiple_deletion_template_localizes_every_matching_caption_and_round_trips() {
+        let catalog = LocalizationCatalog::new(
+            "fr-test",
+            UiTextKey::ALL.map(|key| (key, key.english().to_owned())),
+        )
+        .unwrap()
+        .with_original_dialog_texts([
+            (
+                OriginalDialogTextKey {
+                    dialog_id: ORIGINAL_DIALOG_ID,
+                    item_index: u16::MAX,
+                    control_id: u32::MAX,
+                },
+                "Supprimer plusieurs niveaux".into(),
+            ),
+            (
+                OriginalDialogTextKey {
+                    dialog_id: ORIGINAL_DIALOG_ID,
+                    item_index: 1,
+                    control_id: 0x294,
+                },
+                "Supprimer les niveaux modifiés".into(),
+            ),
+            (
+                OriginalDialogTextKey {
+                    dialog_id: ORIGINAL_DIALOG_ID,
+                    item_index: 2,
+                    control_id: 1,
+                },
+                "Valider".into(),
+            ),
+        ])
+        .unwrap();
+
+        assert_eq!(
+            original_dialog_title(Some(&catalog), "fallback".into()),
+            "Supprimer plusieurs niveaux"
+        );
+        assert_eq!(
+            original_dialog_text(Some(&catalog), 0x294, "fallback".into()),
+            "Supprimer les niveaux modifiés"
+        );
+        assert_eq!(
+            original_dialog_text(Some(&catalog), 1, "Delete".into()),
+            "Valider"
+        );
+        assert_eq!(
+            original_dialog_text(Some(&catalog), 2, "Cancel".into()),
+            "Cancel"
+        );
+        assert_eq!(original_dialog_title(None, "fallback".into()), "fallback");
+
+        let reopened = LocalizationCatalog::decode(&catalog.encode().unwrap()).unwrap();
+        assert_eq!(
+            original_dialog_title(Some(&reopened), "fallback".into()),
+            "Supprimer plusieurs niveaux"
+        );
     }
 }
