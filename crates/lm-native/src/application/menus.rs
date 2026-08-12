@@ -625,6 +625,39 @@ impl NativeApplication {
             if ui.checkbox(&mut save_prompt, save_prompt_label).changed() {
                 self.save_prompt = Some(save_prompt);
             }
+            let mut joined_graphics_files = self.joined_graphics_files;
+            let joined_graphics_files_label =
+                self.original_general_option_text(0x22a4, "Use Joined GFX Files");
+            if ui
+                .checkbox(&mut joined_graphics_files, joined_graphics_files_label)
+                .changed()
+            {
+                self.joined_graphics_files = joined_graphics_files;
+            }
+            let mut gfx_bypass_list_dialogs = self.gfx_bypass_list_dialogs.unwrap_or(true);
+            let gfx_bypass_list_dialogs_label =
+                self.original_general_option_text(0x2297, "Standard GFX Bypass Dialogs");
+            if ui
+                .checkbox(&mut gfx_bypass_list_dialogs, gfx_bypass_list_dialogs_label)
+                .changed()
+            {
+                self.set_gfx_bypass_list_dialogs(gfx_bypass_list_dialogs);
+            }
+            let mut prioritize_allocations_past_2mb =
+                self.prioritize_allocations_past_2mb.unwrap_or(true);
+            let prioritize_allocations_past_2mb_label =
+                self.original_general_option_text(0x22a6, "Prefer Saving in 2MB+ ROM Area");
+            if ui
+                .checkbox(
+                    &mut prioritize_allocations_past_2mb,
+                    prioritize_allocations_past_2mb_label,
+                )
+                .changed()
+            {
+                self.prioritize_allocations_past_2mb = Some(prioritize_allocations_past_2mb);
+                self.app
+                    .set_prioritize_allocations_past_2mb(prioritize_allocations_past_2mb);
+            }
             let mut scan_exits = self.scan_exits_on_save.unwrap_or(true);
             let scan_exits_label =
                 self.original_general_option_text(0x22a9, "Scan Exits on Save to ROM");

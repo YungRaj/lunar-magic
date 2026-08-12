@@ -6863,3 +6863,7 @@ Tools options surface instead of being reachable only from a customized toolbar:
 to ROM `$22A7`, and Save Prompt `$22A8`. Each uses its original `$041F` catalog control label and
 updates the same live application/editor state as the corresponding toolbar command. The dependent
 auto-save control is unavailable while mouse gestures are disabled, matching the option hierarchy.
+The same surface now exposes the remaining three directly implemented ROM-editing choices recovered
+from that dialog: Standard GFX Bypass Dialogs `$2297`, Use Joined GFX Files `$22A4`, and Prefer
+Saving in 2MB+ ROM Area `$22A6`. They update the canonical persisted state consumed respectively by
+the legacy bypass editors, every standard-GFX batch route, and the ROM allocator.
