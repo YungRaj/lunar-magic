@@ -6824,3 +6824,14 @@ controls and independent fallbacks; the draft remains isolated until OK, Cancel 
 and applying a filter continues to mutate only the selected tile edit buffer before an eligible
 paste publishes backing graphics. Localization remains `Partial` pending remaining mapped forms and
 retained live third-party language-DLL/Wine evidence.
+
+## Original tile-editor setup identity and template
+
+Imported Lunar Magic tile-editor profiles and newly created native profiles now retain a stable
+tile-editor identity instead of falling through to the SNES-emulator form. The configuration editor
+uses resource `$0409` for the matching title, executable-path and argument labels, OK, and Cancel;
+new profiles default to the private `{graphics}` placeholder used by the staged graphics round trip.
+Identity survives the existing `LMTOOLS1` encode/decode boundary, and Unicode template tests cover
+resource selection and fallback. The original palette-file replacement and transparent-blue flags
+are not fabricated as command-line arguments because that would alter process behavior; their
+lossless model/launch integration remains an explicit open Localization/Configuration sub-gate.

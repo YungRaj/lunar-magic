@@ -4,6 +4,7 @@ use std::path::PathBuf;
 
 const ORIGINAL_SNES_EMULATOR_DIALOG_ID: u16 = 0x0407;
 const ORIGINAL_GBA_EMULATOR_DIALOG_ID: u16 = 0x0408;
+const ORIGINAL_TILE_EDITOR_DIALOG_ID: u16 = 0x0409;
 
 #[derive(Clone, Debug, Default)]
 struct ToolDraft {
@@ -54,8 +55,20 @@ impl ToolDraft {
         }
     }
 
+    fn tile_editor(index: usize) -> Self {
+        Self {
+            id: format!("tile-editor-{}", index + 1),
+            name: "Tile Editor".into(),
+            arguments: "{graphics}".into(),
+            ..Self::default()
+        }
+    }
+
     fn original_dialog_id(&self) -> u16 {
-        if self.id.trim().to_ascii_lowercase().starts_with("gba-") {
+        let id = self.id.trim().to_ascii_lowercase();
+        if id.contains("tile-editor") {
+            ORIGINAL_TILE_EDITOR_DIALOG_ID
+        } else if id.starts_with("gba-") {
             ORIGINAL_GBA_EMULATOR_DIALOG_ID
         } else {
             ORIGINAL_SNES_EMULATOR_DIALOG_ID
@@ -157,6 +170,10 @@ impl ExternalToolConfigEditor {
                                 .push(ToolDraft::gba_emulator(self.drafts.len()));
                             self.selected = self.drafts.len() - 1;
                         }
+                        if ui.button("Add tile editor").clicked() {
+                            self.drafts.push(ToolDraft::tile_editor(self.drafts.len()));
+                            self.selected = self.drafts.len() - 1;
+                        }
                         if ui
                             .add_enabled(!self.drafts.is_empty(), egui::Button::new("Remove"))
                             .clicked()
@@ -239,10 +256,10 @@ pub(crate) fn menu_text(catalog: Option<&LocalizationCatalog>) -> String {
 fn dialog_title(catalog: Option<&LocalizationCatalog>, dialog_id: u16) -> String {
     catalog
         .and_then(|catalog| catalog.original_dialog_title(dialog_id))
-        .unwrap_or(if dialog_id == ORIGINAL_GBA_EMULATOR_DIALOG_ID {
-            "Setup GBA Emulator…"
-        } else {
-            "Setup SNES Emulator…"
+        .unwrap_or(match dialog_id {
+            ORIGINAL_GBA_EMULATOR_DIALOG_ID => "Setup GBA Emulator…",
+            ORIGINAL_TILE_EDITOR_DIALOG_ID => "Setup Tile Editor…",
+            _ => "Setup SNES Emulator…",
         })
         .to_owned()
 }
@@ -346,6 +363,83 @@ mod tests {
         );
         assert_eq!(tool.id, "gba-emulator-3");
         assert_eq!(tool.arguments, ["{rom}"]);
+    }
+
+    #[test]
+    fn tile_editor_profiles_persist_identity_and_select_original_dialog_0409() {
+        let draft = ToolDraft::tile_editor(1);
+        let tool = draft.build();
+        let reopened = ToolDraft::from_tool(&tool);
+        assert_eq!(
+            reopened.original_dialog_id(),
+            ORIGINAL_TILE_EDITOR_DIALOG_ID
+        );
+        assert_eq!(
+            dialog_title(None, reopened.original_dialog_id()),
+            "Setup Tile Editor…"
+        );
+        assert_eq!(tool.id, "tile-editor-2");
+        assert_eq!(tool.arguments, ["{graphics}"]);
+    }
+
+    #[test]
+    fn original_tile_editor_template_localizes_path_arguments_and_actions() {
+        let catalog = LocalizationCatalog::new(
+            "fr-FR",
+            UiTextKey::ALL.map(|key| (key, key.english().into())),
+        )
+        .unwrap()
+        .with_original_dialog_texts([
+            (
+                OriginalDialogTextKey {
+                    dialog_id: ORIGINAL_TILE_EDITOR_DIALOG_ID,
+                    item_index: u16::MAX,
+                    control_id: u32::MAX,
+                },
+                "Configurer l’éditeur de tuiles".into(),
+            ),
+            (
+                OriginalDialogTextKey {
+                    dialog_id: ORIGINAL_TILE_EDITOR_DIALOG_ID,
+                    item_index: 1,
+                    control_id: 0x66,
+                },
+                "Chemin de l’éditeur :".into(),
+            ),
+            (
+                OriginalDialogTextKey {
+                    dialog_id: ORIGINAL_TILE_EDITOR_DIALOG_ID,
+                    item_index: 2,
+                    control_id: 1,
+                },
+                "Valider".into(),
+            ),
+        ])
+        .unwrap();
+
+        assert_eq!(
+            dialog_title(Some(&catalog), ORIGINAL_TILE_EDITOR_DIALOG_ID),
+            "Configurer l’éditeur de tuiles"
+        );
+        assert_eq!(
+            dialog_control_text(
+                Some(&catalog),
+                ORIGINAL_TILE_EDITOR_DIALOG_ID,
+                0x66,
+                "Executable path"
+            ),
+            "Chemin de l’éditeur :"
+        );
+        assert_eq!(
+            dialog_control_text(Some(&catalog), ORIGINAL_TILE_EDITOR_DIALOG_ID, 1, "Apply"),
+            "Valider"
+        );
+
+        let reopened = LocalizationCatalog::decode(&catalog.encode().unwrap()).unwrap();
+        assert_eq!(
+            dialog_title(Some(&reopened), ORIGINAL_TILE_EDITOR_DIALOG_ID),
+            "Configurer l’éditeur de tuiles"
+        );
     }
 
     #[test]
