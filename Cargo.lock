@@ -1935,6 +1935,7 @@ name = "lm-package"
 version = "0.1.0"
 dependencies = [
  "flate2",
+ "lm-update",
  "tempfile",
 ]
 
@@ -2000,6 +2001,13 @@ name = "lm-title"
 version = "0.1.0"
 dependencies = [
  "flate2",
+]
+
+[[package]]
+name = "lm-update"
+version = "0.1.0"
+dependencies = [
+ "sha2",
 ]
 
 [[package]]

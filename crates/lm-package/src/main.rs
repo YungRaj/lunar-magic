@@ -24,6 +24,7 @@ fn run(arguments: impl IntoIterator<Item = std::ffi::OsString>) -> Result<(), Pa
     let result = package(&options)?;
     println!("{}", result.archive.display());
     println!("{}", result.checksum.display());
+    println!("{}", result.update_manifest.display());
     Ok(())
 }
 
@@ -131,6 +132,7 @@ fn validate_component(label: &str, value: &str) -> Result<(), PackageError> {
 struct PackageResult {
     archive: PathBuf,
     checksum: PathBuf,
+    update_manifest: PathBuf,
 }
 
 fn package(options: &Options) -> Result<PackageResult, PackageError> {
@@ -194,16 +196,35 @@ fn package(options: &Options) -> Result<PackageResult, PackageError> {
     let archive_name = format!("{bundle_name}.tar.gz");
     let checksum_name = format!("{archive_name}.sha256");
     let checksum_bytes = format!("{}  {archive_name}\n", hex_sha256(&archive_bytes)).into_bytes();
+    let update_name = format!("{archive_name}.update");
+    let update_bytes = format!(
+        "LMUPDATE1\nversion {}\ntarget {}\narchive {archive_name}\nlength {}\nsha256 {}\n",
+        options.version,
+        options.target,
+        archive_bytes.len(),
+        hex_sha256(&archive_bytes)
+    )
+    .into_bytes();
 
     fs::create_dir_all(&options.output_dir).map_err(PackageError::Io)?;
     let archive = options.output_dir.join(&archive_name);
     let checksum = options.output_dir.join(&checksum_name);
+    let update_manifest = options.output_dir.join(&update_name);
     create_new(&archive, &archive_bytes)?;
     if let Err(error) = create_new(&checksum, &checksum_bytes) {
         let _cleanup = fs::remove_file(&archive);
         return Err(error);
     }
-    Ok(PackageResult { archive, checksum })
+    if let Err(error) = create_new(&update_manifest, &update_bytes) {
+        let _archive_cleanup = fs::remove_file(&archive);
+        let _checksum_cleanup = fs::remove_file(&checksum);
+        return Err(error);
+    }
+    Ok(PackageResult {
+        archive,
+        checksum,
+        update_manifest,
+    })
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -493,6 +514,19 @@ mod tests {
             fs::read(&first.checksum).unwrap(),
             fs::read(&second.checksum).unwrap()
         );
+        assert_eq!(
+            fs::read(&first.update_manifest).unwrap(),
+            fs::read(&second.update_manifest).unwrap()
+        );
+        let update =
+            lm_update::UpdateManifest::decode(&fs::read(&first.update_manifest).unwrap()).unwrap();
+        update
+            .verify_archive(
+                "1.2.2".parse().unwrap(),
+                "x86_64-test-none",
+                &fs::read(&first.archive).unwrap(),
+            )
+            .unwrap();
         assert!(matches!(
             package(&options(root.path().join("first"))),
             Err(PackageError::Output { .. })
@@ -510,6 +544,24 @@ mod tests {
         assert_eq!(
             fs::read(checksum_path).unwrap(),
             b"retain existing checksum"
+        );
+        let update_collision_dir = root.path().join("update-collision");
+        fs::create_dir(&update_collision_dir).unwrap();
+        let update_path = update_collision_dir.join(format!("{archive_name}.update"));
+        fs::write(&update_path, b"retain existing update manifest").unwrap();
+        assert!(matches!(
+            package(&options(update_collision_dir.clone())),
+            Err(PackageError::Output { .. })
+        ));
+        assert!(!update_collision_dir.join(archive_name).exists());
+        assert!(
+            !update_collision_dir
+                .join(format!("{archive_name}.sha256"))
+                .exists()
+        );
+        assert_eq!(
+            fs::read(update_path).unwrap(),
+            b"retain existing update manifest"
         );
 
         let mut tar = Vec::new();

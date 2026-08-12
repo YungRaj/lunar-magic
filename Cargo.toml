@@ -16,6 +16,7 @@ members = [
     "crates/lm-snes",
     "crates/lm-title",
     "crates/lm-package",
+    "crates/lm-update",
     "crates/lm-windows",
     "crates/lm-libretro",
 ]

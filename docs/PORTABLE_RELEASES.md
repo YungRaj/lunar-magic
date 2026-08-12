@@ -10,8 +10,8 @@ maintains isolated local crash-recovery records for committed unsaved ROM change
 ## Bundle contents
 
 `lm-package` creates `lunar-magic-rust-VERSION-TARGET.tar.gz` and a neighboring
-`.tar.gz.sha256` checksum. The archive contains one top-level directory and these files in a stable
-order:
+`.tar.gz.sha256` checksum plus a canonical `.tar.gz.update` update manifest. The archive contains
+one top-level directory and these files in a stable order:
 
 - `lm-native`, `lm-cli`, and the isolated `lm-libretro` live-emulator backend (with `.exe` on Windows)
 - `README.md`
@@ -22,7 +22,10 @@ The release manifest records the version, target, byte length, and SHA-256 diges
 payload. Tar ownership, timestamps, modes, ordering, and gzip timestamps are normalized, so the
 same inputs and arguments produce byte-identical archives. Inputs must be bounded regular files.
 Publication uses create-new semantics and cleans up a newly created archive if its checksum cannot
-also be created; an existing output is never replaced.
+or update manifest cannot also be created; an existing output is never replaced. The bounded
+`LMUPDATE1` manifest binds the version, platform target, archive filename, exact byte length, and
+SHA-256 digest. Consumers reject non-newer versions, wrong targets, malformed components, length
+mismatches, and digest mismatches before offering an update.
 
 ## Build and verify locally
 

@@ -6982,3 +6982,14 @@ file with strict parsing, records GitHub artifact provenance, and creates the ta
 Release with all archives/checksums and generated notes. The three deterministic packager tests
 pass. A real tagged workflow run, installers, platform signing/notarization, and updates remain
 required before the Release row can pass; aggregate parity remains 60/65.
+
+Update-verification foundation (2026-08-11): the new safe-Rust `lm-update` trust core decodes a
+bounded canonical `LMUPDATE1` manifest and binds an offered version, target triple, portable archive
+name, exact length, and SHA-256 digest. It rejects malformed/oversized/ambiguous manifests,
+noncanonical versions, path-like components, wrong platforms, replay/downgrade offers, length
+mismatches, and digest mismatches. `lm-package` now derives this manifest directly from the final
+archive bytes and publishes archive, checksum, and update manifest with create-new semantics; a
+collision at either later file removes only newly created predecessors and preserves the existing
+target. Producer/consumer, malformed-input, mismatch, and atomic-collision tests pass 6/6. Network
+discovery, user consent, platform installation/relaunch, signing, and retained end-to-end update
+evidence remain incomplete; Release stays Partial and aggregate parity remains 60/65.

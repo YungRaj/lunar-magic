@@ -1174,6 +1174,14 @@ The deterministic packager gate remains 3/3. A retained successful tagged run is
 hosted proof, and installers, signing/notarization, and updates remain incomplete, so Release stays
 Partial and aggregate parity remains 60/65.
 
+Update-verification update (2026-08-11): a safe-Rust `LMUPDATE1` parser/verifier now enforces a
+16-KiB manifest bound, a 512-MiB archive bound, canonical numeric versions, strict newer-only
+selection, exact target matching, portable names, exact length, and SHA-256 integrity. The packager
+derives the update manifest from the final archive and publishes all three neighboring files with
+failure-atomic create-new behavior. Six producer/consumer and rejection gates pass. Network
+discovery, consent UI, platform replacement/relaunch, signing, and live end-to-end proof remain
+missing, so Release remains Partial and aggregate parity remains 60/65.
+
 Crash-recovery evidence update (2026-08-11, fixed-ROM family): palette, Map16, secondary-exit,
 and Lunar Magic metadata staging now accepts every complete two-, three-, or four-editor subset on
 one evolving project clone, superseding the former pair-only coordinator branches. Deterministic
