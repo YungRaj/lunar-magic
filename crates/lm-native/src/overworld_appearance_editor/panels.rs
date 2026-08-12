@@ -2,7 +2,7 @@ use super::form_fields::{part_value_fields, text_field};
 use super::{AppearancePasteMode, AppearancePasteTarget, OverworldAppearanceEditor};
 use crate::{native_clipboard, overworld_appearance_editor_forms::PartForm};
 use eframe::egui;
-use lm_app::{LocalizationCatalog, OverworldAppearanceDocumentEdit};
+use lm_app::{ExtendedUiTextKey as Key, LocalizationCatalog, OverworldAppearanceDocumentEdit};
 use lm_overworld::SpriteAppearanceDefinition;
 
 impl OverworldAppearanceEditor {
@@ -10,16 +10,23 @@ impl OverworldAppearanceEditor {
         &mut self,
         ui: &mut egui::Ui,
         definitions: &[SpriteAppearanceDefinition],
-        _catalog: Option<&LocalizationCatalog>,
+        catalog: Option<&LocalizationCatalog>,
     ) -> Option<Result<OverworldAppearanceDocumentEdit, String>> {
-        text_field(ui, "Sprite ID (hex)", &mut self.definition.sprite_id);
+        text_field(
+            ui,
+            &text(catalog, Key::OverworldAppearanceSpriteId),
+            &mut self.definition.sprite_id,
+        );
         let mut edit = None;
         ui.horizontal(|ui| {
             ui.add(
                 egui::DragValue::new(&mut self.definition.insert_index)
                     .range(0..=definitions.len()),
             );
-            if ui.button("Insert definition at index").clicked() {
+            if ui
+                .button(text(catalog, Key::OverworldAppearanceInsertDefinition))
+                .clicked()
+            {
                 edit = Some(self.definition.sprite_id().map(|sprite_id| {
                     OverworldAppearanceDocumentEdit::InsertDefinition {
                         index: self.definition.insert_index,
@@ -30,7 +37,7 @@ impl OverworldAppearanceEditor {
             if ui
                 .add_enabled(
                     !definitions.is_empty(),
-                    egui::Button::new("Remove selected definition"),
+                    egui::Button::new(text(catalog, Key::OverworldAppearanceRemoveDefinition)),
                 )
                 .clicked()
             {
@@ -44,11 +51,14 @@ impl OverworldAppearanceEditor {
                 egui::DragValue::new(&mut self.definition.move_before)
                     .range(0..=definitions.len().saturating_sub(1)),
             );
-            ui.checkbox(&mut self.definition.move_to_end, "Move to end");
+            ui.checkbox(
+                &mut self.definition.move_to_end,
+                text(catalog, Key::OverworldAppearanceMoveToEnd),
+            );
             if ui
                 .add_enabled(
                     definitions.len() > 1,
-                    egui::Button::new("Move selected definition"),
+                    egui::Button::new(text(catalog, Key::OverworldAppearanceMoveDefinition)),
                 )
                 .clicked()
             {
@@ -73,19 +83,22 @@ impl OverworldAppearanceEditor {
         ui: &mut egui::Ui,
         revision: u64,
         definition: &SpriteAppearanceDefinition,
-        _catalog: Option<&LocalizationCatalog>,
+        catalog: Option<&LocalizationCatalog>,
     ) -> Option<Result<OverworldAppearanceDocumentEdit, String>> {
-        ui.heading(format!(
-            "Tile parts for sprite {:04X}",
-            definition.sprite_id
-        ));
-        ui.label(format!("Painter-ordered parts: {}", definition.parts.len()));
+        ui.heading(
+            text(catalog, Key::OverworldAppearancePartsTitleFormat)
+                .replace("{sprite}", &format!("{:04X}", definition.sprite_id)),
+        );
+        ui.label(
+            text(catalog, Key::OverworldAppearancePartsCountFormat)
+                .replace("{count}", &definition.parts.len().to_string()),
+        );
         ui.add(
             egui::Slider::new(
                 &mut self.part_index,
                 0..=definition.parts.len().saturating_sub(1),
             )
-            .text("Part"),
+            .text(text(catalog, Key::OverworldAppearancePart)),
         );
         let key = (revision, definition.sprite_id, self.part_index);
         if self.part_key != Some(key) {
@@ -98,13 +111,13 @@ impl OverworldAppearanceEditor {
                 });
             self.part_key = Some(key);
         }
-        part_value_fields(ui, &mut self.part);
+        part_value_fields(ui, &mut self.part, catalog);
         let mut edit = None;
         ui.horizontal(|ui| {
             if ui
                 .add_enabled(
                     !definition.parts.is_empty(),
-                    egui::Button::new("Replace selected part"),
+                    egui::Button::new(text(catalog, Key::OverworldAppearanceReplacePart)),
                 )
                 .clicked()
             {
@@ -119,7 +132,7 @@ impl OverworldAppearanceEditor {
             if ui
                 .add_enabled(
                     !definition.parts.is_empty(),
-                    egui::Button::new("Remove selected part"),
+                    egui::Button::new(text(catalog, Key::OverworldAppearanceRemovePart)),
                 )
                 .clicked()
             {
@@ -132,7 +145,10 @@ impl OverworldAppearanceEditor {
         ui.horizontal(|ui| {
             let selected = definition.parts.get(self.part_index).copied();
             if ui
-                .add_enabled(selected.is_some(), egui::Button::new("Copy part"))
+                .add_enabled(
+                    selected.is_some(),
+                    egui::Button::new(text(catalog, Key::OverworldAppearanceCopyPart)),
+                )
                 .clicked()
                 && let Some(part) = selected
             {
@@ -142,7 +158,10 @@ impl OverworldAppearanceEditor {
                 }
             }
             if ui
-                .add_enabled(selected.is_some(), egui::Button::new("Paste over part"))
+                .add_enabled(
+                    selected.is_some(),
+                    egui::Button::new(text(catalog, Key::OverworldAppearancePasteOverPart)),
+                )
                 .clicked()
             {
                 self.clipboard_paste_target = Some(AppearancePasteTarget {
@@ -156,7 +175,10 @@ impl OverworldAppearanceEditor {
                     .send_viewport_cmd(egui::ViewportCommand::RequestPaste);
             }
             if ui
-                .add_enabled(selected.is_some(), egui::Button::new("Paste after part"))
+                .add_enabled(
+                    selected.is_some(),
+                    egui::Button::new(text(catalog, Key::OverworldAppearancePasteAfterPart)),
+                )
                 .clicked()
             {
                 self.clipboard_paste_target = Some(AppearancePasteTarget {
@@ -170,7 +192,10 @@ impl OverworldAppearanceEditor {
                     .send_viewport_cmd(egui::ViewportCommand::RequestPaste);
             }
             if ui
-                .add_enabled(selected.is_some(), egui::Button::new("Duplicate part"))
+                .add_enabled(
+                    selected.is_some(),
+                    egui::Button::new(text(catalog, Key::OverworldAppearanceDuplicatePart)),
+                )
                 .clicked()
                 && let Some(value) = selected
             {
@@ -186,7 +211,10 @@ impl OverworldAppearanceEditor {
         ui.horizontal_wrapped(|ui| {
             let has_parts = !definition.parts.is_empty();
             if ui
-                .add_enabled(has_parts, egui::Button::new("Copy composition"))
+                .add_enabled(
+                    has_parts,
+                    egui::Button::new(text(catalog, Key::OverworldAppearanceCopyComposition)),
+                )
                 .clicked()
             {
                 match native_clipboard::encode_overworld_appearance_parts(&definition.parts) {
@@ -196,10 +224,13 @@ impl OverworldAppearanceEditor {
             }
             for (label, mode) in [
                 (
-                    "Replace composition",
+                    text(catalog, Key::OverworldAppearanceReplaceComposition),
                     AppearancePasteMode::ReplaceComposition,
                 ),
-                ("Append composition", AppearancePasteMode::AppendComposition),
+                (
+                    text(catalog, Key::OverworldAppearanceAppendComposition),
+                    AppearancePasteMode::AppendComposition,
+                ),
             ] {
                 if ui.button(label).clicked() {
                     self.clipboard_paste_target = Some(AppearancePasteTarget {
@@ -211,7 +242,10 @@ impl OverworldAppearanceEditor {
                         .send_viewport_cmd(egui::ViewportCommand::RequestPaste);
                 }
             }
-            if ui.button("Paste as new definition").clicked() {
+            if ui
+                .button(text(catalog, Key::OverworldAppearancePasteNewDefinition))
+                .clicked()
+            {
                 match self.definition.sprite_id() {
                     Ok(sprite_id) => {
                         self.clipboard_paste_target = Some(AppearancePasteTarget {
@@ -233,11 +267,14 @@ impl OverworldAppearanceEditor {
                 egui::DragValue::new(&mut self.part.move_before)
                     .range(0..=definition.parts.len().saturating_sub(1)),
             );
-            ui.checkbox(&mut self.part.move_to_end, "Move to end");
+            ui.checkbox(
+                &mut self.part.move_to_end,
+                text(catalog, Key::OverworldAppearanceMoveToEnd),
+            );
             if ui
                 .add_enabled(
                     definition.parts.len() > 1,
-                    egui::Button::new("Move selected part"),
+                    egui::Button::new(text(catalog, Key::OverworldAppearanceMovePart)),
                 )
                 .clicked()
             {
@@ -256,7 +293,10 @@ impl OverworldAppearanceEditor {
             ui.add(
                 egui::DragValue::new(&mut self.part.insert_index).range(0..=definition.parts.len()),
             );
-            if ui.button("Insert part at index").clicked() {
+            if ui
+                .button(text(catalog, Key::OverworldAppearanceInsertPart))
+                .clicked()
+            {
                 edit = Some(self.part.parse().map(|value| {
                     OverworldAppearanceDocumentEdit::InsertPart {
                         sprite_id: definition.sprite_id,
@@ -268,4 +308,11 @@ impl OverworldAppearanceEditor {
         });
         edit
     }
+}
+
+fn text(catalog: Option<&LocalizationCatalog>, key: Key) -> String {
+    catalog.map_or_else(
+        || key.english().to_owned(),
+        |catalog| catalog.extended_text(key).to_owned(),
+    )
 }

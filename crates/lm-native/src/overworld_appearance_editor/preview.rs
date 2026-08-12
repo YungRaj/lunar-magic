@@ -1,6 +1,6 @@
 use super::OverworldAppearanceEditor;
 use eframe::egui;
-use lm_app::LocalizationCatalog;
+use lm_app::{ExtendedUiTextKey as Key, LocalizationCatalog};
 use lm_overworld::{SpriteAppearanceDefinition, SpriteAppearancePart};
 
 const TILE_SIDE: i32 = 8;
@@ -77,7 +77,7 @@ impl OverworldAppearanceEditor {
         ui: &mut egui::Ui,
         revision: u64,
         definition: &SpriteAppearanceDefinition,
-        _catalog: Option<&LocalizationCatalog>,
+        catalog: Option<&LocalizationCatalog>,
     ) -> Option<lm_app::OverworldAppearanceDocumentEdit> {
         if self
             .preview_drag
@@ -85,10 +85,8 @@ impl OverworldAppearanceEditor {
         {
             self.preview_drag = None;
         }
-        ui.heading("Composition preview");
-        ui.label(
-            "Click to select; arrows move one part, Alt+arrows move all parts. Shift uses eight pixels; X/Y flip; Page Up/Down changes painter order; Insert duplicates; Delete removes.",
-        );
+        ui.heading(text(catalog, Key::OverworldAppearancePreviewTitle));
+        ui.label(text(catalog, Key::OverworldAppearancePreviewNotice));
         let (rect, response) = ui.allocate_exact_size(PREVIEW_SIZE, egui::Sense::click_and_drag());
         let painter = ui.painter_at(rect);
         painter.rect_filled(rect, 2.0, egui::Color32::from_gray(22));
@@ -263,6 +261,13 @@ impl OverworldAppearanceEditor {
         }
         None
     }
+}
+
+fn text(catalog: Option<&LocalizationCatalog>, key: Key) -> String {
+    catalog.map_or_else(
+        || key.english().to_owned(),
+        |catalog| catalog.extended_text(key).to_owned(),
+    )
 }
 
 fn palette_color(index: u8) -> egui::Color32 {

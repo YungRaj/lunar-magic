@@ -7090,6 +7090,17 @@ passes, localization passes 28/28 active cases (one provenance ignore), native c
 and renderer remains 237/237. Operational status strings, other unaudited frontend modules, and
 retained live language-DLL evidence keep Localization Partial; aggregate parity remains 60/65.
 
+Localization coverage update (2026-08-12, portable overworld appearance composition): twenty-two
+additional `OverworldAppearance*` identities cover sprite-ID definition insertion/removal/reorder,
+dynamic sprite and painter-order headings, part selection/replace/remove/reorder/insertion,
+part/composition clipboard variants, composition duplication, and interactive preview guidance.
+Existing `Appearance*` identities cover tile index, signed offsets, palette row, and flips. A
+four-module audit rejects literal window, button, label, heading, slider, and `Button` captions and
+requires every combined overworld-appearance identity. The focused audit passes, localization passes
+28/28 active cases (one provenance ignore), native compilation passes, and renderer remains 237/237.
+Native tooltip/range/Map16/display controls, other frontend/status surfaces, and retained live
+language-DLL evidence keep Localization Partial; aggregate parity remains 60/65.
+
 Localization coverage update (2026-08-12, toolbar reorder controls): the two remaining arrow-only
 reorder buttons now use the existing typed `ToolbarEditorMoveUp` and `ToolbarEditorMoveDown`
 captions, while retaining their localized hover text. This makes the complete toolbar-editor source

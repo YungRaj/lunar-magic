@@ -531,6 +531,39 @@ mod tests {
     use super::*;
     use lm_overworld::{SpriteAppearanceDefinition, SpriteAppearanceFile, SpriteAppearancePart};
 
+    #[test]
+    fn portable_overworld_appearance_surface_has_no_literal_widget_text() {
+        let sources = [
+            include_str!("overworld_appearance_editor.rs"),
+            include_str!("overworld_appearance_editor/panels.rs"),
+            include_str!("overworld_appearance_editor/form_fields.rs"),
+            include_str!("overworld_appearance_editor/preview.rs"),
+        ];
+        for literal in [
+            "ui.button(\"",
+            "ui.label(\"",
+            "ui.heading(\"",
+            "Button::new(\"",
+            "Window::new(\"",
+            ".text(\"",
+        ] {
+            assert!(
+                sources.iter().all(|source| !source.contains(literal)),
+                "portable overworld appearance surface bypasses localization with {literal}"
+            );
+        }
+        let joined = sources.join("\n");
+        for key in Key::ALL
+            .into_iter()
+            .filter(|key| format!("{key:?}").starts_with("OverworldAppearance"))
+        {
+            assert!(
+                joined.contains(&format!("Key::{key:?}")),
+                "portable overworld appearance surface does not consume {key:?}"
+            );
+        }
+    }
+
     fn part(tile_index: u16) -> SpriteAppearancePart {
         SpriteAppearancePart {
             tile_index,
