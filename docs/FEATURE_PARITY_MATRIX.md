@@ -716,6 +716,12 @@ and `$03F8` (common OK/Cancel plus three About buttons), while absent/malformed 
 English independently. The remaining control inventory still lacks native-form bindings, so this
 does not promote the row or aggregate.
 
+Live localization evidence update (2026-08-11): the complete 107-dialog portable template-parser
+gate now passes against both locally supplied Lunar Magic 3.63 executables, `lm363/Lunar Magic.exe`
+and `lm363/x64/Lunar Magic.exe`. This replaces the prior unexecuted local-only claim with direct x86
+and x64 resource evidence. Native-form catalog binding is still incomplete, so Localization remains
+Partial and aggregate parity remains 60/65.
+
 Converted catalogs now preserve the complete safely decoded literal dialog inventory in a bounded,
 optional `LMDLG001` extension keyed by dialog ID, exact item position, and 32-bit control ID.
 Historical catalogs without the extension remain byte-identical, duplicate control IDs survive by

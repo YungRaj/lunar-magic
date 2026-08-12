@@ -7296,3 +7296,10 @@ preview pixels/geometry, option retention, palette rows, request capture, and re
 in the focused Map16 suite (71/71); localization model 28/28 and renderer 237/237 also pass. This
 completes typed coverage for the full Map16 editor family. Localization remains Partial for other
 native forms and live original language-DLL evidence; aggregate parity remains 60/65.
+
+Live localization evidence update (2026-08-11):
+`every_original_363_dialog_resource_decodes_with_the_portable_template_parser` passes separately
+against the locally supplied Lunar Magic 3.63 x86 and x64 executables, proving all 107 mapped dialog
+resources decode through the bounded standard/extended Win32 parser in both binaries. The remaining
+localization gap is native-form binding coverage, not executable-resource parsing; aggregate parity
+remains 60/65.
