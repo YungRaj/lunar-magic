@@ -1166,6 +1166,14 @@ collisions preserve the installed version. The update core passes 9/9. Launcher 
 signing, and live platform proof remain missing, so Release stays Partial and aggregate parity
 remains 60/65.
 
+Rollback-safe version-selection update (2026-08-11): extracted versions can now be activated by an
+atomic, synced, checksummed `LMCURRENT1` selector rather than in-place binary replacement. The prior
+valid selector is retained for validated rollback; resolution canonicalizes containment and
+rehashes the target executable, rejecting external versions or later tampering. Switch, rollback,
+containment, and tamper gates raise the update core to 11/11. A packaged launcher and live relaunch,
+signing, and hosted proof remain missing, so Release stays Partial and aggregate parity remains
+60/65.
+
 Crash-recovery evidence update (2026-08-11, title family): independently staged title-screen
 recording, title tilemap, and credits tilemap edits now compose on one isolated project clone for
 every two- and three-domain combination. Revision validation occurs at each semantic adapter before

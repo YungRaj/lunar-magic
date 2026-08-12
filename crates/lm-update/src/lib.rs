@@ -14,6 +14,8 @@ pub const MAX_MANIFEST_BYTES: usize = 16 * 1024;
 pub const MAX_ARCHIVE_BYTES: u64 = 512 * 1024 * 1024;
 pub const MAX_EXTRACTED_BYTES: u64 = 768 * 1024 * 1024;
 const TAR_BLOCK: usize = 512;
+const CURRENT_FILE: &str = "LMCURRENT1";
+const PREVIOUS_FILE: &str = "LMCURRENT1.previous";
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct UpdateManifest {
@@ -22,6 +24,139 @@ pub struct UpdateManifest {
     pub archive: String,
     pub length: u64,
     pub sha256: [u8; 32],
+}
+
+/// Atomically selects a complete installed version while retaining one rollback selector.
+pub fn activate_version(install_root: &Path, version_directory: &Path) -> Result<(), UpdateError> {
+    let root = fs::canonicalize(install_root)
+        .map_err(|error| UpdateError::SelectorIo(error.to_string()))?;
+    let directory = fs::canonicalize(version_directory)
+        .map_err(|error| UpdateError::SelectorIo(error.to_string()))?;
+    let name = directory
+        .file_name()
+        .and_then(|name| name.to_str())
+        .ok_or(UpdateError::Selector)?;
+    portable_component("version directory", name)?;
+    if directory.parent() != Some(root.as_path()) {
+        return Err(UpdateError::Selector);
+    }
+    let executable_name = if cfg!(windows) {
+        "lm-native.exe"
+    } else {
+        "lm-native"
+    };
+    let executable = directory.join(executable_name);
+    let metadata =
+        fs::metadata(&executable).map_err(|error| UpdateError::SelectorIo(error.to_string()))?;
+    if !metadata.is_file() || metadata.len() == 0 || metadata.len() > MAX_ARCHIVE_BYTES {
+        return Err(UpdateError::Selector);
+    }
+    let digest = hash_file(&executable)?;
+    let contents = format!(
+        "{CURRENT_FILE}\ndirectory {name}\nexecutable {executable_name}\nsha256 {}\n",
+        hex_digest(digest)
+    );
+    publish_selector(&root, contents.as_bytes())
+}
+
+pub fn resolve_current(install_root: &Path) -> Result<PathBuf, UpdateError> {
+    resolve_selector(install_root, CURRENT_FILE)
+}
+
+pub fn rollback_current(install_root: &Path) -> Result<(), UpdateError> {
+    let root = fs::canonicalize(install_root)
+        .map_err(|error| UpdateError::SelectorIo(error.to_string()))?;
+    let previous = fs::read(root.join(PREVIOUS_FILE))
+        .map_err(|error| UpdateError::SelectorIo(error.to_string()))?;
+    decode_selector(&root, &previous)?;
+    publish_selector(&root, &previous)
+}
+
+fn publish_selector(root: &Path, contents: &[u8]) -> Result<(), UpdateError> {
+    let temporary = root.join("LMCURRENT1.new");
+    let current = root.join(CURRENT_FILE);
+    let previous = root.join(PREVIOUS_FILE);
+    let _stale_cleanup = fs::remove_file(&temporary);
+    let mut file = fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&temporary)
+        .map_err(|error| UpdateError::SelectorIo(error.to_string()))?;
+    if let Err(error) = file.write_all(contents).and_then(|()| file.sync_all()) {
+        drop(file);
+        let _cleanup = fs::remove_file(&temporary);
+        return Err(UpdateError::SelectorIo(error.to_string()));
+    }
+    drop(file);
+    if current.exists() {
+        let existing =
+            fs::read(&current).map_err(|error| UpdateError::SelectorIo(error.to_string()))?;
+        decode_selector(root, &existing)?;
+        let _old_previous = fs::remove_file(&previous);
+        fs::rename(&current, &previous)
+            .map_err(|error| UpdateError::SelectorIo(error.to_string()))?;
+    }
+    if let Err(error) = fs::rename(&temporary, &current) {
+        if previous.exists() && !current.exists() {
+            let _rollback = fs::rename(&previous, &current);
+        }
+        let _cleanup = fs::remove_file(&temporary);
+        return Err(UpdateError::SelectorIo(error.to_string()));
+    }
+    Ok(())
+}
+
+fn resolve_selector(root: &Path, filename: &str) -> Result<PathBuf, UpdateError> {
+    let root =
+        fs::canonicalize(root).map_err(|error| UpdateError::SelectorIo(error.to_string()))?;
+    let bytes = fs::read(root.join(filename))
+        .map_err(|error| UpdateError::SelectorIo(error.to_string()))?;
+    decode_selector(&root, &bytes)
+}
+
+fn decode_selector(root: &Path, bytes: &[u8]) -> Result<PathBuf, UpdateError> {
+    if bytes.len() > 1024 {
+        return Err(UpdateError::Selector);
+    }
+    let text = std::str::from_utf8(bytes).map_err(|_| UpdateError::Selector)?;
+    let mut lines = text.lines();
+    if lines.next() != Some(CURRENT_FILE) {
+        return Err(UpdateError::Selector);
+    }
+    let directory = portable_component("version directory", one_field(&mut lines, "directory ")?)?;
+    let executable = portable_component("executable", one_field(&mut lines, "executable ")?)?;
+    let digest = decode_digest(one_field(&mut lines, "sha256 ")?)?;
+    if lines.next().is_some() {
+        return Err(UpdateError::Selector);
+    }
+    let target = root.join(directory).join(executable);
+    let canonical =
+        fs::canonicalize(&target).map_err(|error| UpdateError::SelectorIo(error.to_string()))?;
+    if canonical.parent().and_then(Path::parent) != Some(root) || hash_file(&canonical)? != digest {
+        return Err(UpdateError::Selector);
+    }
+    Ok(canonical)
+}
+
+fn hash_file(path: &Path) -> Result<[u8; 32], UpdateError> {
+    let mut file =
+        fs::File::open(path).map_err(|error| UpdateError::SelectorIo(error.to_string()))?;
+    let mut hasher = Sha256::new();
+    let mut buffer = [0_u8; 64 * 1024];
+    loop {
+        let read = file
+            .read(&mut buffer)
+            .map_err(|error| UpdateError::SelectorIo(error.to_string()))?;
+        if read == 0 {
+            break;
+        }
+        hasher.update(&buffer[..read]);
+    }
+    Ok(hasher.finalize().into())
+}
+
+fn hex_digest(digest: [u8; 32]) -> String {
+    digest.iter().map(|byte| format!("{byte:02x}")).collect()
 }
 
 impl UpdateManifest {
@@ -479,6 +614,8 @@ pub enum UpdateError {
     InstallArchive(String),
     InstallIo(String),
     InstallLimit,
+    Selector,
+    SelectorIo(String),
     StageDirectory,
     StageIo {
         operation: &'static str,
@@ -752,5 +889,75 @@ mod tests {
             );
             assert_eq!(fs::read_dir(root.path()).unwrap().count(), 0);
         }
+    }
+
+    fn installed_version(root: &Path, name: &str, bytes: &[u8]) -> PathBuf {
+        let directory = root.join(name);
+        fs::create_dir(&directory).unwrap();
+        fs::write(
+            directory.join(if cfg!(windows) {
+                "lm-native.exe"
+            } else {
+                "lm-native"
+            }),
+            bytes,
+        )
+        .unwrap();
+        directory
+    }
+
+    #[test]
+    fn atomic_selector_switches_and_rolls_back_between_immutable_versions() {
+        let root = tempfile::tempdir().unwrap();
+        let first = installed_version(root.path(), "version-1", b"first executable");
+        let second = installed_version(root.path(), "version-2", b"second executable");
+        activate_version(root.path(), &first).unwrap();
+        assert_eq!(
+            resolve_current(root.path()).unwrap(),
+            fs::canonicalize(first.join(if cfg!(windows) {
+                "lm-native.exe"
+            } else {
+                "lm-native"
+            }))
+            .unwrap()
+        );
+        activate_version(root.path(), &second).unwrap();
+        assert_eq!(
+            resolve_current(root.path()).unwrap(),
+            fs::canonicalize(second.join(if cfg!(windows) {
+                "lm-native.exe"
+            } else {
+                "lm-native"
+            }))
+            .unwrap()
+        );
+        rollback_current(root.path()).unwrap();
+        assert!(
+            resolve_current(root.path())
+                .unwrap()
+                .starts_with(fs::canonicalize(first).unwrap())
+        );
+    }
+
+    #[test]
+    fn selector_rejects_external_directories_and_post_activation_tampering() {
+        let root = tempfile::tempdir().unwrap();
+        let external = tempfile::tempdir().unwrap();
+        let outside = installed_version(external.path(), "outside", b"outside");
+        assert!(activate_version(root.path(), &outside).is_err());
+        assert!(!root.path().join(CURRENT_FILE).exists());
+
+        let inside = installed_version(root.path(), "inside", b"trusted");
+        activate_version(root.path(), &inside).unwrap();
+        fs::write(
+            inside.join(if cfg!(windows) {
+                "lm-native.exe"
+            } else {
+                "lm-native"
+            }),
+            b"tampered",
+        )
+        .unwrap();
+        assert_eq!(resolve_current(root.path()), Err(UpdateError::Selector));
     }
 }

@@ -7032,3 +7032,14 @@ where applicable). Any failure removes the new version directory; a destination 
 the existing installation. Valid extraction, collision, traversal, missing-runtime, and cleanup
 tests raise the update core to 9/9. Launcher switch/relaunch and retained platform evidence remain
 incomplete; Release stays Partial and aggregate parity remains 60/65.
+
+Rollback-safe version-selection update (2026-08-11): `lm-update` now activates an extracted
+version without replacing any binary. It accepts only a direct portable child of the canonical
+install root with a bounded regular `lm-native` executable, hashes that executable, and publishes a
+bounded `LMCURRENT1` selector through a synced same-directory temporary rename. A previously valid
+selector is retained as `LMCURRENT1.previous`; rollback validates it before republishing it. The
+launcher resolver canonicalizes the selected path, requires it to remain exactly two levels below
+the install root, and rehashes the executable before returning it. Tests prove two-version switch,
+rollback, rejection of external directories, and fail-closed post-activation tampering, raising the
+trust core to 11/11. A packaged launcher executable and live relaunch evidence remain incomplete;
+Release stays Partial and aggregate parity remains 60/65.

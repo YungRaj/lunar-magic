@@ -45,6 +45,12 @@ regular files below that exact archive prefix are accepted; links, devices, trav
 duplicates, invalid tar checksums/sizes, decompression overflow, and missing required executables
 fail with complete cleanup of the new directory. An existing version directory is preserved.
 
+Version activation uses a small `LMCURRENT1` selector in the install root, never an in-place binary
+replacement. The selector binds a direct child version directory and executable filename to the
+executable's SHA-256 digest, is published via a synced same-directory temporary rename, and retains
+the prior valid selector for rollback. Resolution canonicalizes containment and rehashes the target
+before launch, so a moved, external, or modified executable fails closed.
+
 ## Build and verify locally
 
 For a native Linux x86-64 build, run:
