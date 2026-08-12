@@ -3939,10 +3939,20 @@ pub enum ExtendedUiTextKey {
     VanillaLevelCopy,
     VanillaLevelPasteAfterSelection,
     VanillaLevelPasteMap16Rectangle,
+    VanillaLevelExistingSpritesFormat,
+    VanillaLevelChooseExistingSprite,
+    VanillaLevelChooseExistingSpritePlaceholder,
+    VanillaLevelPlacementActive,
+    VanillaLevelRawSpriteStream,
+    VanillaLevelSpritesStored,
+    VanillaLevelAddStandardSprites,
+    VanillaLevelChooseStandardSprite,
+    VanillaLevelStandardSprite,
+    VanillaLevelAddCustomSprites,
 }
 
 impl ExtendedUiTextKey {
-    pub const ALL: [Self; 2238] = [
+    pub const ALL: [Self; 2248] = [
         Self::MwlDocumentEditorTitle,
         Self::MwlDocumentVersionFormat,
         Self::MwlDocumentFlagsHex,
@@ -6181,6 +6191,16 @@ impl ExtendedUiTextKey {
         Self::VanillaLevelCopy,
         Self::VanillaLevelPasteAfterSelection,
         Self::VanillaLevelPasteMap16Rectangle,
+        Self::VanillaLevelExistingSpritesFormat,
+        Self::VanillaLevelChooseExistingSprite,
+        Self::VanillaLevelChooseExistingSpritePlaceholder,
+        Self::VanillaLevelPlacementActive,
+        Self::VanillaLevelRawSpriteStream,
+        Self::VanillaLevelSpritesStored,
+        Self::VanillaLevelAddStandardSprites,
+        Self::VanillaLevelChooseStandardSprite,
+        Self::VanillaLevelStandardSprite,
+        Self::VanillaLevelAddCustomSprites,
     ];
 
     #[must_use]
@@ -9080,6 +9100,24 @@ impl ExtendedUiTextKey {
             Self::VanillaLevelCopy => "Copy",
             Self::VanillaLevelPasteAfterSelection => "Paste after selection",
             Self::VanillaLevelPasteMap16Rectangle => "Paste Map16 rectangle for placement",
+            Self::VanillaLevelExistingSpritesFormat => {
+                "Edit existing enemies and sprites ({count})"
+            }
+            Self::VanillaLevelChooseExistingSprite => {
+                "Choose a picture, then click the canvas to place a copy in this level."
+            }
+            Self::VanillaLevelChooseExistingSpritePlaceholder => "Choose an existing sprite…",
+            Self::VanillaLevelPlacementActive => {
+                "Placement active: click a destination tile on the canvas."
+            }
+            Self::VanillaLevelRawSpriteStream => "Raw stream records and control commands",
+            Self::VanillaLevelSpritesStored => "Enemies and sprites stored in this level",
+            Self::VanillaLevelAddStandardSprites => "Add new enemies and sprites",
+            Self::VanillaLevelChooseStandardSprite => {
+                "Choose a recovered standard-sprite preview, then click its destination tile."
+            }
+            Self::VanillaLevelStandardSprite => "Standard sprite",
+            Self::VanillaLevelAddCustomSprites => "Add custom enemies and sprites",
         }
     }
 

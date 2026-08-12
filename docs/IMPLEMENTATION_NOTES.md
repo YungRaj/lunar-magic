@@ -7190,6 +7190,16 @@ preservation, and divergent history. Localization passes 28/28 active cases (one
 ignore), and renderer passes 237/237. Other native forms and retained language-DLL evidence keep
 Localization Partial; aggregate parity remains 60/65.
 
+Localization coverage update (2026-08-12, vanilla enemy/sprite visual catalogs): ten additional
+`VanillaLevel*` identities cover the existing-sprite picture picker, placement guidance and active
+state, raw stream navigation, standard recovered-preview catalog, custom sprite catalog, filters,
+and text-only standard-sprite fallback names. The live catalog now flows through the sprite list
+and editor into both standard and custom catalogs while sprite images, IDs, translated SSC metadata,
+and placement behavior remain unchanged. A bounded source audit rejects the former fixed-English
+catalog controls. Focused native and localization tests pass, and renderer remains 237/237. Sprite
+header/mutation controls and other vanilla/native forms remain, so Localization stays Partial and
+aggregate parity remains 60/65.
+
 Localization coverage update (2026-08-12, vanilla Layer 1 object mutation actions): eleven
 additional `VanillaLevel*` identities cover insert-after-selection, semantic screen-jump/screen-exit
 or ordinary-field application, raw-record replacement, removal, stream reordering, copy, record

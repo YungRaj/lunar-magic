@@ -1120,9 +1120,10 @@ impl VanillaLevelEditor {
                                 ))
                                 .default_open(requested_tool_panel == Some(LevelToolPanel::Sprites))
                                 .show(ui, |ui| {
-                                    self.sprite_list(ui);
+                                    self.sprite_list(ui, catalog);
                                     self.sprite_editor(
                                         ui,
+                                        catalog,
                                         custom_sprites,
                                         external_assets,
                                         custom_map16,
@@ -10019,7 +10020,7 @@ impl VanillaLevelEditor {
         }
     }
 
-    fn sprite_list(&mut self, ui: &mut egui::Ui) {
+    fn sprite_list(&mut self, ui: &mut egui::Ui, catalog: Option<&LocalizationCatalog>) {
         let animation_phase =
             sprite_animation_phase(self.animation_seconds(ui.input(|input| input.time)));
         let Some(controller) = &self.controller else {
@@ -10039,16 +10040,22 @@ impl VanillaLevelEditor {
         let vertical = lm_profile::smw_us_v1_level_mode(level_header.level_mode()).vertical;
         let level_mode = level_header.level_mode();
         let sprite_tileset = self.form.sprite_tileset;
-        egui::CollapsingHeader::new(format!("Edit existing enemies and sprites ({count})"))
+        egui::CollapsingHeader::new(
+            vanilla_text(catalog, ExtendedUiTextKey::VanillaLevelExistingSpritesFormat)
+                .replace("{count}", &count.to_string()),
+        )
             .id_salt("vanilla-existing-sprites")
             .default_open(false)
             .show(ui, |ui| {
-                ui.label("Choose a picture, then click the canvas to place a copy in this level.");
+                ui.label(vanilla_text(
+                    catalog,
+                    ExtendedUiTextKey::VanillaLevelChooseExistingSprite,
+                ));
                 let selected_placement = placements
                     .iter()
                     .find(|placement| placement.token_index == self.selected_sprite);
                 let selected_text = selected_placement.map_or_else(
-                    || "Choose an existing sprite…".to_owned(),
+                    || vanilla_text(catalog, ExtendedUiTextKey::VanillaLevelChooseExistingSpritePlaceholder),
                     |placement| {
                         format!(
                             "${:02X} · record {} · screen {}",
@@ -10111,9 +10118,15 @@ impl VanillaLevelEditor {
                     self.error = None;
                 }
                 if self.placement_mode == Some(CanvasPlacementMode::Sprite) {
-                    ui.label("Placement active: click a destination tile on the canvas.");
+                    ui.label(vanilla_text(
+                        catalog,
+                        ExtendedUiTextKey::VanillaLevelPlacementActive,
+                    ));
                 }
-                egui::CollapsingHeader::new("Raw stream records and control commands")
+                egui::CollapsingHeader::new(vanilla_text(
+                    catalog,
+                    ExtendedUiTextKey::VanillaLevelRawSpriteStream,
+                ))
                     .id_salt("vanilla-existing-sprite-raw-list")
                     .show(ui, |ui| {
                         for (index, token) in tokens.iter().enumerate() {
@@ -10136,6 +10149,7 @@ impl VanillaLevelEditor {
     fn sprite_editor(
         &mut self,
         ui: &mut egui::Ui,
+        catalog: Option<&LocalizationCatalog>,
         custom_sprites: Option<&lm_level::SscResolvedTable>,
         external_assets: &lm_graphics::ExternalSpriteAssets,
         custom_map16: Option<&lm_app::NativeMap16SidecarDocument>,
@@ -10145,15 +10159,18 @@ impl VanillaLevelEditor {
             .controller
             .as_ref()
             .map_or(0, |controller| controller.level().sprites.tokens.len());
-        ui.label("Enemies and sprites stored in this level");
+        ui.label(vanilla_text(
+            catalog,
+            ExtendedUiTextKey::VanillaLevelSpritesStored,
+        ));
         self.catalog_presentation_toolbar(
             ui,
             toolbar_images,
             OriginalToolbarImages::AddSprite,
             false,
         );
-        self.sprite_catalog(ui);
-        self.custom_sprite_catalog(ui, custom_sprites, external_assets, custom_map16);
+        self.sprite_catalog(ui, catalog);
+        self.custom_sprite_catalog(ui, catalog, custom_sprites, external_assets, custom_map16);
         self.sprite_catalog_preview_area(ui, custom_sprites, external_assets, custom_map16);
         self.sprite_form_controls(ui);
         sprite_save_constraint(ui, self.controller.as_ref());
@@ -10266,94 +10283,114 @@ impl VanillaLevelEditor {
         });
     }
 
-    fn sprite_catalog(&mut self, ui: &mut egui::Ui) {
+    fn sprite_catalog(&mut self, ui: &mut egui::Ui, catalog: Option<&LocalizationCatalog>) {
         let animation_phase =
             sprite_animation_phase(self.animation_seconds(ui.input(|input| input.time)));
-        egui::CollapsingHeader::new("Add new enemies and sprites")
-            .id_salt("vanilla-standard-sprite-catalog")
-            .show(ui, |ui| {
-                ui.horizontal_wrapped(|ui| {
-                    ui.label("Hex filter");
-                    ui.text_edit_singleline(&mut self.sprite_catalog_filter);
-                    if ui.button("Clear").clicked() {
-                        self.sprite_catalog_filter.clear();
-                    }
-                });
-                ui.label(
-                    "Choose a recovered standard-sprite preview, then click its destination tile.",
-                );
-                let ids = filter_standard_sprite_catalog_for_graphics(
-                    sprite_catalog_ids(&self.sprite_catalog_filter),
-                    self.sprite_catalog_compatible_only.unwrap_or(false),
-                    self.form.sprite_tileset,
-                    self.map16_summary.map(|summary| summary.sprite_files),
-                );
-                let texture = self.sprite_texture.clone();
-                let animated_texture = self
-                    .animated_sprite_textures
-                    .get(usize::from(animation_phase))
-                    .cloned()
-                    .or_else(|| texture.clone());
-                let (vertical, level_mode) =
-                    self.controller.as_ref().map_or((false, 0), |controller| {
-                        let header = &controller.level().layer1.header;
-                        (
-                            lm_profile::smw_us_v1_level_mode(header.level_mode()).vertical,
-                            header.level_mode(),
-                        )
-                    });
-                let mut mode = sprite_catalog_preview_mode(
-                    &self.sprite_form,
-                    vertical,
-                    level_mode,
-                    self.form.sprite_tileset,
-                );
-                mode.alternate_display = self.silver_pow_active;
-                let preview_icons = self.sprite_catalog_preview_icons.unwrap_or(true);
-                let vertical_layout = self.sprite_catalog_vertical_layout.unwrap_or(false);
-                let show_ids = self.show_add_editor_ids.unwrap_or(true);
-                let mut chosen = None;
-                egui::ScrollArea::vertical()
-                    .id_salt("vanilla-standard-sprite-catalog-scroll")
-                    .max_height(280.0)
-                    .show(ui, |ui| {
-                        catalog_entry_layout(ui, vertical_layout, |ui| {
-                            for id in ids {
-                                let response = if preview_icons {
-                                    draw_sprite_catalog_entry(
-                                        ui,
-                                        texture.as_ref(),
-                                        animated_texture.as_ref(),
-                                        id,
-                                        mode,
-                                        id == self.sprite_form.sprite_number,
-                                        show_ids,
-                                    )
-                                } else {
-                                    ui.selectable_label(
-                                        id == self.sprite_form.sprite_number,
-                                        if show_ids {
-                                            format!("Standard sprite ${id:02X}")
-                                        } else {
-                                            "Standard sprite".to_owned()
-                                        },
-                                    )
-                                };
-                                if response.clicked() {
-                                    chosen = Some(id);
-                                }
-                            }
-                        });
-                    });
-                if let Some(id) = chosen {
-                    self.choose_standard_sprite(id);
+        egui::CollapsingHeader::new(vanilla_text(
+            catalog,
+            ExtendedUiTextKey::VanillaLevelAddStandardSprites,
+        ))
+        .id_salt("vanilla-standard-sprite-catalog")
+        .show(ui, |ui| {
+            ui.horizontal_wrapped(|ui| {
+                ui.label(vanilla_text(
+                    catalog,
+                    ExtendedUiTextKey::VanillaLevelHexFilter,
+                ));
+                ui.text_edit_singleline(&mut self.sprite_catalog_filter);
+                if ui
+                    .button(vanilla_text(catalog, ExtendedUiTextKey::VanillaLevelClear))
+                    .clicked()
+                {
+                    self.sprite_catalog_filter.clear();
                 }
             });
+            ui.label(vanilla_text(
+                catalog,
+                ExtendedUiTextKey::VanillaLevelChooseStandardSprite,
+            ));
+            let ids = filter_standard_sprite_catalog_for_graphics(
+                sprite_catalog_ids(&self.sprite_catalog_filter),
+                self.sprite_catalog_compatible_only.unwrap_or(false),
+                self.form.sprite_tileset,
+                self.map16_summary.map(|summary| summary.sprite_files),
+            );
+            let texture = self.sprite_texture.clone();
+            let animated_texture = self
+                .animated_sprite_textures
+                .get(usize::from(animation_phase))
+                .cloned()
+                .or_else(|| texture.clone());
+            let (vertical, level_mode) =
+                self.controller.as_ref().map_or((false, 0), |controller| {
+                    let header = &controller.level().layer1.header;
+                    (
+                        lm_profile::smw_us_v1_level_mode(header.level_mode()).vertical,
+                        header.level_mode(),
+                    )
+                });
+            let mut mode = sprite_catalog_preview_mode(
+                &self.sprite_form,
+                vertical,
+                level_mode,
+                self.form.sprite_tileset,
+            );
+            mode.alternate_display = self.silver_pow_active;
+            let preview_icons = self.sprite_catalog_preview_icons.unwrap_or(true);
+            let vertical_layout = self.sprite_catalog_vertical_layout.unwrap_or(false);
+            let show_ids = self.show_add_editor_ids.unwrap_or(true);
+            let mut chosen = None;
+            egui::ScrollArea::vertical()
+                .id_salt("vanilla-standard-sprite-catalog-scroll")
+                .max_height(280.0)
+                .show(ui, |ui| {
+                    catalog_entry_layout(ui, vertical_layout, |ui| {
+                        for id in ids {
+                            let response = if preview_icons {
+                                draw_sprite_catalog_entry(
+                                    ui,
+                                    texture.as_ref(),
+                                    animated_texture.as_ref(),
+                                    id,
+                                    mode,
+                                    id == self.sprite_form.sprite_number,
+                                    show_ids,
+                                )
+                            } else {
+                                ui.selectable_label(
+                                    id == self.sprite_form.sprite_number,
+                                    if show_ids {
+                                        format!(
+                                            "{} ${id:02X}",
+                                            vanilla_text(
+                                                catalog,
+                                                ExtendedUiTextKey::VanillaLevelStandardSprite
+                                            )
+                                        )
+                                    } else {
+                                        vanilla_text(
+                                            catalog,
+                                            ExtendedUiTextKey::VanillaLevelStandardSprite,
+                                        )
+                                    },
+                                )
+                            };
+                            if response.clicked() {
+                                chosen = Some(id);
+                            }
+                        }
+                    });
+                });
+            if let Some(id) = chosen {
+                self.choose_standard_sprite(id);
+            }
+        });
     }
 
     fn custom_sprite_catalog(
         &mut self,
         ui: &mut egui::Ui,
+        catalog: Option<&LocalizationCatalog>,
         custom_sprites: Option<&lm_level::SscResolvedTable>,
         external_assets: &lm_graphics::ExternalSpriteAssets,
         custom_map16: Option<&lm_app::NativeMap16SidecarDocument>,
@@ -10363,105 +10400,109 @@ impl VanillaLevelEditor {
         let Some(custom_sprites) = custom_sprites else {
             return;
         };
-        egui::CollapsingHeader::new("Add custom enemies and sprites")
-            .id_salt("vanilla-custom-sprite-catalog")
-            .show(ui, |ui| {
-                ui.horizontal_wrapped(|ui| {
-                    ui.label("Hex/name filter");
-                    ui.text_edit_singleline(&mut self.custom_sprite_catalog_filter);
-                    if ui.button("Clear").clicked() {
-                        self.custom_sprite_catalog_filter.clear();
-                    }
-                });
-                let entries = custom_sprite_catalog_entries(
-                    custom_sprites,
-                    &self.custom_sprite_catalog_filter,
-                );
-                let texture = self.sprite_texture.clone();
-                let animated_texture = self
-                    .animated_sprite_textures
-                    .get(usize::from(animation_phase))
-                    .cloned()
-                    .or_else(|| texture.clone());
-                let preview_icons = self.sprite_catalog_preview_icons.unwrap_or(true);
-                let vertical_layout = self.sprite_catalog_vertical_layout.unwrap_or(false);
-                let show_ids = self.show_add_editor_ids.unwrap_or(true);
-                let mut chosen = None;
-                egui::ScrollArea::vertical()
-                    .id_salt("vanilla-custom-sprite-catalog-scroll")
-                    .max_height(280.0)
-                    .show(ui, |ui| {
-                        catalog_entry_layout(ui, vertical_layout, |ui| {
-                            for entry in entries {
-                                let response = if preview_icons {
-                                    let atlas_parts =
-                                        lm_render::render_atlas_lunar_magic_custom_sprite_with(
-                                            custom_sprites,
-                                            entry,
-                                            |index| external_sprite_definition(custom_map16, index),
-                                        );
-                                    let external_parts =
-                                        lm_render::render_remapped_lunar_magic_custom_sprite_with(
-                                            custom_sprites,
-                                            entry,
-                                            |index| external_sprite_definition(custom_map16, index),
-                                        );
-                                    if let Some(parts) = external_parts.as_deref() {
-                                        ensure_remapped_part_textures(
-                                            ui.ctx(),
-                                            &mut self.external_sprite_textures,
-                                            parts,
-                                            SpriteRasterAssets {
-                                                external: external_assets,
-                                                foreground_tiles: &self.foreground_tiles,
-                                                layer3_tiles: &self.layer3_tiles,
-                                                vanilla_tiles: &self.sprite_tiles,
-                                                vanilla_palette: self.sprite_palette.as_ref(),
-                                            },
-                                        );
-                                    }
-                                    draw_custom_sprite_catalog_entry(
-                                        ui,
-                                        texture.as_ref(),
-                                        animated_texture.as_ref(),
-                                        entry,
-                                        atlas_parts.as_deref(),
-                                        external_parts.as_deref(),
-                                        &self.external_sprite_textures,
-                                        show_ids,
-                                    )
-                                } else {
-                                    ui.selectable_label(
-                                        false,
-                                        if show_ids {
-                                            format!(
-                                                "${:02X} · E{} {}",
-                                                entry.selector.sprite_number,
-                                                entry.selector.extra_bits,
-                                                entry
-                                                    .description
-                                                    .as_deref()
-                                                    .unwrap_or("custom sprite")
-                                            )
-                                        } else {
-                                            entry
-                                                .description
-                                                .as_deref()
-                                                .unwrap_or("custom sprite")
-                                                .to_owned()
-                                        },
-                                    )
-                                };
-                                if response.clicked() {
-                                    chosen = Some(entry.selector);
-                                }
-                            }
-                        });
-                    });
-                if let Some(selector) = chosen {
-                    self.choose_custom_sprite(selector);
+        egui::CollapsingHeader::new(vanilla_text(
+            catalog,
+            ExtendedUiTextKey::VanillaLevelAddCustomSprites,
+        ))
+        .id_salt("vanilla-custom-sprite-catalog")
+        .show(ui, |ui| {
+            ui.horizontal_wrapped(|ui| {
+                ui.label(vanilla_text(
+                    catalog,
+                    ExtendedUiTextKey::VanillaLevelHexNameFilter,
+                ));
+                ui.text_edit_singleline(&mut self.custom_sprite_catalog_filter);
+                if ui
+                    .button(vanilla_text(catalog, ExtendedUiTextKey::VanillaLevelClear))
+                    .clicked()
+                {
+                    self.custom_sprite_catalog_filter.clear();
                 }
             });
+            let entries =
+                custom_sprite_catalog_entries(custom_sprites, &self.custom_sprite_catalog_filter);
+            let texture = self.sprite_texture.clone();
+            let animated_texture = self
+                .animated_sprite_textures
+                .get(usize::from(animation_phase))
+                .cloned()
+                .or_else(|| texture.clone());
+            let preview_icons = self.sprite_catalog_preview_icons.unwrap_or(true);
+            let vertical_layout = self.sprite_catalog_vertical_layout.unwrap_or(false);
+            let show_ids = self.show_add_editor_ids.unwrap_or(true);
+            let mut chosen = None;
+            egui::ScrollArea::vertical()
+                .id_salt("vanilla-custom-sprite-catalog-scroll")
+                .max_height(280.0)
+                .show(ui, |ui| {
+                    catalog_entry_layout(ui, vertical_layout, |ui| {
+                        for entry in entries {
+                            let response = if preview_icons {
+                                let atlas_parts =
+                                    lm_render::render_atlas_lunar_magic_custom_sprite_with(
+                                        custom_sprites,
+                                        entry,
+                                        |index| external_sprite_definition(custom_map16, index),
+                                    );
+                                let external_parts =
+                                    lm_render::render_remapped_lunar_magic_custom_sprite_with(
+                                        custom_sprites,
+                                        entry,
+                                        |index| external_sprite_definition(custom_map16, index),
+                                    );
+                                if let Some(parts) = external_parts.as_deref() {
+                                    ensure_remapped_part_textures(
+                                        ui.ctx(),
+                                        &mut self.external_sprite_textures,
+                                        parts,
+                                        SpriteRasterAssets {
+                                            external: external_assets,
+                                            foreground_tiles: &self.foreground_tiles,
+                                            layer3_tiles: &self.layer3_tiles,
+                                            vanilla_tiles: &self.sprite_tiles,
+                                            vanilla_palette: self.sprite_palette.as_ref(),
+                                        },
+                                    );
+                                }
+                                draw_custom_sprite_catalog_entry(
+                                    ui,
+                                    texture.as_ref(),
+                                    animated_texture.as_ref(),
+                                    entry,
+                                    atlas_parts.as_deref(),
+                                    external_parts.as_deref(),
+                                    &self.external_sprite_textures,
+                                    show_ids,
+                                )
+                            } else {
+                                ui.selectable_label(
+                                    false,
+                                    if show_ids {
+                                        format!(
+                                            "${:02X} · E{} {}",
+                                            entry.selector.sprite_number,
+                                            entry.selector.extra_bits,
+                                            entry.description.as_deref().unwrap_or("custom sprite")
+                                        )
+                                    } else {
+                                        entry
+                                            .description
+                                            .as_deref()
+                                            .unwrap_or("custom sprite")
+                                            .to_owned()
+                                    },
+                                )
+                            };
+                            if response.clicked() {
+                                chosen = Some(entry.selector);
+                            }
+                        }
+                    });
+                });
+            if let Some(selector) = chosen {
+                self.choose_custom_sprite(selector);
+            }
+        });
     }
 
     fn sprite_catalog_preview_area(
@@ -17078,6 +17119,29 @@ mod tests {
             assert!(
                 !placement_catalogs.contains(literal),
                 "fixed-English placement-catalog control: {literal}"
+            );
+        }
+        let sprite_catalogs = source
+            .split("    fn sprite_list(")
+            .nth(1)
+            .unwrap()
+            .split("    fn choose_standard_sprite(")
+            .next()
+            .unwrap();
+        for literal in [
+            "format!(\"Edit existing enemies and sprites ({count})\")",
+            "label(\"Choose a picture, then click the canvas",
+            "\"Choose an existing sprite…\".to_owned()",
+            "label(\"Placement active: click a destination tile",
+            "CollapsingHeader::new(\"Raw stream records and control commands\")",
+            "label(\"Enemies and sprites stored in this level\")",
+            "CollapsingHeader::new(\"Add new enemies and sprites\")",
+            "CollapsingHeader::new(\"Add custom enemies and sprites\")",
+            "\"Standard sprite\".to_owned()",
+        ] {
+            assert!(
+                !sprite_catalogs.contains(literal),
+                "fixed-English sprite-catalog control: {literal}"
             );
         }
         let modeless_editors = source
