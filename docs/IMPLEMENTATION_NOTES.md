@@ -7190,6 +7190,15 @@ preservation, and divergent history. Localization passes 28/28 active cases (one
 ignore), and renderer passes 237/237. Other native forms and retained language-DLL evidence keep
 Localization Partial; aggregate parity remains 60/65.
 
+Localization coverage update (2026-08-12, vanilla modeless entity editors): eleven additional
+`VanillaLevel*` identities cover the Object/Sprite Properties and Edit Manual windows, dynamic
+Layer 1/Layer 2 object and sprite record/token labels, selection guidance, single-selection
+validation, and semantic/raw apply actions. Both modeless windows receive the live catalog and
+preserve English fallback. Their source-slice audit rejects former literal controls, requires the
+whole typed family, and verifies dynamic placeholder expansion. Focused native and localization
+tests pass, and renderer remains 237/237. Remaining vanilla editor/native forms and retained live
+language-DLL evidence keep Localization Partial; aggregate parity remains 60/65.
+
 Localization coverage update (2026-08-12, portable ExAnimation document): thirty appended
 `ExAnimationDocument*` identities cover the shell, open/profile-bound maximum configuration,
 record list, slot globals, trigger form, record properties, lifecycle, and error dialogs. Identical

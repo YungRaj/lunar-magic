@@ -787,6 +787,14 @@ Undo/Redo are explicit. Editor/form tests pass 6/6, controller 5/5, localization
 cases, and renderer 237/237. Other native forms and retained language-DLL evidence keep
 Localization Partial, so aggregate parity remains 60/65.
 
+Localization coverage update (2026-08-12, vanilla modeless entity editors): eleven typed
+`VanillaLevel*` keys now cover both object/sprite property and manual-record windows, including
+dynamic entity identities, selection constraints, guidance, and apply actions. A bounded source
+audit rejects the former literal controls and verifies placeholder fallback; focused native,
+localization 28/28 active tests (one provenance ignore), and renderer 237/237 pass. Remaining
+vanilla editor/native forms and live language-DLL evidence keep Localization Partial, so aggregate
+parity remains 60/65.
+
 Localization coverage update (2026-08-11, installed overworld animation options and preview):
 twenty-seven additional typed keys cover the installed editor's per-map feature switches, runtime
 installation guidance, preview transport and timer state, trigger controls, event state, and empty

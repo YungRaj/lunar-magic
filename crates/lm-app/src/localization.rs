@@ -3902,10 +3902,21 @@ pub enum ExtendedUiTextKey {
     VanillaLevelBackgroundTileRemapTitle,
     VanillaLevelBackgroundTileOffset,
     VanillaLevelBackgroundTileRemapHelp,
+    VanillaLevelPropertiesTitle,
+    VanillaLevelManualEditTitle,
+    VanillaLevelLayer1ObjectFormat,
+    VanillaLevelLayer2ObjectFormat,
+    VanillaLevelSpriteRecordFormat,
+    VanillaLevelApplyProperties,
+    VanillaLevelSelectEntityForProperties,
+    VanillaLevelManualSingleSelection,
+    VanillaLevelSpriteTokenFormat,
+    VanillaLevelApplyCompleteRecord,
+    VanillaLevelSelectEntityForManualEdit,
 }
 
 impl ExtendedUiTextKey {
-    pub const ALL: [Self; 2201] = [
+    pub const ALL: [Self; 2212] = [
         Self::MwlDocumentEditorTitle,
         Self::MwlDocumentVersionFormat,
         Self::MwlDocumentFlagsHex,
@@ -6107,6 +6118,17 @@ impl ExtendedUiTextKey {
         Self::VanillaLevelBackgroundTileRemapTitle,
         Self::VanillaLevelBackgroundTileOffset,
         Self::VanillaLevelBackgroundTileRemapHelp,
+        Self::VanillaLevelPropertiesTitle,
+        Self::VanillaLevelManualEditTitle,
+        Self::VanillaLevelLayer1ObjectFormat,
+        Self::VanillaLevelLayer2ObjectFormat,
+        Self::VanillaLevelSpriteRecordFormat,
+        Self::VanillaLevelApplyProperties,
+        Self::VanillaLevelSelectEntityForProperties,
+        Self::VanillaLevelManualSingleSelection,
+        Self::VanillaLevelSpriteTokenFormat,
+        Self::VanillaLevelApplyCompleteRecord,
+        Self::VanillaLevelSelectEntityForManualEdit,
     ];
 
     #[must_use]
@@ -8950,6 +8972,23 @@ impl ExtendedUiTextKey {
             Self::VanillaLevelBackgroundTileOffset => "Offset to add to every background tile",
             Self::VanillaLevelBackgroundTileRemapHelp => {
                 "Sources always refer to the original tilemap. Ranges, relative +/− values, moving M destinations, and rectangular R ranges follow Lunar Magic syntax."
+            }
+            Self::VanillaLevelPropertiesTitle => "Object/Sprite Properties",
+            Self::VanillaLevelManualEditTitle => "Edit Manual",
+            Self::VanillaLevelLayer1ObjectFormat => "Layer 1 object {index}",
+            Self::VanillaLevelLayer2ObjectFormat => "Layer 2 object {index}",
+            Self::VanillaLevelSpriteRecordFormat => "Sprite record {index}",
+            Self::VanillaLevelApplyProperties => "Apply properties",
+            Self::VanillaLevelSelectEntityForProperties => {
+                "Select one object or sprite to inspect its properties."
+            }
+            Self::VanillaLevelManualSingleSelection => {
+                "Edit Manual requires exactly one selected object or sprite."
+            }
+            Self::VanillaLevelSpriteTokenFormat => "Sprite token {index}",
+            Self::VanillaLevelApplyCompleteRecord => "Apply complete record",
+            Self::VanillaLevelSelectEntityForManualEdit => {
+                "Select one object or sprite to edit it manually."
             }
         }
     }

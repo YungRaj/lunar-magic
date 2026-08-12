@@ -986,7 +986,7 @@ impl VanillaLevelEditor {
         self.show_direct_map16_remap_dialog(ui.ctx(), catalog);
         self.show_background_map16_bank_dialog(ui.ctx(), catalog);
         self.show_background_tile_remap_dialog(ui.ctx(), catalog);
-        self.show_modeless_entity_edit_windows(ui.ctx());
+        self.show_modeless_entity_edit_windows(ui.ctx(), catalog);
         let Some(controller) = self.controller.as_ref() else {
             ui.colored_label(
                 egui::Color32::RED,
@@ -5677,38 +5677,65 @@ impl VanillaLevelEditor {
         }
     }
 
-    fn show_modeless_entity_edit_windows(&mut self, context: &egui::Context) {
+    fn show_modeless_entity_edit_windows(
+        &mut self,
+        context: &egui::Context,
+        catalog: Option<&LocalizationCatalog>,
+    ) {
         if self.properties_window_open {
             let mut open = true;
-            egui::Window::new("Object/Sprite Properties")
-                .id(egui::Id::new("level-entity-properties-window"))
-                .open(&mut open)
-                .resizable(true)
-                .show(context, |ui| self.show_selected_entity_properties(ui));
+            egui::Window::new(vanilla_text(
+                catalog,
+                ExtendedUiTextKey::VanillaLevelPropertiesTitle,
+            ))
+            .id(egui::Id::new("level-entity-properties-window"))
+            .open(&mut open)
+            .resizable(true)
+            .show(context, |ui| {
+                self.show_selected_entity_properties(ui, catalog)
+            });
             self.properties_window_open = open;
         }
         if self.manual_edit_dialog_open {
             let mut open = true;
-            egui::Window::new("Edit Manual")
-                .id(egui::Id::new("level-entity-manual-edit-window"))
-                .open(&mut open)
-                .collapsible(false)
-                .resizable(true)
-                .show(context, |ui| self.show_selected_entity_manual_editor(ui));
+            egui::Window::new(vanilla_text(
+                catalog,
+                ExtendedUiTextKey::VanillaLevelManualEditTitle,
+            ))
+            .id(egui::Id::new("level-entity-manual-edit-window"))
+            .open(&mut open)
+            .collapsible(false)
+            .resizable(true)
+            .show(context, |ui| {
+                self.show_selected_entity_manual_editor(ui, catalog)
+            });
             self.manual_edit_dialog_open = open;
         }
     }
 
-    fn show_selected_entity_properties(&mut self, ui: &mut egui::Ui) {
+    fn show_selected_entity_properties(
+        &mut self,
+        ui: &mut egui::Ui,
+        catalog: Option<&LocalizationCatalog>,
+    ) {
         match self.canvas_entity_selection {
             Some(CanvasEntitySelection::Layer1Object) => {
-                ui.label(format!("Layer 1 object {}", self.selected_object));
+                ui.label(
+                    vanilla_text(catalog, ExtendedUiTextKey::VanillaLevelLayer1ObjectFormat)
+                        .replace("{index}", &self.selected_object.to_string()),
+                );
                 show_compact_object_fields(
                     ui,
                     "modeless-layer1-object-properties",
                     &mut self.object_form,
                 );
-                if ui.button("Apply properties").clicked() {
+                if ui
+                    .button(vanilla_text(
+                        catalog,
+                        ExtendedUiTextKey::VanillaLevelApplyProperties,
+                    ))
+                    .clicked()
+                {
                     let edit = self
                         .selected_object_field_edits()
                         .map(NativeLevelEdit::Objects);
@@ -5716,13 +5743,22 @@ impl VanillaLevelEditor {
                 }
             }
             Some(CanvasEntitySelection::Layer2Object) => {
-                ui.label(format!("Layer 2 object {}", self.selected_layer2_object));
+                ui.label(
+                    vanilla_text(catalog, ExtendedUiTextKey::VanillaLevelLayer2ObjectFormat)
+                        .replace("{index}", &self.selected_layer2_object.to_string()),
+                );
                 show_compact_object_fields(
                     ui,
                     "modeless-layer2-object-properties",
                     &mut self.layer2_object_form,
                 );
-                if ui.button("Apply properties").clicked() {
+                if ui
+                    .button(vanilla_text(
+                        catalog,
+                        ExtendedUiTextKey::VanillaLevelApplyProperties,
+                    ))
+                    .clicked()
+                {
                     let current = self.controller.as_ref().and_then(|controller| {
                         controller.layer2().and_then(|layer2| match layer2 {
                             lm_level::NativeLayer2Data::Objects(objects) => {
@@ -5740,12 +5776,18 @@ impl VanillaLevelEditor {
                 }
             }
             Some(CanvasEntitySelection::Sprite) => {
-                ui.label(format!("Sprite record {}", self.selected_sprite));
+                ui.label(
+                    vanilla_text(catalog, ExtendedUiTextKey::VanillaLevelSpriteRecordFormat)
+                        .replace("{index}", &self.selected_sprite.to_string()),
+                );
                 show_modeless_sprite_properties(ui, &mut self.sprite_form);
                 if ui
                     .add_enabled(
                         self.sprite_form.semantic_record,
-                        egui::Button::new("Apply properties"),
+                        egui::Button::new(vanilla_text(
+                            catalog,
+                            ExtendedUiTextKey::VanillaLevelApplyProperties,
+                        )),
                     )
                     .clicked()
                 {
@@ -5753,12 +5795,19 @@ impl VanillaLevelEditor {
                 }
             }
             None => {
-                ui.label("Select one object or sprite to inspect its properties.");
+                ui.label(vanilla_text(
+                    catalog,
+                    ExtendedUiTextKey::VanillaLevelSelectEntityForProperties,
+                ));
             }
         }
     }
 
-    fn show_selected_entity_manual_editor(&mut self, ui: &mut egui::Ui) {
+    fn show_selected_entity_manual_editor(
+        &mut self,
+        ui: &mut egui::Ui,
+        catalog: Option<&LocalizationCatalog>,
+    ) {
         let selection_count = match self.canvas_entity_selection {
             Some(CanvasEntitySelection::Layer1Object) => self.selected_object_group.len().max(1),
             Some(CanvasEntitySelection::Layer2Object) => {
@@ -5768,14 +5817,26 @@ impl VanillaLevelEditor {
             None => 0,
         };
         if selection_count > 1 {
-            ui.label("Edit Manual requires exactly one selected object or sprite.");
+            ui.label(vanilla_text(
+                catalog,
+                ExtendedUiTextKey::VanillaLevelManualSingleSelection,
+            ));
             return;
         }
         match self.canvas_entity_selection {
             Some(CanvasEntitySelection::Layer1Object) => {
-                ui.label(format!("Layer 1 object {}", self.selected_object));
+                ui.label(
+                    vanilla_text(catalog, ExtendedUiTextKey::VanillaLevelLayer1ObjectFormat)
+                        .replace("{index}", &self.selected_object.to_string()),
+                );
                 manual_record_field(ui, &mut self.object_form.encoded);
-                if ui.button("Apply complete record").clicked() {
+                if ui
+                    .button(vanilla_text(
+                        catalog,
+                        ExtendedUiTextKey::VanillaLevelApplyCompleteRecord,
+                    ))
+                    .clicked()
+                {
                     let edit = self.object_form.raw_record().map(|record| {
                         NativeLevelEdit::Objects(vec![ObjectEdit::Replace {
                             index: self.selected_object,
@@ -5786,9 +5847,18 @@ impl VanillaLevelEditor {
                 }
             }
             Some(CanvasEntitySelection::Layer2Object) => {
-                ui.label(format!("Layer 2 object {}", self.selected_layer2_object));
+                ui.label(
+                    vanilla_text(catalog, ExtendedUiTextKey::VanillaLevelLayer2ObjectFormat)
+                        .replace("{index}", &self.selected_layer2_object.to_string()),
+                );
                 manual_record_field(ui, &mut self.layer2_object_form.encoded);
-                if ui.button("Apply complete record").clicked() {
+                if ui
+                    .button(vanilla_text(
+                        catalog,
+                        ExtendedUiTextKey::VanillaLevelApplyCompleteRecord,
+                    ))
+                    .clicked()
+                {
                     let edit = self.layer2_object_form.raw_record().map(|record| {
                         vec![ObjectEdit::Replace {
                             index: self.selected_layer2_object,
@@ -5799,9 +5869,18 @@ impl VanillaLevelEditor {
                 }
             }
             Some(CanvasEntitySelection::Sprite) => {
-                ui.label(format!("Sprite token {}", self.selected_sprite));
+                ui.label(
+                    vanilla_text(catalog, ExtendedUiTextKey::VanillaLevelSpriteTokenFormat)
+                        .replace("{index}", &self.selected_sprite.to_string()),
+                );
                 manual_record_field(ui, &mut self.sprite_form.encoded);
-                if ui.button("Apply complete record").clicked() {
+                if ui
+                    .button(vanilla_text(
+                        catalog,
+                        ExtendedUiTextKey::VanillaLevelApplyCompleteRecord,
+                    ))
+                    .clicked()
+                {
                     let edit = crate::native_level_document_form::parse_sprite_token(
                         &self.sprite_form.encoded,
                     )
@@ -5813,7 +5892,10 @@ impl VanillaLevelEditor {
                 }
             }
             None => {
-                ui.label("Select one object or sprite to edit it manually.");
+                ui.label(vanilla_text(
+                    catalog,
+                    ExtendedUiTextKey::VanillaLevelSelectEntityForManualEdit,
+                ));
             }
         }
     }
@@ -16838,6 +16920,26 @@ mod tests {
                 "fixed-English utility-dialog control: {literal}"
             );
         }
+        let modeless_editors = source
+            .split("    fn show_modeless_entity_edit_windows(")
+            .nth(1)
+            .unwrap()
+            .split("    pub(crate) fn toolbar_zoom_toggle(")
+            .next()
+            .unwrap();
+        for literal in [
+            "Window::new(\"Object/Sprite Properties\")",
+            "Window::new(\"Edit Manual\")",
+            "button(\"Apply properties\")",
+            "Button::new(\"Apply properties\")",
+            "button(\"Apply complete record\")",
+            "label(\"Select one object or sprite",
+        ] {
+            assert!(
+                !modeless_editors.contains(literal),
+                "fixed-English modeless-editor control: {literal}"
+            );
+        }
 
         let catalog = LocalizationCatalog::new(
             "fr-FR",
@@ -16864,6 +16966,11 @@ mod tests {
         assert_eq!(
             vanilla_text(None, ExtendedUiTextKey::VanillaLevelCancel),
             "Cancel"
+        );
+        assert_eq!(
+            vanilla_text(None, ExtendedUiTextKey::VanillaLevelSpriteTokenFormat)
+                .replace("{index}", "7"),
+            "Sprite token 7"
         );
     }
 
@@ -17074,7 +17181,7 @@ mod tests {
         };
         let _ = context.run(egui::RawInput::default(), |context| {
             egui::CentralPanel::default().show(context, |_ui| {
-                editor.show_modeless_entity_edit_windows(context);
+                editor.show_modeless_entity_edit_windows(context, None);
             });
         });
         assert!(editor.properties_window_open);
