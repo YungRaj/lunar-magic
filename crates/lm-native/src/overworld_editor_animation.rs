@@ -429,6 +429,7 @@ mod localization_tests {
         let source = include_str!("overworld_editor_animation.rs");
         for key in ExtendedUiTextKey::ALL
             .into_iter()
+            .take_while(|key| *key != ExtendedUiTextKey::OverworldAnimationOptionsHeading)
             .filter(|key| format!("{key:?}").starts_with("OverworldAnimation"))
         {
             assert!(source.contains(&format!("ExtendedUiTextKey::{key:?}")));

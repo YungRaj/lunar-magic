@@ -763,6 +763,14 @@ localization model 28/28, and renderer 237/237. Per-map options, live preview co
 profile variants remain; the overworld palette/ExAnimation row stays Partial and aggregate parity
 remains 60/65.
 
+Localization coverage update (2026-08-11, installed overworld animation options and preview):
+twenty-seven additional typed keys cover the installed editor's per-map feature switches, runtime
+installation guidance, preview transport and timer state, trigger controls, event state, and empty
+record notice. Separate source audits now bind the reusable record panel and the installed-only
+controls without allowing either key family to mask omissions in the other. Installed-control audit
+1/1, shared animation family 3/3, localization model 28/28, and renderer 237/237 pass. Remaining
+profile/variant evidence keeps the overworld animation row Partial; aggregate parity remains 60/65.
+
 Converted catalogs now preserve the complete safely decoded literal dialog inventory in a bounded,
 optional `LMDLG001` extension keyed by dialog ID, exact item position, and 32-bit control ID.
 Historical catalogs without the extension remain byte-identical, duplicate control IDs survive by

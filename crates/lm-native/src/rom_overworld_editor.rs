@@ -17,8 +17,13 @@ use lm_overworld::{
     OverworldEndpoint, OverworldPathDirection, OverworldPathLink, OverworldPathLinkTable,
     OverworldPathTarget,
 };
+
 use lm_project::{CompleteOverworldFile, CompleteOverworldShape};
 use std::collections::BTreeSet;
+
+fn ow_text(catalog: Option<&LocalizationCatalog>, key: lm_app::ExtendedUiTextKey) -> String {
+    crate::frontend_ui::extended_localized_text(catalog, key)
+}
 
 mod commit;
 mod lifecycle;
@@ -1159,9 +1164,9 @@ impl RomOverworldEditor {
                 edit
             }
             Panel::Animation => {
-                self.animation_preview_controls(ui, &file.data.animation);
+                self.animation_preview_controls(ui, &file.data.animation, catalog);
                 self.animation_file_controls(ui, stale, revision);
-                runtime_command = self.animation_option_controls(ui, editing_blocked);
+                runtime_command = self.animation_option_controls(ui, editing_blocked, catalog);
                 self.animation_destination_controls(ui, &animation_ownership.graphics);
                 self.animation.show(
                     ui,
@@ -2423,15 +2428,21 @@ impl RomOverworldEditor {
         &mut self,
         ui: &mut egui::Ui,
         editing_blocked: bool,
+        catalog: Option<&LocalizationCatalog>,
     ) -> Option<Command> {
         let Some(workspace) = self.workspace.as_mut() else {
             return None;
         };
         ui.separator();
-        ui.heading("Per-map animation options");
+        ui.heading(ow_text(
+            catalog,
+            lm_app::ExtendedUiTextKey::OverworldAnimationOptionsHeading,
+        ));
         ui.add(
-            egui::Slider::new(&mut self.animation_option_map, 0..=6)
-                .text("Map (main, Yoshi, Vanilla, Forest, Valley, Special, Star)"),
+            egui::Slider::new(&mut self.animation_option_map, 0..=6).text(ow_text(
+                catalog,
+                lm_app::ExtendedUiTextKey::OverworldAnimationMapSelector,
+            )),
         );
         let installed = workspace.assets.animation_options_runtime_installed;
         let layout_supported = workspace.assets.animation_options_layout_supported;
@@ -2443,36 +2454,46 @@ impl RomOverworldEditor {
             ui.add_enabled_ui(installed, |ui| {
                 for (label, feature) in [
                     (
-                        "Original palette animation",
+                        lm_app::ExtendedUiTextKey::OverworldAnimationOriginalPalette,
                         lm_graphics::ExAnimationFeature::PaletteAnimation,
                     ),
                     (
-                        "Original animated tiles",
+                        lm_app::ExtendedUiTextKey::OverworldAnimationOriginalTiles,
                         lm_graphics::ExAnimationFeature::VanillaAnimation,
                     ),
                     (
-                        "Global ExAnimation",
+                        lm_app::ExtendedUiTextKey::OverworldAnimationGlobalFeature,
                         lm_graphics::ExAnimationFeature::GlobalExAnimation,
                     ),
                     (
-                        "This map's ExAnimation",
+                        lm_app::ExtendedUiTextKey::OverworldAnimationMapFeature,
                         lm_graphics::ExAnimationFeature::LevelExAnimation,
                     ),
                 ] {
                     let mut enabled = option.features.enabled(feature);
-                    if ui.checkbox(&mut enabled, label).changed() {
+                    if ui.checkbox(&mut enabled, ow_text(catalog, label)).changed() {
                         option.features.set_enabled(feature, enabled);
                     }
                 }
             });
-            ui.checkbox(&mut option.original_lightning, "Original lightning");
+            ui.checkbox(
+                &mut option.original_lightning,
+                ow_text(
+                    catalog,
+                    lm_app::ExtendedUiTextKey::OverworldAnimationOriginalLightning,
+                ),
+            );
         });
         if !layout_supported {
-            ui.small("Per-map option operands are not authenticated for this ROM profile.");
+            ui.small(ow_text(
+                catalog,
+                lm_app::ExtendedUiTextKey::OverworldAnimationOptionsUnsupported,
+            ));
         } else if !installed {
-            ui.small(
-                "The four feature switches require Lunar Magic's overworld animation runtime; original lightning is independently editable.",
-            );
+            ui.small(ow_text(
+                catalog,
+                lm_app::ExtendedUiTextKey::OverworldAnimationRuntimeRequired,
+            ));
         }
         if *option != before {
             staged = true;
@@ -2484,11 +2505,15 @@ impl RomOverworldEditor {
             && ui
                 .add_enabled(
                     !editing_blocked && !staged,
-                    egui::Button::new("Install overworld animation runtime"),
+                    egui::Button::new(ow_text(
+                        catalog,
+                        lm_app::ExtendedUiTextKey::OverworldAnimationInstallRuntime,
+                    )),
                 )
-                .on_hover_text(
-                    "Install Lunar Magic's authenticated vanilla SMW-US runtime and seven-byte per-map option table as one undoable ROM transaction.",
-                )
+                .on_hover_text(ow_text(
+                    catalog,
+                    lm_app::ExtendedUiTextKey::OverworldAnimationInstallRuntimeNotice,
+                ))
                 .clicked()
         {
             match self.prepare_animation_runtime_install() {
@@ -2497,7 +2522,10 @@ impl RomOverworldEditor {
             }
         }
         if !installed && staged {
-            ui.small("Commit or discard staged changes before installing the runtime.");
+            ui.small(ow_text(
+                catalog,
+                lm_app::ExtendedUiTextKey::OverworldAnimationInstallBlocked,
+            ));
         }
         None
     }
@@ -2656,14 +2684,25 @@ impl RomOverworldEditor {
         &mut self,
         ui: &mut egui::Ui,
         animation: &lm_graphics::CompactExAnimation,
+        catalog: Option<&LocalizationCatalog>,
     ) {
         if self.animation_preview_events_passed.len() != 256 {
             self.animation_preview_events_passed.resize(256, false);
         }
         ui.group(|ui| {
-            ui.label("Live overworld ExAnimation preview");
+            ui.label(ow_text(
+                catalog,
+                lm_app::ExtendedUiTextKey::OverworldAnimationPreviewHeading,
+            ));
             ui.horizontal(|ui| {
-                let label = if self.animation_preview_paused { "Play" } else { "Pause" };
+                let label = ow_text(
+                    catalog,
+                    if self.animation_preview_paused {
+                        lm_app::ExtendedUiTextKey::OverworldAnimationPlay
+                    } else {
+                        lm_app::ExtendedUiTextKey::OverworldAnimationPause
+                    },
+                );
                 if ui.button(label).clicked() {
                     self.animation_preview_paused = !self.animation_preview_paused;
                     if self.animation_preview_paused {
@@ -2676,24 +2715,45 @@ impl RomOverworldEditor {
                         );
                     }
                 }
-                if ui.button("Reset").clicked() {
+                if ui
+                    .button(ow_text(
+                        catalog,
+                        lm_app::ExtendedUiTextKey::OverworldAnimationReset,
+                    ))
+                    .clicked()
+                {
                     self.reset_animation_preview();
                     self.rendered_key = None;
                 }
                 if ui
-                    .add_enabled(self.animation_preview_paused, egui::Button::new("Step timer"))
+                    .add_enabled(
+                        self.animation_preview_paused,
+                        egui::Button::new(ow_text(
+                            catalog,
+                            lm_app::ExtendedUiTextKey::OverworldAnimationStepTimer,
+                        )),
+                    )
                     .clicked()
                 {
                     self.animation_preview_tick = self.animation_preview_tick.saturating_add(1);
                     self.rendered_key = None;
                 }
-                ui.monospace(format!(
-                    "phase {:X}, tick {}",
-                    self.animation_preview_tick
-                        .saturating_mul(self.animation_preview_rate.substeps_per_tick())
-                        & 7,
-                    self.animation_preview_tick
-                ));
+                ui.monospace(
+                    ow_text(
+                        catalog,
+                        lm_app::ExtendedUiTextKey::OverworldAnimationPhaseTick,
+                    )
+                    .replace(
+                        "{phase}",
+                        &format!(
+                            "{:X}",
+                            self.animation_preview_tick
+                                .saturating_mul(self.animation_preview_rate.substeps_per_tick())
+                                & 7
+                        ),
+                    )
+                    .replace("{tick}", &self.animation_preview_tick.to_string()),
+                );
                 egui::ComboBox::from_id_salt("overworld-animation-preview-rate")
                     .selected_text(self.animation_preview_rate.label())
                     .show_ui(ui, |ui| {
@@ -2713,44 +2773,97 @@ impl RomOverworldEditor {
                         }
                     });
             });
-            ui.small(format!(
-                "The selected native timer advances {} animation substep{} per callback.",
-                self.animation_preview_rate.substeps_per_tick(),
-                if self.animation_preview_rate.substeps_per_tick() == 1 {
-                    ""
-                } else {
-                    "s"
-                }
-            ));
+            ui.small(
+                ow_text(
+                    catalog,
+                    lm_app::ExtendedUiTextKey::OverworldAnimationTimerNotice,
+                )
+                .replace(
+                    "{count}",
+                    &self.animation_preview_rate.substeps_per_tick().to_string(),
+                )
+                .replace(
+                    "{unit}",
+                    if self.animation_preview_rate.substeps_per_tick() == 1 {
+                        "substep"
+                    } else {
+                        "substeps"
+                    },
+                ),
+            );
             ui.horizontal(|ui| {
                 egui::ComboBox::from_id_salt("overworld-preview-trigger-kind")
                     .selected_text(match self.animation_preview_trigger_kind {
-                        0 => "Custom",
-                        1 => "One Shot",
-                        _ => "Manual Frame",
+                        0 => ow_text(catalog, lm_app::ExtendedUiTextKey::OverworldAnimationCustom),
+                        1 => ow_text(
+                            catalog,
+                            lm_app::ExtendedUiTextKey::OverworldAnimationOneShot,
+                        ),
+                        _ => ow_text(
+                            catalog,
+                            lm_app::ExtendedUiTextKey::OverworldAnimationManualFrame,
+                        ),
                     })
                     .show_ui(ui, |ui| {
-                        ui.selectable_value(&mut self.animation_preview_trigger_kind, 0, "Custom");
-                        ui.selectable_value(&mut self.animation_preview_trigger_kind, 1, "One Shot");
-                        ui.selectable_value(&mut self.animation_preview_trigger_kind, 2, "Manual Frame");
+                        ui.selectable_value(
+                            &mut self.animation_preview_trigger_kind,
+                            0,
+                            ow_text(catalog, lm_app::ExtendedUiTextKey::OverworldAnimationCustom),
+                        );
+                        ui.selectable_value(
+                            &mut self.animation_preview_trigger_kind,
+                            1,
+                            ow_text(
+                                catalog,
+                                lm_app::ExtendedUiTextKey::OverworldAnimationOneShot,
+                            ),
+                        );
+                        ui.selectable_value(
+                            &mut self.animation_preview_trigger_kind,
+                            2,
+                            ow_text(
+                                catalog,
+                                lm_app::ExtendedUiTextKey::OverworldAnimationManualFrame,
+                            ),
+                        );
                     });
-                let maximum = if self.animation_preview_trigger_kind == 1 { 31 } else { 15 };
-                self.animation_preview_trigger_index = self.animation_preview_trigger_index.min(maximum);
-                ui.add(egui::DragValue::new(&mut self.animation_preview_trigger_index).range(0..=maximum).prefix("#"));
+                let maximum = if self.animation_preview_trigger_kind == 1 {
+                    31
+                } else {
+                    15
+                };
+                self.animation_preview_trigger_index =
+                    self.animation_preview_trigger_index.min(maximum);
+                ui.add(
+                    egui::DragValue::new(&mut self.animation_preview_trigger_index)
+                        .range(0..=maximum)
+                        .prefix("#"),
+                );
                 let changed = match self.animation_preview_trigger_kind {
-                    0 => ui.checkbox(
-                        &mut self.animation_preview_triggers.custom[self.animation_preview_trigger_index],
-                        "Active",
-                    ).changed(),
-                    1 => ui.checkbox(
-                        &mut self.animation_preview_triggers.one_shot[self.animation_preview_trigger_index],
-                        "Active",
-                    ).changed(),
-                    _ => ui.add(
-                        egui::DragValue::new(
-                            &mut self.animation_preview_triggers.manual_frames[self.animation_preview_trigger_index],
-                        ).range(0..=u8::MAX).prefix("frame $"),
-                    ).changed(),
+                    0 => ui
+                        .checkbox(
+                            &mut self.animation_preview_triggers.custom
+                                [self.animation_preview_trigger_index],
+                            ow_text(catalog, lm_app::ExtendedUiTextKey::OverworldAnimationActive),
+                        )
+                        .changed(),
+                    1 => ui
+                        .checkbox(
+                            &mut self.animation_preview_triggers.one_shot
+                                [self.animation_preview_trigger_index],
+                            ow_text(catalog, lm_app::ExtendedUiTextKey::OverworldAnimationActive),
+                        )
+                        .changed(),
+                    _ => ui
+                        .add(
+                            egui::DragValue::new(
+                                &mut self.animation_preview_triggers.manual_frames
+                                    [self.animation_preview_trigger_index],
+                            )
+                            .range(0..=u8::MAX)
+                            .prefix("frame $"),
+                        )
+                        .changed(),
                 };
                 if changed {
                     self.rendered_key = None;
@@ -2760,21 +2873,30 @@ impl RomOverworldEditor {
                 ui.add(
                     egui::DragValue::new(&mut self.animation_preview_event)
                         .range(0..=u8::MAX as usize)
-                        .prefix("Event $"),
+                        .prefix(ow_text(
+                            catalog,
+                            lm_app::ExtendedUiTextKey::OverworldAnimationEventPrefix,
+                        )),
                 );
                 if ui
                     .checkbox(
                         &mut self.animation_preview_events_passed[self.animation_preview_event],
-                        "Passed",
+                        ow_text(catalog, lm_app::ExtendedUiTextKey::OverworldAnimationPassed),
                     )
                     .changed()
                 {
                     self.rendered_key = None;
                 }
             });
-            ui.small("Event Manual 8-F uses the event numbers stored by Trigger Init and these passed-event states.");
+            ui.small(ow_text(
+                catalog,
+                lm_app::ExtendedUiTextKey::OverworldAnimationEventManualNotice,
+            ));
             if animation.records.is_empty() {
-                ui.small("No custom overworld ExAnimation records are installed for this submap.");
+                ui.small(ow_text(
+                    catalog,
+                    lm_app::ExtendedUiTextKey::OverworldAnimationNoRecordsNotice,
+                ));
             }
         });
     }
@@ -3187,6 +3309,56 @@ mod canvas_tests {
     use crate::document_loader::BoundedRead;
     use crate::overworld_editor_render;
     use eframe::egui;
+
+    #[test]
+    fn installed_animation_options_and_preview_use_every_typed_key() {
+        let source = include_str!("rom_overworld_editor.rs");
+        for key in [
+            lm_app::ExtendedUiTextKey::OverworldAnimationOptionsHeading,
+            lm_app::ExtendedUiTextKey::OverworldAnimationMapSelector,
+            lm_app::ExtendedUiTextKey::OverworldAnimationOriginalPalette,
+            lm_app::ExtendedUiTextKey::OverworldAnimationOriginalTiles,
+            lm_app::ExtendedUiTextKey::OverworldAnimationGlobalFeature,
+            lm_app::ExtendedUiTextKey::OverworldAnimationMapFeature,
+            lm_app::ExtendedUiTextKey::OverworldAnimationOriginalLightning,
+            lm_app::ExtendedUiTextKey::OverworldAnimationOptionsUnsupported,
+            lm_app::ExtendedUiTextKey::OverworldAnimationRuntimeRequired,
+            lm_app::ExtendedUiTextKey::OverworldAnimationInstallRuntime,
+            lm_app::ExtendedUiTextKey::OverworldAnimationInstallRuntimeNotice,
+            lm_app::ExtendedUiTextKey::OverworldAnimationInstallBlocked,
+            lm_app::ExtendedUiTextKey::OverworldAnimationPreviewHeading,
+            lm_app::ExtendedUiTextKey::OverworldAnimationPlay,
+            lm_app::ExtendedUiTextKey::OverworldAnimationPause,
+            lm_app::ExtendedUiTextKey::OverworldAnimationReset,
+            lm_app::ExtendedUiTextKey::OverworldAnimationStepTimer,
+            lm_app::ExtendedUiTextKey::OverworldAnimationPhaseTick,
+            lm_app::ExtendedUiTextKey::OverworldAnimationTimerNotice,
+            lm_app::ExtendedUiTextKey::OverworldAnimationCustom,
+            lm_app::ExtendedUiTextKey::OverworldAnimationOneShot,
+            lm_app::ExtendedUiTextKey::OverworldAnimationManualFrame,
+            lm_app::ExtendedUiTextKey::OverworldAnimationActive,
+            lm_app::ExtendedUiTextKey::OverworldAnimationEventPrefix,
+            lm_app::ExtendedUiTextKey::OverworldAnimationPassed,
+            lm_app::ExtendedUiTextKey::OverworldAnimationEventManualNotice,
+            lm_app::ExtendedUiTextKey::OverworldAnimationNoRecordsNotice,
+        ] {
+            assert!(
+                source.contains(&format!("ExtendedUiTextKey::{key:?}")),
+                "installed animation UI does not consume {key:?}"
+            );
+        }
+        for bypass in [
+            "ui.heading(\"Per-map animation options\")",
+            "ui.button(\"Reset\")",
+            "egui::Button::new(\"Step timer\")",
+            "ui.small(\"No animation records are installed.\")",
+        ] {
+            assert!(
+                !source.contains(bypass),
+                "installed animation UI bypasses typed localization: {bypass}"
+            );
+        }
+    }
 
     #[test]
     fn native_sprite_form_preserves_variable_extensions_and_hex_coordinates() {

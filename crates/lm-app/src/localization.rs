@@ -2246,10 +2246,37 @@ pub enum ExtendedUiTextKey {
     OverworldAnimationFramePrefix,
     OverworldAnimationCopyFrame,
     OverworldAnimationPasteFrame,
+    OverworldAnimationOptionsHeading,
+    OverworldAnimationMapSelector,
+    OverworldAnimationOriginalPalette,
+    OverworldAnimationOriginalTiles,
+    OverworldAnimationGlobalFeature,
+    OverworldAnimationMapFeature,
+    OverworldAnimationOriginalLightning,
+    OverworldAnimationOptionsUnsupported,
+    OverworldAnimationRuntimeRequired,
+    OverworldAnimationInstallRuntime,
+    OverworldAnimationInstallRuntimeNotice,
+    OverworldAnimationInstallBlocked,
+    OverworldAnimationPreviewHeading,
+    OverworldAnimationPlay,
+    OverworldAnimationPause,
+    OverworldAnimationReset,
+    OverworldAnimationStepTimer,
+    OverworldAnimationPhaseTick,
+    OverworldAnimationTimerNotice,
+    OverworldAnimationCustom,
+    OverworldAnimationOneShot,
+    OverworldAnimationManualFrame,
+    OverworldAnimationActive,
+    OverworldAnimationEventPrefix,
+    OverworldAnimationPassed,
+    OverworldAnimationEventManualNotice,
+    OverworldAnimationNoRecordsNotice,
 }
 
 impl ExtendedUiTextKey {
-    pub const ALL: [Self; 545] = [
+    pub const ALL: [Self; 572] = [
         Self::TilemapTitleScreenName,
         Self::TilemapCreditsName,
         Self::TilemapEditorTitleFormat,
@@ -2795,6 +2822,33 @@ impl ExtendedUiTextKey {
         Self::OverworldAnimationFramePrefix,
         Self::OverworldAnimationCopyFrame,
         Self::OverworldAnimationPasteFrame,
+        Self::OverworldAnimationOptionsHeading,
+        Self::OverworldAnimationMapSelector,
+        Self::OverworldAnimationOriginalPalette,
+        Self::OverworldAnimationOriginalTiles,
+        Self::OverworldAnimationGlobalFeature,
+        Self::OverworldAnimationMapFeature,
+        Self::OverworldAnimationOriginalLightning,
+        Self::OverworldAnimationOptionsUnsupported,
+        Self::OverworldAnimationRuntimeRequired,
+        Self::OverworldAnimationInstallRuntime,
+        Self::OverworldAnimationInstallRuntimeNotice,
+        Self::OverworldAnimationInstallBlocked,
+        Self::OverworldAnimationPreviewHeading,
+        Self::OverworldAnimationPlay,
+        Self::OverworldAnimationPause,
+        Self::OverworldAnimationReset,
+        Self::OverworldAnimationStepTimer,
+        Self::OverworldAnimationPhaseTick,
+        Self::OverworldAnimationTimerNotice,
+        Self::OverworldAnimationCustom,
+        Self::OverworldAnimationOneShot,
+        Self::OverworldAnimationManualFrame,
+        Self::OverworldAnimationActive,
+        Self::OverworldAnimationEventPrefix,
+        Self::OverworldAnimationPassed,
+        Self::OverworldAnimationEventManualNotice,
+        Self::OverworldAnimationNoRecordsNotice,
     ];
 
     #[must_use]
@@ -3545,6 +3599,49 @@ impl ExtendedUiTextKey {
             Self::OverworldAnimationFramePrefix => "Frame ",
             Self::OverworldAnimationCopyFrame => "Copy frame",
             Self::OverworldAnimationPasteFrame => "Paste frame",
+            Self::OverworldAnimationOptionsHeading => "Per-map animation options",
+            Self::OverworldAnimationMapSelector => {
+                "Map (main, Yoshi, Vanilla, Forest, Valley, Special, Star)"
+            }
+            Self::OverworldAnimationOriginalPalette => "Original palette animation",
+            Self::OverworldAnimationOriginalTiles => "Original animated tiles",
+            Self::OverworldAnimationGlobalFeature => "Global ExAnimation",
+            Self::OverworldAnimationMapFeature => "This map's ExAnimation",
+            Self::OverworldAnimationOriginalLightning => "Original lightning",
+            Self::OverworldAnimationOptionsUnsupported => {
+                "Per-map option operands are not authenticated for this ROM profile."
+            }
+            Self::OverworldAnimationRuntimeRequired => {
+                "The four feature switches require Lunar Magic's overworld animation runtime; original lightning is independently editable."
+            }
+            Self::OverworldAnimationInstallRuntime => "Install overworld animation runtime",
+            Self::OverworldAnimationInstallRuntimeNotice => {
+                "Install Lunar Magic's authenticated vanilla SMW-US runtime and seven-byte per-map option table as one undoable ROM transaction."
+            }
+            Self::OverworldAnimationInstallBlocked => {
+                "Commit or discard staged changes before installing the runtime."
+            }
+            Self::OverworldAnimationPreviewHeading => "Live overworld ExAnimation preview",
+            Self::OverworldAnimationPlay => "Play",
+            Self::OverworldAnimationPause => "Pause",
+            Self::OverworldAnimationReset => "Reset",
+            Self::OverworldAnimationStepTimer => "Step timer",
+            Self::OverworldAnimationPhaseTick => "phase {phase}, tick {tick}",
+            Self::OverworldAnimationTimerNotice => {
+                "The selected native timer advances {count} animation {unit} per callback."
+            }
+            Self::OverworldAnimationCustom => "Custom",
+            Self::OverworldAnimationOneShot => "One Shot",
+            Self::OverworldAnimationManualFrame => "Manual Frame",
+            Self::OverworldAnimationActive => "Active",
+            Self::OverworldAnimationEventPrefix => "Event $",
+            Self::OverworldAnimationPassed => "Passed",
+            Self::OverworldAnimationEventManualNotice => {
+                "Event Manual 8-F uses the event numbers stored by Trigger Init and these passed-event states."
+            }
+            Self::OverworldAnimationNoRecordsNotice => {
+                "No custom overworld ExAnimation records are installed for this submap."
+            }
         }
     }
 

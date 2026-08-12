@@ -7329,6 +7329,16 @@ ownership navigation pass 2/2; installed animation cadence/table checks pass 3/3
 28/28, and renderer 237/237. Per-map runtime options, preview controls, and remaining profile
 evidence keep the overworld animation row Partial; aggregate parity remains 60/65.
 
+Localization coverage update (2026-08-11, installed overworld animation options and preview):
+twenty-seven appended `ExtendedUiTextKey` values now cover the installed editor's map selector,
+original/global/map animation switches, runtime installation states, preview playback/reset/step
+controls, phase/tick reporting, trigger kind and state, event state, and empty-record guidance. The
+shared-panel audit stops at the installed-only suffix boundary, while a dedicated installed-controls
+audit requires every new key and rejects representative literal regressions. The installed audit
+passes 1/1, the shared animation family passes 3/3, localization passes 28/28, and the renderer
+passes 237/237. Remaining profile and mapper/runtime variant evidence keeps the overworld animation
+row Partial and aggregate parity at 60/65.
+
 Localization coverage update (2026-08-11, installed expanded settings): thirty typed extension
 keys cover the complete profile-backed editor surface—exact record guidance, Layer 3 semantic
 controls, ten bypass assignments, sprite-boundary behavior, sixteen raw words, staging/commit,
