@@ -1310,6 +1310,12 @@ manifest. Launcher 2/2, updater 11/11, packager 3/3, and renderer 237/237 pass. 
 consent and retained cross-platform release execution remain missing, so Release stays Partial and
 aggregate parity remains 60/65.
 
+Localization coverage update (2026-08-12, vanilla Layer 2 tilemap editing): eight typed keys cover
+the panel, selection/count status, Map16 staging, paint/storage guidance, shared-background safety,
+and background canvas. A bounded source audit rejects former literals; focused native,
+localization 28/28 active tests (one provenance ignore), and renderer 237/237 pass. Other
+vanilla/native surfaces keep Localization Partial, so aggregate parity remains 60/65.
+
 Localization coverage update (2026-08-12, vanilla screen-exit workflow): fifteen typed keys cover
 the complete 32-screen table, apply/reset, save-time enforcement, manual scan results, and
 remediation guidance while preserving exact screen values and original-option text. Bounded source

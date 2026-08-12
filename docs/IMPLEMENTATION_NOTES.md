@@ -7100,6 +7100,15 @@ ignore), native compilation passes, and renderer remains 237/237. Vanilla-level 
 shared progress windows, and retained live language-DLL evidence keep Localization Partial;
 aggregate parity remains 60/65.
 
+Localization coverage update (2026-08-12, vanilla Layer 2 tilemap editing): eight additional
+`VanillaLevel*` identities cover the Layer 2 panel, tilemap selection status, Map16 word staging,
+paint/storage guidance, shared-background read-only explanation, decoded object-stream count, and
+32×32 background canvas. Dynamic indexes/counts use localized templates. The live catalog reaches
+both tilemap and object-backed Layer 2 branches without changing copy-on-write safety or storage
+semantics. A bounded source audit rejects former fixed-English controls. Focused native and
+localization tests pass, and renderer remains 237/237. Other vanilla/native forms keep Localization
+Partial; aggregate parity remains 60/65.
+
 Localization coverage update (2026-08-12, vanilla screen-exit workflow): fifteen additional
 `VanillaLevel*` identities cover the 32-screen table, apply/reset actions, save-time invalid-exit
 warning, manual scan result, remediation guidance, and original-option disable hint. The table,

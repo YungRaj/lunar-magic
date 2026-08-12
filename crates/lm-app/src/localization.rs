@@ -4012,10 +4012,18 @@ pub enum ExtendedUiTextKey {
     VanillaLevelScanExitsTitle,
     VanillaLevelNoInvalidExits,
     VanillaLevelInvalidExitFixHelp,
+    VanillaLevelLayer2,
+    VanillaLevelLayer2TilemapStatusFormat,
+    VanillaLevelMap16Word,
+    VanillaLevelStageSelectedTile,
+    VanillaLevelLayer2PaintHelp,
+    VanillaLevelSharedBackgroundReadOnly,
+    VanillaLevelLayer2ObjectCountFormat,
+    VanillaLevelBackgroundCanvas,
 }
 
 impl ExtendedUiTextKey {
-    pub const ALL: [Self; 2311] = [
+    pub const ALL: [Self; 2319] = [
         Self::MwlDocumentEditorTitle,
         Self::MwlDocumentVersionFormat,
         Self::MwlDocumentFlagsHex,
@@ -6327,6 +6335,14 @@ impl ExtendedUiTextKey {
         Self::VanillaLevelScanExitsTitle,
         Self::VanillaLevelNoInvalidExits,
         Self::VanillaLevelInvalidExitFixHelp,
+        Self::VanillaLevelLayer2,
+        Self::VanillaLevelLayer2TilemapStatusFormat,
+        Self::VanillaLevelMap16Word,
+        Self::VanillaLevelStageSelectedTile,
+        Self::VanillaLevelLayer2PaintHelp,
+        Self::VanillaLevelSharedBackgroundReadOnly,
+        Self::VanillaLevelLayer2ObjectCountFormat,
+        Self::VanillaLevelBackgroundCanvas,
     ];
 
     #[must_use]
@@ -9325,6 +9341,22 @@ impl ExtendedUiTextKey {
             Self::VanillaLevelInvalidExitFixHelp => {
                 "Set an exit destination or remove the exit-enabled pipe or door objects on those screens; otherwise the player can become trapped in an endless bonus game."
             }
+            Self::VanillaLevelLayer2 => "Layer 2",
+            Self::VanillaLevelLayer2TilemapStatusFormat => {
+                "Compressed 32×32 background tilemap · selected storage word {index}"
+            }
+            Self::VanillaLevelMap16Word => "Map16 word",
+            Self::VanillaLevelStageSelectedTile => "Stage selected tile",
+            Self::VanillaLevelLayer2PaintHelp => {
+                "Choose “Paint Layer 2 tile” and click the canvas to write this word. Selection follows Lunar Magic's column-major two-plane storage."
+            }
+            Self::VanillaLevelSharedBackgroundReadOnly => {
+                "This is a shared pristine SMW background. It remains read-only until the format-$103 Layer 2 runtime can be installed copy-on-write; editing the shared bank-$0C payload directly would change every level that uses it."
+            }
+            Self::VanillaLevelLayer2ObjectCountFormat => {
+                "{count} native Layer 2 object records are decoded and rendered."
+            }
+            Self::VanillaLevelBackgroundCanvas => "32×32 background canvas",
         }
     }
 

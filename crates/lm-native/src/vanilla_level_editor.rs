@@ -1472,7 +1472,7 @@ impl VanillaLevelEditor {
         else {
             return;
         };
-        egui::CollapsingHeader::new("Layer 2")
+        egui::CollapsingHeader::new(vanilla_text(catalog, ExtendedUiTextKey::VanillaLevelLayer2))
             .id_salt((
                 "vanilla-layer2-tools",
                 self.tool_panel_generations[LevelToolPanel::Layer2.index()],
@@ -1483,18 +1483,30 @@ impl VanillaLevelEditor {
                     let count = bytes.len() / 2;
                     self.selected_layer2_tile =
                         self.selected_layer2_tile.min(count.saturating_sub(1));
-                    ui.label(format!(
-                        "Compressed 32×32 background tilemap · selected storage word {}",
-                        self.selected_layer2_tile
-                    ));
+                    ui.label(
+                        vanilla_text(
+                            catalog,
+                            ExtendedUiTextKey::VanillaLevelLayer2TilemapStatusFormat,
+                        )
+                        .replace("{index}", &self.selected_layer2_tile.to_string()),
+                    );
                     if layer2_tilemap_editable(self.shared_vanilla_background) {
                         ui.horizontal_wrapped(|ui| {
-                            ui.label("Map16 word");
+                            ui.label(vanilla_text(
+                                catalog,
+                                ExtendedUiTextKey::VanillaLevelMap16Word,
+                            ));
                             ui.add(
                                 egui::DragValue::new(&mut self.layer2_word)
                                     .hexadecimal(4, false, true),
                             );
-                            if ui.button("Stage selected tile").clicked() {
+                            if ui
+                                .button(vanilla_text(
+                                    catalog,
+                                    ExtendedUiTextKey::VanillaLevelStageSelectedTile,
+                                ))
+                                .clicked()
+                            {
                                 let result = self
                                     .controller
                                     .as_mut()
@@ -1512,24 +1524,26 @@ impl VanillaLevelEditor {
                                 }
                             }
                         });
-                        ui.small(
-                            "Choose “Paint Layer 2 tile” and click the canvas to write this word. \
-                         Selection follows Lunar Magic's column-major two-plane storage.",
-                        );
+                        ui.small(vanilla_text(
+                            catalog,
+                            ExtendedUiTextKey::VanillaLevelLayer2PaintHelp,
+                        ));
                     } else {
-                        ui.small(
-                        "This is a shared pristine SMW background. It remains read-only until the \
-                         format-$103 Layer 2 runtime can be installed copy-on-write; editing the \
-                         shared bank-$0C payload directly would change every level that uses it.",
-                    );
+                        ui.small(vanilla_text(
+                            catalog,
+                            ExtendedUiTextKey::VanillaLevelSharedBackgroundReadOnly,
+                        ));
                     }
-                    self.show_layer2_tilemap_canvas(ui, bytes, toolbar_images);
+                    self.show_layer2_tilemap_canvas(ui, catalog, bytes, toolbar_images);
                 }
                 lm_level::NativeLayer2Data::Objects(objects) => {
-                    ui.label(format!(
-                        "{} native Layer 2 object records are decoded and rendered.",
-                        objects.objects.records.len()
-                    ));
+                    ui.label(
+                        vanilla_text(
+                            catalog,
+                            ExtendedUiTextKey::VanillaLevelLayer2ObjectCountFormat,
+                        )
+                        .replace("{count}", &objects.objects.records.len().to_string()),
+                    );
                     self.object_catalog(ui, catalog, custom_map16, true);
                     self.extended_object_catalog(ui, catalog, custom_map16, true);
                     self.custom_object_catalog(ui, catalog, custom_objects, custom_map16, true);
@@ -1547,6 +1561,7 @@ impl VanillaLevelEditor {
     fn show_layer2_tilemap_canvas(
         &mut self,
         ui: &mut egui::Ui,
+        catalog: Option<&LocalizationCatalog>,
         bytes: &[u8],
         toolbar_images: &MainToolbarImageSet,
     ) {
@@ -1556,7 +1571,10 @@ impl VanillaLevelEditor {
         let display_side = ui.available_width().min(256.0).max(128.0);
         let image_size = egui::vec2(display_side, display_side);
         let viewport_size = egui::vec2(ui.available_width().max(display_side), 280.0);
-        ui.label("32×32 background canvas");
+        ui.label(vanilla_text(
+            catalog,
+            ExtendedUiTextKey::VanillaLevelBackgroundCanvas,
+        ));
         egui::ScrollArea::both()
             .id_salt("vanilla-layer2-background-canvas")
             .max_height(viewport_size.y)
@@ -17596,6 +17614,24 @@ mod tests {
             assert!(
                 !exit_scan.contains(literal),
                 "fixed-English exit-scan control: {literal}"
+            );
+        }
+        let layer2_panel = source
+            .split("    fn show_layer2_editor(")
+            .nth(1)
+            .unwrap()
+            .split("    fn show_layer2_object_editor(")
+            .next()
+            .unwrap();
+        for literal in [
+            "CollapsingHeader::new(\"Layer 2\")",
+            "label(\"Map16 word\")",
+            "button(\"Stage selected tile\")",
+            "label(\"32×32 background canvas\")",
+        ] {
+            assert!(
+                !layer2_panel.contains(literal),
+                "fixed-English Layer 2 control: {literal}"
             );
         }
         let modeless_editors = source
