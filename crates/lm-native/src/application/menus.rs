@@ -3,8 +3,23 @@ use eframe::egui;
 use lm_app::{Command, EditorMode, EmulatorTestRequest, ExternalTool, ProjectStatus, UiTextKey};
 
 impl NativeApplication {
+    const ORIGINAL_GENERAL_OPTIONS_DIALOG_ID: u16 = 0x041f;
+
     pub(super) fn menu_text(&self, key: UiTextKey) -> String {
         self.localized(key, key.english())
+    }
+
+    fn original_general_option_text(&self, control_id: u32, fallback: &str) -> String {
+        self.app
+            .localization()
+            .and_then(|catalog| {
+                catalog.original_dialog_control_text(
+                    Self::ORIGINAL_GENERAL_OPTIONS_DIALOG_ID,
+                    control_id,
+                )
+            })
+            .unwrap_or(fallback)
+            .to_owned()
     }
 
     pub(super) fn menu_bar(&mut self, context: &egui::Context, ui: &mut egui::Ui) {
@@ -562,25 +577,25 @@ impl NativeApplication {
                 self.set_remember_window_size(remember_window_size);
             }
             let mut scan_exits = self.scan_exits_on_save.unwrap_or(true);
-            if ui
-                .checkbox(&mut scan_exits, "Scan Exits on Save to ROM")
-                .changed()
-            {
+            let scan_exits_label =
+                self.original_general_option_text(0x22a9, "Scan Exits on Save to ROM");
+            if ui.checkbox(&mut scan_exits, scan_exits_label).changed() {
                 self.set_scan_exits_on_save(scan_exits);
             }
             let mut count_sprites = self.count_sprites_on_save.unwrap_or(true);
+            let count_sprites_label =
+                self.original_general_option_text(0x22aa, "Count Sprites on Save to ROM");
             if ui
-                .checkbox(&mut count_sprites, "Count Sprites on Save to ROM")
+                .checkbox(&mut count_sprites, count_sprites_label)
                 .changed()
             {
                 self.set_count_sprites_on_save(count_sprites);
             }
             let mut check_object_placement = self.check_object_placement_on_save.unwrap_or(true);
+            let check_object_placement_label =
+                self.original_general_option_text(0x22ab, "Check Object Placement on Save to ROM");
             if ui
-                .checkbox(
-                    &mut check_object_placement,
-                    "Check Object Placement on Save to ROM",
-                )
+                .checkbox(&mut check_object_placement, check_object_placement_label)
                 .changed()
             {
                 self.set_check_object_placement_on_save(check_object_placement);
@@ -596,11 +611,10 @@ impl NativeApplication {
                 self.set_correct_fatal_errors(correct_fatal_errors);
             }
             let mut warn_vertical_fireball = self.warn_vertical_fireball_buoyancy.unwrap_or(true);
+            let warn_vertical_fireball_label = self
+                .original_general_option_text(0x22ad, "Check if Vertical Fireball has Buoyancy");
             if ui
-                .checkbox(
-                    &mut warn_vertical_fireball,
-                    "Check if Vertical Fireball has Buoyancy",
-                )
+                .checkbox(&mut warn_vertical_fireball, warn_vertical_fireball_label)
                 .changed()
             {
                 self.set_warn_vertical_fireball_buoyancy(warn_vertical_fireball);

@@ -6849,3 +6849,5 @@ Options resource `$041F` labels that name their enabling choices: controls `$22A
 localized strings drive both each warning title and its disable-option guidance. Dynamic safety
 details remain native explanatory text rather than being falsely attributed to an original dialog;
 the executable proves these phrases are option controls, not standalone warning resources.
+The same four catalog entries now label their live Tools-menu checkboxes, so selection, persistence,
+and the resulting warning all present one translated option identity.
