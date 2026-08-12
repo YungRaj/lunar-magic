@@ -2099,6 +2099,27 @@ impl eframe::App for NativeApplication {
                         .map_err(|error| error.to_string());
                 }
                 if staged_editors == 2
+                    && overworld_recovery_revision.is_some()
+                    && warp_link_recovery_revision.is_some()
+                {
+                    let (terrain, paths) = self
+                        .rom_overworld_editor
+                        .staged_main_terrain_and_paths(&self.app)?;
+                    let warps = self
+                        .rom_overworld_warp_link_editor
+                        .staged_recovery_table(&self.app)?
+                        .ok_or("staged warp-link recovery table disappeared")?;
+                    return self
+                        .app
+                        .recovery_snapshot_with_overworld_terrain_navigation(
+                            terrain.as_ref(),
+                            paths,
+                            warps,
+                            self.app.current_level(),
+                        )
+                        .map_err(|error| error.to_string());
+                }
+                if staged_editors == 2
                     && title_tilemap_recovery_revision.is_some()
                     && credits_tilemap_recovery_revision.is_some()
                 {

@@ -1182,6 +1182,12 @@ those combinations requires a recovered combined runtime rather than unsafe last
 All established within-family exact-reopen gates and the 237-test renderer gate remain green. This
 newly explicit shared-runtime gap keeps Release Partial and aggregate parity at 60/65.
 
+Playable-overworld recovery update (2026-08-11): the aggregate main-map Layer 2 editor now exposes
+its revision-bound terrain mutation and optional staged path table so an independently staged warp
+table can join the same recovery clone. Terrain, paths, and warps persist in deterministic order and
+reopen together without touching live bytes/history. Focused exact-reopen and 237 renderer tests
+pass. The broader Release gaps keep the row Partial and aggregate parity at 60/65.
+
 Toolbar coverage update (2026-08-11, GFX display override): authenticated `LM_KEY_GFX_OVERRIDE`
 `$26B8` now opens the original session-only two-row hexadecimal dialog. Eight Layer 1/2 and eight
 Layer 3 slots default to `$7F` (use the real level assignment); explicit `$000..=$FFF` values

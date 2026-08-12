@@ -314,6 +314,35 @@ pub(crate) struct RomOverworldEditor {
 }
 
 impl RomOverworldEditor {
+    pub(crate) fn staged_main_terrain_and_paths(
+        &self,
+        app: &AppState,
+    ) -> Result<
+        (
+            Option<lm_project::RomMutation>,
+            Option<&lm_overworld::OverworldPathLinkTable>,
+        ),
+        String,
+    > {
+        let workspace = self
+            .main_layer2_workspace
+            .as_ref()
+            .ok_or("playable main-overworld workspace is closed")?;
+        if workspace.controller.revision() != app.project_revision() {
+            return Err("stale playable main-overworld workspace cannot be recovered".into());
+        }
+        let terrain = if workspace.controller.is_modified() {
+            Some(overworld_mutation_from_command(
+                app,
+                self.prepare_main_layer2_commit()?,
+            )?)
+        } else {
+            None
+        };
+        let paths = (workspace.paths != workspace.original_paths).then_some(&workspace.paths);
+        Ok((terrain, paths))
+    }
+
     pub(crate) fn staged_recovery_generation(&self, app: &AppState) -> Option<u64> {
         if let Some(workspace) = self.workspace.as_ref()
             && (workspace.controller.is_modified()

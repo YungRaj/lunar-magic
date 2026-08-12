@@ -194,6 +194,33 @@ impl AppState {
         self.recovery_snapshot_with_current_rom(staged.save_snapshot(), level)
     }
 
+    /// Applies playable main-map terrain, its staged path table, and an independently staged warp
+    /// table to one evolving clone. Terrain is a revision-bound mutation; both link installers then
+    /// allocate against its resulting image in native persistence order.
+    pub fn recovery_snapshot_with_overworld_terrain_navigation(
+        &self,
+        terrain: Option<&lm_project::RomMutation>,
+        paths: Option<&lm_overworld::OverworldPathLinkTable>,
+        warps: &lm_overworld::OverworldWarpLinkTable,
+        level: Option<u16>,
+    ) -> Result<Option<RecoverySnapshot>, AppError> {
+        let project = self.project.as_ref().ok_or(AppError::NoProject)?;
+        let mut staged = project.clone();
+        if let Some(mutation) = terrain {
+            staged
+                .apply_mutation("Stage overworld terrain for crash recovery", mutation)
+                .map_err(|error| AppError::Recovery(error.to_string()))?;
+        }
+        if let Some(value) = paths {
+            crate::overworld_path_link_state::replace_native_path_links_in_project(
+                &mut staged,
+                value,
+            )?;
+        }
+        crate::overworld_warp_link_state::replace_native_warp_links_in_project(&mut staged, warps)?;
+        self.recovery_snapshot_with_current_rom(staged.save_snapshot(), level)
+    }
+
     /// Persists all four staged overworld-event domains sequentially into one isolated project so
     /// their pristine installers allocate against a shared evolving ROM image.
     pub fn recovery_snapshot_with_overworld_event_family(
@@ -514,6 +541,64 @@ mod tests {
         reopened.load_recovery(recovery).unwrap();
         assert_eq!(reopened.current_level(), Some(0x105));
         let project = reopened.project().unwrap();
+        assert_eq!(
+            project
+                .load_overworld_path_links_detected(smw_us_v1_overworld_path_patch_locator())
+                .unwrap()
+                .table,
+            paths
+        );
+        assert_eq!(
+            project
+                .load_overworld_warp_links_detected(smw_us_v1_overworld_warp_patch_locator())
+                .unwrap()
+                .table,
+            warps
+        );
+    }
+
+    #[test]
+    fn terrain_mutation_path_and_warp_tables_recover_on_one_evolving_project() {
+        let mut app = AppState::default();
+        app.load_rom(crate::test_support::pristine_smw_us_rom_bytes())
+            .unwrap();
+        let baseline = app.project().unwrap().save_snapshot();
+        let project = app.project().unwrap();
+        let mut paths = project
+            .load_overworld_path_links_detected(smw_us_v1_overworld_path_patch_locator())
+            .unwrap()
+            .table;
+        paths.links[0].target.x_tile ^= 1;
+        let mut warps = project
+            .load_overworld_warp_links_detected(smw_us_v1_overworld_warp_patch_locator())
+            .unwrap()
+            .table;
+        warps.links[0].destination.horizontal_tile ^= 1;
+        let offset = 0x1000;
+        let mut evolved = project.rom.logical_bytes().to_vec();
+        evolved[offset] ^= 0x5a;
+        let terrain = lm_project::RomMutation::between(
+            lm_rom::Mapper::LoRom,
+            project.rom.logical_bytes(),
+            &evolved,
+        )
+        .unwrap();
+
+        let recovery = app
+            .recovery_snapshot_with_overworld_terrain_navigation(
+                Some(&terrain),
+                Some(&paths),
+                &warps,
+                Some(0x105),
+            )
+            .unwrap()
+            .unwrap();
+        assert_eq!(app.project().unwrap().save_snapshot(), baseline);
+        assert_eq!(app.project().unwrap().history.undo_len(), 0);
+        let mut reopened = AppState::default();
+        reopened.load_recovery(recovery).unwrap();
+        let project = reopened.project().unwrap();
+        assert_eq!(project.rom.logical_bytes()[offset], evolved[offset]);
         assert_eq!(
             project
                 .load_overworld_path_links_detected(smw_us_v1_overworld_path_patch_locator())

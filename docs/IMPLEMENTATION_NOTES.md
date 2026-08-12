@@ -6945,3 +6945,11 @@ installation is not sound. `cross_family_overworld_recovery_rejects_before_share
 locks this failure-atomic boundary; all six existing pristine family composition gates still pass.
 A future cross-family route requires an authenticated combined shared-hook runtime, not write
 reordering. Native compilation and the renderer gate remain green at 237/237.
+
+Playable-overworld recovery update (2026-08-11): staged main-map Layer 2 terrain and its embedded
+path edits can now compose with an independently open warp-link editor. The aggregate editor
+exposes its revision-checked terrain mutation and optional path table; recovery applies terrain,
+then path installation/update, then warp installation/update on one evolving clone. The
+`terrain_mutation_path_and_warp_tables_recover_on_one_evolving_project` gate proves all three
+domains reopen together while the live ROM and history remain unchanged. Native compilation and
+all 237 renderer tests pass.
