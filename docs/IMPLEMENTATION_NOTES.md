@@ -7043,3 +7043,13 @@ the install root, and rehashes the executable before returning it. Tests prove t
 rollback, rejection of external directories, and fail-closed post-activation tampering, raising the
 trust core to 11/11. A packaged launcher executable and live relaunch evidence remain incomplete;
 Release stays Partial and aggregate parity remains 60/65.
+
+Packaged launcher update (2026-08-11): the new safe-Rust `lm-launcher` executable locates its own
+install root, resolves and rehashes `LMCURRENT1`, forwards every OS argument directly without shell
+parsing, launches the selected immutable `lm-native`, and returns its exact supported exit code.
+Process gates switch between two real executable fixtures, preserve an argument containing spaces,
+observe distinct exit codes, roll back to the first version, and reject post-selection tampering.
+`lm-package` now requires, hashes, manifests, and archives the launcher; CI and all four release
+matrix targets build it. Launcher 2/2, update 11/11, packager 3/3, and renderer 237/237 gates pass.
+Native extraction/activation consent and retained cross-platform release execution remain
+incomplete; Release stays Partial and aggregate parity remains 60/65.

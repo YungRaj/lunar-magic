@@ -435,6 +435,7 @@ impl UpdateManifest {
             ""
         };
         for required in [
+            format!("lm-launcher{suffix}"),
             format!("lm-native{suffix}"),
             format!("lm-cli{suffix}"),
             format!("lm-libretro{suffix}"),
@@ -847,6 +848,7 @@ mod tests {
         let prefix = "lunar-magic-rust-2.0.0-target-a";
         let bytes = bundle(&[
             (&format!("{prefix}/lm-native"), b"native"),
+            (&format!("{prefix}/lm-launcher"), b"launcher"),
             (&format!("{prefix}/lm-cli"), b"cli"),
             (&format!("{prefix}/lm-libretro"), b"backend"),
             (&format!("{prefix}/RELEASE-MANIFEST.txt"), b"manifest"),

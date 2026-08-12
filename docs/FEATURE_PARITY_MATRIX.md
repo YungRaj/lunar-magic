@@ -1158,6 +1158,15 @@ live ROM and Undo history remain unchanged. The Release row remains Partial for 
 listed installer, update, publication, signing, and remaining recovery gaps; aggregate parity stays
 60/65.
 
+Packaged launcher update (2026-08-11): portable bundles now include a separately built
+`lm-launcher` that resolves and rehashes the atomic selector, forwards OS arguments without shell
+interpretation, launches the chosen immutable native editor, and returns its exit status. Process
+tests prove switch, rollback, spaced-argument preservation, distinct child status propagation, and
+tamper rejection. The four-platform workflow builds it and the packager binds it into the release
+manifest. Launcher 2/2, updater 11/11, packager 3/3, and renderer 237/237 pass. Native activation
+consent and retained cross-platform release execution remain missing, so Release stays Partial and
+aggregate parity remains 60/65.
+
 Transactional update-extraction update (2026-08-11): verified portable archives now extract only
 into a create-new version/target sibling directory. The bounded gzip/tar decoder validates headers,
 checksums, sizes, a single exact top-level prefix, flat portable regular-file names, uniqueness,

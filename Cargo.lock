@@ -1869,6 +1869,14 @@ name = "lm-graphics"
 version = "0.1.0"
 
 [[package]]
+name = "lm-launcher"
+version = "0.1.0"
+dependencies = [
+ "lm-update",
+ "tempfile",
+]
+
+[[package]]
 name = "lm-level"
 version = "0.1.0"
 

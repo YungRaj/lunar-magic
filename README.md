@@ -224,6 +224,7 @@ native GUI and CLI
 | `lm-cli` | Headless format, rendering, ROM-editing, and oracle workflows |
 | `lm-package` | Deterministic create-new portable release archives and SHA-256 manifests |
 | `lm-update` | Bounded platform/version/archive update-manifest verification |
+| `lm-launcher` | Verified immutable-version launcher with rollback selection |
 
 ### Where to start reading
 

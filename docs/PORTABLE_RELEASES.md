@@ -13,7 +13,7 @@ maintains isolated local crash-recovery records for committed unsaved ROM change
 `.tar.gz.sha256` checksum plus a canonical `.tar.gz.update` update manifest. The archive contains
 one top-level directory and these files in a stable order:
 
-- `lm-native`, `lm-cli`, and the isolated `lm-libretro` live-emulator backend (with `.exe` on Windows)
+- `lm-launcher`, `lm-native`, `lm-cli`, and the isolated `lm-libretro` live-emulator backend (with `.exe` on Windows)
 - `README.md`
 - `LICENSE-MIT` and `LICENSE-APACHE`
 - `RELEASE-MANIFEST.txt`
@@ -50,6 +50,11 @@ replacement. The selector binds a direct child version directory and executable 
 executable's SHA-256 digest, is published via a synced same-directory temporary rename, and retains
 the prior valid selector for rollback. Resolution canonicalizes containment and rehashes the target
 before launch, so a moved, external, or modified executable fails closed.
+
+Users start `lm-launcher` from the install root. It resolves and verifies the current selector,
+forwards all operating-system arguments directly to the selected immutable `lm-native` without a
+shell, waits for that process, and returns its exit status. The launcher is included in every
+platform archive and bound by both release and update manifests.
 
 ## Build and verify locally
 

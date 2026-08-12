@@ -41,7 +41,7 @@ jobs:
       - name: Build portable runtime binaries
         run: >-
           cargo build --locked --release --target ${{ matrix.target }}
-          -p lm-native -p lm-cli -p lm-libretro
+          -p lm-native -p lm-cli -p lm-libretro -p lm-launcher
       - name: Test the portable packager
         run: cargo test --locked -p lm-package
       - name: Create deterministic bundle

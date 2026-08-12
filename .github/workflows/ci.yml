@@ -49,7 +49,7 @@ jobs:
       - name: Compile complete test suite
         run: cargo test --workspace --all-targets --no-run
       - name: Build every portable runtime binary
-        run: cargo build --locked -p lm-native -p lm-cli -p lm-libretro
+        run: cargo build --locked -p lm-native -p lm-cli -p lm-libretro -p lm-launcher
       - name: Verify portable bundle contains the live backend
         run: >-
           cargo run --locked -p lm-package --

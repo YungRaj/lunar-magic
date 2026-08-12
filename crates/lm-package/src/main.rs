@@ -146,6 +146,13 @@ fn package(options: &Options) -> Result<PackageResult, PackageError> {
         input_file(
             &options
                 .bin_dir
+                .join(format!("lm-launcher{executable_suffix}")),
+            format!("lm-launcher{executable_suffix}"),
+            0o755,
+        )?,
+        input_file(
+            &options
+                .bin_dir
                 .join(format!("lm-native{executable_suffix}")),
             format!("lm-native{executable_suffix}"),
             0o755,
@@ -491,6 +498,7 @@ mod tests {
             (project.join("README.md"), b"readme".as_slice()),
             (project.join("LICENSE-MIT"), b"mit"),
             (project.join("LICENSE-APACHE"), b"apache"),
+            (bin.join("lm-launcher"), b"launcher"),
             (bin.join("lm-native"), b"native"),
             (bin.join("lm-cli"), b"cli"),
             (bin.join("lm-libretro"), b"libretro"),
@@ -580,6 +588,7 @@ mod tests {
                 "lunar-magic-rust-1.2.3-x86_64-test-none/README.md",
                 "lunar-magic-rust-1.2.3-x86_64-test-none/RELEASE-MANIFEST.txt",
                 "lunar-magic-rust-1.2.3-x86_64-test-none/lm-cli",
+                "lunar-magic-rust-1.2.3-x86_64-test-none/lm-launcher",
                 "lunar-magic-rust-1.2.3-x86_64-test-none/lm-libretro",
                 "lunar-magic-rust-1.2.3-x86_64-test-none/lm-native",
             ]
