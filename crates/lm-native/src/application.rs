@@ -2179,22 +2179,34 @@ impl eframe::App for NativeApplication {
                         )
                         .map_err(|error| error.to_string());
                 }
-                if staged_editors == 2
-                    && graphics_recovery_revision.is_some()
-                    && exanimation_recovery_revision.is_some()
+                let staged_graphics_family = usize::from(graphics_recovery_revision.is_some())
+                    + usize::from(exanimation_recovery_revision.is_some())
+                    + usize::from(expanded_settings_recovery_revision.is_some());
+                if staged_editors == staged_graphics_family && staged_graphics_family >= 2
                 {
                     let mut staged = self
                         .app
                         .project()
                         .ok_or("open a supported ROM first")?
                         .clone();
-                    let graphics_level = self
-                        .rom_graphics_editor
-                        .stage_recovery_on_project(&self.app, &mut staged)?;
-                    let exanimation_level = self
-                        .rom_exanimation_editor
-                        .stage_recovery_on_project(&self.app, &mut staged)?;
-                    let level = graphics_level.or(Some(exanimation_level));
+                    let mut level = None;
+                    if graphics_recovery_revision.is_some() {
+                        level = self
+                            .rom_graphics_editor
+                            .stage_recovery_on_project(&self.app, &mut staged)?;
+                    }
+                    if exanimation_recovery_revision.is_some() {
+                        level = Some(
+                            self.rom_exanimation_editor
+                                .stage_recovery_on_project(&self.app, &mut staged)?,
+                        );
+                    }
+                    if expanded_settings_recovery_revision.is_some() {
+                        level = Some(
+                            self.rom_expanded_settings_editor
+                                .stage_recovery_on_project(&self.app, &mut staged)?,
+                        );
+                    }
                     return self
                         .app
                         .recovery_snapshot_with_current_rom(staged.save_snapshot(), level)

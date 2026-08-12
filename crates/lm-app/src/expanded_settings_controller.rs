@@ -161,6 +161,35 @@ impl ExpandedSettingsController {
             mutation,
         })
     }
+
+    /// Saves the staged record onto an evolving recovery project.
+    ///
+    /// Unlike `prepare_commit`, this route does not retain the original ROM length, so it can be
+    /// composed after another staged editor has grown or relocated data in the recovery clone.
+    ///
+    /// # Errors
+    ///
+    /// Rejects a project whose mapper differs from the decoded installed layout or any installed
+    /// settings I/O failure.
+    pub fn save_to_project(
+        &self,
+        project: &mut Project,
+    ) -> Result<(), ExpandedSettingsControllerError> {
+        let project_mapper = project
+            .identity
+            .as_ref()
+            .map_or(self.layout.mapper, |identity| identity.mapper);
+        if project_mapper != self.layout.mapper {
+            return Err(ExpandedSettingsControllerError::MapperMismatch {
+                snapshot: project_mapper,
+                layout: self.layout.mapper,
+            });
+        }
+        project
+            .save_expanded_level_settings(self.slot, &self.record, self.layout, self.checksum_field)
+            .map(|_| ())
+            .map_err(ExpandedSettingsControllerError::Io)
+    }
 }
 
 #[cfg(test)]
@@ -223,6 +252,46 @@ mod tests {
                 .unwrap(),
             0
         );
+    }
+
+    #[test]
+    fn staged_record_saves_after_an_independent_recovery_clone_growth() {
+        let mut bytes = vec![0; 0x8000];
+        bytes[0x7fc0..0x7fd5].copy_from_slice(b"SUPER MARIOWORLD     ");
+        bytes[0x7fd5] = 0x20;
+        bytes[0x7fd9] = 1;
+        let checksum = lm_rom::compute_snes_checksum(&bytes, 0x7fdc).unwrap();
+        bytes[0x7fdc..0x7fe0].copy_from_slice(&checksum.encoded());
+        let layout = ExpandedLevelSettingsLayout {
+            mapper: Mapper::LoRom,
+            table_offset: 0x2000,
+            entries: 0x200,
+            stride: 0x20,
+        };
+        let mut app = AppState::default();
+        app.load_rom(bytes).unwrap();
+        app.dispatch(Command::SelectLevel(0x105)).unwrap();
+        let mut controller =
+            ExpandedSettingsController::decode(&app.controller_snapshot().unwrap(), layout)
+                .unwrap();
+        controller.set_word(9, 0x5aa5).unwrap();
+
+        let mut staged = app.project().unwrap().clone();
+        staged
+            .expand_rom(Mapper::LoRom, 0x1_0000, 0xff, 0x7fdc)
+            .unwrap();
+        controller.save_to_project(&mut staged).unwrap();
+
+        assert_eq!(staged.rom.logical_len(), 0x1_0000);
+        assert_eq!(
+            staged
+                .load_expanded_level_settings(0x105, layout)
+                .unwrap()
+                .word(9)
+                .unwrap(),
+            0x5aa5
+        );
+        assert_eq!(app.project().unwrap().rom.logical_len(), 0x8000);
     }
 
     #[test]

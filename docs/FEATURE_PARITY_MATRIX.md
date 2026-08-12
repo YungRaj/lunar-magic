@@ -608,6 +608,13 @@ ExAnimation family. Their native coordinator now persists both semantic controll
 one evolving clone, recomputing allocation protection after graphics growth. `semantic_graphics_`
 `and_exanimation_saves_share_one_growing_staging_project` forces expansion, proves disjoint RATS
 owners, exact reopen, checksum validity, and live-project byte identity; both native adapter tests
+cover their individual staging boundaries. Expanded settings now participates in that same evolving
+clone with graphics and/or ExAnimation instead of rejecting a simultaneous recovery snapshot.
+`staged_record_saves_after_an_independent_recovery_clone_growth` proves the installed 32-byte record
+is applied after independent clone growth, reopens exactly, preserves the grown extent, and leaves
+the live project unchanged. Native integration compilation binds every two- and three-editor
+combination to this shared route. Other unrelated simultaneous staged-editor families remain an
+explicit Release-row gap.
 exercise the same save-to-project boundary. Other unlisted simultaneous editor-family combinations
 remain intentionally rejected.
 

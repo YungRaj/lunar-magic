@@ -17,6 +17,30 @@ pub(crate) struct RomExpandedSettingsEditor {
 }
 
 impl RomExpandedSettingsEditor {
+    pub(crate) fn stage_recovery_on_project(
+        &self,
+        app: &AppState,
+        staged: &mut lm_project::Project,
+    ) -> Result<u16, String> {
+        let controller = self
+            .controller
+            .as_ref()
+            .ok_or("expanded-settings workspace is closed")?;
+        if !controller.is_modified() {
+            return Err("expanded-settings workspace has no staged recovery edit".into());
+        }
+        if controller.revision() != app.project_revision() {
+            return Err(
+                "expanded-settings recovery controller was prepared from a stale revision".into(),
+            );
+        }
+        controller
+            .save_to_project(staged)
+            .map_err(|error| error.to_string())?;
+        app.current_level()
+            .ok_or_else(|| "expanded-settings recovery requires a selected level".into())
+    }
+
     pub(crate) fn staged_recovery_generation(&self, app: &AppState) -> Option<u64> {
         let controller = self.controller.as_ref()?;
         controller.is_modified().then(|| {
