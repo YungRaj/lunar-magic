@@ -493,22 +493,29 @@ impl RomOverworldEditor {
         &mut self,
         context: &egui::Context,
         revision: u64,
+        catalog: Option<&LocalizationCatalog>,
     ) -> Option<Command> {
         self.editor_transition_prompt.as_ref()?;
         let mut choice = None;
-        egui::Window::new("Save overworld to ROM?")
+        egui::Window::new(ow_text(catalog, Key::RomOverworldSaveTransitionTitle))
             .collapsible(false)
             .resizable(false)
             .show(context, |ui| {
-                ui.label("The overworld has staged changes. Save before continuing?");
+                ui.label(ow_text(catalog, Key::RomOverworldSaveTransitionNotice));
                 ui.horizontal(|ui| {
-                    if ui.button("Save").clicked() {
+                    if ui.button(ow_text(catalog, Key::RomOverworldSave)).clicked() {
                         choice = Some(0_u8);
                     }
-                    if ui.button("Discard").clicked() {
+                    if ui
+                        .button(ow_text(catalog, Key::RomOverworldDiscard))
+                        .clicked()
+                    {
                         choice = Some(1);
                     }
-                    if ui.button("Cancel").clicked() {
+                    if ui
+                        .button(ow_text(catalog, Key::RomOverworldCancel))
+                        .clicked()
+                    {
                         choice = Some(2);
                     }
                 });
@@ -967,7 +974,7 @@ impl RomOverworldEditor {
         }
         let approved = self.close_confirmation(context, catalog);
         if command.is_none() {
-            command = self.show_editor_transition_confirmation(context, revision);
+            command = self.show_editor_transition_confirmation(context, revision, catalog);
         }
         self.show_error(context, catalog);
         (approved, command)
@@ -1271,7 +1278,7 @@ impl RomOverworldEditor {
             return runtime_command;
         }
         self.show_native_sprite_property_dialog(ui.ctx(), mutation_blocked, catalog);
-        self.commit_controls(ui, editing_blocked, revision)
+        self.commit_controls(ui, editing_blocked, revision, catalog)
     }
 
     fn native_sprite_controls(
@@ -2523,12 +2530,13 @@ impl RomOverworldEditor {
         ui: &mut egui::Ui,
         stale: bool,
         revision: u64,
+        catalog: Option<&LocalizationCatalog>,
     ) -> Option<Command> {
         ui.separator();
         ui.horizontal(|ui| {
-            ui.label("Allocation logical PC hex");
+            ui.label(ow_text(catalog, Key::RomOverworldAllocation));
             ui.text_edit_singleline(&mut self.search_start);
-            ui.label("..");
+            ui.label(ow_text(catalog, Key::RomOverworldRangeSeparator));
             ui.text_edit_singleline(&mut self.search_end);
         });
         let modified = self.workspace.as_ref().is_some_and(|value| {
@@ -2544,7 +2552,7 @@ impl RomOverworldEditor {
         if ui
             .add_enabled(
                 modified && !stale && !self.manifest_loader.is_running() && !transfer_busy,
-                egui::Button::new("Commit all staged overworld changes"),
+                egui::Button::new(ow_text(catalog, Key::RomOverworldCommitAll)),
             )
             .clicked()
         {
@@ -2558,7 +2566,7 @@ impl RomOverworldEditor {
         if ui
             .add_enabled(
                 payloads_modified && !stale && !self.manifest_loader.is_running() && !transfer_busy,
-                egui::Button::new("Commit and reclaim all nine"),
+                egui::Button::new(ow_text(catalog, Key::RomOverworldCommitReclaim)),
             )
             .clicked()
         {
@@ -2566,11 +2574,14 @@ impl RomOverworldEditor {
                 self.error = Some(error);
             }
         }
-        ui.label(if modified {
-            "Staged overworld changes"
-        } else {
-            "No staged changes"
-        });
+        ui.label(ow_text(
+            catalog,
+            if modified {
+                Key::RomOverworldStaged
+            } else {
+                Key::RomOverworldUnmodified
+            },
+        ));
         None
     }
 

@@ -7929,3 +7929,12 @@ overworld family key audit passes, localization passes 28/28 active cases (one p
 native compilation passes, and renderer remains 237/237. General tile/preview, save-transition,
 and aggregate commit controls remain; Localization and aggregate parity remain Partial and 60/65
 respectively.
+
+Localization coverage update (2026-08-12, overworld save transition and aggregate commit): seven
+appended `RomOverworld*` identities cover the staged-change transition prompt, all three decisions,
+both ordinary and reclaiming aggregate commits, and the aggregate staged/clean state. The commit
+range reuses the existing typed allocation and range-separator vocabulary. The overworld family
+key audit passes, localization passes 28/28 active cases (one provenance ignore), native
+compilation passes, and renderer remains 237/237. Shared tile/picker, preview-canvas, and animation
+destination controls remain; Localization and aggregate parity remain Partial and 60/65
+respectively.

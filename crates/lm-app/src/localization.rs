@@ -2330,6 +2330,13 @@ pub enum ExtendedUiTextKey {
     RomOverworldSpritePropertiesTitle,
     RomOverworldSpriteRecordFormat,
     RomOverworldSpriteApply,
+    RomOverworldSaveTransitionTitle,
+    RomOverworldSaveTransitionNotice,
+    RomOverworldSave,
+    RomOverworldCommitAll,
+    RomOverworldCommitReclaim,
+    RomOverworldStaged,
+    RomOverworldUnmodified,
     ExAnimationDocumentTitle,
     ExAnimationDocumentOpenTitle,
     ExAnimationDocumentMaximumRecords,
@@ -3492,7 +3499,7 @@ pub enum ExtendedUiTextKey {
 }
 
 impl ExtendedUiTextKey {
-    pub const ALL: [Self; 1788] = [
+    pub const ALL: [Self; 1795] = [
         Self::MwlDocumentEditorTitle,
         Self::MwlDocumentVersionFormat,
         Self::MwlDocumentFlagsHex,
@@ -4122,6 +4129,13 @@ impl ExtendedUiTextKey {
         Self::RomOverworldSpritePropertiesTitle,
         Self::RomOverworldSpriteRecordFormat,
         Self::RomOverworldSpriteApply,
+        Self::RomOverworldSaveTransitionTitle,
+        Self::RomOverworldSaveTransitionNotice,
+        Self::RomOverworldSave,
+        Self::RomOverworldCommitAll,
+        Self::RomOverworldCommitReclaim,
+        Self::RomOverworldStaged,
+        Self::RomOverworldUnmodified,
         Self::ExAnimationDocumentTitle,
         Self::ExAnimationDocumentOpenTitle,
         Self::ExAnimationDocumentMaximumRecords,
@@ -6079,6 +6093,15 @@ impl ExtendedUiTextKey {
             Self::RomOverworldSpritePropertiesTitle => "Custom overworld sprite properties",
             Self::RomOverworldSpriteRecordFormat => "Map {map} record {record}",
             Self::RomOverworldSpriteApply => "Apply",
+            Self::RomOverworldSaveTransitionTitle => "Save overworld to ROM?",
+            Self::RomOverworldSaveTransitionNotice => {
+                "The overworld has staged changes. Save before continuing?"
+            }
+            Self::RomOverworldSave => "Save",
+            Self::RomOverworldCommitAll => "Commit all staged overworld changes",
+            Self::RomOverworldCommitReclaim => "Commit and reclaim all nine",
+            Self::RomOverworldStaged => "Staged overworld changes",
+            Self::RomOverworldUnmodified => "No staged changes",
             Self::ExAnimationDocumentTitle => "Portable ExAnimation Editor",
             Self::ExAnimationDocumentOpenTitle => "Open ExAnimation",
             Self::ExAnimationDocumentMaximumRecords => {
