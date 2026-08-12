@@ -2,7 +2,7 @@ mod workspace;
 
 use crate::document_loader::{BoundedRead, DocumentLoader, LoadedDocument};
 use eframe::egui;
-use lm_app::{AppState, Command};
+use lm_app::{AppState, Command, ExtendedUiTextKey, LocalizationCatalog};
 use workspace::IpsPatchWorkspace;
 
 #[derive(Default)]
@@ -35,17 +35,18 @@ impl IpsPatchDialog {
     }
 
     pub(crate) fn show(&mut self, context: &egui::Context, app: &AppState) -> Option<Command> {
+        let catalog = app.localization();
         self.poll_loader(context, app);
         let mut command = None;
         if self.workspace.is_some() {
-            egui::Window::new("Apply IPS Patch")
+            egui::Window::new(text(catalog, ExtendedUiTextKey::IpsApplyTitle))
                 .collapsible(false)
                 .resizable(false)
                 .show(context, |ui| {
-                    command = self.contents(ui, app.project_revision());
+                    command = self.contents(ui, app.project_revision(), catalog);
                 });
         }
-        self.show_error(context);
+        self.show_error(context, catalog);
         command
     }
 
@@ -72,34 +73,41 @@ impl IpsPatchDialog {
         }
     }
 
-    fn contents(&mut self, ui: &mut egui::Ui, project_revision: u64) -> Option<Command> {
+    fn contents(
+        &mut self,
+        ui: &mut egui::Ui,
+        project_revision: u64,
+        catalog: Option<&LocalizationCatalog>,
+    ) -> Option<Command> {
         let workspace = self.workspace.as_ref()?;
         let stale = workspace.is_stale(project_revision);
         let mut cancel = false;
-        ui.label("The patch applies to logical ROM offsets; the copier header remains unchanged.");
-        ui.monospace(format!(
-            "logical bytes: {} → {}    changed/added/removed: {}",
-            workspace.source_len, workspace.target_len, workspace.changed_bytes
-        ));
-        ui.label(
-            "The resulting image must retain the open game's stable identity and occupy complete \
-             mapper-addressable banks. A successful patch is one undoable project operation.",
+        ui.label(text(catalog, ExtendedUiTextKey::IpsApplyHeaderNotice));
+        ui.monospace(
+            text(catalog, ExtendedUiTextKey::IpsApplySummaryFormat)
+                .replace("{source}", &workspace.source_len.to_string())
+                .replace("{target}", &workspace.target_len.to_string())
+                .replace("{changed}", &workspace.changed_bytes.to_string()),
         );
+        ui.label(text(catalog, ExtendedUiTextKey::IpsApplyIdentityNotice));
         if stale {
             ui.colored_label(
                 egui::Color32::YELLOW,
-                "The ROM changed after this patch was loaded.",
+                text(catalog, ExtendedUiTextKey::IpsApplyStaleNotice),
             );
         }
         let mut command = None;
         ui.horizontal(|ui| {
-            if ui.button("Cancel").clicked() {
+            if ui
+                .button(text(catalog, ExtendedUiTextKey::IpsApplyCancel))
+                .clicked()
+            {
                 cancel = true;
             }
             if ui
                 .add_enabled(
                     !stale && workspace.changed_bytes != 0,
-                    egui::Button::new("Apply transactionally"),
+                    egui::Button::new(text(catalog, ExtendedUiTextKey::IpsApplyAction)),
                 )
                 .clicked()
             {
@@ -115,20 +123,30 @@ impl IpsPatchDialog {
         command
     }
 
-    fn show_error(&mut self, context: &egui::Context) {
+    fn show_error(&mut self, context: &egui::Context, catalog: Option<&LocalizationCatalog>) {
         if let Some(error) = self.error.clone() {
-            egui::Window::new("IPS patch error").show(context, |ui| {
-                ui.label(error);
-                if ui.button("OK").clicked() {
-                    self.error = None;
-                }
-            });
+            egui::Window::new(text(catalog, ExtendedUiTextKey::IpsApplyErrorTitle)).show(
+                context,
+                |ui| {
+                    ui.label(error);
+                    if ui
+                        .button(text(catalog, ExtendedUiTextKey::IpsApplyOk))
+                        .clicked()
+                    {
+                        self.error = None;
+                    }
+                },
+            );
         }
     }
 
     pub(crate) fn commit_succeeded(&mut self) {
         self.workspace = None;
     }
+}
+
+fn text(catalog: Option<&LocalizationCatalog>, key: ExtendedUiTextKey) -> String {
+    crate::frontend_ui::extended_localized_text(catalog, key)
 }
 
 fn decode_patch(loaded: LoadedDocument) -> Result<Vec<u8>, String> {
@@ -140,6 +158,25 @@ fn decode_patch(loaded: LoadedDocument) -> Result<Vec<u8>, String> {
 mod tests {
     use super::*;
     use std::path::PathBuf;
+
+    #[test]
+    fn complete_ips_apply_form_uses_every_typed_key() {
+        let source = include_str!("ips_patch_dialog.rs");
+        for key in ExtendedUiTextKey::ALL
+            .into_iter()
+            .filter(|key| format!("{key:?}").starts_with("IpsApply"))
+        {
+            assert!(source.contains(&format!("ExtendedUiTextKey::{key:?}")));
+        }
+        for hard_coded_caption in [
+            "Window::new(\"Apply IPS Patch\")",
+            "ui.button(\"Cancel\")",
+            "Button::new(\"Apply transactionally\")",
+            "Window::new(\"IPS patch error\")",
+        ] {
+            assert!(!source.contains(hard_coded_caption));
+        }
+    }
 
     #[test]
     fn exact_loader_group_is_required() {

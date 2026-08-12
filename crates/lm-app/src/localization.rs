@@ -2388,10 +2388,19 @@ pub enum ExtendedUiTextKey {
     CopierHeaderConvert,
     CopierHeaderErrorTitle,
     CopierHeaderOk,
+    IpsApplyTitle,
+    IpsApplyHeaderNotice,
+    IpsApplySummaryFormat,
+    IpsApplyIdentityNotice,
+    IpsApplyStaleNotice,
+    IpsApplyCancel,
+    IpsApplyAction,
+    IpsApplyErrorTitle,
+    IpsApplyOk,
 }
 
 impl ExtendedUiTextKey {
-    pub const ALL: [Self; 687] = [
+    pub const ALL: [Self; 696] = [
         Self::TilemapTitleScreenName,
         Self::TilemapCreditsName,
         Self::TilemapEditorTitleFormat,
@@ -3079,6 +3088,15 @@ impl ExtendedUiTextKey {
         Self::CopierHeaderConvert,
         Self::CopierHeaderErrorTitle,
         Self::CopierHeaderOk,
+        Self::IpsApplyTitle,
+        Self::IpsApplyHeaderNotice,
+        Self::IpsApplySummaryFormat,
+        Self::IpsApplyIdentityNotice,
+        Self::IpsApplyStaleNotice,
+        Self::IpsApplyCancel,
+        Self::IpsApplyAction,
+        Self::IpsApplyErrorTitle,
+        Self::IpsApplyOk,
     ];
 
     #[must_use]
@@ -4033,6 +4051,21 @@ impl ExtendedUiTextKey {
             Self::CopierHeaderConvert => "Convert transactionally",
             Self::CopierHeaderErrorTitle => "Copier-header conversion error",
             Self::CopierHeaderOk => "OK",
+            Self::IpsApplyTitle => "Apply IPS Patch",
+            Self::IpsApplyHeaderNotice => {
+                "The patch applies to logical ROM offsets; the copier header remains unchanged."
+            }
+            Self::IpsApplySummaryFormat => {
+                "logical bytes: {source} → {target}    changed/added/removed: {changed}"
+            }
+            Self::IpsApplyIdentityNotice => {
+                "The resulting image must retain the open game's stable identity and occupy complete mapper-addressable banks. A successful patch is one undoable project operation."
+            }
+            Self::IpsApplyStaleNotice => "The ROM changed after this patch was loaded.",
+            Self::IpsApplyCancel => "Cancel",
+            Self::IpsApplyAction => "Apply transactionally",
+            Self::IpsApplyErrorTitle => "IPS patch error",
+            Self::IpsApplyOk => "OK",
         }
     }
 

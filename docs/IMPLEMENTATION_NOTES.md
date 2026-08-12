@@ -7407,3 +7407,13 @@ requires every key and rejects representative literal regressions. The semantic 
 canonical-header suite passes 5/5, localization passes 28/28, and renderer passes 237/237.
 Localization remains Partial for other native forms and retained live language-DLL evidence;
 aggregate parity remains 60/65.
+
+Localization coverage update (2026-08-12, IPS application): nine appended `IpsApply*` keys cover
+the complete revision-bound IPS application form: logical-offset/header preservation, dynamic
+source/target/change counts, identity and bank-shape requirements, stale state, transactional
+apply/cancel actions, and error lifecycle. Counts remain data substituted into one localized
+template. A complete-family source audit requires every key and rejects representative literal
+regressions. Real-ROM transactional application, malformed/no-op rejection, stale-revision safety,
+and loader framing pass 4/4; localization passes 28/28 and renderer passes 237/237. Localization
+remains Partial for the create-IPS workflow, other native forms, and retained live language-DLL
+evidence; aggregate parity remains 60/65.

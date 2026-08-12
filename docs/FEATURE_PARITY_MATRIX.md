@@ -2066,3 +2066,11 @@ lifecycle. Existing inverse-target, canonical synthesis, stale-revision, no-op, 
 semantics remain proven. The focused form passes 5/5, localization model 28/28, and renderer
 237/237. Other native forms and retained live language-DLL evidence remain open; Localization stays
 Partial and aggregate parity remains 60/65.
+
+Localization coverage update (2026-08-12, IPS application): the complete apply-IPS form now uses
+nine typed extension keys for logical/header guarantees, dynamic change statistics, stable-identity
+and mapper-bank constraints, stale state, transactional controls, and error lifecycle. Real-ROM
+apply, malformed/no-op rejection, stale revision, and exact loader-group behavior remain proven.
+The focused form passes 4/4, localization model 28/28, and renderer 237/237. IPS creation and other
+native forms plus retained live language-DLL evidence remain open; Localization stays Partial and
+aggregate parity remains 60/65.
