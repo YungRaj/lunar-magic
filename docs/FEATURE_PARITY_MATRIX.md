@@ -1832,3 +1832,11 @@ metadata-plus-shared-palette gate reopens both exact semantic values, retains th
 validates the final checksum, and proves live ROM bytes and Undo history remain unchanged. Release
 remains Partial for the explicitly listed installer/update/publication and other recovery gaps;
 aggregate parity remains 60/65.
+Localization coverage update (2026-08-11, title/credits tilemaps): both installed ROM tilemap
+editors now consume nineteen typed extension keys for their complete dynamic and static UI,
+including identities, dimensions, coordinates, planes, tile edits, commit/stale state, unsaved
+confirmation, and errors. Shared standard actions retain their fixed-prefix keys. A two-module audit
+requires every extension key and prohibits literal window/button/label text; existing semantic
+install/reopen, stale-close, and crash-recovery tests remain green. Localization model 28/28,
+tilemap editor 7/7, and renderer 237/237 pass. Other native forms and retained live language-DLL
+evidence remain open; Localization stays Partial and aggregate parity remains 60/65.

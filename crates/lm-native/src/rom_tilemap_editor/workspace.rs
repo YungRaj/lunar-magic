@@ -1,4 +1,4 @@
-use lm_app::{AppState, Command};
+use lm_app::{AppState, Command, ExtendedUiTextKey};
 use lm_overworld::{CreditsTilemap, ExpandedLayerTilemap};
 use lm_profile::{smw_us_v1_credits_tilemap_locator, smw_us_v1_title_tilemap_locator};
 
@@ -9,10 +9,10 @@ pub(super) enum TilemapKind {
 }
 
 impl TilemapKind {
-    pub(super) const fn title(self) -> &'static str {
+    pub(super) const fn title_key(self) -> ExtendedUiTextKey {
         match self {
-            Self::Title => "Title-Screen Tilemap",
-            Self::Credits => "Credits Tilemap",
+            Self::Title => ExtendedUiTextKey::TilemapTitleScreenName,
+            Self::Credits => ExtendedUiTextKey::TilemapCreditsName,
         }
     }
 

@@ -1701,39 +1701,76 @@ const RUST_UI_ITEM_INDEX: u16 = u16::MAX - 1;
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 #[repr(u32)]
 pub enum ExtendedUiTextKey {
+    TilemapTitleScreenName,
+    TilemapCreditsName,
+    TilemapEditorTitleFormat,
+    TilemapDimensionsFormat,
+    TilemapStaleNotice,
     TilemapRow,
     TilemapColumn,
     TilemapPlane,
+    TilemapPrimary,
+    TilemapSecondary,
     TilemapWord,
     TilemapLoadTile,
     TilemapApplyTile,
     TilemapCommit,
+    TilemapStaged,
+    TilemapUnchanged,
+    TilemapDiscardTitleFormat,
     TilemapUnsavedNotice,
+    TilemapErrorTitleFormat,
 }
 
 impl ExtendedUiTextKey {
-    pub const ALL: [Self; 8] = [
+    pub const ALL: [Self; 19] = [
+        Self::TilemapTitleScreenName,
+        Self::TilemapCreditsName,
+        Self::TilemapEditorTitleFormat,
+        Self::TilemapDimensionsFormat,
+        Self::TilemapStaleNotice,
         Self::TilemapRow,
         Self::TilemapColumn,
         Self::TilemapPlane,
+        Self::TilemapPrimary,
+        Self::TilemapSecondary,
         Self::TilemapWord,
         Self::TilemapLoadTile,
         Self::TilemapApplyTile,
         Self::TilemapCommit,
+        Self::TilemapStaged,
+        Self::TilemapUnchanged,
+        Self::TilemapDiscardTitleFormat,
         Self::TilemapUnsavedNotice,
+        Self::TilemapErrorTitleFormat,
     ];
 
     #[must_use]
     pub const fn english(self) -> &'static str {
         match self {
+            Self::TilemapTitleScreenName => "Title-Screen Tilemap",
+            Self::TilemapCreditsName => "Credits Tilemap",
+            Self::TilemapEditorTitleFormat => "ROM {tilemap}",
+            Self::TilemapDimensionsFormat => {
+                "Exact {columns}×{rows} native tile words. Coordinates and values are hexadecimal."
+            }
+            Self::TilemapStaleNotice => {
+                "The ROM changed after this tilemap was opened. Reopen before committing."
+            }
             Self::TilemapRow => "Row",
             Self::TilemapColumn => "Column",
             Self::TilemapPlane => "Plane",
+            Self::TilemapPrimary => "Primary",
+            Self::TilemapSecondary => "Secondary",
             Self::TilemapWord => "Tile word",
             Self::TilemapLoadTile => "Load tile",
             Self::TilemapApplyTile => "Apply tile",
             Self::TilemapCommit => "Commit tilemap to ROM",
+            Self::TilemapStaged => "Staged",
+            Self::TilemapUnchanged => "Unchanged",
+            Self::TilemapDiscardTitleFormat => "Discard {tilemap} changes?",
             Self::TilemapUnsavedNotice => "The staged tilemap has not been committed to the ROM.",
+            Self::TilemapErrorTitleFormat => "{tilemap} editor error",
         }
     }
 

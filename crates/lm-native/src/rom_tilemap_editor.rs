@@ -3,7 +3,7 @@ mod workspace;
 
 use eframe::egui;
 use form::TileForm;
-use lm_app::{AppState, Command};
+use lm_app::{AppState, Command, ExtendedUiTextKey, LocalizationCatalog, UiTextKey};
 use workspace::{TilemapKind, TilemapWorkspace};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -81,80 +81,143 @@ impl RomTilemapEditor {
         false
     }
 
-    fn show(&mut self, context: &egui::Context, project_revision: u64) -> (bool, Option<Command>) {
+    fn show(
+        &mut self,
+        context: &egui::Context,
+        project_revision: u64,
+        catalog: Option<&LocalizationCatalog>,
+    ) -> (bool, Option<Command>) {
         let mut command = None;
         if self.workspace.is_some() {
-            egui::Window::new(format!("ROM {}", self.kind.title()))
-                .default_size([520.0, 360.0])
-                .show(context, |ui| {
-                    command = self.contents(ui, project_revision);
-                });
+            egui::Window::new(self.format_extended(
+                catalog,
+                ExtendedUiTextKey::TilemapEditorTitleFormat,
+                "{tilemap}",
+                &self.tilemap_name(catalog),
+            ))
+            .default_size([520.0, 360.0])
+            .show(context, |ui| {
+                command = self.contents(ui, project_revision, catalog);
+            });
         }
-        let approved = self.close_confirmation(context);
-        self.show_error(context);
+        let approved = self.close_confirmation(context, catalog);
+        self.show_error(context, catalog);
         (approved, command)
     }
 
-    fn contents(&mut self, ui: &mut egui::Ui, project_revision: u64) -> Option<Command> {
+    fn contents(
+        &mut self,
+        ui: &mut egui::Ui,
+        project_revision: u64,
+        catalog: Option<&LocalizationCatalog>,
+    ) -> Option<Command> {
         let workspace = self.workspace.as_ref()?;
         let stale = workspace.revision != project_revision;
         let dirty = workspace.is_dirty();
-        ui.label(format!(
-            "Exact {}×{} native tile words. Coordinates and values are hexadecimal.",
-            self.kind.columns(),
-            self.kind.rows()
-        ));
+        let dimensions = crate::frontend_ui::extended_localized_text(
+            catalog,
+            ExtendedUiTextKey::TilemapDimensionsFormat,
+        )
+        .replace("{columns}", &self.kind.columns().to_string())
+        .replace("{rows}", &self.kind.rows().to_string());
+        ui.label(dimensions);
         if stale {
             ui.colored_label(
                 egui::Color32::YELLOW,
-                "The ROM changed after this tilemap was opened. Reopen before committing.",
+                crate::frontend_ui::extended_localized_text(
+                    catalog,
+                    ExtendedUiTextKey::TilemapStaleNotice,
+                ),
             );
         }
         egui::Grid::new(format!("rom-{:?}-tilemap-form", self.kind))
             .striped(true)
             .show(ui, |ui| {
-                ui.label("Row");
+                ui.label(crate::frontend_ui::extended_localized_text(
+                    catalog,
+                    ExtendedUiTextKey::TilemapRow,
+                ));
                 if ui.text_edit_singleline(&mut self.form.row).changed() {
                     self.form.selection_changed();
                 }
                 ui.end_row();
-                ui.label("Column");
+                ui.label(crate::frontend_ui::extended_localized_text(
+                    catalog,
+                    ExtendedUiTextKey::TilemapColumn,
+                ));
                 if ui.text_edit_singleline(&mut self.form.column).changed() {
                     self.form.selection_changed();
                 }
                 ui.end_row();
                 if self.kind.planes() > 1 {
-                    ui.label("Plane");
+                    ui.label(crate::frontend_ui::extended_localized_text(
+                        catalog,
+                        ExtendedUiTextKey::TilemapPlane,
+                    ));
                     if ui
-                        .selectable_value(&mut self.form.plane, 0, "Primary")
+                        .selectable_value(
+                            &mut self.form.plane,
+                            0,
+                            crate::frontend_ui::extended_localized_text(
+                                catalog,
+                                ExtendedUiTextKey::TilemapPrimary,
+                            ),
+                        )
                         .clicked()
-                        | ui.selectable_value(&mut self.form.plane, 1, "Secondary")
-                            .clicked()
+                        | ui.selectable_value(
+                            &mut self.form.plane,
+                            1,
+                            crate::frontend_ui::extended_localized_text(
+                                catalog,
+                                ExtendedUiTextKey::TilemapSecondary,
+                            ),
+                        )
+                        .clicked()
                     {
                         self.form.selection_changed();
                     }
                     ui.end_row();
                 }
-                ui.label("Tile word");
+                ui.label(crate::frontend_ui::extended_localized_text(
+                    catalog,
+                    ExtendedUiTextKey::TilemapWord,
+                ));
                 ui.text_edit_singleline(&mut self.form.value);
                 ui.end_row();
             });
         let mut command = None;
         ui.horizontal(|ui| {
-            if ui.button("Load tile").clicked()
+            if ui
+                .button(crate::frontend_ui::extended_localized_text(
+                    catalog,
+                    ExtendedUiTextKey::TilemapLoadTile,
+                ))
+                .clicked()
                 && let Err(error) = self.load_selected()
             {
                 self.error = Some(error);
             }
             if ui
-                .add_enabled(!stale, egui::Button::new("Apply tile"))
+                .add_enabled(
+                    !stale,
+                    egui::Button::new(crate::frontend_ui::extended_localized_text(
+                        catalog,
+                        ExtendedUiTextKey::TilemapApplyTile,
+                    )),
+                )
                 .clicked()
                 && let Err(error) = self.apply_selected()
             {
                 self.error = Some(error);
             }
             if ui
-                .add_enabled(dirty && !stale, egui::Button::new("Commit tilemap to ROM"))
+                .add_enabled(
+                    dirty && !stale,
+                    egui::Button::new(crate::frontend_ui::extended_localized_text(
+                        catalog,
+                        ExtendedUiTextKey::TilemapCommit,
+                    )),
+                )
                 .clicked()
             {
                 match self.prepare_commit(project_revision) {
@@ -162,7 +225,14 @@ impl RomTilemapEditor {
                     Err(error) => self.error = Some(error),
                 }
             }
-            ui.label(if dirty { "Staged" } else { "Unchanged" });
+            ui.label(crate::frontend_ui::extended_localized_text(
+                catalog,
+                if dirty {
+                    ExtendedUiTextKey::TilemapStaged
+                } else {
+                    ExtendedUiTextKey::TilemapUnchanged
+                },
+            ));
         });
         command
     }
@@ -190,38 +260,88 @@ impl RomTilemapEditor {
             .command(project_revision)
     }
 
-    fn close_confirmation(&mut self, context: &egui::Context) -> bool {
+    fn close_confirmation(
+        &mut self,
+        context: &egui::Context,
+        catalog: Option<&LocalizationCatalog>,
+    ) -> bool {
         let Some(pending) = self.pending_close else {
             return false;
         };
         let mut approved = false;
-        egui::Window::new(format!("Discard {} changes?", self.kind.title()))
-            .collapsible(false)
-            .resizable(false)
-            .show(context, |ui| {
-                ui.label("The staged tilemap has not been committed to the ROM.");
-                ui.horizontal(|ui| {
-                    if ui.button("Cancel").clicked() {
-                        self.pending_close = None;
-                    }
-                    if ui.button("Discard").clicked() {
-                        self.clear();
-                        approved = pending == PendingClose::Application;
-                    }
-                });
+        egui::Window::new(self.format_extended(
+            catalog,
+            ExtendedUiTextKey::TilemapDiscardTitleFormat,
+            "{tilemap}",
+            &self.tilemap_name(catalog),
+        ))
+        .collapsible(false)
+        .resizable(false)
+        .show(context, |ui| {
+            ui.label(crate::frontend_ui::extended_localized_text(
+                catalog,
+                ExtendedUiTextKey::TilemapUnsavedNotice,
+            ));
+            ui.horizontal(|ui| {
+                if ui
+                    .button(crate::frontend_ui::localized_text(
+                        catalog,
+                        UiTextKey::CommonCancel,
+                    ))
+                    .clicked()
+                {
+                    self.pending_close = None;
+                }
+                if ui
+                    .button(crate::frontend_ui::localized_text(
+                        catalog,
+                        UiTextKey::UnsavedDiscard,
+                    ))
+                    .clicked()
+                {
+                    self.clear();
+                    approved = pending == PendingClose::Application;
+                }
             });
+        });
         approved
     }
 
-    fn show_error(&mut self, context: &egui::Context) {
+    fn show_error(&mut self, context: &egui::Context, catalog: Option<&LocalizationCatalog>) {
         if let Some(error) = self.error.clone() {
-            egui::Window::new(format!("{} editor error", self.kind.title())).show(context, |ui| {
+            egui::Window::new(self.format_extended(
+                catalog,
+                ExtendedUiTextKey::TilemapErrorTitleFormat,
+                "{tilemap}",
+                &self.tilemap_name(catalog),
+            ))
+            .show(context, |ui| {
                 ui.label(error);
-                if ui.button("OK").clicked() {
+                if ui
+                    .button(crate::frontend_ui::localized_text(
+                        catalog,
+                        UiTextKey::CommonOk,
+                    ))
+                    .clicked()
+                {
                     self.error = None;
                 }
             });
         }
+    }
+
+    fn tilemap_name(&self, catalog: Option<&LocalizationCatalog>) -> String {
+        crate::frontend_ui::extended_localized_text(catalog, self.kind.title_key())
+    }
+
+    fn format_extended(
+        &self,
+        catalog: Option<&LocalizationCatalog>,
+        key: ExtendedUiTextKey,
+        placeholder: &str,
+        value: &str,
+    ) -> String {
+        crate::frontend_ui::extended_localized_text(catalog, key).replace(placeholder, value)
     }
 
     fn clear(&mut self) {
@@ -284,8 +404,9 @@ macro_rules! tilemap_editor_wrapper {
                 &mut self,
                 context: &egui::Context,
                 revision: u64,
+                catalog: Option<&LocalizationCatalog>,
             ) -> (bool, Option<Command>) {
-                self.0.show(context, revision)
+                self.0.show(context, revision, catalog)
             }
 
             pub(crate) fn commit_succeeded(&mut self) {
@@ -344,6 +465,30 @@ mod tests {
     use lm_overworld::CreditsTilemap;
     use lm_profile::{smw_us_v1_credits_tilemap_locator, smw_us_v1_title_tilemap_locator};
     use std::path::PathBuf;
+
+    #[test]
+    fn title_and_credits_tilemap_surface_has_no_literal_widget_text() {
+        let source = [
+            include_str!("rom_tilemap_editor.rs"),
+            include_str!("rom_tilemap_editor/workspace.rs"),
+        ]
+        .join("\n");
+        for literal_widget in [
+            "egui::Window::new(\"",
+            "ui.button(\"",
+            "egui::Button::new(\"",
+            "ui.label(\"",
+            ".selectable_value(&mut self.form.plane, 0, \"",
+        ] {
+            assert!(
+                !source.contains(literal_widget),
+                "tilemap editor bypasses typed localization with {literal_widget}"
+            );
+        }
+        for key in ExtendedUiTextKey::ALL {
+            assert!(source.contains(&format!("ExtendedUiTextKey::{key:?}")));
+        }
+    }
 
     fn pristine_app() -> AppState {
         let _root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");

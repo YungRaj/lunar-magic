@@ -84,8 +84,38 @@ impl NativeApplication {
             self.request_quit(context);
         }
         show_rom_editor!(self, context, rom_title_recording_editor);
-        show_rom_editor!(self, context, rom_title_tilemap_editor);
-        show_rom_editor!(self, context, rom_credits_tilemap_editor);
+        for (quit, command, title) in [
+            {
+                let (quit, command) = self.rom_title_tilemap_editor.show(
+                    context,
+                    self.app.project_revision(),
+                    self.app.localization(),
+                );
+                (quit, command, true)
+            },
+            {
+                let (quit, command) = self.rom_credits_tilemap_editor.show(
+                    context,
+                    self.app.project_revision(),
+                    self.app.localization(),
+                );
+                (quit, command, false)
+            },
+        ] {
+            if let Some(command) = command
+                && self.try_dispatch(context, command)
+            {
+                if title {
+                    self.rom_title_tilemap_editor.commit_succeeded();
+                } else {
+                    self.rom_credits_tilemap_editor.commit_succeeded();
+                }
+                self.renderer.invalidate();
+            }
+            if quit {
+                self.request_quit(context);
+            }
+        }
         show_rom_editor!(
             self,
             context,

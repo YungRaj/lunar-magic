@@ -7120,3 +7120,14 @@ surface. Catalog migration retains each historical 19/183/184/199/201/212/230-ke
 prefix and appends English fallbacks into the new 238-key schema. Localization 26/26, focused
 palette-transfer 4/4, and renderer 237/237 gates pass. Remaining native forms and retained original
 language-DLL evidence keep Localization Partial; aggregate parity remains 60/65.
+Localization coverage update (2026-08-11, title/credits tilemap family): the first production use
+of `ExtendedUiTextKey` covers both installed ROM tilemap editors as one complete family. Typed
+extension text now controls title-versus-credits names, dynamic window/dimensions/confirmation/error
+templates, stale-revision guidance, row/column/plane labels, primary/secondary selection, tile word,
+load/apply/commit actions, staged state, and unsaved guidance; shared Cancel, Discard, and OK remain
+in the stable prefix. The native call boundary supplies the active catalog to each editor without
+changing other ROM-editor signatures. A two-module source audit proves every one of the nineteen
+extension keys is consumed and rejects literal window/button/label text. Localization model 28/28,
+tilemap editor 7/7 (including install/reopen and recovery), and renderer 237/237 pass. Localization
+stays Partial for remaining forms and live original language-DLL evidence; aggregate parity remains
+60/65.
