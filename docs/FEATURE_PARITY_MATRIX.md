@@ -1270,6 +1270,14 @@ and oversized replacement atomicity, immutable saves, and later-edit preservatio
 passes 28/28 active cases and renderer 237/237. Other native forms and retained language-DLL
 evidence keep Localization Partial, so aggregate parity remains 60/65.
 
+Localization coverage update (2026-08-12, portable overworld metadata): forty typed extension
+keys cover all three structured panels, fields, submap choices, mutation actions, history/save,
+close, and error UI with the live catalog. One canonical revision now has explicit test evidence
+across level names, player starts, and submap settings, including raw flags/unknown bytes,
+encode/reopen, Undo, and Redo. Native tests pass 9/9, controller tests 3/3, localization 28/28
+active cases, and renderer 237/237. Other native forms and retained language-DLL evidence keep
+Localization Partial, so aggregate parity remains 60/65.
+
 Localization coverage update (2026-08-12, lossless SSC custom-sprite metadata): twenty typed
 extension keys cover the complete source, external-asset status, diagnostics, history/save, close,
 and error surface with the live catalog. Binary-preserving source history, nearest asset-directory

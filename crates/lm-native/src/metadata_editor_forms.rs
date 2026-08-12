@@ -1,4 +1,4 @@
-use crate::{level_editor_forms, overworld_editor_forms::SUBMAP_NAMES};
+use crate::level_editor_forms;
 use lm_overworld::{OverworldLevelName, PlayerStart, Submap, SubmapSettings};
 use std::fmt::Write;
 
@@ -94,8 +94,6 @@ impl SettingsForm {
         })
     }
 }
-
-pub(crate) const METADATA_SUBMAP_NAMES: [&str; 7] = SUBMAP_NAMES;
 
 fn parse_submap(value: usize) -> Result<Submap, String> {
     Submap::decode(u8::try_from(value).unwrap_or(u8::MAX)).ok_or("invalid metadata submap".into())

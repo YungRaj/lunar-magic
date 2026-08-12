@@ -2,10 +2,10 @@ use crate::{
     dialogs,
     document_loader::{BoundedRead, DocumentLoader},
     document_persistence::DocumentPersistence,
-    metadata_editor_forms::{LevelNameForm, METADATA_SUBMAP_NAMES, PlayerStartForm, SettingsForm},
+    metadata_editor_forms::{LevelNameForm, PlayerStartForm, SettingsForm},
 };
 use eframe::egui;
-use lm_app::OverworldMetadataController;
+use lm_app::{ExtendedUiTextKey, LocalizationCatalog, OverworldMetadataController};
 use lm_overworld::{MetadataEdit, OverworldMetadata};
 
 mod panels;
@@ -88,7 +88,11 @@ impl MetadataEditor {
         false
     }
 
-    pub(crate) fn show(&mut self, context: &egui::Context) -> bool {
+    pub(crate) fn show(
+        &mut self,
+        context: &egui::Context,
+        catalog: Option<&LocalizationCatalog>,
+    ) -> bool {
         if let Some(result) = self.loader.show(context) {
             match result.and_then(|mut loaded| {
                 let (path, bytes) = loaded
@@ -111,28 +115,40 @@ impl MetadataEditor {
         }
         if self.controller.is_some() {
             self.clamp_indices();
-            egui::Window::new("Portable Overworld Metadata Editor")
+            egui::Window::new(text(catalog, ExtendedUiTextKey::MetadataEditorTitle))
                 .default_size([720.0, 540.0])
-                .show(context, |ui| self.contents(ui));
+                .show(context, |ui| self.contents(ui, catalog));
         }
-        let approved = self.show_close_confirmation(context);
-        self.show_error(context);
+        let approved = self.show_close_confirmation(context, catalog);
+        self.show_error(context, catalog);
         approved
     }
 
-    fn contents(&mut self, ui: &mut egui::Ui) {
-        self.toolbar(ui);
+    fn contents(&mut self, ui: &mut egui::Ui, catalog: Option<&LocalizationCatalog>) {
+        self.toolbar(ui, catalog);
         ui.separator();
         ui.horizontal(|ui| {
-            ui.selectable_value(&mut self.panel, Panel::LevelNames, "Level names");
-            ui.selectable_value(&mut self.panel, Panel::PlayerStarts, "Player starts");
-            ui.selectable_value(&mut self.panel, Panel::SubmapSettings, "Submap settings");
+            ui.selectable_value(
+                &mut self.panel,
+                Panel::LevelNames,
+                text(catalog, ExtendedUiTextKey::MetadataLevelNames),
+            );
+            ui.selectable_value(
+                &mut self.panel,
+                Panel::PlayerStarts,
+                text(catalog, ExtendedUiTextKey::MetadataPlayerStarts),
+            );
+            ui.selectable_value(
+                &mut self.panel,
+                Panel::SubmapSettings,
+                text(catalog, ExtendedUiTextKey::MetadataSubmapSettings),
+            );
         });
         ui.separator();
         let edit = match self.panel {
-            Panel::LevelNames => self.show_level_names(ui),
-            Panel::PlayerStarts => self.show_player_starts(ui),
-            Panel::SubmapSettings => self.show_submap_settings(ui),
+            Panel::LevelNames => self.show_level_names(ui, catalog),
+            Panel::PlayerStarts => self.show_player_starts(ui, catalog),
+            Panel::SubmapSettings => self.show_submap_settings(ui, catalog),
         };
         if let Some(edit) = edit {
             match edit {
@@ -142,7 +158,7 @@ impl MetadataEditor {
         }
     }
 
-    fn toolbar(&mut self, ui: &mut egui::Ui) {
+    fn toolbar(&mut self, ui: &mut egui::Ui, catalog: Option<&LocalizationCatalog>) {
         let Some(controller) = self.controller.as_ref() else {
             return;
         };
@@ -155,21 +171,37 @@ impl MetadataEditor {
         let mut save_requested = false;
         ui.horizontal(|ui| {
             if ui
-                .add_enabled(can_undo, egui::Button::new("Undo"))
+                .add_enabled(
+                    can_undo,
+                    egui::Button::new(text(catalog, ExtendedUiTextKey::MetadataUndo)),
+                )
                 .clicked()
             {
                 history = Some(true);
             }
             if ui
-                .add_enabled(can_redo, egui::Button::new("Redo"))
+                .add_enabled(
+                    can_redo,
+                    egui::Button::new(text(catalog, ExtendedUiTextKey::MetadataRedo)),
+                )
                 .clicked()
             {
                 history = Some(false);
             }
             save_requested = ui
-                .add_enabled(!self.persistence.is_running(), egui::Button::new("Save"))
+                .add_enabled(
+                    !self.persistence.is_running(),
+                    egui::Button::new(text(catalog, ExtendedUiTextKey::MetadataSave)),
+                )
                 .clicked();
-            ui.label(if modified { "Modified" } else { "Saved" });
+            ui.label(text(
+                catalog,
+                if modified {
+                    ExtendedUiTextKey::MetadataModified
+                } else {
+                    ExtendedUiTextKey::MetadataSaved
+                },
+            ));
         });
         let mut changed = false;
         if let Some(controller) = self.controller.as_mut() {
@@ -226,22 +258,32 @@ impl MetadataEditor {
         self.settings_key = None;
     }
 
-    fn show_close_confirmation(&mut self, context: &egui::Context) -> bool {
+    fn show_close_confirmation(
+        &mut self,
+        context: &egui::Context,
+        catalog: Option<&LocalizationCatalog>,
+    ) -> bool {
         let Some(pending) = self.pending_close else {
             return false;
         };
         let mut approved = false;
-        egui::Window::new("Unsaved overworld metadata")
+        egui::Window::new(text(catalog, ExtendedUiTextKey::MetadataDiscardTitle))
             .collapsible(false)
             .resizable(false)
             .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
             .show(context, |ui| {
-                ui.label("Discard unsaved metadata changes?");
+                ui.label(text(catalog, ExtendedUiTextKey::MetadataUnsavedNotice));
                 ui.horizontal(|ui| {
-                    if ui.button("Cancel").clicked() {
+                    if ui
+                        .button(text(catalog, ExtendedUiTextKey::MetadataCancel))
+                        .clicked()
+                    {
                         self.pending_close = None;
                     }
-                    if ui.button("Discard").clicked() {
+                    if ui
+                        .button(text(catalog, ExtendedUiTextKey::MetadataDiscard))
+                        .clicked()
+                    {
                         self.clear();
                         approved = pending == PendingClose::Application;
                     }
@@ -250,14 +292,17 @@ impl MetadataEditor {
         approved
     }
 
-    fn show_error(&mut self, context: &egui::Context) {
+    fn show_error(&mut self, context: &egui::Context, catalog: Option<&LocalizationCatalog>) {
         if let Some(error) = self.error.clone() {
-            egui::Window::new("Metadata editor error")
+            egui::Window::new(text(catalog, ExtendedUiTextKey::MetadataErrorTitle))
                 .collapsible(false)
                 .resizable(false)
                 .show(context, |ui| {
                     ui.label(error);
-                    if ui.button("OK").clicked() {
+                    if ui
+                        .button(text(catalog, ExtendedUiTextKey::MetadataOk))
+                        .clicked()
+                    {
                         self.error = None;
                     }
                 });
@@ -286,23 +331,150 @@ fn text_field(ui: &mut egui::Ui, label: &str, value: &mut String) {
     });
 }
 
-fn submap_combo(ui: &mut egui::Ui, value: &mut usize, id: &str) {
+fn submap_combo(
+    ui: &mut egui::Ui,
+    value: &mut usize,
+    id: &str,
+    catalog: Option<&LocalizationCatalog>,
+) {
+    let names = metadata_submap_names(catalog);
     egui::ComboBox::from_id_salt(id)
-        .selected_text(METADATA_SUBMAP_NAMES[(*value).min(6)])
+        .selected_text(&names[(*value).min(6)])
         .show_ui(ui, |ui| {
-            for (index, name) in METADATA_SUBMAP_NAMES.into_iter().enumerate() {
+            for (index, name) in names.iter().enumerate() {
                 ui.selectable_value(value, index, name);
             }
         });
 }
 
-fn edit_buttons(ui: &mut egui::Ui, can_remove: bool, noun: &str) -> (bool, bool) {
+fn edit_buttons(
+    ui: &mut egui::Ui,
+    can_remove: bool,
+    upsert: ExtendedUiTextKey,
+    catalog: Option<&LocalizationCatalog>,
+) -> (bool, bool) {
     let mut result = (false, false);
     ui.horizontal(|ui| {
-        result.0 = ui.button(format!("Upsert {noun}")).clicked();
+        result.0 = ui.button(text(catalog, upsert)).clicked();
         result.1 = ui
-            .add_enabled(can_remove, egui::Button::new("Remove selected"))
+            .add_enabled(
+                can_remove,
+                egui::Button::new(text(catalog, ExtendedUiTextKey::MetadataRemoveSelected)),
+            )
             .clicked();
     });
     result
+}
+
+fn metadata_submap_names(catalog: Option<&LocalizationCatalog>) -> [String; 7] {
+    [
+        ExtendedUiTextKey::MetadataSubmapMain,
+        ExtendedUiTextKey::MetadataSubmapYoshiIsland,
+        ExtendedUiTextKey::MetadataSubmapVanillaDome,
+        ExtendedUiTextKey::MetadataSubmapForestIllusion,
+        ExtendedUiTextKey::MetadataSubmapValleyBowser,
+        ExtendedUiTextKey::MetadataSubmapSpecialWorld,
+        ExtendedUiTextKey::MetadataSubmapStarWorld,
+    ]
+    .map(|key| text(catalog, key))
+}
+
+fn text(catalog: Option<&LocalizationCatalog>, key: ExtendedUiTextKey) -> String {
+    crate::frontend_ui::extended_localized_text(catalog, key)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use lm_overworld::{OverworldLevelName, PlayerStart, Submap, SubmapSettings};
+
+    fn controller() -> OverworldMetadataController {
+        OverworldMetadataController::decode(
+            "metadata.lmowmeta".into(),
+            &OverworldMetadata::default().encode_file().unwrap(),
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn complete_metadata_form_uses_every_typed_key_and_live_catalog() {
+        let editor = include_str!("metadata_editor.rs");
+        let panels = include_str!("metadata_editor/panels.rs");
+        for key in ExtendedUiTextKey::ALL
+            .into_iter()
+            .filter(|key| format!("{key:?}").starts_with("Metadata"))
+        {
+            assert!(
+                editor.contains(&format!("ExtendedUiTextKey::{key:?}"))
+                    || panels.contains(&format!("ExtendedUiTextKey::{key:?}")),
+                "missing metadata label {key:?}"
+            );
+        }
+        for literal in [
+            "Window::new(\"Portable Overworld Metadata Editor\")",
+            "Window::new(\"Unsaved overworld metadata\")",
+            "Window::new(\"Metadata editor error\")",
+            "Button::new(\"Undo\")",
+            "Button::new(\"Save\")",
+            "Button::new(\"Remove selected\")",
+        ] {
+            assert!(
+                !editor.contains(literal),
+                "fixed-English control: {literal}"
+            );
+        }
+        assert!(
+            include_str!("application/windows.rs")
+                .contains(".show(context, self.app.localization())")
+        );
+    }
+
+    #[test]
+    fn all_three_metadata_domains_commit_canonically_as_one_undoable_revision() {
+        let mut controller = controller();
+        let name = OverworldLevelName {
+            level: 0x105,
+            tiles: [0x2a; OverworldLevelName::TILE_COUNT],
+            raw_flags: 0x81,
+        };
+        let start = PlayerStart {
+            player: 1,
+            x: 0x1234,
+            y: 0x5678,
+            submap: Submap::StarWorld,
+            raw_flags: 0x82,
+        };
+        let settings = SubmapSettings {
+            submap: Submap::ForestOfIllusion,
+            music: 3,
+            palette: 4,
+            layer1_scroll: 5,
+            layer2_scroll: 6,
+            raw_flags: 0x9234,
+            unknown: [7, 8, 9, 10, 11],
+        };
+        controller
+            .apply_edits(
+                0,
+                &[
+                    MetadataEdit::UpsertLevelName(name.clone()),
+                    MetadataEdit::UpsertPlayerStart(start),
+                    MetadataEdit::UpsertSubmapSettings(settings),
+                ],
+            )
+            .unwrap();
+        assert_eq!(controller.revision(), 1);
+        assert_eq!(controller.metadata().level_names, [name]);
+        assert_eq!(controller.metadata().player_starts, [start]);
+        assert_eq!(controller.metadata().submap_settings, [settings]);
+
+        let snapshot = controller.begin_save().unwrap();
+        let reopened = OverworldMetadata::decode_file(&snapshot.bytes).unwrap();
+        assert_eq!(reopened, *controller.metadata());
+        controller.cancel_save(snapshot.request_id).unwrap();
+        assert!(controller.undo(controller.revision()).unwrap());
+        assert_eq!(controller.metadata(), &OverworldMetadata::default());
+        assert!(controller.redo(controller.revision()).unwrap());
+        assert_eq!(controller.metadata(), &reopened);
+    }
 }

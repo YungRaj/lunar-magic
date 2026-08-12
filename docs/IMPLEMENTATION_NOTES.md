@@ -7122,6 +7122,19 @@ and preservation of edits made after persistence begins. Localization passes 28/
 (one provenance ignore), and renderer passes 237/237. Other native forms and retained live
 language-DLL evidence keep Localization Partial; aggregate parity remains 60/65.
 
+Localization coverage update (2026-08-12, portable overworld metadata): forty appended
+`Metadata*` keys cover the complete three-panel editor: level-name records, player starts,
+submap settings, every hexadecimal field, seven submap choices, upsert/remove actions,
+history/save/dirty state, close confirmation, and error lifecycle. The application host passes the
+live catalog through the parent form and every panel/helper. A domain-spanning test applies one
+level name, one player start, and one submap-settings record—including raw flags and five unknown
+bytes—as one revision, proves canonical encode/reopen equality, then atomic Undo/Redo. Native form
+tests pass 9/9; controller tests pass 3/3 for revision binding, divergent history, immutable save
+snapshots, stale acknowledgement retention, later-edit preservation, and request overflow.
+Localization passes 28/28 active cases (one provenance ignore), and renderer passes 237/237.
+Other native forms and retained language-DLL evidence keep Localization Partial; aggregate parity
+remains 60/65.
+
 Localization coverage update (2026-08-11, current-level palette transfer): the complete native
 import/export format chooser now routes its export/import titles, format explanation, Raw/TPL/RGB
 actions, optional `.palmask` guidance, Cancel/OK actions, and error title through the active typed
