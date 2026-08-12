@@ -1,6 +1,6 @@
 use crate::level_editor_forms::{SecondaryExitForm, parse_hex_u16};
 use eframe::egui;
-use lm_app::{AppState, Command, LocalizationCatalog};
+use lm_app::{AppState, Command, ExtendedUiTextKey, LocalizationCatalog, UiTextKey};
 use lm_level::{SecondaryExit, SecondaryExitTable};
 use lm_profile::smw_us_v1_secondary_exit_locator;
 
@@ -168,9 +168,9 @@ impl RomSecondaryExitEditor {
                     command = self.contents(ui, project_revision, catalog);
                 });
         }
-        let approved = self.close_confirmation(context);
-        self.clear_all_confirmation(context, project_revision);
-        self.show_error(context);
+        let approved = self.close_confirmation(context, catalog);
+        self.clear_all_confirmation(context, project_revision, catalog);
+        self.show_error(context, catalog);
         (approved, command)
     }
 
@@ -183,19 +183,22 @@ impl RomSecondaryExitEditor {
         let workspace = self.workspace.as_ref()?;
         let stale = workspace.revision != project_revision;
         let modified = workspace.table != workspace.original;
-        ui.label("Global 8,192-entry native table. Values are hexadecimal.");
+        ui.label(text(catalog, ExtendedUiTextKey::SecondaryExitDescription));
         if stale {
             ui.colored_label(
                 egui::Color32::YELLOW,
-                "The ROM changed after this table was opened. Reopen before committing.",
+                text(catalog, ExtendedUiTextKey::SecondaryExitStaleNotice),
             );
         }
         ui.horizontal(|ui| {
-            ui.label("Entry");
+            ui.label(text(catalog, ExtendedUiTextKey::SecondaryExitEntry));
             if ui.text_edit_singleline(&mut self.index).changed() {
                 self.loaded_index = None;
             }
-            if ui.button("Load").clicked() {
+            if ui
+                .button(text(catalog, ExtendedUiTextKey::SecondaryExitLoad))
+                .clicked()
+            {
                 self.load_selected();
             }
         });
@@ -203,7 +206,10 @@ impl RomSecondaryExitEditor {
         let mut command = None;
         ui.horizontal(|ui| {
             if ui
-                .add_enabled(!stale, egui::Button::new("Apply entry"))
+                .add_enabled(
+                    !stale,
+                    egui::Button::new(text(catalog, ExtendedUiTextKey::SecondaryExitApplyEntry)),
+                )
                 .clicked()
             {
                 if let Err(error) = self.apply_selected() {
@@ -230,7 +236,10 @@ impl RomSecondaryExitEditor {
                 self.pending_clear_all = true;
             }
             if ui
-                .add_enabled(modified && !stale, egui::Button::new("Commit table to ROM"))
+                .add_enabled(
+                    modified && !stale,
+                    egui::Button::new(text(catalog, ExtendedUiTextKey::SecondaryExitCommit)),
+                )
                 .clicked()
             {
                 match self.prepare_commit(project_revision) {
@@ -238,7 +247,14 @@ impl RomSecondaryExitEditor {
                     Err(error) => self.error = Some(error),
                 }
             }
-            ui.label(if modified { "Staged" } else { "Unchanged" });
+            ui.label(text(
+                catalog,
+                if modified {
+                    ExtendedUiTextKey::SecondaryExitStaged
+                } else {
+                    ExtendedUiTextKey::SecondaryExitUnchanged
+                },
+            ));
         });
         command
     }
@@ -335,20 +351,36 @@ impl RomSecondaryExitEditor {
         Ok(())
     }
 
-    fn clear_all_confirmation(&mut self, context: &egui::Context, project_revision: u64) {
+    fn clear_all_confirmation(
+        &mut self,
+        context: &egui::Context,
+        project_revision: u64,
+        catalog: Option<&LocalizationCatalog>,
+    ) {
         if !self.pending_clear_all {
             return;
         }
-        egui::Window::new("Clear all secondary exits?")
+        egui::Window::new(text(catalog, ExtendedUiTextKey::SecondaryExitClearAllTitle))
             .collapsible(false)
             .resizable(false)
             .show(context, |ui| {
-                ui.label("This stages 8,192 cleared entries. The ROM is unchanged until commit.");
+                ui.label(text(
+                    catalog,
+                    ExtendedUiTextKey::SecondaryExitClearAllNotice,
+                ));
                 ui.horizontal(|ui| {
-                    if ui.button("Cancel").clicked() {
+                    if ui
+                        .button(crate::frontend_ui::localized_text(
+                            catalog,
+                            UiTextKey::CommonCancel,
+                        ))
+                        .clicked()
+                    {
                         self.pending_clear_all = false;
                     }
-                    if ui.button("Clear all").clicked()
+                    if ui
+                        .button(text(catalog, ExtendedUiTextKey::SecondaryExitClearAll))
+                        .clicked()
                         && let Err(error) = self.clear_all(project_revision)
                     {
                         self.error = Some(error);
@@ -357,21 +389,37 @@ impl RomSecondaryExitEditor {
             });
     }
 
-    fn close_confirmation(&mut self, context: &egui::Context) -> bool {
+    fn close_confirmation(
+        &mut self,
+        context: &egui::Context,
+        catalog: Option<&LocalizationCatalog>,
+    ) -> bool {
         let Some(pending) = self.pending_close else {
             return false;
         };
         let mut approved = false;
-        egui::Window::new("Discard staged secondary exits?")
+        egui::Window::new(text(catalog, ExtendedUiTextKey::SecondaryExitDiscardTitle))
             .collapsible(false)
             .resizable(false)
             .show(context, |ui| {
-                ui.label("The staged global table has not been committed to the ROM.");
+                ui.label(text(catalog, ExtendedUiTextKey::SecondaryExitUnsavedNotice));
                 ui.horizontal(|ui| {
-                    if ui.button("Cancel").clicked() {
+                    if ui
+                        .button(crate::frontend_ui::localized_text(
+                            catalog,
+                            UiTextKey::CommonCancel,
+                        ))
+                        .clicked()
+                    {
                         self.pending_close = None;
                     }
-                    if ui.button("Discard").clicked() {
+                    if ui
+                        .button(crate::frontend_ui::localized_text(
+                            catalog,
+                            UiTextKey::UnsavedDiscard,
+                        ))
+                        .clicked()
+                    {
                         self.clear();
                         approved = pending == PendingClose::Application;
                     }
@@ -380,14 +428,23 @@ impl RomSecondaryExitEditor {
         approved
     }
 
-    fn show_error(&mut self, context: &egui::Context) {
+    fn show_error(&mut self, context: &egui::Context, catalog: Option<&LocalizationCatalog>) {
         if let Some(error) = self.error.clone() {
-            egui::Window::new("Secondary-exit editor error").show(context, |ui| {
-                ui.label(error);
-                if ui.button("OK").clicked() {
-                    self.error = None;
-                }
-            });
+            egui::Window::new(text(catalog, ExtendedUiTextKey::SecondaryExitErrorTitle)).show(
+                context,
+                |ui| {
+                    ui.label(error);
+                    if ui
+                        .button(crate::frontend_ui::localized_text(
+                            catalog,
+                            UiTextKey::CommonOk,
+                        ))
+                        .clicked()
+                    {
+                        self.error = None;
+                    }
+                },
+            );
         }
     }
 
@@ -401,6 +458,10 @@ impl RomSecondaryExitEditor {
     pub(crate) fn commit_succeeded(&mut self) {
         self.clear();
     }
+}
+
+fn text(catalog: Option<&LocalizationCatalog>, key: ExtendedUiTextKey) -> String {
+    crate::frontend_ui::extended_localized_text(catalog, key)
 }
 
 const ORIGINAL_DIALOG_ID: u16 = 0x03f1;
@@ -431,19 +492,37 @@ fn secondary_fields(
         .show(ui, |ui| {
             for (label, value) in [
                 (
-                    dialog_control_text(catalog, 0x6c, "Destination"),
+                    dialog_control_text(catalog, 0x6c, "Destination").to_owned(),
                     &mut form.destination,
                 ),
-                ("Position/method", &mut form.position),
                 (
-                    dialog_control_text(catalog, 0xdb, "Screen"),
+                    text(catalog, ExtendedUiTextKey::SecondaryExitPositionMethod),
+                    &mut form.position,
+                ),
+                (
+                    dialog_control_text(catalog, 0xdb, "Screen").to_owned(),
                     &mut form.screen,
                 ),
-                (dialog_control_text(catalog, 0x67, "X"), &mut form.x),
-                (dialog_control_text(catalog, 0x69, "Y"), &mut form.y),
-                ("Destination flags", &mut form.destination_flags),
-                ("X/overworld flags", &mut form.x_flags),
-                ("Additional flags", &mut form.additional),
+                (
+                    dialog_control_text(catalog, 0x67, "X").to_owned(),
+                    &mut form.x,
+                ),
+                (
+                    dialog_control_text(catalog, 0x69, "Y").to_owned(),
+                    &mut form.y,
+                ),
+                (
+                    text(catalog, ExtendedUiTextKey::SecondaryExitDestinationFlags),
+                    &mut form.destination_flags,
+                ),
+                (
+                    text(catalog, ExtendedUiTextKey::SecondaryExitXOverworldFlags),
+                    &mut form.x_flags,
+                ),
+                (
+                    text(catalog, ExtendedUiTextKey::SecondaryExitAdditionalFlags),
+                    &mut form.additional,
+                ),
             ] {
                 ui.label(label);
                 ui.text_edit_singleline(value);
@@ -458,6 +537,30 @@ mod tests {
     use lm_app::{OriginalDialogTextKey, UiTextKey};
     use lm_rom::RomImage;
     use std::path::PathBuf;
+
+    #[test]
+    fn secondary_exit_rust_surface_uses_every_typed_extension_key() {
+        let source = include_str!("rom_secondary_exit_editor.rs");
+        for key in ExtendedUiTextKey::ALL
+            .into_iter()
+            .filter(|key| format!("{key:?}").starts_with("SecondaryExit"))
+        {
+            assert!(source.contains(&format!("ExtendedUiTextKey::{key:?}")));
+        }
+        for bypass in [
+            "ui.button(\"Load\")",
+            "egui::Button::new(\"Apply entry\")",
+            "egui::Button::new(\"Commit table to ROM\")",
+            "egui::Window::new(\"Clear all secondary exits?\")",
+            "egui::Window::new(\"Discard staged secondary exits?\")",
+            "egui::Window::new(\"Secondary-exit editor error\")",
+        ] {
+            assert!(
+                !source.contains(bypass),
+                "secondary-exit Rust surface bypasses typed localization with {bypass}"
+            );
+        }
+    }
 
     #[test]
     fn pristine_table_stages_a_global_entry_and_emits_one_profile_command() {

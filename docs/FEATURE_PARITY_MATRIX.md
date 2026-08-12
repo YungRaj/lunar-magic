@@ -1192,6 +1192,14 @@ opaque flag/byte/high-nibble preservation, and pristine/installed recovery remai
 Localization model 28/28, settings family 7/7, and renderer 237/237 pass. Other native forms and
 retained live language-DLL evidence remain open; Localization stays Partial and aggregate parity
 remains 60/65.
+Localization coverage update (2026-08-11, global secondary exits): the complete 8,192-entry editor
+now combines authenticated original dialog `$03F1` title/control translations with eighteen typed
+extension keys for every Rust-native table status, extra flag field, apply/commit action, clear-all
+confirmation, discard, and error surface. Source and retained original-dialog inventory audits cover
+both text sources. Final-entry pristine recovery, installed-table preservation, invalid-state
+handling, and exact clear-one/clear-all behavior remain proven. Localization model 28/28,
+secondary-exit editor 9/9, and renderer 237/237 pass. Other native forms and retained live
+language-DLL evidence remain open; Localization stays Partial and aggregate parity remains 60/65.
 
 Localization coverage update (2026-08-11, current-level palette transfer): the full Raw 257-color,
 TPL v2, and RGB24 import/export chooser—including format guidance, `.palmask` behavior, actions, and

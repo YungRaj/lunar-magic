@@ -1853,10 +1853,28 @@ pub enum ExtendedUiTextKey {
     OverworldSettingsDiscardTitle,
     OverworldSettingsUnsavedNotice,
     OverworldSettingsErrorTitle,
+    SecondaryExitDescription,
+    SecondaryExitStaleNotice,
+    SecondaryExitEntry,
+    SecondaryExitLoad,
+    SecondaryExitPositionMethod,
+    SecondaryExitDestinationFlags,
+    SecondaryExitXOverworldFlags,
+    SecondaryExitAdditionalFlags,
+    SecondaryExitApplyEntry,
+    SecondaryExitCommit,
+    SecondaryExitStaged,
+    SecondaryExitUnchanged,
+    SecondaryExitClearAllTitle,
+    SecondaryExitClearAllNotice,
+    SecondaryExitClearAll,
+    SecondaryExitDiscardTitle,
+    SecondaryExitUnsavedNotice,
+    SecondaryExitErrorTitle,
 }
 
 impl ExtendedUiTextKey {
-    pub const ALL: [Self; 152] = [
+    pub const ALL: [Self; 170] = [
         Self::TilemapTitleScreenName,
         Self::TilemapCreditsName,
         Self::TilemapEditorTitleFormat,
@@ -2009,6 +2027,24 @@ impl ExtendedUiTextKey {
         Self::OverworldSettingsDiscardTitle,
         Self::OverworldSettingsUnsavedNotice,
         Self::OverworldSettingsErrorTitle,
+        Self::SecondaryExitDescription,
+        Self::SecondaryExitStaleNotice,
+        Self::SecondaryExitEntry,
+        Self::SecondaryExitLoad,
+        Self::SecondaryExitPositionMethod,
+        Self::SecondaryExitDestinationFlags,
+        Self::SecondaryExitXOverworldFlags,
+        Self::SecondaryExitAdditionalFlags,
+        Self::SecondaryExitApplyEntry,
+        Self::SecondaryExitCommit,
+        Self::SecondaryExitStaged,
+        Self::SecondaryExitUnchanged,
+        Self::SecondaryExitClearAllTitle,
+        Self::SecondaryExitClearAllNotice,
+        Self::SecondaryExitClearAll,
+        Self::SecondaryExitDiscardTitle,
+        Self::SecondaryExitUnsavedNotice,
+        Self::SecondaryExitErrorTitle,
     ];
 
     #[must_use]
@@ -2214,6 +2250,32 @@ impl ExtendedUiTextKey {
                 "The staged settings have not been committed to the ROM."
             }
             Self::OverworldSettingsErrorTitle => "Overworld-settings editor error",
+            Self::SecondaryExitDescription => {
+                "Global 8,192-entry native table. Values are hexadecimal."
+            }
+            Self::SecondaryExitStaleNotice => {
+                "The ROM changed after this table was opened. Reopen before committing."
+            }
+            Self::SecondaryExitEntry => "Entry",
+            Self::SecondaryExitLoad => "Load",
+            Self::SecondaryExitPositionMethod => "Position/method",
+            Self::SecondaryExitDestinationFlags => "Destination flags",
+            Self::SecondaryExitXOverworldFlags => "X/overworld flags",
+            Self::SecondaryExitAdditionalFlags => "Additional flags",
+            Self::SecondaryExitApplyEntry => "Apply entry",
+            Self::SecondaryExitCommit => "Commit table to ROM",
+            Self::SecondaryExitStaged => "Staged",
+            Self::SecondaryExitUnchanged => "Unchanged",
+            Self::SecondaryExitClearAllTitle => "Clear all secondary exits?",
+            Self::SecondaryExitClearAllNotice => {
+                "This stages 8,192 cleared entries. The ROM is unchanged until commit."
+            }
+            Self::SecondaryExitClearAll => "Clear all",
+            Self::SecondaryExitDiscardTitle => "Discard staged secondary exits?",
+            Self::SecondaryExitUnsavedNotice => {
+                "The staged global table has not been committed to the ROM."
+            }
+            Self::SecondaryExitErrorTitle => "Secondary-exit editor error",
         }
     }
 

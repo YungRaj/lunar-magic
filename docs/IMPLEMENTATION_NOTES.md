@@ -7180,6 +7180,17 @@ reopen, invalid/stale safety, pristine expanded-table recovery, and installed-ta
 and renderer 237/237 pass. Localization stays Partial for remaining forms and live original
 language-DLL evidence; aggregate parity remains 60/65.
 
+Localization coverage update (2026-08-11, global secondary exits): the complete 8,192-entry editor
+now combines authenticated original dialog `$03F1` text for its title, Destination/Screen/X/Y, and
+Clear Entry/Clear All controls with eighteen typed extension keys for the Rust-native description,
+stale/status text, extra flag fields, apply/commit flow, clear-all confirmation, discard, and error
+surfaces. Shared Cancel/Discard/OK retain fixed-prefix keys. The source audit requires every
+`SecondaryExit*` key while the retained dialog-inventory test proves original resource overrides and
+fallbacks. Localization model 28/28 and secondary-exit editor 9/9 pass, including final-entry
+pristine recovery, installed-table preservation, invalid-state handling, and exact clear-one/
+clear-all behavior. Renderer parity remains 237/237. Localization stays Partial for remaining forms
+and live original language-DLL evidence; aggregate parity remains 60/65.
+
 Localization coverage update (2026-08-11, overworld event tilemaps): the complete 2,048-cell,
 three-plane editor now uses twenty typed extension keys for its window, buffer description, dynamic
 pristine/installed storage state, stale warning, tile/plane/value fields, all three plane choices,
