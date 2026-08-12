@@ -605,18 +605,17 @@ historical runtime-generation variants remain open for the compression row.
 Crash-recovery evidence update (2026-08-11): the Release row's older statement that simultaneous
 independently allocating editors always fail visibly is superseded for the installed graphics plus
 ExAnimation family. Their native coordinator now persists both semantic controllers sequentially on
-one evolving clone, recomputing allocation protection after graphics growth. `semantic_graphics_`
-`and_exanimation_saves_share_one_growing_staging_project` forces expansion, proves disjoint RATS
-owners, exact reopen, checksum validity, and live-project byte identity; both native adapter tests
-cover their individual staging boundaries. Expanded settings now participates in that same evolving
-clone with graphics and/or ExAnimation instead of rejecting a simultaneous recovery snapshot.
+one evolving clone, recomputing allocation protection after graphics growth. Both native adapter
+tests cover their individual staging boundaries. Expanded settings now participates in that same
+evolving clone with graphics and/or ExAnimation instead of rejecting a simultaneous recovery
+snapshot.
 `staged_record_saves_after_an_independent_recovery_clone_growth` proves the installed 32-byte record
 is applied after independent clone growth, reopens exactly, preserves the grown extent, and leaves
-the live project unchanged. Native integration compilation binds every two- and three-editor
-combination to this shared route. Other unrelated simultaneous staged-editor families remain an
-explicit Release-row gap.
-exercise the same save-to-project boundary. Other unlisted simultaneous editor-family combinations
-remain intentionally rejected.
+the live project unchanged. `semantic_graphics_exanimation_and_settings_share_one_growing_staging_`
+`project` provides the combined end-to-end gate: it forces graphics growth, proves the subsequent
+ExAnimation allocation is disjoint, applies expanded settings last, reopens all three domains,
+validates the final checksum, and retains a byte-identical live project. Other unrelated
+simultaneous staged-editor families remain an explicit Release-row gap.
 
 The Patches/runtime row additionally routes authenticated SMW-US SA-1 sources through the recovered
 SA-1 expanded-settings hook and runtime family instead of rejecting their mapper. The native

@@ -6697,9 +6697,10 @@ persists the active level/global animation. Each allocator therefore sees prior 
 ownership instead of attempting to merge two independently allocated byte mutations. The final
 snapshot is checksum-valid, retains level context, and never commits either edit to the live project.
 
-`semantic_graphics_and_exanimation_saves_share_one_growing_staging_project` forces the first save
-past the source ROM end, proves the second allocation is disjoint on that expanded image, reopens
-both exact semantic edits, validates the checksum, and proves the live project stayed byte-identical.
+`semantic_graphics_exanimation_and_settings_share_one_growing_staging_project` forces the first
+save past the source ROM end, proves the second allocation is disjoint on that expanded image,
+applies an installed expanded-settings edit after both allocations, reopens all three exact
+semantic edits, validates the checksum, and proves the live project stayed byte-identical.
 The two `staged_rom_*_edit_is_recovered_without_committing_live_project` tests also exercise each
 native adapter's semantic staging route directly. The lower-level raw-mutation composition helper
 continues to validate overlap and repair the final checksum for same-size callers; it deliberately

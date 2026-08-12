@@ -1,11 +1,12 @@
 use super::*;
 use crate::{
-    AppError, AppState, Command, ExAnimationController, ExAnimationControllerEdit, FrontendEffect,
+    AppError, AppState, Command, ExAnimationController, ExAnimationControllerEdit,
+    ExpandedSettingsController, FrontendEffect,
 };
 use lm_graphics::{CompactExAnimation, GraphicsTileOwner, IndexedTile};
 use lm_project::{
-    ExAnimationRomLayout, ExAnimationSaveOptions, GraphicsCompression, GraphicsSaveOptions,
-    LevelPointerTable, Project, RatsOwnershipManifest,
+    ExAnimationRomLayout, ExAnimationSaveOptions, ExpandedLevelSettingsLayout, GraphicsCompression,
+    GraphicsSaveOptions, LevelPointerTable, Project, RatsOwnershipManifest,
 };
 use lm_rats::{AllocationPolicy, ProtectedRange};
 use lm_rom::RomImage;
@@ -92,7 +93,7 @@ fn graphics_snapshot() -> crate::ControllerSnapshot {
 }
 
 #[test]
-fn semantic_graphics_and_exanimation_saves_share_one_growing_staging_project() {
+fn semantic_graphics_exanimation_and_settings_share_one_growing_staging_project() {
     const MODES: [bool; 256] = [false; 256];
     let graphics_layout = layout();
     let exanimation_layout = ExAnimationRomLayout {
@@ -104,6 +105,12 @@ fn semantic_graphics_and_exanimation_saves_share_one_growing_staging_project() {
         },
         maximum_records: 32,
         maximum_encoded_len: 0x4000,
+    };
+    let settings_layout = ExpandedLevelSettingsLayout {
+        mapper: Mapper::LoRom,
+        table_offset: 0x4000,
+        entries: 2,
+        stride: 0x20,
     };
     let animation = CompactExAnimation {
         setting: 1,
@@ -124,6 +131,7 @@ fn semantic_graphics_and_exanimation_saves_share_one_growing_staging_project() {
         protected: vec![
             ProtectedRange(0x200..0x20c),
             ProtectedRange(0x300..0x306),
+            ProtectedRange(0x4000..0x4040),
             ProtectedRange(0x7fdc..0x7fe0),
         ],
     };
@@ -159,6 +167,11 @@ fn semantic_graphics_and_exanimation_saves_share_one_growing_staging_project() {
 
     let mut app = AppState::default();
     app.load_rom(source.save_snapshot()).unwrap();
+    app.dispatch(Command::SelectLevel(1)).unwrap();
+    let mut settings_controller =
+        ExpandedSettingsController::decode(&app.controller_snapshot().unwrap(), settings_layout)
+            .unwrap();
+    settings_controller.set_word(11, 0xa55a).unwrap();
     app.dispatch(Command::ShowGraphics(2)).unwrap();
     let mut graphics_controller = GraphicsController::decode(
         &app.controller_snapshot().unwrap(),
@@ -192,6 +205,7 @@ fn semantic_graphics_and_exanimation_saves_share_one_growing_staging_project() {
         protected: vec![
             ProtectedRange(0x200..0x20c),
             ProtectedRange(0x300..0x306),
+            ProtectedRange(0x4000..0x4040),
             ProtectedRange(0x7fdc..0x7fe0),
         ],
     };
@@ -217,6 +231,7 @@ fn semantic_graphics_and_exanimation_saves_share_one_growing_staging_project() {
             },
         )
         .unwrap();
+    settings_controller.save_to_project(&mut staged).unwrap();
 
     assert!(staged.rom.logical_len() > baseline.len());
     assert!(
@@ -233,6 +248,14 @@ fn semantic_graphics_and_exanimation_saves_share_one_growing_staging_project() {
             .load_exanimation(1, exanimation_layout, &MODES)
             .unwrap(),
         *exanimation_controller.animation()
+    );
+    assert_eq!(
+        staged
+            .load_expanded_level_settings(1, settings_layout)
+            .unwrap()
+            .word(11)
+            .unwrap(),
+        0xa55a
     );
     assert_eq!(app.project().unwrap().save_snapshot(), baseline);
     let logical = staged.rom.logical_bytes();
