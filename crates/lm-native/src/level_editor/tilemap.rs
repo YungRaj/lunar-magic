@@ -1,24 +1,32 @@
 use super::LevelEditor;
 use crate::{level_editor_forms, level_editor_render};
 use eframe::egui;
-use lm_app::CompleteLevelDocumentEdit;
+use lm_app::{CompleteLevelDocumentEdit, ExtendedUiTextKey as Key, LocalizationCatalog};
 use lm_level::{LayerDimensions, LevelLayer, LevelPropertyEdit, TileCoordinate};
 
 impl LevelEditor {
-    pub(super) fn level_view(&mut self, ui: &mut egui::Ui) {
+    pub(super) fn level_view(&mut self, ui: &mut egui::Ui, catalog: Option<&LocalizationCatalog>) {
         ui.horizontal(|ui| {
             if ui
-                .selectable_value(&mut self.edit_layer, 0, "Layer 1")
+                .selectable_value(
+                    &mut self.edit_layer,
+                    0,
+                    text(catalog, Key::LevelDocumentLayer1),
+                )
                 .clicked()
                 || ui
-                    .selectable_value(&mut self.edit_layer, 1, "Layer 2")
+                    .selectable_value(
+                        &mut self.edit_layer,
+                        1,
+                        text(catalog, Key::LevelDocumentLayer2),
+                    )
                     .clicked()
             {
                 self.loaded_tile = None;
             }
         });
         let Some(texture) = self.texture.clone() else {
-            ui.label("Preview unavailable; editing remains available.");
+            ui.label(text(catalog, Key::LevelDocumentPreviewUnavailable));
             return;
         };
         egui::ScrollArea::both().show(ui, |ui| {
@@ -48,20 +56,21 @@ impl LevelEditor {
         ui: &mut egui::Ui,
         catalog: Option<&lm_app::LocalizationCatalog>,
     ) {
-        ui.heading("Tilemap");
-        ui.label(format!(
-            "Coordinate {}, {}",
-            self.selected.0, self.selected.1
-        ));
+        ui.heading(text(catalog, Key::LevelDocumentTilemap));
+        ui.label(
+            text(catalog, Key::LevelDocumentCoordinateFormat)
+                .replace("{x}", &self.selected.0.to_string())
+                .replace("{y}", &self.selected.1.to_string()),
+        );
         ui.horizontal(|ui| {
-            ui.label("Map16 tile (hex)");
+            ui.label(text(catalog, Key::LevelDocumentMap16Tile));
             ui.text_edit_singleline(&mut self.tile_value);
         });
         let dimensions = self.active_dimensions();
         if ui
             .add_enabled(
                 dimensions.width > 0 && dimensions.height > 0,
-                egui::Button::new("Apply tile"),
+                egui::Button::new(text(catalog, Key::LevelDocumentApplyTile)),
             )
             .clicked()
         {
@@ -194,4 +203,8 @@ impl LevelEditor {
                 .max(document.dimensions.layer2_height),
         }
     }
+}
+
+fn text(catalog: Option<&LocalizationCatalog>, key: Key) -> String {
+    super::level_document_text(catalog, key)
 }

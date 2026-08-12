@@ -7218,6 +7218,17 @@ proves dynamic replacement. Localization 26/26 focused tests, native updater 6/6
 237/237 pass. Remaining native forms and retained original language-DLL behavior keep Localization
 Partial; aggregate parity remains 60/65.
 
+Localization coverage update (2026-08-12, portable complete-level document shell): twenty-six
+appended `LevelDocument*` identities cover the editor and dimension-dialog titles, all four exact
+tilemap dimensions, open/cancel, Undo/Redo/Save and dirty state, Layer 1/2 selection, unavailable
+preview, tilemap heading/coordinate/Map16 editing, dirty-close confirmation, and error
+acknowledgement. The existing catalog parameter now reaches the parent window, toolbar, dimension
+dialog, tilemap child, and lifecycle dialogs. A two-module audit rejects literal window, button,
+label, heading, and `Button` captions and requires every family identity. The focused audit passes,
+localization passes 28/28 active cases (one provenance ignore), native compilation passes, and
+renderer remains 237/237. Other unaudited frontend modules and retained live language-DLL evidence
+keep Localization Partial; aggregate parity remains 60/65.
+
 Localization coverage update (2026-08-12, aggregate Level domain): twenty-six appended
 `NativeAssets*` identities plus the matching native-document identities now cover source/header
 summary, every legacy header semantic, custom-time controls, staged header lifecycle, Layer 1

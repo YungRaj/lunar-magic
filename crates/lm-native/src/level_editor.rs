@@ -9,7 +9,7 @@ use crate::{
 use dimensions::{parse_dimensions, suggested_dimensions};
 use eframe::egui;
 use level_editor_render::LevelAssets;
-use lm_app::CompleteLevelDocumentController;
+use lm_app::{CompleteLevelDocumentController, ExtendedUiTextKey as Key, LocalizationCatalog};
 use lm_render::PortableLevelRenderDimensions;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -108,54 +108,70 @@ impl LevelEditor {
         {
             self.error = Some(error);
         }
-        self.show_open_configuration(context);
+        self.show_open_configuration(context, catalog);
         if self.document.is_some() {
             self.refresh_texture(context);
             self.load_tile();
-            egui::Window::new("Portable Complete Level Editor")
+            egui::Window::new(level_document_text(catalog, Key::LevelDocumentTitle))
                 .default_size([1000.0, 700.0])
                 .show(context, |ui| self.contents(ui, catalog));
         }
-        let approved = self.show_close_confirmation(context);
-        self.show_error(context);
+        let approved = self.show_close_confirmation(context, catalog);
+        self.show_error(context, catalog);
         approved
     }
 
-    fn show_open_configuration(&mut self, context: &egui::Context) {
+    fn show_open_configuration(
+        &mut self,
+        context: &egui::Context,
+        catalog: Option<&LocalizationCatalog>,
+    ) {
         if self.pending_open.is_none() {
             return;
         }
-        egui::Window::new("Level dimensions")
-            .collapsible(false)
-            .resizable(false)
-            .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
-            .show(context, |ui| {
-                ui.label("Enter exact row-major tilemap dimensions:");
-                if let Some(pending) = self.pending_open.as_mut() {
-                    for (label, field) in [
-                        "Layer 1 width",
-                        "Layer 1 height",
-                        "Layer 2 width",
-                        "Layer 2 height",
-                    ]
-                    .into_iter()
-                    .zip(pending.dimensions.iter_mut())
-                    {
-                        ui.horizontal(|ui| {
-                            ui.label(label);
-                            ui.text_edit_singleline(field);
-                        });
-                    }
+        egui::Window::new(level_document_text(
+            catalog,
+            Key::LevelDocumentDimensionsTitle,
+        ))
+        .collapsible(false)
+        .resizable(false)
+        .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+        .show(context, |ui| {
+            ui.label(level_document_text(
+                catalog,
+                Key::LevelDocumentDimensionsNotice,
+            ));
+            if let Some(pending) = self.pending_open.as_mut() {
+                for (label, field) in [
+                    level_document_text(catalog, Key::LevelDocumentLayer1Width),
+                    level_document_text(catalog, Key::LevelDocumentLayer1Height),
+                    level_document_text(catalog, Key::LevelDocumentLayer2Width),
+                    level_document_text(catalog, Key::LevelDocumentLayer2Height),
+                ]
+                .into_iter()
+                .zip(pending.dimensions.iter_mut())
+                {
+                    ui.horizontal(|ui| {
+                        ui.label(&label);
+                        ui.text_edit_singleline(field);
+                    });
                 }
-                ui.horizontal(|ui| {
-                    if ui.button("Cancel").clicked() {
-                        self.pending_open = None;
-                    }
-                    if ui.button("Open").clicked() {
-                        self.finish_open();
-                    }
-                });
+            }
+            ui.horizontal(|ui| {
+                if ui
+                    .button(level_document_text(catalog, Key::LevelDocumentCancel))
+                    .clicked()
+                {
+                    self.pending_open = None;
+                }
+                if ui
+                    .button(level_document_text(catalog, Key::LevelDocumentOpen))
+                    .clicked()
+                {
+                    self.finish_open();
+                }
             });
+        });
     }
 
     fn finish_open(&mut self) {
@@ -179,15 +195,15 @@ impl LevelEditor {
     }
 
     fn contents(&mut self, ui: &mut egui::Ui, catalog: Option<&lm_app::LocalizationCatalog>) {
-        self.toolbar(ui);
+        self.toolbar(ui, catalog);
         ui.separator();
         ui.columns(2, |columns| {
-            self.level_view(&mut columns[0]);
+            self.level_view(&mut columns[0], catalog);
             self.side_panel(&mut columns[1], catalog);
         });
     }
 
-    fn toolbar(&mut self, ui: &mut egui::Ui) {
+    fn toolbar(&mut self, ui: &mut egui::Ui, catalog: Option<&LocalizationCatalog>) {
         let Some(document) = self.document.as_ref() else {
             return;
         };
@@ -198,24 +214,40 @@ impl LevelEditor {
         let mut save_requested = false;
         ui.horizontal(|ui| {
             if ui
-                .add_enabled(can_undo, egui::Button::new("Undo"))
+                .add_enabled(
+                    can_undo,
+                    egui::Button::new(level_document_text(catalog, Key::LevelDocumentUndo)),
+                )
                 .clicked()
             {
                 action = Some(true);
             }
             if ui
-                .add_enabled(can_redo, egui::Button::new("Redo"))
+                .add_enabled(
+                    can_redo,
+                    egui::Button::new(level_document_text(catalog, Key::LevelDocumentRedo)),
+                )
                 .clicked()
             {
                 action = Some(false);
             }
             if ui
-                .add_enabled(!self.persistence.is_running(), egui::Button::new("Save"))
+                .add_enabled(
+                    !self.persistence.is_running(),
+                    egui::Button::new(level_document_text(catalog, Key::LevelDocumentSave)),
+                )
                 .clicked()
             {
                 save_requested = true;
             }
-            ui.label(if modified { "Modified" } else { "Saved" });
+            ui.label(level_document_text(
+                catalog,
+                if modified {
+                    Key::LevelDocumentModified
+                } else {
+                    Key::LevelDocumentSaved
+                },
+            ));
         });
         let mut changed = false;
         if let Some(document) = self.document.as_mut() {
@@ -272,22 +304,35 @@ impl LevelEditor {
         self.panels.invalidate();
     }
 
-    fn show_close_confirmation(&mut self, context: &egui::Context) -> bool {
+    fn show_close_confirmation(
+        &mut self,
+        context: &egui::Context,
+        catalog: Option<&LocalizationCatalog>,
+    ) -> bool {
         let Some(pending) = self.pending_close else {
             return false;
         };
         let mut approved = false;
-        egui::Window::new("Unsaved complete level")
+        egui::Window::new(level_document_text(catalog, Key::LevelDocumentDiscardTitle))
             .collapsible(false)
             .resizable(false)
             .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
             .show(context, |ui| {
-                ui.label("Discard unsaved level changes?");
+                ui.label(level_document_text(
+                    catalog,
+                    Key::LevelDocumentDiscardNotice,
+                ));
                 ui.horizontal(|ui| {
-                    if ui.button("Cancel").clicked() {
+                    if ui
+                        .button(level_document_text(catalog, Key::LevelDocumentCancel))
+                        .clicked()
+                    {
                         self.pending_close = None;
                     }
-                    if ui.button("Discard").clicked() {
+                    if ui
+                        .button(level_document_text(catalog, Key::LevelDocumentDiscard))
+                        .clicked()
+                    {
                         self.clear();
                         approved = pending == PendingClose::Application;
                     }
@@ -296,14 +341,17 @@ impl LevelEditor {
         approved
     }
 
-    fn show_error(&mut self, context: &egui::Context) {
+    fn show_error(&mut self, context: &egui::Context, catalog: Option<&LocalizationCatalog>) {
         if let Some(error) = self.error.clone() {
-            egui::Window::new("Level editor error")
+            egui::Window::new(level_document_text(catalog, Key::LevelDocumentErrorTitle))
                 .collapsible(false)
                 .resizable(false)
                 .show(context, |ui| {
                     ui.label(error);
-                    if ui.button("OK").clicked() {
+                    if ui
+                        .button(level_document_text(catalog, Key::LevelDocumentOk))
+                        .clicked()
+                    {
                         self.error = None;
                     }
                 });
@@ -316,5 +364,49 @@ impl LevelEditor {
         self.texture = None;
         self.pending_close = None;
         self.invalidate();
+    }
+}
+
+fn level_document_text(catalog: Option<&LocalizationCatalog>, key: Key) -> String {
+    catalog.map_or_else(
+        || key.english().to_owned(),
+        |catalog| catalog.extended_text(key).to_owned(),
+    )
+}
+
+#[cfg(test)]
+mod localization_tests {
+    use super::Key;
+
+    #[test]
+    fn complete_level_document_shell_has_no_literal_widget_text() {
+        let sources = [
+            include_str!("level_editor.rs"),
+            include_str!("level_editor/tilemap.rs"),
+        ];
+        for literal_widget in [
+            "ui.button(\"",
+            "ui.label(\"",
+            "ui.heading(\"",
+            "Button::new(\"",
+            "Window::new(\"",
+        ] {
+            assert!(
+                sources
+                    .iter()
+                    .all(|source| !source.contains(literal_widget)),
+                "complete-level document shell bypasses localization with {literal_widget}"
+            );
+        }
+        let joined = sources.join("\n");
+        for key in Key::ALL
+            .into_iter()
+            .filter(|key| format!("{key:?}").starts_with("LevelDocument"))
+        {
+            assert!(
+                joined.contains(&format!("Key::{key:?}")),
+                "complete-level document shell does not consume {key:?}"
+            );
+        }
     }
 }
