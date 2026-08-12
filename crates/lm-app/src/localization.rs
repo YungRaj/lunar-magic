@@ -1694,6 +1694,66 @@ pub struct LocalizationCatalog {
 
 const DIALOG_TITLE_ITEM_INDEX: u16 = u16::MAX;
 const DIALOG_TITLE_CONTROL_ID: u32 = u32::MAX;
+const RUST_UI_DIALOG_ID: u16 = u16::MAX;
+const RUST_UI_ITEM_INDEX: u16 = u16::MAX - 1;
+
+/// Stable typed identities for Rust-native text beyond the fixed 256-key `LMLOC001` prefix.
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+#[repr(u32)]
+pub enum ExtendedUiTextKey {
+    TilemapRow,
+    TilemapColumn,
+    TilemapPlane,
+    TilemapWord,
+    TilemapLoadTile,
+    TilemapApplyTile,
+    TilemapCommit,
+    TilemapUnsavedNotice,
+}
+
+impl ExtendedUiTextKey {
+    pub const ALL: [Self; 8] = [
+        Self::TilemapRow,
+        Self::TilemapColumn,
+        Self::TilemapPlane,
+        Self::TilemapWord,
+        Self::TilemapLoadTile,
+        Self::TilemapApplyTile,
+        Self::TilemapCommit,
+        Self::TilemapUnsavedNotice,
+    ];
+
+    #[must_use]
+    pub const fn english(self) -> &'static str {
+        match self {
+            Self::TilemapRow => "Row",
+            Self::TilemapColumn => "Column",
+            Self::TilemapPlane => "Plane",
+            Self::TilemapWord => "Tile word",
+            Self::TilemapLoadTile => "Load tile",
+            Self::TilemapApplyTile => "Apply tile",
+            Self::TilemapCommit => "Commit tilemap to ROM",
+            Self::TilemapUnsavedNotice => "The staged tilemap has not been committed to the ROM.",
+        }
+    }
+
+    const fn storage_key(self) -> OriginalDialogTextKey {
+        OriginalDialogTextKey {
+            dialog_id: RUST_UI_DIALOG_ID,
+            item_index: RUST_UI_ITEM_INDEX,
+            control_id: self as u32,
+        }
+    }
+
+    fn from_storage_key(key: OriginalDialogTextKey) -> Option<Self> {
+        if key.dialog_id != RUST_UI_DIALOG_ID || key.item_index != RUST_UI_ITEM_INDEX {
+            return None;
+        }
+        Self::ALL
+            .get(usize::try_from(key.control_id).ok()?)
+            .copied()
+    }
+}
 
 /// Stable identity for one literal item in an original Win32 dialog template.
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -1786,8 +1846,29 @@ impl LocalizationCatalog {
         entries: impl IntoIterator<Item = (OriginalDialogTextKey, String)>,
     ) -> Result<Self, LocalizationError> {
         for (key, value) in entries {
+            if ExtendedUiTextKey::from_storage_key(key).is_some()
+                || (key.dialog_id == RUST_UI_DIALOG_ID && key.item_index == RUST_UI_ITEM_INDEX)
+            {
+                return Err(LocalizationError::InvalidDialogTextKey(key));
+            }
             if self.dialog_entries.insert(key, value).is_some() {
                 return Err(LocalizationError::DuplicateDialogText(key));
+            }
+        }
+        self.validate()?;
+        Ok(self)
+    }
+
+    /// Adds typed Rust-native translations in the versioned `LMDLG001` extension.
+    /// Missing values intentionally fall back to each key's built-in English text.
+    pub fn with_extended_ui_texts(
+        mut self,
+        entries: impl IntoIterator<Item = (ExtendedUiTextKey, String)>,
+    ) -> Result<Self, LocalizationError> {
+        for (key, value) in entries {
+            let storage = key.storage_key();
+            if self.dialog_entries.insert(storage, value).is_some() {
+                return Err(LocalizationError::DuplicateDialogText(storage));
             }
         }
         self.validate()?;
@@ -1805,6 +1886,14 @@ impl LocalizationCatalog {
         self.entries
             .get(&key)
             .expect("validated catalogs contain every key")
+    }
+
+    /// Returns a Rust-native extension translation or its stable English fallback.
+    #[must_use]
+    pub fn extended_text(&self, key: ExtendedUiTextKey) -> &str {
+        self.dialog_entries
+            .get(&key.storage_key())
+            .map_or_else(|| key.english(), String::as_str)
     }
 
     /// Returns the localized title for one original dialog resource when present.
@@ -1929,6 +2018,11 @@ impl LocalizationCatalog {
             ));
         }
         for (key, value) in &self.dialog_entries {
+            if key.dialog_id == RUST_UI_DIALOG_ID && key.item_index == RUST_UI_ITEM_INDEX {
+                if ExtendedUiTextKey::from_storage_key(*key).is_none() {
+                    return Err(LocalizationError::InvalidDialogTextKey(*key));
+                }
+            }
             if key.item_index == DIALOG_TITLE_ITEM_INDEX
                 && key.control_id != DIALOG_TITLE_CONTROL_ID
             {
@@ -3052,6 +3146,60 @@ mod tests {
         assert_eq!(
             decoded.original_dialog_item_text(0x03f0, 7),
             Some("Deuxième")
+        );
+    }
+
+    #[test]
+    fn typed_rust_extension_round_trips_without_colliding_with_original_dialogs() {
+        let original = OriginalDialogTextKey {
+            dialog_id: 0x019d,
+            item_index: 2,
+            control_id: 1001,
+        };
+        let catalog = catalog()
+            .with_original_dialog_texts([(original, "Original caption".into())])
+            .unwrap()
+            .with_extended_ui_texts([
+                (ExtendedUiTextKey::TilemapRow, "Fila".into()),
+                (ExtendedUiTextKey::TilemapCommit, "Guardar mapa".into()),
+            ])
+            .unwrap();
+        assert_eq!(catalog.extended_text(ExtendedUiTextKey::TilemapRow), "Fila");
+        assert_eq!(
+            catalog.extended_text(ExtendedUiTextKey::TilemapColumn),
+            "Column"
+        );
+        assert_eq!(
+            catalog.original_dialog_item_text(original.dialog_id, original.item_index),
+            Some("Original caption")
+        );
+        let decoded = LocalizationCatalog::decode(&catalog.encode().unwrap()).unwrap();
+        assert_eq!(decoded, catalog);
+        assert_eq!(
+            decoded.extended_text(ExtendedUiTextKey::TilemapCommit),
+            "Guardar mapa"
+        );
+    }
+
+    #[test]
+    fn typed_rust_extension_rejects_duplicates_unknown_ids_and_original_injection() {
+        let duplicate = catalog().with_extended_ui_texts([
+            (ExtendedUiTextKey::TilemapRow, "A".into()),
+            (ExtendedUiTextKey::TilemapRow, "B".into()),
+        ]);
+        assert!(matches!(
+            duplicate,
+            Err(LocalizationError::DuplicateDialogText(_))
+        ));
+
+        let reserved = OriginalDialogTextKey {
+            dialog_id: RUST_UI_DIALOG_ID,
+            item_index: RUST_UI_ITEM_INDEX,
+            control_id: ExtendedUiTextKey::ALL.len() as u32,
+        };
+        assert_eq!(
+            catalog().with_original_dialog_texts([(reserved, "bad".into())]),
+            Err(LocalizationError::InvalidDialogTextKey(reserved))
         );
     }
 

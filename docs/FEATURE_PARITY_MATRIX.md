@@ -1185,6 +1185,15 @@ for the new 238-key suffix. Localization 26/26, palette-transfer 4/4, and render
 Other native forms and retained live language-DLL evidence remain open; Localization stays Partial
 and aggregate parity remains 60/65.
 
+Localization-extension update (2026-08-11): after exhausting all 256 stable one-byte catalog IDs,
+Rust-native typed text now extends through a reserved namespace in the already-versioned
+`LMDLG001` section, retaining its 16-bit dialog/item and 32-bit control framing. Original Win32
+dialog text cannot collide with or inject into this namespace. Typed lookup provides per-key English
+fallback, while canonical encode/decode preserves original and native entries together and rejects
+duplicates or unknown reserved IDs. The first eight tilemap keys establish the public/native API;
+conversion of that editor follows separately. Localization model 28/28, frontend 9/9, and renderer
+237/237 pass. Localization stays Partial and aggregate parity remains 60/65.
+
 Localization coverage update (2026-08-11, complete Map16-set editor): all visible document,
 navigation, history, clipboard, page-management, subtile, Acts Like, preview, unsaved-confirmation,
 and error controls now use typed localization. Shared semantic keys are reused and eighteen new

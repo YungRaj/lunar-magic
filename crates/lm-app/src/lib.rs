@@ -34,6 +34,8 @@ mod graphics_migration_state;
 mod graphics_ownership_file;
 mod ips_patch_state;
 mod layer3_document_controller;
+mod legacy_graphics_bypass_transfer;
+mod legacy_graphics_bypass_workspace;
 mod legacy_mwl_transfer;
 mod level_access_restriction_state;
 mod level_controller;
@@ -41,8 +43,6 @@ mod level_deletion_state;
 mod level_navigation;
 mod level_usage;
 mod level_usage_scan;
-mod legacy_graphics_bypass_transfer;
-mod legacy_graphics_bypass_workspace;
 mod localization;
 mod lunar_magic_metadata_state;
 mod map16_bitmap_allocation;
@@ -145,6 +145,10 @@ pub use complete_level_document_controller::{
     CompleteLevelDocumentEdit, CompleteLevelDocumentEditError, CompleteLevelDocumentSaveSnapshot,
 };
 pub use credits_tilemap_state::save_native_credits_tilemap_to_project;
+pub use current_level_palette_transfer::{
+    CurrentLevelPaletteTransferError, load_current_level_native_palette,
+    prepare_current_level_palette_import,
+};
 pub use custom_object_controller::{
     CustomObjectControllerError, CustomObjectLibraryController, CustomObjectLibraryEdit,
     CustomObjectSaveSnapshot,
@@ -215,6 +219,12 @@ pub use graphics_ownership_file::{GraphicsOwnershipFile, GraphicsOwnershipFileEr
 pub use layer3_document_controller::{
     Layer3DocumentController, Layer3DocumentControllerError, Layer3DocumentSaveSnapshot,
 };
+pub use legacy_graphics_bypass_transfer::{
+    export_legacy_graphics_bypass_list, prepare_legacy_graphics_bypass_list_import,
+};
+pub use legacy_graphics_bypass_workspace::{
+    LegacyGraphicsBypassWorkspace, LegacyGraphicsBypassWorkspaceError,
+};
 pub use legacy_mwl_transfer::{legacy_mwl_sidecar_paths, publish_legacy_mwl_bundle_new};
 pub use level_controller::{LevelController, LevelControllerError, NativeLevelEdit};
 pub use level_deletion_state::LevelDeletionPartition;
@@ -230,19 +240,13 @@ pub use level_usage_scan::{
     LevelUsageScanResult, LevelUsageScanStage, scan_builtin_smw_us_v1_level_usage,
     scan_smw_us_v1_level_usage,
 };
-pub use legacy_graphics_bypass_transfer::{
-    export_legacy_graphics_bypass_list, prepare_legacy_graphics_bypass_list_import,
-};
-pub use legacy_graphics_bypass_workspace::{
-    LegacyGraphicsBypassWorkspace, LegacyGraphicsBypassWorkspaceError,
-};
 pub use lm_project::{MwlOptionalAssetsEdit, MwlOptionalAssetsEditError};
 pub use localization::{
-    LocalizationCatalog, LocalizationError, OriginalDialogTextKey, OriginalLanguageDialogResource,
-    OriginalLanguageModuleError, OriginalLanguageModuleMetadata, OriginalLanguageStringPool,
-    UiTextKey, decode_original_language_module, decode_original_language_module_catalog,
-    decode_original_language_module_dialogs, decode_original_language_module_strings,
-    validate_original_language_module_checksum,
+    ExtendedUiTextKey, LocalizationCatalog, LocalizationError, OriginalDialogTextKey,
+    OriginalLanguageDialogResource, OriginalLanguageModuleError, OriginalLanguageModuleMetadata,
+    OriginalLanguageStringPool, UiTextKey, decode_original_language_module,
+    decode_original_language_module_catalog, decode_original_language_module_dialogs,
+    decode_original_language_module_strings, validate_original_language_module_checksum,
 };
 pub use lunar_magic_metadata_state::save_lunar_magic_rom_metadata_to_project;
 pub use map16_bitmap_allocation::{
@@ -357,20 +361,16 @@ pub use palette_document_controller::{
 };
 pub use palette_ownership_file::{PaletteOwnershipFile, PaletteOwnershipFileError};
 pub use prepared_commit::PreparedRomCommit;
-pub use current_level_palette_transfer::{
-    CurrentLevelPaletteTransferError, load_current_level_native_palette,
-    prepare_current_level_palette_import,
-};
 pub use profile_controller::{ProfileControllerError, RevisionProfileControllers};
 pub use recent_documents::{RecentDocuments, RecentDocumentsError};
 pub use recovery::{OverworldRecoveryEdits, RecoverySnapshot};
-pub use secondary_exit_state::save_native_secondary_exits_to_project;
 pub use revision_profile::{
     DirectTableAudit, PointerTableAudit, RevisionAllocationError, RevisionProfile,
     RevisionProfileAudit, RevisionProfileAuditError, RevisionProfileError,
     RevisionProfileReadError,
 };
 pub use rom_user_area_scan::RomUserAreaReport;
+pub use secondary_exit_state::save_native_secondary_exits_to_project;
 pub use selection::{EditorSelection, SelectionError};
 pub use shared_palette_state::save_native_shared_palette_to_project;
 pub use shortcut::{

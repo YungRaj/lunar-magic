@@ -7078,6 +7078,17 @@ the Windows test target cross-compiles locally. The public workflow currently ha
 so hosted four-platform execution and a real tag publication remain required. Release stays Partial
 and aggregate parity remains 60/65.
 
+Localization-extension update (2026-08-11): the fixed `UiTextKey` prefix remains byte-for-byte
+stable at its complete 256-ID capacity. New `ExtendedUiTextKey` identities now use a reserved,
+typed namespace inside the existing bounded `LMDLG001` extension: one impossible original-dialog
+ID/item tuple plus a 32-bit stable key ID. Original Win32 dialog titles/items remain independently
+addressable, cannot inject into the reserved namespace, and continue to round-trip beside native
+extensions. Missing extended translations fall back to each typed key's built-in English; duplicate
+keys, unknown reserved IDs, oversized/empty text, malformed framing, and collisions fail closed.
+The initial eight-key tilemap vocabulary proves the public model and native lookup adapter without
+yet claiming that editor localized. Localization 28/28 focused model tests, native frontend 9/9,
+and renderer 237/237 pass. Localization remains Partial and aggregate parity remains 60/65.
+
 Localization coverage update (2026-08-11, complete Map16-set editor): the full document editor now
 routes its window, page navigation, Undo/Redo/Save, copy/paste, page insertion/removal, modified
 state, address, subtile fields, palette/priority/flips, Acts Like editor, preview fallback, unsaved

@@ -1,11 +1,21 @@
 use eframe::egui;
 use lm_app::{
-    AppState, LocalizationCatalog, ShortcutGesture, ShortcutKey, ShortcutModifiers,
-    ToolbarActivation, ToolbarItem, UiTextKey,
+    AppState, ExtendedUiTextKey, LocalizationCatalog, ShortcutGesture, ShortcutKey,
+    ShortcutModifiers, ToolbarActivation, ToolbarItem, UiTextKey,
 };
 
 pub(crate) fn localized_text(catalog: Option<&LocalizationCatalog>, key: UiTextKey) -> String {
     catalog.map_or_else(|| key.english().into(), |catalog| catalog.text(key).into())
+}
+
+pub(crate) fn extended_localized_text(
+    catalog: Option<&LocalizationCatalog>,
+    key: ExtendedUiTextKey,
+) -> String {
+    catalog.map_or_else(
+        || key.english().into(),
+        |catalog| catalog.extended_text(key).into(),
+    )
 }
 
 pub(crate) fn show_toolbar(ui: &mut egui::Ui, app: &AppState) -> Option<ToolbarActivation> {
@@ -396,6 +406,29 @@ mod tests {
         assert_eq!(
             localized_text(Some(&catalog), UiTextKey::AboutCopySourceUrl),
             "translated-AboutCopySourceUrl"
+        );
+    }
+
+    #[test]
+    fn extended_text_selects_translation_or_stable_english_fallback() {
+        let catalog = LocalizationCatalog::new(
+            "zz-test",
+            UiTextKey::ALL.map(|key| (key, key.english().to_owned())),
+        )
+        .unwrap()
+        .with_extended_ui_texts([(ExtendedUiTextKey::TilemapRow, "Rango".into())])
+        .unwrap();
+        assert_eq!(
+            extended_localized_text(Some(&catalog), ExtendedUiTextKey::TilemapRow),
+            "Rango"
+        );
+        assert_eq!(
+            extended_localized_text(Some(&catalog), ExtendedUiTextKey::TilemapColumn),
+            "Column"
+        );
+        assert_eq!(
+            extended_localized_text(None, ExtendedUiTextKey::TilemapRow),
+            "Row"
         );
     }
 }
