@@ -7090,6 +7090,16 @@ active cases (one provenance ignore), native compilation passes, and renderer re
 Application confirmations, vanilla-level UI/status strings, shared progress windows, and retained
 live language-DLL evidence keep Localization Partial; aggregate parity remains 60/65.
 
+Localization coverage update (2026-08-12, application safety confirmations): twelve appended
+`Application*` identities cover the same-name IPS warning title, dynamic filename explanation,
+rename guidance, save question/actions, 2bpp-view confirmation, and destructive max-screen
+truncation warning. The combined application/toolbar audit rejects literal window, button, label,
+heading, slider, and `Button` captions and verifies every application identity is consumed by one of
+the two modules. The focused audit passes, localization passes 28/28 active cases (one provenance
+ignore), native compilation passes, and renderer remains 237/237. Vanilla-level UI/status strings,
+shared progress windows, and retained live language-DLL evidence keep Localization Partial;
+aggregate parity remains 60/65.
+
 Localization coverage update (2026-08-12, native overworld appearance controls): thirty-nine
 additional `OverworldAppearance*` identities cover native-pair save and dynamic record summary,
 sprite selection, tooltip enablement/text behavior, graphics and palette range tables, display

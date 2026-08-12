@@ -2711,6 +2711,18 @@ pub enum ExtendedUiTextKey {
     ApplicationRecentClearNotice,
     ApplicationRecentYes,
     ApplicationRecentNo,
+    ApplicationIpsWarningTitle,
+    ApplicationIpsWarningFormat,
+    ApplicationIpsRenameNotice,
+    ApplicationIpsSaveQuestion,
+    ApplicationIpsSaveAnyway,
+    ApplicationIpsCancel,
+    ApplicationTwoBppTitle,
+    ApplicationTwoBppQuestion,
+    ApplicationYes,
+    ApplicationNo,
+    ApplicationTruncateTitle,
+    ApplicationTruncateNotice,
     ExAnimationDocumentTitle,
     ExAnimationDocumentOpenTitle,
     ExAnimationDocumentMaximumRecords,
@@ -3873,7 +3885,7 @@ pub enum ExtendedUiTextKey {
 }
 
 impl ExtendedUiTextKey {
-    pub const ALL: [Self; 2169] = [
+    pub const ALL: [Self; 2181] = [
         Self::MwlDocumentEditorTitle,
         Self::MwlDocumentVersionFormat,
         Self::MwlDocumentFlagsHex,
@@ -4884,6 +4896,18 @@ impl ExtendedUiTextKey {
         Self::ApplicationRecentClearNotice,
         Self::ApplicationRecentYes,
         Self::ApplicationRecentNo,
+        Self::ApplicationIpsWarningTitle,
+        Self::ApplicationIpsWarningFormat,
+        Self::ApplicationIpsRenameNotice,
+        Self::ApplicationIpsSaveQuestion,
+        Self::ApplicationIpsSaveAnyway,
+        Self::ApplicationIpsCancel,
+        Self::ApplicationTwoBppTitle,
+        Self::ApplicationTwoBppQuestion,
+        Self::ApplicationYes,
+        Self::ApplicationNo,
+        Self::ApplicationTruncateTitle,
+        Self::ApplicationTruncateNotice,
         Self::ExAnimationDocumentTitle,
         Self::ExAnimationDocumentOpenTitle,
         Self::ExAnimationDocumentMaximumRecords,
@@ -7284,6 +7308,24 @@ impl ExtendedUiTextKey {
             }
             Self::ApplicationRecentYes => "Yes",
             Self::ApplicationRecentNo => "No",
+            Self::ApplicationIpsWarningTitle => "Check if ROMFileName.ips Exists",
+            Self::ApplicationIpsWarningFormat => {
+                "A same-name IPS file ({file}) exists beside the ROM. Some emulators automatically apply it, which can hide saved editor changes or cause other problems."
+            }
+            Self::ApplicationIpsRenameNotice => {
+                "Rename or move the IPS file to avoid automatic patching."
+            }
+            Self::ApplicationIpsSaveQuestion => "Save the ROM anyway?",
+            Self::ApplicationIpsSaveAnyway => "Save Anyway",
+            Self::ApplicationIpsCancel => "Cancel",
+            Self::ApplicationTwoBppTitle => "Lunar Magic Rust",
+            Self::ApplicationTwoBppQuestion => "Switch 2bpp viewing mode?",
+            Self::ApplicationYes => "Yes",
+            Self::ApplicationNo => "No",
+            Self::ApplicationTruncateTitle => "Remove data beyond max screens?",
+            Self::ApplicationTruncateNotice => {
+                "This will delete all objects and sprites beyond the current max screen limit for this level mode.  Proceed?"
+            }
             Self::ExAnimationDocumentTitle => "Portable ExAnimation Editor",
             Self::ExAnimationDocumentOpenTitle => "Open ExAnimation",
             Self::ExAnimationDocumentMaximumRecords => {

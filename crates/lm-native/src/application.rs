@@ -84,8 +84,8 @@ use crate::{
 };
 use eframe::egui;
 use lm_app::{
-    AppState, Command, EditorMode, ExternalTool, LocalizationCatalog, ShortcutConfig, ToolConfig,
-    ToolbarConfig, UiTextKey, UserToolbar,
+    AppState, Command, EditorMode, ExtendedUiTextKey as Key, ExternalTool, LocalizationCatalog,
+    ShortcutConfig, ToolConfig, ToolbarConfig, UiTextKey, UserToolbar,
 };
 
 mod document_menus;
@@ -1109,21 +1109,29 @@ impl NativeApplication {
             .unwrap_or_else(|| "ROMFileName.ips".into());
         let mut save_anyway = false;
         let mut cancel = false;
-        egui::Window::new("Check if ROMFileName.ips Exists")
+        let catalog = self.app.localization();
+        egui::Window::new(application_text(catalog, Key::ApplicationIpsWarningTitle))
             .collapsible(false)
             .resizable(false)
             .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
             .show(context, |ui| {
-                ui.label(format!(
-                    "A same-name IPS file ({file_name}) exists beside the ROM. Some emulators automatically apply it, which can hide saved editor changes or cause other problems."
-                ));
-                ui.label("Rename or move the IPS file to avoid automatic patching.");
-                ui.label("Save the ROM anyway?");
+                ui.label(
+                    application_text(catalog, Key::ApplicationIpsWarningFormat)
+                        .replace("{file}", &file_name),
+                );
+                ui.label(application_text(catalog, Key::ApplicationIpsRenameNotice));
+                ui.label(application_text(catalog, Key::ApplicationIpsSaveQuestion));
                 ui.horizontal(|ui| {
-                    if ui.button("Save Anyway").clicked() {
+                    if ui
+                        .button(application_text(catalog, Key::ApplicationIpsSaveAnyway))
+                        .clicked()
+                    {
                         save_anyway = true;
                     }
-                    if ui.button("Cancel").clicked() {
+                    if ui
+                        .button(application_text(catalog, Key::ApplicationIpsCancel))
+                        .clicked()
+                    {
                         cancel = true;
                     }
                 });
@@ -1152,15 +1160,20 @@ impl NativeApplication {
         }
         let mut accept = false;
         let mut cancel = false;
-        egui::Window::new("Lunar Magic Rust")
+        let catalog = self.app.localization();
+        egui::Window::new(application_text(catalog, Key::ApplicationTwoBppTitle))
             .collapsible(false)
             .resizable(false)
             .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
             .show(context, |ui| {
-                ui.label("Switch 2bpp viewing mode?");
+                ui.label(application_text(catalog, Key::ApplicationTwoBppQuestion));
                 ui.horizontal(|ui| {
-                    accept = ui.button("Yes").clicked();
-                    cancel = ui.button("No").clicked();
+                    accept = ui
+                        .button(application_text(catalog, Key::ApplicationYes))
+                        .clicked();
+                    cancel = ui
+                        .button(application_text(catalog, Key::ApplicationNo))
+                        .clicked();
                 });
             });
         if accept {
@@ -1178,17 +1191,20 @@ impl NativeApplication {
         }
         let mut accept = false;
         let mut cancel = false;
-        egui::Window::new("Remove data beyond max screens?")
+        let catalog = self.app.localization();
+        egui::Window::new(application_text(catalog, Key::ApplicationTruncateTitle))
             .collapsible(false)
             .resizable(false)
             .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
             .show(context, |ui| {
-                ui.label(
-                    "This will delete all objects and sprites beyond the current max screen limit for this level mode.  Proceed?",
-                );
+                ui.label(application_text(catalog, Key::ApplicationTruncateNotice));
                 ui.horizontal(|ui| {
-                    accept = ui.button("Yes").clicked();
-                    cancel = ui.button("No").clicked();
+                    accept = ui
+                        .button(application_text(catalog, Key::ApplicationYes))
+                        .clicked();
+                    cancel = ui
+                        .button(application_text(catalog, Key::ApplicationNo))
+                        .clicked();
                 });
             });
         if accept {
@@ -3005,6 +3021,13 @@ fn decode_hex(value: &str, max_bytes: usize) -> Result<Vec<u8>, String> {
         .collect::<Result<Vec<_>, _>>()
 }
 
+fn application_text(catalog: Option<&LocalizationCatalog>, key: Key) -> String {
+    catalog.map_or_else(
+        || key.english().to_owned(),
+        |catalog| catalog.extended_text(key).to_owned(),
+    )
+}
+
 #[cfg(test)]
 mod preference_tests {
     use super::*;
@@ -3841,6 +3864,33 @@ fn save_visual_smoke_image(image: &egui::ColorImage, path: &str) -> Result<(), S
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn application_confirmation_dialogs_have_no_literal_widget_text() {
+        let source = include_str!("application.rs");
+        for literal in [
+            "ui.button(\"",
+            "ui.label(\"",
+            "ui.heading(\"",
+            "Button::new(\"",
+            "Window::new(\"",
+        ] {
+            assert!(
+                !source.contains(literal),
+                "application confirmation bypasses localization with {literal}"
+            );
+        }
+        for key in Key::ALL
+            .into_iter()
+            .filter(|key| format!("{key:?}").starts_with("Application"))
+        {
+            assert!(
+                source.contains(&format!("Key::{key:?}"))
+                    || include_str!("application/toolbar.rs").contains(&format!("Key::{key:?}")),
+                "application chrome does not consume {key:?}"
+            );
+        }
+    }
 
     #[test]
     fn dispatch_acknowledgement_distinguishes_acceptance_from_rejection() {
