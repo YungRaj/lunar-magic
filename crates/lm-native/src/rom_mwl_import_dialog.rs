@@ -1,6 +1,6 @@
 use crate::document_loader::{BoundedRead, DocumentLoader, LoadedDocument};
 use eframe::egui;
-use lm_app::{AppState, Command};
+use lm_app::{AppState, Command, ExtendedUiTextKey, LocalizationCatalog};
 use lm_level::{LegacyMwlManifest, MwlFile};
 use lm_project::LegacyMwlBundle;
 use std::ops::Range;
@@ -72,16 +72,21 @@ impl RomMwlImportDialog {
         });
         self.pending_commit = None;
         self.active_search = Some(0..logical_len);
-        self.status = Some(format!("Reading {}", path.display()));
+        self.status = Some(format_text(
+            app.localization(),
+            ExtendedUiTextKey::MwlImportReadingFormat,
+            &[("{path}", path.display().to_string())],
+        ));
         self.error = None;
         Ok(())
     }
 
     pub(crate) fn show(&mut self, context: &egui::Context, app: &AppState) -> Option<Command> {
+        let catalog = app.localization();
         let loaded = self.loader.show(context);
         if self.is_open() || self.error.is_some() {
             let mut dismiss = false;
-            egui::Window::new("Insert Level From File")
+            egui::Window::new(text(catalog, ExtendedUiTextKey::MwlImportTitle))
                 .collapsible(false)
                 .resizable(false)
                 .show(context, |ui| {
@@ -90,7 +95,9 @@ impl RomMwlImportDialog {
                     }
                     if let Some(error) = &self.error {
                         ui.colored_label(ui.visuals().error_fg_color, error);
-                        dismiss = ui.button("Close").clicked();
+                        dismiss = ui
+                            .button(text(catalog, ExtendedUiTextKey::MwlImportClose))
+                            .clicked();
                     } else {
                         ui.spinner();
                     }
@@ -168,7 +175,11 @@ impl RomMwlImportDialog {
                         .collect::<Vec<_>>()
                         .join("; ")
                 });
-                self.status = Some(format!("Reading legacy sidecars for {}", path.display()));
+                self.status = Some(format_text(
+                    app.localization(),
+                    ExtendedUiTextKey::MwlImportReadingSidecarsFormat,
+                    &[("{path}", path.display().to_string())],
+                ));
                 self.pending_read = Some(PendingRead::LegacySidecars {
                     path,
                     revision,
@@ -218,22 +229,33 @@ impl RomMwlImportDialog {
                 )?;
                 let mut notes = diagnostic.into_iter().collect::<Vec<_>>();
                 if missing_palette {
-                    notes.push(
-                        "Couldn't locate the palette file! Switching to non-custom shared palette."
-                            .into(),
-                    );
+                    notes.push(text(
+                        app.localization(),
+                        ExtendedUiTextKey::MwlImportMissingPalette,
+                    ));
                 }
                 self.pending_commit = Some(PendingCommit {
                     path: path.clone(),
                     level,
                 });
                 self.status = Some(if notes.is_empty() {
-                    format!("Committing level {level:03X} from {}", path.display())
+                    format_text(
+                        app.localization(),
+                        ExtendedUiTextKey::MwlImportCommittingFormat,
+                        &[
+                            ("{level}", format!("{level:03X}")),
+                            ("{path}", path.display().to_string()),
+                        ],
+                    )
                 } else {
-                    format!(
-                        "Committing level {level:03X} from {} ({})",
-                        path.display(),
-                        notes.join("; ")
+                    format_text(
+                        app.localization(),
+                        ExtendedUiTextKey::MwlImportCommittingNotesFormat,
+                        &[
+                            ("{level}", format!("{level:03X}")),
+                            ("{path}", path.display().to_string()),
+                            ("{notes}", notes.join("; ")),
+                        ],
                     )
                 });
                 Ok(Some(prepared.into_command()))
@@ -263,9 +285,13 @@ impl RomMwlImportDialog {
             path: path.clone(),
             level,
         });
-        self.status = Some(format!(
-            "Committing level {level:03X} from {}",
-            path.display()
+        self.status = Some(format_text(
+            app.localization(),
+            ExtendedUiTextKey::MwlImportCommittingFormat,
+            &[
+                ("{level}", format!("{level:03X}")),
+                ("{path}", path.display().to_string()),
+            ],
         ));
         Ok(prepared.into_command())
     }
@@ -276,28 +302,37 @@ impl RomMwlImportDialog {
             .ok_or_else(|| "the ROM changed while the MWL was loading".into())
     }
 
-    pub(crate) fn commit_succeeded(&mut self) -> Option<u16> {
+    pub(crate) fn commit_succeeded(
+        &mut self,
+        catalog: Option<&LocalizationCatalog>,
+    ) -> Option<u16> {
         let Some(pending) = self.pending_commit.take() else {
             return None;
         };
-        self.status = Some(format!(
-            "Inserted level {:03X} from {}",
-            pending.level,
-            pending.path.display()
+        self.status = Some(format_text(
+            catalog,
+            ExtendedUiTextKey::MwlImportInsertedFormat,
+            &[
+                ("{level}", format!("{:03X}", pending.level)),
+                ("{path}", pending.path.display().to_string()),
+            ],
         ));
         self.active_search = None;
         Some(pending.level)
     }
 
-    pub(crate) fn commit_failed(&mut self) {
+    pub(crate) fn commit_failed(&mut self, catalog: Option<&LocalizationCatalog>) {
         let Some(pending) = self.pending_commit.take() else {
             return;
         };
         self.active_search = None;
-        self.error = Some(format!(
-            "Failed to commit level {:03X} from {}",
-            pending.level,
-            pending.path.display()
+        self.error = Some(format_text(
+            catalog,
+            ExtendedUiTextKey::MwlImportFailedFormat,
+            &[
+                ("{level}", format!("{:03X}", pending.level)),
+                ("{path}", pending.path.display().to_string()),
+            ],
         ));
     }
 
@@ -314,10 +349,45 @@ impl RomMwlImportDialog {
     }
 }
 
+fn text(catalog: Option<&LocalizationCatalog>, key: ExtendedUiTextKey) -> String {
+    crate::frontend_ui::extended_localized_text(catalog, key)
+}
+
+fn format_text(
+    catalog: Option<&LocalizationCatalog>,
+    key: ExtendedUiTextKey,
+    replacements: &[(&str, String)],
+) -> String {
+    replacements
+        .iter()
+        .fold(text(catalog, key), |text, (placeholder, value)| {
+            text.replace(placeholder, value)
+        })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::path::Path;
+
+    #[test]
+    fn complete_mwl_import_form_uses_every_typed_key() {
+        let source = include_str!("rom_mwl_import_dialog.rs");
+        for key in ExtendedUiTextKey::ALL
+            .into_iter()
+            .filter(|key| format!("{key:?}").starts_with("MwlImport"))
+        {
+            assert!(source.contains(&format!("ExtendedUiTextKey::{key:?}")));
+        }
+        for hard_coded_caption in [
+            "Window::new(\"Insert Level From File\")",
+            "ui.button(\"Close\")",
+            "format!(\"Reading {}\"",
+            "format!(\"Failed to commit level",
+        ] {
+            assert!(!source.contains(hard_coded_caption));
+        }
+    }
 
     #[test]
     fn closed_dialog_has_no_pending_import() {

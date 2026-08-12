@@ -2478,10 +2478,19 @@ pub enum ExtendedUiTextKey {
     RomLoaderCancel,
     RomLoaderOpeningTitle,
     RomLoaderOpeningProgress,
+    MwlImportTitle,
+    MwlImportReadingFormat,
+    MwlImportReadingSidecarsFormat,
+    MwlImportMissingPalette,
+    MwlImportCommittingFormat,
+    MwlImportCommittingNotesFormat,
+    MwlImportClose,
+    MwlImportInsertedFormat,
+    MwlImportFailedFormat,
 }
 
 impl ExtendedUiTextKey {
-    pub const ALL: [Self; 777] = [
+    pub const ALL: [Self; 786] = [
         Self::TilemapTitleScreenName,
         Self::TilemapCreditsName,
         Self::TilemapEditorTitleFormat,
@@ -3259,6 +3268,15 @@ impl ExtendedUiTextKey {
         Self::RomLoaderCancel,
         Self::RomLoaderOpeningTitle,
         Self::RomLoaderOpeningProgress,
+        Self::MwlImportTitle,
+        Self::MwlImportReadingFormat,
+        Self::MwlImportReadingSidecarsFormat,
+        Self::MwlImportMissingPalette,
+        Self::MwlImportCommittingFormat,
+        Self::MwlImportCommittingNotesFormat,
+        Self::MwlImportClose,
+        Self::MwlImportInsertedFormat,
+        Self::MwlImportFailedFormat,
     ];
 
     #[must_use]
@@ -4375,6 +4393,19 @@ impl ExtendedUiTextKey {
             Self::RomLoaderCancel => "Cancel",
             Self::RomLoaderOpeningTitle => "Opening ROM",
             Self::RomLoaderOpeningProgress => "Reading and validating the selected ROM…",
+            Self::MwlImportTitle => "Insert Level From File",
+            Self::MwlImportReadingFormat => "Reading {path}",
+            Self::MwlImportReadingSidecarsFormat => "Reading legacy sidecars for {path}",
+            Self::MwlImportMissingPalette => {
+                "Couldn't locate the palette file! Switching to non-custom shared palette."
+            }
+            Self::MwlImportCommittingFormat => "Committing level {level} from {path}",
+            Self::MwlImportCommittingNotesFormat => {
+                "Committing level {level} from {path} ({notes})"
+            }
+            Self::MwlImportClose => "Close",
+            Self::MwlImportInsertedFormat => "Inserted level {level} from {path}",
+            Self::MwlImportFailedFormat => "Failed to commit level {level} from {path}",
         }
     }
 

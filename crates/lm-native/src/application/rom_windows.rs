@@ -469,12 +469,16 @@ impl NativeApplication {
         }
         if let Some(command) = self.rom_mwl_import_dialog.show(context, &self.app) {
             if self.try_dispatch(context, command) {
-                if let Some(level) = self.rom_mwl_import_dialog.commit_succeeded() {
+                if let Some(level) = self
+                    .rom_mwl_import_dialog
+                    .commit_succeeded(self.app.localization())
+                {
                     let _ = self.try_dispatch(context, lm_app::Command::SelectLevel(level));
                 }
                 self.renderer.invalidate();
             } else {
-                self.rom_mwl_import_dialog.commit_failed();
+                self.rom_mwl_import_dialog
+                    .commit_failed(self.app.localization());
             }
         }
         if let Some(command) =

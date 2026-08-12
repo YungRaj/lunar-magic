@@ -7432,6 +7432,18 @@ ROM changed after confirmation. Localization passes 28/28 and renderer passes 23
 forms and retained live language-DLL evidence keep Localization Partial; aggregate parity remains
 60/65.
 
+Localization coverage update (2026-08-12, single-level MWL import): nine appended `MwlImport*`
+keys cover the complete modern-binary and legacy-sidecar progress lifecycle: primary and sidecar
+reads, optional-palette fallback, commit with diagnostics, success/failure, close, paths, and level
+numbers. Paths, hexadecimal level numbers, and parser diagnostics remain data substituted into
+localized templates; loader and semantic errors remain technical payloads. The application host
+passes the active catalog into commit acknowledgement and failure. The complete-form audit passes
+4/4 with stale revision and sidecar-order checks. Broader import evidence passes 3/3 across modern
+binary MWL, legacy Layer 1/Layer 2/sprites/palette bundles, directory failure isolation, checksum,
+and headered/headerless logical equivalence. Localization passes 28/28 and renderer passes 237/237.
+Other native forms and retained live language-DLL evidence keep Localization Partial; aggregate
+parity remains 60/65.
+
 Localization coverage update (2026-08-12, IPS application): nine appended `IpsApply*` keys cover
 the complete revision-bound IPS application form: logical-offset/header preservation, dynamic
 source/target/change counts, identity and bank-shape requirements, stale state, transactional
