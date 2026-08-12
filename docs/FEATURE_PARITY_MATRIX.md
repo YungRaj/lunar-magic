@@ -722,6 +722,14 @@ and `lm363/x64/Lunar Magic.exe`. This replaces the prior unexecuted local-only c
 and x64 resource evidence. Native-form catalog binding is still incomplete, so Localization remains
 Partial and aggregate parity remains 60/65.
 
+Localization coverage update (2026-08-11, ROM expansion): the complete ordinary LoROM, 64-Mbit
+ExLoROM, and fixed-target SA-1 expansion form now uses thirty-two typed extension keys for presets,
+advanced target/fill controls, eligibility guidance, mapper and emulator compatibility warnings,
+confirmations, transaction actions, and errors. Exact zero-filled Lunar Magic presets, mapper and
+size gates, confirmation routing, and commit acknowledgement remain proven. Expansion dialog 9/9,
+localization model 28/28, and renderer 237/237 pass. Localization remains Partial for other native
+forms; aggregate parity remains 60/65.
+
 Converted catalogs now preserve the complete safely decoded literal dialog inventory in a bounded,
 optional `LMDLG001` extension keyed by dialog ID, exact item position, and 32-bit control ID.
 Historical catalogs without the extension remain byte-identical, duplicate control IDs survive by

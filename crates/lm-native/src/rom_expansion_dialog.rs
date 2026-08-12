@@ -1,6 +1,6 @@
 use crate::level_editor_forms;
 use eframe::egui;
-use lm_app::{AppState, Command, RomExpansionCommand};
+use lm_app::{AppState, Command, ExtendedUiTextKey, LocalizationCatalog, RomExpansionCommand};
 use lm_project::{SA1_6_MIB_LEN, SA1_8_MIB_LEN};
 use lm_rom::{Mapper, RomImage};
 
@@ -96,21 +96,30 @@ impl RomExpansionDialog {
         }
     }
 
-    pub(crate) fn show(&mut self, context: &egui::Context, app: &AppState) -> Option<Command> {
+    pub(crate) fn show(
+        &mut self,
+        context: &egui::Context,
+        app: &AppState,
+        catalog: Option<&LocalizationCatalog>,
+    ) -> Option<Command> {
         let mut command = None;
         if self.open {
-            egui::Window::new("Expand ROM")
+            egui::Window::new(text(catalog, ExtendedUiTextKey::RomExpansionTitle))
                 .collapsible(false)
                 .resizable(false)
                 .show(context, |ui| {
-                    ui.label("Target logical ROM size in hexadecimal bytes.");
-                    ui.label("The target must be larger, 32 KiB aligned, and mapper-addressable.");
+                    ui.label(text(catalog, ExtendedUiTextKey::RomExpansionTargetNotice));
+                    ui.label(text(
+                        catalog,
+                        ExtendedUiTextKey::RomExpansionAlignmentNotice,
+                    ));
                     ui.horizontal(|ui| {
-                        ui.label("Lunar Magic target:");
-                        for (target, label) in LUNAR_MAGIC_LOROM_TARGETS
-                            .into_iter()
-                            .zip(["2 MiB", "3 MiB", "4 MiB"])
-                        {
+                        ui.label(text(catalog, ExtendedUiTextKey::RomExpansionLmTarget));
+                        for (target, label) in LUNAR_MAGIC_LOROM_TARGETS.into_iter().zip([
+                            ExtendedUiTextKey::RomExpansion2MiB,
+                            ExtendedUiTextKey::RomExpansion3MiB,
+                            ExtendedUiTextKey::RomExpansion4MiB,
+                        ]) {
                             if ui
                                 .add_enabled(
                                     ordinary_expansion_eligible(
@@ -118,7 +127,7 @@ impl RomExpansionDialog {
                                         self.current_logical_len,
                                         target,
                                     ),
-                                    egui::Button::new(label),
+                                    egui::Button::new(text(catalog, label)),
                                 )
                                 .clicked()
                             {
@@ -128,40 +137,41 @@ impl RomExpansionDialog {
                         }
                     });
                     ui.separator();
-                    ui.heading("64-Mbit ExLoROM");
-                    ui.label(
-                        "Uses Lunar Magic's recovered mapper conversion, including relocation, \
-                         compatibility metadata, inaccessible-bank locks, and checksum preservation.",
-                    );
-                    let exlorom_eligible = exlorom_eligible(
-                        self.source_mapper,
-                        self.current_logical_len,
-                    );
+                    ui.heading(text(catalog, ExtendedUiTextKey::RomExpansionExLoRomHeading));
+                    ui.label(text(catalog, ExtendedUiTextKey::RomExpansionExLoRomNotice));
+                    let exlorom_eligible =
+                        exlorom_eligible(self.source_mapper, self.current_logical_len);
                     if ui
                         .add_enabled(
                             exlorom_eligible,
-                            egui::Button::new("Convert to 64-Mbit ExLoROM…"),
+                            egui::Button::new(text(
+                                catalog,
+                                ExtendedUiTextKey::RomExpansionExLoRomConvert,
+                            )),
                         )
                         .clicked()
                     {
                         self.confirm_exlorom = true;
                     }
                     if !exlorom_eligible {
-                        ui.weak("Requires a checksum-valid 512 KiB–4 MiB SMW LoROM.");
+                        ui.weak(text(
+                            catalog,
+                            ExtendedUiTextKey::RomExpansionExLoRomRequires,
+                        ));
                     }
                     ui.separator();
-                    ui.heading("SA-1 expansion");
+                    ui.heading(text(catalog, ExtendedUiTextKey::RomExpansionSa1Heading));
                     ui.horizontal_wrapped(|ui| {
-                        ui.label("Lunar Magic target:");
+                        ui.label(text(catalog, ExtendedUiTextKey::RomExpansionLmTarget));
                         for (target, label) in [
-                            (SA1_6_MIB_LEN, "6 MiB"),
-                            (SA1_8_MIB_LEN, "8 MiB"),
+                            (SA1_6_MIB_LEN, ExtendedUiTextKey::RomExpansion6MiB),
+                            (SA1_8_MIB_LEN, ExtendedUiTextKey::RomExpansion8MiB),
                         ] {
                             if ui
                                 .add_enabled(
                                     self.source_mapper == Some(Mapper::Sa1)
                                         && target > self.current_logical_len,
-                                    egui::Button::new(label),
+                                    egui::Button::new(text(catalog, label)),
                                 )
                                 .clicked()
                             {
@@ -170,30 +180,36 @@ impl RomExpansionDialog {
                         }
                     });
                     if self.source_mapper != Some(Mapper::Sa1) {
-                        ui.weak("These fixed targets are available only for an SA-1 ROM.");
+                        ui.weak(text(catalog, ExtendedUiTextKey::RomExpansionSa1Requires));
                     }
                     let ordinary_route = self.source_mapper != Some(Mapper::Sa1);
                     ui.add_enabled_ui(ordinary_route, |ui| {
                         ui.horizontal(|ui| {
-                            ui.label("Target");
+                            ui.label(text(catalog, ExtendedUiTextKey::RomExpansionTarget));
                             ui.text_edit_singleline(&mut self.target);
                         });
                         ui.horizontal(|ui| {
-                            ui.label("Fill byte");
+                            ui.label(text(catalog, ExtendedUiTextKey::RomExpansionFillByte));
                             ui.text_edit_singleline(&mut self.fill);
                         });
                     });
                     if !ordinary_route {
-                        ui.weak("SA-1 ROMs must use the fixed 6 MiB or 8 MiB action above.");
+                        ui.weak(text(catalog, ExtendedUiTextKey::RomExpansionSa1FixedNotice));
                     }
                     ui.horizontal(|ui| {
-                        if ui.button("Cancel").clicked() {
+                        if ui
+                            .button(text(catalog, ExtendedUiTextKey::RomExpansionCancel))
+                            .clicked()
+                        {
                             self.open = false;
                         }
                         if ui
                             .add_enabled(
                                 ordinary_route,
-                                egui::Button::new("Expand transactionally"),
+                                egui::Button::new(text(
+                                    catalog,
+                                    ExtendedUiTextKey::RomExpansionApply,
+                                )),
                             )
                             .clicked()
                         {
@@ -208,69 +224,90 @@ impl RomExpansionDialog {
                 });
         }
         if self.confirm_exlorom {
-            egui::Window::new("64 Mbit ExLoROM Expansion Warning")
-                .collapsible(false)
-                .resizable(false)
-                .show(context, |ui| {
-                    ui.colored_label(
-                        egui::Color32::YELLOW,
-                        "This changes the ROM mapper and relocates ROM data.",
-                    );
-                    ui.label(
-                        "Some external patches and tools may not support 64-Mbit ExLoROM files. \
-                         Save a backup before distributing or applying third-party patches.",
-                    );
-                    ui.label("The conversion is a single undoable operation in this editor.");
-                    ui.horizontal(|ui| {
-                        if ui.button("Cancel").clicked() {
-                            self.confirm_exlorom = false;
-                        }
-                        if ui.button("Convert ROM").clicked() {
-                            command = Some(Command::ConvertRomTo64MbitExLoRom {
-                                expected_revision: app.project_revision(),
-                            });
-                        }
-                    });
+            egui::Window::new(text(
+                catalog,
+                ExtendedUiTextKey::RomExpansionExLoRomWarningTitle,
+            ))
+            .collapsible(false)
+            .resizable(false)
+            .show(context, |ui| {
+                ui.colored_label(
+                    egui::Color32::YELLOW,
+                    text(catalog, ExtendedUiTextKey::RomExpansionMapperWarning),
+                );
+                ui.label(text(
+                    catalog,
+                    ExtendedUiTextKey::RomExpansionCompatibilityWarning,
+                ));
+                ui.label(text(catalog, ExtendedUiTextKey::RomExpansionUndoableNotice));
+                ui.horizontal(|ui| {
+                    if ui
+                        .button(text(catalog, ExtendedUiTextKey::RomExpansionCancel))
+                        .clicked()
+                    {
+                        self.confirm_exlorom = false;
+                    }
+                    if ui
+                        .button(text(catalog, ExtendedUiTextKey::RomExpansionConvertRom))
+                        .clicked()
+                    {
+                        command = Some(Command::ConvertRomTo64MbitExLoRom {
+                            expected_revision: app.project_revision(),
+                        });
+                    }
                 });
+            });
         }
         if let Some(target) = self.confirm_sa1_target {
             let mib = target / 0x10_0000;
-            egui::Window::new("Expand SA-1 ROM?")
-                .collapsible(false)
-                .resizable(false)
-                .show(context, |ui| {
-                    ui.label(format!("This will expand the SA-1 ROM to {mib} MiB."));
-                    if target == SA1_6_MIB_LEN {
-                        ui.label(
-                            "If using Snes9x, this requires version 1.54+ or FuSoYa's custom \
-                             8MB Snes9x build.",
-                        );
-                    } else {
-                        ui.label(
-                            "If using Snes9x, this requires version 1.54+ or FuSoYa's custom \
-                             8MB Snes9x build. ZSNES requires FuSoYa's custom 8MB build.",
-                        );
+            egui::Window::new(text(
+                catalog,
+                ExtendedUiTextKey::RomExpansionSa1ConfirmTitle,
+            ))
+            .collapsible(false)
+            .resizable(false)
+            .show(context, |ui| {
+                ui.label(
+                    text(catalog, ExtendedUiTextKey::RomExpansionSa1ConfirmNotice)
+                        .replace("{mib}", &mib.to_string()),
+                );
+                if target == SA1_6_MIB_LEN {
+                    ui.label(text(catalog, ExtendedUiTextKey::RomExpansionSnes9xNotice));
+                } else {
+                    ui.label(text(catalog, ExtendedUiTextKey::RomExpansionZsnesNotice));
+                }
+                ui.horizontal(|ui| {
+                    if ui
+                        .button(text(catalog, ExtendedUiTextKey::RomExpansionCancel))
+                        .clicked()
+                    {
+                        self.confirm_sa1_target = None;
                     }
-                    ui.horizontal(|ui| {
-                        if ui.button("Cancel").clicked() {
-                            self.confirm_sa1_target = None;
-                        }
-                        if ui.button("Expand ROM").clicked() {
-                            command = Some(Command::ExpandSa1Rom {
-                                expected_revision: app.project_revision(),
-                                target_logical_len: target,
-                            });
-                        }
-                    });
+                    if ui
+                        .button(text(catalog, ExtendedUiTextKey::RomExpansionExpandRom))
+                        .clicked()
+                    {
+                        command = Some(Command::ExpandSa1Rom {
+                            expected_revision: app.project_revision(),
+                            target_logical_len: target,
+                        });
+                    }
                 });
+            });
         }
         if let Some(error) = self.error.clone() {
-            egui::Window::new("ROM expansion error").show(context, |ui| {
-                ui.label(error);
-                if ui.button("OK").clicked() {
-                    self.error = None;
-                }
-            });
+            egui::Window::new(text(catalog, ExtendedUiTextKey::RomExpansionErrorTitle)).show(
+                context,
+                |ui| {
+                    ui.label(error);
+                    if ui
+                        .button(text(catalog, ExtendedUiTextKey::RomExpansionOk))
+                        .clicked()
+                    {
+                        self.error = None;
+                    }
+                },
+            );
         }
         command
     }
@@ -280,6 +317,10 @@ impl RomExpansionDialog {
         self.confirm_exlorom = false;
         self.confirm_sa1_target = None;
     }
+}
+
+fn text(catalog: Option<&LocalizationCatalog>, key: ExtendedUiTextKey) -> String {
+    crate::frontend_ui::extended_localized_text(catalog, key)
 }
 
 fn build_command(app: &AppState, target: &str, fill: &str) -> Result<Command, String> {
@@ -322,6 +363,26 @@ fn ordinary_expansion_eligible(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn complete_expansion_surface_uses_every_typed_key() {
+        let source = include_str!("rom_expansion_dialog.rs");
+        for key in ExtendedUiTextKey::ALL
+            .into_iter()
+            .filter(|key| format!("{key:?}").starts_with("RomExpansion"))
+        {
+            assert!(source.contains(&format!("ExtendedUiTextKey::{key:?}")));
+        }
+        for bypass in [
+            "egui::Window::new(\"Expand ROM\")",
+            "ui.heading(\"64-Mbit ExLoROM\")",
+            "egui::Button::new(\"Convert to 64-Mbit ExLoROM…\")",
+            "egui::Window::new(\"Expand SA-1 ROM?\")",
+            "egui::Window::new(\"ROM expansion error\")",
+        ] {
+            assert!(!source.contains(bypass));
+        }
+    }
 
     #[test]
     fn suggested_target_follows_the_original_fixed_lorom_commands() {

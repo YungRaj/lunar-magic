@@ -7303,3 +7303,11 @@ against the locally supplied Lunar Magic 3.63 x86 and x64 executables, proving a
 resources decode through the bounded standard/extended Win32 parser in both binaries. The remaining
 localization gap is native-form binding coverage, not executable-resource parsing; aggregate parity
 remains 60/65.
+
+Localization coverage update (2026-08-11, ROM expansion): thirty-two typed extension keys cover
+the complete expansion UI across ordinary LoROM target/fill, 64-Mbit ExLoROM conversion warning,
+fixed 6/8 MiB SA-1 targets, emulator compatibility, confirmations, and errors. A source audit
+requires every `RomExpansion*` key and rejects literal window/action regressions. Exact preset,
+eligibility, confirmation, and lifecycle evidence passes in the expansion suite (9/9), alongside
+localization model 28/28 and renderer 237/237. Localization remains Partial for other native forms;
+aggregate parity remains 60/65.

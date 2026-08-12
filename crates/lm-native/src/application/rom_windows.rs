@@ -376,7 +376,15 @@ impl NativeApplication {
                 self.rom_mwl_import_dialog.commit_failed();
             }
         }
-        show_project_operation!(self, context, rom_expansion_dialog);
+        if let Some(command) =
+            self.rom_expansion_dialog
+                .show(context, &self.app, self.app.localization())
+        {
+            if self.try_dispatch(context, command) {
+                self.rom_expansion_dialog.commit_succeeded();
+                self.renderer.invalidate();
+            }
+        }
         let ips_workflow_active = self.ips_create_dialog.has_open_workflow();
         if let Some(action) = self.level_access_restriction_dialog.show(
             context,

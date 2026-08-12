@@ -2123,10 +2123,42 @@ pub enum ExtendedUiTextKey {
     RomMap16BitmapMaintainDetail,
     RomMap16BitmapReduceMethod1,
     RomMap16BitmapReduceMethod2,
+    RomExpansionTitle,
+    RomExpansionTargetNotice,
+    RomExpansionAlignmentNotice,
+    RomExpansionLmTarget,
+    RomExpansion2MiB,
+    RomExpansion3MiB,
+    RomExpansion4MiB,
+    RomExpansionExLoRomHeading,
+    RomExpansionExLoRomNotice,
+    RomExpansionExLoRomConvert,
+    RomExpansionExLoRomRequires,
+    RomExpansionSa1Heading,
+    RomExpansion6MiB,
+    RomExpansion8MiB,
+    RomExpansionSa1Requires,
+    RomExpansionTarget,
+    RomExpansionFillByte,
+    RomExpansionSa1FixedNotice,
+    RomExpansionCancel,
+    RomExpansionApply,
+    RomExpansionExLoRomWarningTitle,
+    RomExpansionMapperWarning,
+    RomExpansionCompatibilityWarning,
+    RomExpansionUndoableNotice,
+    RomExpansionConvertRom,
+    RomExpansionSa1ConfirmTitle,
+    RomExpansionSa1ConfirmNotice,
+    RomExpansionSnes9xNotice,
+    RomExpansionZsnesNotice,
+    RomExpansionExpandRom,
+    RomExpansionErrorTitle,
+    RomExpansionOk,
 }
 
 impl ExtendedUiTextKey {
-    pub const ALL: [Self; 422] = [
+    pub const ALL: [Self; 454] = [
         Self::TilemapTitleScreenName,
         Self::TilemapCreditsName,
         Self::TilemapEditorTitleFormat,
@@ -2549,6 +2581,38 @@ impl ExtendedUiTextKey {
         Self::RomMap16BitmapMaintainDetail,
         Self::RomMap16BitmapReduceMethod1,
         Self::RomMap16BitmapReduceMethod2,
+        Self::RomExpansionTitle,
+        Self::RomExpansionTargetNotice,
+        Self::RomExpansionAlignmentNotice,
+        Self::RomExpansionLmTarget,
+        Self::RomExpansion2MiB,
+        Self::RomExpansion3MiB,
+        Self::RomExpansion4MiB,
+        Self::RomExpansionExLoRomHeading,
+        Self::RomExpansionExLoRomNotice,
+        Self::RomExpansionExLoRomConvert,
+        Self::RomExpansionExLoRomRequires,
+        Self::RomExpansionSa1Heading,
+        Self::RomExpansion6MiB,
+        Self::RomExpansion8MiB,
+        Self::RomExpansionSa1Requires,
+        Self::RomExpansionTarget,
+        Self::RomExpansionFillByte,
+        Self::RomExpansionSa1FixedNotice,
+        Self::RomExpansionCancel,
+        Self::RomExpansionApply,
+        Self::RomExpansionExLoRomWarningTitle,
+        Self::RomExpansionMapperWarning,
+        Self::RomExpansionCompatibilityWarning,
+        Self::RomExpansionUndoableNotice,
+        Self::RomExpansionConvertRom,
+        Self::RomExpansionSa1ConfirmTitle,
+        Self::RomExpansionSa1ConfirmNotice,
+        Self::RomExpansionSnes9xNotice,
+        Self::RomExpansionZsnesNotice,
+        Self::RomExpansionExpandRom,
+        Self::RomExpansionErrorTitle,
+        Self::RomExpansionOk,
     ];
 
     #[must_use]
@@ -3126,6 +3190,58 @@ impl ExtendedUiTextKey {
             }
             Self::RomMap16BitmapReduceMethod1 => "Reduce colors, method 1 (for high-color images)",
             Self::RomMap16BitmapReduceMethod2 => "Reduce colors, method 2 (for high-color images)",
+            Self::RomExpansionTitle => "Expand ROM",
+            Self::RomExpansionTargetNotice => "Target logical ROM size in hexadecimal bytes.",
+            Self::RomExpansionAlignmentNotice => {
+                "The target must be larger, 32 KiB aligned, and mapper-addressable."
+            }
+            Self::RomExpansionLmTarget => "Lunar Magic target:",
+            Self::RomExpansion2MiB => "2 MiB",
+            Self::RomExpansion3MiB => "3 MiB",
+            Self::RomExpansion4MiB => "4 MiB",
+            Self::RomExpansionExLoRomHeading => "64-Mbit ExLoROM",
+            Self::RomExpansionExLoRomNotice => {
+                "Uses Lunar Magic's recovered mapper conversion, including relocation, compatibility metadata, inaccessible-bank locks, and checksum preservation."
+            }
+            Self::RomExpansionExLoRomConvert => "Convert to 64-Mbit ExLoROM…",
+            Self::RomExpansionExLoRomRequires => {
+                "Requires a checksum-valid 512 KiB–4 MiB SMW LoROM."
+            }
+            Self::RomExpansionSa1Heading => "SA-1 expansion",
+            Self::RomExpansion6MiB => "6 MiB",
+            Self::RomExpansion8MiB => "8 MiB",
+            Self::RomExpansionSa1Requires => {
+                "These fixed targets are available only for an SA-1 ROM."
+            }
+            Self::RomExpansionTarget => "Target",
+            Self::RomExpansionFillByte => "Fill byte",
+            Self::RomExpansionSa1FixedNotice => {
+                "SA-1 ROMs must use the fixed 6 MiB or 8 MiB action above."
+            }
+            Self::RomExpansionCancel => "Cancel",
+            Self::RomExpansionApply => "Expand transactionally",
+            Self::RomExpansionExLoRomWarningTitle => "64 Mbit ExLoROM Expansion Warning",
+            Self::RomExpansionMapperWarning => {
+                "This changes the ROM mapper and relocates ROM data."
+            }
+            Self::RomExpansionCompatibilityWarning => {
+                "Some external patches and tools may not support 64-Mbit ExLoROM files. Save a backup before distributing or applying third-party patches."
+            }
+            Self::RomExpansionUndoableNotice => {
+                "The conversion is a single undoable operation in this editor."
+            }
+            Self::RomExpansionConvertRom => "Convert ROM",
+            Self::RomExpansionSa1ConfirmTitle => "Expand SA-1 ROM?",
+            Self::RomExpansionSa1ConfirmNotice => "This will expand the SA-1 ROM to {mib} MiB.",
+            Self::RomExpansionSnes9xNotice => {
+                "If using Snes9x, this requires version 1.54+ or FuSoYa's custom 8MB Snes9x build."
+            }
+            Self::RomExpansionZsnesNotice => {
+                "If using Snes9x, this requires version 1.54+ or FuSoYa's custom 8MB Snes9x build. ZSNES requires FuSoYa's custom 8MB build."
+            }
+            Self::RomExpansionExpandRom => "Expand ROM",
+            Self::RomExpansionErrorTitle => "ROM expansion error",
+            Self::RomExpansionOk => "OK",
         }
     }
 
