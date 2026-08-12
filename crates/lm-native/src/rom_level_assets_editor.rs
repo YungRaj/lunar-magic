@@ -1,7 +1,7 @@
 use crate::{document_loader::DocumentLoader, native_level_assets_panels::AggregatePanels};
 use eframe::egui;
 use lm_app::{
-    AppState, Command, LocalizationCatalog, NativeLevelAssetsController,
+    AppState, Command, ExtendedUiTextKey as Key, LocalizationCatalog, NativeLevelAssetsController,
     NativeLevelAssetsControllerEdit, NativeLevelAssetsControllerError, ProfiledControllerSnapshot,
     RevisionProfile, RevisionProfileControllers,
 };
@@ -26,6 +26,10 @@ mod lifecycle;
 mod mwl;
 mod mwl_batch;
 mod palette_transfer;
+
+fn text(catalog: Option<&LocalizationCatalog>, key: Key) -> String {
+    crate::frontend_ui::extended_localized_text(catalog, key)
+}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum PendingClose {
@@ -841,7 +845,7 @@ impl RomLevelAssetsEditor {
             command = reclamation_command;
         }
         if self.workspace.is_some() {
-            egui::Window::new("ROM Native Level Assets")
+            egui::Window::new(text(catalog, Key::RomNativeAssetsTitle))
                 .default_size([900.0, 720.0])
                 .vscroll(true)
                 .show(context, |ui| {
@@ -862,8 +866,8 @@ impl RomLevelAssetsEditor {
         if command.is_none() {
             self.show_layer2_mode_reset_confirmation(context, project_revision);
         }
-        let approved = self.close_confirmation(context);
-        self.show_error(context);
+        let approved = self.close_confirmation(context, catalog);
+        self.show_error(context, catalog);
         (approved, command)
     }
 
@@ -886,13 +890,13 @@ impl RomLevelAssetsEditor {
         if stale {
             ui.colored_label(
                 egui::Color32::YELLOW,
-                "The ROM changed. Close and reopen this workspace before committing.",
+                text(catalog, Key::RomNativeAssetsStaleNotice),
             );
         }
         if !stale && editing_blocked {
             ui.colored_label(
                 egui::Color32::YELLOW,
-                "Level import or commit preparation is active; staged editing is temporarily disabled.",
+                text(catalog, Key::RomNativeAssetsBusyNotice),
             );
         }
         if let Some(mode) = self
@@ -902,9 +906,8 @@ impl RomLevelAssetsEditor {
         {
             ui.colored_label(
                 egui::Color32::YELLOW,
-                format!(
-                    "Mode ${mode:02X} is reserved. Lunar Magic compatibility uses mode $00 instead."
-                ),
+                text(catalog, Key::RomNativeAssetsReservedModeFormat)
+                    .replace("{mode}", &format!("{mode:02X}")),
             );
         }
         let history = self.workspace.as_ref().map(|workspace| {
@@ -918,18 +921,31 @@ impl RomLevelAssetsEditor {
         if let Some((can_undo, can_redo, modified)) = history {
             ui.horizontal(|ui| {
                 if ui
-                    .add_enabled(!editing_blocked && can_undo, egui::Button::new("Undo"))
+                    .add_enabled(
+                        !editing_blocked && can_undo,
+                        egui::Button::new(text(catalog, Key::RomNativeAssetsUndo)),
+                    )
                     .clicked()
                 {
                     history_action = Some(true);
                 }
                 if ui
-                    .add_enabled(!editing_blocked && can_redo, egui::Button::new("Redo"))
+                    .add_enabled(
+                        !editing_blocked && can_redo,
+                        egui::Button::new(text(catalog, Key::RomNativeAssetsRedo)),
+                    )
                     .clicked()
                 {
                     history_action = Some(false);
                 }
-                ui.label(if modified { "Modified" } else { "Unmodified" });
+                ui.label(text(
+                    catalog,
+                    if modified {
+                        Key::RomNativeAssetsModified
+                    } else {
+                        Key::RomNativeAssetsUnmodified
+                    },
+                ));
             });
         }
         if let Some(undo) = history_action {
@@ -946,12 +962,12 @@ impl RomLevelAssetsEditor {
             }
         }
         ui.horizontal(|ui| {
-            ui.label("Allocation search (logical PC hex, end-exclusive)");
+            ui.label(text(catalog, Key::RomNativeAssetsAllocation));
             ui.text_edit_singleline(&mut self.search_start);
-            ui.label("..");
+            ui.label(text(catalog, Key::RomNativeAssetsRangeSeparator));
             ui.text_edit_singleline(&mut self.search_end);
         });
-        self.palette_file_controls(ui, stale, project_revision);
+        self.palette_file_controls(ui, stale, project_revision, catalog);
         let workspace = self.workspace.as_ref()?;
         let file = NativeLevelAssetsFile {
             source_slot: workspace.source_slot,
@@ -3642,6 +3658,43 @@ mod tests {
     use std::sync::atomic::{AtomicU64, Ordering};
 
     static NEXT_IMAGE_PATH: AtomicU64 = AtomicU64::new(0);
+
+    #[test]
+    fn rom_native_assets_shell_palette_and_lifecycle_use_every_typed_key() {
+        let sources = [
+            include_str!("rom_level_assets_editor.rs"),
+            include_str!("rom_level_assets_editor/lifecycle.rs"),
+            include_str!("rom_level_assets_editor/palette_transfer.rs"),
+        ]
+        .join("\n");
+        for key in Key::ALL
+            .into_iter()
+            .filter(|key| format!("{key:?}").starts_with("RomNativeAssets"))
+        {
+            assert!(
+                sources.contains(&format!("{key:?}")),
+                "missing ROM native-assets label {key:?}"
+            );
+        }
+        for child in [
+            include_str!("rom_level_assets_editor/lifecycle.rs"),
+            include_str!("rom_level_assets_editor/palette_transfer.rs"),
+        ] {
+            for literal_widget in [
+                "Window::new(\"",
+                "ui.heading(\"",
+                "ui.label(\"",
+                "ui.button(\"",
+                "ui.small(\"",
+                "Button::new(\"",
+            ] {
+                assert!(
+                    !child.contains(literal_widget),
+                    "ROM native-assets child surface regressed to fixed widget text: {literal_widget}"
+                );
+            }
+        }
+    }
 
     #[test]
     fn staged_installed_level_assets_are_recovered_without_live_commit() {

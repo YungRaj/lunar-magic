@@ -2174,6 +2174,32 @@ pub enum ExtendedUiTextKey {
     NativeAssetsSettingsLevelAnimation,
     NativeAssetsSettingsPreservedNibbleFormat,
     NativeAssetsSettingsApplyAnimation,
+    RomNativeAssetsTitle,
+    RomNativeAssetsStaleNotice,
+    RomNativeAssetsBusyNotice,
+    RomNativeAssetsReservedModeFormat,
+    RomNativeAssetsUndo,
+    RomNativeAssetsRedo,
+    RomNativeAssetsModified,
+    RomNativeAssetsUnmodified,
+    RomNativeAssetsAllocation,
+    RomNativeAssetsRangeSeparator,
+    RomNativeAssetsPaletteImportFull,
+    RomNativeAssetsPaletteExportFull,
+    RomNativeAssetsPaletteFullNotice,
+    RomNativeAssetsPaletteImportRaw,
+    RomNativeAssetsPaletteExportRaw,
+    RomNativeAssetsPaletteImportTpl,
+    RomNativeAssetsPaletteExportTpl,
+    RomNativeAssetsPaletteImportRgb,
+    RomNativeAssetsPaletteExportRgb,
+    RomNativeAssetsPaletteNativeNotice,
+    RomNativeAssetsDiscardTitle,
+    RomNativeAssetsDiscardNotice,
+    RomNativeAssetsCancel,
+    RomNativeAssetsDiscard,
+    RomNativeAssetsErrorTitle,
+    RomNativeAssetsOk,
     ExAnimationDocumentTitle,
     ExAnimationDocumentOpenTitle,
     ExAnimationDocumentMaximumRecords,
@@ -3336,7 +3362,7 @@ pub enum ExtendedUiTextKey {
 }
 
 impl ExtendedUiTextKey {
-    pub const ALL: [Self; 1632] = [
+    pub const ALL: [Self; 1658] = [
         Self::MwlDocumentEditorTitle,
         Self::MwlDocumentVersionFormat,
         Self::MwlDocumentFlagsHex,
@@ -3810,6 +3836,32 @@ impl ExtendedUiTextKey {
         Self::NativeAssetsSettingsLevelAnimation,
         Self::NativeAssetsSettingsPreservedNibbleFormat,
         Self::NativeAssetsSettingsApplyAnimation,
+        Self::RomNativeAssetsTitle,
+        Self::RomNativeAssetsStaleNotice,
+        Self::RomNativeAssetsBusyNotice,
+        Self::RomNativeAssetsReservedModeFormat,
+        Self::RomNativeAssetsUndo,
+        Self::RomNativeAssetsRedo,
+        Self::RomNativeAssetsModified,
+        Self::RomNativeAssetsUnmodified,
+        Self::RomNativeAssetsAllocation,
+        Self::RomNativeAssetsRangeSeparator,
+        Self::RomNativeAssetsPaletteImportFull,
+        Self::RomNativeAssetsPaletteExportFull,
+        Self::RomNativeAssetsPaletteFullNotice,
+        Self::RomNativeAssetsPaletteImportRaw,
+        Self::RomNativeAssetsPaletteExportRaw,
+        Self::RomNativeAssetsPaletteImportTpl,
+        Self::RomNativeAssetsPaletteExportTpl,
+        Self::RomNativeAssetsPaletteImportRgb,
+        Self::RomNativeAssetsPaletteExportRgb,
+        Self::RomNativeAssetsPaletteNativeNotice,
+        Self::RomNativeAssetsDiscardTitle,
+        Self::RomNativeAssetsDiscardNotice,
+        Self::RomNativeAssetsCancel,
+        Self::RomNativeAssetsDiscard,
+        Self::RomNativeAssetsErrorTitle,
+        Self::RomNativeAssetsOk,
         Self::ExAnimationDocumentTitle,
         Self::ExAnimationDocumentOpenTitle,
         Self::ExAnimationDocumentMaximumRecords,
@@ -5539,6 +5591,44 @@ impl ExtendedUiTextKey {
                 "Preserved unrelated low nibble: {value}"
             }
             Self::NativeAssetsSettingsApplyAnimation => "Apply animation options",
+            Self::RomNativeAssetsTitle => "ROM Native Level Assets",
+            Self::RomNativeAssetsStaleNotice => {
+                "The ROM changed. Close and reopen this workspace before committing."
+            }
+            Self::RomNativeAssetsBusyNotice => {
+                "Level import or commit preparation is active; staged editing is temporarily disabled."
+            }
+            Self::RomNativeAssetsReservedModeFormat => {
+                "Mode ${mode} is reserved. Lunar Magic compatibility uses mode $00 instead."
+            }
+            Self::RomNativeAssetsUndo => "Undo",
+            Self::RomNativeAssetsRedo => "Redo",
+            Self::RomNativeAssetsModified => "Modified",
+            Self::RomNativeAssetsUnmodified => "Unmodified",
+            Self::RomNativeAssetsAllocation => "Allocation search (logical PC hex, end-exclusive)",
+            Self::RomNativeAssetsRangeSeparator => "..",
+            Self::RomNativeAssetsPaletteImportFull => "Import full .lmpal…",
+            Self::RomNativeAssetsPaletteExportFull => "Export full .lmpal…",
+            Self::RomNativeAssetsPaletteFullNotice => {
+                "Every import is staged through the active ownership map; exports snapshot the current staged palette and never overwrite an existing file."
+            }
+            Self::RomNativeAssetsPaletteImportRaw => "Import raw…",
+            Self::RomNativeAssetsPaletteExportRaw => "Export raw…",
+            Self::RomNativeAssetsPaletteImportTpl => "Import TPL v2…",
+            Self::RomNativeAssetsPaletteExportTpl => "Export TPL v2…",
+            Self::RomNativeAssetsPaletteImportRgb => "Import RGB24…",
+            Self::RomNativeAssetsPaletteExportRgb => "Export RGB24…",
+            Self::RomNativeAssetsPaletteNativeNotice => {
+                "Raw/TPL/RGB imports automatically apply a same-name .palmask when present; full exports remove a stale mask sidecar."
+            }
+            Self::RomNativeAssetsDiscardTitle => "Discard staged native assets?",
+            Self::RomNativeAssetsDiscardNotice => {
+                "The staged cross-domain changes have not been committed to the ROM."
+            }
+            Self::RomNativeAssetsCancel => "Cancel",
+            Self::RomNativeAssetsDiscard => "Discard",
+            Self::RomNativeAssetsErrorTitle => "ROM native-assets error",
+            Self::RomNativeAssetsOk => "OK",
             Self::ExAnimationDocumentTitle => "Portable ExAnimation Editor",
             Self::ExAnimationDocumentOpenTitle => "Open ExAnimation",
             Self::ExAnimationDocumentMaximumRecords => {

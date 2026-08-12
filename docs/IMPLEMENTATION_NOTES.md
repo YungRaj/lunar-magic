@@ -7846,3 +7846,15 @@ The editor's source audit now rejects every literal window, heading, label, butt
 surface audit passes, localization passes 28/28 active cases (one provenance ignore), and renderer
 remains 237/237. Remaining native forms and retained live language-DLL evidence keep Localization
 Partial; aggregate parity remains 60/65.
+
+Localization coverage update (2026-08-12, installed-ROM level-assets shell and palette transfer):
+twenty-six appended `RomNativeAssets*` identities now cover the installed aggregate window,
+stale/busy/reserved-mode notices, Undo/Redo and modified state, allocation range, full `.lmpal`
+and raw/TPL/RGB24 import/export controls and guidance, plus dirty-close and error dialogs. The live
+catalog already reached the aggregate panels and now also reaches the palette-transfer and
+lifecycle child surfaces. A family audit requires every new identity and rejects literal window,
+heading, label, button, small-text, and `Button` captions in both child modules. The focused audit
+passes, localization passes 28/28 active cases (one provenance ignore), native compilation passes,
+and renderer remains 237/237. Preview controls, MWL/image transfer surfaces, commit controls, and
+the Layer 2 mode-reset confirmation still need catalog wiring, so Localization and aggregate
+parity remain Partial and 60/65 respectively.

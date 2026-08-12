@@ -1,6 +1,7 @@
 use super::RomLevelAssetsEditor;
 use crate::{dialogs, document_loader::BoundedRead, persistence_worker::PersistenceTarget};
 use eframe::egui;
+use lm_app::{ExtendedUiTextKey as Key, LocalizationCatalog};
 use lm_graphics::{
     Bgr555, Palette, PaletteInterchangeFile, PaletteMaskFile, RawSnesPaletteFile,
     RgbChannelExpansion, RgbPaletteFile, TplPaletteFile, apply_raw_palette_import,
@@ -64,7 +65,13 @@ impl RomLevelAssetsEditor {
         }
     }
 
-    pub(super) fn palette_file_controls(&mut self, ui: &mut egui::Ui, stale: bool, revision: u64) {
+    pub(super) fn palette_file_controls(
+        &mut self,
+        ui: &mut egui::Ui,
+        stale: bool,
+        revision: u64,
+        catalog: Option<&LocalizationCatalog>,
+    ) {
         let busy = self.palette_loader.is_running()
             || self.palette_persistence.is_running()
             || self.mwl_loader.is_running()
@@ -74,7 +81,10 @@ impl RomLevelAssetsEditor {
             || self.image_batch_worker.is_running();
         ui.horizontal(|ui| {
             if ui
-                .add_enabled(!stale && !busy, egui::Button::new("Import full .lmpal…"))
+                .add_enabled(
+                    !stale && !busy,
+                    egui::Button::new(super::text(catalog, Key::RomNativeAssetsPaletteImportFull)),
+                )
                 .clicked()
                 && let Some(path) = dialogs::choose_palette_document()
             {
@@ -88,14 +98,17 @@ impl RomLevelAssetsEditor {
                 }
             }
             if ui
-                .add_enabled(!stale && !busy, egui::Button::new("Export full .lmpal…"))
+                .add_enabled(
+                    !stale && !busy,
+                    egui::Button::new(super::text(catalog, Key::RomNativeAssetsPaletteExportFull)),
+                )
                 .clicked()
             {
                 self.start_palette_export(revision);
             }
         });
-        self.native_palette_file_controls(ui, stale, busy, revision);
-        ui.small("Every import is staged through the active ownership map; exports snapshot the current staged palette and never overwrite an existing file.");
+        self.native_palette_file_controls(ui, stale, busy, revision, catalog);
+        ui.small(super::text(catalog, Key::RomNativeAssetsPaletteFullNotice));
     }
 
     fn native_palette_file_controls(
@@ -104,22 +117,23 @@ impl RomLevelAssetsEditor {
         stale: bool,
         busy: bool,
         revision: u64,
+        catalog: Option<&LocalizationCatalog>,
     ) {
-        for (label, kind, maximum, description) in [
+        for (key, kind, maximum, description) in [
             (
-                "Import raw…",
+                Key::RomNativeAssetsPaletteImportRaw,
                 PendingTransfer::Raw,
                 RawSnesPaletteFile::FILE_LEN as u64,
                 "raw 257-color palette",
             ),
             (
-                "Import TPL v2…",
+                Key::RomNativeAssetsPaletteImportTpl,
                 PendingTransfer::Tpl,
                 TplPaletteFile::FILE_LEN as u64,
                 "TPL v2 palette",
             ),
             (
-                "Import RGB24…",
+                Key::RomNativeAssetsPaletteImportRgb,
                 PendingTransfer::Rgb,
                 RgbPaletteFile::FILE_LEN as u64,
                 "RGB24 palette",
@@ -127,7 +141,10 @@ impl RomLevelAssetsEditor {
         ] {
             ui.horizontal(|ui| {
                 if ui
-                    .add_enabled(!stale && !busy, egui::Button::new(label))
+                    .add_enabled(
+                        !stale && !busy,
+                        egui::Button::new(super::text(catalog, key)),
+                    )
                     .clicked()
                     && let Some(path) = choose_native_palette_import(kind)
                 {
@@ -137,20 +154,26 @@ impl RomLevelAssetsEditor {
                         Err(error) => self.error = Some(error),
                     }
                 }
-                let export_label = match kind {
-                    PendingTransfer::Raw => "Export raw…",
-                    PendingTransfer::Tpl => "Export TPL v2…",
-                    PendingTransfer::Rgb => "Export RGB24…",
+                let export_key = match kind {
+                    PendingTransfer::Raw => Key::RomNativeAssetsPaletteExportRaw,
+                    PendingTransfer::Tpl => Key::RomNativeAssetsPaletteExportTpl,
+                    PendingTransfer::Rgb => Key::RomNativeAssetsPaletteExportRgb,
                 };
                 if ui
-                    .add_enabled(!stale && !busy, egui::Button::new(export_label))
+                    .add_enabled(
+                        !stale && !busy,
+                        egui::Button::new(super::text(catalog, export_key)),
+                    )
                     .clicked()
                 {
                     self.start_native_palette_export(revision, kind);
                 }
             });
         }
-        ui.small("Raw/TPL/RGB imports automatically apply a same-name .palmask when present; full exports remove a stale mask sidecar.");
+        ui.small(super::text(
+            catalog,
+            Key::RomNativeAssetsPaletteNativeNotice,
+        ));
     }
 
     fn start_native_palette_export(&mut self, revision: u64, kind: PendingTransfer) {
