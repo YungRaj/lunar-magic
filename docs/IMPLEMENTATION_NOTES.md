@@ -7858,3 +7858,12 @@ passes, localization passes 28/28 active cases (one provenance ignore), native c
 and renderer remains 237/237. Preview controls, MWL/image transfer surfaces, commit controls, and
 the Layer 2 mode-reset confirmation still need catalog wiring, so Localization and aggregate
 parity remain Partial and 60/65 respectively.
+
+Localization coverage update (2026-08-12, installed-ROM level-assets MWL transfers): ten appended
+`RomNativeAssetsMwl*` identities cover complete and legacy single-level import/export, all/modified
+batch export, the cancellable batch-progress window, dynamic output-template path, publication
+notice, and cancelling state. The live catalog now flows through both MWL child modules, which join
+the family key-coverage and fixed-widget source audit. The focused audit passes, localization
+passes 28/28 active cases (one provenance ignore), and renderer remains 237/237. Image transfer,
+preview, commit, and Layer 2 mode-reset controls remain before the installed aggregate family is
+complete; Localization and aggregate parity remain Partial and 60/65 respectively.

@@ -786,7 +786,7 @@ impl RomLevelAssetsEditor {
         catalog: Option<&LocalizationCatalog>,
     ) -> (bool, Option<Command>) {
         self.poll_palette_file_io(context, project_revision);
-        if let Some(result) = self.mwl_batch_worker.show(context) {
+        if let Some(result) = self.mwl_batch_worker.show(context, catalog) {
             match result {
                 Ok(Some(count)) => {
                     self.mwl_batch_status =
@@ -1515,7 +1515,7 @@ impl RomLevelAssetsEditor {
         if let Some(status) = &self.level_image_status {
             ui.label(status);
         }
-        self.show_mwl_actions(ui, stale, modified);
+        self.show_mwl_actions(ui, stale, modified, catalog);
         if let Some(status) = &self.legacy_mwl_status {
             ui.label(status);
         }
@@ -3664,6 +3664,8 @@ mod tests {
         let sources = [
             include_str!("rom_level_assets_editor.rs"),
             include_str!("rom_level_assets_editor/lifecycle.rs"),
+            include_str!("rom_level_assets_editor/mwl.rs"),
+            include_str!("rom_level_assets_editor/mwl_batch.rs"),
             include_str!("rom_level_assets_editor/palette_transfer.rs"),
         ]
         .join("\n");
@@ -3678,6 +3680,8 @@ mod tests {
         }
         for child in [
             include_str!("rom_level_assets_editor/lifecycle.rs"),
+            include_str!("rom_level_assets_editor/mwl.rs"),
+            include_str!("rom_level_assets_editor/mwl_batch.rs"),
             include_str!("rom_level_assets_editor/palette_transfer.rs"),
         ] {
             for literal_widget in [

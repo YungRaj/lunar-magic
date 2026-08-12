@@ -1,5 +1,6 @@
 use super::{Command, RomLevelAssetsEditor};
 use crate::document_loader::{BoundedRead, LoadedDocument};
+use lm_app::{ExtendedUiTextKey as Key, LocalizationCatalog};
 use lm_level::{LegacyMwlManifest, MwlFile};
 use lm_project::{LegacyMwlBundle, MwlNativeLevel};
 
@@ -19,6 +20,7 @@ impl RomLevelAssetsEditor {
         ui: &mut eframe::egui::Ui,
         stale: bool,
         modified: bool,
+        catalog: Option<&LocalizationCatalog>,
     ) {
         let palette_busy =
             self.palette_loader.is_running() || self.palette_persistence.is_running();
@@ -29,7 +31,10 @@ impl RomLevelAssetsEditor {
                         && !self.mwl_loader.is_running()
                         && !self.image_batch_worker.is_running()
                         && !palette_busy,
-                    eframe::egui::Button::new("Export complete MWL…"),
+                    eframe::egui::Button::new(super::text(
+                        catalog,
+                        Key::RomNativeAssetsMwlExportComplete,
+                    )),
                 )
                 .clicked()
                 && let Err(error) = self.export_mwl()
@@ -44,7 +49,10 @@ impl RomLevelAssetsEditor {
                         && !self.legacy_mwl_loader.is_running()
                         && !self.manifest_loader.is_running()
                         && !palette_busy,
-                    eframe::egui::Button::new("Import complete MWL…"),
+                    eframe::egui::Button::new(super::text(
+                        catalog,
+                        Key::RomNativeAssetsMwlImportComplete,
+                    )),
                 )
                 .clicked()
                 && let Err(error) = self.choose_mwl_import()
@@ -62,7 +70,10 @@ impl RomLevelAssetsEditor {
             if ui
                 .add_enabled(
                     legacy_enabled,
-                    eframe::egui::Button::new("Export legacy multi-file level…"),
+                    eframe::egui::Button::new(super::text(
+                        catalog,
+                        Key::RomNativeAssetsMwlExportLegacy,
+                    )),
                 )
                 .clicked()
                 && let Err(error) = self.export_legacy_mwl()
@@ -72,7 +83,10 @@ impl RomLevelAssetsEditor {
             if ui
                 .add_enabled(
                     legacy_enabled && !modified,
-                    eframe::egui::Button::new("Import legacy multi-file level…"),
+                    eframe::egui::Button::new(super::text(
+                        catalog,
+                        Key::RomNativeAssetsMwlImportLegacy,
+                    )),
                 )
                 .clicked()
                 && let Err(error) = self.choose_legacy_mwl_import()
@@ -90,7 +104,13 @@ impl RomLevelAssetsEditor {
                 && !self.mwl_batch_worker.is_running()
                 && !palette_busy;
             if ui
-                .add_enabled(batch_enabled, eframe::egui::Button::new("Export all MWLs…"))
+                .add_enabled(
+                    batch_enabled,
+                    eframe::egui::Button::new(super::text(
+                        catalog,
+                        Key::RomNativeAssetsMwlExportAll,
+                    )),
+                )
                 .clicked()
                 && let Err(error) = self.choose_mwl_batch_export(lm_app::MwlBatchExportMode::All)
             {
@@ -99,7 +119,10 @@ impl RomLevelAssetsEditor {
             if ui
                 .add_enabled(
                     batch_enabled,
-                    eframe::egui::Button::new("Export modified MWLs…"),
+                    eframe::egui::Button::new(super::text(
+                        catalog,
+                        Key::RomNativeAssetsMwlExportModified,
+                    )),
                 )
                 .clicked()
                 && let Err(error) =

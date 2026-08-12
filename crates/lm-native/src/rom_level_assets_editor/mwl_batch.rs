@@ -1,5 +1,7 @@
 use eframe::egui;
-use lm_app::{MwlBatchExportMode, ProfiledControllerSnapshot};
+use lm_app::{
+    ExtendedUiTextKey as Key, LocalizationCatalog, MwlBatchExportMode, ProfiledControllerSnapshot,
+};
 use std::path::PathBuf;
 use std::sync::{
     Arc,
@@ -69,22 +71,25 @@ impl MwlBatchExportWorker {
     pub(super) fn show(
         &mut self,
         context: &egui::Context,
+        catalog: Option<&LocalizationCatalog>,
     ) -> Option<Result<Option<usize>, String>> {
         let completion = self.poll();
         if let Some(running) = &self.running {
             let cancellation_requested = running.cancelled.load(Ordering::Relaxed);
-            egui::Window::new("Exporting levels")
+            egui::Window::new(super::text(catalog, Key::RomNativeAssetsMwlBatchTitle))
                 .collapsible(false)
                 .resizable(false)
                 .show(context, |ui| {
-                    ui.label(format!(
-                        "Creating numbered MWLs from {}",
-                        running.template.display()
-                    ));
-                    ui.label("Cancellation takes effect before grouped publication starts.");
+                    ui.label(
+                        super::text(catalog, Key::RomNativeAssetsMwlBatchPathFormat)
+                            .replace("{path}", &running.template.display().to_string()),
+                    );
+                    ui.label(super::text(catalog, Key::RomNativeAssetsMwlBatchNotice));
                     if cancellation_requested {
-                        ui.label("Cancelling after the current level…");
-                    } else if ui.button("Cancel").clicked()
+                        ui.label(super::text(catalog, Key::RomNativeAssetsMwlBatchCancelling));
+                    } else if ui
+                        .button(super::text(catalog, Key::RomNativeAssetsCancel))
+                        .clicked()
                         || context.input(|input| input.key_pressed(egui::Key::Escape))
                     {
                         running.request_cancel();

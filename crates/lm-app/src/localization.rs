@@ -2200,6 +2200,16 @@ pub enum ExtendedUiTextKey {
     RomNativeAssetsDiscard,
     RomNativeAssetsErrorTitle,
     RomNativeAssetsOk,
+    RomNativeAssetsMwlExportComplete,
+    RomNativeAssetsMwlImportComplete,
+    RomNativeAssetsMwlExportLegacy,
+    RomNativeAssetsMwlImportLegacy,
+    RomNativeAssetsMwlExportAll,
+    RomNativeAssetsMwlExportModified,
+    RomNativeAssetsMwlBatchTitle,
+    RomNativeAssetsMwlBatchPathFormat,
+    RomNativeAssetsMwlBatchNotice,
+    RomNativeAssetsMwlBatchCancelling,
     ExAnimationDocumentTitle,
     ExAnimationDocumentOpenTitle,
     ExAnimationDocumentMaximumRecords,
@@ -3362,7 +3372,7 @@ pub enum ExtendedUiTextKey {
 }
 
 impl ExtendedUiTextKey {
-    pub const ALL: [Self; 1658] = [
+    pub const ALL: [Self; 1668] = [
         Self::MwlDocumentEditorTitle,
         Self::MwlDocumentVersionFormat,
         Self::MwlDocumentFlagsHex,
@@ -3862,6 +3872,16 @@ impl ExtendedUiTextKey {
         Self::RomNativeAssetsDiscard,
         Self::RomNativeAssetsErrorTitle,
         Self::RomNativeAssetsOk,
+        Self::RomNativeAssetsMwlExportComplete,
+        Self::RomNativeAssetsMwlImportComplete,
+        Self::RomNativeAssetsMwlExportLegacy,
+        Self::RomNativeAssetsMwlImportLegacy,
+        Self::RomNativeAssetsMwlExportAll,
+        Self::RomNativeAssetsMwlExportModified,
+        Self::RomNativeAssetsMwlBatchTitle,
+        Self::RomNativeAssetsMwlBatchPathFormat,
+        Self::RomNativeAssetsMwlBatchNotice,
+        Self::RomNativeAssetsMwlBatchCancelling,
         Self::ExAnimationDocumentTitle,
         Self::ExAnimationDocumentOpenTitle,
         Self::ExAnimationDocumentMaximumRecords,
@@ -5629,6 +5649,18 @@ impl ExtendedUiTextKey {
             Self::RomNativeAssetsDiscard => "Discard",
             Self::RomNativeAssetsErrorTitle => "ROM native-assets error",
             Self::RomNativeAssetsOk => "OK",
+            Self::RomNativeAssetsMwlExportComplete => "Export complete MWL…",
+            Self::RomNativeAssetsMwlImportComplete => "Import complete MWL…",
+            Self::RomNativeAssetsMwlExportLegacy => "Export legacy multi-file level…",
+            Self::RomNativeAssetsMwlImportLegacy => "Import legacy multi-file level…",
+            Self::RomNativeAssetsMwlExportAll => "Export all MWLs…",
+            Self::RomNativeAssetsMwlExportModified => "Export modified MWLs…",
+            Self::RomNativeAssetsMwlBatchTitle => "Exporting levels",
+            Self::RomNativeAssetsMwlBatchPathFormat => "Creating numbered MWLs from {path}",
+            Self::RomNativeAssetsMwlBatchNotice => {
+                "Cancellation takes effect before grouped publication starts."
+            }
+            Self::RomNativeAssetsMwlBatchCancelling => "Cancelling after the current level…",
             Self::ExAnimationDocumentTitle => "Portable ExAnimation Editor",
             Self::ExAnimationDocumentOpenTitle => "Open ExAnimation",
             Self::ExAnimationDocumentMaximumRecords => {
