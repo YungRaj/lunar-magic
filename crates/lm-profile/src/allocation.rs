@@ -245,6 +245,17 @@ fn protect_smw_us_v1_overworld_animation_options(
         }
         _ => unreachable!("overworld animation layout always has one authenticated marker"),
     };
+    // A synthetic or partially expanded ExLoROM profile can legitimately be used to plan growth
+    // before its relocated SMW body exists. In that state the complete optional overworld-
+    // animation subsystem is absent and contributes no live allocation ranges. Once any selected
+    // fixed field is addressable, the ordinary bounded checks below still fail closed on a
+    // truncated companion field.
+    let fixed_start = marker_offset
+        .min(operand_offset)
+        .min(layout.lightning_disable_mask_offset);
+    if fixed_start >= rom.logical_len() {
+        return Ok(());
+    }
     for (domain, offset, len) in [
         ("overworld.animation.options.marker", marker_offset, 1),
         (
@@ -817,6 +828,42 @@ mod tests {
         ] {
             assert!(policy.protected.contains(&range), "missing {range:?}");
         }
+    }
+
+    #[test]
+    fn absent_exlorom_overworld_body_skips_protection_but_partial_body_fails_closed() {
+        let mut policy = AllocationPolicy::lorom(0x6000..0x7000);
+        let absent = lm_rom::RomImage::from_bytes(vec![0xff; 0x3_0000]).unwrap();
+        protect_smw_us_v1_overworld_animation_options(
+            &mut policy,
+            &absent,
+            lm_rom::Mapper::ExLoRom,
+        )
+        .unwrap();
+        assert!(
+            policy
+                .protected
+                .iter()
+                .all(|range| range.0.start < absent.logical_len())
+        );
+
+        let layout =
+            crate::smw_us_v1_overworld_animation_options_layout_for_mapper(lm_rom::Mapper::ExLoRom);
+        let marker = match layout.feature_installation {
+            lm_project::InstalledLayout::Alternatives { primary, .. } => primary.marker.offset,
+            _ => unreachable!(),
+        };
+        let partial = lm_rom::RomImage::from_bytes(vec![0xff; marker + 1]).unwrap();
+        let error = protect_smw_us_v1_overworld_animation_options(
+            &mut policy,
+            &partial,
+            lm_rom::Mapper::ExLoRom,
+        )
+        .unwrap_err();
+        assert!(matches!(
+            error,
+            RevisionAllocationError::ProtectedRangeOutsideImage { .. }
+        ));
     }
 
     #[test]
