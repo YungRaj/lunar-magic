@@ -977,6 +977,7 @@ impl NativeApplication {
     ///
     /// ROM editor windows use this acknowledgement before discarding their staged controller.
     fn try_dispatch(&mut self, context: &egui::Context, command: Command) -> bool {
+        let opens_native_overworld = matches!(&command, Command::ShowOverworld);
         if matches!(command, Command::Save) {
             if self.ips_sibling_save_authorized {
                 self.ips_sibling_save_authorized = false;
@@ -1024,6 +1025,12 @@ impl NativeApplication {
                     self.vram_patch_selection_initialized = false;
                 }
                 self.effects.handle(&mut self.app, context, effects);
+                // The generic Overworld mode has no central canvas of its own. Open the
+                // native editor immediately so the primary Editors > Overworld action
+                // displays the playable map instead of leaving users at the placeholder.
+                if opens_native_overworld && !self.rom_overworld_editor.is_open() {
+                    self.rom_overworld_editor.open(&self.app);
+                }
                 true
             }
             Err(error) => {
@@ -3908,6 +3915,20 @@ mod tests {
         assert!(!application.try_dispatch(&context, Command::Save));
         assert!(application.effects.error.is_some());
         assert!(application.app.project().is_none());
+    }
+
+    #[test]
+    fn show_overworld_opens_the_native_playable_map_editor() {
+        let context = egui::Context::default();
+        let mut application = NativeApplication::default();
+        application
+            .app
+            .load_rom(crate::test_support::pristine_smw_us_rom_bytes())
+            .unwrap();
+
+        assert!(application.try_dispatch(&context, Command::ShowOverworld));
+        assert_eq!(application.app.mode, EditorMode::Overworld);
+        assert!(application.rom_overworld_editor.is_open());
     }
 
     #[test]
