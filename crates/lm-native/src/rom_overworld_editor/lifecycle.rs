@@ -419,19 +419,19 @@ fn load_vanilla_yoshi_island_bg_vram(
     layout: lm_project::GraphicsRomLayout,
 ) -> Result<Vec<IndexedTile>, String> {
     // UploadGraphicsFiles ($00A9DA), tileset $12. The editor renderer's graphics interchange is
-    // relative to BG VRAM $100, so the four vanilla 3bpp slots begin at tile zero here.
+    // relative to BG VRAM $100, so the four vanilla slots begin at tile zero here. Some vanilla
+    // streams decompress into padded $1000-byte buffers, but the original non-LM upload loop
+    // consumes the first $C00 bytes as 128 3bpp tiles and expands them into 4bpp VRAM.
     let blank = IndexedTile::new([0; IndexedTile::PIXEL_COUNT]);
     let mut result = vec![blank.clone(); 0x400];
-    for (file, destination, bits) in [
-        (0x1c, 0x000, 3),
-        (0x1d, 0x080, 3),
-        (0x08, 0x100, 3),
-        (0x1e, 0x180, 3),
-    ] {
+    for (file, destination) in [(0x1c, 0x000), (0x1d, 0x080), (0x08, 0x100), (0x1e, 0x180)] {
         let decoded = project
             .load_decompressed_graphics_file(file, layout)
             .map_err(|error| format!("could not load Yoshi's Island GFX{file:02X}: {error}"))?;
-        let mut tiles = lm_graphics::decode_planar_tiles(&decoded, bits)
+        let consumed = decoded.get(..0x0c00).ok_or_else(|| {
+            format!("Yoshi's Island GFX{file:02X} is shorter than its vanilla $C00-byte upload")
+        })?;
+        let mut tiles = lm_graphics::decode_planar_tiles(consumed, 3)
             .map_err(|error| format!("could not decode Yoshi's Island GFX{file:02X}: {error}"))?;
         if tiles.len() > 0x80 {
             return Err(format!(
@@ -1226,6 +1226,28 @@ mod tests {
             image.read(0x06_7bdf + 10 * 16 + 6, 1).unwrap(),
             [replacement as u8]
         );
+    }
+
+    #[test]
+    fn vanilla_yoshi_island_graphics_decode_all_four_vram_slots() {
+        let fixture = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../..")
+            .join("artifacts/vanilla-production/sysLMRestore/smwOrig.smc");
+        let image = RomImage::from_bytes(fs::read(fixture).unwrap()).unwrap();
+        let project = Project::new(image);
+        let tiles = super::load_vanilla_yoshi_island_bg_vram(
+            &project,
+            lm_profile::smw_us_v1_vanilla_graphics_layout(),
+        )
+        .unwrap();
+        assert_eq!(tiles.len(), 0x400);
+        for start in [0x000, 0x080, 0x100, 0x180] {
+            assert!(
+                tiles[start..start + 0x80]
+                    .iter()
+                    .any(|tile| tile.pixels().iter().any(|&pixel| pixel != 0))
+            );
+        }
     }
 
     #[test]
