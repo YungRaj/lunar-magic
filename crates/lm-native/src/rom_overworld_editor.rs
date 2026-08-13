@@ -22,8 +22,6 @@ use lm_overworld::{
 use lm_project::{CompleteOverworldFile, CompleteOverworldShape};
 use std::collections::BTreeSet;
 
-type LiveOverworldFrame = (egui::TextureId, [usize; 2], lm_app::EmulatorRuntimeState);
-
 fn composed_storage_tile(
     rect: egui::Rect,
     position: egui::Pos2,
@@ -40,8 +38,14 @@ fn composed_storage_tile(
     };
     let (pixel_x, pixel_y) =
         overworld_editor_render::selected_tile(rect, position, frame_size[0], frame_size[1])?;
-    let world_x = (usize::from(state.camera_x) + pixel_x) & 0x1ff;
-    let world_y = (usize::from(state.camera_y) + pixel_y) & 0x1ff;
+    // The composed frame reserves x=0..15 and y=0..39 for the Layer-3 border/HUD.
+    let playfield_x = pixel_x.checked_sub(16)?;
+    let playfield_y = pixel_y.checked_sub(40)?;
+    if playfield_x >= 224 || playfield_y >= 160 {
+        return None;
+    }
+    let world_x = (usize::from(state.camera_x) + playfield_x) & 0x1ff;
+    let world_y = (usize::from(state.camera_y) + playfield_y) & 0x1ff;
     Some((plane_x + world_x / 8, world_y / 8))
 }
 
@@ -222,11 +226,16 @@ impl Default for NativeSpriteForm {
 }
 
 struct MainLayer2Workspace {
+    image: lm_rom::RomImage,
     controller: SmwMainOverworldLayer2Controller,
     original_paths: OverworldPathLinkTable,
     paths: OverworldPathLinkTable,
     palette: Palette,
     assets: OverworldAssets,
+    layer1: lm_overworld::OverworldLayer,
+    baseline_layer1: lm_overworld::OverworldLayer,
+    layer1_revision: u64,
+    layer1_map16: lm_level::Map16SetFile,
 }
 
 #[derive(Default)]
@@ -365,7 +374,9 @@ impl RomOverworldEditor {
         if workspace.controller.revision() != app.project_revision() {
             return Err("stale playable main-overworld workspace cannot be recovered".into());
         }
-        let terrain = if workspace.controller.is_modified() {
+        let terrain = if workspace.controller.is_modified()
+            || workspace.layer1 != workspace.baseline_layer1
+        {
             Some(overworld_mutation_from_command(
                 app,
                 self.prepare_main_layer2_commit()?,
@@ -401,13 +412,14 @@ impl RomOverworldEditor {
             );
         }
         let workspace = self.main_layer2_workspace.as_ref()?;
-        (workspace.controller.is_modified() || workspace.paths != workspace.original_paths).then(
-            || {
+        (workspace.controller.is_modified()
+            || workspace.layer1 != workspace.baseline_layer1
+            || workspace.paths != workspace.original_paths)
+            .then(|| {
                 app.project_revision().wrapping_mul(0x5899_65cc_7537_4cc3)
                     ^ workspace.controller.revision().rotate_left(19)
                     ^ 0x4f57_4c32_0000_0000
-            },
-        )
+            })
     }
 
     pub(crate) fn staged_recovery_snapshot(
@@ -422,7 +434,9 @@ impl RomOverworldEditor {
             .main_layer2_workspace
             .as_ref()
             .ok_or("overworld workspace is closed")?;
-        let terrain_mutation = if workspace.controller.is_modified() {
+        let terrain_mutation = if workspace.controller.is_modified()
+            || workspace.layer1 != workspace.baseline_layer1
+        {
             let command = self.prepare_main_layer2_commit()?;
             Some(overworld_mutation_from_command(app, command)?)
         } else {
@@ -463,7 +477,9 @@ impl RomOverworldEditor {
             .main_layer2_workspace
             .as_ref()
             .is_some_and(|workspace| {
-                workspace.controller.is_modified() || workspace.paths != workspace.original_paths
+                workspace.controller.is_modified()
+                    || workspace.layer1 != workspace.baseline_layer1
+                    || workspace.paths != workspace.original_paths
             })
     }
 
@@ -475,7 +491,8 @@ impl RomOverworldEditor {
             .main_layer2_workspace
             .as_ref()
             .ok_or("overworld workspace is closed")?;
-        let terrain = workspace.controller.is_modified();
+        let terrain =
+            workspace.controller.is_modified() || workspace.layer1 != workspace.baseline_layer1;
         let paths = workspace.paths != workspace.original_paths;
         match (terrain, paths) {
             (true, false) => self
@@ -597,7 +614,6 @@ impl RomOverworldEditor {
         ui: &mut egui::Ui,
         revision: u64,
         catalog: Option<&LocalizationCatalog>,
-        live_frame: Option<LiveOverworldFrame>,
     ) -> Option<Command> {
         let workspace = self.main_layer2_workspace.as_ref()?;
         let stale = workspace.controller.revision() != revision;
@@ -622,27 +638,12 @@ impl RomOverworldEditor {
             .as_ref()
             .is_some_and(|workspace| workspace.paths != workspace.original_paths);
         ui.label(ow_text(catalog, Key::RomOverworldPlayableMapNotice));
+        ui.label("Recognizable in-game map (primary editable canvas):");
         ui.horizontal(|ui| {
-            ui.label("Recognizable in-game map (primary editable canvas):");
-            if ui
-                .button(crate::frontend_ui::localized_text(
-                    catalog,
-                    lm_app::UiTextKey::ToolsLiveEmulator,
-                ))
-                .clicked()
-            {
-                self.live_preview_requested = true;
-            }
+            ui.selectable_value(&mut self.layer, 0, "Layer 1 structures / paths (16×16)");
+            ui.selectable_value(&mut self.layer, 1, "Layer 2 terrain (8×8)");
         });
-        self.layer = 1;
-        if let Some(frame) = live_frame {
-            self.composed_world_canvas(ui, frame, stale || paths_modified, catalog);
-        } else {
-            ui.horizontal(|ui| {
-                ui.spinner();
-                ui.label("Start Live ROM Test to load the exact game-composited map here.");
-            });
-        }
+        self.composed_world_canvas(ui, stale || paths_modified, catalog);
         egui::CollapsingHeader::new("Advanced: raw 128×64 Layer 2 storage plane")
             .default_open(false)
             .show(ui, |ui| {
@@ -659,7 +660,9 @@ impl RomOverworldEditor {
         let modified = self
             .main_layer2_workspace
             .as_ref()
-            .is_some_and(|workspace| workspace.controller.is_modified());
+            .is_some_and(|workspace| {
+                workspace.controller.is_modified() || workspace.layer1 != workspace.baseline_layer1
+            });
         if ui
             .add_enabled(
                 modified && !paths_modified && !stale,
@@ -981,7 +984,6 @@ impl RomOverworldEditor {
         context: &egui::Context,
         revision: u64,
         catalog: Option<&LocalizationCatalog>,
-        live_frame: Option<LiveOverworldFrame>,
     ) -> (bool, Option<Command>) {
         if let Some(command) = self.take_editor_transition_after_save(revision) {
             return (false, Some(command));
@@ -1027,9 +1029,7 @@ impl RomOverworldEditor {
                 .default_size([820.0, 720.0])
                 .vscroll(true)
                 .show(context, |ui| {
-                    if let Some(ui_command) =
-                        self.main_layer2_contents(ui, revision, catalog, live_frame)
-                    {
+                    if let Some(ui_command) = self.main_layer2_contents(ui, revision, catalog) {
                         command = Some(ui_command);
                     }
                 });
@@ -1848,7 +1848,6 @@ impl RomOverworldEditor {
     fn composed_world_canvas(
         &mut self,
         ui: &mut egui::Ui,
-        frame: LiveOverworldFrame,
         stale: bool,
         catalog: Option<&LocalizationCatalog>,
     ) {
@@ -1874,12 +1873,26 @@ impl RomOverworldEditor {
                 ow_text(catalog, Key::RomOverworldToolFill),
             );
         });
-        let (texture, frame_size, state) = frame;
+        let Some(texture) = self.texture.clone() else {
+            ui.spinner();
+            return;
+        };
+        let frame_size = [256, 224];
+        // Yoshi's Island is the vanilla opening map. The texture is an editor-native composed
+        // 256x224 game frame; gestures are translated through its inset 224x160 playfield.
+        let state = lm_app::EmulatorRuntimeState {
+            game_mode: 0x0e,
+            sublevel: 0,
+            translevel: 0,
+            overworld_submap: 1,
+            camera_x: 0,
+            camera_y: 0,
+        };
         let available = ui.available_width().max(1.0);
         let native = egui::vec2(frame_size[0] as f32, frame_size[1] as f32);
         let display = native * (available / native.x).min(4.0);
         let response =
-            ui.add(egui::Image::new((texture, display)).sense(egui::Sense::click_and_drag()));
+            ui.add(egui::Image::new((texture.id(), display)).sense(egui::Sense::click_and_drag()));
         let interacted = response.clicked()
             || response.dragged()
             || response.drag_started()
@@ -1887,8 +1900,13 @@ impl RomOverworldEditor {
         let mut action = None;
         if interacted
             && let Some(position) = response.interact_pointer_pos()
-            && let Some((x, y)) = composed_storage_tile(response.rect, position, frame_size, state)
+            && let Some((mut x, mut y)) =
+                composed_storage_tile(response.rect, position, frame_size, state)
         {
+            if self.layer == 0 {
+                x = (x - 64) / 2;
+                y /= 2;
+            }
             self.x = x;
             self.y = y;
             self.loaded = None;
@@ -1907,6 +1925,13 @@ impl RomOverworldEditor {
                             .input(|input| input.pointer.press_origin())
                             .and_then(|origin| {
                                 composed_storage_tile(response.rect, origin, frame_size, state)
+                            })
+                            .map(|(x, y)| {
+                                if self.layer == 0 {
+                                    ((x - 64) / 2, y / 2)
+                                } else {
+                                    (x, y)
+                                }
                             })
                             .or(Some((x, y)));
                     }
@@ -1935,18 +1960,34 @@ impl RomOverworldEditor {
             self.paint_anchor = None;
         }
 
-        let plane_x = if state.overworld_submap == 0 { 0 } else { 64 };
-        if self.x >= plane_x && self.x < plane_x + 64 {
-            let local_x =
-                ((self.x - plane_x) * 8 + 512 - usize::from(state.camera_x & 0x1ff)) & 0x1ff;
-            let local_y = (self.y * 8 + 512 - usize::from(state.camera_y & 0x1ff)) & 0x1ff;
-            if local_x < frame_size[0] && local_y < frame_size[1] {
+        let plane_x = if self.layer == 0 {
+            0
+        } else if state.overworld_submap == 0 {
+            0
+        } else {
+            64
+        };
+        let cell_pixels = if self.layer == 0 { 16 } else { 8 };
+        let plane_width = if self.layer == 0 { 32 } else { 64 };
+        if self.x >= plane_x && self.x < plane_x + plane_width {
+            let local_x = ((self.x - plane_x) * cell_pixels + 512
+                - usize::from(state.camera_x & 0x1ff))
+                & 0x1ff;
+            let local_y =
+                (self.y * cell_pixels + 512 - usize::from(state.camera_y & 0x1ff)) & 0x1ff;
+            if local_x < 224 && local_y < 160 {
                 let scale_x = response.rect.width() / frame_size[0] as f32;
                 let scale_y = response.rect.height() / frame_size[1] as f32;
                 let minimum = response.rect.min
-                    + egui::vec2(local_x as f32 * scale_x, local_y as f32 * scale_y);
+                    + egui::vec2(
+                        (16 + local_x) as f32 * scale_x,
+                        (40 + local_y) as f32 * scale_y,
+                    );
                 ui.painter().rect_stroke(
-                    egui::Rect::from_min_size(minimum, egui::vec2(8.0 * scale_x, 8.0 * scale_y)),
+                    egui::Rect::from_min_size(
+                        minimum,
+                        egui::vec2(cell_pixels as f32 * scale_x, cell_pixels as f32 * scale_y),
+                    ),
                     0.0,
                     egui::Stroke::new(2.0_f32, egui::Color32::YELLOW),
                     egui::StrokeKind::Inside,
@@ -2587,13 +2628,19 @@ impl RomOverworldEditor {
         let Some(workspace) = self.main_layer2_workspace.as_ref() else {
             return;
         };
-        let key = (workspace.controller.revision(), 0, 0);
+        let key = (
+            workspace.controller.revision(),
+            0,
+            usize::try_from(workspace.layer1_revision).unwrap_or(usize::MAX),
+        );
         if self.rendered_key == Some(key) {
             return;
         }
         match overworld_editor_render::render_layer_texture(
             context,
             workspace.controller.layer(),
+            &workspace.layer1,
+            &workspace.layer1_map16,
             &workspace.palette,
             &workspace.assets,
         ) {
@@ -2699,11 +2746,12 @@ impl RomOverworldEditor {
             };
             (shape.width, shape.height, source.as_slice())
         } else if let Some(workspace) = self.main_layer2_workspace.as_ref() {
-            if layer != OverworldLayerId::Layer2 {
-                return;
+            if layer == OverworldLayerId::Layer1 {
+                (32, 32, workspace.layer1.tiles.as_slice())
+            } else {
+                let layer = workspace.controller.layer();
+                (layer.width, layer.height, layer.tiles.as_slice())
             }
-            let layer = workspace.controller.layer();
-            (layer.width, layer.height, layer.tiles.as_slice())
         } else {
             return;
         };
@@ -2738,8 +2786,8 @@ impl RomOverworldEditor {
             .copied();
         }
         let workspace = self.main_layer2_workspace.as_ref()?;
-        if layer != OverworldLayerId::Layer2 {
-            return None;
+        if layer == OverworldLayerId::Layer1 {
+            return workspace.layer1.tile(x, y).ok();
         }
         workspace.controller.layer().tile(x, y).ok()
     }
@@ -2928,10 +2976,36 @@ impl RomOverworldEditor {
                 .apply_edits(edits)
                 .map_err(|error| error.to_string())
         } else if let Some(workspace) = self.main_layer2_workspace.as_mut() {
-            workspace
-                .controller
-                .apply_edits(edits)
-                .map_err(|error| error.to_string())
+            if edits.iter().all(|edit| {
+                matches!(
+                    edit,
+                    OverworldControllerEdit::SetLayerTile {
+                        layer: OverworldLayerId::Layer1,
+                        ..
+                    }
+                )
+            }) {
+                let mut staged = workspace.layer1.clone();
+                let result = edits.iter().try_for_each(|edit| {
+                    let OverworldControllerEdit::SetLayerTile { x, y, tile, .. } = edit else {
+                        unreachable!()
+                    };
+                    staged
+                        .set_tile(*x, *y, *tile)
+                        .map(|_| ())
+                        .map_err(|error| error.to_string())
+                });
+                if result.is_ok() {
+                    workspace.layer1 = staged;
+                    workspace.layer1_revision = workspace.layer1_revision.wrapping_add(1);
+                }
+                result
+            } else {
+                workspace
+                    .controller
+                    .apply_edits(edits)
+                    .map_err(|error| error.to_string())
+            }
         } else {
             self.error = Some("overworld workspace is closed".into());
             return;
@@ -3303,7 +3377,7 @@ mod composed_overworld_canvas_tests {
     fn yoshi_island_frame_click_maps_to_shared_layer2_plane() {
         let rect = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(512.0, 448.0));
         assert_eq!(
-            composed_storage_tile(rect, egui::pos2(96.0, 160.0), [256, 224], state(1, 0, 0)),
+            composed_storage_tile(rect, egui::pos2(128.0, 240.0), [256, 224], state(1, 0, 0)),
             Some((70, 10))
         );
     }
@@ -3312,7 +3386,7 @@ mod composed_overworld_canvas_tests {
     fn main_map_camera_and_wrap_are_applied_before_tile_conversion() {
         let rect = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(256.0, 224.0));
         assert_eq!(
-            composed_storage_tile(rect, egui::pos2(16.0, 24.0), [256, 224], state(0, 504, 504)),
+            composed_storage_tile(rect, egui::pos2(32.0, 64.0), [256, 224], state(0, 504, 504)),
             Some((1, 2))
         );
     }

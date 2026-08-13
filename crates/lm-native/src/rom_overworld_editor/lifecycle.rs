@@ -328,32 +328,24 @@ fn decode_main_layer2_workspace(
     map16_snapshot.mode = lm_app::EditorMode::Map16;
     let map16 =
         lm_app::SmwMap16Controller::decode(&map16_snapshot).map_err(|error| error.to_string())?;
-    let mut tiles =
-        Vec::with_capacity(OVERWORLD_GRAPHICS_FILES.len() * TILES_PER_NATIVE_GRAPHICS_SLOT);
-    for file_number in OVERWORLD_GRAPHICS_FILES {
-        let slot = project
-            .load_graphics_file(file_number, lm_profile::smw_us_v1_vanilla_graphics_layout())
-            .map_err(|error| format!("could not load overworld GFX{file_number:02X}: {error}"))?
-            .tiles;
-        append_overworld_graphics_slot(&mut tiles, file_number, slot)?;
-    }
-    let mut palette = project
-        .load_shared_palette(lm_profile::smw_us_v1_shared_palette_layout())
-        .map_err(|error| error.to_string())?
-        .palette()
-        .map_err(|error| error.to_string())?;
-    // The legacy `.smwpal` backend retains one non-row tail color. Rendering consumes complete
-    // 16-color SNES CGRAM rows, so keep every complete row and leave that auxiliary tail intact in
-    // the ROM rather than inventing a palette entry.
-    let complete_colors = palette.colors.len() / 16 * 16;
-    palette.colors.truncate(complete_colors);
+    let graphics_layout = lm_profile::smw_us_v1_vanilla_graphics_layout();
+    let native_sprite_graphics_cache =
+        load_native_sprite_graphics_cache(&project, graphics_layout)?;
+    let tiles = load_vanilla_yoshi_island_bg_vram(&project, graphics_layout)?;
+    let palette = load_vanilla_overworld_palette(&image, 1)?;
+    let (layer1, layer1_map16) = load_vanilla_yoshi_island_layer1(&image)?;
     let (gfx32, gfx33) =
         load_overworld_special_graphics(&project, lm_profile::smw_us_v1_vanilla_graphics_layout())?;
     Ok(MainLayer2Workspace {
+        image,
         controller,
         original_paths: paths.clone(),
         paths,
         palette,
+        baseline_layer1: layer1.clone(),
+        layer1,
+        layer1_revision: 0,
+        layer1_map16,
         assets: crate::overworld_editor_render::OverworldAssets {
             map16: Map16SetFile {
                 set: map16.set().clone(),
@@ -362,10 +354,7 @@ fn decode_main_layer2_workspace(
                 source_slot: u16::try_from(OVERWORLD_GRAPHICS_FILES[0]).unwrap_or_default(),
                 graphics: GraphicsFile4bpp { tiles },
             },
-            native_sprite_graphics_cache: load_native_sprite_graphics_cache(
-                &project,
-                lm_profile::smw_us_v1_vanilla_graphics_layout(),
-            )?,
+            native_sprite_graphics_cache,
             external_sprite_assets: lm_graphics::ExternalSpriteAssets::default(),
             gfx32,
             gfx33,
@@ -380,6 +369,117 @@ fn decode_main_layer2_workspace(
             global_animation: None,
         },
     })
+}
+
+fn load_vanilla_yoshi_island_layer1(
+    image: &RomImage,
+) -> Result<(lm_overworld::OverworldLayer, Map16SetFile), String> {
+    // SNES $0C:F7DF and $05:D000 converted to headerless LoROM file offsets.
+    const TILEMAP_OFFSET: usize = 0x06_77df;
+    const MAP16_OFFSET: usize = 0x02_d000;
+    let tilemap = image
+        .read(TILEMAP_OFFSET + 0x400, 0x400)
+        .map_err(|error| error.to_string())?;
+    // The ROM stores four 16x16-tile SNES screens consecutively, not as one
+    // row-major 32x32 editor surface. Reassemble those screens before rendering.
+    let mut tiles = vec![0_u16; 32 * 32];
+    for y in 0..32 {
+        for x in 0..32 {
+            let screen = (y / 16) * 2 + x / 16;
+            let within = (y % 16) * 16 + x % 16;
+            tiles[y * 32 + x] = u16::from(tilemap[screen * 0x100 + within]);
+        }
+    }
+    let layer = lm_overworld::OverworldLayer::new(32, 32, tiles)
+        .map_err(|_| "could not assemble vanilla Yoshi's Island Layer 1".to_string())?;
+    let bytes = image
+        .read(MAP16_OFFSET, 772 * 2)
+        .map_err(|error| error.to_string())?;
+    let mut page = lm_level::Map16Page::new(vec![lm_level::Map16Tile::default(); 256])
+        .map_err(|_| "could not allocate vanilla overworld Map16 page".to_string())?;
+    for (index, chunk) in bytes.chunks_exact(8).enumerate() {
+        page.tiles[index] = lm_level::Map16Tile {
+            top_left: lm_level::Subtile(u16::from_le_bytes([chunk[0], chunk[1]])),
+            bottom_left: lm_level::Subtile(u16::from_le_bytes([chunk[2], chunk[3]])),
+            top_right: lm_level::Subtile(u16::from_le_bytes([chunk[4], chunk[5]])),
+            bottom_right: lm_level::Subtile(u16::from_le_bytes([chunk[6], chunk[7]])),
+            acts_like: 0,
+        };
+    }
+    Ok((
+        layer,
+        Map16SetFile {
+            set: lm_level::Map16Set { pages: vec![page] },
+        },
+    ))
+}
+
+fn load_vanilla_yoshi_island_bg_vram(
+    project: &Project,
+    layout: lm_project::GraphicsRomLayout,
+) -> Result<Vec<IndexedTile>, String> {
+    // UploadGraphicsFiles ($00A9DA), tileset $12. The editor renderer's graphics interchange is
+    // relative to BG VRAM $100, so the four vanilla 3bpp slots begin at tile zero here.
+    let blank = IndexedTile::new([0; IndexedTile::PIXEL_COUNT]);
+    let mut result = vec![blank.clone(); 0x400];
+    for (file, destination, bits) in [
+        (0x1c, 0x000, 3),
+        (0x1d, 0x080, 3),
+        (0x08, 0x100, 3),
+        (0x1e, 0x180, 3),
+    ] {
+        let decoded = project
+            .load_decompressed_graphics_file(file, layout)
+            .map_err(|error| format!("could not load Yoshi's Island GFX{file:02X}: {error}"))?;
+        let mut tiles = lm_graphics::decode_planar_tiles(&decoded, bits)
+            .map_err(|error| format!("could not decode Yoshi's Island GFX{file:02X}: {error}"))?;
+        if tiles.len() > 0x80 {
+            return Err(format!(
+                "Yoshi's Island GFX{file:02X} exceeds its $80-tile VRAM slot"
+            ));
+        }
+        tiles.resize(0x80, blank.clone());
+        result[destination..destination + 0x80].clone_from_slice(&tiles);
+    }
+    Ok(result)
+}
+
+fn load_vanilla_overworld_palette(
+    image: &RomImage,
+    submap: usize,
+) -> Result<lm_graphics::Palette, String> {
+    // BufferPalettesRoutines_Overworld ($00AD25), reconstructed directly from the vanilla ROM.
+    const AREA_SELECT: [usize; 7] = [1, 0, 3, 4, 3, 5, 2];
+    // SNES bank-$00 addresses converted to headerless LoROM file offsets.
+    const AREA_OFFSET: usize = 0x00_33d8;
+    const OBJECT_OFFSET: usize = 0x00_3528;
+    const SPRITE_OFFSET: usize = 0x00_357c;
+    const LAYER3_OFFSET: usize = 0x00_35ec;
+    let area = *AREA_SELECT
+        .get(submap)
+        .ok_or("overworld submap palette index is out of range")?;
+    let mut colors = vec![lm_graphics::Bgr555(0); 256];
+    let mut copy_rows =
+        |source: usize, destination: usize, width: usize, rows: usize| -> Result<(), String> {
+            let bytes = image
+                .read(source, width * rows * 2)
+                .map_err(|error| error.to_string())?;
+            for row in 0..rows {
+                for column in 0..width {
+                    let at = (row * width + column) * 2;
+                    colors[destination + row * 16 + column] =
+                        lm_graphics::Bgr555(u16::from_le_bytes([bytes[at], bytes[at + 1]]));
+                }
+            }
+            Ok(())
+        };
+    // The 65c816 routine's width/row arguments are inclusive loop counters.
+    copy_rows(AREA_OFFSET + area * 28 * 2, 65, 7, 4)?;
+    copy_rows(OBJECT_OFFSET, 41, 7, 6)?;
+    copy_rows(SPRITE_OFFSET, 129, 7, 8)?;
+    copy_rows(LAYER3_OFFSET, 8, 8, 2)?;
+    colors[0] = lm_graphics::Bgr555(0x01fe);
+    Ok(lm_graphics::Palette { colors })
 }
 
 fn parse_slot(value: &str) -> Result<u16, String> {
@@ -1094,6 +1194,38 @@ mod tests {
             );
         }
         assert_eq!(logical_results[0], logical_results[1]);
+    }
+
+    #[test]
+    fn vanilla_composed_layer1_edit_commits_and_reopens_at_the_same_editor_coordinate() {
+        let fixture = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../..")
+            .join("artifacts/vanilla-production/sysLMRestore/smwOrig.smc");
+        let mut app = lm_app::AppState::default();
+        app.load_rom(fs::read(fixture).unwrap()).unwrap();
+        app.dispatch(lm_app::Command::ShowOverworld).unwrap();
+        let mut editor = super::RomOverworldEditor::default();
+        editor.main_layer2_workspace =
+            Some(decode_main_layer2_workspace(app.controller_snapshot().unwrap()).unwrap());
+        let workspace = editor.main_layer2_workspace.as_mut().unwrap();
+        let original = workspace.layer1.tile(6, 10).unwrap();
+        let replacement = if original == 1 { 2 } else { 1 };
+        workspace.layer1.set_tile(6, 10, replacement).unwrap();
+        workspace.layer1_revision += 1;
+        editor.search_start = "E0000".into();
+        editor.search_end = "F0000".into();
+        app.dispatch(editor.prepare_main_layer2_commit().unwrap())
+            .unwrap();
+
+        let reopened = decode_main_layer2_workspace(app.controller_snapshot().unwrap()).unwrap();
+        assert_eq!(reopened.layer1.tile(6, 10).unwrap(), replacement);
+        assert_ne!(reopened.layer1.tile(6, 10).unwrap(), original);
+        // Shared-submap screen-order storage: screen 0, row 10, column 6.
+        let image = app.project().unwrap().rom.clone();
+        assert_eq!(
+            image.read(0x06_7bdf + 10 * 16 + 6, 1).unwrap(),
+            [replacement as u8]
+        );
     }
 
     #[test]

@@ -65,7 +65,7 @@ impl RomOverworldEditor {
             .as_ref()
             .ok_or("playable Layer 2 workspace is closed")?;
         let range = parse_search_range(&self.search_start, &self.search_end)?;
-        workspace
+        let mut prepared = workspace
             .controller
             .prepare_commit(
                 "Edit playable SMW main-overworld Layer 2",
@@ -93,8 +93,37 @@ impl RomOverworldEditor {
                     ],
                 },
             )
-            .map(lm_app::PreparedRomCommit::into_command)
-            .map_err(|error| error.to_string())
+            .map_err(|error| error.to_string())?;
+        if workspace.layer1 != workspace.baseline_layer1 {
+            let before = workspace.image.logical_bytes().to_vec();
+            let mut project = Project::new(workspace.image.clone());
+            project
+                .apply_mutation("stage playable Layer 2", &prepared.mutation)
+                .map_err(|error| error.to_string())?;
+            let mut encoded = vec![0_u8; 0x400];
+            for y in 0..32 {
+                for x in 0..32 {
+                    let screen = (y / 16) * 2 + x / 16;
+                    let within = (y % 16) * 16 + x % 16;
+                    encoded[screen * 0x100 + within] =
+                        u8::try_from(workspace.layer1.tiles[y * 32 + x])
+                            .map_err(|_| "vanilla overworld Layer 1 tile exceeds $FF")?;
+                }
+            }
+            project
+                .rom
+                .write(0x06_7bdf, &encoded)
+                .map_err(|error| error.to_string())?;
+            project
+                .rom
+                .update_snes_checksum(lm_profile::SMW_US_V1_CHECKSUM_FIELD)
+                .map_err(|error| error.to_string())?;
+            prepared.description = "Edit composed playable SMW overworld".into();
+            prepared.mutation =
+                RomMutation::between(lm_rom::Mapper::LoRom, &before, project.rom.logical_bytes())
+                    .map_err(|error| error.to_string())?;
+        }
+        Ok(prepared.into_command())
     }
 
     pub(super) fn prepare_commit(&self) -> Result<Command, String> {

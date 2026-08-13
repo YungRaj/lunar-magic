@@ -168,15 +168,6 @@ impl LiveEmulator {
         ))
     }
 
-    pub(crate) fn overworld_frame(
-        &self,
-    ) -> Option<(egui::TextureId, [usize; 2], lm_app::EmulatorRuntimeState)> {
-        let state = self.runtime_state?;
-        let texture = self.texture.as_ref()?.id();
-        let size = self.frame_size?;
-        (state.game_mode == 0x0e).then_some((texture, size, state))
-    }
-
     /// Stops a live session only when there is no longer an open level/project context.
     pub(crate) fn retain_for_open_project(&mut self, context: Option<(u16, u64)>) -> bool {
         if self.running.is_some() && context.is_none() {

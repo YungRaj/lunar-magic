@@ -262,12 +262,57 @@ fn attribute_animation_records(
 pub(crate) fn render_layer_texture(
     context: &egui::Context,
     layer: &lm_overworld::OverworldLayer,
+    layer1: &lm_overworld::OverworldLayer,
+    layer1_map16: &lm_level::Map16SetFile,
     palette: &lm_graphics::Palette,
     assets: &OverworldAssets,
 ) -> Result<egui::TextureHandle, String> {
-    let canvas = lm_render::render_smw_overworld_layer2_tilemap(layer, &assets.graphics, palette)
+    let background =
+        lm_render::render_smw_overworld_layer2_tilemap(layer, &assets.graphics, palette)
+            .map_err(|error| error.to_string())?;
+    let foreground = lm_render::render_portable_overworld_layer(
+        1,
+        layer1,
+        layer1_map16,
+        &assets.graphics,
+        palette,
+    )
+    .map_err(|error| error.to_string())?;
+    let mut pixels = background.pixels().to_vec();
+    for y in 0..foreground.height() {
+        for x in 0..foreground.width() {
+            if let Some(pixel) = foreground.get(x, y)
+                && pixel.alpha != 0
+            {
+                let destination_x = 512 + x;
+                if destination_x < background.width() && y < background.height() {
+                    pixels[y * background.width() + destination_x] = pixel;
+                }
+            }
+        }
+    }
+    let composed = lm_render::Canvas::from_pixels(background.width(), background.height(), pixels)
         .map_err(|error| error.to_string())?;
-    texture_from_canvas(context, "native-main-overworld-layer2", &canvas)
+    // SMW displays submaps in a 224x160 playfield at (16, 40), surrounded by Layer 3/HUD.
+    // Materialize that authentic game viewport here so the primary editor canvas has the same
+    // geometry as the player's view instead of exposing the raw 512x512 submap sheet.
+    let border = lm_render::Rgba {
+        red: 198,
+        green: 181,
+        blue: 165,
+        alpha: 255,
+    };
+    let mut frame_pixels = vec![border; 256 * 224];
+    for y in 0..160 {
+        for x in 0..224 {
+            if let Some(pixel) = composed.get(512 + x, y) {
+                frame_pixels[(40 + y) * 256 + 16 + x] = pixel;
+            }
+        }
+    }
+    let frame = lm_render::Canvas::from_pixels(256, 224, frame_pixels)
+        .map_err(|error| error.to_string())?;
+    texture_from_canvas(context, "native-main-overworld-composed", &frame)
 }
 
 pub(crate) fn render_layer2_graphics_texture(
