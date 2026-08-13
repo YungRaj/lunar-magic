@@ -449,6 +449,9 @@ impl NativeApplication {
         application.load_main_toolbar_images();
         application.load_user_toolbar();
         application.load_installed_localizations();
+        if application.app.mode == EditorMode::Overworld {
+            application.rom_overworld_editor.open(&application.app);
+        }
         application
     }
 

@@ -11,6 +11,7 @@ pub struct StartupOptions {
     pub revision_profile: Option<PathBuf>,
     pub command_script: Option<PathBuf>,
     pub level: Option<u16>,
+    pub overworld: bool,
     pub allow_in_place_rom_write: bool,
     pub help: bool,
 }
@@ -61,6 +62,13 @@ impl StartupOptions {
                     ));
                 }
                 options.allow_in_place_rom_write = true;
+                continue;
+            }
+            if !positional_only && argument == "--overworld" {
+                if options.overworld {
+                    return Err(StartupArgumentError::Duplicate("--overworld"));
+                }
+                options.overworld = true;
                 continue;
             }
             if !positional_only && argument == "--level" {
@@ -158,6 +166,7 @@ mod tests {
             "--allow-in-place-rom-write",
             "--level",
             "102",
+            "--overworld",
             "game.smc",
         ])
         .unwrap();
@@ -168,6 +177,7 @@ mod tests {
         assert_eq!(options.revision_profile, Some("SMW US.lmrev".into()));
         assert_eq!(options.command_script, Some("Build Hack.lmscript".into()));
         assert_eq!(options.level, Some(0x102));
+        assert!(options.overworld);
         assert!(options.allow_in_place_rom_write);
     }
 
@@ -176,6 +186,10 @@ mod tests {
         assert_eq!(
             parse(&["--rom"]),
             Err(StartupArgumentError::MissingValue("--rom"))
+        );
+        assert_eq!(
+            parse(&["--overworld", "--overworld"]),
+            Err(StartupArgumentError::Duplicate("--overworld"))
         );
         assert_eq!(
             parse(&["--allow-in-place-rom-write", "--allow-in-place-rom-write"]),
