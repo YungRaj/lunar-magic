@@ -8368,3 +8368,17 @@ reconstructs and hashes the complete original payload and compares every generat
 fixed-hook byte at Lunar Magic's allocation coordinates. The runtime module passes 12/12 and the
 renderer remains 237/237. The inferred `$C40` historical generation still lacks an authentic
 output fixture, so Overworld stays Partial and aggregate parity remains 61/65.
+
+## Authentic SA-1 mapper-selected overworld animation runtime (2026-08-12)
+
+A retained Lunar Magic 3.63 capture from an expanded, copier-headered SA-1 Pack v1.40 workspace
+selects the `$C40` overworld animation generation. Its complete runtime, adjacent `$15` auxiliary
+owner, seven-byte options owner, and all fixed hooks are reconstructed from compact non-ROM
+fixtures. The oracle exposed that the inferred generator was wrong: this generation applies an
+additional SA-1 transformation across fixed RAM operands and the local address table, and retains
+its captured `$3FFA00` compatibility pointer rather than an allocation-relative suffix pointer.
+Rust now derives that generation from the authenticated compact delta while retaining all true
+allocation-dependent fixups. The 13-test focused runtime suite covers ordinary LoROM, ExLoROM,
+SA-1 `$C20`, and metadata-selected SA-1 `$C40` output, corruption rejection, checksums, copier
+headers, and exact Undo/Redo. The Overworld palette/ExAnimation row is Pass; aggregate parity is
+62/65.

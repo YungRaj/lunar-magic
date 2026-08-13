@@ -234,10 +234,44 @@ fn relocate_mapper_iram(
     Ok(())
 }
 
+fn apply_compact_delta(
+    bytes: &mut [u8],
+    encoded: &str,
+) -> Result<(), SmwUsV1OverworldAnimationRuntimeError> {
+    let delta = decode_base64(encoded)?;
+    if delta.len() < 2 {
+        return Err(SmwUsV1OverworldAnimationRuntimeError::WrongMapperTemplateLength(delta.len()));
+    }
+    let mut cursor = 2;
+    let run_count = u16::from_le_bytes([delta[0], delta[1]]);
+    for _ in 0..run_count {
+        let header = delta
+            .get(cursor..cursor + 4)
+            .ok_or(SmwUsV1OverworldAnimationRuntimeError::WrongMapperTemplateLength(delta.len()))?;
+        let offset = usize::from(u16::from_le_bytes([header[0], header[1]]));
+        let length = usize::from(u16::from_le_bytes([header[2], header[3]]));
+        cursor += 4;
+        let replacement = delta
+            .get(cursor..cursor + length)
+            .ok_or(SmwUsV1OverworldAnimationRuntimeError::WrongMapperTemplateLength(delta.len()))?;
+        let bytes_len = bytes.len();
+        let destination = bytes
+            .get_mut(offset..offset + length)
+            .ok_or(SmwUsV1OverworldAnimationRuntimeError::WrongMapperTemplateLength(bytes_len))?;
+        destination.copy_from_slice(replacement);
+        cursor += length;
+    }
+    if cursor != delta.len() {
+        return Err(SmwUsV1OverworldAnimationRuntimeError::WrongMapperTemplateLength(delta.len()));
+    }
+    Ok(())
+}
+
 /// Builds the exact mapper-conditioned overworld-animation payload recovered from
-/// `InstallExAnimationRomPatch` (`$004B2440`). SA-1 applies the eight word and one compact-byte
-/// IRAM conversions before appending the shared `$20` compatibility suffix. ExLoROM applies the
-/// same word conversion at all nine sites, while SA-1 uses its compact `$3000` form at `+$7D1`.
+/// `InstallExAnimationRomPatch` (`$004B2440`). ExLoROM applies the recovered nine-word IRAM pass
+/// and appends the shared `$20` compatibility suffix. The metadata-selected SA-1 `$C40` form is
+/// reconstructed from the retained authentic Lunar Magic 3.63 differential; this captures its
+/// distinct fixed-RAM and local-table transformation without conflating it with the `$C20` form.
 pub fn smw_us_v1_overworld_animation_runtime_payload_for_mapper(
     mapper: Mapper,
     mapper_runtime: bool,
@@ -250,19 +284,31 @@ fn runtime_payload_for_mapper(
     mapper_runtime: bool,
 ) -> Result<PatchPayload, SmwUsV1OverworldAnimationRuntimeError> {
     let mut bytes = smw_us_v1_overworld_animation_runtime_template()?;
+    let local_word_sources = bytes
+        [LOCAL_WORD_TABLE_OFFSET..LOCAL_WORD_TABLE_OFFSET + LOCAL_WORD_TABLE_ENTRIES * 2]
+        .to_vec();
 
     // Ordinary LoROM selects mapping byte zero and skips every mapper-only IRAM conversion.
     bytes[0x58] = 0;
     bytes[0x61..0x63].copy_from_slice(&0_u16.to_le_bytes());
     if mapper_runtime {
         match mapper {
-            Mapper::Sa1 | Mapper::ExLoRom => relocate_mapper_iram(&mut bytes, mapper)?,
+            Mapper::Sa1 => {
+                bytes.resize(SMW_US_V1_OVERWORLD_ANIMATION_MAPPER_RUNTIME_LEN, 0xff);
+                apply_compact_delta(
+                    &mut bytes,
+                    include_str!("assets/overworld_animation_runtime_sa1_mapper_lm363_delta.b64"),
+                )?;
+            }
+            Mapper::ExLoRom => relocate_mapper_iram(&mut bytes, mapper)?,
             Mapper::LoRom => {}
         }
-        bytes.extend(
-            crate::expanded_exanimation_runtime_optional_suffix()
-                .map_err(SmwUsV1OverworldAnimationRuntimeError::MapperSuffix)?,
-        );
+        if mapper != Mapper::Sa1 {
+            bytes.extend(
+                crate::expanded_exanimation_runtime_optional_suffix()
+                    .map_err(SmwUsV1OverworldAnimationRuntimeError::MapperSuffix)?,
+            );
+        }
     }
 
     for (offset, target) in [
@@ -443,7 +489,11 @@ fn runtime_payload_for_mapper(
     ];
     for index in 0..LOCAL_WORD_TABLE_ENTRIES {
         let offset = LOCAL_WORD_TABLE_OFFSET + index * 2;
-        let source = u16::from_le_bytes([bytes[offset], bytes[offset + 1]]);
+        let source_offset = index * 2;
+        let source = u16::from_le_bytes([
+            local_word_sources[source_offset],
+            local_word_sources[source_offset + 1],
+        ]);
         let relative = usize::from(source & 0x7fff);
         if relative >= 0x720 {
             return Err(
@@ -460,7 +510,7 @@ fn runtime_payload_for_mapper(
             encoding: low,
         });
     }
-    if mapper_runtime {
+    if mapper_runtime && mapper != Mapper::Sa1 {
         fixups.push(PatchFixup {
             offset: MAPPER_SUFFIX_POINTER_OFFSET,
             target_payload: 0,
@@ -813,25 +863,18 @@ mod tests {
     }
 
     #[test]
-    fn sa1_mapper_payload_applies_every_recovered_iram_conversion_and_suffix_pointer() {
-        let ordinary = smw_us_v1_overworld_animation_runtime_template().unwrap();
+    fn sa1_mapper_payload_matches_the_authenticated_metadata_selected_generation() {
         let payload =
             smw_us_v1_overworld_animation_runtime_payload_for_mapper(Mapper::Sa1, true).unwrap();
         assert_eq!(
             payload.bytes.len(),
             SMW_US_V1_OVERWORLD_ANIMATION_MAPPER_RUNTIME_LEN
         );
-        for offset in SA1_IRAM_WORD_OFFSETS {
-            let before = u16::from_le_bytes([ordinary[offset], ordinary[offset + 1]]);
-            let after = u16::from_le_bytes([payload.bytes[offset], payload.bytes[offset + 1]]);
-            assert_eq!(after, before + 0x6000, "IRAM word at +{offset:#x}");
-        }
+        assert_eq!(&payload.bytes[0x76b..0x76d], &[0x03, 0x67]);
+        assert_eq!(&payload.bytes[0x7d1..0x7d3], &[0xe7, 0x97]);
         assert_eq!(
-            u16::from_le_bytes([
-                payload.bytes[SA1_IRAM_BYTE_OFFSET],
-                payload.bytes[SA1_IRAM_BYTE_OFFSET + 1],
-            ]),
-            u16::from(ordinary[SA1_IRAM_BYTE_OFFSET]) + 0x3000
+            &payload.bytes[MAPPER_SUFFIX_POINTER_OFFSET..][..3],
+            &[0x00, 0xfa, 0x3f]
         );
         assert_eq!(
             &payload.bytes[SMW_US_V1_OVERWORLD_ANIMATION_RUNTIME_LEN..],
@@ -839,12 +882,12 @@ mod tests {
                 .unwrap()
                 .as_slice()
         );
-        assert!(payload.fixups.iter().any(|fixup| {
-            fixup.offset == MAPPER_SUFFIX_POINTER_OFFSET
-                && fixup.target_payload == 0
-                && fixup.target_addend == SMW_US_V1_OVERWORLD_ANIMATION_RUNTIME_LEN
-                && fixup.encoding == PatchFixupEncoding::Long24
-        }));
+        assert!(
+            payload
+                .fixups
+                .iter()
+                .all(|fixup| fixup.offset != MAPPER_SUFFIX_POINTER_OFFSET)
+        );
     }
 
     #[test]
@@ -1330,6 +1373,102 @@ mod tests {
             &generated[HOOK_C_OPERAND..HOOK_C_OPERAND + 4],
             &[0x22, 0x3a, 0xd3, 0x10]
         );
+    }
+
+    #[test]
+    fn authentic_lunar_magic_363_sa1_mapper_runtime_matches_every_owned_and_fixed_byte() {
+        const RUNTIME_HEADER: usize = 0x09_0bbf;
+        const AUXILIARY_HEADER: usize = 0x09_1807;
+        const OPTIONS_HEADER: usize = 0x09_1824;
+        const ORACLE_END: usize = 0x09_1833;
+
+        // Reconstruct the complete authentic C40 payload from changed runs against the retained
+        // C20 template and its default-FF mapper suffix. No proprietary ROM bytes are retained.
+        let delta = decode_base64(include_str!(
+            "assets/overworld_animation_runtime_sa1_mapper_lm363_delta.b64"
+        ))
+        .unwrap();
+        assert_eq!(
+            format!("{:x}", Sha256::digest(&delta)),
+            "ee1c32878826f6071137a03c0048acf74937f52b961126d148fca8f4df8af8c7"
+        );
+        let mut runtime = smw_us_v1_overworld_animation_runtime_template().unwrap();
+        runtime.resize(SMW_US_V1_OVERWORLD_ANIMATION_MAPPER_RUNTIME_LEN, 0xff);
+        let mut cursor = 2;
+        let run_count = u16::from_le_bytes([delta[0], delta[1]]);
+        for _ in 0..run_count {
+            let offset = usize::from(u16::from_le_bytes([delta[cursor], delta[cursor + 1]]));
+            let length = usize::from(u16::from_le_bytes([delta[cursor + 2], delta[cursor + 3]]));
+            cursor += 4;
+            runtime[offset..offset + length].copy_from_slice(&delta[cursor..cursor + length]);
+            cursor += length;
+        }
+        assert_eq!(cursor, delta.len());
+        assert_eq!(
+            format!("{:x}", Sha256::digest(&runtime)),
+            "5dd52f83da4e493d951956c477418eec80d166ba315e2279d104267115d4ba6e"
+        );
+        let mut authentic = b"STAR\x3f\x0c\xc0\xf3".to_vec();
+        authentic.extend_from_slice(&runtime);
+        let owners = decode_base64(include_str!(
+            "assets/overworld_animation_sa1_mapper_owners_lm363.b64"
+        ))
+        .unwrap();
+        assert_eq!(
+            format!("{:x}", Sha256::digest(&owners)),
+            "f78224c52b9a383f9aa0bf57ecdd86a68c998080e3273d434b3f1bc5a34bb93d"
+        );
+        authentic.extend_from_slice(&owners);
+        assert_eq!(authentic.len(), ORACLE_END - RUNTIME_HEADER);
+
+        let mut bytes = vec![0xff; 0x20_0000];
+        bytes[HOOK_A..HOOK_A + 4].copy_from_slice(&[0xc2, 0x30, 0x64, 0x03]);
+        bytes[HOOK_B..HOOK_B + 4].copy_from_slice(&[0xc2, 0x10, 0xa9, 0x80]);
+        bytes[HOOK_C_OPERAND..HOOK_C_OPERAND + 4].copy_from_slice(&[0xa5, 0x13, 0x29, 0x07]);
+        for offset in MODE_BYTES {
+            bytes[offset] = 0x13;
+        }
+        bytes[0x08_0000..RUNTIME_HEADER].fill(0x5a);
+        let mut project = Project::new(RomImage::from_bytes(bytes).unwrap());
+        let result = project
+            .install_relocatable_patch(
+                &smw_us_v1_overworld_animation_runtime_installation_plan_for_mapper(
+                    Mapper::Sa1,
+                    AllocationPolicy {
+                        search: 0x08_0000..0x20_0000,
+                        bank_size: Some(0x8000),
+                        fill_bytes: vec![0xff],
+                        protected: Vec::new(),
+                    },
+                    true,
+                )
+                .unwrap(),
+            )
+            .unwrap();
+        assert_eq!(result.blocks[0].header_offset, RUNTIME_HEADER);
+        assert_eq!(result.blocks[1].header_offset, AUXILIARY_HEADER);
+        assert_eq!(result.blocks[2].header_offset, OPTIONS_HEADER);
+        let first_pointer = AUXILIARY_HEADER + HEADER_LEN - RUNTIME_HEADER;
+        assert_eq!(
+            &authentic[first_pointer..first_pointer + 3],
+            &[0x3b, 0x98, 0x12]
+        );
+        authentic[first_pointer..first_pointer + 3].copy_from_slice(&[0xff, 0, 0]);
+        let generated = project.rom.logical_bytes();
+        assert_eq!(&generated[RUNTIME_HEADER..ORACLE_END], authentic);
+        assert_eq!(&generated[HOOK_A..HOOK_A + 4], &[0x22, 0xc7, 0x8b, 0x12]);
+        assert_eq!(&generated[HOOK_B..HOOK_B + 4], &[0x22, 0xb7, 0x8d, 0x12]);
+        assert_eq!(
+            &generated[HOOK_C_OPERAND..HOOK_C_OPERAND + 4],
+            &[0x22, 0xc7, 0x90, 0x12]
+        );
+        let detected =
+            detect_smw_us_v1_overworld_animation_runtime_for_mapper(generated, Mapper::Sa1, true)
+                .unwrap()
+                .unwrap();
+        assert_eq!(detected.runtime, result.blocks[0]);
+        assert_eq!(detected.auxiliary, result.blocks[1]);
+        assert_eq!(detected.options, result.blocks[2]);
     }
 
     #[test]
