@@ -245,17 +245,20 @@ fn protect_smw_us_v1_overworld_animation_options(
         }
         _ => unreachable!("overworld animation layout always has one authenticated marker"),
     };
-    // A synthetic or partially expanded ExLoROM profile can legitimately be used to plan growth
-    // before its relocated SMW body exists. In that state the complete optional overworld-
-    // animation subsystem is absent and contributes no live allocation ranges. Once any selected
-    // fixed field is addressable, the ordinary bounded checks below still fail closed on a
-    // truncated companion field.
+    // A synthetic or partially expanded ExLoROM profile can legitimately contain the relocated
+    // marker address without containing the optional overworld-animation runtime. Protect this
+    // family's fixed fields only when its authenticated installation marker selects a layout;
+    // otherwise a clean 4 MiB planning image would be rejected merely because the later operand
+    // addresses lie beyond EOF.
     let fixed_start = marker_offset
         .min(operand_offset)
         .min(layout.lightning_disable_mask_offset);
     if fixed_start >= rom.logical_len() {
         return Ok(());
     }
+    let Some(locator) = layout.feature_installation.resolve(rom)? else {
+        return Ok(());
+    };
     for (domain, offset, len) in [
         ("overworld.animation.options.marker", marker_offset, 1),
         (
@@ -274,24 +277,22 @@ fn protect_smw_us_v1_overworld_animation_options(
             policy.protected.push(range);
         }
     }
-    if let Some(locator) = layout.feature_installation.resolve(rom)? {
-        for range in [
-            protected_range(
-                "overworld.animation.options.final_operand",
-                locator.final_operand_offset(rom)?,
-                3,
-                rom.logical_len(),
-            )?,
-            protected_range(
-                "overworld.animation.options.table",
-                locator.resolve(rom)?,
-                lm_project::OVERWORLD_ANIMATION_MAP_COUNT,
-                rom.logical_len(),
-            )?,
-        ] {
-            if !policy.protected.contains(&range) {
-                policy.protected.push(range);
-            }
+    for range in [
+        protected_range(
+            "overworld.animation.options.final_operand",
+            locator.final_operand_offset(rom)?,
+            3,
+            rom.logical_len(),
+        )?,
+        protected_range(
+            "overworld.animation.options.table",
+            locator.resolve(rom)?,
+            lm_project::OVERWORLD_ANIMATION_MAP_COUNT,
+            rom.logical_len(),
+        )?,
+    ] {
+        if !policy.protected.contains(&range) {
+            policy.protected.push(range);
         }
     }
     Ok(())
