@@ -3,8 +3,23 @@ name: Portable release bundles
 on:
   workflow_dispatch:
   push:
+    branches:
+      - main
     tags:
       - "v*"
+  pull_request:
+    paths:
+      - ".github/workflows/portable-release.yml"
+      - "Cargo.lock"
+      - "Cargo.toml"
+      - "crates/lm-app/**"
+      - "crates/lm-cli/**"
+      - "crates/lm-launcher/**"
+      - "crates/lm-libretro/**"
+      - "crates/lm-native/**"
+      - "crates/lm-package/**"
+      - "crates/lm-update/**"
+      - "docs/PORTABLE_RELEASES.md"
 
 permissions:
   contents: read
@@ -17,6 +32,9 @@ env:
 jobs:
   package:
     name: ${{ matrix.target }}
+    concurrency:
+      group: portable-release-${{ github.workflow }}-${{ github.ref }}-${{ matrix.target }}
+      cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/v') }}
     strategy:
       fail-fast: false
       matrix:

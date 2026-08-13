@@ -87,11 +87,15 @@ On Windows, compare `Get-FileHash -Algorithm SHA256` with the first field of the
 ## Continuous integration scope
 
 The portable-release workflow builds Linux x86-64, Windows x86-64, macOS Apple Silicon, and macOS
-Intel bundles. Each native runner executes the packager, updater, and launcher contract tests before
+Intel bundles. It runs on every `main` push, on a pull request that changes a release input, on
+manual dispatch, and on a pushed `v*` tag. Non-tag runs use concurrency cancellation per ref and
+target so a newer commit replaces obsolete hosted package work; immutable tag runs are never
+cancelled. Each native runner executes the packager, updater, and launcher contract tests before
 packaging; the Windows launcher gate uses a real copied `cmd.exe` payload to prove selector
 switching, rollback, process execution, and exit-status propagation, while all platforms compile
-the same tamper-checking path. Manual runs produce `0.1.0-dev` CI artifacts retained for 14 days. A pushed `v*` tag
-instead derives the version from that tag and, only after all four matrix builds succeed, downloads
-the complete set, verifies every checksum with strict parsing, attests the artifacts, and creates
-the matching GitHub Release with generated notes. The release job has scoped `contents: write`,
-`id-token: write`, and `attestations: write` permissions; build jobs retain read-only access.
+the same tamper-checking path. Non-tag runs produce `0.1.0-dev` CI artifacts retained for 14 days.
+A pushed `v*` tag instead derives the version from that tag and, only after all four matrix builds
+succeed, downloads the complete set, verifies every checksum with strict parsing, attests the
+artifacts, and creates the matching GitHub Release with generated notes. The release job has scoped
+`contents: write`, `id-token: write`, and `attestations: write` permissions; build jobs retain
+read-only access.
