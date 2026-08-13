@@ -212,6 +212,22 @@ int main(int argc, char **argv) {
     BringWindowToTop(main_window);
     SetForegroundWindow(main_window);
     Sleep(500);
+    HWND open_warning = process_window(process_id, "#32770", "Warning: This isn't a fresh ROM!");
+    if (open_warning != NULL) {
+        printf("open-warning acknowledged\n");
+        fflush(stdout);
+        if (click_ok(open_warning)) {
+            return 1;
+        }
+        for (DWORD elapsed = 0; IsWindow(open_warning) && elapsed < 10000; elapsed += 25) {
+            Sleep(25);
+        }
+        if (IsWindow(open_warning)) {
+            fprintf(stderr, "modified-ROM warning did not close\n");
+            return 1;
+        }
+        Sleep(500);
+    }
     HWND overworld = NULL;
     for (unsigned attempt = 0; attempt < 3 && overworld == NULL; attempt++) {
         PostMessageA(main_window, WM_COMMAND, MAKEWPARAM(0x232d, 0), 0);
@@ -239,6 +255,20 @@ int main(int argc, char **argv) {
     }
     char animation_title[256] = {0};
     GetWindowTextA(animation, animation_title, sizeof(animation_title));
+    if (strcmp(animation_title, "Warning: This isn't a fresh ROM!") == 0) {
+        if (click_ok(animation)) {
+            return 1;
+        }
+        for (DWORD elapsed = 0; IsWindow(animation) && elapsed < 10000; elapsed += 25) {
+            Sleep(25);
+        }
+        animation = wait_for_window(process_id, "#32770", NULL, 10000);
+        if (animation == NULL) {
+            fprintf(stderr, "ExAnimation editor not ready after modified-ROM warning\n");
+            return 1;
+        }
+        GetWindowTextA(animation, animation_title, sizeof(animation_title));
+    }
     printf("animation-ready title=%s\n", animation_title);
     fflush(stdout);
     Sleep(1000);

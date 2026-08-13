@@ -529,7 +529,7 @@ pub fn smw_us_v1_overworld_animation_runtime_installation_plan_for_mapper(
             0,
             0x1f0,
         ),
-        if mapper == Mapper::ExLoRom {
+        if mapper != Mapper::LoRom {
             payload_write(
                 mapper,
                 HOOK_C_OPERAND,
@@ -708,11 +708,8 @@ pub fn detect_smw_us_v1_overworld_animation_runtime_for_mapper(
         },
     )?;
     let hook_b_target = read_pointer_for_mapper(bytes, hook_b + 1, mapper)?;
-    let hook_c_target = read_pointer_for_mapper(
-        bytes,
-        hook_c + usize::from(mapper == Mapper::ExLoRom),
-        mapper,
-    )?;
+    let hook_c_target =
+        read_pointer_for_mapper(bytes, hook_c + usize::from(mapper != Mapper::LoRom), mapper)?;
     if hook_b_target != runtime.payload.start + 0x1f0
         || hook_c_target != runtime.payload.start + 0x500
     {
@@ -1251,6 +1248,87 @@ mod tests {
         assert_eq!(
             &generated[mapper_rom_offset(Mapper::ExLoRom, HOOK_C_OPERAND)..][..4],
             &[0x22, 0x3a, 0xd3, 0xc0]
+        );
+    }
+
+    #[test]
+    fn authentic_lunar_magic_363_sa1_runtime_matches_every_owned_and_fixed_byte() {
+        const RUNTIME_HEADER: usize = 0x08_4e32;
+        const AUXILIARY_HEADER: usize = 0x08_5a5a;
+        const OPTIONS_HEADER: usize = 0x08_5a77;
+        const ORACLE_END: usize = 0x08_5a86;
+        let delta = decode_base64(include_str!(
+            "assets/overworld_animation_runtime_sa1_lm363_delta.b64"
+        ))
+        .unwrap();
+        assert_eq!(
+            format!("{:x}", Sha256::digest(&delta)),
+            "afda35b94982021bd1c2c8d055d69d16362165620b6885c742f2c01707cd32ac"
+        );
+        let mut runtime = smw_us_v1_overworld_animation_runtime_template().unwrap();
+        let mut cursor = 0;
+        let run_count = u16::from_le_bytes([delta[0], delta[1]]);
+        cursor += 2;
+        for _ in 0..run_count {
+            let offset = usize::from(u16::from_le_bytes([delta[cursor], delta[cursor + 1]]));
+            let length = usize::from(u16::from_le_bytes([delta[cursor + 2], delta[cursor + 3]]));
+            cursor += 4;
+            runtime[offset..offset + length].copy_from_slice(&delta[cursor..cursor + length]);
+            cursor += length;
+        }
+        assert_eq!(cursor, delta.len());
+        assert_eq!(
+            format!("{:x}", Sha256::digest(&runtime)),
+            "9dae7a4fe84034935ebf62835a6f57d05d0d39740a6ac0d4f00ea7580411f971"
+        );
+        let mut authentic = b"STAR\x1f\x0c\xe0\xf3".to_vec();
+        authentic.extend_from_slice(&runtime);
+        let owners = decode_base64(include_str!(
+            "assets/overworld_animation_sa1_owners_lm363.b64"
+        ))
+        .unwrap();
+        assert_eq!(
+            format!("{:x}", Sha256::digest(&owners)),
+            "b1aab30ec161ed808804c9f73e24404022e1dc18935865935f27d45d2e4e4eb0"
+        );
+        authentic.extend_from_slice(&owners);
+
+        let mut bytes = vec![0xff; 0x10_0000];
+        bytes[HOOK_A..HOOK_A + 4].copy_from_slice(&[0xc2, 0x30, 0x64, 0x03]);
+        bytes[HOOK_B..HOOK_B + 4].copy_from_slice(&[0xc2, 0x10, 0xa9, 0x80]);
+        bytes[HOOK_C_OPERAND..HOOK_C_OPERAND + 4].copy_from_slice(&[0xa5, 0x13, 0x29, 0x07]);
+        for offset in MODE_BYTES {
+            bytes[offset] = 0x13;
+        }
+        bytes[0x08_0000..RUNTIME_HEADER].fill(0x5a);
+        let mut project = Project::new(RomImage::from_bytes(bytes).unwrap());
+        let result = project
+            .install_relocatable_patch(
+                &smw_us_v1_overworld_animation_runtime_installation_plan_for_mapper(
+                    Mapper::Sa1,
+                    AllocationPolicy {
+                        search: 0x08_0000..0x10_0000,
+                        bank_size: Some(0x8000),
+                        fill_bytes: vec![0xff],
+                        protected: Vec::new(),
+                    },
+                    false,
+                )
+                .unwrap(),
+            )
+            .unwrap();
+        assert_eq!(result.blocks[0].header_offset, RUNTIME_HEADER);
+        assert_eq!(result.blocks[1].header_offset, AUXILIARY_HEADER);
+        assert_eq!(result.blocks[2].header_offset, OPTIONS_HEADER);
+        let first_pointer = AUXILIARY_HEADER + HEADER_LEN - RUNTIME_HEADER;
+        authentic[first_pointer..first_pointer + 3].copy_from_slice(&[0xff, 0, 0]);
+        let generated = project.rom.logical_bytes();
+        assert_eq!(&generated[RUNTIME_HEADER..ORACLE_END], authentic);
+        assert_eq!(&generated[HOOK_A..HOOK_A + 4], &[0x22, 0x3a, 0xce, 0x10]);
+        assert_eq!(&generated[HOOK_B..HOOK_B + 4], &[0x22, 0x2a, 0xd0, 0x10]);
+        assert_eq!(
+            &generated[HOOK_C_OPERAND..HOOK_C_OPERAND + 4],
+            &[0x22, 0x3a, 0xd3, 0x10]
         );
     }
 

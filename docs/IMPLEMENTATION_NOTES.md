@@ -8359,3 +8359,12 @@ original runtime without retaining ROM, and the default Oracle test compares eve
 core-owner and fixed-hook byte at the original allocation coordinates. The runtime module passes
 11/11. Authentic SA-1 and `$C40` output evidence remains open, so Overworld stays Partial and
 aggregate parity remains 61/65.
+
+Overworld SA-1 Oracle update (2026-08-12): original Lunar Magic 3.63 on an authenticated SA-1 Pack
+v1.40 fixture installs the `$C20` runtime at `$084E32`, followed by its auxiliary, options, and
+compact-animation owners. The capture proves both non-LoROM families use a four-byte JSL at hook C;
+Rust previously decoded and wrote the SA-1 form as a three-byte operand. The default compact Oracle
+reconstructs and hashes the complete original payload and compares every generated core-owner and
+fixed-hook byte at Lunar Magic's allocation coordinates. The runtime module passes 12/12 and the
+renderer remains 237/237. The inferred `$C40` historical generation still lacks an authentic
+output fixture, so Overworld stays Partial and aggregate parity remains 61/65.
