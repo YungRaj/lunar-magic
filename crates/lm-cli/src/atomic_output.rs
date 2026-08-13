@@ -83,9 +83,7 @@ fn destination_identity(path: &Path) -> io::Result<PathBuf> {
 }
 
 fn remove_if_same_file(destination: &Path, staged: &Path) -> io::Result<()> {
-    let destination_metadata = fs::metadata(destination)?;
-    let staged_metadata = fs::metadata(staged)?;
-    if same_file(&destination_metadata, &staged_metadata) {
+    if same_file(destination, staged)? {
         fs::remove_file(destination)
     } else {
         Ok(())
@@ -93,23 +91,23 @@ fn remove_if_same_file(destination: &Path, staged: &Path) -> io::Result<()> {
 }
 
 #[cfg(unix)]
-fn same_file(first: &fs::Metadata, second: &fs::Metadata) -> bool {
+fn same_file(first: &Path, second: &Path) -> io::Result<bool> {
     use std::os::unix::fs::MetadataExt;
-    first.dev() == second.dev() && first.ino() == second.ino()
+    let first = fs::metadata(first)?;
+    let second = fs::metadata(second)?;
+    Ok(first.dev() == second.dev() && first.ino() == second.ino())
 }
 
 #[cfg(windows)]
-fn same_file(first: &fs::Metadata, second: &fs::Metadata) -> bool {
-    use std::os::windows::fs::MetadataExt;
-    first.volume_serial_number().is_some()
-        && first.volume_serial_number() == second.volume_serial_number()
-        && first.file_index().is_some()
-        && first.file_index() == second.file_index()
+fn same_file(first: &Path, second: &Path) -> io::Result<bool> {
+    let first = fs::File::open(first)?;
+    let second = fs::File::open(second)?;
+    Ok(lm_windows::file_identity(&first)? == lm_windows::file_identity(&second)?)
 }
 
 #[cfg(not(any(unix, windows)))]
-fn same_file(_first: &fs::Metadata, _second: &fs::Metadata) -> bool {
-    false
+fn same_file(_first: &Path, _second: &Path) -> io::Result<bool> {
+    Ok(false)
 }
 
 fn cleanup_staging(staged: &[(PathBuf, PathBuf)]) {

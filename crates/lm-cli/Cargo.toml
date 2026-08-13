@@ -20,6 +20,9 @@ lm-rom = { path = "../lm-rom" }
 lm-title = { path = "../lm-title" }
 png = "0.17"
 
+[target.'cfg(windows)'.dependencies]
+lm-windows = { path = "../lm-windows" }
+
 [lints]
 workspace = true
 

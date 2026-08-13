@@ -83,7 +83,7 @@ pub(crate) fn decode_palette_row(text: &str) -> Result<[Bgr555; 16], String> {
 }
 
 pub(crate) fn copy_palette_color_to_system(
-    context: &eframe::egui::Context,
+    _context: &eframe::egui::Context,
     color: Bgr555,
 ) -> Result<(), String> {
     let fallback = encode_palette_color(color)?;
@@ -96,13 +96,13 @@ pub(crate) fn copy_palette_color_to_system(
     }
     #[cfg(not(windows))]
     {
-        context.copy_text(fallback);
+        _context.copy_text(fallback);
         Ok(())
     }
 }
 
 pub(crate) fn copy_palette_row_to_system(
-    context: &eframe::egui::Context,
+    _context: &eframe::egui::Context,
     colors: &[Bgr555],
 ) -> Result<(), String> {
     let fallback = encode_palette_row(colors)?;
@@ -114,7 +114,7 @@ pub(crate) fn copy_palette_row_to_system(
     }
     #[cfg(not(windows))]
     {
-        context.copy_text(fallback);
+        _context.copy_text(fallback);
         Ok(())
     }
 }
@@ -247,7 +247,7 @@ pub(crate) fn decode_graphics_tile(text: &str) -> Result<IndexedTile, String> {
 }
 
 pub(crate) fn copy_graphics_tile_to_system(
-    context: &eframe::egui::Context,
+    _context: &eframe::egui::Context,
     tile: &IndexedTile,
 ) -> Result<(), String> {
     let fallback = encode_graphics_tile(tile)?;
@@ -258,7 +258,7 @@ pub(crate) fn copy_graphics_tile_to_system(
     }
     #[cfg(not(windows))]
     {
-        context.copy_text(fallback);
+        _context.copy_text(fallback);
         Ok(())
     }
 }
@@ -309,7 +309,7 @@ pub(crate) fn decode_map16_tile(text: &str) -> Result<Map16Tile, String> {
 }
 
 pub(crate) fn copy_map16_tile_to_system(
-    context: &eframe::egui::Context,
+    _context: &eframe::egui::Context,
     tile: Map16Tile,
 ) -> Result<(), String> {
     let fallback = encode_map16_tile(tile)?;
@@ -320,7 +320,7 @@ pub(crate) fn copy_map16_tile_to_system(
     }
     #[cfg(not(windows))]
     {
-        context.copy_text(fallback);
+        _context.copy_text(fallback);
         Ok(())
     }
 }
