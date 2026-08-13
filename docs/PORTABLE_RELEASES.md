@@ -14,7 +14,15 @@ uploaded non-expired `0.1.0-dev` artifacts: Linux x86-64 (`9166459522`, 12,560,7
 x86-64 (`9166481149`, 8,800,289 bytes), Apple Silicon macOS (`9166444227`, 9,503,398 bytes), and
 Intel macOS (`9166500547`, 9,968,570 bytes). This proves the hosted build/test/package/upload path;
 the tag-only publication job was correctly skipped and therefore is not evidence of a published
-release.
+release. Each downloaded artifact was then independently extracted: all four neighboring SHA-256
+files validate, every tar contains the exact eight required payloads, and every `LMRELEASE1`
+manifest binds their byte lengths and digests.
+
+FuSoYa's authoritative Lunar Magic 3.63 download is itself a portable WinZip file (SHA-256
+`305efeaae3c593e45f98d2c82281ae2a98abfb667080a52a78d21ba7799da7da`) with five archive entries:
+32-bit and 64-bit `Lunar Magic.exe`, `readme.txt`, `Lunar Magic.chm`, and the `x64/` directory. It
+has no installer, signing/notarization workflow, or automatic updater. Those Rust distribution
+extensions are useful hardening, but are not missing original Lunar Magic features.
 
 ## Bundle contents
 

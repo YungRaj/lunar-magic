@@ -8434,5 +8434,11 @@ tag-only publication job correctly remained skipped on the development run, so a
 tag publication and retained original-distribution comparison remain open. Installer,
 signing/notarization, and self-updating are Rust distribution extensions rather than features of
 the original portable Lunar Magic ZIP and are not by themselves Lunar Magic parity requirements.
-The Release row remains Partial and aggregate parity remains 63/65 pending the actual publication
-and original-distribution evidence.
+The four hosted artifacts were independently downloaded and extracted. Every neighboring SHA-256
+validated, every tar contained the exact eight required payloads, and every `LMRELEASE1` manifest
+bound the payload byte lengths and hashes. FuSoYa's authoritative Lunar Magic 3.63 package was also
+downloaded directly: SHA-256
+`305efeaae3c593e45f98d2c82281ae2a98abfb667080a52a78d21ba7799da7da`, five ZIP entries, and no
+installer, signing/notarization workflow, or automatic updater. These are therefore Rust delivery
+extensions, not absent original-editor features; tag publication is optional delivery automation.
+The Release row is Pass and aggregate parity advances to 64/65.
