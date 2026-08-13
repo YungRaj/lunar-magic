@@ -7983,9 +7983,10 @@ error lifecycle. Authenticated original dialog `$0416` continues to supply the t
 selector, all three codec choices, migration notice, transactional action, and Cancel on a
 per-control basis. Allocation values and technical migration failures remain untranslated data.
 Focused lifecycle, original-control, LZ2 Speed routing, and source-boundary tests pass 4/4;
-localization model tests pass and renderer remains 237/237. Historical compression runtime
-generations still keep Graphics Partial; other native forms and retained live language-DLL
-evidence keep Localization Partial; aggregate parity remains 60/65.
+localization model tests pass and renderer remains 237/237. At this historical milestone,
+compression-generation inventory was still open; the later finite inventory closes it. Other
+native forms and retained live language-DLL evidence kept Localization Partial; aggregate parity
+was 60/65.
 
 ## Keyboard-shortcut localization parity
 
@@ -8392,3 +8393,22 @@ PE resources now drive mapper-specific installation and full-runtime detection. 
 length/CRC/trailer and six-way installed-owner corruption tests pass. Graphics remains Partial only
 for the separately enumerated historical input generations Lunar Magic 3.63 can upgrade; current
 3.63-generated runtime output coverage is complete.
+
+## Graphics-compression compatibility inventory completion (2026-08-12)
+
+The historical-input boundary is now finite and evidence-backed. Ghidra
+`ValidateAndInitializeOpenedRom` (`$0047C120`) shows that Lunar Magic 3.63 selects its decompressor
+from the metadata low nibble and does not identify or dispatch on a runtime generation. Its sole
+conversion path removes the hook target it encounters and installs one of the six current
+mapper/mode resources; no historical-runtime signature table exists. Therefore arbitrary custom
+65C816 code behind a metadata-compatible hook is not a released Lunar Magic variant and is not
+safe to admit by metadata alone.
+
+The separately retained released-editor generation is the exact LoROM `$1AF` optimized-LZ2 owner
+with trailer `LM 00 01`. Its complete runtime checksum, earlier `$6D00` ExGFX settings owner,
+earlier event-loader family, four-tile GFX17 upgrade, 52 standard files, 54 ExGFX files, and both
+event streams are authenticated. Forward LZ3 and both reciprocal LZ2 conversions match Lunar Magic
+semantically across all 106 graphics files and both event buffers, reopen in Lunar Magic as no-op
+target formats, retain checksums and ROM size, and Undo byte-exactly. Together with the exact six
+current output resources, this closes the current-output and released historical-input inventories.
+The Graphics compression row is Pass and aggregate parity advances to 63/65.

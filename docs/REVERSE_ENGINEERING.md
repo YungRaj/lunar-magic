@@ -272,7 +272,14 @@ Wine import/re-export over a real pristine-ROM record confirms screens `$00/$1F`
   completed application transaction now also walks every non-null compressed `$80..$FFF`
   ExAnimation/ExGFX pointer and converts both installed overworld-event streams before publishing
   the runtime/metadata switch. Raw `$60..$63` files remain unchanged because the selected codec does
-  not apply to them.
+  not apply to them. `ValidateAndInitializeOpenedRom` (`$0047C120`) also establishes the historical
+  compatibility boundary: it sets `g_dwRomCompressionMode` directly from the metadata low nibble
+  (or zero for the `$FF` sentinel) and performs no runtime-generation lookup. The conversion
+  dispatcher likewise removes the hook target it finds and installs one of the current resources;
+  it has no table of older runtime signatures. Consequently arbitrary third-party code behind that
+  hook is not an enumerable Lunar Magic generation. The supported backward-compatibility inventory
+  consists of authenticated released-editor artifacts, currently the exact `$1AF`/`LM 00 01`
+  optimized-LZ2 generation, rather than every possible metadata-compatible 65C816 program.
 - `LevelObjectNode` (currently 29 recovered bytes): linked-list pointer plus the serialized command bytes and encoding-variant field. Unknown regions remain explicitly named as byte arrays. The type is applied at the Layer 1 list head (`0060b6b8`).
 - `ManualEditorCommandBuffer` (16 bytes): shared encoded-command workspace used by the manual object and sprite editors, applied at `008636c4`.
 - `LayerScrollMode` (8-bit enum): all 32 scroll-mode values, including automatic directional modes and unused slots.
