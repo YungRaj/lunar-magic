@@ -8382,3 +8382,13 @@ allocation-dependent fixups. The 13-test focused runtime suite covers ordinary L
 SA-1 `$C20`, and metadata-selected SA-1 `$C40` output, corruption rejection, checksums, copier
 headers, and exact Undo/Redo. The Overworld palette/ExAnimation row is Pass; aggregate parity is
 62/65.
+
+## Complete Lunar Magic 3.63 graphics-compression output runtimes (2026-08-12)
+
+Ghidra's two current runtime installers select a finite six-resource product: ordinary LoROM,
+ExLoROM, and SA-1 each have distinct LZ2-Speed and LZ3 payloads. Rust formerly reused the ordinary
+LoROM LZ2-Speed runtime for ExLoROM and SA-1 and reused ordinary LZ3 for ExLoROM. The authenticated
+PE resources now drive mapper-specific installation and full-runtime detection. Exact resource
+length/CRC/trailer and six-way installed-owner corruption tests pass. Graphics remains Partial only
+for the separately enumerated historical input generations Lunar Magic 3.63 can upgrade; current
+3.63-generated runtime output coverage is complete.

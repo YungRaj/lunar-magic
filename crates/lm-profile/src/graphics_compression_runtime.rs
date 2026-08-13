@@ -7,8 +7,8 @@ use lm_project::{
     RatsOwnershipManifest, RelocatablePatchPlan,
 };
 use lm_rats::AllocationPolicy;
-use lm_rats::{parse_at, HeaderError, HEADER_LEN};
-use lm_rom::{detect_identity, snes_to_pc, Mapper, RomError, RomImage, SnesPointer24};
+use lm_rats::{HEADER_LEN, HeaderError, parse_at};
+use lm_rom::{Mapper, RomError, RomImage, SnesPointer24, detect_identity, snes_to_pc};
 
 pub const SMW_US_V1_GRAPHICS_COMPRESSION_METADATA_OFFSET: usize = 0x07_ffeb;
 pub const SMW_US_V1_GRAPHICS_COMPRESSION_HOOK_OFFSET: usize = 0x0038_e3;
@@ -17,12 +17,16 @@ const ORIGINAL_HOOK: [u8; 5] = [0x20, 0x83, 0xb9, 0xc9, 0xff];
 const INSTALLED_OPCODE: u8 = 0x22;
 const INSTALLED_RETURN: u8 = 0x60;
 const SPEED_RUNTIME_LEN: usize = 0x1c0;
+const SA1_SPEED_RUNTIME_LEN: usize = 0x202;
 const LEGACY_SPEED_RUNTIME_LEN: usize = 0x1af;
 const LZ3_RUNTIME_LEN: usize = 0x2ab;
 const SA1_LZ3_RUNTIME_LEN: usize = 0x30c;
 const SPEED_RUNTIME_CRC32: u32 = 0x5d3c_ac46;
+const EXLOROM_SPEED_RUNTIME_CRC32: u32 = 0xcb92_843b;
+const SA1_SPEED_RUNTIME_CRC32: u32 = 0x7aec_530d;
 const LEGACY_SPEED_RUNTIME_CRC32: u32 = 0xb5f7_eda1;
 const LZ3_RUNTIME_CRC32: u32 = 0xdcb7_727e;
+const EXLOROM_LZ3_RUNTIME_CRC32: u32 = 0x69d9_d8b5;
 const SA1_LZ3_RUNTIME_CRC32: u32 = 0x520e_eb36;
 const SA1_LZ2_SPEED_OWNER_LEN: usize = 0x4806;
 const SA1_LZ2_SPEED_RUNTIME_ADDEND: usize = 0x32ba;
@@ -31,10 +35,14 @@ const SA1_LZ2_SPEED_RUNTIME_CRC32: u32 = 0x5d96_54d6;
 const RUNTIME_TRAILER: [u8; 4] = *b"LM\x01\x01";
 const LEGACY_RUNTIME_TRAILER: [u8; 4] = *b"LM\x00\x01";
 const SPEED_RUNTIME_HEX: &str = include_str!("assets/graphics_compression_lz2_speed.hex");
+const EXLOROM_SPEED_RUNTIME_HEX: &str =
+    include_str!("assets/graphics_compression_lz2_speed_exlorom.hex");
+const SA1_SPEED_RUNTIME_HEX: &str = include_str!("assets/graphics_compression_lz2_speed_sa1.hex");
 #[cfg(test)]
 const LEGACY_SPEED_RUNTIME_HEX: &str =
     include_str!("assets/graphics_compression_lz2_speed_legacy.hex");
 const LZ3_RUNTIME_HEX: &str = include_str!("assets/graphics_compression_lz3.hex");
+const EXLOROM_LZ3_RUNTIME_HEX: &str = include_str!("assets/graphics_compression_lz3_exlorom.hex");
 const SA1_LZ3_RUNTIME_HEX: &str = include_str!("assets/graphics_compression_lz3_sa1.hex");
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -199,7 +207,7 @@ pub fn detect_smw_us_v1_graphics_compression_mode(
     }
     let runtime_offset = snes_to_pc(mapper, u32::from_le_bytes([hook[1], hook[2], hook[3], 0]))
         .map_err(SmwUsV1GraphicsCompressionDetectError::RuntimeAddress)?;
-    if mapper == Mapper::Sa1 && mode != SmwUsV1GraphicsCompressionMode::Lz3 {
+    if mapper == Mapper::Sa1 && mode == SmwUsV1GraphicsCompressionMode::Lz2Original {
         let owner = lm_rats::scan(bytes)
             .into_iter()
             .find(|block| block.payload.contains(&runtime_offset))
@@ -248,11 +256,24 @@ pub fn detect_smw_us_v1_graphics_compression_mode(
                 LEGACY_RUNTIME_TRAILER,
             ),
         ],
+        SmwUsV1GraphicsCompressionMode::Lz2Speed if mapper == Mapper::ExLoRom => &[(
+            SPEED_RUNTIME_LEN,
+            EXLOROM_SPEED_RUNTIME_CRC32,
+            RUNTIME_TRAILER,
+        )],
+        SmwUsV1GraphicsCompressionMode::Lz2Speed if mapper == Mapper::Sa1 => &[(
+            SA1_SPEED_RUNTIME_LEN,
+            SA1_SPEED_RUNTIME_CRC32,
+            RUNTIME_TRAILER,
+        )],
         SmwUsV1GraphicsCompressionMode::Lz2Speed => {
             &[(SPEED_RUNTIME_LEN, SPEED_RUNTIME_CRC32, RUNTIME_TRAILER)]
         }
         SmwUsV1GraphicsCompressionMode::Lz3 if mapper == Mapper::Sa1 => {
             &[(SA1_LZ3_RUNTIME_LEN, SA1_LZ3_RUNTIME_CRC32, RUNTIME_TRAILER)]
+        }
+        SmwUsV1GraphicsCompressionMode::Lz3 if mapper == Mapper::ExLoRom => {
+            &[(LZ3_RUNTIME_LEN, EXLOROM_LZ3_RUNTIME_CRC32, RUNTIME_TRAILER)]
         }
         SmwUsV1GraphicsCompressionMode::Lz3 => {
             &[(LZ3_RUNTIME_LEN, LZ3_RUNTIME_CRC32, RUNTIME_TRAILER)]
@@ -338,9 +359,7 @@ pub fn smw_us_v1_lz2_speed_installation_plan(
         });
     }
     let metadata = image.logical_bytes()[base + SMW_US_V1_GRAPHICS_COMPRESSION_METADATA_OFFSET];
-    let runtime = decode_hex(SPEED_RUNTIME_HEX);
-    debug_assert_eq!(runtime.len(), SPEED_RUNTIME_LEN);
-    debug_assert_eq!(crc32(&runtime), SPEED_RUNTIME_CRC32);
+    let runtime = speed_runtime_for_mapper(mapper);
     Ok(RelocatablePatchPlan {
         description: "change SMW graphics compression from LZ2 Orig to LZ2 Speed".into(),
         mapper,
@@ -553,9 +572,12 @@ fn smw_us_v1_graphics_compression_installation_plan(
     );
     let runtime = match target_mode {
         SmwUsV1GraphicsCompressionMode::Lz2Original => None,
-        SmwUsV1GraphicsCompressionMode::Lz2Speed => Some(decode_hex(SPEED_RUNTIME_HEX)),
+        SmwUsV1GraphicsCompressionMode::Lz2Speed => Some(speed_runtime_for_mapper(mapper)),
         SmwUsV1GraphicsCompressionMode::Lz3 if mapper == Mapper::Sa1 => {
             Some(decode_hex(SA1_LZ3_RUNTIME_HEX))
+        }
+        SmwUsV1GraphicsCompressionMode::Lz3 if mapper == Mapper::ExLoRom => {
+            Some(decode_hex(EXLOROM_LZ3_RUNTIME_HEX))
         }
         SmwUsV1GraphicsCompressionMode::Lz3 => Some(decode_hex(LZ3_RUNTIME_HEX)),
     };
@@ -1004,6 +1026,26 @@ fn decode_hex(source: &str) -> Vec<u8> {
         .collect()
 }
 
+fn speed_runtime_for_mapper(mapper: Mapper) -> Vec<u8> {
+    let (source, expected_len, expected_crc) = match mapper {
+        Mapper::LoRom => (SPEED_RUNTIME_HEX, SPEED_RUNTIME_LEN, SPEED_RUNTIME_CRC32),
+        Mapper::ExLoRom => (
+            EXLOROM_SPEED_RUNTIME_HEX,
+            SPEED_RUNTIME_LEN,
+            EXLOROM_SPEED_RUNTIME_CRC32,
+        ),
+        Mapper::Sa1 => (
+            SA1_SPEED_RUNTIME_HEX,
+            SA1_SPEED_RUNTIME_LEN,
+            SA1_SPEED_RUNTIME_CRC32,
+        ),
+    };
+    let runtime = decode_hex(source);
+    debug_assert_eq!(runtime.len(), expected_len);
+    debug_assert_eq!(crc32(&runtime), expected_crc);
+    runtime
+}
+
 fn hex_nibble(byte: u8) -> u8 {
     match byte {
         b'0'..=b'9' => byte - b'0',
@@ -1037,6 +1079,7 @@ fn crc32(bytes: &[u8]) -> u32 {
 mod tests {
     use super::*;
     use lm_project::Project;
+    use lm_rom::{compute_snes_checksum, pc_to_snes};
     use std::fs;
 
     fn legacy_lz2_speed_runtime_image() -> RomImage {
@@ -1062,6 +1105,172 @@ mod tests {
             .write(SMW_US_V1_GRAPHICS_COMPRESSION_METADATA_OFFSET, &[1])
             .unwrap();
         image
+    }
+
+    #[test]
+    fn all_six_lunar_magic_363_runtime_resources_are_embedded_exactly() {
+        let cases = [
+            (
+                Mapper::LoRom,
+                SmwUsV1GraphicsCompressionMode::Lz2Speed,
+                0x1fe,
+                0x1c0,
+                0x5d3c_ac46,
+            ),
+            (
+                Mapper::LoRom,
+                SmwUsV1GraphicsCompressionMode::Lz3,
+                0x1ff,
+                0x2ab,
+                0xdcb7_727e,
+            ),
+            (
+                Mapper::ExLoRom,
+                SmwUsV1GraphicsCompressionMode::Lz2Speed,
+                0x200,
+                0x1c0,
+                0xcb92_843b,
+            ),
+            (
+                Mapper::ExLoRom,
+                SmwUsV1GraphicsCompressionMode::Lz3,
+                0x201,
+                0x2ab,
+                0x69d9_d8b5,
+            ),
+            (
+                Mapper::Sa1,
+                SmwUsV1GraphicsCompressionMode::Lz2Speed,
+                0x203,
+                0x202,
+                0x7aec_530d,
+            ),
+            (
+                Mapper::Sa1,
+                SmwUsV1GraphicsCompressionMode::Lz3,
+                0x204,
+                0x30c,
+                0x520e_eb36,
+            ),
+        ];
+        for (mapper, mode, resource, expected_len, expected_crc) in cases {
+            let runtime = match mode {
+                SmwUsV1GraphicsCompressionMode::Lz2Speed => speed_runtime_for_mapper(mapper),
+                SmwUsV1GraphicsCompressionMode::Lz3 if mapper == Mapper::Sa1 => {
+                    decode_hex(SA1_LZ3_RUNTIME_HEX)
+                }
+                SmwUsV1GraphicsCompressionMode::Lz3 if mapper == Mapper::ExLoRom => {
+                    decode_hex(EXLOROM_LZ3_RUNTIME_HEX)
+                }
+                SmwUsV1GraphicsCompressionMode::Lz3 => decode_hex(LZ3_RUNTIME_HEX),
+                SmwUsV1GraphicsCompressionMode::Lz2Original => unreachable!(),
+            };
+            assert_eq!(runtime.len(), expected_len, "PE resource {resource:#x}");
+            assert_eq!(crc32(&runtime), expected_crc, "PE resource {resource:#x}");
+            assert_eq!(&runtime[runtime.len() - 4..], &RUNTIME_TRAILER);
+        }
+    }
+
+    fn current_runtime_image(mapper: Mapper, mode: SmwUsV1GraphicsCompressionMode) -> RomImage {
+        let mut bytes = match mapper {
+            Mapper::ExLoRom => vec![0xff; 0x80_0000],
+            Mapper::LoRom | Mapper::Sa1 => vec![0xff; 0x10_0000],
+        };
+        let base = mapper_body_base(mapper);
+        let header = base + 0x7fc0;
+        bytes[header..header + 21].copy_from_slice(b"SUPER MARIOWORLD     ");
+        bytes[header + 0x15] = match mapper {
+            Mapper::LoRom => 0x20,
+            Mapper::ExLoRom => 0x32,
+            Mapper::Sa1 => 0x23,
+        };
+        bytes[header + 0x17] = 0x09;
+        bytes[header + 0x19] = 1;
+        bytes[header + 0x1b] = 0;
+        let runtime = match mode {
+            SmwUsV1GraphicsCompressionMode::Lz2Speed => speed_runtime_for_mapper(mapper),
+            SmwUsV1GraphicsCompressionMode::Lz3 if mapper == Mapper::Sa1 => {
+                decode_hex(SA1_LZ3_RUNTIME_HEX)
+            }
+            SmwUsV1GraphicsCompressionMode::Lz3 if mapper == Mapper::ExLoRom => {
+                decode_hex(EXLOROM_LZ3_RUNTIME_HEX)
+            }
+            SmwUsV1GraphicsCompressionMode::Lz3 => decode_hex(LZ3_RUNTIME_HEX),
+            SmwUsV1GraphicsCompressionMode::Lz2Original => unreachable!(),
+        };
+        let runtime_header = if mapper == Mapper::ExLoRom {
+            0x50_0000
+        } else {
+            0x08_0000
+        };
+        let length_minus_one = u16::try_from(runtime.len() - 1).unwrap();
+        bytes[runtime_header..runtime_header + 4].copy_from_slice(b"STAR");
+        bytes[runtime_header + 4..runtime_header + 6]
+            .copy_from_slice(&length_minus_one.to_le_bytes());
+        bytes[runtime_header + 6..runtime_header + 8]
+            .copy_from_slice(&(!length_minus_one).to_le_bytes());
+        bytes[runtime_header + HEADER_LEN..runtime_header + HEADER_LEN + runtime.len()]
+            .copy_from_slice(&runtime);
+        let address = pc_to_snes(mapper, runtime_header + HEADER_LEN)
+            .unwrap()
+            .to_le_bytes();
+        bytes[base + SMW_US_V1_GRAPHICS_COMPRESSION_HOOK_OFFSET
+            ..base + SMW_US_V1_GRAPHICS_COMPRESSION_HOOK_OFFSET + 5]
+            .copy_from_slice(&[
+                INSTALLED_OPCODE,
+                address[0],
+                address[1],
+                address[2],
+                INSTALLED_RETURN,
+            ]);
+        bytes[base + SMW_US_V1_GRAPHICS_COMPRESSION_METADATA_OFFSET] = match mode {
+            SmwUsV1GraphicsCompressionMode::Lz2Speed => 1,
+            SmwUsV1GraphicsCompressionMode::Lz3 => 2,
+            SmwUsV1GraphicsCompressionMode::Lz2Original => unreachable!(),
+        };
+        let checksum = compute_snes_checksum(&bytes, header + 0x1c).unwrap();
+        bytes[header + 0x1c..header + 0x20].copy_from_slice(&checksum.encoded());
+        if mapper == Mapper::ExLoRom {
+            let internal_header = bytes[header..header + 0x40].to_vec();
+            bytes[0x7fc0..0x8000].copy_from_slice(&internal_header);
+        }
+        RomImage::from_bytes(bytes).unwrap()
+    }
+
+    #[test]
+    fn detector_accepts_every_current_mapper_runtime_and_rejects_cross_mapper_substitution() {
+        for mapper in [Mapper::LoRom, Mapper::ExLoRom, Mapper::Sa1] {
+            for mode in [
+                SmwUsV1GraphicsCompressionMode::Lz2Speed,
+                SmwUsV1GraphicsCompressionMode::Lz3,
+            ] {
+                let image = current_runtime_image(mapper, mode);
+                assert_eq!(detect_identity(&image).unwrap().mapper, mapper);
+                assert_eq!(
+                    detect_smw_us_v1_graphics_compression_mode(&image).unwrap(),
+                    mode
+                );
+                let mut corrupt = image;
+                let base = mapper_body_base(mapper);
+                let hook = read_array::<5>(
+                    corrupt.logical_bytes(),
+                    base + SMW_US_V1_GRAPHICS_COMPRESSION_HOOK_OFFSET,
+                )
+                .unwrap();
+                let runtime =
+                    snes_to_pc(mapper, u32::from_le_bytes([hook[1], hook[2], hook[3], 0])).unwrap();
+                corrupt
+                    .write(
+                        runtime + 0x20,
+                        &[corrupt.logical_bytes()[runtime + 0x20] ^ 1],
+                    )
+                    .unwrap();
+                assert!(matches!(
+                    detect_smw_us_v1_graphics_compression_mode(&corrupt),
+                    Err(SmwUsV1GraphicsCompressionDetectError::RuntimeChecksum { .. })
+                ));
+            }
+        }
     }
 
     fn load_mapper_graphics(
@@ -1186,11 +1395,13 @@ mod tests {
         )
         .unwrap();
         assert_eq!(replacement.plan.mapper, Mapper::ExLoRom);
-        assert!(replacement
-            .plan
-            .writes
-            .iter()
-            .all(|write| { write.offset >= 0x40_0000 || write.offset >= 0x7f_0000 }));
+        assert!(
+            replacement
+                .plan
+                .writes
+                .iter()
+                .all(|write| { write.offset >= 0x40_0000 || write.offset >= 0x7f_0000 })
+        );
         let inactive_mirror = lz2.clone();
         let mut project = Project::new(lz2);
         project
@@ -1369,12 +1580,14 @@ mod tests {
             detect_smw_us_v1_graphics_compression_mode(&image).unwrap(),
             SmwUsV1GraphicsCompressionMode::Lz2Speed
         );
-        assert!(has_historical_lz2_speed_runtime(
-            &image,
-            Mapper::LoRom,
-            SmwUsV1GraphicsCompressionMode::Lz2Speed
-        )
-        .unwrap());
+        assert!(
+            has_historical_lz2_speed_runtime(
+                &image,
+                Mapper::LoRom,
+                SmwUsV1GraphicsCompressionMode::Lz2Speed
+            )
+            .unwrap()
+        );
 
         let mut corrupt = image.clone();
         corrupt.write(0x80_008 + 0x80, &[0]).unwrap();
@@ -1820,9 +2033,11 @@ mod tests {
             project.install_relocatable_patch(&plan).unwrap();
             assert_eq!(project.rom.copier_header(), expected_header);
             assert_eq!(project.rom.logical_bytes()[0x7fd5], 0x30);
-            assert!(lm_rom::detect_identity(&project.rom)
-                .unwrap()
-                .checksum_matches());
+            assert!(
+                lm_rom::detect_identity(&project.rom)
+                    .unwrap()
+                    .checksum_matches()
+            );
             assert_eq!(
                 detect_smw_us_v1_graphics_compression_mode(&project.rom).unwrap(),
                 SmwUsV1GraphicsCompressionMode::Lz3
