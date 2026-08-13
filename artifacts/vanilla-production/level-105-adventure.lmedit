@@ -116,7 +116,9 @@ object place 160686 13 06 06 true
 
 # Deliberately bounded vanilla roster: common Koopas and Goombas plus Rex ($AB),
 # which is native to pristine 105's sprite GFX set 08. No dynamic/special composites.
-sprite place 11d004 00 0d 0017
+# Keep the opening Koopa on the long unobstructed runway. At X=$0D it spawned
+# against the raised solid obstacle and could visibly pace in place in Live ROM Test.
+sprite place 119004 00 09 0017
 sprite place 71120f 01 04 0017
 sprite place 7112ab 01 0c 0017
 sprite place 711205 02 05 0017
