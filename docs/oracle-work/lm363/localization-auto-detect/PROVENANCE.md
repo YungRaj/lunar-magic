@@ -1,5 +1,23 @@
 # Lunar Magic 3.63 localization auto-detection oracle
 
+## Clean-room live dual-loader oracle
+
+On 2026-08-12, the ignored
+`original_lunar_magic_and_rust_load_the_same_clean_room_language_module` gate generated a fresh
+32-bit resource DLL without retaining or redistributing it. The module contains the recovered
+`$01F4` marker/metadata/string resources, a complete 5,870-slot table, one nonzero `$000A` entry
+whose decoded bytes are `&OracleFile`, and the exact signed 64-byte trailer. The gate binds the
+original side to the 32-bit Lunar Magic 3.63 executable SHA-256
+`b64998b637e553c9adb96dd893140b5b8d0303c7a0f46a1fdab5f887a1d46eff`.
+
+An isolated Wine prefix persists `LanguageFile=oracle.dll`, and a PID-owned Win32 observer starts
+that exact executable. It requires Lunar Magic itself to publish a nonzero active-module handle,
+the complete decoded count, the allocated pool, slot `$000A = 1`, and the NUL-terminated bytes
+`&OracleFile` at `pool + slot`. The same exact signed module is then decoded by Rust and must yield
+locale `en-US` plus typed `MenuFile = OracleFile`. This live gate exposed and corrected a prior
+synthetic-fixture error: `$0DAD` is the declared count plus lengths, while `$0DAE` is the parallel
+offset table. The ordinary localization suite locks that orientation independently.
+
 This fixture records direct decompilation evidence from the labeled `Lunar Magic.exe` program on
 the local Ghidra MCP server at port 8089. It contains no Lunar Magic binary or language-resource
 payload.
@@ -36,9 +54,9 @@ four fields after the module filename: display name, version, locale tag, and co
 `LoadLanguageStringResources` at `$004D6D40` requires three more type-`$01F4` resources. `$0DAC`
 is copied, then bytes 1 through end are decoded in place as
 `((encoded ^ $92) - previous_decoded) + $34` before raw-DEFLATE expansion. `$0DAD` begins with a
-little-endian declared count followed by 32-bit string offsets; `$0DAE` contains parallel 32-bit
-lengths. The effective count is the minimum of the declaration, both complete table extents, and
-`$16EE` (5,869). Each entry is retained only when offset plus length is in the inflated pool and
+little-endian declared count followed by 32-bit string lengths; `$0DAE` contains parallel 32-bit
+offsets. The effective count is the minimum of the declaration, both complete table extents, and
+`$16EE` (5,870). Each entry is retained only when offset plus length is in the inflated pool and
 the following byte is NUL. `LoadSelectedLanguageModule` at `$004D7110` requires this string load
 and the whole-file checksum before publishing the module.
 

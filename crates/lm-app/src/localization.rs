@@ -259,8 +259,8 @@ pub fn decode_original_language_module(
 /// Validates an original language DLL and decodes its complete bounded localized string pool.
 ///
 /// Resource `$DAC` contains an offset-dependent obfuscated raw-DEFLATE stream. Resource `$DAD`
-/// starts with the declared string count followed by offsets, while `$DAE` contains matching
-/// lengths. The effective count is the recovered minimum of all three table bounds and 5,869.
+/// starts with the declared string count followed by lengths, while `$DAE` contains matching
+/// offsets. The effective count is the recovered minimum of all three table bounds and 5,870.
 ///
 /// # Errors
 ///
@@ -456,17 +456,17 @@ fn normalize_original_dialog_text(text: &str) -> String {
 
 fn decode_original_language_string_resources(
     encoded_pool: &[u8],
-    offsets: &[u8],
     lengths: &[u8],
+    offsets: &[u8],
 ) -> Result<OriginalLanguageStringPool, OriginalLanguageModuleError> {
-    if offsets.len() < 4 {
+    if lengths.len() < 4 {
         return Err(OriginalLanguageModuleError::MalformedStringTables);
     }
-    let declared = usize::try_from(read_u32(offsets, 0)?)
+    let declared = usize::try_from(read_u32(lengths, 0)?)
         .map_err(|_| OriginalLanguageModuleError::MalformedStringTables)?;
     let count = declared
-        .min((offsets.len() - 4) / 4)
-        .min(lengths.len() / 4)
+        .min((lengths.len() - 4) / 4)
+        .min(offsets.len() / 4)
         .min(ORIGINAL_LANGUAGE_MAX_STRINGS);
 
     let mut compressed = encoded_pool.to_vec();
@@ -482,9 +482,9 @@ fn decode_original_language_string_resources(
         let table_offset = index
             .checked_mul(4)
             .ok_or(OriginalLanguageModuleError::MalformedStringTables)?;
-        let offset = usize::try_from(read_u32(offsets, 4 + table_offset)?)
+        let length = usize::try_from(read_u32(lengths, 4 + table_offset)?)
             .map_err(|_| OriginalLanguageModuleError::MalformedStringTables)?;
-        let length = usize::try_from(read_u32(lengths, table_offset)?)
+        let offset = usize::try_from(read_u32(offsets, table_offset)?)
             .map_err(|_| OriginalLanguageModuleError::MalformedStringTables)?;
         let Some(end) = offset.checked_add(length) else {
             strings.push(None);
@@ -10650,9 +10650,9 @@ mod tests {
     #[test]
     fn original_language_string_resources_decode_obfuscation_deflate_and_tables() {
         let encoded = encoded_original_string_pool(b"hello\0world\0");
-        let offsets = string_table(&[0, 6], true);
-        let lengths = string_table(&[5, 5], false);
-        let pool = decode_original_language_string_resources(&encoded, &offsets, &lengths).unwrap();
+        let lengths = string_table(&[5, 5], true);
+        let offsets = string_table(&[0, 6], false);
+        let pool = decode_original_language_string_resources(&encoded, &lengths, &offsets).unwrap();
         assert_eq!(pool.len(), 2);
         assert_eq!(pool.get(0), Some("hello"));
         assert_eq!(pool.get(1), Some("world"));
@@ -10662,17 +10662,17 @@ mod tests {
     #[test]
     fn original_language_string_resources_bound_count_and_clear_invalid_entries() {
         let encoded = encoded_original_string_pool(b"\0");
-        let offsets = string_table(&vec![0; ORIGINAL_LANGUAGE_MAX_STRINGS + 1], true);
-        let lengths = string_table(&vec![0; ORIGINAL_LANGUAGE_MAX_STRINGS + 1], false);
-        let pool = decode_original_language_string_resources(&encoded, &offsets, &lengths).unwrap();
+        let lengths = string_table(&vec![0; ORIGINAL_LANGUAGE_MAX_STRINGS + 1], true);
+        let offsets = string_table(&vec![0; ORIGINAL_LANGUAGE_MAX_STRINGS + 1], false);
+        let pool = decode_original_language_string_resources(&encoded, &lengths, &offsets).unwrap();
         assert_eq!(pool.len(), ORIGINAL_LANGUAGE_MAX_STRINGS);
         assert_eq!(pool.get(ORIGINAL_LANGUAGE_MAX_STRINGS - 1), Some(""));
 
         let encoded = encoded_original_string_pool(b"hello\0world\0");
         let pool = decode_original_language_string_resources(
             &encoded,
-            &string_table(&[0, 6], true),
-            &string_table(&[6, 5], false),
+            &string_table(&[6, 5], true),
+            &string_table(&[0, 6], false),
         )
         .unwrap();
         assert_eq!(pool.get(0), None);
@@ -10711,8 +10711,8 @@ mod tests {
         lengths[0x0119] = 0x80;
         let pool = decode_original_language_string_resources(
             &encoded,
-            &string_table(&offsets, true),
-            &string_table(&lengths, false),
+            &string_table(&lengths, true),
+            &string_table(&offsets, false),
         )
         .unwrap();
         assert_eq!(pool.get(0x0118), Some("kept"));
@@ -10865,8 +10865,8 @@ mod tests {
         let module = original_language_catalog_pe(
             b"Deutsch - Test\n3.63\nde-DE\n1252\n",
             &encoded_original_string_pool(&decoded),
-            &string_table(&offsets, true),
-            &string_table(&lengths, false),
+            &string_table(&lengths, true),
+            &string_table(&offsets, false),
         );
         let (metadata, catalog) = decode_original_language_module_catalog(&module).unwrap();
         assert_eq!(metadata.display_name, "Deutsch - Test");
@@ -10880,6 +10880,255 @@ mod tests {
         assert_eq!(
             catalog.text(UiTextKey::MenuTools),
             UiTextKey::MenuTools.english()
+        );
+    }
+
+    #[test]
+    #[ignore = "requires Wine, MinGW, and a locally supplied Lunar Magic 3.63 executable"]
+    fn original_lunar_magic_and_rust_load_the_same_clean_room_language_module() {
+        use std::fs;
+        use std::path::PathBuf;
+        use std::process::Command;
+        use std::time::{SystemTime, UNIX_EPOCH};
+
+        const LUNAR_MAGIC_363_SHA256: &str =
+            "b64998b637e553c9adb96dd893140b5b8d0303c7a0f46a1fdab5f887a1d46eff";
+        let source = std::env::var_os("LUNAR_MAGIC_EXE")
+            .map(PathBuf::from)
+            .expect("set LUNAR_MAGIC_EXE to the 32-bit Lunar Magic 3.63 executable");
+        assert_eq!(
+            lm_oracle::sha256_hex(&fs::read(&source).unwrap()),
+            LUNAR_MAGIC_363_SHA256,
+            "unexpected Lunar Magic executable"
+        );
+
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!(
+            "lm-localization-wine-{}-{nonce}",
+            std::process::id()
+        ));
+        let application = root.join("application");
+        let language_directory = application.join("sysLMLanguage");
+        let prefix = root.join("wine-prefix");
+        fs::create_dir_all(&language_directory).unwrap();
+        let executable = application.join("Lunar Magic.exe");
+        fs::copy(&source, &executable).unwrap();
+
+        let count = ORIGINAL_LANGUAGE_MAX_STRINGS;
+        let mut decoded = vec![0];
+        let mut offsets = vec![0; count];
+        let mut lengths = vec![0; count];
+        offsets[0x000a] = u32::try_from(decoded.len()).unwrap();
+        lengths[0x000a] = u32::try_from(b"&OracleFile".len()).unwrap();
+        decoded.extend_from_slice(b"&OracleFile\0");
+        let resources = root.join("resources");
+        fs::create_dir_all(&resources).unwrap();
+        let resource_payloads = [
+            (
+                0x0db6,
+                b"English - Clean Room Oracle\n3.63\nen-US\n1252\n".to_vec(),
+            ),
+            (0x0db7, ORIGINAL_LANGUAGE_MARKER.to_le_bytes().to_vec()),
+            (0x0dac, encoded_original_string_pool(&decoded)),
+            (0x0dad, string_table(&lengths, true)),
+            (0x0dae, string_table(&offsets, false)),
+        ];
+        let mut resource_script = String::new();
+        for (id, bytes) in &resource_payloads {
+            let path = resources.join(format!("{id:04x}.bin"));
+            fs::write(&path, bytes).unwrap();
+            resource_script.push_str(&format!("{id} {PE_RESOURCE_TYPE} \"{}\"\n", path.display()));
+        }
+        let resource_script_path = resources.join("oracle.rc");
+        fs::write(&resource_script_path, resource_script).unwrap();
+        let resource_object = resources.join("oracle-res.o");
+        let windres =
+            std::env::var_os("MINGW_WINDRES").unwrap_or_else(|| "i686-w64-mingw32-windres".into());
+        let output = Command::new(windres)
+            .arg(&resource_script_path)
+            .arg(&resource_object)
+            .output()
+            .expect("cannot compile the language resources");
+        assert!(
+            output.status.success(),
+            "language resource compilation failed:\n{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let source_path = resources.join("oracle.c");
+        fs::write(&source_path, "void oracle_language_module(void) {}\n").unwrap();
+        let module_path = language_directory.join("oracle.dll");
+        let module_compiler =
+            std::env::var_os("MINGW_CC").unwrap_or_else(|| "i686-w64-mingw32-gcc".into());
+        let output = Command::new(&module_compiler)
+            .args(["-shared", "-s"])
+            .arg(&source_path)
+            .arg(&resource_object)
+            .arg("-o")
+            .arg(&module_path)
+            .output()
+            .expect("cannot link the language DLL");
+        assert!(
+            output.status.success(),
+            "language DLL link failed:\n{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let mut module = fs::read(&module_path).unwrap();
+        module.resize(module.len() + ORIGINAL_LANGUAGE_TRAILER_BYTES, 0);
+        sign_original_module(&mut module);
+        fs::write(&module_path, &module).unwrap();
+
+        let (metadata, rust_catalog) = decode_original_language_module_catalog(&module).unwrap();
+        assert_eq!(metadata.locale, "en-US");
+        assert_eq!(rust_catalog.text(UiTextKey::MenuFile), "OracleFile");
+
+        let helper_source = resources.join("localization-oracle.c");
+        fs::write(
+            &helper_source,
+            r#"#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+struct frame_search { DWORD process_id; HWND frame; };
+
+static BOOL CALLBACK find_frame(HWND window, LPARAM opaque) {
+    struct frame_search *search = (struct frame_search *)opaque;
+    DWORD process_id = 0;
+    char class_name[64] = {0};
+    GetWindowThreadProcessId(window, &process_id);
+    GetClassNameA(window, class_name, sizeof(class_name));
+    if (process_id == search->process_id && _stricmp(class_name, "LMFrame") == 0) {
+        search->frame = window;
+        return FALSE;
+    }
+    return TRUE;
+}
+
+int main(int argc, char **argv) {
+    if (argc != 2) return 2;
+    STARTUPINFOA startup = {.cb = sizeof(startup)};
+    PROCESS_INFORMATION process = {0};
+    if (!CreateProcessA(argv[1], NULL, NULL, NULL, FALSE, 0, NULL, NULL, &startup, &process)) {
+        fprintf(stderr, "cannot start Lunar Magic: %lu\n", GetLastError());
+        return 1;
+    }
+    HWND frame = NULL;
+    DWORD module = 0, count = 0, pool = 0, slot_a = 0;
+    char translated[64] = {0};
+    HANDLE target = NULL;
+    for (unsigned attempt = 0; attempt < 800 && translated[0] == 0; attempt++) {
+        struct frame_search search = {.process_id = process.dwProcessId, .frame = NULL};
+        EnumWindows(find_frame, (LPARAM)&search);
+        frame = search.frame;
+        target = OpenProcess(PROCESS_VM_READ | PROCESS_QUERY_INFORMATION, FALSE,
+                             process.dwProcessId);
+        if (target != NULL) {
+            SIZE_T read = 0;
+            ReadProcessMemory(target, (void *)0x00e27a50, &module, sizeof(module), &read);
+            ReadProcessMemory(target, (void *)0x00e27a54, &count, sizeof(count), &read);
+            ReadProcessMemory(target, (void *)0x00e27a58, &pool, sizeof(pool), &read);
+            ReadProcessMemory(target, (void *)(0x0095bb90 + 0x000a * 4),
+                              &slot_a, sizeof(slot_a), &read);
+            if (pool != 0 && slot_a != 0) {
+                ReadProcessMemory(target, (void *)(uintptr_t)(pool + slot_a), translated,
+                                  sizeof(translated) - 1, &read);
+            }
+            CloseHandle(target);
+        }
+        if (translated[0] == 0) Sleep(25);
+    }
+    if (strcmp(translated, "&OracleFile") != 0) {
+        fprintf(stderr,
+                "Lunar Magic did not publish the translated slot; module=%08lx count=%lu "
+                "pool=%08lx slot-a=%lu text=%s exit=%lu\n",
+                (unsigned long)module, (unsigned long)count, (unsigned long)pool,
+                (unsigned long)slot_a, translated,
+                (unsigned long)WaitForSingleObject(process.hProcess, 0));
+        TerminateProcess(process.hProcess, 1);
+        return 1;
+    }
+    PostMessageA(frame, WM_CLOSE, 0, 0);
+    if (WaitForSingleObject(process.hProcess, 5000) == WAIT_TIMEOUT) {
+        TerminateProcess(process.hProcess, 1);
+    }
+    CloseHandle(process.hThread);
+    CloseHandle(process.hProcess);
+    return 0;
+}
+"#,
+        )
+        .unwrap();
+        let helper = root.join("localization-oracle.exe");
+        let output = Command::new(module_compiler)
+            .args(["-std=c11", "-O2", "-Wall", "-Wextra", "-Werror"])
+            .arg(&helper_source)
+            .args(["-o"])
+            .arg(&helper)
+            .output()
+            .expect("cannot compile the Win32 menu observer");
+        assert!(
+            output.status.success(),
+            "menu observer compilation failed:\n{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+
+        let wine = std::env::var_os("WINE_BIN").unwrap_or_else(|| "wine".into());
+        let wineserver = std::env::var_os("WINESERVER_BIN").unwrap_or_else(|| "wineserver".into());
+        let _ = Command::new(&wine)
+            .env("WINEPREFIX", &prefix)
+            .env("WINEDEBUG", "-all")
+            .arg("wineboot")
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status();
+        let registry = Command::new(&wine)
+            .env("WINEPREFIX", &prefix)
+            .env("WINEDEBUG", "-all")
+            .args([
+                "reg",
+                "add",
+                r"HKCU\Software\LunarianConcepts\LunarMagic\Settings",
+                "/v",
+                "LanguageFile",
+                "/t",
+                "REG_SZ",
+                "/d",
+                "oracle.dll",
+                "/f",
+            ])
+            .output()
+            .expect("cannot seed Lunar Magic language selection");
+        assert!(
+            registry.status.success(),
+            "cannot seed Lunar Magic language selection:\n{}",
+            String::from_utf8_lossy(&registry.stderr)
+        );
+        let executable_windows = "Z:\\".to_owned()
+            + &executable
+                .to_string_lossy()
+                .replace('/', "\\")
+                .trim_start_matches('\\');
+        let observation = Command::new(&wine)
+            .env("WINEPREFIX", &prefix)
+            .env("WINEDEBUG", "-all")
+            .env("WINEDLLOVERRIDES", "d3d9=")
+            .current_dir(&application)
+            .arg(&helper)
+            .arg(&executable_windows)
+            .output()
+            .expect("cannot run the original Lunar Magic localization oracle");
+        let _ = Command::new(wineserver)
+            .env("WINEPREFIX", &prefix)
+            .arg("-k")
+            .status();
+        assert!(
+            observation.status.success(),
+            "original Lunar Magic localization oracle failed:\n{}",
+            String::from_utf8_lossy(&observation.stderr)
         );
     }
 
@@ -10992,8 +11241,8 @@ mod tests {
         assert_eq!(
             decode_original_language_string_resources(
                 &encoded_original_string_pool(&[0xff, 0]),
-                &string_table(&[0], true),
-                &string_table(&[1], false),
+                &string_table(&[1], true),
+                &string_table(&[0], false),
             ),
             Err(OriginalLanguageModuleError::InvalidStringUtf8(0))
         );

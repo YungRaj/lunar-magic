@@ -3617,7 +3617,7 @@ below closes that boundary.
 The portable core now decodes the original localized string payload as well. It reads `$0DAC`,
 `$0DAD`, and `$0DAE` through the validated PE resource tree, reproduces the recovered chained
 byte transform, requires a complete raw-DEFLATE stream, caps inflated output at 32 MiB, and applies
-the original minimum of declared count, complete offset/length table extents, and 5,869 entries.
+the original minimum of declared count, complete offset/length table extents, and 5,870 entries.
 Every offset/length addition is checked; entries without an in-range trailing NUL are unavailable,
 and valid entries must be UTF-8 before publication. The exact 272 single-index and 22 half-open
 range guards recovered from `$005E6420` and `$005E6398` then clear strings whose byte length reaches
@@ -8442,3 +8442,21 @@ downloaded directly: SHA-256
 installer, signing/notarization workflow, or automatic updater. These are therefore Rust delivery
 extensions, not absent original-editor features; tag publication is optional delivery automation.
 The Release row is Pass and aggregate parity advances to 64/65.
+
+## Localization live dual-loader completion (2026-08-12)
+
+The final localization gate now constructs a clean-room 32-bit resource DLL at test time, signs
+its recovered 64-byte trailer, and supplies the exact `$01F4` marker, metadata, compressed pool,
+and complete 5,870-slot string tables. An isolated Wine process opens the authenticated 32-bit
+Lunar Magic 3.63 executable (SHA-256
+`b64998b637e553c9adb96dd893140b5b8d0303c7a0f46a1fdab5f887a1d46eff`) with that module selected.
+The PID-owned observer requires the original process to publish the module handle, decoded count,
+pool pointer, slot `$000A = 1`, and exact `&OracleFile` bytes. Rust independently decodes the same
+signed module to `MenuFile = OracleFile`.
+
+This live gate found and corrected a real ABI inversion hidden by synthetic fixtures: resource
+`$0DAD` stores the declared count followed by lengths, while `$0DAE` stores parallel offsets.
+Focused localization passes 28/28 active `lm-app` tests and 16/16 `lm-native` tests; the exact live
+oracle passes explicitly; and the post-fix renderer safeguard passes 56/56, including the complete
+512-level traversal, in 465.99 seconds. All 65 matrix rows are Pass, so aggregate verified parity
+advances to 65/65.
