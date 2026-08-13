@@ -89,6 +89,7 @@ mod palette_editor;
 mod path_editor;
 mod path_editor_forms;
 mod persistence_worker;
+#[cfg(test)]
 mod pristine_full_level_render;
 mod profile_loader;
 mod progress_localization;
@@ -139,6 +140,7 @@ mod update_dialog;
 mod user_toolbar_images;
 mod vanilla_graphics_editor;
 mod vanilla_level_editor;
+#[cfg_attr(not(test), allow(dead_code))]
 mod vanilla_map16_preview;
 mod vram_patch_options_dialog;
 

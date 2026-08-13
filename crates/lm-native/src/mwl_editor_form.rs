@@ -202,6 +202,8 @@ fn parse_hex_bytes<const N: usize>(values: &[String; N], field: &str) -> Result<
     Ok(parsed)
 }
 
+#[cfg(test)]
+#[allow(dead_code)]
 pub(crate) const SECTION_NAMES: [&str; MwlFile::SECTION_COUNT] = [
     "Level header",
     "Layer 1",

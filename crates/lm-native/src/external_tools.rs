@@ -142,6 +142,7 @@ fn configure_process_options(command: &mut ProcessCommand, options: ProcessOptio
 #[cfg(not(windows))]
 fn configure_process_options(_command: &mut ProcessCommand, _options: ProcessOptions) {}
 
+#[cfg(any(windows, test))]
 fn windows_parameter_line(arguments: &[String]) -> String {
     arguments
         .iter()

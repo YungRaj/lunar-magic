@@ -11963,6 +11963,7 @@ fn object_insertion_index(selected: usize, record_count: usize) -> usize {
     selected.saturating_add(1).min(record_count)
 }
 
+#[cfg(test)]
 fn pasted_object_edit(text: &str, index: usize) -> Result<NativeLevelEdit, String> {
     crate::native_clipboard::decode_level_object(text)
         .map(|record| NativeLevelEdit::Objects(vec![ObjectEdit::Insert { index, record }]))
@@ -11982,6 +11983,7 @@ fn direct_map16_rectangle_from_clipboard(text: &str) -> Result<ObjectRecord, Str
         .map_err(|error| error.to_string())
 }
 
+#[cfg(test)]
 fn pasted_sprite_edit(text: &str, index: usize) -> Result<NativeLevelEdit, String> {
     crate::native_clipboard::decode_level_sprite(text).map(|record| NativeLevelEdit::InsertSprite {
         index,

@@ -1,4 +1,6 @@
-use crate::{level_editor_forms, overworld_editor_forms::SUBMAP_NAMES};
+use crate::level_editor_forms;
+#[cfg(test)]
+use crate::overworld_editor_forms::SUBMAP_NAMES;
 use lm_overworld::{PathDirection, PathEdge, PathNode, Submap};
 
 #[derive(Clone, Debug, Default)]
@@ -120,7 +122,11 @@ impl EdgeForm {
     }
 }
 
+#[cfg(test)]
+#[allow(dead_code)]
 pub(crate) const DIRECTION_NAMES: [&str; 4] = ["Up", "Right", "Down", "Left"];
+#[cfg(test)]
+#[allow(dead_code)]
 pub(crate) const PATH_SUBMAP_NAMES: [&str; 7] = SUBMAP_NAMES;
 
 const fn directions() -> [PathDirection; 4] {

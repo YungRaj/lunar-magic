@@ -860,6 +860,7 @@ impl VanillaGraphicsEditor {
         }
     }
 
+    #[cfg(test)]
     fn apply_tile(&mut self, tile: IndexedTile) {
         self.apply_tile_at(self.selected_tile, tile);
     }

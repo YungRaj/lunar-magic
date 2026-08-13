@@ -310,6 +310,7 @@ fn next_id(forms: &[ToolbarForm], action: ToolbarAction) -> String {
     unreachable!("one more candidate than existing forms guarantees a free ID")
 }
 
+#[cfg(test)]
 fn action_name(action: ToolbarAction) -> &'static str {
     action_metadata(action).1
 }

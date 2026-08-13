@@ -2699,6 +2699,7 @@ fn normalize_locale(value: &str) -> Option<String> {
         .then(|| value.to_ascii_lowercase())
 }
 
+#[cfg(test)]
 fn select_preferred_installed_localization(
     installed: &[InstalledLocalization],
     preferences: impl IntoIterator<Item = String>,
