@@ -529,7 +529,18 @@ pub fn smw_us_v1_overworld_animation_runtime_installation_plan_for_mapper(
             0,
             0x1f0,
         ),
-        payload_write(mapper, HOOK_C_OPERAND, &[0xa5, 0x13, 0x29], None, 0, 0x500),
+        if mapper == Mapper::ExLoRom {
+            payload_write(
+                mapper,
+                HOOK_C_OPERAND,
+                &[0xa5, 0x13, 0x29, 0x07],
+                Some(0x22),
+                0,
+                0x500,
+            )
+        } else {
+            payload_write(mapper, HOOK_C_OPERAND, &[0xa5, 0x13, 0x29], None, 0, 0x500)
+        },
     ];
     writes.extend(MODE_BYTES.into_iter().map(|offset| PatchWrite {
         offset: mapper_rom_offset(mapper, offset),
@@ -697,7 +708,11 @@ pub fn detect_smw_us_v1_overworld_animation_runtime_for_mapper(
         },
     )?;
     let hook_b_target = read_pointer_for_mapper(bytes, hook_b + 1, mapper)?;
-    let hook_c_target = read_pointer_for_mapper(bytes, hook_c, mapper)?;
+    let hook_c_target = read_pointer_for_mapper(
+        bytes,
+        hook_c + usize::from(mapper == Mapper::ExLoRom),
+        mapper,
+    )?;
     if hook_b_target != runtime.payload.start + 0x1f0
         || hook_c_target != runtime.payload.start + 0x500
     {
@@ -1148,6 +1163,95 @@ mod tests {
             &parse_at(project.rom.logical_bytes(), SUBMAP_HEADER).unwrap()
         );
         assert!(detected.submap_animations[1..].iter().all(Option::is_none));
+    }
+
+    #[test]
+    fn authentic_lunar_magic_363_exlorom_runtime_matches_every_owned_and_fixed_byte() {
+        const RUNTIME_HEADER: usize = 0x20_4e32;
+        const AUXILIARY_HEADER: usize = 0x20_5a5a;
+        const OPTIONS_HEADER: usize = 0x20_5a77;
+        const ORACLE_END: usize = 0x20_5a86;
+
+        // Retain only the 28 changed runs relative to the already retained C20 template. This
+        // reconstructs Lunar Magic's complete authentic ExLoROM payload without retaining ROM.
+        let delta = decode_base64(include_str!(
+            "assets/overworld_animation_runtime_exlorom_lm363_delta.b64"
+        ))
+        .unwrap();
+        assert_eq!(
+            format!("{:x}", Sha256::digest(&delta)),
+            "b1dfee167ec41e5387bac1a029b291b067d9b289c85daa8207f81fc9cb2f9ca0"
+        );
+        let mut runtime = smw_us_v1_overworld_animation_runtime_template().unwrap();
+        let mut cursor = 0;
+        let run_count = u16::from_le_bytes([delta[cursor], delta[cursor + 1]]);
+        cursor += 2;
+        for _ in 0..run_count {
+            let offset = usize::from(u16::from_le_bytes([delta[cursor], delta[cursor + 1]]));
+            let length = usize::from(u16::from_le_bytes([delta[cursor + 2], delta[cursor + 3]]));
+            cursor += 4;
+            runtime[offset..offset + length].copy_from_slice(&delta[cursor..cursor + length]);
+            cursor += length;
+        }
+        assert_eq!(cursor, delta.len());
+        assert_eq!(
+            format!("{:x}", Sha256::digest(&runtime)),
+            "9c769ddd9968f252e7601ac1f08e4cf543c1616d2a7856201235ce6fb858b8cf"
+        );
+        let mut authentic = b"STAR\x1f\x0c\xe0\xf3".to_vec();
+        authentic.extend_from_slice(&runtime);
+        let owners = decode_base64(include_str!(
+            "assets/overworld_animation_exlorom_owners_lm363.b64"
+        ))
+        .unwrap();
+        assert_eq!(
+            format!("{:x}", Sha256::digest(&owners)),
+            "ff782675edaf6fc5a4cb5a83eae26799467dc6ffd67640b00b06d4c2592d0328"
+        );
+        authentic.extend_from_slice(&owners);
+        assert_eq!(authentic.len(), ORACLE_END - RUNTIME_HEADER);
+
+        let pristine = crate::test_support::pristine_smw_us_rom_bytes();
+        let mut project = Project::open_supported(RomImage::from_bytes(pristine).unwrap()).unwrap();
+        project.convert_to_64_mbit_exlorom().unwrap();
+        project
+            .rom
+            .write(0x10_0000, &vec![0x5a; RUNTIME_HEADER - 0x10_0000])
+            .unwrap();
+        let result = project
+            .install_relocatable_patch(
+                &smw_us_v1_overworld_animation_runtime_installation_plan_for_mapper(
+                    Mapper::ExLoRom,
+                    AllocationPolicy {
+                        search: 0x10_0000..0x40_0000,
+                        bank_size: Some(0x8000),
+                        fill_bytes: vec![0x00, 0xff],
+                        protected: Vec::new(),
+                    },
+                    false,
+                )
+                .unwrap(),
+            )
+            .unwrap();
+        assert_eq!(result.blocks[0].header_offset, RUNTIME_HEADER);
+        assert_eq!(result.blocks[1].header_offset, AUXILIARY_HEADER);
+        assert_eq!(result.blocks[2].header_offset, OPTIONS_HEADER);
+        let generated = project.rom.logical_bytes();
+        let first_pointer = AUXILIARY_HEADER + HEADER_LEN - RUNTIME_HEADER;
+        authentic[first_pointer..first_pointer + 3].copy_from_slice(&[0xff, 0, 0]);
+        assert_eq!(&generated[RUNTIME_HEADER..ORACLE_END], authentic);
+        assert_eq!(
+            &generated[mapper_rom_offset(Mapper::ExLoRom, HOOK_A)..][..4],
+            &[0x22, 0x3a, 0xce, 0xc0]
+        );
+        assert_eq!(
+            &generated[mapper_rom_offset(Mapper::ExLoRom, HOOK_B)..][..4],
+            &[0x22, 0x2a, 0xd0, 0xc0]
+        );
+        assert_eq!(
+            &generated[mapper_rom_offset(Mapper::ExLoRom, HOOK_C_OPERAND)..][..4],
+            &[0x22, 0x3a, 0xd3, 0xc0]
+        );
     }
 
     #[test]

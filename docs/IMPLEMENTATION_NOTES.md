@@ -8349,3 +8349,13 @@ duplicate rejection without mutation, one application revision, and byte-exact U
 with the existing LoROM size/header/allocation/historical-generation product and SA-1 header/RAM-
 remap variants, every supported SMW-US revision-0 mapper and framing variant is explicit. The
 expanded-settings/Layer 3/palette-runtimes row is now Pass; aggregate parity advances to 61/65.
+
+Overworld ExLoROM Oracle update (2026-08-12): an isolated original Lunar Magic 3.63 Wine capture
+on the authenticated 8-MiB ExLoROM baseline installed the historical `$C20` runtime at `$204E32`,
+followed by its auxiliary, options, and compact-animation owners. It exposed and fixes the
+ExLoROM-only four-byte JSL boundary at active-body `$4200E0`; Rust formerly treated it as an
+ordinary three-byte operand. A compact 28-run template differential reconstructs the complete
+original runtime without retaining ROM, and the default Oracle test compares every generated
+core-owner and fixed-hook byte at the original allocation coordinates. The runtime module passes
+11/11. Authentic SA-1 and `$C40` output evidence remains open, so Overworld stays Partial and
+aggregate parity remains 61/65.
