@@ -462,10 +462,12 @@ impl NativeApplication {
         if quit {
             self.request_quit(context);
         }
+        let overworld_frame = self.live_emulator.overworld_frame();
         let (quit, command) = self.rom_overworld_editor.show(
             context,
             self.app.project_revision(),
             self.app.localization(),
+            overworld_frame,
         );
         if let Some(command) = command
             && self.try_dispatch(context, command)

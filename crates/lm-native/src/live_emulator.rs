@@ -38,6 +38,7 @@ pub(crate) struct LiveEmulator {
     source_revision: Option<u64>,
     texture: Option<egui::TextureHandle>,
     frame_size: Option<[usize; 2]>,
+    runtime_state: Option<lm_app::EmulatorRuntimeState>,
     audio: crate::live_audio::LiveAudio,
     status: String,
 }
@@ -128,6 +129,7 @@ impl LiveEmulator {
         self.source_revision = Some(revision);
         self.texture = None;
         self.frame_size = None;
+        self.runtime_state = None;
         self.audio.stop();
         self.status = if flags & lm_app::EMULATOR_FLAG_BOOT_TO_OVERWORLD != 0 {
             "Starting live emulator at the navigable overworld".into()
@@ -143,6 +145,7 @@ impl LiveEmulator {
         }
         self.texture = None;
         self.frame_size = None;
+        self.runtime_state = None;
         self.source_level = None;
         self.source_revision = None;
     }
@@ -163,6 +166,15 @@ impl LiveEmulator {
             self.frame_size?,
             frame_is_translucent(pause_translucent, running.pause),
         ))
+    }
+
+    pub(crate) fn overworld_frame(
+        &self,
+    ) -> Option<(egui::TextureId, [usize; 2], lm_app::EmulatorRuntimeState)> {
+        let state = self.runtime_state?;
+        let texture = self.texture.as_ref()?.id();
+        let size = self.frame_size?;
+        (state.game_mode == 0x0e).then_some((texture, size, state))
     }
 
     /// Stops a live session only when there is no longer an open level/project context.
@@ -489,6 +501,7 @@ impl LiveEmulator {
                         rgba,
                         state,
                     } => {
+                        self.runtime_state = Some(state);
                         install_frame(
                             context,
                             &mut self.texture,
@@ -514,6 +527,7 @@ impl LiveEmulator {
                         sample_rate,
                         audio,
                     } => {
+                        self.runtime_state = Some(state);
                         install_frame(
                             context,
                             &mut self.texture,
@@ -856,6 +870,7 @@ mod tests {
                     game_mode: 0x14,
                     sublevel: 0x105,
                     translevel: 0x28,
+                    overworld_submap: 1,
                     camera_x: 0,
                     camera_y: 192,
                 },

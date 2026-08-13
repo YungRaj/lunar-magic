@@ -22,6 +22,29 @@ use lm_overworld::{
 use lm_project::{CompleteOverworldFile, CompleteOverworldShape};
 use std::collections::BTreeSet;
 
+type LiveOverworldFrame = (egui::TextureId, [usize; 2], lm_app::EmulatorRuntimeState);
+
+fn composed_storage_tile(
+    rect: egui::Rect,
+    position: egui::Pos2,
+    frame_size: [usize; 2],
+    state: lm_app::EmulatorRuntimeState,
+) -> Option<(usize, usize)> {
+    if state.game_mode != 0x0e {
+        return None;
+    }
+    let plane_x = match state.overworld_submap {
+        0 => 0,
+        1..=6 => 64,
+        _ => return None,
+    };
+    let (pixel_x, pixel_y) =
+        overworld_editor_render::selected_tile(rect, position, frame_size[0], frame_size[1])?;
+    let world_x = (usize::from(state.camera_x) + pixel_x) & 0x1ff;
+    let world_y = (usize::from(state.camera_y) + pixel_y) & 0x1ff;
+    Some((plane_x + world_x / 8, world_y / 8))
+}
+
 fn ow_text(catalog: Option<&LocalizationCatalog>, key: lm_app::ExtendedUiTextKey) -> String {
     crate::frontend_ui::extended_localized_text(catalog, key)
 }
@@ -574,6 +597,7 @@ impl RomOverworldEditor {
         ui: &mut egui::Ui,
         revision: u64,
         catalog: Option<&LocalizationCatalog>,
+        live_frame: Option<LiveOverworldFrame>,
     ) -> Option<Command> {
         let workspace = self.main_layer2_workspace.as_ref()?;
         let stale = workspace.controller.revision() != revision;
@@ -599,7 +623,7 @@ impl RomOverworldEditor {
             .is_some_and(|workspace| workspace.paths != workspace.original_paths);
         ui.label(ow_text(catalog, Key::RomOverworldPlayableMapNotice));
         ui.horizontal(|ui| {
-            ui.label("Gameplay-composited navigable preview:");
+            ui.label("Recognizable in-game map (primary editable canvas):");
             if ui
                 .button(crate::frontend_ui::localized_text(
                     catalog,
@@ -610,11 +634,20 @@ impl RomOverworldEditor {
                 self.live_preview_requested = true;
             }
         });
-        ui.small(
-            "The canvas below is the complete editable 128×64 Layer 2 storage plane; the live preview composes it with paths, level nodes, sprites, events, animation, and the active submap exactly as the game does.",
-        );
         self.layer = 1;
-        self.world_canvas(ui, shape, stale || paths_modified, catalog);
+        if let Some(frame) = live_frame {
+            self.composed_world_canvas(ui, frame, stale || paths_modified, catalog);
+        } else {
+            ui.horizontal(|ui| {
+                ui.spinner();
+                ui.label("Start Live ROM Test to load the exact game-composited map here.");
+            });
+        }
+        egui::CollapsingHeader::new("Advanced: raw 128×64 Layer 2 storage plane")
+            .default_open(false)
+            .show(ui, |ui| {
+                self.world_canvas(ui, shape, stale || paths_modified, catalog)
+            });
         self.main_layer2_tile_controls(ui, shape, stale || paths_modified, catalog);
         ui.separator();
         ui.horizontal(|ui| {
@@ -948,6 +981,7 @@ impl RomOverworldEditor {
         context: &egui::Context,
         revision: u64,
         catalog: Option<&LocalizationCatalog>,
+        live_frame: Option<LiveOverworldFrame>,
     ) -> (bool, Option<Command>) {
         if let Some(command) = self.take_editor_transition_after_save(revision) {
             return (false, Some(command));
@@ -993,7 +1027,9 @@ impl RomOverworldEditor {
                 .default_size([820.0, 720.0])
                 .vscroll(true)
                 .show(context, |ui| {
-                    if let Some(ui_command) = self.main_layer2_contents(ui, revision, catalog) {
+                    if let Some(ui_command) =
+                        self.main_layer2_contents(ui, revision, catalog, live_frame)
+                    {
                         command = Some(ui_command);
                     }
                 });
@@ -1807,6 +1843,120 @@ impl RomOverworldEditor {
                 );
             }
         });
+    }
+
+    fn composed_world_canvas(
+        &mut self,
+        ui: &mut egui::Ui,
+        frame: LiveOverworldFrame,
+        stale: bool,
+        catalog: Option<&LocalizationCatalog>,
+    ) {
+        ui.horizontal_wrapped(|ui| {
+            ui.selectable_value(
+                &mut self.paint_tool,
+                MapPaintTool::Select,
+                ow_text(catalog, Key::RomOverworldToolSelect),
+            );
+            ui.selectable_value(
+                &mut self.paint_tool,
+                MapPaintTool::Brush,
+                ow_text(catalog, Key::RomOverworldToolBrush),
+            );
+            ui.selectable_value(
+                &mut self.paint_tool,
+                MapPaintTool::Rectangle,
+                ow_text(catalog, Key::RomOverworldToolRectangle),
+            );
+            ui.selectable_value(
+                &mut self.paint_tool,
+                MapPaintTool::Fill,
+                ow_text(catalog, Key::RomOverworldToolFill),
+            );
+        });
+        let (texture, frame_size, state) = frame;
+        let available = ui.available_width().max(1.0);
+        let native = egui::vec2(frame_size[0] as f32, frame_size[1] as f32);
+        let display = native * (available / native.x).min(4.0);
+        let response =
+            ui.add(egui::Image::new((texture, display)).sense(egui::Sense::click_and_drag()));
+        let interacted = response.clicked()
+            || response.dragged()
+            || response.drag_started()
+            || response.drag_stopped();
+        let mut action = None;
+        if interacted
+            && let Some(position) = response.interact_pointer_pos()
+            && let Some((x, y)) = composed_storage_tile(response.rect, position, frame_size, state)
+        {
+            self.x = x;
+            self.y = y;
+            self.loaded = None;
+            match self.paint_tool {
+                MapPaintTool::Select => {
+                    self.load_main_layer2_tile();
+                    self.refresh_map16_texture(ui.ctx());
+                }
+                MapPaintTool::Brush if !stale => action = Some((MapPaintTool::Brush, (x, y))),
+                MapPaintTool::Fill if !stale && response.clicked() => {
+                    action = Some((MapPaintTool::Fill, (x, y)));
+                }
+                MapPaintTool::Rectangle if !stale => {
+                    if response.drag_started() {
+                        self.paint_anchor = ui
+                            .input(|input| input.pointer.press_origin())
+                            .and_then(|origin| {
+                                composed_storage_tile(response.rect, origin, frame_size, state)
+                            })
+                            .or(Some((x, y)));
+                    }
+                    if response.drag_stopped() || response.clicked() {
+                        action = Some((MapPaintTool::Rectangle, (x, y)));
+                    }
+                }
+                MapPaintTool::NativeSprite
+                | MapPaintTool::RouteSource
+                | MapPaintTool::RouteDestination
+                | MapPaintTool::Brush
+                | MapPaintTool::Rectangle
+                | MapPaintTool::Fill => {}
+            }
+        }
+        if let Some((tool, position)) = action {
+            match tool {
+                MapPaintTool::Brush => self.paint_to(position),
+                MapPaintTool::Rectangle => self.paint_rectangle_to(position),
+                MapPaintTool::Fill => self.fill_at(position),
+                _ => {}
+            }
+        }
+        if self.paint_tool == MapPaintTool::Brush && !ui.input(|input| input.pointer.primary_down())
+        {
+            self.paint_anchor = None;
+        }
+
+        let plane_x = if state.overworld_submap == 0 { 0 } else { 64 };
+        if self.x >= plane_x && self.x < plane_x + 64 {
+            let local_x =
+                ((self.x - plane_x) * 8 + 512 - usize::from(state.camera_x & 0x1ff)) & 0x1ff;
+            let local_y = (self.y * 8 + 512 - usize::from(state.camera_y & 0x1ff)) & 0x1ff;
+            if local_x < frame_size[0] && local_y < frame_size[1] {
+                let scale_x = response.rect.width() / frame_size[0] as f32;
+                let scale_y = response.rect.height() / frame_size[1] as f32;
+                let minimum = response.rect.min
+                    + egui::vec2(local_x as f32 * scale_x, local_y as f32 * scale_y);
+                ui.painter().rect_stroke(
+                    egui::Rect::from_min_size(minimum, egui::vec2(8.0 * scale_x, 8.0 * scale_y)),
+                    0.0,
+                    egui::Stroke::new(2.0_f32, egui::Color32::YELLOW),
+                    egui::StrokeKind::Inside,
+                );
+            }
+        }
+        ui.small(format!(
+            "Editing submap {:02X} through the live game composition · storage cell {:03},{:02}",
+            state.overworld_submap, self.x, self.y
+        ));
     }
 
     fn world_canvas(
@@ -3130,6 +3280,56 @@ impl RomOverworldEditor {
                 ));
             }
         });
+    }
+}
+
+#[cfg(test)]
+mod composed_overworld_canvas_tests {
+    use super::composed_storage_tile;
+    use eframe::egui;
+
+    fn state(submap: u8, camera_x: u16, camera_y: u16) -> lm_app::EmulatorRuntimeState {
+        lm_app::EmulatorRuntimeState {
+            game_mode: 0x0e,
+            sublevel: 0,
+            translevel: 0,
+            overworld_submap: submap,
+            camera_x,
+            camera_y,
+        }
+    }
+
+    #[test]
+    fn yoshi_island_frame_click_maps_to_shared_layer2_plane() {
+        let rect = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(512.0, 448.0));
+        assert_eq!(
+            composed_storage_tile(rect, egui::pos2(96.0, 160.0), [256, 224], state(1, 0, 0)),
+            Some((70, 10))
+        );
+    }
+
+    #[test]
+    fn main_map_camera_and_wrap_are_applied_before_tile_conversion() {
+        let rect = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(256.0, 224.0));
+        assert_eq!(
+            composed_storage_tile(rect, egui::pos2(16.0, 24.0), [256, 224], state(0, 504, 504)),
+            Some((1, 2))
+        );
+    }
+
+    #[test]
+    fn non_overworld_and_invalid_submap_frames_are_not_editable() {
+        let rect = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(256.0, 224.0));
+        let mut inactive = state(1, 0, 0);
+        inactive.game_mode = 0x14;
+        assert_eq!(
+            composed_storage_tile(rect, egui::pos2(8.0, 8.0), [256, 224], inactive),
+            None
+        );
+        assert_eq!(
+            composed_storage_tile(rect, egui::pos2(8.0, 8.0), [256, 224], state(7, 0, 0)),
+            None
+        );
     }
 }
 

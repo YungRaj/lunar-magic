@@ -838,6 +838,7 @@ fn runtime_state(api: &CoreApi) -> Option<EmulatorRuntimeState> {
         game_mode: wram[0x0100],
         sublevel: u16::from_le_bytes([wram[0x010b], wram[0x010c]]),
         translevel: wram[0x13bf],
+        overworld_submap: wram[0x1f11],
         camera_x: u16::from_le_bytes([wram[0x001a], wram[0x001b]]),
         camera_y: u16::from_le_bytes([wram[0x001c], wram[0x001d]]),
     })

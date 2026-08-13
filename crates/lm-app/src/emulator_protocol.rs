@@ -42,6 +42,8 @@ pub struct EmulatorRuntimeState {
     pub sublevel: u16,
     /// Vanilla SMW's current overworld translevel slot (`$13BF`).
     pub translevel: u8,
+    /// Vanilla SMW's active overworld submap (`$1F11`): zero is the main map, 1–6 share the submap plane.
+    pub overworld_submap: u8,
     pub camera_x: u16,
     pub camera_y: u16,
 }
@@ -300,6 +302,7 @@ impl EmulatorBackendEvent {
                 payload.push(state.game_mode);
                 payload.extend_from_slice(&state.sublevel.to_le_bytes());
                 payload.push(state.translevel);
+                payload.push(state.overworld_submap);
                 payload.extend_from_slice(&state.camera_x.to_le_bytes());
                 payload.extend_from_slice(&state.camera_y.to_le_bytes());
             }
@@ -320,6 +323,7 @@ impl EmulatorBackendEvent {
                 payload.push(state.game_mode);
                 payload.extend_from_slice(&state.sublevel.to_le_bytes());
                 payload.push(state.translevel);
+                payload.push(state.overworld_submap);
                 payload.extend_from_slice(&state.camera_x.to_le_bytes());
                 payload.extend_from_slice(&state.camera_y.to_le_bytes());
                 payload.extend_from_slice(&sample_rate.to_le_bytes());
@@ -388,6 +392,7 @@ impl EmulatorBackendEvent {
                         game_mode: input.byte()?,
                         sublevel: input.u16()?,
                         translevel: input.byte()?,
+                        overworld_submap: input.byte()?,
                         camera_x: input.u16()?,
                         camera_y: input.u16()?,
                     },
@@ -402,6 +407,7 @@ impl EmulatorBackendEvent {
                     game_mode: input.byte()?,
                     sublevel: input.u16()?,
                     translevel: input.byte()?,
+                    overworld_submap: input.byte()?,
                     camera_x: input.u16()?,
                     camera_y: input.u16()?,
                 };
@@ -732,6 +738,7 @@ mod tests {
                     game_mode: 0x14,
                     sublevel: 0x105,
                     translevel: 0x29,
+                    overworld_submap: 1,
                     camera_x: 0x1234,
                     camera_y: 0x0056,
                 },
@@ -744,6 +751,7 @@ mod tests {
                     game_mode: 0x14,
                     sublevel: 0x106,
                     translevel: 0x2a,
+                    overworld_submap: 1,
                     camera_x: 0x0040,
                     camera_y: 0x00c0,
                 },
@@ -821,6 +829,7 @@ mod tests {
                 game_mode: 0x14,
                 sublevel: 0x105,
                 translevel: 0x28,
+                overworld_submap: 1,
                 camera_x: 0,
                 camera_y: 0,
             },
