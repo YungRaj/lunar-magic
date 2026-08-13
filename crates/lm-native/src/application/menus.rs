@@ -924,7 +924,8 @@ impl NativeApplication {
                 ui.separator();
             }
             let live_enabled =
-                matches!(self.app.mode, EditorMode::Level(_)) && self.app.project().is_some();
+                matches!(self.app.mode, EditorMode::Level(_) | EditorMode::Overworld)
+                    && self.app.project().is_some();
             if ui
                 .add_enabled(
                     live_enabled,
@@ -989,9 +990,6 @@ impl NativeApplication {
         let Some(core) = crate::live_emulator::choose_core() else {
             return;
         };
-        let EditorMode::Level(level) = self.app.mode else {
-            return;
-        };
         let snapshot = match self.app.controller_snapshot() {
             Ok(snapshot) => snapshot,
             Err(error) => {
@@ -999,10 +997,18 @@ impl NativeApplication {
                 return;
             }
         };
-        if let Err(error) =
-            self.live_emulator
-                .start(core, snapshot.revision, level, snapshot.rom_bytes)
-        {
+        let result = match self.app.mode {
+            EditorMode::Level(level) => {
+                self.live_emulator
+                    .start(core, snapshot.revision, level, snapshot.rom_bytes)
+            }
+            EditorMode::Overworld => {
+                self.live_emulator
+                    .start_overworld(core, snapshot.revision, snapshot.rom_bytes)
+            }
+            _ => return,
+        };
+        if let Err(error) = result {
             self.effects.error = Some(error);
         }
     }

@@ -50,6 +50,32 @@ impl LiveEmulator {
         level: u16,
         rom: Vec<u8>,
     ) -> Result<(), String> {
+        self.start_with_flags(core, revision, level, rom, 0)
+    }
+
+    pub(crate) fn start_overworld(
+        &mut self,
+        core: PathBuf,
+        revision: u64,
+        rom: Vec<u8>,
+    ) -> Result<(), String> {
+        self.start_with_flags(
+            core,
+            revision,
+            0,
+            rom,
+            lm_app::EMULATOR_FLAG_BOOT_TO_OVERWORLD,
+        )
+    }
+
+    fn start_with_flags(
+        &mut self,
+        core: PathBuf,
+        revision: u64,
+        level: u16,
+        rom: Vec<u8>,
+        flags: u8,
+    ) -> Result<(), String> {
         self.stop();
         let backend = backend_executable()?;
         let mut child = Command::new(&backend)
@@ -76,7 +102,7 @@ impl LiveEmulator {
                     EmulatorBackendCommand::Initialize {
                         revision,
                         level,
-                        flags: 0,
+                        flags,
                         rom,
                         sprites: Vec::new(),
                     },
@@ -103,7 +129,11 @@ impl LiveEmulator {
         self.texture = None;
         self.frame_size = None;
         self.audio.stop();
-        self.status = format!("Starting live emulator for level {level:03X}");
+        self.status = if flags & lm_app::EMULATOR_FLAG_BOOT_TO_OVERWORLD != 0 {
+            "Starting live emulator at the navigable overworld".into()
+        } else {
+            format!("Starting live emulator for level {level:03X}")
+        };
         Ok(())
     }
 
@@ -856,7 +886,10 @@ mod tests {
     #[test]
     fn configured_core_bypasses_the_native_file_picker() {
         let path = PathBuf::from("configured-snes9x-libretro-core");
-        assert_eq!(configured_core(Some(path.clone().into_os_string())), Some(path));
+        assert_eq!(
+            configured_core(Some(path.clone().into_os_string())),
+            Some(path)
+        );
         assert_eq!(configured_core(None), None);
     }
 

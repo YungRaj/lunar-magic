@@ -23,6 +23,8 @@ pub const EMULATOR_JOYPAD_X: u16 = 1 << 9;
 pub const EMULATOR_JOYPAD_L: u16 = 1 << 10;
 pub const EMULATOR_JOYPAD_R: u16 = 1 << 11;
 pub const EMULATOR_JOYPAD_ALL: u16 = (1 << 12) - 1;
+/// Initialize normally but stop at SMW's overworld instead of injecting the requested level.
+pub const EMULATOR_FLAG_BOOT_TO_OVERWORLD: u8 = 1 << 0;
 const MAX_ERROR_BYTES: usize = 4096;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

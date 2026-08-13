@@ -317,9 +317,14 @@ pub(crate) struct RomOverworldEditor {
     editor_transition_prompt: Option<Command>,
     editor_transition_after_save: Option<PendingEditorTransitionSave>,
     authorized_editor_transition: Option<Command>,
+    live_preview_requested: bool,
 }
 
 impl RomOverworldEditor {
+    pub(crate) fn take_live_preview_request(&mut self) -> bool {
+        std::mem::take(&mut self.live_preview_requested)
+    }
+
     pub(crate) fn staged_main_terrain_and_paths(
         &self,
         app: &AppState,
@@ -593,6 +598,21 @@ impl RomOverworldEditor {
             .as_ref()
             .is_some_and(|workspace| workspace.paths != workspace.original_paths);
         ui.label(ow_text(catalog, Key::RomOverworldPlayableMapNotice));
+        ui.horizontal(|ui| {
+            ui.label("Gameplay-composited navigable preview:");
+            if ui
+                .button(crate::frontend_ui::localized_text(
+                    catalog,
+                    lm_app::UiTextKey::ToolsLiveEmulator,
+                ))
+                .clicked()
+            {
+                self.live_preview_requested = true;
+            }
+        });
+        ui.small(
+            "The canvas below is the complete editable 128×64 Layer 2 storage plane; the live preview composes it with paths, level nodes, sprites, events, animation, and the active submap exactly as the game does.",
+        );
         self.layer = 1;
         self.world_canvas(ui, shape, stale || paths_modified, catalog);
         self.main_layer2_tile_controls(ui, shape, stale || paths_modified, catalog);

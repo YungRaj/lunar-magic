@@ -479,6 +479,9 @@ impl NativeApplication {
         if quit {
             self.request_quit(context);
         }
+        if self.rom_overworld_editor.take_live_preview_request() {
+            self.begin_live_emulator_test();
+        }
     }
 
     pub(super) fn show_project_operations(&mut self, context: &egui::Context) {

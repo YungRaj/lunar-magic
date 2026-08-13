@@ -2,9 +2,10 @@
 
 use libloading::Library;
 use lm_app::{
-    EmulatorBackendCommand, EmulatorBackendEvent, EmulatorPauseMode, EmulatorRuntimeState,
-    EmulatorViewport, MAX_EMULATOR_AUDIO_FRAMES, MAX_EMULATOR_AUDIO_RATE,
-    MAX_EMULATOR_FRAME_HEIGHT, MAX_EMULATOR_FRAME_WIDTH, MIN_EMULATOR_AUDIO_RATE,
+    EMULATOR_FLAG_BOOT_TO_OVERWORLD, EmulatorBackendCommand, EmulatorBackendEvent,
+    EmulatorPauseMode, EmulatorRuntimeState, EmulatorViewport, MAX_EMULATOR_AUDIO_FRAMES,
+    MAX_EMULATOR_AUDIO_RATE, MAX_EMULATOR_FRAME_HEIGHT, MAX_EMULATOR_FRAME_WIDTH,
+    MIN_EMULATOR_AUDIO_RATE,
 };
 use std::ffi::{CString, c_char, c_void};
 use std::io::{self, Read, Write};
@@ -391,6 +392,7 @@ struct Backend {
     pause: EmulatorPauseMode,
     viewport: Option<EmulatorViewport>,
     requested_level: Option<u16>,
+    boot_to_overworld: bool,
     reached_overworld: bool,
     previous_mode: u8,
     mode_age: u32,
@@ -467,6 +469,7 @@ impl Backend {
             pause: EmulatorPauseMode::Running,
             viewport: None,
             requested_level: None,
+            boot_to_overworld: false,
             reached_overworld: false,
             previous_mode: 0xff,
             mode_age: 0,
@@ -723,7 +726,9 @@ impl Backend {
         }
         if mode == 0x0e {
             self.reached_overworld = true;
-            if let Some(level) = self.requested_level.take() {
+            if should_inject_requested_level(self.boot_to_overworld)
+                && let Some(level) = self.requested_level.take()
+            {
                 inject_selected_level(wram, level);
                 return Ok(0);
             }
@@ -741,12 +746,13 @@ impl Backend {
 
     fn command(&mut self, command: EmulatorBackendCommand) -> EmulatorBackendEvent {
         let result = match command {
-            EmulatorBackendCommand::Initialize { level, rom, .. } => {
-                self.load_rom(rom).and_then(|()| {
-                    self.request_level(level)?;
-                    Ok(EmulatorBackendEvent::Active(true))
-                })
-            }
+            EmulatorBackendCommand::Initialize {
+                level, flags, rom, ..
+            } => self.load_rom(rom).and_then(|()| {
+                self.boot_to_overworld = flags & EMULATOR_FLAG_BOOT_TO_OVERWORLD != 0;
+                self.request_level(level)?;
+                Ok(EmulatorBackendEvent::Active(true))
+            }),
             EmulatorBackendCommand::ReloadRom { rom, .. } => self
                 .load_rom(rom)
                 .map(|()| EmulatorBackendEvent::Active(true)),
@@ -790,6 +796,10 @@ impl Backend {
         };
         result.unwrap_or_else(EmulatorBackendEvent::Error)
     }
+}
+
+fn should_inject_requested_level(boot_to_overworld: bool) -> bool {
+    !boot_to_overworld
 }
 
 fn system_ram_parts(api: &CoreApi) -> Option<(*mut u8, usize)> {
@@ -1162,6 +1172,12 @@ mod tests {
                 assert_eq!(old, new, "unexpected WRAM change at ${offset:04X}");
             }
         }
+    }
+
+    #[test]
+    fn overworld_boot_flag_suppresses_level_injection_at_the_overworld_transition() {
+        assert!(should_inject_requested_level(false));
+        assert!(!should_inject_requested_level(true));
     }
 
     #[test]
