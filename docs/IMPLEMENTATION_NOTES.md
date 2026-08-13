@@ -8412,3 +8412,27 @@ semantically across all 106 graphics files and both event buffers, reopen in Lun
 target formats, retain checksums and ROM size, and Undo byte-exactly. Together with the exact six
 current output resources, this closes the current-output and released historical-input inventories.
 The Graphics compression row is Pass and aggregate parity advances to 63/65.
+
+## Hosted four-platform portable-release verification (2026-08-12)
+
+GitHub Actions run `31661670448` completed successfully at exact commit
+`8e1831def854249801dcccc3d0c4e6c9d29060ee`. Its Linux x86-64, Windows x86-64, Apple Silicon
+macOS, and Intel macOS jobs each passed the strict release build, packager/update/launcher tests,
+deterministic bundle creation, and artifact upload. The retained artifact IDs are `9166459522`,
+`9166481149`, `9166444227`, and `9166500547`, respectively.
+
+The hosted gate exposed two real stable-toolchain incompatibilities before passing. Rust's
+toolchain-dependent `Option::map_or_default` use was replaced by stable `map_or_else`. Windows
+atomic-output rollback now obtains volume/file identity through the existing safe
+`GetFileInformationByHandle` boundary instead of unstable `MetadataExt` accessors, and strict
+Windows clipboard builds no longer report platform-unused context parameters. The CLI atomic
+publication suite passes 8/8, strict Windows GNU cross-compilation passes, and the renderer passes
+56/56 including the complete 512-level traversal after these changes.
+
+This closes the previously missing hosted bundle proof and cross-platform build execution. The
+tag-only publication job correctly remained skipped on the development run, so a real immutable
+tag publication and retained original-distribution comparison remain open. Installer,
+signing/notarization, and self-updating are Rust distribution extensions rather than features of
+the original portable Lunar Magic ZIP and are not by themselves Lunar Magic parity requirements.
+The Release row remains Partial and aggregate parity remains 63/65 pending the actual publication
+and original-distribution evidence.

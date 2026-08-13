@@ -7,6 +7,15 @@ all platform assets on the corresponding GitHub Release. Installer, platform cod
 notarization, and automatic updates remain separate milestones. The graphical editor separately
 maintains isolated local crash-recovery records for committed unsaved ROM changes.
 
+The first complete hosted development matrix is GitHub Actions run
+[`31661670448`](https://github.com/YungRaj/lunar-magic/actions/runs/31661670448) at exact commit
+`8e1831def854249801dcccc3d0c4e6c9d29060ee`. All four package jobs completed successfully and
+uploaded non-expired `0.1.0-dev` artifacts: Linux x86-64 (`9166459522`, 12,560,717 bytes), Windows
+x86-64 (`9166481149`, 8,800,289 bytes), Apple Silicon macOS (`9166444227`, 9,503,398 bytes), and
+Intel macOS (`9166500547`, 9,968,570 bytes). This proves the hosted build/test/package/upload path;
+the tag-only publication job was correctly skipped and therefore is not evidence of a published
+release.
+
 ## Bundle contents
 
 `lm-package` creates `lunar-magic-rust-VERSION-TARGET.tar.gz` and a neighboring
