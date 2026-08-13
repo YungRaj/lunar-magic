@@ -731,10 +731,17 @@ fn terminate_child(child: &mut Child) {
 }
 
 pub(crate) fn choose_core() -> Option<PathBuf> {
+    if let Some(path) = configured_core(std::env::var_os("LM_LIBRETRO_CORE")) {
+        return Some(path);
+    }
     rfd::FileDialog::new()
         .set_title("Choose Snes9x Libretro Core")
         .add_filter("Libretro core", &["dylib", "so", "dll"])
         .pick_file()
+}
+
+fn configured_core(value: Option<std::ffi::OsString>) -> Option<PathBuf> {
+    value.map(PathBuf::from)
 }
 
 #[cfg(test)]
@@ -844,6 +851,13 @@ mod tests {
                 "lm-libretro"
             }
         );
+    }
+
+    #[test]
+    fn configured_core_bypasses_the_native_file_picker() {
+        let path = PathBuf::from("configured-snes9x-libretro-core");
+        assert_eq!(configured_core(Some(path.clone().into_os_string())), Some(path));
+        assert_eq!(configured_core(None), None);
     }
 
     #[test]
