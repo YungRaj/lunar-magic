@@ -1,0 +1,156 @@
+LMLEDIT1
+# Authored from pristine level 105's exact object and sprite records.
+# Keep the compatible vanilla object/sprite GFX sets (07/08), while giving the
+# rebuilt course its own foreground, background, sprite, and backdrop palette mix.
+header last-screen 13
+header background-palette 03
+header background-color 04
+header foreground-palette 03
+header sprite-palette 02
+header music 02
+header time 03
+header layer1-scroll 02
+custom-time 500 true
+sprite-properties 12 true true
+object clear
+sprite clear
+
+# 00: safe opening runway, scenery, and a descending landform.
+object place 5810bf 00 08 00 true
+object place 72ad22 00 02 03 true
+object place 77f402 00 07 0b true
+# 01: raised ledge and first jump rhythm.
+object place 581016 01 08 00 true
+object place 16f811 01 06 0c true
+# 02: broken terrain with two slopes and a recovery platform.
+object place 77f402 02 07 00 true
+object place 77fe03 02 07 07 true
+object place 34fb30 02 04 0d true
+object place 72ad22 02 02 09 true
+# 03: pipe/block obstacle court.
+object place 5810bf 03 08 00 true
+object place 149801 03 04 08 true
+object place 16f820 03 06 0c true
+# 04: long climb, then a narrow crest.
+object place 77f502 04 07 00 true
+object place 77fc02 04 07 07 true
+object place 95f120 04 05 0d true
+object place 72ad22 04 02 0a true
+# 05: alternating blocks over a grounded lane.
+object place 5810bf 05 08 00 true
+object place 35f320 05 05 02 true
+object place 34f430 05 04 05 true
+object place 14fb30 05 04 0b true
+# 06: hillside descent into a low tunnel-like challenge.
+object place 77fa03 06 07 00 true
+# 07: elevated multi-tier platform sequence.
+object place 581018 07 08 00 true
+# 08: rest garden and broad runway.
+object place 5810bf 08 08 00 true
+object place 72ad22 08 02 02 true
+object place 72ad22 08 02 08 true
+object place 100141 08 00 0d true
+# 09: compact staircase arena.
+object place 58101e 09 08 00 true
+object place 38300d 09 08 01 true
+object place 38360b 09 08 06 true
+object place 38472c 09 08 0a true
+object place 77f803 09 07 0e true
+# 0A: high bonus route over lower hazards.
+object place 5810bf 0a 08 00 true
+object place 257414 0a 05 02 true
+object place 040618 0a 04 06 true
+object place 30731e 0a 00 0b true
+# 0B: dense block-and-column traversal.
+object place 581018 0b 08 00 true
+object place 383425 0b 08 03 true
+object place 18058e 0b 08 05 true
+object place 18068e 0b 08 07 true
+object place 383723 0b 08 09 true
+object place 384821 0b 08 0c true
+# 0C: three-step ascent with a sloped exit.
+object place 5810bf 0c 08 00 true
+object place 38300d 0c 08 01 true
+object place 383f0b 0c 08 06 true
+object place 384022 0c 08 0a true
+object place 77f803 0c 07 0d true
+# 0D: precision bridge and suspended reward.
+object place 581016 0d 08 00 true
+object place 149f00 0d 04 03 true
+object place 959300 0d 05 07 true
+object place 149700 0d 04 0b true
+object place 110330 0d 01 07 true
+# 0E: descending hill into a wider combat lane.
+object place 77f903 0e 07 00 true
+object place 5810bf 0e 08 08 true
+object place 344e36 0e 04 0a true
+object place 343d37 0e 04 0d true
+# 0F: staggered platforms and a final climb.
+object place 58101c 0f 08 00 true
+object place 343538 0f 04 04 true
+object place 353e2b 0f 05 08 true
+object place 14fc30 0f 04 0c true
+object place 354f53 0f 05 0f true
+# 10: summit checkpoint-style breather.
+object place 5810bf 10 08 00 true
+object place 72ad22 10 02 09 true
+# 11: late-game split route, low floor and high ledges.
+object place 5810bf 11 08 00 true
+object place 2f5d91 11 0f 03 true
+object place 35332d 11 05 08 true
+object place 14d300 11 04 0c true
+# 12: authenticated cross-screen approach ledge. These are pristine 105
+# objects 81–84; their geometry continues into the finish assembly on 13.
+object place b43538 12 04 05 true
+object place 353e2b 12 05 0e true
+object place 14fc30 12 04 0c true
+object place 354f53 12 05 0f true
+# 13: complete vanilla-authenticated finish assembly, relocated as one cluster.
+# These are pristine 105 objects 85–90 with their exact relative geometry.
+object place 900041 13 00 00 true
+object place 2f5d91 13 0f 0d false
+object place 58131c 13 08 03 true
+object place 35332d 13 05 03 true
+object place 14d300 13 04 03 true
+object place 160686 13 06 06 true
+
+# Deliberately bounded vanilla roster: common Koopas and Goombas plus Rex ($AB),
+# which is native to pristine 105's sprite GFX set 08. No dynamic/special composites.
+sprite place 11d004 00 0d 0017
+sprite place 71120f 01 04 0017
+sprite place 7112ab 01 0c 0017
+sprite place 711205 02 05 0017
+sprite place 71120f 02 0d 0017
+sprite place 7112ab 03 07 0017
+sprite place 711204 03 0d 0017
+sprite place 71120f 04 05 0017
+sprite place 7112ab 04 0c 0017
+sprite place 711205 05 04 0017
+sprite place 71120f 05 0c 0017
+sprite place 7112ab 06 06 0017
+sprite place 711204 06 0d 0017
+sprite place 71120f 07 04 0017
+sprite place 7112ab 07 0b 0017
+sprite place 711205 08 06 0017
+sprite place 71120f 08 0d 0017
+sprite place 7112ab 09 04 0017
+sprite place 711204 09 0c 0017
+sprite place 71120f 0a 05 0017
+sprite place 7112ab 0a 0c 0017
+sprite place 711205 0b 04 0017
+sprite place 71120f 0b 09 0017
+sprite place 7112ab 0b 0e 0017
+sprite place 711204 0c 05 0017
+sprite place 71120f 0c 0c 0017
+sprite place 7112ab 0d 05 0017
+sprite place 711205 0d 0c 0017
+sprite place 71120f 0e 04 0017
+sprite place 7112ab 0e 0b 0017
+sprite place 711204 0f 05 0017
+sprite place 71120f 0f 0a 0017
+sprite place 7112ab 10 08 0017
+sprite place 711205 11 05 0017
+sprite place 71120f 11 0c 0017
+sprite place 7112ab 12 05 0017
+# Pristine 105's authenticated goal tape, moved to the remodeled finish plateau.
+sprite place 73e27b 13 0e 0017

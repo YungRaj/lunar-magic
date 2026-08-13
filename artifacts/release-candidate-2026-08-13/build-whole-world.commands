@@ -1,0 +1,10 @@
+open sysLMRestore/smwOrig.smc
+overworld
+overworld-edit artifacts/release-candidate-2026-08-13/overworld-terrain.lmedit 080000 0f0000
+rom-expand 100000 ff
+level 104
+level-edit artifacts/vanilla-production/level-105-adventure.lmedit 080000 0d0000
+level 105
+level-edit artifacts/vanilla-production/level-105-adventure.lmedit 080000 0d0000
+save-as artifacts/release-candidate-2026-08-13/whole-new-world.smc
+quit
