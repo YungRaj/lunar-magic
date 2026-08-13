@@ -3059,7 +3059,9 @@ impl VanillaLevelEditor {
             level,
             self.controller
                 .as_ref()
-                .map_or_default(|controller| controller.level().layer1.header),
+                .map_or_else(Default::default, |controller| {
+                    controller.level().layer1.header
+                }),
             game_runtime,
             special_world_passed,
             crate::vanilla_map16_preview::VanillaAnimationViewState {
