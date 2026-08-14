@@ -585,8 +585,16 @@ int main(int argc, char **argv) {
   bool ok = loaded && ram && api.get_memory_size(RETRO_MEMORY_SYSTEM_RAM) == 128u * 1024u &&
             scenario_ok &&
             write_snapshot(&snapshot, options.snapshot) && write_png(options.screenshot);
-  if (loaded) api.unload_game(); api.deinit(); dlclose(api.library); free(video_pixels);
+  if (loaded)
+    api.unload_game();
+  api.deinit();
+  dlclose(api.library);
+  free(video_pixels);
   free(snapshot.bytes);
-  if (!ok) { remove(options.snapshot); remove(options.screenshot); return 1; }
+  if (!ok) {
+    remove(options.snapshot);
+    remove(options.screenshot);
+    return 1;
+  }
   return 0;
 }
