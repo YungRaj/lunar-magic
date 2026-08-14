@@ -44,8 +44,8 @@ fn composed_storage_tile(
     if playfield_x >= 224 || playfield_y >= 160 {
         return None;
     }
-    let world_x = (usize::from(state.camera_x) + playfield_x) & 0x1ff;
-    let world_y = (usize::from(state.camera_y) + playfield_y) & 0x1ff;
+    let world_x = (usize::from(state.camera_x) + pixel_x) & 0x1ff;
+    let world_y = (usize::from(state.camera_y) + pixel_y) & 0x1ff;
     Some((plane_x + world_x / 8, world_y / 8))
 }
 
@@ -1987,8 +1987,12 @@ impl RomOverworldEditor {
         let frame_size = [256, 224];
         let state = composed_overworld_state(self.composed_map);
         let available = ui.available_width().max(1.0);
+        let available_height = (ui.clip_rect().bottom() - ui.cursor().top()).max(1.0);
         let native = egui::vec2(frame_size[0] as f32, frame_size[1] as f32);
-        let display = native * (available / native.x).min(4.0);
+        let display = native
+            * (available / native.x)
+                .min(available_height / native.y)
+                .min(4.0);
         let response =
             ui.add(egui::Image::new((texture.id(), display)).sense(egui::Sense::click_and_drag()));
         let interacted = response.clicked()
@@ -2093,19 +2097,16 @@ impl RomOverworldEditor {
         let cell_pixels = if self.layer == 0 { 16 } else { 8 };
         let plane_width = if self.layer == 0 { 32 } else { 64 };
         if self.x >= plane_x && self.x < plane_x + plane_width {
-            let local_x = ((self.x - plane_x) * cell_pixels + 512
+            let screen_x = ((self.x - plane_x) * cell_pixels + 512
                 - usize::from(state.camera_x & 0x1ff))
                 & 0x1ff;
-            let local_y =
+            let screen_y =
                 (self.y * cell_pixels + 512 - usize::from(state.camera_y & 0x1ff)) & 0x1ff;
-            if local_x < 224 && local_y < 160 {
+            if (16..240).contains(&screen_x) && (40..200).contains(&screen_y) {
                 let scale_x = response.rect.width() / frame_size[0] as f32;
                 let scale_y = response.rect.height() / frame_size[1] as f32;
                 let minimum = response.rect.min
-                    + egui::vec2(
-                        (16 + local_x) as f32 * scale_x,
-                        (40 + local_y) as f32 * scale_y,
-                    );
+                    + egui::vec2(screen_x as f32 * scale_x, screen_y as f32 * scale_y);
                 ui.painter().rect_stroke(
                     egui::Rect::from_min_size(
                         minimum,
@@ -3527,7 +3528,7 @@ mod composed_overworld_canvas_tests {
         let rect = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(512.0, 448.0));
         assert_eq!(
             composed_storage_tile(rect, egui::pos2(128.0, 240.0), [256, 224], state(1, 0, 0)),
-            Some((70, 10))
+            Some((72, 15))
         );
     }
 
@@ -3536,7 +3537,7 @@ mod composed_overworld_canvas_tests {
         let rect = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(256.0, 224.0));
         assert_eq!(
             composed_storage_tile(rect, egui::pos2(32.0, 64.0), [256, 224], state(0, 504, 504)),
-            Some((1, 2))
+            Some((3, 7))
         );
     }
 

@@ -343,8 +343,11 @@ pub(crate) fn render_layer_texture(
     let plane_x = if state.overworld_submap == 0 { 0 } else { 512 };
     for y in 0..160 {
         for x in 0..224 {
-            let source_x = plane_x + ((usize::from(state.camera_x) + x) & 0x1ff);
-            let source_y = (usize::from(state.camera_y) + y) & 0x1ff;
+            // The recovered camera origins include the game's 16-pixel left and 40-pixel top
+            // screen insets. Add those screen coordinates before sampling the 224x160 playfield;
+            // otherwise wrapped submaps expose the opposite edge of the shared sheet.
+            let source_x = plane_x + ((usize::from(state.camera_x) + 16 + x) & 0x1ff);
+            let source_y = (usize::from(state.camera_y) + 40 + y) & 0x1ff;
             if let Some(pixel) = composed.get(source_x, source_y) {
                 frame_pixels[(40 + y) * 256 + 16 + x] = pixel;
             }
