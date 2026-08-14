@@ -138,18 +138,25 @@ static int16_t input_state(unsigned port, unsigned device, unsigned index, unsig
          (held_buttons & (uint16_t)(1u << id)) ? 1 : 0;
 }
 
-static bool load_symbol(void *library, const char *name, void *destination) {
+static bool load_symbol(void *library, const char *name, void *destination,
+                        size_t destination_size) {
   void *symbol = dlsym(library, name);
   if (!symbol) {
     fprintf(stderr, "Snes9x core is missing %s: %s\n", name, dlerror());
     return false;
   }
-  memcpy(destination, &symbol, sizeof(symbol));
+  if (destination_size != sizeof(symbol)) {
+    fprintf(stderr, "Snes9x function-pointer size is unsupported\n");
+    return false;
+  }
+  memcpy(destination, &symbol, destination_size);
   return true;
 }
 
-#define LOAD(api, member, name) \
-  if (!load_symbol((api)->library, (name), &(api)->member)) return false
+#define LOAD(api, member, name)                                                \
+  if (!load_symbol((api)->library, (name), &(api)->member,                    \
+                   sizeof((api)->member)))                                    \
+    return false
 
 static bool load_core(struct core_api *api, const char *path) {
   memset(api, 0, sizeof(*api));
@@ -201,6 +208,8 @@ static bool parse_hex(const char *text, unsigned limit, unsigned *value) {
 
 static bool parse_options(int argc, char **argv, struct options *options) {
   memset(options, 0, sizeof(*options));
+  if (argc < 3 || (argc & 1) == 0)
+    return false;
   unsigned seen = 0;
   for (int i = 1; i + 1 < argc; i += 2) {
     const char *key = argv[i], *value = argv[i + 1];
@@ -222,6 +231,8 @@ static bool parse_options(int argc, char **argv, struct options *options) {
       return false;
     }
   }
+  if (!options->scenario)
+    return false;
   if (!strcmp(options->scenario, "smw-overworld-path-link"))
     return argc == 23 && seen == 0x7ff;
   if (!strcmp(options->scenario, "smw-level-header"))
@@ -426,7 +437,8 @@ static bool capture_title_recording(struct core_api *api, uint8_t *ram,
     if (marker != 0x0042 || encoded > 0x7ffcu || bank7f[encoded + 3] != 0xff) {
       fprintf(stderr,
               "title recorder did not publish bounded data: marker=%04X encoded=%04X term=%02X\n",
-              marker, encoded, encoded <= 0x7ffcu ? bank7f[encoded + 3] : 0);
+              (unsigned)marker, (unsigned)encoded,
+              encoded <= 0x7ffcu ? (unsigned)bank7f[encoded + 3] : 0u);
       return false;
     }
     return capture_snapshot(api, snapshot);
