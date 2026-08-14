@@ -1228,6 +1228,8 @@ mod tests {
         let replacement = if original == 1 { 2 } else { 1 };
         workspace.layer1.set_tile(6, 10, replacement).unwrap();
         workspace.layer1_revision += 1;
+        workspace.paths.links[0].destination.x ^= 1;
+        let expected_paths = workspace.paths.clone();
         editor.search_start = "E0000".into();
         editor.search_end = "F0000".into();
         app.dispatch(editor.prepare_main_layer2_commit().unwrap())
@@ -1236,6 +1238,7 @@ mod tests {
         let reopened = decode_main_layer2_workspace(app.controller_snapshot().unwrap()).unwrap();
         assert_eq!(reopened.layer1.tile(6, 10).unwrap(), replacement);
         assert_ne!(reopened.layer1.tile(6, 10).unwrap(), original);
+        assert_eq!(reopened.paths, expected_paths);
         // Shared-submap screen-order storage: screen 0, row 10, column 6.
         let image = app.project().unwrap().rom.clone();
         assert_eq!(

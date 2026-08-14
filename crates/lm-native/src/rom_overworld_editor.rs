@@ -672,7 +672,7 @@ impl RomOverworldEditor {
         });
         if ui
             .add_enabled(
-                modified && !paths_modified && !stale,
+                (modified || paths_modified) && !stale,
                 egui::Button::new(ow_text(catalog, Key::RomOverworldCommitPlayable)),
             )
             .clicked()
@@ -690,9 +690,6 @@ impl RomOverworldEditor {
                 Key::RomOverworldPlayableUnmodified
             },
         ));
-        if paths_modified {
-            ui.small(ow_text(catalog, Key::RomOverworldRouteBlocksTerrain));
-        }
         None
     }
 
@@ -834,7 +831,7 @@ impl RomOverworldEditor {
                     }
                     if ui
                         .add_enabled(
-                            !stale && !terrain_modified,
+                            !stale,
                             egui::Button::new(ow_text(catalog, Key::RomOverworldRouteApply)),
                         )
                         .clicked()
@@ -856,9 +853,7 @@ impl RomOverworldEditor {
                         });
                     }
                 });
-                if terrain_modified {
-                    ui.small(ow_text(catalog, Key::RomOverworldTerrainBlocksRoute));
-                } else if paths_modified {
+                if paths_modified {
                     ui.small(ow_text(catalog, Key::RomOverworldRouteStaged));
                 }
             });
