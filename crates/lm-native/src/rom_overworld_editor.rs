@@ -59,16 +59,48 @@ const NATIVE_OVERWORLD_MAPS: [(&str, u16, u16); 7] = [
     ("06 Star World", 0x00f0, 0x0128),
 ];
 
-fn composed_overworld_state(map: usize) -> lm_app::EmulatorRuntimeState {
+fn composed_overworld_state(
+    map: usize,
+    main_camera: (usize, usize),
+) -> lm_app::EmulatorRuntimeState {
     let (_, camera_x, camera_y) = NATIVE_OVERWORLD_MAPS[map.min(NATIVE_OVERWORLD_MAPS.len() - 1)];
     lm_app::EmulatorRuntimeState {
         game_mode: 0x0e,
         sublevel: 0,
         translevel: 0,
         overworld_submap: u8::try_from(map).unwrap_or_default(),
-        camera_x,
-        camera_y,
+        camera_x: if map == 0 {
+            u16::try_from(main_camera.0).unwrap_or_default()
+        } else {
+            camera_x
+        },
+        camera_y: if map == 0 {
+            u16::try_from(main_camera.1).unwrap_or_default()
+        } else {
+            camera_y
+        },
     }
+}
+
+fn main_overview_camera(pixel_x: usize, pixel_y: usize) -> (usize, usize) {
+    (
+        pixel_x.saturating_sub(112).min(288),
+        pixel_y.saturating_sub(80).min(352),
+    )
+}
+
+fn pan_main_overworld_camera(
+    camera: (usize, usize),
+    delta: egui::Vec2,
+    scale: egui::Vec2,
+) -> (usize, usize) {
+    let x = (camera.0 as f32 - delta.x / scale.x.max(f32::EPSILON))
+        .round()
+        .clamp(0.0, 288.0) as usize;
+    let y = (camera.1 as f32 - delta.y / scale.y.max(f32::EPSILON))
+        .round()
+        .clamp(0.0, 352.0) as usize;
+    (x, y)
 }
 
 fn ow_text(catalog: Option<&LocalizationCatalog>, key: lm_app::ExtendedUiTextKey) -> String {
@@ -327,6 +359,10 @@ pub(crate) struct RomOverworldEditor {
     animation: OverworldAnimationPanel,
     layer: usize,
     composed_map: usize,
+    composed_main_camera_x: usize,
+    composed_main_camera_y: usize,
+    composed_main_overview: bool,
+    composed_zoom: f32,
     x: usize,
     y: usize,
     tile: String,
@@ -1941,6 +1977,38 @@ impl RomOverworldEditor {
                     }
                 });
             ui.separator();
+            if self.composed_map == 0 {
+                if ui
+                    .selectable_label(self.composed_main_overview, "Full map")
+                    .clicked()
+                {
+                    self.composed_main_overview = !self.composed_main_overview;
+                    self.rendered_key = None;
+                }
+                let mut camera_changed = false;
+                camera_changed |= ui
+                    .add(
+                        egui::Slider::new(&mut self.composed_main_camera_x, 0..=288)
+                            .text("Camera X"),
+                    )
+                    .changed();
+                camera_changed |= ui
+                    .add(
+                        egui::Slider::new(&mut self.composed_main_camera_y, 0..=352)
+                            .text("Camera Y"),
+                    )
+                    .changed();
+                if camera_changed {
+                    self.composed_main_overview = false;
+                    self.rendered_key = None;
+                    self.loaded = None;
+                }
+            }
+            if self.composed_zoom == 0.0 {
+                self.composed_zoom = 1.0;
+            }
+            ui.add(egui::Slider::new(&mut self.composed_zoom, 0.5..=3.0).text("Zoom"));
+            ui.separator();
             ui.selectable_value(
                 &mut self.paint_tool,
                 MapPaintTool::Select,
@@ -1984,17 +2052,57 @@ impl RomOverworldEditor {
             ui.spinner();
             return;
         };
-        let frame_size = [256, 224];
-        let state = composed_overworld_state(self.composed_map);
+        let overview = self.composed_map == 0 && self.composed_main_overview;
+        let frame_size = if overview { [512, 512] } else { [256, 224] };
+        let state = composed_overworld_state(
+            self.composed_map,
+            (self.composed_main_camera_x, self.composed_main_camera_y),
+        );
         let available = ui.available_width().max(1.0);
         let available_height = (ui.clip_rect().bottom() - ui.cursor().top()).max(1.0);
         let native = egui::vec2(frame_size[0] as f32, frame_size[1] as f32);
-        let display = native
+        let base_display = native
             * (available / native.x)
                 .min(available_height / native.y)
                 .min(4.0);
+        let display = base_display * self.composed_zoom;
         let response =
             ui.add(egui::Image::new((texture.id(), display)).sense(egui::Sense::click_and_drag()));
+        if overview {
+            if response.clicked()
+                && let Some(position) = response.interact_pointer_pos()
+                && let Some((pixel_x, pixel_y)) = overworld_editor_render::selected_tile(
+                    response.rect,
+                    position,
+                    frame_size[0],
+                    frame_size[1],
+                )
+            {
+                (self.composed_main_camera_x, self.composed_main_camera_y) =
+                    main_overview_camera(pixel_x, pixel_y);
+                self.composed_main_overview = false;
+                self.rendered_key = None;
+                self.loaded = None;
+            }
+            ui.small("Click anywhere in the full map to center the editable game viewport there.");
+            return;
+        }
+        if self.composed_map == 0 && response.dragged_by(egui::PointerButton::Middle) {
+            let scale_x = response.rect.width() / frame_size[0] as f32;
+            let scale_y = response.rect.height() / frame_size[1] as f32;
+            let delta = ui.input(|input| input.pointer.delta());
+            let (next_x, next_y) = pan_main_overworld_camera(
+                (self.composed_main_camera_x, self.composed_main_camera_y),
+                delta,
+                egui::vec2(scale_x, scale_y),
+            );
+            if (next_x, next_y) != (self.composed_main_camera_x, self.composed_main_camera_y) {
+                self.composed_main_camera_x = next_x;
+                self.composed_main_camera_y = next_y;
+                self.rendered_key = None;
+                self.loaded = None;
+            }
+        }
         let interacted = response.clicked()
             || response.dragged()
             || response.drag_started()
@@ -2119,8 +2227,8 @@ impl RomOverworldEditor {
             }
         }
         ui.small(format!(
-            "Editing submap {:02X} through the live game composition · storage cell {:03},{:02}",
-            state.overworld_submap, self.x, self.y
+            "Editing submap {:02X} through the live game composition · camera {:03},{:03} · storage cell {:03},{:02} · middle-drag to pan map 00",
+            state.overworld_submap, state.camera_x, state.camera_y, self.x, self.y
         ));
     }
 
@@ -2752,27 +2860,49 @@ impl RomOverworldEditor {
         let Some(workspace) = self.main_layer2_workspace.as_ref() else {
             return;
         };
+        let render_view = if self.composed_main_overview && self.composed_map == 0 {
+            usize::MAX
+        } else {
+            (self.composed_map << 20)
+                | (self.composed_main_camera_x << 10)
+                | self.composed_main_camera_y
+        };
         let key = (
             workspace.controller.revision(),
-            self.composed_map,
+            render_view,
             usize::try_from(workspace.layer1_revision).unwrap_or(usize::MAX),
         );
         if self.rendered_key == Some(key) {
             return;
         }
-        let state = composed_overworld_state(self.composed_map);
+        let state = composed_overworld_state(
+            self.composed_map,
+            (self.composed_main_camera_x, self.composed_main_camera_y),
+        );
         let palette =
             lifecycle::load_vanilla_overworld_palette(&workspace.image, self.composed_map)
                 .unwrap_or_else(|_| workspace.palette.clone());
-        match overworld_editor_render::render_layer_texture(
-            context,
-            workspace.controller.layer(),
-            &workspace.layer1,
-            &workspace.layer1_map16,
-            &palette,
-            &workspace.assets,
-            state,
-        ) {
+        let rendered = if self.composed_main_overview && self.composed_map == 0 {
+            overworld_editor_render::render_full_main_overworld_texture(
+                context,
+                workspace.controller.layer(),
+                &workspace.layer1,
+                &workspace.layer1_map16,
+                &palette,
+                &workspace.assets,
+            )
+        } else {
+            overworld_editor_render::render_layer_texture(
+                context,
+                workspace.controller.layer(),
+                &workspace.layer1,
+                &workspace.layer1_map16,
+                &palette,
+                &workspace.assets,
+                state,
+            )
+        };
+        match rendered {
             Ok(texture) => {
                 self.texture = Some(texture);
                 self.rendered_key = Some(key);
@@ -3509,7 +3639,10 @@ impl RomOverworldEditor {
 
 #[cfg(test)]
 mod composed_overworld_canvas_tests {
-    use super::{NATIVE_OVERWORLD_MAPS, composed_overworld_state, composed_storage_tile};
+    use super::{
+        NATIVE_OVERWORLD_MAPS, composed_overworld_state, composed_storage_tile,
+        main_overview_camera, pan_main_overworld_camera,
+    };
     use eframe::egui;
 
     fn state(submap: u8, camera_x: u16, camera_y: u16) -> lm_app::EmulatorRuntimeState {
@@ -3569,7 +3702,7 @@ mod composed_overworld_canvas_tests {
         ];
         assert_eq!(NATIVE_OVERWORLD_MAPS.len(), expected.len());
         for (map, &(camera_x, camera_y)) in expected.iter().enumerate() {
-            let state = composed_overworld_state(map);
+            let state = composed_overworld_state(map, (0, 0));
             assert_eq!(usize::from(state.overworld_submap), map);
             assert_eq!((state.camera_x, state.camera_y), (camera_x, camera_y));
         }
@@ -3583,13 +3716,32 @@ mod composed_overworld_canvas_tests {
                 rect,
                 egui::pos2(16.5, 40.5),
                 [256, 224],
-                composed_overworld_state(map),
+                composed_overworld_state(map, (0, 0)),
             )
             .unwrap();
             assert_eq!(x >= 64, map != 0);
             assert!(x < 128);
             assert!(y < 64);
         }
+    }
+
+    #[test]
+    fn full_main_overworld_click_centers_and_clamps_the_game_viewport() {
+        assert_eq!(main_overview_camera(0, 0), (0, 0));
+        assert_eq!(main_overview_camera(256, 256), (144, 176));
+        assert_eq!(main_overview_camera(511, 511), (288, 352));
+    }
+
+    #[test]
+    fn middle_drag_pans_in_world_pixels_and_stays_inside_main_map() {
+        assert_eq!(
+            pan_main_overworld_camera((144, 176), egui::vec2(-20.0, 40.0), egui::vec2(2.0, 2.0)),
+            (154, 156)
+        );
+        assert_eq!(
+            pan_main_overworld_camera((0, 352), egui::vec2(20.0, -20.0), egui::vec2(1.0, 1.0),),
+            (0, 352)
+        );
     }
 }
 

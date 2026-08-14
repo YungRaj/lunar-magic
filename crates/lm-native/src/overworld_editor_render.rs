@@ -268,6 +268,66 @@ pub(crate) fn render_layer_texture(
     assets: &OverworldAssets,
     state: lm_app::EmulatorRuntimeState,
 ) -> Result<egui::TextureHandle, String> {
+    let composed = render_composed_layer_canvas(layer, layer1, layer1_map16, palette, assets)?;
+    // SMW displays maps in a 224x160 playfield at (16, 40), surrounded by Layer 3/HUD.
+    // Materialize that authentic game viewport here so the primary editor canvas has the same
+    // geometry as the player's view instead of exposing the raw 512x512 submap sheet.
+    let border = lm_render::Rgba {
+        red: 198,
+        green: 181,
+        blue: 165,
+        alpha: 255,
+    };
+    let mut frame_pixels = vec![border; 256 * 224];
+    let plane_x = if state.overworld_submap == 0 { 0 } else { 512 };
+    for y in 0..160 {
+        for x in 0..224 {
+            // The recovered camera origins include the game's 16-pixel left and 40-pixel top
+            // screen insets. Add those screen coordinates before sampling the 224x160 playfield;
+            // otherwise wrapped submaps expose the opposite edge of the shared sheet.
+            let source_x = plane_x + ((usize::from(state.camera_x) + 16 + x) & 0x1ff);
+            let source_y = (usize::from(state.camera_y) + 40 + y) & 0x1ff;
+            if let Some(pixel) = composed.get(source_x, source_y) {
+                frame_pixels[(40 + y) * 256 + 16 + x] = pixel;
+            }
+        }
+    }
+    let frame = lm_render::Canvas::from_pixels(256, 224, frame_pixels)
+        .map_err(|error| error.to_string())?;
+    texture_from_canvas(context, "native-main-overworld-composed", &frame)
+}
+
+pub(crate) fn render_full_main_overworld_texture(
+    context: &egui::Context,
+    layer: &lm_overworld::OverworldLayer,
+    layer1: &lm_overworld::OverworldLayer,
+    layer1_map16: &lm_level::Map16SetFile,
+    palette: &lm_graphics::Palette,
+    assets: &OverworldAssets,
+) -> Result<egui::TextureHandle, String> {
+    let composed = render_composed_layer_canvas(layer, layer1, layer1_map16, palette, assets)?;
+    let mut pixels = Vec::with_capacity(512 * 512);
+    for y in 0..512 {
+        for x in 0..512 {
+            pixels.push(
+                composed
+                    .get(x, y)
+                    .ok_or("main overworld plane is incomplete")?,
+            );
+        }
+    }
+    let plane =
+        lm_render::Canvas::from_pixels(512, 512, pixels).map_err(|error| error.to_string())?;
+    texture_from_canvas(context, "native-main-overworld-full", &plane)
+}
+
+fn render_composed_layer_canvas(
+    layer: &lm_overworld::OverworldLayer,
+    layer1: &lm_overworld::OverworldLayer,
+    layer1_map16: &lm_level::Map16SetFile,
+    palette: &lm_graphics::Palette,
+    assets: &OverworldAssets,
+) -> Result<lm_render::Canvas, String> {
     let background =
         lm_render::render_smw_overworld_layer2_tilemap(layer, &assets.graphics, palette)
             .map_err(|error| error.to_string())?;
@@ -328,34 +388,8 @@ pub(crate) fn render_layer_texture(
             }
         }
     }
-    let composed = lm_render::Canvas::from_pixels(background.width(), background.height(), pixels)
-        .map_err(|error| error.to_string())?;
-    // SMW displays maps in a 224x160 playfield at (16, 40), surrounded by Layer 3/HUD.
-    // Materialize that authentic game viewport here so the primary editor canvas has the same
-    // geometry as the player's view instead of exposing the raw 512x512 submap sheet.
-    let border = lm_render::Rgba {
-        red: 198,
-        green: 181,
-        blue: 165,
-        alpha: 255,
-    };
-    let mut frame_pixels = vec![border; 256 * 224];
-    let plane_x = if state.overworld_submap == 0 { 0 } else { 512 };
-    for y in 0..160 {
-        for x in 0..224 {
-            // The recovered camera origins include the game's 16-pixel left and 40-pixel top
-            // screen insets. Add those screen coordinates before sampling the 224x160 playfield;
-            // otherwise wrapped submaps expose the opposite edge of the shared sheet.
-            let source_x = plane_x + ((usize::from(state.camera_x) + 16 + x) & 0x1ff);
-            let source_y = (usize::from(state.camera_y) + 40 + y) & 0x1ff;
-            if let Some(pixel) = composed.get(source_x, source_y) {
-                frame_pixels[(40 + y) * 256 + 16 + x] = pixel;
-            }
-        }
-    }
-    let frame = lm_render::Canvas::from_pixels(256, 224, frame_pixels)
-        .map_err(|error| error.to_string())?;
-    texture_from_canvas(context, "native-main-overworld-composed", &frame)
+    lm_render::Canvas::from_pixels(background.width(), background.height(), pixels)
+        .map_err(|error| error.to_string())
 }
 
 pub(crate) fn render_layer2_graphics_texture(
