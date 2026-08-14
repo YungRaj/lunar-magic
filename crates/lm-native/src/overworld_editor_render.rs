@@ -270,9 +270,9 @@ pub(crate) fn render_layer_texture(
     let background =
         lm_render::render_smw_overworld_layer2_tilemap(layer, &assets.graphics, palette)
             .map_err(|error| error.to_string())?;
-    // Vanilla overworld Map16 uses $122 as its transparent placeholder subtile. The portable
-    // graphics table does not include the game's separate blank character-base region, so map
-    // only that audited placeholder to an actually transparent decoded tile.
+    // Map16 definition 0 is the transparent Layer-1 cell. Its vanilla subtiles refer to the
+    // game's separate blank character-base region, which is not part of the portable GFX table.
+    // Normalize only definition 0: $122 is also used by real overworld geometry elsewhere.
     let blank_tile = assets
         .graphics
         .graphics
@@ -283,11 +283,11 @@ pub(crate) fn render_layer_texture(
     let blank_tile =
         u16::try_from(blank_tile).map_err(|_| "transparent overworld tile exceeds SNES range")?;
     let mut rendered_map16 = layer1_map16.clone();
-    for definition in rendered_map16
+    if let Some(definition) = rendered_map16
         .set
         .pages
-        .iter_mut()
-        .flat_map(|page| &mut page.tiles)
+        .first_mut()
+        .and_then(|page| page.tiles.first_mut())
     {
         for subtile in [
             &mut definition.top_left,
@@ -295,11 +295,11 @@ pub(crate) fn render_layer_texture(
             &mut definition.bottom_left,
             &mut definition.bottom_right,
         ] {
-            if subtile.tile_number() == 0x122 {
-                subtile.0 = (subtile.0 & !0x03ff) | blank_tile;
-            }
+            subtile.0 = (subtile.0 & !0x03ff) | blank_tile;
         }
     }
+    // The pristine Layer-1 table also retains the event-reveal staging cells. They are not part
+    // of the zero-event-state map shown in game, but remain intact in the editable workspace.
     let mut visible_layer1 = layer1.clone();
     for tile in &mut visible_layer1.tiles {
         if (0x97..=0xbb).contains(tile) {
