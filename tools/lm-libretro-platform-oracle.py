@@ -52,11 +52,11 @@ def runtime_frame(event):
     if (width, height, len(rgba)) != (256, 224, 256 * 224 * 4):
         raise RuntimeError("invalid platform-oracle frame geometry")
     state_offset = 13 + byte_count
-    state = struct.unpack("<BHBHH", event[state_offset : state_offset + 8])
+    state = struct.unpack("<BHBBHH", event[state_offset : state_offset + 9])
     sample_rate, sample_count = struct.unpack(
-        "<II", event[state_offset + 8 : state_offset + 16]
+        "<II", event[state_offset + 9 : state_offset + 17]
     )
-    audio = event[state_offset + 16 :]
+    audio = event[state_offset + 17 :]
     if sample_rate != 32040 or sample_count != 8 or len(audio) != 16:
         raise RuntimeError("invalid platform-oracle audio")
     if any(rgba[index] != 0xFF for index in range(3, len(rgba), 4)):
