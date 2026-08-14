@@ -424,7 +424,12 @@ fn load_vanilla_yoshi_island_bg_vram(
     // consumes the first $C00 bytes as 128 3bpp tiles and expands them into 4bpp VRAM.
     let blank = IndexedTile::new([0; IndexedTile::PIXEL_COUNT]);
     let mut result = vec![blank.clone(); 0x400];
-    for (file, destination) in [(0x1c, 0x000), (0x1d, 0x080), (0x08, 0x100), (0x1e, 0x180)] {
+    for (file, destination, high_palette_half) in [
+        (0x1c, 0x000, false),
+        (0x1d, 0x080, false),
+        (0x08, 0x100, true),
+        (0x1e, 0x180, true),
+    ] {
         let decoded = project
             .load_decompressed_graphics_file(file, layout)
             .map_err(|error| format!("could not load Yoshi's Island GFX{file:02X}: {error}"))?;
@@ -433,6 +438,17 @@ fn load_vanilla_yoshi_island_bg_vram(
         })?;
         let mut tiles = lm_graphics::decode_planar_tiles(consumed, 3)
             .map_err(|error| format!("could not decode Yoshi's Island GFX{file:02X}: {error}"))?;
+        if high_palette_half {
+            // UploadGraphicsFiles_UploadGFXFile ($00AA6B) synthesizes plane 3 as the OR of
+            // planes 0-2 for GFX08/GFX1E. Equivalently, every nonzero indexed pixel gains bit 3.
+            for tile in &mut tiles {
+                let pixels = std::array::from_fn(|index| {
+                    let pixel = tile.pixels()[index];
+                    if pixel == 0 { 0 } else { pixel | 8 }
+                });
+                *tile = IndexedTile::new(pixels);
+            }
+        }
         if tiles.len() > 0x80 {
             return Err(format!(
                 "Yoshi's Island GFX{file:02X} exceeds its $80-tile VRAM slot"

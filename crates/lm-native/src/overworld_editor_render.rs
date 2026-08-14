@@ -270,10 +270,46 @@ pub(crate) fn render_layer_texture(
     let background =
         lm_render::render_smw_overworld_layer2_tilemap(layer, &assets.graphics, palette)
             .map_err(|error| error.to_string())?;
+    // Vanilla overworld Map16 uses $122 as its transparent placeholder subtile. The portable
+    // graphics table does not include the game's separate blank character-base region, so map
+    // only that audited placeholder to an actually transparent decoded tile.
+    let blank_tile = assets
+        .graphics
+        .graphics
+        .tiles
+        .iter()
+        .position(|tile| tile.pixels().iter().all(|&pixel| pixel == 0))
+        .ok_or("vanilla overworld graphics contain no transparent tile")?;
+    let blank_tile =
+        u16::try_from(blank_tile).map_err(|_| "transparent overworld tile exceeds SNES range")?;
+    let mut rendered_map16 = layer1_map16.clone();
+    for definition in rendered_map16
+        .set
+        .pages
+        .iter_mut()
+        .flat_map(|page| &mut page.tiles)
+    {
+        for subtile in [
+            &mut definition.top_left,
+            &mut definition.top_right,
+            &mut definition.bottom_left,
+            &mut definition.bottom_right,
+        ] {
+            if subtile.tile_number() == 0x122 {
+                subtile.0 = (subtile.0 & !0x03ff) | blank_tile;
+            }
+        }
+    }
+    let mut visible_layer1 = layer1.clone();
+    for tile in &mut visible_layer1.tiles {
+        if (0x97..=0xbb).contains(tile) {
+            *tile = 0;
+        }
+    }
     let foreground = lm_render::render_portable_overworld_layer(
         1,
-        layer1,
-        layer1_map16,
+        &visible_layer1,
+        &rendered_map16,
         &assets.graphics,
         palette,
     )
