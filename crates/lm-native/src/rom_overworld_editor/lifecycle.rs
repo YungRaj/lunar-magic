@@ -335,7 +335,7 @@ fn decode_main_layer2_workspace(
         load_native_sprite_graphics_cache(&project, graphics_layout)?;
     let tiles = load_vanilla_yoshi_island_bg_vram(&project, graphics_layout)?;
     let palette = load_vanilla_overworld_palette(&image, 1)?;
-    let (layer1, layer1_map16) = load_vanilla_yoshi_island_layer1(&image)?;
+    let (layer1, layer1_map16) = load_vanilla_overworld_layer1(&image)?;
     let (gfx32, gfx33) =
         load_overworld_special_graphics(&project, lm_profile::smw_us_v1_vanilla_graphics_layout())?;
     Ok(MainLayer2Workspace {
@@ -373,27 +373,30 @@ fn decode_main_layer2_workspace(
     })
 }
 
-fn load_vanilla_yoshi_island_layer1(
+fn load_vanilla_overworld_layer1(
     image: &RomImage,
 ) -> Result<(lm_overworld::OverworldLayer, Map16SetFile), String> {
     // SNES $0C:F7DF and $05:D000 converted to headerless LoROM file offsets.
     const TILEMAP_OFFSET: usize = 0x06_77df;
     const MAP16_OFFSET: usize = 0x02_d000;
     let tilemap = image
-        .read(TILEMAP_OFFSET + 0x400, 0x400)
+        .read(TILEMAP_OFFSET, 0x800)
         .map_err(|error| error.to_string())?;
     // The ROM stores four 16x16-tile SNES screens consecutively, not as one
     // row-major 32x32 editor surface. Reassemble those screens before rendering.
-    let mut tiles = vec![0_u16; 32 * 32];
-    for y in 0..32 {
-        for x in 0..32 {
-            let screen = (y / 16) * 2 + x / 16;
-            let within = (y % 16) * 16 + x % 16;
-            tiles[y * 32 + x] = u16::from(tilemap[screen * 0x100 + within]);
+    let mut tiles = vec![0_u16; 64 * 32];
+    for plane in 0..2 {
+        for y in 0..32 {
+            for x in 0..32 {
+                let screen = (y / 16) * 2 + x / 16;
+                let within = (y % 16) * 16 + x % 16;
+                tiles[y * 64 + plane * 32 + x] =
+                    u16::from(tilemap[plane * 0x400 + screen * 0x100 + within]);
+            }
         }
     }
-    let layer = lm_overworld::OverworldLayer::new(32, 32, tiles)
-        .map_err(|_| "could not assemble vanilla Yoshi's Island Layer 1".to_string())?;
+    let layer = lm_overworld::OverworldLayer::new(64, 32, tiles)
+        .map_err(|_| "could not assemble vanilla overworld Layer 1".to_string())?;
     let bytes = image
         .read(MAP16_OFFSET, 772 * 2)
         .map_err(|error| error.to_string())?;
@@ -462,7 +465,7 @@ fn load_vanilla_yoshi_island_bg_vram(
     Ok(result)
 }
 
-fn load_vanilla_overworld_palette(
+pub(super) fn load_vanilla_overworld_palette(
     image: &RomImage,
     submap: usize,
 ) -> Result<lm_graphics::Palette, String> {
@@ -1226,9 +1229,21 @@ mod tests {
         editor.main_layer2_workspace =
             Some(decode_main_layer2_workspace(app.controller_snapshot().unwrap()).unwrap());
         let workspace = editor.main_layer2_workspace.as_mut().unwrap();
-        let original = workspace.layer1.tile(6, 10).unwrap();
-        let replacement = if original == 1 { 2 } else { 1 };
-        workspace.layer1.set_tile(6, 10, replacement).unwrap();
+        // X 0..31 is the main map and X 32..63 is the shared submap plane.
+        let shared_x = 38;
+        let main_x = 6;
+        let shared_original = workspace.layer1.tile(shared_x, 10).unwrap();
+        let main_original = workspace.layer1.tile(main_x, 10).unwrap();
+        let shared_replacement = if shared_original == 1 { 2 } else { 1 };
+        let main_replacement = if main_original == 1 { 2 } else { 1 };
+        workspace
+            .layer1
+            .set_tile(shared_x, 10, shared_replacement)
+            .unwrap();
+        workspace
+            .layer1
+            .set_tile(main_x, 10, main_replacement)
+            .unwrap();
         workspace.layer1_revision += 1;
         workspace.paths.links[0].destination.x ^= 1;
         let expected_paths = workspace.paths.clone();
@@ -1238,14 +1253,22 @@ mod tests {
             .unwrap();
 
         let reopened = decode_main_layer2_workspace(app.controller_snapshot().unwrap()).unwrap();
-        assert_eq!(reopened.layer1.tile(6, 10).unwrap(), replacement);
-        assert_ne!(reopened.layer1.tile(6, 10).unwrap(), original);
+        assert_eq!(
+            reopened.layer1.tile(shared_x, 10).unwrap(),
+            shared_replacement
+        );
+        assert_eq!(reopened.layer1.tile(main_x, 10).unwrap(), main_replacement);
         assert_eq!(reopened.paths, expected_paths);
         // Shared-submap screen-order storage: screen 0, row 10, column 6.
         let image = app.project().unwrap().rom.clone();
         assert_eq!(
             image.read(0x06_7bdf + 10 * 16 + 6, 1).unwrap(),
-            [replacement as u8]
+            [shared_replacement as u8]
+        );
+        // Main-overworld screen-order storage uses the preceding $400-byte half.
+        assert_eq!(
+            image.read(0x06_77df + 10 * 16 + 6, 1).unwrap(),
+            [main_replacement as u8]
         );
     }
 

@@ -103,19 +103,21 @@ impl RomOverworldEditor {
                 .apply_mutation("stage playable Layer 2", &prepared.mutation)
                 .map_err(|error| error.to_string())?;
             if layer1_modified {
-                let mut encoded = vec![0_u8; 0x400];
-                for y in 0..32 {
-                    for x in 0..32 {
-                        let screen = (y / 16) * 2 + x / 16;
-                        let within = (y % 16) * 16 + x % 16;
-                        encoded[screen * 0x100 + within] =
-                            u8::try_from(workspace.layer1.tiles[y * 32 + x])
-                                .map_err(|_| "vanilla overworld Layer 1 tile exceeds $FF")?;
+                let mut encoded = vec![0_u8; 0x800];
+                for plane in 0..2 {
+                    for y in 0..32 {
+                        for x in 0..32 {
+                            let screen = (y / 16) * 2 + x / 16;
+                            let within = (y % 16) * 16 + x % 16;
+                            encoded[plane * 0x400 + screen * 0x100 + within] =
+                                u8::try_from(workspace.layer1.tiles[y * 64 + plane * 32 + x])
+                                    .map_err(|_| "vanilla overworld Layer 1 tile exceeds $FF")?;
+                        }
                     }
                 }
                 project
                     .rom
-                    .write(0x06_7bdf, &encoded)
+                    .write(0x06_77df, &encoded)
                     .map_err(|error| error.to_string())?;
             }
             if paths_modified {

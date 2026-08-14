@@ -49,6 +49,28 @@ fn composed_storage_tile(
     Some((plane_x + world_x / 8, world_y / 8))
 }
 
+const NATIVE_OVERWORLD_MAPS: [(&str, u16, u16); 7] = [
+    ("00 Main Overworld", 0, 0),
+    ("01 Yoshi's Island", 0x01ef, 0x01d8),
+    ("02 Vanilla Dome", 0x01ef, 0x0080),
+    ("03 Forest of Illusion", 0x01ef, 0x0128),
+    ("04 Valley of Bowser", 0x00f0, 0x01d8),
+    ("05 Special World", 0x00f0, 0x0080),
+    ("06 Star World", 0x00f0, 0x0128),
+];
+
+fn composed_overworld_state(map: usize) -> lm_app::EmulatorRuntimeState {
+    let (_, camera_x, camera_y) = NATIVE_OVERWORLD_MAPS[map.min(NATIVE_OVERWORLD_MAPS.len() - 1)];
+    lm_app::EmulatorRuntimeState {
+        game_mode: 0x0e,
+        sublevel: 0,
+        translevel: 0,
+        overworld_submap: u8::try_from(map).unwrap_or_default(),
+        camera_x,
+        camera_y,
+    }
+}
+
 fn ow_text(catalog: Option<&LocalizationCatalog>, key: lm_app::ExtendedUiTextKey) -> String {
     crate::frontend_ui::extended_localized_text(catalog, key)
 }
@@ -304,6 +326,7 @@ pub(crate) struct RomOverworldEditor {
     palette: OverworldPalettePanel,
     animation: OverworldAnimationPanel,
     layer: usize,
+    composed_map: usize,
     x: usize,
     y: usize,
     tile: String,
@@ -1903,6 +1926,21 @@ impl RomOverworldEditor {
         catalog: Option<&LocalizationCatalog>,
     ) {
         ui.horizontal_wrapped(|ui| {
+            ui.label("Map");
+            egui::ComboBox::from_id_salt("composed-overworld-map")
+                .selected_text(NATIVE_OVERWORLD_MAPS[self.composed_map].0)
+                .show_ui(ui, |ui| {
+                    for (map, (name, _, _)) in NATIVE_OVERWORLD_MAPS.iter().enumerate() {
+                        if ui
+                            .selectable_value(&mut self.composed_map, map, *name)
+                            .changed()
+                        {
+                            self.rendered_key = None;
+                            self.loaded = None;
+                        }
+                    }
+                });
+            ui.separator();
             ui.selectable_value(
                 &mut self.paint_tool,
                 MapPaintTool::Select,
@@ -1947,16 +1985,7 @@ impl RomOverworldEditor {
             return;
         };
         let frame_size = [256, 224];
-        // Yoshi's Island is the vanilla opening map. The texture is an editor-native composed
-        // 256x224 game frame; gestures are translated through its inset 224x160 playfield.
-        let state = lm_app::EmulatorRuntimeState {
-            game_mode: 0x0e,
-            sublevel: 0,
-            translevel: 0,
-            overworld_submap: 1,
-            camera_x: 0,
-            camera_y: 0,
-        };
+        let state = composed_overworld_state(self.composed_map);
         let available = ui.available_width().max(1.0);
         let native = egui::vec2(frame_size[0] as f32, frame_size[1] as f32);
         let display = native * (available / native.x).min(4.0);
@@ -1973,7 +2002,7 @@ impl RomOverworldEditor {
                 composed_storage_tile(response.rect, position, frame_size, state)
         {
             if self.layer == 0 {
-                x = (x - 64) / 2;
+                x /= 2;
                 y /= 2;
             }
             self.x = x;
@@ -1997,7 +2026,7 @@ impl RomOverworldEditor {
                             })
                             .map(|(x, y)| {
                                 if self.layer == 0 {
-                                    ((x - 64) / 2, y / 2)
+                                    (x / 2, y / 2)
                                 } else {
                                     (x, y)
                                 }
@@ -2055,7 +2084,7 @@ impl RomOverworldEditor {
         }
 
         let plane_x = if self.layer == 0 {
-            0
+            if state.overworld_submap == 0 { 0 } else { 32 }
         } else if state.overworld_submap == 0 {
             0
         } else {
@@ -2724,19 +2753,24 @@ impl RomOverworldEditor {
         };
         let key = (
             workspace.controller.revision(),
-            0,
+            self.composed_map,
             usize::try_from(workspace.layer1_revision).unwrap_or(usize::MAX),
         );
         if self.rendered_key == Some(key) {
             return;
         }
+        let state = composed_overworld_state(self.composed_map);
+        let palette =
+            lifecycle::load_vanilla_overworld_palette(&workspace.image, self.composed_map)
+                .unwrap_or_else(|_| workspace.palette.clone());
         match overworld_editor_render::render_layer_texture(
             context,
             workspace.controller.layer(),
             &workspace.layer1,
             &workspace.layer1_map16,
-            &workspace.palette,
+            &palette,
             &workspace.assets,
+            state,
         ) {
             Ok(texture) => {
                 self.texture = Some(texture);
@@ -3474,7 +3508,7 @@ impl RomOverworldEditor {
 
 #[cfg(test)]
 mod composed_overworld_canvas_tests {
-    use super::composed_storage_tile;
+    use super::{NATIVE_OVERWORLD_MAPS, composed_overworld_state, composed_storage_tile};
     use eframe::egui;
 
     fn state(submap: u8, camera_x: u16, camera_y: u16) -> lm_app::EmulatorRuntimeState {
@@ -3519,6 +3553,42 @@ mod composed_overworld_canvas_tests {
             composed_storage_tile(rect, egui::pos2(8.0, 8.0), [256, 224], state(7, 0, 0)),
             None
         );
+    }
+
+    #[test]
+    fn every_native_map_uses_the_vanilla_camera_origin() {
+        let expected = [
+            (0, 0),
+            (0x01ef, 0x01d8),
+            (0x01ef, 0x0080),
+            (0x01ef, 0x0128),
+            (0x00f0, 0x01d8),
+            (0x00f0, 0x0080),
+            (0x00f0, 0x0128),
+        ];
+        assert_eq!(NATIVE_OVERWORLD_MAPS.len(), expected.len());
+        for (map, &(camera_x, camera_y)) in expected.iter().enumerate() {
+            let state = composed_overworld_state(map);
+            assert_eq!(usize::from(state.overworld_submap), map);
+            assert_eq!((state.camera_x, state.camera_y), (camera_x, camera_y));
+        }
+    }
+
+    #[test]
+    fn every_native_map_frame_maps_into_its_correct_storage_plane() {
+        let rect = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(256.0, 224.0));
+        for map in 0..NATIVE_OVERWORLD_MAPS.len() {
+            let (x, y) = composed_storage_tile(
+                rect,
+                egui::pos2(16.5, 40.5),
+                [256, 224],
+                composed_overworld_state(map),
+            )
+            .unwrap();
+            assert_eq!(x >= 64, map != 0);
+            assert!(x < 128);
+            assert!(y < 64);
+        }
     }
 }
 
