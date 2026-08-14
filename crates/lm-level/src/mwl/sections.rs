@@ -269,7 +269,7 @@ impl SpriteSpawnSettings {
         }
         let raw = self.0 & !(Self::RANGE_MASK | Self::SMART_SPAWN_FLAG)
             | vertical_range
-            | u8::from(smart_spawn) * Self::SMART_SPAWN_FLAG;
+            | (u8::from(smart_spawn) * Self::SMART_SPAWN_FLAG);
         Ok(Self(raw))
     }
 }

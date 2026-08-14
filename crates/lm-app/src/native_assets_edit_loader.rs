@@ -2,10 +2,9 @@
 
 use crate::{
     editor_shell::read_bounded_utf8, entrance_edit_script, exanimation_edit_script,
-    exanimation_feature_edit_script,
-    expanded_settings_edit_script, layer2_object_edit_script, layer2_tilemap_edit_script,
-    level_edit_script, map16_edit_script, native_assets_edit_spec, palette_edit_script,
-    sprite_spawn_edit_script,
+    exanimation_feature_edit_script, expanded_settings_edit_script, layer2_object_edit_script,
+    layer2_tilemap_edit_script, level_edit_script, map16_edit_script, native_assets_edit_spec,
+    palette_edit_script, sprite_spawn_edit_script,
 };
 use lm_app::{Map16ControllerEdit, NativeLevelAssetsControllerEdit, VanillaEntranceEdit};
 use lm_graphics::PaletteOwnership;
@@ -28,11 +27,7 @@ pub(crate) fn load(path: &Path) -> Result<LoadedNativeAssetsEdits, Box<dyn std::
         Vec::new()
     };
     let entrance_edits = if let Some(path) = spec.entrances {
-        let text = read_bounded_utf8(
-            &path,
-            entrance_edit_script::MAX_SCRIPT_LEN,
-            "entrance edit",
-        )?;
+        let text = read_bounded_utf8(&path, entrance_edit_script::MAX_SCRIPT_LEN, "entrance edit")?;
         entrance_edit_script::parse(&text)?
     } else {
         Vec::new()

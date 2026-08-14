@@ -454,6 +454,7 @@ int main(int argc, char **argv) {
             "       wine-window-command.exe EXECUTABLE command-at HWND_ADDRESS,COMMAND_ID\n"
             "       wine-window-command.exe EXECUTABLE post-command COMMAND_ID [WINDOW_CLASS]\n"
             "       wine-window-command.exe EXECUTABLE read ADDRESS,LENGTH\n"
+            "       wine-window-command.exe EXECUTABLE hdc-font HDC_ADDRESS\n"
             "       wine-window-command.exe EXECUTABLE find-u32 VALUE\n"
             "       wine-window-command.exe EXECUTABLE write-byte ADDRESS,VALUE\n"
             "       wine-window-command.exe EXECUTABLE slot-oracle PRIMARY,ALTERNATE,COMPOSITION,SPLIT\n"
@@ -484,6 +485,7 @@ int main(int argc, char **argv) {
     BOOL command_at = _stricmp(argv[2], "command-at") == 0;
     BOOL post_command = _stricmp(argv[2], "post-command") == 0;
     BOOL read = _stricmp(argv[2], "read") == 0;
+    BOOL hdc_font = _stricmp(argv[2], "hdc-font") == 0;
     BOOL find_u32 = _stricmp(argv[2], "find-u32") == 0;
     BOOL write_byte = _stricmp(argv[2], "write-byte") == 0;
     BOOL slot_oracle = _stricmp(argv[2], "slot-oracle") == 0;
@@ -638,6 +640,61 @@ int main(int argc, char **argv) {
             fprintf(stderr, "cannot read requested range\n");
             return 1;
         }
+        return 0;
+    }
+    if (hdc_font) {
+        if (argc != 4) {
+            fprintf(stderr, "hdc-font requires HDC_ADDRESS\n");
+            return 2;
+        }
+        char *end = NULL;
+        unsigned long address = strtoul(argv[3], &end, 0);
+        if (end == argv[3] || *end != '\0' || address == 0) {
+            fprintf(stderr, "invalid HDC address\n");
+            return 2;
+        }
+        HANDLE process = OpenProcess(PROCESS_VM_READ, FALSE, process_id);
+        uint32_t raw_hdc = 0;
+        SIZE_T bytes_read = 0;
+        BOOL read_ok = process != NULL && ReadProcessMemory(
+            process,
+            (void *)(uintptr_t)address,
+            &raw_hdc,
+            sizeof(raw_hdc),
+            &bytes_read
+        );
+        if (process != NULL) {
+            CloseHandle(process);
+        }
+        if (!read_ok || bytes_read != sizeof(raw_hdc) || raw_hdc == 0) {
+            fprintf(stderr, "cannot resolve HDC at 0x%08lx\n", address);
+            return 1;
+        }
+        HDC hdc = (HDC)(uintptr_t)raw_hdc;
+        HFONT font = (HFONT)GetCurrentObject(hdc, OBJ_FONT);
+        LOGFONTA logical = {0};
+        TEXTMETRICA metrics = {0};
+        if (font == NULL || GetObjectA(font, sizeof(logical), &logical) != sizeof(logical) ||
+            !GetTextMetricsA(hdc, &metrics)) {
+            fprintf(stderr, "cannot query HDC font 0x%08lx\n", (unsigned long)raw_hdc);
+            return 1;
+        }
+        printf(
+            "hdc=0x%08lx font=%s height=%ld width=%ld weight=%ld italic=%u quality=%u "
+            "tm_height=%ld ascent=%ld descent=%ld ave_width=%ld max_width=%ld\n",
+            (unsigned long)raw_hdc,
+            logical.lfFaceName,
+            (long)logical.lfHeight,
+            (long)logical.lfWidth,
+            (long)logical.lfWeight,
+            (unsigned int)logical.lfItalic,
+            (unsigned int)logical.lfQuality,
+            (long)metrics.tmHeight,
+            (long)metrics.tmAscent,
+            (long)metrics.tmDescent,
+            (long)metrics.tmAveCharWidth,
+            (long)metrics.tmMaxCharWidth
+        );
         return 0;
     }
     if (write_byte) {

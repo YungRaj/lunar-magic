@@ -271,18 +271,6 @@ fn terminal_native_assets_spec_commits_all_domains_as_one_undoable_operation() {
     assert!(execute_native_assets_script(&mut app, &spec, 0x1_0000..0x10_0000).is_err());
     assert_eq!(app.project().unwrap().save_snapshot(), before);
     fs::write(
-        directory.join("Animation feature edits.txt"),
-        "LMEXFT1\nfeatures true false true false\n",
-    )
-    .unwrap();
-    fs::write(
-        directory.join("Map16 edits.txt"),
-        "LMM16ED1\nacts-like 00 01 0002 10000\nacts-like 00 02 0001 10000\n",
-    )
-    .unwrap();
-    assert!(execute_native_assets_script(&mut app, &spec, 0x1_0000..0x10_0000).is_err());
-    assert_eq!(app.project().unwrap().save_snapshot(), before);
-    fs::write(
         directory.join("Map16 edits.txt"),
         "LMM16ED1\ntile 01 02 0001 0002 0003 0004 0000 10000\n",
     )
@@ -290,6 +278,18 @@ fn terminal_native_assets_spec_commits_all_domains_as_one_undoable_operation() {
     fs::write(
         directory.join("Entrance edits.txt"),
         "LMENTR1\nmain 12 34 56 78\nmidway 9a bc de f0\n",
+    )
+    .unwrap();
+    assert!(execute_native_assets_script(&mut app, &spec, 0x1_0000..0x10_0000).is_err());
+    assert_eq!(app.project().unwrap().save_snapshot(), before);
+    fs::write(
+        directory.join("Animation feature edits.txt"),
+        "LMEXFT1\nfeatures true false true false\n",
+    )
+    .unwrap();
+    fs::write(
+        directory.join("Map16 edits.txt"),
+        "LMM16ED1\nacts-like 00 01 0002 10000\nacts-like 00 02 0001 10000\n",
     )
     .unwrap();
     assert!(execute_native_assets_script(&mut app, &spec, 0x1_0000..0x10_0000).is_err());
@@ -543,14 +543,16 @@ fn owned_native_assets_shell_reclaims_exact_blocks_and_rejects_stale_evidence() 
     }
     let after = app.project().unwrap().save_snapshot();
     fs::write(&palette, "LMPALED1\nowners 100 editable\nset 1 4321\n").unwrap();
-    assert!(execute_owned_editor_script(
-        &mut app,
-        shell_command::ScriptEditor::NativeAssets,
-        &spec,
-        &manifest,
-        0x1_8000..0x2_0000,
-    )
-    .is_err());
+    assert!(
+        execute_owned_editor_script(
+            &mut app,
+            shell_command::ScriptEditor::NativeAssets,
+            &spec,
+            &manifest,
+            0x1_8000..0x2_0000,
+        )
+        .is_err()
+    );
     assert_eq!(app.project().unwrap().save_snapshot(), after);
     app.dispatch(Command::Undo).unwrap();
     assert_eq!(app.project().unwrap().save_snapshot(), before);
@@ -651,13 +653,15 @@ fn terminal_layer1_scroll_header_edit_preserves_adjacent_bits_reopens_and_undoes
             .unwrap(),
         original
     );
-    assert!(edit_level_header(
-        &mut app,
-        shell_command::LevelHeaderField::Layer1VerticalScroll,
-        4,
-        0x1_0000..0x1_8000,
-    )
-    .is_err());
+    assert!(
+        edit_level_header(
+            &mut app,
+            shell_command::LevelHeaderField::Layer1VerticalScroll,
+            4,
+            0x1_0000..0x1_8000,
+        )
+        .is_err()
+    );
     assert_eq!(
         app.project()
             .unwrap()
@@ -720,13 +724,14 @@ fn terminal_expanded_settings_batch_is_atomic_checksum_valid_and_undoable() {
             baseline.word(word).unwrap() & 0x0fff
         );
     }
-    assert!(app
-        .project()
-        .unwrap()
-        .identity
-        .as_ref()
-        .unwrap()
-        .checksum_matches());
+    assert!(
+        app.project()
+            .unwrap()
+            .identity
+            .as_ref()
+            .unwrap()
+            .checksum_matches()
+    );
     app.dispatch(Command::Undo).unwrap();
     assert_eq!(
         app.project()
@@ -834,8 +839,7 @@ fn terminal_screen_exit_script_canonicalizes_both_shapes_reopens_and_undoes() {
     app.dispatch(Command::InstallRevisionProfile(Box::new(profile.clone())))
         .unwrap();
     let before = app.project().unwrap().save_snapshot();
-    let directory =
-        std::env::temp_dir().join(format!("lm-app-screen-exit-{}", std::process::id()));
+    let directory = std::env::temp_dir().join(format!("lm-app-screen-exit-{}", std::process::id()));
     let _ = fs::remove_dir_all(&directory);
     fs::create_dir(&directory).unwrap();
     let script = directory.join("screen exit edits.lmedit");
@@ -860,13 +864,14 @@ fn terminal_screen_exit_script_canonicalizes_both_shapes_reopens_and_undoes() {
         let exit = record.screen_exit().unwrap();
         assert_eq!(exit.screen, 0x1f);
         assert_eq!(exit.destination_and_flags, expected);
-        assert!(app
-            .project()
-            .unwrap()
-            .identity
-            .as_ref()
-            .unwrap()
-            .checksum_matches());
+        assert!(
+            app.project()
+                .unwrap()
+                .identity
+                .as_ref()
+                .unwrap()
+                .checksum_matches()
+        );
         app.dispatch(Command::Undo).unwrap();
         assert_eq!(app.project().unwrap().save_snapshot(), before);
     }
@@ -915,11 +920,7 @@ fn terminal_absolute_object_place_and_full_relocate_reopen_and_undo() {
     fs::create_dir(&directory).unwrap();
     let script = directory.join("absolute object edits.lmedit");
 
-    fs::write(
-        &script,
-        "LMLEDIT1\nobject place 090855 1f 0c 0b true\n",
-    )
-    .unwrap();
+    fs::write(&script, "LMLEDIT1\nobject place 090855 1f 0c 0b true\n").unwrap();
     execute_level_script(&mut app, &script, 0x1_0000..0x1_8000).unwrap();
     let loaded = app
         .project()
@@ -936,19 +937,22 @@ fn terminal_absolute_object_place_and_full_relocate_reopen_and_undo() {
         })
         .unwrap();
     assert!(loaded.layer1.objects.records[placed.record_index].perpendicular_high_coordinate());
-    assert!(loaded
-        .layer1
-        .objects
-        .records
-        .iter()
-        .any(|record| record.screen_jump().is_some()));
-    assert!(app
-        .project()
-        .unwrap()
-        .identity
-        .as_ref()
-        .unwrap()
-        .checksum_matches());
+    assert!(
+        loaded
+            .layer1
+            .objects
+            .records
+            .iter()
+            .any(|record| record.screen_jump().is_some())
+    );
+    assert!(
+        app.project()
+            .unwrap()
+            .identity
+            .as_ref()
+            .unwrap()
+            .checksum_matches()
+    );
     app.dispatch(Command::Undo).unwrap();
     assert_eq!(app.project().unwrap().save_snapshot(), before);
 
@@ -1005,21 +1009,24 @@ fn terminal_absolute_object_place_and_full_relocate_reopen_and_undo() {
         .unwrap()
         .load_level_slot(0x105, profile.level, &profile.sprite_lengths)
         .unwrap();
-    assert!(relocated
-        .layer1
-        .objects
-        .native_placements()
-        .iter()
-        .any(|placement| {
-            placement.screen == 0x1e && placement.major == 0x1e9 && placement.minor == 0x1a
-        }));
-    assert!(app
-        .project()
-        .unwrap()
-        .identity
-        .as_ref()
-        .unwrap()
-        .checksum_matches());
+    assert!(
+        relocated
+            .layer1
+            .objects
+            .native_placements()
+            .iter()
+            .any(|placement| {
+                placement.screen == 0x1e && placement.major == 0x1e9 && placement.minor == 0x1a
+            })
+    );
+    assert!(
+        app.project()
+            .unwrap()
+            .identity
+            .as_ref()
+            .unwrap()
+            .checksum_matches()
+    );
     app.dispatch(Command::Undo).unwrap();
     assert_eq!(app.project().unwrap().save_snapshot(), before);
 
@@ -1037,11 +1044,7 @@ fn terminal_absolute_object_place_and_full_relocate_reopen_and_undo() {
     .unwrap();
     assert!(execute_level_script(&mut app, &script, 0x1_0000..0x1_8000).is_err());
     assert_eq!(app.project().unwrap().save_snapshot(), before);
-    fs::write(
-        &script,
-        "LMLEDIT1\nobject place 090855 20 00 00 false\n",
-    )
-    .unwrap();
+    fs::write(&script, "LMLEDIT1\nobject place 090855 20 00 00 false\n").unwrap();
     assert!(execute_level_script(&mut app, &script, 0x1_0000..0x1_8000).is_err());
     assert_eq!(app.project().unwrap().save_snapshot(), before);
     fs::write(
@@ -1236,13 +1239,14 @@ fn terminal_custom_time_script_is_orientation_aware_checksum_valid_and_undoable(
             .command_id(),
         0x28
     );
-    assert!(app
-        .project()
-        .unwrap()
-        .identity
-        .as_ref()
-        .unwrap()
-        .checksum_matches());
+    assert!(
+        app.project()
+            .unwrap()
+            .identity
+            .as_ref()
+            .unwrap()
+            .checksum_matches()
+    );
     app.dispatch(Command::Undo).unwrap();
     assert_eq!(app.project().unwrap().save_snapshot(), before);
 
@@ -1257,13 +1261,14 @@ fn terminal_custom_time_script_is_orientation_aware_checksum_valid_and_undoable(
     assert_eq!(vertical.layer1.objects.custom_time(true), Some(settings));
     let vertical_record = vertical.layer1.objects.records.last().unwrap().encoded();
     assert_ne!(vertical_record, horizontal_record);
-    assert!(app
-        .project()
-        .unwrap()
-        .identity
-        .as_ref()
-        .unwrap()
-        .checksum_matches());
+    assert!(
+        app.project()
+            .unwrap()
+            .identity
+            .as_ref()
+            .unwrap()
+            .checksum_matches()
+    );
     app.dispatch(Command::Undo).unwrap();
     assert_eq!(app.project().unwrap().save_snapshot(), before);
 
@@ -1304,13 +1309,14 @@ fn terminal_sprite_properties_preserve_expanded_framing_reopen_and_undo() {
     assert!(!header.buoyancy_2());
     assert_ne!(loaded.sprites.header & 0x20, 0);
     assert!(loaded.sprites.expanded);
-    assert!(app
-        .project()
-        .unwrap()
-        .identity
-        .as_ref()
-        .unwrap()
-        .checksum_matches());
+    assert!(
+        app.project()
+            .unwrap()
+            .identity
+            .as_ref()
+            .unwrap()
+            .checksum_matches()
+    );
 
     app.dispatch(Command::Undo).unwrap();
     assert_eq!(app.project().unwrap().save_snapshot(), before);
@@ -1364,10 +1370,12 @@ fn terminal_entrance_batch_preserves_scroll_nibble_reopens_checksum_and_undoes()
             }),
             lm_app::VanillaEntranceEdit::SetLayer2ScrollTable(0x10),
         ]),
-        Err(lm_app::VanillaEntranceControllerError::InvalidLayer2ScrollTable {
-            command: 1,
-            value: 0x10,
-        })
+        Err(
+            lm_app::VanillaEntranceControllerError::InvalidLayer2ScrollTable {
+                command: 1,
+                value: 0x10,
+            }
+        )
     ));
     assert_eq!(controller.entrance(), controller_before);
 
@@ -1376,11 +1384,7 @@ fn terminal_entrance_batch_preserves_scroll_nibble_reopens_checksum_and_undoes()
     let _ = fs::remove_dir_all(&directory);
     fs::create_dir(&directory).unwrap();
     let script = directory.join("entrance edits.lmentr");
-    fs::write(
-        &script,
-        "LMENTR1\nmain 12 34 56 78\nlayer2-scroll 0a\n",
-    )
-    .unwrap();
+    fs::write(&script, "LMENTR1\nmain 12 34 56 78\nlayer2-scroll 0a\n").unwrap();
     execute_entrance_script(&mut app, &script).unwrap();
     let loaded = app
         .project()
@@ -1391,21 +1395,18 @@ fn terminal_entrance_batch_preserves_scroll_nibble_reopens_checksum_and_undoes()
     assert_eq!(loaded.vertical_settings, 0x34);
     assert_eq!(loaded.screen_and_method, 0x56);
     assert_eq!(loaded.level_mode_and_screen, 0x78);
-    assert!(app
-        .project()
-        .unwrap()
-        .identity
-        .as_ref()
-        .unwrap()
-        .checksum_matches());
+    assert!(
+        app.project()
+            .unwrap()
+            .identity
+            .as_ref()
+            .unwrap()
+            .checksum_matches()
+    );
     app.dispatch(Command::Undo).unwrap();
     assert_eq!(app.project().unwrap().save_snapshot(), before);
 
-    fs::write(
-        &script,
-        "LMENTR1\nmain 12 34 56 78\nmidway 9a bc de f0\n",
-    )
-    .unwrap();
+    fs::write(&script, "LMENTR1\nmain 12 34 56 78\nmidway 9a bc de f0\n").unwrap();
     assert!(execute_entrance_script(&mut app, &script).is_err());
     assert_eq!(app.project().unwrap().save_snapshot(), before);
     fs::remove_dir_all(directory).unwrap();
@@ -1435,7 +1436,10 @@ fn terminal_secondary_exit_set_clear_all_reopens_checksum_and_undoes() {
         .load_secondary_exit_table_detected(lm_profile::smw_us_v1_secondary_exit_locator())
         .unwrap();
     assert_eq!(loaded.table.entries[0], lm_level::SecondaryExit::default());
-    assert_eq!(loaded.table.entries[0x400], lm_level::SecondaryExit::default());
+    assert_eq!(
+        loaded.table.entries[0x400],
+        lm_level::SecondaryExit::default()
+    );
     assert_eq!(
         loaded.table.entries[0x401],
         lm_level::SecondaryExit {
@@ -1449,13 +1453,14 @@ fn terminal_secondary_exit_set_clear_all_reopens_checksum_and_undoes() {
             additional_flags: 7,
         }
     );
-    assert!(app
-        .project()
-        .unwrap()
-        .identity
-        .as_ref()
-        .unwrap()
-        .checksum_matches());
+    assert!(
+        app.project()
+            .unwrap()
+            .identity
+            .as_ref()
+            .unwrap()
+            .checksum_matches()
+    );
     app.dispatch(Command::Undo).unwrap();
     assert_eq!(app.project().unwrap().save_snapshot(), original);
 
@@ -1821,8 +1826,8 @@ fn terminal_layer2_only_script_edits_authentic_playable_main_overworld_and_undoe
 
     commit_overworld_edits(&mut app, &script, 0x0e_0000..0x0f_0000).unwrap();
 
-    let reopened = lm_profile::load_smw_us_v1_main_overworld_layer2(app.project().unwrap())
-        .unwrap();
+    let reopened =
+        lm_profile::load_smw_us_v1_main_overworld_layer2(app.project().unwrap()).unwrap();
     assert_eq!(reopened.layer.tile(12, 9).unwrap(), replacement);
     let logical = app.project().unwrap().rom.logical_bytes();
     assert_eq!(

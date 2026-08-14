@@ -214,10 +214,10 @@ pub fn smw_us_v1_expanded_settings_installation_plan_for_rom_with_overworld_sett
     rom: &RomImage,
     overworld: Option<&ExpandedOverworldSettings>,
 ) -> Result<RelocatablePatchPlan, ExpandedSettingsInstallPlanError> {
-    let search_end = rom
-        .logical_len()
-        .max(SMW_US_V1_EXPANDED_SETTINGS_ALLOCATION_SEARCH_END)
-        .min(SMW_US_V1_EXPANDED_SETTINGS_MAXIMUM_LOROM_LEN);
+    let search_end = rom.logical_len().clamp(
+        SMW_US_V1_EXPANDED_SETTINGS_ALLOCATION_SEARCH_END,
+        SMW_US_V1_EXPANDED_SETTINGS_MAXIMUM_LOROM_LEN,
+    );
     smw_us_v1_expanded_settings_installation_plan_for_range(
         overworld,
         SMW_US_V1_EXPANDED_SETTINGS_ALLOCATION_SEARCH_START..search_end,

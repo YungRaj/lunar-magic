@@ -452,7 +452,11 @@ mod tests {
 
     #[test]
     fn complete_legacy_bypass_form_uses_every_typed_key() {
-        let source = include_str!("rom_legacy_graphics_bypass_editor.rs");
+        let source = [
+            include_str!("rom_legacy_graphics_bypass_editor.rs"),
+            include_str!("legacy_graphics_bypass_transfer.rs"),
+        ]
+        .join("\n");
         for key in ExtendedUiTextKey::ALL
             .into_iter()
             .filter(|key| format!("{key:?}").starts_with("LegacyBypass"))

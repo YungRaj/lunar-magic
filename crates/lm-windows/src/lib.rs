@@ -1,3 +1,4 @@
+#![cfg(windows)]
 //! Narrow safe wrappers around Windows APIs needed by the native frontend.
 
 use std::os::windows::{

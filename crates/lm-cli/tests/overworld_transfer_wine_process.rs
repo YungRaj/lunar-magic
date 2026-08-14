@@ -129,7 +129,11 @@ fn verify_full_observation(fixture: &Path, output: &Path) {
         "full overworld observation differs at up to the first 16 paths: {:?}",
         &differences[..differences.len().min(16)]
     );
-    assert_eq!(actual_text, full.to_text(), "generated observation is not canonical");
+    assert_eq!(
+        actual_text,
+        full.to_text(),
+        "generated observation is not canonical"
+    );
     assert_eq!(
         expected_text,
         expected.to_text(),

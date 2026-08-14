@@ -307,6 +307,7 @@ pub(crate) struct RomOverworldEditor {
     x: usize,
     y: usize,
     tile: String,
+    active_tile: String,
     level_node: String,
     loaded: Option<(u64, usize, usize, usize)>,
     paint_tool: MapPaintTool,
@@ -484,7 +485,7 @@ impl RomOverworldEditor {
             })
     }
 
-    fn prepare_transition_commits(&self, revision: u64) -> Result<Vec<Command>, String> {
+    fn prepare_transition_commits(&self) -> Result<Vec<Command>, String> {
         if self.workspace.is_some() {
             return self.prepare_commit().map(|command| vec![command]);
         }
@@ -503,13 +504,9 @@ impl RomOverworldEditor {
                 rev: workspace.controller.revision(),
                 table: Box::new(workspace.paths.clone()),
             }]),
-            (true, true) => Ok(vec![
-                self.prepare_main_layer2_commit()?,
-                Command::ReplaceNativeOverworldPathLinks {
-                    rev: revision.checked_add(1).ok_or("project revision overflow")?,
-                    table: Box::new(workspace.paths.clone()),
-                },
-            ]),
+            (true, true) => self
+                .prepare_main_layer2_commit()
+                .map(|command| vec![command]),
             (false, false) => Err("the overworld has no staged changes".into()),
         }
     }
@@ -576,7 +573,7 @@ impl RomOverworldEditor {
     ) -> Option<Command> {
         let transition = self.editor_transition_prompt.clone()?;
         match choice {
-            Some(0) => match self.prepare_transition_commits(revision) {
+            Some(0) => match self.prepare_transition_commits() {
                 Ok(mut commands) => {
                     let Some(expected) = revision.checked_add(commands.len() as u64) else {
                         self.error = Some("project revision overflow".into());
@@ -655,6 +652,9 @@ impl RomOverworldEditor {
             });
         if let Some(path_command) = self.main_path_link_controls(ui, stale, modified, catalog) {
             return Some(path_command);
+        }
+        if paths_modified {
+            ui.small(ow_text(catalog, Key::RomOverworldRouteBlocksTerrain));
         }
         self.composed_world_canvas(ui, stale || paths_modified, catalog);
         egui::CollapsingHeader::new("Advanced: raw 128×64 Layer 2 storage plane")
@@ -750,6 +750,9 @@ impl RomOverworldEditor {
             .show(ui, |ui| {
                 ui.label(ow_text(catalog, Key::RomOverworldRouteNotice));
                 ui.small(ow_text(catalog, Key::RomOverworldRouteCanvasNotice));
+                if terrain_modified {
+                    ui.small(ow_text(catalog, Key::RomOverworldTerrainBlocksRoute));
+                }
                 if path_count == 0 {
                     ui.label(ow_text(catalog, Key::RomOverworldRouteUnavailable));
                     return;
@@ -764,19 +767,51 @@ impl RomOverworldEditor {
                 }
                 ui.horizontal_wrapped(|ui| {
                     ui.strong("Source");
-                    compact_path_field(ui, "X", &mut self.main_path.source_x);
-                    compact_path_field(ui, "Y", &mut self.main_path.source_y);
-                    compact_path_field(ui, "Map", &mut self.main_path.source_submap);
+                    compact_path_field(
+                        ui,
+                        &ow_text(catalog, Key::RomOverworldRouteSourceX),
+                        &mut self.main_path.source_x,
+                    );
+                    compact_path_field(
+                        ui,
+                        &ow_text(catalog, Key::RomOverworldRouteSourceY),
+                        &mut self.main_path.source_y,
+                    );
+                    compact_path_field(
+                        ui,
+                        &ow_text(catalog, Key::RomOverworldRouteSourceSubmap),
+                        &mut self.main_path.source_submap,
+                    );
                     ui.separator();
                     ui.strong("Destination");
-                    compact_path_field(ui, "X", &mut self.main_path.destination_x);
-                    compact_path_field(ui, "Y", &mut self.main_path.destination_y);
-                    compact_path_field(ui, "Map", &mut self.main_path.destination_submap);
+                    compact_path_field(
+                        ui,
+                        &ow_text(catalog, Key::RomOverworldRouteDestinationX),
+                        &mut self.main_path.destination_x,
+                    );
+                    compact_path_field(
+                        ui,
+                        &ow_text(catalog, Key::RomOverworldRouteDestinationY),
+                        &mut self.main_path.destination_y,
+                    );
+                    compact_path_field(
+                        ui,
+                        &ow_text(catalog, Key::RomOverworldRouteDestinationSubmap),
+                        &mut self.main_path.destination_submap,
+                    );
                 });
                 ui.horizontal_wrapped(|ui| {
                     ui.strong("Engine target");
-                    compact_path_field(ui, "X tile", &mut self.main_path.target_x);
-                    compact_path_field(ui, "Y tile", &mut self.main_path.target_y);
+                    compact_path_field(
+                        ui,
+                        &ow_text(catalog, Key::RomOverworldRouteTargetX),
+                        &mut self.main_path.target_x,
+                    );
+                    compact_path_field(
+                        ui,
+                        &ow_text(catalog, Key::RomOverworldRouteTargetY),
+                        &mut self.main_path.target_y,
+                    );
                 });
                 let previous_direction = self.main_path.direction;
                 ui.horizontal(|ui| {
@@ -1036,6 +1071,7 @@ impl RomOverworldEditor {
             self.refresh_main_layer2_texture(context);
             self.refresh_map16_texture(context);
             egui::Window::new(ow_text(catalog, Key::RomOverworldPlayableTitle))
+                .default_pos([30.0, 30.0])
                 .default_size([820.0, 720.0])
                 .vscroll(true)
                 .show(context, |ui| {
@@ -1886,6 +1922,13 @@ impl RomOverworldEditor {
                 &mut self.paint_tool,
                 MapPaintTool::Fill,
                 ow_text(catalog, Key::RomOverworldToolFill),
+            );
+            ui.separator();
+            ui.label(ow_text(catalog, Key::RomOverworldTileWord));
+            ui.add(
+                egui::TextEdit::singleline(&mut self.active_tile)
+                    .desired_width(72.0)
+                    .hint_text("0000"),
             );
             ui.separator();
             ui.selectable_value(
@@ -2812,7 +2855,12 @@ impl RomOverworldEditor {
     }
 
     fn brush_tile(&mut self) -> Option<u16> {
-        match level_editor_forms::parse_hex_u16(&self.tile, "overworld tile") {
+        let text = if self.active_tile.is_empty() {
+            &self.tile
+        } else {
+            &self.active_tile
+        };
+        match level_editor_forms::parse_hex_u16(text, "overworld tile") {
             Ok(tile) => Some(tile),
             Err(error) => {
                 self.error = Some(error);
@@ -3119,6 +3167,9 @@ impl RomOverworldEditor {
         };
         if let Some(tile) = tile {
             self.tile = format!("{tile:04X}");
+            if self.paint_tool == MapPaintTool::Select || self.active_tile.is_empty() {
+                self.active_tile = self.tile.clone();
+            }
             if self.layer == 0 {
                 if let Some(level) = vanilla_overworld_level_for_tile(tile) {
                     self.level_node = format!("{level:03X}");

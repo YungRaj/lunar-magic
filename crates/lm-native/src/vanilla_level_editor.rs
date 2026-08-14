@@ -6490,10 +6490,12 @@ impl VanillaLevelEditor {
             self.animation_frozen_seconds =
                 self.animation_last_wall_seconds + self.animation_time_offset_seconds;
             self.animation_playing = Some(false);
+            self.animation_effectively_playing = Some(false);
         } else {
             self.animation_time_offset_seconds =
                 self.animation_frozen_seconds - self.animation_last_wall_seconds;
             self.animation_playing = Some(true);
+            self.animation_effectively_playing = Some(true);
         }
     }
 

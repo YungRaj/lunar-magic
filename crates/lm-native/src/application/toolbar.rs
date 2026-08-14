@@ -2635,7 +2635,11 @@ mod user_toolbar_tests {
 
     #[test]
     fn application_toolbar_has_no_literal_widget_text() {
-        let source = include_str!("toolbar.rs");
+        let source = [
+            include_str!("toolbar.rs"),
+            include_str!("../application.rs"),
+        ]
+        .join("\n");
         for literal in [
             "ui.button(\"",
             "ui.label(\"",

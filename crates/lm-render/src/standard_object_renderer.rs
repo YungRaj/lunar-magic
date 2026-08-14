@@ -836,10 +836,12 @@ pub fn render_mapped_standard_object_placement(
     layout: NativeLevelMap16Layout,
     blank_tile: u16,
 ) -> Result<Option<NativeLevelMap16Cache>, StandardObjectRenderError> {
-    let mut view_state = LunarMagicConditionalViewState::default();
     // This compatibility entry point renders authored cells without editor-only substitutions.
     // Native Lunar Magic surfaces call the explicit view-state variant below.
-    view_state.conditional_direct_map16 = false;
+    let view_state = LunarMagicConditionalViewState {
+        conditional_direct_map16: false,
+        ..LunarMagicConditionalViewState::default()
+    };
     render_mapped_standard_object_placement_with_view_state(
         record,
         placement,

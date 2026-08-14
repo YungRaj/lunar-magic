@@ -581,11 +581,13 @@ mod tests {
             loaded.buffers.primary_bytes()[EventTilemapBuffers::WORD_COUNT + 60],
             0xc0
         );
-        assert!(loaded
-            .buffers
-            .secondary_high_bytes()
-            .iter()
-            .all(|byte| *byte == 0));
+        assert!(
+            loaded
+                .buffers
+                .secondary_high_bytes()
+                .iter()
+                .all(|byte| *byte == 0)
+        );
 
         let mut edited = loaded.buffers;
         edited.secondary_high_bytes_mut()[0x7ff] = 0x80;

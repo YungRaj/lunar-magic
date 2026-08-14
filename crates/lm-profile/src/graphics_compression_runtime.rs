@@ -11,7 +11,7 @@ use lm_rats::{HEADER_LEN, HeaderError, parse_at};
 use lm_rom::{Mapper, RomError, RomImage, SnesPointer24, detect_identity, snes_to_pc};
 
 pub const SMW_US_V1_GRAPHICS_COMPRESSION_METADATA_OFFSET: usize = 0x07_ffeb;
-pub const SMW_US_V1_GRAPHICS_COMPRESSION_HOOK_OFFSET: usize = 0x0038_e3;
+pub const SMW_US_V1_GRAPHICS_COMPRESSION_HOOK_OFFSET: usize = 0x0000_38e3;
 
 const ORIGINAL_HOOK: [u8; 5] = [0x20, 0x83, 0xb9, 0xc9, 0xff];
 const INSTALLED_OPCODE: u8 = 0x22;
@@ -1273,6 +1273,7 @@ mod tests {
         }
     }
 
+    #[allow(clippy::type_complexity)]
     fn load_mapper_graphics(
         image: &RomImage,
         mapper: Mapper,

@@ -2,8 +2,8 @@
 
 use lm_codec::encode_lz2;
 use lm_project::{PatchFixup, PatchFixupEncoding, PatchPayload, PatchWrite, RelocatablePatchPlan};
-use lm_rats::{parse_at, AllocationPolicy, HEADER_LEN};
-use lm_rom::{snes_to_pc, Mapper, RomError, RomImage};
+use lm_rats::{AllocationPolicy, HEADER_LEN, parse_at};
+use lm_rom::{Mapper, RomError, RomImage, snes_to_pc};
 
 pub const SMW_US_V1_EXGFX_RUNTIME_HOOK_OFFSET: usize = 0x001471;
 pub const SMW_US_V1_EXGFX_RUNTIME_HOOK: [u8; 5] = [0x22, 0xc0, 0xf9, 0x0f, 0xea];
@@ -978,18 +978,22 @@ mod tests {
                 .unwrap(),
             SMW_US_V1_EXPANDED_GRAPHICS_FORMAT_MARKER
         );
-        assert!(project
-            .rom
-            .read(SMW_US_V1_ORDINARY_EXGFX_POINTER_OFFSET + 3, 0x7f * 3)
-            .unwrap()
-            .iter()
-            .all(|byte| *byte == 0));
-        assert!(project
-            .rom
-            .read(SMW_US_V1_EXTENDED_EXGFX_POINTER_OFFSET, 0xf00 * 3)
-            .unwrap()
-            .iter()
-            .all(|byte| *byte == 0));
+        assert!(
+            project
+                .rom
+                .read(SMW_US_V1_ORDINARY_EXGFX_POINTER_OFFSET + 3, 0x7f * 3)
+                .unwrap()
+                .iter()
+                .all(|byte| *byte == 0)
+        );
+        assert!(
+            project
+                .rom
+                .read(SMW_US_V1_EXTENDED_EXGFX_POINTER_OFFSET, 0xf00 * 3)
+                .unwrap()
+                .iter()
+                .all(|byte| *byte == 0)
+        );
         assert_eq!(project.rom.logical_len(), SMW_US_V1_EXGFX_LOGICAL_LEN);
         project.undo().unwrap();
         assert_eq!(project.rom.logical_bytes(), original);

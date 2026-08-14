@@ -486,8 +486,10 @@ mod tests {
         assert_eq!(before.image_size, Some(24));
         let after = UserToolbar::parse("LM_ADDIMAGE \"a.bmp\"\nLM_SETIMAGE_SIZE 24").unwrap();
         assert_eq!(after.image_size, None);
-        assert!(after
-            .global_options
-            .contains(&UserToolbarGlobalOption::SetImageSize(24)));
+        assert!(
+            after
+                .global_options
+                .contains(&UserToolbarGlobalOption::SetImageSize(24))
+        );
     }
 }

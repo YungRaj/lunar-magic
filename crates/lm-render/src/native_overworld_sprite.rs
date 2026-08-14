@@ -824,6 +824,7 @@ fn expand_map16(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn push_subtile(
     output: &mut Vec<ResolvedNativeOverworldSpriteElement>,
     sprite_index: usize,

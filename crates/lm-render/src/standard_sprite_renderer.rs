@@ -301,7 +301,7 @@ pub fn render_lunar_magic_standard_sprite_with_mode(
         0x3d => parts(&[(0x54, 8, -15), (0x64, 0, 1)]),
         // Dispatch entry $3E points at $004C5630. The low bit of the packed
         // major coordinate passed to the native handler selects $55 or $65.
-        0x3e => parts(&[(0x55 + u16::from(mode.placement_major & 1) * 0x10, 0, 1)]),
+        0x3e => parts(&[(0x55 + (mode.placement_major & 1) * 0x10, 0, 1)]),
         // Dispatch $3F -> RenderConditionalTiles56And66 @ $004C5660. The
         // adjacent $40 handler is the distinct $56/$67 parachuting variant.
         0x3f => parts(&[(0x56, -6, -14), (0x66, -6, 2)]),
@@ -480,7 +480,7 @@ pub fn render_lunar_magic_standard_sprite_with_mode(
         0x73 if mode.alternate_display => parts(&[(0x115, 0, 1)]),
         0x73 => parts(&[
             (0x42, 0, 1),
-            (0xe8 + u16::from(mode.placement_major & 1) * 0x10, 8, 1),
+            (0xe8 + (mode.placement_major & 1) * 0x10, 8, 1),
         ]),
         // Dispatches $74–$78 @ $004C73A0–$004C7420 are five consecutive
         // single-definition handlers. $81 aliases the first one.
@@ -669,7 +669,7 @@ pub fn render_lunar_magic_standard_sprite_with_mode(
                 StandardLevelOrientation::Horizontal => mode.placement_major,
                 StandardLevelOrientation::Vertical => mode.placement_minor,
             };
-            let base = 0x120 + u16::from(directional_coordinate & 1) * 2;
+            let base = 0x120 + (directional_coordinate & 1) * 2;
             parts(&[
                 (base, -8, -8),
                 (base + 1, 8, -8),

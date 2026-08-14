@@ -538,7 +538,7 @@ mod tests {
 
     #[test]
     fn native_overworld_appearance_surface_has_no_literal_widget_text() {
-        let source = include_str!("native_mode.rs");
+        let source = [include_str!("native_mode.rs"), include_str!("preview.rs")].join("\n");
         for literal in [
             "ui.button(\"",
             "ui.label(\"",

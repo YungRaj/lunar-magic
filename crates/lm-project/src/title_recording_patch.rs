@@ -375,12 +375,12 @@ fn allocate_title_blocks(
         TitleRecordingStorage::Absent => None,
         TitleRecordingStorage::Installed { runtime, recording } => {
             validate_owned(
-                &staged,
+                staged,
                 runtime,
                 TitleRecordingPatchError::MissingRuntimeOwnership,
             )?;
             validate_owned(
-                &staged,
+                staged,
                 recording,
                 TitleRecordingPatchError::MissingRecordingOwnership,
             )?;

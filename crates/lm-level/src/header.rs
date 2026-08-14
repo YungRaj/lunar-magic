@@ -408,7 +408,7 @@ impl ExpandedLevelHeader {
     /// Changes only the recovered boundary-interaction bit in expanded-settings word 8.
     pub fn set_sprites_beyond_boundaries_use_air(&mut self, enabled: bool) {
         self.fields[8] = self.fields[8] & !Self::SPRITES_BEYOND_BOUNDARIES_USE_AIR_FLAG
-            | u16::from(enabled) * Self::SPRITES_BEYOND_BOUNDARIES_USE_AIR_FLAG;
+            | (u16::from(enabled) * Self::SPRITES_BEYOND_BOUNDARIES_USE_AIR_FLAG);
     }
 }
 

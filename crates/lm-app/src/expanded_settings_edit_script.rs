@@ -111,7 +111,20 @@ pub fn parse(input: &str) -> Result<ExpandedSettingsEditScript, ExpandedSettings
                 ),
                 (8..16).map(|word| (word, 0xf000)).collect(),
             ),
-            ["super-gfx", enabled, fg1, fg2, fg3, bg1, bg2, bg3, sp1, sp2, sp3, sp4] => {
+            [
+                "super-gfx",
+                enabled,
+                fg1,
+                fg2,
+                fg3,
+                bg1,
+                bg2,
+                bg3,
+                sp1,
+                sp2,
+                sp3,
+                sp4,
+            ] => {
                 let bypass = SuperGraphicsBypass {
                     enabled: boolean(line, enabled)?,
                     foreground_background: [

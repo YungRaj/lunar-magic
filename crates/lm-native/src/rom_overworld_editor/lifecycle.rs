@@ -305,7 +305,9 @@ impl RomOverworldEditor {
     }
 
     pub(crate) fn commit_succeeded(&mut self) {
+        let pending_transition = self.editor_transition_after_save.take();
         self.clear();
+        self.editor_transition_after_save = pending_transition;
     }
 }
 
@@ -1085,7 +1087,7 @@ mod tests {
                 (128, 64)
             );
             assert_eq!(workspace.assets.map16.set.pages.len(), 0x100);
-            assert_eq!(workspace.assets.graphics.graphics.tiles.len(), 0x200);
+            assert_eq!(workspace.assets.graphics.graphics.tiles.len(), 0x400);
             assert_eq!(workspace.assets.built_in_animation_addresses.len(), 67);
             assert!(workspace.assets.built_in_level_dot_palette.is_some());
             assert!(workspace.assets.built_in_lightning.is_some());
@@ -1450,11 +1452,6 @@ mod tests {
             .resolve_editor_transition_choice(Some(0), revision)
             .expect("combined save must emit terrain first");
         app.dispatch(terrain_commit).unwrap();
-        combined.commit_succeeded();
-        let path_commit = combined
-            .take_editor_transition_after_save(app.project_revision())
-            .expect("combined save must emit route links second");
-        app.dispatch(path_commit).unwrap();
         combined.commit_succeeded();
         assert_eq!(
             combined.take_editor_transition_after_save(app.project_revision()),

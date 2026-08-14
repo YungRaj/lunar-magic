@@ -330,17 +330,17 @@ mod tests {
     fn out_of_range_id_is_typed_instead_of_indexing_the_size_table() {
         let table = NativeCustomOverworldSpriteTable {
             maps: std::array::from_fn(|map| {
-                (map == 0)
-                    .then(|| {
-                        vec![NativeCustomOverworldSprite {
-                            id: 0x80,
-                            x: 0,
-                            y: 0,
-                            screen: 0,
-                            extra: vec![0],
-                        }]
-                    })
-                    .unwrap_or_default()
+                if map == 0 {
+                    vec![NativeCustomOverworldSprite {
+                        id: 0x80,
+                        x: 0,
+                        y: 0,
+                        screen: 0,
+                        extra: vec![0],
+                    }]
+                } else {
+                    Vec::new()
+                }
             }),
         };
         assert_eq!(

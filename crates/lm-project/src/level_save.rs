@@ -672,9 +672,11 @@ mod tests {
                 let mut logical_results = Vec::new();
 
                 for copier_header in [false, true] {
-                    let prefix: Vec<u8> = copier_header
-                        .then(|| (0..0x200).map(|index| (index as u8) ^ 0xa5).collect())
-                        .unwrap_or_default();
+                    let prefix: Vec<u8> = if copier_header {
+                        (0..0x200).map(|index| (index as u8) ^ 0xa5).collect()
+                    } else {
+                        Vec::new()
+                    };
                     let mut physical = prefix.clone();
                     physical.extend(vec![0xff; 0x8000]);
                     let mut project = Project::new(RomImage::from_bytes(physical).unwrap());

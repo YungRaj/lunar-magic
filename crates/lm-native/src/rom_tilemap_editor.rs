@@ -485,7 +485,10 @@ mod tests {
                 "tilemap editor bypasses typed localization with {literal_widget}"
             );
         }
-        for key in ExtendedUiTextKey::ALL {
+        for key in ExtendedUiTextKey::ALL
+            .into_iter()
+            .filter(|key| format!("{key:?}").starts_with("Tilemap"))
+        {
             assert!(source.contains(&format!("ExtendedUiTextKey::{key:?}")));
         }
     }

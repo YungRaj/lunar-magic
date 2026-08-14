@@ -1,7 +1,7 @@
 //! Strict compressed Layer 2 tilemap scripts for word painting and native remapping.
 
 use lm_app::NativeLevelAssetsControllerEdit;
-use lm_level::{NativeLayer2RemapProgram, NATIVE_LAYER2_TILEMAP_LEN};
+use lm_level::{NATIVE_LAYER2_TILEMAP_LEN, NativeLayer2RemapProgram};
 use std::collections::BTreeSet;
 use std::fmt;
 

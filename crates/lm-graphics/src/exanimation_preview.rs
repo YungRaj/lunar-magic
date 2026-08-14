@@ -790,8 +790,10 @@ mod tests {
     fn conditional_and_custom_triggers_select_the_second_frame_bank() {
         let records = vec![record(1, 1, 4), record(1, 1, 0x2a)];
         let mut state = ExAnimationPreviewState::new(2);
-        let mut triggers = ExAnimationTriggerPreviewState::default();
-        triggers.have_star = true;
+        let mut triggers = ExAnimationTriggerPreviewState {
+            have_star: true,
+            ..ExAnimationTriggerPreviewState::default()
+        };
         triggers.custom[0x0a] = true;
         assert_eq!(
             state.process_phase(&records, 0, true, &mut triggers)[0].frame,
@@ -807,10 +809,11 @@ mod tests {
     fn overworld_event_manual_replaces_level_trigger_slots_eight_through_f() {
         let records = vec![record(1, 1, 8), record(1, 1, 0x0f)];
         let mut state = ExAnimationPreviewState::new(records.len());
-        let mut triggers = ExAnimationTriggerPreviewState::default();
-        triggers.five_yoshi_coins = true;
-        triggers.overworld_event_manual =
-            Some([false, false, false, false, false, false, false, true]);
+        let mut triggers = ExAnimationTriggerPreviewState {
+            five_yoshi_coins: true,
+            overworld_event_manual: Some([false, false, false, false, false, false, false, true]),
+            ..ExAnimationTriggerPreviewState::default()
+        };
 
         assert_eq!(
             state.process_phase(&records, 0, true, &mut triggers)[0].frame,

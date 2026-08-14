@@ -179,10 +179,7 @@ mod tests {
         );
         assert_eq!(spec.sprite_spawn, Some(PathBuf::from("project/Spawn.txt")));
         assert_eq!(spec.map16, Some(PathBuf::from("project/Blocks.txt")));
-        assert_eq!(
-            spec.entrances,
-            Some(PathBuf::from("project/Entrances.txt"))
-        );
+        assert_eq!(spec.entrances, Some(PathBuf::from("project/Entrances.txt")));
         assert_eq!(
             parse("LMNATED1\nlayer2-tilemap=tiles.txt\n", Path::new("project"))
                 .unwrap()

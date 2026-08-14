@@ -37,7 +37,7 @@ fn parse_from(args: &[OsString]) -> Result<Command, Box<dyn std::error::Error>> 
         return Ok(command);
     }
     match text.as_slice() {
-        [command, path] if command == "inspect" => Ok(Command::Inspect(PathBuf::from(&args[1]))),
+        [command, _path] if command == "inspect" => Ok(Command::Inspect(PathBuf::from(&args[1]))),
         [command, _, mapper, page, graphics_table, acts_like_table] if command == "map16" => {
             Ok(Command::Map16 {
                 rom: PathBuf::from(&args[1]),

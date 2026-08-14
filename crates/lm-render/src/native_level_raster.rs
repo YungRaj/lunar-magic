@@ -637,6 +637,7 @@ fn lm363_editor_font_advance(character: u8) -> i16 {
     i16::from_le_bytes([LM363_EDITOR_FONT[offset], LM363_EDITOR_FONT[offset + 1]])
 }
 
+#[allow(clippy::too_many_arguments)]
 fn draw_map16_clipped(
     canvas: &mut Canvas,
     definition: Map16Tile,
@@ -688,6 +689,7 @@ fn draw_map16_clipped(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn draw_subtile_clipped(
     canvas: &mut Canvas,
     subtile: Subtile,

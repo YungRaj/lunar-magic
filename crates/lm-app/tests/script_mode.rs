@@ -10,21 +10,21 @@ use lm_level::{
     NativeSpriteStream, S16Sidecar, SpriteLengthTable,
 };
 use lm_overworld::{
-    decode_native_overworld_message_file, encode_native_overworld_message_file, EventNumberMap,
-    EventReveal, EventRevealTable, EventTilemapBuffers, OverworldLevelName, OverworldMessage,
-    OverworldMetadata, OverworldPathGraph, PathDirection, PathEdge, PathNode,
+    EventNumberMap, EventReveal, EventRevealTable, EventTilemapBuffers, OverworldLevelName,
+    OverworldMessage, OverworldMetadata, OverworldPathGraph, PathDirection, PathEdge, PathNode,
     SpecialEventRevealTable, SpriteAppearanceDefinition, SpriteAppearanceFile,
-    SpriteAppearancePart, Submap,
+    SpriteAppearancePart, Submap, decode_native_overworld_message_file,
+    encode_native_overworld_message_file,
 };
 use lm_profile::{
-    smw_us_v1_event_tilemap_locator, smw_us_v1_overworld_event_number_map_locator,
-    smw_us_v1_overworld_event_reveal_locator, smw_us_v1_overworld_message_patch_locator,
-    smw_us_v1_special_event_reveal_locator, SMW_US_V1_EXPANDED_SETTINGS_ALLOCATION_LEN,
-    SMW_US_V1_EXPANDED_SETTINGS_ALLOCATION_SEARCH_START,
+    SMW_US_V1_EXPANDED_SETTINGS_ALLOCATION_LEN,
+    SMW_US_V1_EXPANDED_SETTINGS_ALLOCATION_SEARCH_START, smw_us_v1_event_tilemap_locator,
+    smw_us_v1_overworld_event_number_map_locator, smw_us_v1_overworld_event_reveal_locator,
+    smw_us_v1_overworld_message_patch_locator, smw_us_v1_special_event_reveal_locator,
 };
 use lm_project::{EventTilemapCompression, MwlOptionalLevelAssets, Project};
 use lm_rats::{parse_at, scan};
-use lm_rom::{detect_identity, RomImage};
+use lm_rom::{RomImage, detect_identity};
 use std::fs;
 use std::path::PathBuf;
 use std::process::Command;
@@ -142,8 +142,10 @@ fn command_script_drives_the_real_binary_and_propagates_errors() {
         .output()
         .unwrap();
     assert!(elevated.status.success());
-    assert!(String::from_utf8_lossy(&elevated.stdout)
-        .contains("in-place ROM replacement is explicitly enabled"));
+    assert!(
+        String::from_utf8_lossy(&elevated.stdout)
+            .contains("in-place ROM replacement is explicitly enabled")
+    );
     let duplicate = Command::new(env!("CARGO_BIN_EXE_lm-app"))
         .arg("--allow-in-place-rom-write")
         .arg("--allow-in-place-rom-write")

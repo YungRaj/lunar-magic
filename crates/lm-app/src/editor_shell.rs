@@ -4,11 +4,11 @@ use crate::{
     shell_command,
 };
 use lm_app::{
-    AppState, EditorMode, LevelController, Map16ControllerEdit, MwlBatchExportMode, NativeLevelEdit,
-    OverworldControllerEdit, OverworldLayerId, RevisionProfileControllers,
-    SmwMainOverworldLayer2Controller,
-    VanillaEntranceController, VanillaEntranceEdit, discover_mwl_directory,
-    export_smw_us_v1_installed_mwl_batch, prepare_declared_mwl_import, publish_mwl_batch_new,
+    AppState, EditorMode, LevelController, Map16ControllerEdit, MwlBatchExportMode,
+    NativeLevelEdit, OverworldControllerEdit, OverworldLayerId, RevisionProfileControllers,
+    SmwMainOverworldLayer2Controller, VanillaEntranceController, VanillaEntranceEdit,
+    discover_mwl_directory, export_smw_us_v1_installed_mwl_batch, prepare_declared_mwl_import,
+    publish_mwl_batch_new,
 };
 use lm_level::{LegacyHeaderEdit, MwlFile};
 use lm_project::{
@@ -398,7 +398,10 @@ pub(crate) fn commit_native_assets_edits(
         };
         let map16_prepared =
             map16.prepare_commit("Stage aggregate Map16 definitions", &map16_options)?;
-        staged.apply_mutation("Stage aggregate Map16 definitions", &map16_prepared.mutation)?;
+        staged.apply_mutation(
+            "Stage aggregate Map16 definitions",
+            &map16_prepared.mutation,
+        )?;
     }
     if !entrance_edits.is_empty() {
         let mut entrance_snapshot = profiled.snapshot.clone();
@@ -580,9 +583,8 @@ fn commit_builtin_smw_level_edits(
     let sprite_pointer = layout.sprites.read_snes_pointer(&image, level)?;
     let sprite_offset = sprite_pointer.to_pc(layout.mapper)?;
     let sprite_header = image.read(sprite_offset, 1)?[0];
-    layout.expanded_sprites = lm_level::NativeSpriteStream::header_uses_expanded_framing(
-        sprite_header,
-    );
+    layout.expanded_sprites =
+        lm_level::NativeSpriteStream::header_uses_expanded_framing(sprite_header);
     let mut controller =
         LevelController::decode(&snapshot, layout, &lm_level::SpriteLengthTable::standard())?;
     controller.apply_edits(edits)?;

@@ -171,6 +171,7 @@ impl Project {
     /// Rejects invalid layouts or pointers, replacement streams outside the original 512-KiB
     /// area, a shared-bank sprite layout whose bank cannot represent the replacement, malformed
     /// tagged payloads, checksum failures, and atomic transaction failures.
+    #[allow(clippy::too_many_arguments)]
     pub fn delete_level_streams_to_original(
         &mut self,
         description: impl Into<String>,
@@ -276,6 +277,7 @@ impl Project {
     /// area, malformed tagged ownership, unsafe shared-bank sprite replacement, checksum failures,
     /// and atomic transaction failures. Original-area targets are redirected without attempting
     /// payload reclamation; this is required by Lunar Magic's multi-level unmodified/all modes.
+    #[allow(clippy::too_many_arguments)]
     pub fn delete_native_level_assets_to_original_source(
         &mut self,
         description: impl Into<String>,

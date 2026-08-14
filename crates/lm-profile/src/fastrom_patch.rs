@@ -248,7 +248,7 @@ const TRAMPOLINE_OFFSET: usize = 0x003a4e;
 const MAP_MODE_OFFSET: usize = 0x007fd5;
 const FIRST_HOOK_WORD_OFFSET: usize = 0x007fea;
 const SECOND_HOOK_WORD_OFFSET: usize = 0x007ffc;
-const PATCH_MARKER_OFFSET: usize = 0x007f_fef;
+const PATCH_MARKER_OFFSET: usize = 0x0007_ffef;
 
 /// Authenticates the complete fixed hook and dynamically owned runtime contract.
 pub fn detect_smw_us_v1_fastrom_patch(
@@ -405,9 +405,8 @@ fn changed_byte_writes(before: &[u8], after: &[u8]) -> Vec<PatchWrite> {
         .iter()
         .zip(after)
         .enumerate()
-        .filter_map(|(offset, (&expected, &replacement))| {
-            (expected != replacement).then(|| fixed_write(offset, &[expected], &[replacement]))
-        })
+        .filter(|&(_, (&expected, &replacement))| expected != replacement)
+        .map(|(offset, (&expected, &replacement))| fixed_write(offset, &[expected], &[replacement]))
         .collect()
 }
 

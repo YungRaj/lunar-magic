@@ -153,8 +153,10 @@ impl RomOverworldSpecialEventEditor {
                 catalog,
                 ExtendedUiTextKey::SpecialEventEditorTitle,
             ))
-                .default_size([520.0, 340.0])
-                .show(context, |ui| command = self.contents(ui, project_revision, catalog));
+            .default_size([520.0, 340.0])
+            .show(context, |ui| {
+                command = self.contents(ui, project_revision, catalog)
+            });
         }
         let approved = self.close_confirmation(context, catalog);
         self.show_error(context, catalog);
@@ -337,29 +339,35 @@ impl RomOverworldSpecialEventEditor {
             catalog,
             ExtendedUiTextKey::SpecialEventDiscardTitle,
         ))
-            .collapsible(false)
-            .resizable(false)
-            .show(context, |ui| {
-                ui.label(crate::frontend_ui::extended_localized_text(
-                    catalog,
-                    ExtendedUiTextKey::SpecialEventUnsavedNotice,
-                ));
-                ui.horizontal(|ui| {
-                    if ui.button(crate::frontend_ui::localized_text(
+        .collapsible(false)
+        .resizable(false)
+        .show(context, |ui| {
+            ui.label(crate::frontend_ui::extended_localized_text(
+                catalog,
+                ExtendedUiTextKey::SpecialEventUnsavedNotice,
+            ));
+            ui.horizontal(|ui| {
+                if ui
+                    .button(crate::frontend_ui::localized_text(
                         catalog,
                         UiTextKey::CommonCancel,
-                    )).clicked() {
-                        self.pending_close = None;
-                    }
-                    if ui.button(crate::frontend_ui::localized_text(
+                    ))
+                    .clicked()
+                {
+                    self.pending_close = None;
+                }
+                if ui
+                    .button(crate::frontend_ui::localized_text(
                         catalog,
                         UiTextKey::UnsavedDiscard,
-                    )).clicked() {
-                        self.clear();
-                        approved = pending == PendingClose::Application;
-                    }
-                });
+                    ))
+                    .clicked()
+                {
+                    self.clear();
+                    approved = pending == PendingClose::Application;
+                }
             });
+        });
         approved
     }
 
@@ -368,12 +376,16 @@ impl RomOverworldSpecialEventEditor {
             egui::Window::new(crate::frontend_ui::extended_localized_text(
                 catalog,
                 ExtendedUiTextKey::SpecialEventErrorTitle,
-            )).show(context, |ui| {
+            ))
+            .show(context, |ui| {
                 ui.label(error);
-                if ui.button(crate::frontend_ui::localized_text(
-                    catalog,
-                    UiTextKey::CommonOk,
-                )).clicked() {
+                if ui
+                    .button(crate::frontend_ui::localized_text(
+                        catalog,
+                        UiTextKey::CommonOk,
+                    ))
+                    .clicked()
+                {
                     self.error = None;
                 }
             });

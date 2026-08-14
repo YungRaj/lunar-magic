@@ -1494,9 +1494,11 @@ fn assign_tiles_to_lowest_error_rows(
                 else {
                     continue;
                 };
-                let assigned_priority = prefer_assigned_entries
-                    .then_some(assigned_pixels)
-                    .unwrap_or(0);
+                let assigned_priority = if prefer_assigned_entries {
+                    assigned_pixels
+                } else {
+                    0
+                };
                 if best
                     .as_ref()
                     .is_none_or(|(best_error, best_assigned, best_row, _)| {
@@ -1827,10 +1829,12 @@ impl PaletteRowAllocation {
             .min_by_key(|(entry, distance)| {
                 (
                     *distance,
-                    prefer_last_equal_entry
-                        .then_some(Reverse(*entry))
-                        .unwrap_or(Reverse(0)),
-                    (!prefer_last_equal_entry).then_some(*entry).unwrap_or(0),
+                    if prefer_last_equal_entry {
+                        Reverse(*entry)
+                    } else {
+                        Reverse(0)
+                    },
+                    if prefer_last_equal_entry { 0 } else { *entry },
                 )
             })
     }

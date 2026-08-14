@@ -126,7 +126,7 @@ impl MwlOptionalAssetsPanel {
                 if ui
                     .add_sized(
                         [20.0, 20.0],
-                        egui::Button::new("")
+                        egui::Button::new(egui::RichText::default())
                             .fill(egui::Color32::from_rgb(rgb.red, rgb.green, rgb.blue)),
                     )
                     .clicked()

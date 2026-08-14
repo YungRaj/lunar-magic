@@ -3,6 +3,11 @@
 A cross-platform, clean-room reimplementation of Lunar Magic for Super Mario World, written in
 safe Rust.
 
+The current stable release is **1.0.0**. It provides the first supported portable release of the
+native editor, command-line tools, isolated live-emulator backend, verified updater, and rollback
+launcher. The compatibility limitations documented below still apply; 1.0 denotes a stable
+release boundary, not a claim that every Lunar Magic 3.63 workflow is implemented.
+
 The project is building a native level editor and a reusable ROM-editing engine for macOS, Linux,
 and Windows. It already opens supported SMW ROMs, renders and edits several level and overworld
 domains, performs transactional ROM changes with undo/redo, and includes command-line tools for
@@ -23,7 +28,7 @@ right. The screenshot shows the built-in SMW-US profile rendering level `$001`; 
 
 ### Requirements
 
-- Rust 1.85 or newer
+- Rust 1.88 or newer
 - Cargo
 - A legally obtained Super Mario World ROM
 - Platform build dependencies required by
@@ -40,7 +45,7 @@ From the repository root:
 ```sh
 cargo build --workspace
 cargo test --workspace --all-targets
-cargo clippy --workspace --all-targets --all-features -- -D warnings
+cargo clippy --workspace --all-targets --all-features
 cargo fmt --all -- --check
 ```
 

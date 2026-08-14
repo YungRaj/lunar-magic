@@ -1820,7 +1820,7 @@ checksum = "11d3d7f243d5c5a8b9bb5d6dd2b1602c0cb0b9db1621bafc7ed66e35ff9fe092"
 
 [[package]]
 name = "lm-app"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "fax",
  "flate2",
@@ -1843,7 +1843,7 @@ dependencies = [
 
 [[package]]
 name = "lm-cli"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "lm-app",
  "lm-codec",
@@ -1863,15 +1863,15 @@ dependencies = [
 
 [[package]]
 name = "lm-codec"
-version = "0.1.0"
+version = "1.0.0"
 
 [[package]]
 name = "lm-graphics"
-version = "0.1.0"
+version = "1.0.0"
 
 [[package]]
 name = "lm-launcher"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "lm-update",
  "tempfile",
@@ -1879,11 +1879,11 @@ dependencies = [
 
 [[package]]
 name = "lm-level"
-version = "0.1.0"
+version = "1.0.0"
 
 [[package]]
 name = "lm-libretro"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "libloading",
  "lm-app",
@@ -1892,7 +1892,7 @@ dependencies = [
 
 [[package]]
 name = "lm-native"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "arboard",
  "chrono",
@@ -1922,7 +1922,7 @@ dependencies = [
 
 [[package]]
 name = "lm-oracle"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "lm-codec",
  "lm-graphics",
@@ -1937,14 +1937,14 @@ dependencies = [
 
 [[package]]
 name = "lm-overworld"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "lm-graphics",
 ]
 
 [[package]]
 name = "lm-package"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "flate2",
  "lm-update",
@@ -1953,7 +1953,7 @@ dependencies = [
 
 [[package]]
 name = "lm-profile"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "base64",
  "flate2",
@@ -1971,7 +1971,7 @@ dependencies = [
 
 [[package]]
 name = "lm-project"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "flate2",
  "lm-codec",
@@ -1985,11 +1985,11 @@ dependencies = [
 
 [[package]]
 name = "lm-rats"
-version = "0.1.0"
+version = "1.0.0"
 
 [[package]]
 name = "lm-render"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "lm-graphics",
  "lm-level",
@@ -2002,22 +2002,22 @@ dependencies = [
 
 [[package]]
 name = "lm-rom"
-version = "0.1.0"
+version = "1.0.0"
 
 [[package]]
 name = "lm-snes"
-version = "0.1.0"
+version = "1.0.0"
 
 [[package]]
 name = "lm-title"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "flate2",
 ]
 
 [[package]]
 name = "lm-update"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "flate2",
  "sha2",
@@ -2026,7 +2026,7 @@ dependencies = [
 
 [[package]]
 name = "lm-windows"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "windows-sys 0.59.0",
 ]

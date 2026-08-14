@@ -251,19 +251,25 @@ fn parse_command(line: usize, content: &str) -> Result<NativeLevelEdit, LevelEdi
                 },
             },
         ])),
-        ["object", "relocate-position", index, screen, first, second, perpendicular_high] => {
-            Ok(NativeLevelEdit::Objects(vec![
-                ObjectEdit::RelocateOrdinaryPosition {
-                    index: decimal(line, index)?,
-                    screen: native_screen(line, screen)?,
-                    coordinates: ObjectCoordinateNibbles {
-                        first: coordinate_nibble(line, first)?,
-                        second: coordinate_nibble(line, second)?,
-                    },
-                    perpendicular_high: boolean(line, perpendicular_high)?,
+        [
+            "object",
+            "relocate-position",
+            index,
+            screen,
+            first,
+            second,
+            perpendicular_high,
+        ] => Ok(NativeLevelEdit::Objects(vec![
+            ObjectEdit::RelocateOrdinaryPosition {
+                index: decimal(line, index)?,
+                screen: native_screen(line, screen)?,
+                coordinates: ObjectCoordinateNibbles {
+                    first: coordinate_nibble(line, first)?,
+                    second: coordinate_nibble(line, second)?,
                 },
-            ]))
-        }
+                perpendicular_high: boolean(line, perpendicular_high)?,
+            },
+        ])),
         ["sprite-header", value] => Ok(NativeLevelEdit::SetSpriteHeader(hex_byte(line, value)?)),
         ["sprite-properties", memory, buoyancy_1, buoyancy_2] => {
             let memory = hex_byte(line, memory)?;

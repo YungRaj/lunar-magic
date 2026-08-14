@@ -987,10 +987,7 @@ mod tests {
 
         let horizontal_maximum = ObjectRecord::new(vec![0x1f, 0x0f, 1]).unwrap();
         assert_eq!(
-            horizontal_maximum
-                .screen_jump()
-                .unwrap()
-                .resolved_screen(),
+            horizontal_maximum.screen_jump().unwrap().resolved_screen(),
             0x30
         );
     }

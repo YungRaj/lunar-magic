@@ -105,7 +105,6 @@ impl CustomObjectEntry {
         })
     }
 
-    #[must_use]
     pub fn objects(&self) -> impl Iterator<Item = &ObjectRecord> {
         std::iter::once(&self.object).chain(&self.additional_objects)
     }

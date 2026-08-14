@@ -3,11 +3,11 @@ use crate::{LevelControllerError, PaletteControllerEdit};
 use lm_codec::encode_terminated_rle;
 use lm_graphics::{Bgr555, Palette, PaletteChange, PaletteEntryOwner, PaletteInterchangeFile};
 use lm_level::{
-    split_layer2_tilemap_planes, CustomTimeSettings, ExpandedLevelHeader, Layer1VerticalScrollMode,
-    LegacyHeaderEdit, MwlFile, MwlLayer2Descriptor, MwlLevelHeaderSection,
+    CustomTimeSettings, ExpandedLevelHeader, Layer1VerticalScrollMode, LegacyHeaderEdit, MwlFile,
+    MwlLayer2Descriptor, MwlLevelHeaderSection, NATIVE_LAYER2_TILEMAP_LEN,
     NativeObjectRecordFields, NativeSpriteRecordFields, NativeSpriteStream,
     ObjectCoordinateNibbles, ObjectRecord, ObjectStream, SpriteRecord, SpriteToken,
-    NATIVE_LAYER2_TILEMAP_LEN,
+    split_layer2_tilemap_planes,
 };
 use lm_project::{
     ExAnimationRomLayout, ExAnimationSaveOptions, ExpandedLevelSettingsLayout,
@@ -18,7 +18,7 @@ use lm_project::{
     PaletteSaveOptions, RatsOwnershipManifest,
 };
 use lm_rats::{AllocationPolicy, ProtectedRange};
-use lm_rom::{compute_snes_checksum, detect_identity, pc_to_snes, SnesChecksum};
+use lm_rom::{SnesChecksum, compute_snes_checksum, detect_identity, pc_to_snes};
 
 fn table(offset: usize) -> LevelPointerTable {
     LevelPointerTable {
@@ -1292,11 +1292,13 @@ fn installed_aggregate_history_is_bounded() {
     .unwrap();
     controller.apply_edits(&[]).unwrap();
     assert!(!controller.can_undo());
-    assert!(controller
-        .apply_edits(&[NativeLevelAssetsControllerEdit::ExpandedSettingsWords(
-            vec![(1, 2), (1, 3)],
-        )])
-        .is_err());
+    assert!(
+        controller
+            .apply_edits(&[NativeLevelAssetsControllerEdit::ExpandedSettingsWords(
+                vec![(1, 2), (1, 3)],
+            )])
+            .is_err()
+    );
     assert!(!controller.can_undo());
     for value in 0..=NativeLevelAssetsController::HISTORY_LIMIT {
         controller
@@ -1524,9 +1526,11 @@ fn owned_aggregate_reclaims_four_payloads_keeps_direct_write_atomic_and_undoes()
         .apply_mutation("commit", &prepared.mutation)
         .unwrap();
     for block in &manifest.owned {
-        assert!(project.rom.logical_bytes()[block.full_range()]
-            .iter()
-            .all(|byte| *byte == 0xff));
+        assert!(
+            project.rom.logical_bytes()[block.full_range()]
+                .iter()
+                .all(|byte| *byte == 0xff)
+        );
     }
     assert_eq!(
         project
@@ -1867,9 +1871,11 @@ fn owned_layer2_aggregate_reclaims_all_five_payloads_atomically() {
         .apply_mutation("owned Layer 2 aggregate", &prepared.mutation)
         .unwrap();
     for block in &manifest.owned {
-        assert!(project.rom.logical_bytes()[block.full_range()]
-            .iter()
-            .all(|byte| *byte == 0xff));
+        assert!(
+            project.rom.logical_bytes()[block.full_range()]
+                .iter()
+                .all(|byte| *byte == 0xff)
+        );
     }
     assert_eq!(
         project.load_level_layer2(0, 2, layer2_layout()).unwrap(),
@@ -1888,14 +1894,16 @@ fn late_cross_domain_failure_rolls_back_the_complete_aggregate() {
     )
     .unwrap();
     let before = controller.assets().clone();
-    assert!(controller
-        .apply_edits(&[
-            NativeLevelAssetsControllerEdit::ExAnimation(vec![
-                ExAnimationControllerEdit::SetSetting(9),
-            ]),
-            NativeLevelAssetsControllerEdit::ExpandedSettingsWords(vec![(16, 1)]),
-        ])
-        .is_err());
+    assert!(
+        controller
+            .apply_edits(&[
+                NativeLevelAssetsControllerEdit::ExAnimation(vec![
+                    ExAnimationControllerEdit::SetSetting(9),
+                ]),
+                NativeLevelAssetsControllerEdit::ExpandedSettingsWords(vec![(16, 1)]),
+            ])
+            .is_err()
+    );
     assert_eq!(controller.assets(), &before);
     assert!(!controller.is_modified());
 }
@@ -2062,13 +2070,11 @@ fn installed_truncate_is_one_cross_domain_undo_boundary() {
                     y: 1,
                 },
             ]),
-            NativeLevelAssetsControllerEdit::Layer2Objects(vec![
-                ObjectEdit::InsertOrdinaryAt {
-                    record,
-                    screen: 13,
-                    coordinates: position,
-                },
-            ]),
+            NativeLevelAssetsControllerEdit::Layer2Objects(vec![ObjectEdit::InsertOrdinaryAt {
+                record,
+                screen: 13,
+                coordinates: position,
+            }]),
         ])
         .unwrap();
     let before_truncate = controller.assets().clone();

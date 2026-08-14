@@ -86,17 +86,17 @@ cargo run --locked --release -p lm-package -- \
   --bin-dir target/x86_64-unknown-linux-gnu/release \
   --output-dir dist \
   --target x86_64-unknown-linux-gnu \
-  --version 0.1.0
+  --version 1.0.0
 ```
 
 Verify and inspect the result before distributing it:
 
 ```sh
 cd dist
-shasum -a 256 -c lunar-magic-rust-0.1.0-x86_64-unknown-linux-gnu.tar.gz.sha256
-tar -tzf lunar-magic-rust-0.1.0-x86_64-unknown-linux-gnu.tar.gz
-tar -xOzf lunar-magic-rust-0.1.0-x86_64-unknown-linux-gnu.tar.gz \
-  lunar-magic-rust-0.1.0-x86_64-unknown-linux-gnu/RELEASE-MANIFEST.txt
+shasum -a 256 -c lunar-magic-rust-1.0.0-x86_64-unknown-linux-gnu.tar.gz.sha256
+tar -tzf lunar-magic-rust-1.0.0-x86_64-unknown-linux-gnu.tar.gz
+tar -xOzf lunar-magic-rust-1.0.0-x86_64-unknown-linux-gnu.tar.gz \
+  lunar-magic-rust-1.0.0-x86_64-unknown-linux-gnu/RELEASE-MANIFEST.txt
 ```
 
 On Windows, compare `Get-FileHash -Algorithm SHA256` with the first field of the checksum file.
@@ -110,7 +110,7 @@ target so a newer commit replaces obsolete hosted package work; immutable tag ru
 cancelled. Each native runner executes the packager, updater, and launcher contract tests before
 packaging; the Windows launcher gate uses a real copied `cmd.exe` payload to prove selector
 switching, rollback, process execution, and exit-status propagation, while all platforms compile
-the same tamper-checking path. Non-tag runs produce `0.1.0-dev` CI artifacts retained for 14 days.
+the same tamper-checking path. Non-tag runs produce `1.0.0-dev` CI artifacts retained for 14 days.
 A pushed `v*` tag instead derives the version from that tag and, only after all four matrix builds
 succeed, downloads the complete set, verifies every checksum with strict parsing, attests the
 artifacts, and creates the matching GitHub Release with generated notes. The release job has scoped

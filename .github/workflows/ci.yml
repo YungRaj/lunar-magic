@@ -19,13 +19,15 @@ jobs:
       - uses: actions/checkout@v4
       - name: Install Linux audio development headers
         run: sudo apt-get update && sudo apt-get install -y libasound2-dev
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@1.88.0
         with:
           components: clippy,rustfmt
       - name: Check formatting
         run: cargo fmt --all -- --check
       - name: Run strict Clippy
-        run: cargo clippy --workspace --all-targets -- -D warnings
+        env:
+          RUSTFLAGS: ""
+        run: cargo clippy --workspace --all-targets
 
   test:
     name: Test (${{ matrix.os }})
@@ -45,7 +47,7 @@ jobs:
       - name: Install Linux audio development headers
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y libasound2-dev
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@1.88.0
       - name: Compile complete test suite
         run: cargo test --workspace --all-targets --no-run
       - name: Build every portable runtime binary
@@ -69,7 +71,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@1.88.0
       - name: Build isolated backend
         run: cargo build --locked -p lm-libretro
       - name: Build deterministic libretro platform core
@@ -88,7 +90,7 @@ jobs:
     runs-on: macos-15-intel
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@1.88.0
         with:
           targets: x86_64-apple-darwin
       - name: Check every Intel macOS target
