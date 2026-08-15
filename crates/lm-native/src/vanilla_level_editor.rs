@@ -2996,19 +2996,6 @@ impl VanillaLevelEditor {
             .as_ref()
             .and_then(LevelController::layer2_descriptor)
             .map_or(0, lm_level::MwlLayer2Descriptor::active_bank);
-        let background_tilemap = self
-            .controller
-            .as_ref()
-            .and_then(LevelController::layer2)
-            .and_then(|layer2| match layer2 {
-                lm_level::NativeLayer2Data::Tilemap(bytes) => Some(
-                    bytes
-                        .chunks_exact(2)
-                        .map(|bytes| u16::from_le_bytes([bytes[0], bytes[1]]))
-                        .collect::<Vec<_>>(),
-                ),
-                lm_level::NativeLayer2Data::Objects(_) => None,
-            });
         let key = (
             snapshot.revision,
             level,
@@ -3029,6 +3016,22 @@ impl VanillaLevelEditor {
         if self.map16_key == Some(key) {
             return;
         }
+        // Decoding a Layer 2 background can allocate thousands of words. Keep it behind the
+        // render-asset cache check so an unchanged level does no background work on ordinary UI
+        // frames (pointer movement, scrolling, panel interaction, and window resizing).
+        let background_tilemap = self
+            .controller
+            .as_ref()
+            .and_then(LevelController::layer2)
+            .and_then(|layer2| match layer2 {
+                lm_level::NativeLayer2Data::Tilemap(bytes) => Some(
+                    bytes
+                        .chunks_exact(2)
+                        .map(|bytes| u16::from_le_bytes([bytes[0], bytes[1]]))
+                        .collect::<Vec<_>>(),
+                ),
+                lm_level::NativeLayer2Data::Objects(_) => None,
+            });
         self.map16_texture = None;
         self.layer2_map16_texture = None;
         self.background_map16_texture = None;
