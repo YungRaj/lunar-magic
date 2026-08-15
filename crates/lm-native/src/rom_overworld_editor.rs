@@ -1111,12 +1111,15 @@ impl RomOverworldEditor {
             }
             None => None,
         };
+        let mut close_requested = false;
         if self.workspace.is_some() {
             self.update_animation_preview_clock(context);
             self.load_tile();
             self.refresh_texture(context);
             self.refresh_map16_texture(context);
+            let mut window_open = true;
             egui::Window::new(ow_text(catalog, Key::RomOverworldCompleteTitle))
+                .open(&mut window_open)
                 .default_size([820.0, 720.0])
                 .vscroll(true)
                 .show(context, |ui| {
@@ -1124,12 +1127,15 @@ impl RomOverworldEditor {
                         command = Some(ui_command);
                     }
                 });
+            close_requested |= !window_open;
         }
         if self.main_layer2_workspace.is_some() {
             self.load_main_layer2_tile();
             self.refresh_main_layer2_texture(context);
             self.refresh_map16_texture(context);
+            let mut window_open = true;
             egui::Window::new(ow_text(catalog, Key::RomOverworldPlayableTitle))
+                .open(&mut window_open)
                 .default_pos([30.0, 30.0])
                 .default_size([820.0, 720.0])
                 .vscroll(true)
@@ -1138,6 +1144,10 @@ impl RomOverworldEditor {
                         command = Some(ui_command);
                     }
                 });
+            close_requested |= !window_open;
+        }
+        if close_requested {
+            self.request_close(false);
         }
         let approved = self.close_confirmation(context, catalog);
         if command.is_none() {
@@ -4222,6 +4232,11 @@ mod canvas_tests {
             }
         }
         let main = include_str!("rom_overworld_editor.rs");
+        assert_eq!(
+            main.matches(concat!(".open(&mut ", "window_open)")).count(),
+            2,
+            "both primary overworld editor windows must expose a title-bar close button"
+        );
         for migrated_literal in [
             "ui.collapsing(\"Visual 8x8 tile picker\"",
             ".text(\"Palette row\")",
