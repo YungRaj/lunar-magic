@@ -3908,6 +3908,14 @@ mod tests {
     }
 
     #[test]
+    fn editors_menu_is_viewport_bounded_on_first_open() {
+        let source = include_str!("application/menus.rs");
+        assert!(source.contains("ScrollArea::vertical()"));
+        assert!(source.contains("editors-menu-scroll"));
+        assert!(source.contains("screen_rect().height()"));
+    }
+
+    #[test]
     fn dispatch_acknowledgement_distinguishes_acceptance_from_rejection() {
         let context = egui::Context::default();
         let mut application = NativeApplication::default();

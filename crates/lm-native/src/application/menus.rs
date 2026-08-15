@@ -433,44 +433,50 @@ impl NativeApplication {
 
     fn editors_menu(&mut self, context: &egui::Context, ui: &mut egui::Ui, status: ProjectStatus) {
         ui.menu_button(self.menu_text(UiTextKey::MenuEditors), |ui| {
-            let enabled = !matches!(status, ProjectStatus::Closed);
-            let level = match self.app.mode {
-                EditorMode::Level(level) | EditorMode::Layer3(level) => level,
-                _ => u16::from_str_radix(self.level_text.trim(), 16).unwrap_or(0),
-            };
-            for (label, command) in [
-                (
-                    self.menu_text(UiTextKey::ViewLevel),
-                    Command::SelectLevel(level),
-                ),
-                (
-                    self.menu_text(UiTextKey::ViewOverworld),
-                    Command::ShowOverworld,
-                ),
-                (self.menu_text(UiTextKey::ViewMap16), Command::ShowMap16),
-                (
-                    self.menu_text(UiTextKey::ViewGraphics),
-                    Command::ShowGraphics(0),
-                ),
-                (
-                    self.menu_text(UiTextKey::ViewPalette),
-                    Command::ShowPalette(0),
-                ),
-                (
-                    self.menu_text(UiTextKey::ViewExAnimation),
-                    Command::ShowExAnimation(0),
-                ),
-                (
-                    self.menu_text(UiTextKey::ViewLayer3),
-                    Command::ShowLayer3(level),
-                ),
-            ] {
-                if ui.add_enabled(enabled, egui::Button::new(label)).clicked() {
-                    ui.close_menu();
-                    self.dispatch(context, command);
-                }
-            }
-            self.rom_editor_menu_items(ui, enabled);
+            let maximum_height = (ui.ctx().screen_rect().height() - 48.0).max(160.0);
+            egui::ScrollArea::vertical()
+                .id_salt("editors-menu-scroll")
+                .max_height(maximum_height)
+                .show(ui, |ui| {
+                    let enabled = !matches!(status, ProjectStatus::Closed);
+                    let level = match self.app.mode {
+                        EditorMode::Level(level) | EditorMode::Layer3(level) => level,
+                        _ => u16::from_str_radix(self.level_text.trim(), 16).unwrap_or(0),
+                    };
+                    for (label, command) in [
+                        (
+                            self.menu_text(UiTextKey::ViewLevel),
+                            Command::SelectLevel(level),
+                        ),
+                        (
+                            self.menu_text(UiTextKey::ViewOverworld),
+                            Command::ShowOverworld,
+                        ),
+                        (self.menu_text(UiTextKey::ViewMap16), Command::ShowMap16),
+                        (
+                            self.menu_text(UiTextKey::ViewGraphics),
+                            Command::ShowGraphics(0),
+                        ),
+                        (
+                            self.menu_text(UiTextKey::ViewPalette),
+                            Command::ShowPalette(0),
+                        ),
+                        (
+                            self.menu_text(UiTextKey::ViewExAnimation),
+                            Command::ShowExAnimation(0),
+                        ),
+                        (
+                            self.menu_text(UiTextKey::ViewLayer3),
+                            Command::ShowLayer3(level),
+                        ),
+                    ] {
+                        if ui.add_enabled(enabled, egui::Button::new(label)).clicked() {
+                            ui.close_menu();
+                            self.dispatch(context, command);
+                        }
+                    }
+                    self.rom_editor_menu_items(ui, enabled);
+                });
         });
     }
 
