@@ -434,6 +434,7 @@ pub(crate) enum CustomCollectionSelection {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum CanvasEntityShortcut {
+    SelectScreen,
     SelectAll,
     Insert,
     Duplicate,
@@ -3418,6 +3419,15 @@ impl VanillaLevelEditor {
             };
             ui.horizontal_wrapped(|ui| {
                 ui.colored_label(egui::Color32::YELLOW, description);
+                if ui
+                    .button(vanilla_text(
+                        catalog,
+                        ExtendedUiTextKey::VanillaLevelSelectScreen,
+                    ))
+                    .clicked()
+                {
+                    toolbar_shortcut = Some(CanvasEntityShortcut::SelectScreen);
+                }
                 if ui
                     .button(vanilla_text(
                         catalog,
@@ -7953,6 +7963,77 @@ impl VanillaLevelEditor {
         };
         match (selection, shortcut) {
             (_, CanvasEntityShortcut::Insert) => {}
+            (selection, CanvasEntityShortcut::SelectScreen) => {
+                let screen = self.canvas_navigation_screen;
+                let Some(controller) = self.controller.as_ref() else {
+                    return;
+                };
+                match selection {
+                    CanvasEntitySelection::Layer1Object => {
+                        self.selected_object_group = controller
+                            .level()
+                            .layer1
+                            .objects
+                            .native_placements()
+                            .into_iter()
+                            .filter(|placement| placement.major / 16 == screen)
+                            .map(|placement| placement.record_index)
+                            .collect();
+                        if let Some(selected) = self.selected_object_group.first().copied() {
+                            self.selected_object = selected;
+                            self.reload_object_form();
+                        }
+                    }
+                    CanvasEntitySelection::Layer2Object => {
+                        let Some(lm_level::NativeLayer2Data::Objects(layer2)) = controller.layer2()
+                        else {
+                            return;
+                        };
+                        self.selected_layer2_object_group = layer2
+                            .objects
+                            .native_placements()
+                            .into_iter()
+                            .filter(|placement| placement.major / 16 == screen)
+                            .map(|placement| placement.record_index)
+                            .collect();
+                        if let Some(selected) = self.selected_layer2_object_group.first().copied() {
+                            self.selected_layer2_object = selected;
+                            self.reload_layer2_object_form();
+                        }
+                    }
+                    CanvasEntitySelection::Sprite => {
+                        self.selected_sprite_group = controller
+                            .level()
+                            .sprites
+                            .native_placements()
+                            .into_iter()
+                            .filter(|placement| placement.major / 16 == screen)
+                            .map(|placement| placement.token_index)
+                            .collect();
+                        if let Some(selected) = self.selected_sprite_group.first().copied() {
+                            self.selected_sprite = selected;
+                            self.sprite_form = SpriteForm::from_token(
+                                controller.level().sprites.header,
+                                controller.level().sprites.tokens.get(selected),
+                            );
+                        }
+                    }
+                }
+                let selected = match selection {
+                    CanvasEntitySelection::Layer1Object => !self.selected_object_group.is_empty(),
+                    CanvasEntitySelection::Layer2Object => {
+                        !self.selected_layer2_object_group.is_empty()
+                    }
+                    CanvasEntitySelection::Sprite => !self.selected_sprite_group.is_empty(),
+                };
+                self.error = if selected {
+                    None
+                } else {
+                    Some(format!(
+                        "Screen {screen:02X} contains no entities in the active editing domain"
+                    ))
+                };
+            }
             (selection, CanvasEntityShortcut::SelectAll) => {
                 let Some(controller) = self.controller.as_ref() else {
                     return;
@@ -26236,6 +26317,64 @@ mod tests {
         assert_eq!(editor.selected_sprite_group, vec![editor.selected_sprite]);
         editor.toolbar_edit_layer2();
         assert_eq!(editor.canvas_entity_selection, None);
+    }
+
+    #[test]
+    fn select_screen_collects_only_the_active_domains_visible_native_placements() {
+        let mut app = AppState::default();
+        app.load_rom(crate::test_support::pristine_smw_us_rom_bytes())
+            .unwrap();
+        app.dispatch(Command::SelectLevel(0x105)).unwrap();
+        let snapshot = app.controller_snapshot().unwrap();
+        let mut editor = VanillaLevelEditor::default();
+        editor.load(
+            &snapshot,
+            EditorKey {
+                revision: snapshot.revision,
+                level: 0x105,
+                sprite_lengths_signature: ssc_sprite_lengths_signature(None),
+            },
+            None,
+        );
+
+        let object_placements = editor
+            .controller
+            .as_ref()
+            .unwrap()
+            .level()
+            .layer1
+            .objects
+            .native_placements();
+        let object_screen = object_placements[0].major / 16;
+        let expected_objects = object_placements
+            .iter()
+            .filter(|placement| placement.major / 16 == object_screen)
+            .map(|placement| placement.record_index)
+            .collect::<Vec<_>>();
+        editor.canvas_navigation_screen = object_screen;
+        editor.canvas_entity_selection = Some(CanvasEntitySelection::Layer1Object);
+        editor.apply_canvas_entity_shortcut(CanvasEntityShortcut::SelectScreen);
+        assert_eq!(editor.selected_object_group, expected_objects);
+        assert!(editor.error.is_none(), "{:?}", editor.error);
+
+        let sprite_placements = editor
+            .controller
+            .as_ref()
+            .unwrap()
+            .level()
+            .sprites
+            .native_placements();
+        let sprite_screen = sprite_placements[0].major / 16;
+        let expected_sprites = sprite_placements
+            .iter()
+            .filter(|placement| placement.major / 16 == sprite_screen)
+            .map(|placement| placement.token_index)
+            .collect::<Vec<_>>();
+        editor.canvas_navigation_screen = sprite_screen;
+        editor.canvas_entity_selection = Some(CanvasEntitySelection::Sprite);
+        editor.apply_canvas_entity_shortcut(CanvasEntityShortcut::SelectScreen);
+        assert_eq!(editor.selected_sprite_group, expected_sprites);
+        assert!(editor.error.is_none(), "{:?}", editor.error);
     }
 
     #[test]
