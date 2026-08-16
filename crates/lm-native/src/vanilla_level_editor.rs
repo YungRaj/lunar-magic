@@ -629,6 +629,7 @@ pub(crate) struct VanillaLevelEditor {
     preview_camera_minor_offset: i16,
     initial_vertical_scroll_tiles: Option<u16>,
     initial_horizontal_scroll_tiles: Option<u16>,
+    canvas_navigation_screen: u16,
     open_levels_at_main_entrance: Option<bool>,
     placement_mode: Option<CanvasPlacementMode>,
     canvas_entity_selection: Option<CanvasEntitySelection>,
@@ -3604,6 +3605,13 @@ impl VanillaLevelEditor {
                 self.initial_horizontal_scroll_tiles = None;
             }
         }
+        let major_offset = if vertical {
+            scroll_output.state.offset.y
+        } else {
+            scroll_output.state.offset.x
+        };
+        self.canvas_navigation_screen =
+            canvas_navigation_screen(major_offset, cell, major_tiles.div_ceil(16).max(1));
         draw_canvas_caption(ui, vertical);
     }
 
@@ -3756,6 +3764,28 @@ impl VanillaLevelEditor {
                         self.canvas_zoom_percent = Some(zoom);
                         if zoom != 100 {
                             self.canvas_previous_zoom_percent = Some(zoom);
+                        }
+                        if !(self.game_preview() && self.snes_viewport()) {
+                            ui.separator();
+                            ui.label(vanilla_text(catalog, ExtendedUiTextKey::VanillaLevelScreen));
+                            let screen_count = major_tiles.div_ceil(16).max(1);
+                            self.canvas_navigation_screen =
+                                self.canvas_navigation_screen.min(screen_count - 1);
+                            let changed = ui
+                                .add(
+                                    egui::DragValue::new(&mut self.canvas_navigation_screen)
+                                        .range(0..=screen_count - 1)
+                                        .hexadecimal(2, false, true),
+                                )
+                                .changed();
+                            if changed {
+                                let tile = self.canvas_navigation_screen.saturating_mul(16);
+                                if vertical {
+                                    self.initial_vertical_scroll_tiles = Some(tile);
+                                } else {
+                                    self.initial_horizontal_scroll_tiles = Some(tile);
+                                }
+                            }
                         }
                     })
                 });
@@ -17322,6 +17352,13 @@ fn clamped_scroll_offset(requested: f32, content_extent: f32, viewport_extent: f
     requested.clamp(0.0, (content_extent - viewport_extent).max(0.0))
 }
 
+fn canvas_navigation_screen(scroll_offset: f32, cell: f32, screen_count: u16) -> u16 {
+    if !scroll_offset.is_finite() || !cell.is_finite() || cell <= 0.0 || screen_count == 0 {
+        return 0;
+    }
+    ((scroll_offset.max(0.0) / (cell * 16.0)).floor() as u16).min(screen_count - 1)
+}
+
 fn fitted_snes_viewport_cell(available: egui::Vec2, zoom_percent: u16) -> f32 {
     const TILE_PIXELS: f32 = 16.0;
     const VIEWPORT_WIDTH: f32 = 256.0;
@@ -21093,6 +21130,18 @@ mod tests {
                     < f32::EPSILON
             );
         }
+    }
+
+    #[test]
+    fn canvas_screen_navigator_tracks_manual_scroll_across_zoom_and_bounds() {
+        assert_eq!(canvas_navigation_screen(0.0, 16.0, 32), 0);
+        assert_eq!(canvas_navigation_screen(255.0, 16.0, 32), 0);
+        assert_eq!(canvas_navigation_screen(256.0, 16.0, 32), 1);
+        assert_eq!(canvas_navigation_screen(512.0, 32.0, 32), 1);
+        assert_eq!(canvas_navigation_screen(f32::MAX, 16.0, 4), 3);
+        assert_eq!(canvas_navigation_screen(f32::NAN, 16.0, 32), 0);
+        assert_eq!(canvas_navigation_screen(256.0, 0.0, 32), 0);
+        assert_eq!(canvas_navigation_screen(256.0, 16.0, 0), 0);
     }
 
     #[test]
