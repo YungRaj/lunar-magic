@@ -4026,6 +4026,7 @@ pub enum ExtendedUiTextKey {
     VanillaLevelCanvasSelectHelp,
     VanillaLevelDuplicateSelected,
     VanillaLevelDeleteSelected,
+    VanillaLevelSelectAll,
     VanillaLevelGamePixels,
     VanillaLevelViewport,
     VanillaLevelSelectionOverGame,
@@ -4130,7 +4131,7 @@ pub enum ExtendedUiTextKey {
 }
 
 impl ExtendedUiTextKey {
-    pub const ALL: [Self; 2426] = [
+    pub const ALL: [Self; 2427] = [
         Self::MwlDocumentEditorTitle,
         Self::MwlDocumentVersionFormat,
         Self::MwlDocumentFlagsHex,
@@ -6456,6 +6457,7 @@ impl ExtendedUiTextKey {
         Self::VanillaLevelCanvasSelectHelp,
         Self::VanillaLevelDuplicateSelected,
         Self::VanillaLevelDeleteSelected,
+        Self::VanillaLevelSelectAll,
         Self::VanillaLevelGamePixels,
         Self::VanillaLevelViewport,
         Self::VanillaLevelSelectionOverGame,
@@ -9581,6 +9583,7 @@ impl ExtendedUiTextKey {
             }
             Self::VanillaLevelDuplicateSelected => "Duplicate selected",
             Self::VanillaLevelDeleteSelected => "Delete selected",
+            Self::VanillaLevelSelectAll => "Select all",
             Self::VanillaLevelGamePixels => "Game pixels",
             Self::VanillaLevelViewport => "256×224 viewport",
             Self::VanillaLevelSelectionOverGame => "Selection over game",

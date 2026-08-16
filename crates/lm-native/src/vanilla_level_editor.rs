@@ -3390,20 +3390,43 @@ impl VanillaLevelEditor {
             ));
         }
         let mut toolbar_shortcut = None;
+        let mut toolbar_nudge = None;
         if let Some(selection) = self.canvas_entity_selection {
+            let selected_count = match selection {
+                CanvasEntitySelection::Layer1Object => {
+                    selected_indexes(&self.selected_object_group, self.selected_object).len()
+                }
+                CanvasEntitySelection::Layer2Object => selected_indexes(
+                    &self.selected_layer2_object_group,
+                    self.selected_layer2_object,
+                )
+                .len(),
+                CanvasEntitySelection::Sprite => {
+                    selected_indexes(&self.selected_sprite_group, self.selected_sprite).len()
+                }
+            };
             let description = match selection {
                 CanvasEntitySelection::Layer1Object => {
-                    format!("Selected Layer 1 object {}", self.selected_object)
+                    format!("Layer 1: {selected_count} selected")
                 }
                 CanvasEntitySelection::Layer2Object => {
-                    format!("Selected Layer 2 object {}", self.selected_layer2_object)
+                    format!("Layer 2: {selected_count} selected")
                 }
                 CanvasEntitySelection::Sprite => {
-                    format!("Selected sprite token {}", self.selected_sprite)
+                    format!("Sprites: {selected_count} selected")
                 }
             };
             ui.horizontal_wrapped(|ui| {
                 ui.colored_label(egui::Color32::YELLOW, description);
+                if ui
+                    .button(vanilla_text(
+                        catalog,
+                        ExtendedUiTextKey::VanillaLevelSelectAll,
+                    ))
+                    .clicked()
+                {
+                    toolbar_shortcut = Some(CanvasEntityShortcut::SelectAll);
+                }
                 if ui
                     .button(vanilla_text(
                         catalog,
@@ -3422,10 +3445,20 @@ impl VanillaLevelEditor {
                 {
                     toolbar_shortcut = Some(CanvasEntityShortcut::Remove);
                 }
+                ui.separator();
+                for (label, delta) in [("←", (-1, 0)), ("→", (1, 0)), ("↑", (0, -1)), ("↓", (0, 1))]
+                {
+                    if ui.small_button(label).clicked() {
+                        toolbar_nudge = Some(delta);
+                    }
+                }
             });
         }
         if let Some(shortcut) = toolbar_shortcut {
             self.apply_canvas_entity_shortcut(shortcut);
+        }
+        if let Some((x_delta, y_delta)) = toolbar_nudge {
+            self.toolbar_nudge_selection(x_delta, y_delta);
         }
         let canvas_available = ui.available_size();
         let cell = if snes_viewport {
