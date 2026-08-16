@@ -187,6 +187,7 @@ enum MapPaintTool {
     Brush,
     Rectangle,
     Fill,
+    Replace,
     NativeSprite,
     RouteSource,
     RouteDestination,
@@ -2131,6 +2132,11 @@ impl RomOverworldEditor {
                 MapPaintTool::Fill,
                 ow_text(catalog, Key::RomOverworldToolFill),
             );
+            ui.selectable_value(
+                &mut self.paint_tool,
+                MapPaintTool::Replace,
+                ow_text(catalog, Key::RomOverworldToolReplace),
+            );
             ui.separator();
             ui.label(ow_text(catalog, Key::RomOverworldTileWord));
             ui.add(
@@ -2231,6 +2237,9 @@ impl RomOverworldEditor {
                 MapPaintTool::Fill if !stale && response.clicked() => {
                     action = Some((MapPaintTool::Fill, (x, y)));
                 }
+                MapPaintTool::Replace if !stale && response.clicked() => {
+                    action = Some((MapPaintTool::Replace, (x, y)));
+                }
                 MapPaintTool::Rectangle if !stale => {
                     if response.drag_started() {
                         self.paint_anchor = ui
@@ -2281,7 +2290,8 @@ impl RomOverworldEditor {
                 | MapPaintTool::RouteDestination
                 | MapPaintTool::Brush
                 | MapPaintTool::Rectangle
-                | MapPaintTool::Fill => {}
+                | MapPaintTool::Fill
+                | MapPaintTool::Replace => {}
             }
         }
         if let Some((tool, position)) = action {
@@ -2289,6 +2299,7 @@ impl RomOverworldEditor {
                 MapPaintTool::Brush => self.paint_to(position),
                 MapPaintTool::Rectangle => self.paint_rectangle_to(position),
                 MapPaintTool::Fill => self.fill_at(position),
+                MapPaintTool::Replace => self.replace_matching_at(position),
                 _ => {}
             }
         }
@@ -2378,6 +2389,11 @@ impl RomOverworldEditor {
                 MapPaintTool::Fill,
                 ow_text(catalog, Key::RomOverworldToolFill),
             );
+            ui.selectable_value(
+                &mut self.paint_tool,
+                MapPaintTool::Replace,
+                ow_text(catalog, Key::RomOverworldToolReplace),
+            );
             if self.workspace.is_some() && self.panel == Panel::NativeSprites {
                 ui.selectable_value(
                     &mut self.paint_tool,
@@ -2447,6 +2463,9 @@ impl RomOverworldEditor {
                     MapPaintTool::Brush if !stale => action = Some((MapPaintTool::Brush, (x, y))),
                     MapPaintTool::Fill if !stale && response.clicked() => {
                         action = Some((MapPaintTool::Fill, (x, y)));
+                    }
+                    MapPaintTool::Replace if !stale && response.clicked() => {
+                        action = Some((MapPaintTool::Replace, (x, y)));
                     }
                     MapPaintTool::NativeSprite if !stale => {
                         let modifiers = ui.input(|input| input.modifiers);
@@ -2677,6 +2696,7 @@ impl RomOverworldEditor {
                 MapPaintTool::Brush => self.paint_to(position),
                 MapPaintTool::Rectangle => self.paint_rectangle_to(position),
                 MapPaintTool::Fill => self.fill_at(position),
+                MapPaintTool::Replace => self.replace_matching_at(position),
                 MapPaintTool::Select
                 | MapPaintTool::NativeSprite
                 | MapPaintTool::RouteSource
@@ -3117,6 +3137,37 @@ impl RomOverworldEditor {
             return;
         };
         let cells = flood_fill_cells(width, height, source, position);
+        let edits = stroke_edits(layer, &cells, tile, |x, y| self.current_tile(layer, x, y));
+        self.apply_many(&edits);
+    }
+
+    fn replace_matching_at(&mut self, position: (usize, usize)) {
+        let Some(tile) = self.brush_tile() else {
+            return;
+        };
+        let layer = self.layer_id();
+        let (width, height, source) = if let Some(workspace) = self.workspace.as_ref() {
+            let shape = workspace.profiled.profile.overworld_shape;
+            let source = match layer {
+                OverworldLayerId::Layer1 => &workspace.controller.data().layers.layer1.tiles,
+                OverworldLayerId::Layer2 => &workspace.controller.data().layers.layer2.tiles,
+            };
+            (shape.width, shape.height, source.clone())
+        } else if let Some(workspace) = self.main_layer2_workspace.as_ref() {
+            if layer == OverworldLayerId::Layer1 {
+                (32, 32, workspace.layer1.tiles.clone())
+            } else {
+                let source = workspace.controller.layer();
+                (source.width, source.height, source.tiles.clone())
+            }
+        } else {
+            return;
+        };
+        let cells = matching_tile_cells(width, height, &source, position);
+        if cells.is_empty() {
+            self.error = Some("replace source is outside the active overworld plane".into());
+            return;
+        }
         let edits = stroke_edits(layer, &cells, tile, |x, y| self.current_tile(layer, x, y));
         self.apply_many(&edits);
     }
@@ -4224,6 +4275,32 @@ fn rectangle_cells(start: (usize, usize), end: (usize, usize)) -> Vec<(usize, us
         .collect()
 }
 
+fn matching_tile_cells(
+    width: usize,
+    height: usize,
+    tiles: &[u16],
+    source: (usize, usize),
+) -> Vec<(usize, usize)> {
+    if width == 0 || height == 0 || tiles.len() != width.saturating_mul(height) {
+        return Vec::new();
+    }
+    let Some(source_tile) = source
+        .1
+        .checked_mul(width)
+        .and_then(|row| row.checked_add(source.0))
+        .filter(|index| source.0 < width && source.1 < height && *index < tiles.len())
+        .map(|index| tiles[index])
+    else {
+        return Vec::new();
+    };
+    tiles
+        .iter()
+        .enumerate()
+        .filter(|(_, tile)| **tile == source_tile)
+        .map(|(index, _)| (index % width, index / width))
+        .collect()
+}
+
 fn flood_fill_cells(
     width: usize,
     height: usize,
@@ -4277,13 +4354,13 @@ mod canvas_tests {
         OverworldAnimationRate, OverworldControllerEdit, OverworldEndpoint, OverworldLayerId,
         OverworldPathDirection, OverworldPathLink, OverworldPathLinkTable, OverworldPathTarget,
         RomOverworldEditor, append_path_link, composed_route_endpoint, flood_fill_cells, grid_line,
-        inclusive_canvas_rect, native_sprite_canvas_edit, native_sprite_canvas_position,
-        native_sprite_group_duplicate_edits, native_sprite_group_move_edits,
-        native_sprite_secondary_action, native_sprite_selection_remove_edits,
-        overworld_animation_preview_tick, parse_vanilla_overworld_level_tile, rectangle_cells,
-        remove_path_link, route_canvas_endpoint, route_directional_canvas_endpoint,
-        route_endpoint_canvas_pixel, stroke_edits, toggle_native_sprite_selection,
-        vanilla_overworld_level_for_tile,
+        inclusive_canvas_rect, matching_tile_cells, native_sprite_canvas_edit,
+        native_sprite_canvas_position, native_sprite_group_duplicate_edits,
+        native_sprite_group_move_edits, native_sprite_secondary_action,
+        native_sprite_selection_remove_edits, overworld_animation_preview_tick,
+        parse_vanilla_overworld_level_tile, rectangle_cells, remove_path_link,
+        route_canvas_endpoint, route_directional_canvas_endpoint, route_endpoint_canvas_pixel,
+        stroke_edits, toggle_native_sprite_selection, vanilla_overworld_level_for_tile,
     };
     use crate::document_loader::BoundedRead;
     use crate::overworld_editor_render;
@@ -4388,6 +4465,7 @@ mod canvas_tests {
             "MapPaintTool::Brush, \"Brush\"",
             "MapPaintTool::Rectangle, \"Rectangle\"",
             "MapPaintTool::Fill, \"Fill\"",
+            "MapPaintTool::Replace, \"Replace matching\"",
             "MapPaintTool::NativeSprite, \"Place/move native sprite\"",
             "MapPaintTool::RouteSource, \"Set route source\"",
             "MapPaintTool::RouteDestination, \"Set route destination\"",
@@ -4764,6 +4842,21 @@ mod canvas_tests {
         assert_eq!(flood_fill_cells(3, 3, &tiles, (2, 0)), vec![(2, 0)]);
         assert!(flood_fill_cells(3, 3, &tiles[..8], (0, 0)).is_empty());
         assert!(flood_fill_cells(3, 3, &tiles, (3, 0)).is_empty());
+    }
+
+    #[test]
+    fn matching_tile_cells_replace_noncontiguous_occurrences_in_row_major_order() {
+        let tiles = [1, 2, 1, 3, 1, 2, 1, 4, 4];
+        assert_eq!(
+            matching_tile_cells(3, 3, &tiles, (1, 0)),
+            vec![(1, 0), (2, 1)]
+        );
+        assert_eq!(
+            matching_tile_cells(3, 3, &tiles, (0, 0)),
+            vec![(0, 0), (2, 0), (1, 1), (0, 2)]
+        );
+        assert!(matching_tile_cells(3, 3, &tiles[..8], (0, 0)).is_empty());
+        assert!(matching_tile_cells(3, 3, &tiles, (3, 0)).is_empty());
     }
 
     #[test]

@@ -2359,6 +2359,7 @@ pub enum ExtendedUiTextKey {
     RomOverworldToolBrush,
     RomOverworldToolRectangle,
     RomOverworldToolFill,
+    RomOverworldToolReplace,
     RomOverworldToolNativeSprite,
     RomOverworldToolRouteSource,
     RomOverworldToolRouteDestination,
@@ -4133,7 +4134,7 @@ pub enum ExtendedUiTextKey {
 }
 
 impl ExtendedUiTextKey {
-    pub const ALL: [Self; 2429] = [
+    pub const ALL: [Self; 2430] = [
         Self::MwlDocumentEditorTitle,
         Self::MwlDocumentVersionFormat,
         Self::MwlDocumentFlagsHex,
@@ -4792,6 +4793,7 @@ impl ExtendedUiTextKey {
         Self::RomOverworldToolBrush,
         Self::RomOverworldToolRectangle,
         Self::RomOverworldToolFill,
+        Self::RomOverworldToolReplace,
         Self::RomOverworldToolNativeSprite,
         Self::RomOverworldToolRouteSource,
         Self::RomOverworldToolRouteDestination,
@@ -7404,6 +7406,7 @@ impl ExtendedUiTextKey {
             Self::RomOverworldToolBrush => "Brush",
             Self::RomOverworldToolRectangle => "Rectangle",
             Self::RomOverworldToolFill => "Fill",
+            Self::RomOverworldToolReplace => "Replace matching",
             Self::RomOverworldToolNativeSprite => "Place/move native sprite",
             Self::RomOverworldToolRouteSource => "Set route source",
             Self::RomOverworldToolRouteDestination => "Set route destination",
