@@ -4025,6 +4025,7 @@ pub enum ExtendedUiTextKey {
     VanillaLevelCanvasPlaceHelp,
     VanillaLevelCanvasSelectHelp,
     VanillaLevelDuplicateSelected,
+    VanillaLevelDuplicateNextScreen,
     VanillaLevelDeleteSelected,
     VanillaLevelSelectAll,
     VanillaLevelSelectScreen,
@@ -4132,7 +4133,7 @@ pub enum ExtendedUiTextKey {
 }
 
 impl ExtendedUiTextKey {
-    pub const ALL: [Self; 2428] = [
+    pub const ALL: [Self; 2429] = [
         Self::MwlDocumentEditorTitle,
         Self::MwlDocumentVersionFormat,
         Self::MwlDocumentFlagsHex,
@@ -6457,6 +6458,7 @@ impl ExtendedUiTextKey {
         Self::VanillaLevelCanvasPlaceHelp,
         Self::VanillaLevelCanvasSelectHelp,
         Self::VanillaLevelDuplicateSelected,
+        Self::VanillaLevelDuplicateNextScreen,
         Self::VanillaLevelDeleteSelected,
         Self::VanillaLevelSelectAll,
         Self::VanillaLevelSelectScreen,
@@ -9584,6 +9586,7 @@ impl ExtendedUiTextKey {
                 "Select or drag an object/enemy; Insert places the active template at the pointer, right-click duplicates there, and Delete removes the selection."
             }
             Self::VanillaLevelDuplicateSelected => "Duplicate selected",
+            Self::VanillaLevelDuplicateNextScreen => "Duplicate to next screen",
             Self::VanillaLevelDeleteSelected => "Delete selected",
             Self::VanillaLevelSelectAll => "Select all",
             Self::VanillaLevelSelectScreen => "Select screen",

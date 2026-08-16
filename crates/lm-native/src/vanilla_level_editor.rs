@@ -438,6 +438,7 @@ enum CanvasEntityShortcut {
     SelectAll,
     Insert,
     Duplicate,
+    DuplicateNextScreen,
     Remove,
 }
 
@@ -3449,6 +3450,15 @@ impl VanillaLevelEditor {
                 if ui
                     .button(vanilla_text(
                         catalog,
+                        ExtendedUiTextKey::VanillaLevelDuplicateNextScreen,
+                    ))
+                    .clicked()
+                {
+                    toolbar_shortcut = Some(CanvasEntityShortcut::DuplicateNextScreen);
+                }
+                if ui
+                    .button(vanilla_text(
+                        catalog,
                         ExtendedUiTextKey::VanillaLevelDeleteSelected,
                     ))
                     .clicked()
@@ -5495,6 +5505,123 @@ impl VanillaLevelEditor {
                                 controller.level().sprites.tokens.get(self.selected_sprite),
                             );
                         }
+                        self.error = None;
+                    }
+                    Err(error) => self.error = Some(error.to_string()),
+                }
+            }
+        }
+    }
+
+    fn duplicate_selection_to_next_screen(&mut self) {
+        let Some(domain) = self.canvas_entity_selection else {
+            self.error = Some("Duplication requires an object or sprite selection".into());
+            return;
+        };
+        let Some(controller) = self.controller.as_mut() else {
+            self.error = Some("level controller is unavailable".into());
+            return;
+        };
+        const MAJOR_DELTA: i32 = 16;
+        match domain {
+            CanvasEntitySelection::Layer1Object => {
+                let selected = selected_indexes(&self.selected_object_group, self.selected_object);
+                let mut predicted = controller.level().layer1.objects.clone();
+                let clones =
+                    match predicted.duplicate_ordinary_object_group(&selected, MAJOR_DELTA, 0) {
+                        Ok(clones) => clones,
+                        Err(error) => {
+                            self.error = Some(error.to_string());
+                            return;
+                        }
+                    };
+                let result = controller.apply_edits(&[NativeLevelEdit::Objects(vec![
+                    ObjectEdit::DuplicateOrdinaryGroup {
+                        selected,
+                        major_delta: MAJOR_DELTA,
+                        minor_delta: 0,
+                    },
+                ])]);
+                match result {
+                    Ok(()) => {
+                        self.selected_object_group = clones;
+                        self.selected_object = self.selected_object_group[0];
+                        self.reload_object_form();
+                        self.canvas_navigation_screen =
+                            self.canvas_navigation_screen.saturating_add(1).min(31);
+                        self.error = None;
+                    }
+                    Err(error) => self.error = Some(error.to_string()),
+                }
+            }
+            CanvasEntitySelection::Layer2Object => {
+                let selected = selected_indexes(
+                    &self.selected_layer2_object_group,
+                    self.selected_layer2_object,
+                );
+                let Some(lm_level::NativeLayer2Data::Objects(layer2)) = controller.layer2() else {
+                    self.error =
+                        Some("the current level does not use object-backed Layer 2".into());
+                    return;
+                };
+                let mut predicted = layer2.objects.clone();
+                let clones =
+                    match predicted.duplicate_ordinary_object_group(&selected, MAJOR_DELTA, 0) {
+                        Ok(clones) => clones,
+                        Err(error) => {
+                            self.error = Some(error.to_string());
+                            return;
+                        }
+                    };
+                match controller.apply_layer2_object_edits(&[ObjectEdit::DuplicateOrdinaryGroup {
+                    selected,
+                    major_delta: MAJOR_DELTA,
+                    minor_delta: 0,
+                }]) {
+                    Ok(()) => {
+                        self.selected_layer2_object_group = clones;
+                        self.selected_layer2_object = self.selected_layer2_object_group[0];
+                        self.reload_layer2_object_form();
+                        self.canvas_navigation_screen =
+                            self.canvas_navigation_screen.saturating_add(1).min(31);
+                        self.error = None;
+                    }
+                    Err(error) => self.error = Some(error.to_string()),
+                }
+            }
+            CanvasEntitySelection::Sprite => {
+                let selected = selected_indexes(&self.selected_sprite_group, self.selected_sprite);
+                let vertical =
+                    lm_profile::smw_us_v1_level_mode(controller.level().layer1.header.level_mode())
+                        .vertical;
+                let mut predicted = controller.level().sprites.clone();
+                let clones = match predicted.duplicate_record_group(
+                    &selected,
+                    MAJOR_DELTA,
+                    0,
+                    vertical,
+                    controller.sprite_lengths(),
+                ) {
+                    Ok(clones) => clones,
+                    Err(error) => {
+                        self.error = Some(error.to_string());
+                        return;
+                    }
+                };
+                match controller.apply_edits(&[NativeLevelEdit::DuplicateSpriteGroup {
+                    selected,
+                    major_delta: MAJOR_DELTA,
+                    minor_delta: 0,
+                }]) {
+                    Ok(()) => {
+                        self.selected_sprite_group = clones;
+                        self.selected_sprite = self.selected_sprite_group[0];
+                        self.sprite_form = SpriteForm::from_token(
+                            controller.level().sprites.header,
+                            controller.level().sprites.tokens.get(self.selected_sprite),
+                        );
+                        self.canvas_navigation_screen =
+                            self.canvas_navigation_screen.saturating_add(1).min(31);
                         self.error = None;
                     }
                     Err(error) => self.error = Some(error.to_string()),
@@ -7963,6 +8090,9 @@ impl VanillaLevelEditor {
         };
         match (selection, shortcut) {
             (_, CanvasEntityShortcut::Insert) => {}
+            (_, CanvasEntityShortcut::DuplicateNextScreen) => {
+                self.duplicate_selection_to_next_screen();
+            }
             (selection, CanvasEntityShortcut::SelectScreen) => {
                 let screen = self.canvas_navigation_screen;
                 let Some(controller) = self.controller.as_ref() else {
@@ -26375,6 +26505,143 @@ mod tests {
         editor.apply_canvas_entity_shortcut(CanvasEntityShortcut::SelectScreen);
         assert_eq!(editor.selected_sprite_group, expected_sprites);
         assert!(editor.error.is_none(), "{:?}", editor.error);
+    }
+
+    #[test]
+    fn duplicate_to_next_screen_moves_complete_groups_in_one_undo_step() {
+        let mut app = AppState::default();
+        app.load_rom(crate::test_support::pristine_smw_us_rom_bytes())
+            .unwrap();
+        app.dispatch(Command::SelectLevel(0x105)).unwrap();
+        let snapshot = app.controller_snapshot().unwrap();
+        let mut editor = VanillaLevelEditor::default();
+        editor.load(
+            &snapshot,
+            EditorKey {
+                revision: snapshot.revision,
+                level: 0x105,
+                sprite_lengths_signature: ssc_sprite_lengths_signature(None),
+            },
+            None,
+        );
+
+        let original_objects = editor
+            .controller
+            .as_ref()
+            .unwrap()
+            .level()
+            .layer1
+            .objects
+            .clone();
+        let placements = original_objects.native_placements();
+        let screen = placements
+            .iter()
+            .find(|placement| placement.major <= 495)
+            .unwrap()
+            .major
+            / 16;
+        let selected = placements
+            .iter()
+            .filter(|placement| placement.major / 16 == screen)
+            .map(|placement| placement.record_index)
+            .collect::<Vec<_>>();
+        let source_positions = placements
+            .iter()
+            .filter(|placement| selected.contains(&placement.record_index))
+            .map(|placement| (placement.major, placement.minor))
+            .collect::<Vec<_>>();
+        editor.canvas_navigation_screen = screen;
+        editor.selected_object = selected[0];
+        editor.selected_object_group = selected;
+        editor.canvas_entity_selection = Some(CanvasEntitySelection::Layer1Object);
+        editor.apply_canvas_entity_shortcut(CanvasEntityShortcut::DuplicateNextScreen);
+        assert!(editor.error.is_none(), "{:?}", editor.error);
+        assert_eq!(editor.canvas_navigation_screen, screen + 1);
+        let updated = editor
+            .controller
+            .as_ref()
+            .unwrap()
+            .level()
+            .layer1
+            .objects
+            .native_placements();
+        let clone_positions = editor
+            .selected_object_group
+            .iter()
+            .filter_map(|index| {
+                updated
+                    .iter()
+                    .find(|placement| placement.record_index == *index)
+            })
+            .map(|placement| (placement.major, placement.minor))
+            .collect::<Vec<_>>();
+        assert_eq!(clone_positions.len(), source_positions.len());
+        assert_eq!(
+            clone_positions,
+            source_positions
+                .iter()
+                .map(|(major, minor)| (major + 16, *minor))
+                .collect::<Vec<_>>()
+        );
+        assert!(editor.controller.as_mut().unwrap().undo());
+        assert_eq!(
+            editor.controller.as_ref().unwrap().level().layer1.objects,
+            original_objects
+        );
+
+        let original_sprites = editor.controller.as_ref().unwrap().level().sprites.clone();
+        let placements = original_sprites.native_placements();
+        let screen = placements
+            .iter()
+            .find(|placement| placement.major <= 495)
+            .unwrap()
+            .major
+            / 16;
+        let selected = placements
+            .iter()
+            .filter(|placement| placement.major / 16 == screen)
+            .map(|placement| placement.token_index)
+            .collect::<Vec<_>>();
+        let source_positions = placements
+            .iter()
+            .filter(|placement| selected.contains(&placement.token_index))
+            .map(|placement| (placement.major, placement.minor, placement.sprite_number))
+            .collect::<Vec<_>>();
+        editor.canvas_navigation_screen = screen;
+        editor.selected_sprite = selected[0];
+        editor.selected_sprite_group = selected;
+        editor.canvas_entity_selection = Some(CanvasEntitySelection::Sprite);
+        editor.apply_canvas_entity_shortcut(CanvasEntityShortcut::DuplicateNextScreen);
+        assert!(editor.error.is_none(), "{:?}", editor.error);
+        let updated = editor
+            .controller
+            .as_ref()
+            .unwrap()
+            .level()
+            .sprites
+            .native_placements();
+        let clone_positions = editor
+            .selected_sprite_group
+            .iter()
+            .filter_map(|index| {
+                updated
+                    .iter()
+                    .find(|placement| placement.token_index == *index)
+            })
+            .map(|placement| (placement.major, placement.minor, placement.sprite_number))
+            .collect::<Vec<_>>();
+        assert_eq!(
+            clone_positions,
+            source_positions
+                .iter()
+                .map(|(major, minor, number)| (major + 16, *minor, *number))
+                .collect::<Vec<_>>()
+        );
+        assert!(editor.controller.as_mut().unwrap().undo());
+        assert_eq!(
+            editor.controller.as_ref().unwrap().level().sprites,
+            original_sprites
+        );
     }
 
     #[test]
