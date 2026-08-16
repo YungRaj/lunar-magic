@@ -292,7 +292,6 @@ struct MainLayer2Workspace {
     layer1_map16: lm_level::Map16SetFile,
 }
 
-#[derive(Default)]
 struct MainPathLinkForm {
     index: usize,
     source_x: String,
@@ -306,6 +305,25 @@ struct MainPathLinkForm {
     direction: OverworldPathDirection,
     one_way: bool,
     loaded: Option<usize>,
+}
+
+impl Default for MainPathLinkForm {
+    fn default() -> Self {
+        Self {
+            index: 0,
+            source_x: "0000".into(),
+            source_y: "0000".into(),
+            source_submap: "00".into(),
+            destination_x: "0000".into(),
+            destination_y: "0000".into(),
+            destination_submap: "00".into(),
+            target_x: "00".into(),
+            target_y: "00".into(),
+            direction: OverworldPathDirection::Up,
+            one_way: false,
+            loaded: None,
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -814,15 +832,15 @@ impl RomOverworldEditor {
                 }
                 if path_count == 0 {
                     ui.label(ow_text(catalog, Key::RomOverworldRouteUnavailable));
-                    return;
-                }
-                let previous = self.main_path.index;
-                ui.add(
-                    egui::Slider::new(&mut self.main_path.index, 0..=path_count - 1)
-                        .text(ow_text(catalog, Key::RomOverworldRouteLink)),
-                );
-                if self.main_path.index != previous {
-                    self.load_main_path_link();
+                } else {
+                    let previous = self.main_path.index;
+                    ui.add(
+                        egui::Slider::new(&mut self.main_path.index, 0..=path_count - 1)
+                            .text(ow_text(catalog, Key::RomOverworldRouteLink)),
+                    );
+                    if self.main_path.index != previous {
+                        self.load_main_path_link();
+                    }
                 }
                 ui.horizontal_wrapped(|ui| {
                     ui.strong("Source");
@@ -925,11 +943,31 @@ impl RomOverworldEditor {
                     }
                     if ui
                         .add_enabled(
-                            !stale,
+                            !stale && path_count != 0,
                             egui::Button::new(ow_text(catalog, Key::RomOverworldRouteApply)),
                         )
                         .clicked()
                         && let Err(error) = self.apply_main_path_link()
+                    {
+                        self.error = Some(error);
+                    }
+                    if ui
+                        .add_enabled(
+                            !stale && path_count < OverworldPathLinkTable::MAX_LINKS,
+                            egui::Button::new(ow_text(catalog, Key::RomOverworldRouteAdd)),
+                        )
+                        .clicked()
+                        && let Err(error) = self.add_main_path_link()
+                    {
+                        self.error = Some(error);
+                    }
+                    if ui
+                        .add_enabled(
+                            !stale && path_count != 0,
+                            egui::Button::new(ow_text(catalog, Key::RomOverworldRouteRemove)),
+                        )
+                        .clicked()
+                        && let Err(error) = self.remove_main_path_link()
                     {
                         self.error = Some(error);
                     }
@@ -980,6 +1018,33 @@ impl RomOverworldEditor {
         staged.links[self.main_path.index] = link;
         staged.encode_planes().map_err(|error| error.to_string())?;
         workspace.paths = staged;
+        Ok(())
+    }
+
+    fn add_main_path_link(&mut self) -> Result<(), String> {
+        let link = self.main_path.parse()?;
+        let workspace = self
+            .main_layer2_workspace
+            .as_mut()
+            .ok_or("playable overworld workspace is closed")?;
+        let index = append_path_link(&mut workspace.paths, link)?;
+        self.main_path.index = index;
+        self.load_main_path_link();
+        Ok(())
+    }
+
+    fn remove_main_path_link(&mut self) -> Result<(), String> {
+        let workspace = self
+            .main_layer2_workspace
+            .as_mut()
+            .ok_or("playable overworld workspace is closed")?;
+        let next = remove_path_link(&mut workspace.paths, self.main_path.index)?;
+        self.main_path.index = next.unwrap_or(0);
+        if next.is_some() {
+            self.load_main_path_link();
+        } else {
+            self.main_path.loaded = None;
+        }
         Ok(())
     }
 
@@ -1274,6 +1339,33 @@ impl MainPathLinkForm {
         }
         Ok(())
     }
+}
+
+fn append_path_link(
+    table: &mut OverworldPathLinkTable,
+    link: OverworldPathLink,
+) -> Result<usize, String> {
+    let mut staged = table.clone();
+    staged.links.push(link);
+    staged.encode_planes().map_err(|error| error.to_string())?;
+    let index = staged.links.len() - 1;
+    *table = staged;
+    Ok(index)
+}
+
+fn remove_path_link(
+    table: &mut OverworldPathLinkTable,
+    index: usize,
+) -> Result<Option<usize>, String> {
+    if index >= table.links.len() {
+        return Err("selected route link is out of range".into());
+    }
+    let mut staged = table.clone();
+    staged.links.remove(index);
+    staged.encode_planes().map_err(|error| error.to_string())?;
+    let next = (!staged.links.is_empty()).then(|| index.min(staged.links.len() - 1));
+    *table = staged;
+    Ok(next)
 }
 
 fn path_form_row(ui: &mut egui::Ui, label: &str, value: &mut String) {
@@ -4184,17 +4276,60 @@ mod canvas_tests {
         MainPathLinkForm, NativeCustomOverworldSpriteEdit, NativeSpriteSecondaryAction,
         OverworldAnimationRate, OverworldControllerEdit, OverworldEndpoint, OverworldLayerId,
         OverworldPathDirection, OverworldPathLink, OverworldPathLinkTable, OverworldPathTarget,
-        RomOverworldEditor, composed_route_endpoint, flood_fill_cells, grid_line,
+        RomOverworldEditor, append_path_link, composed_route_endpoint, flood_fill_cells, grid_line,
         inclusive_canvas_rect, native_sprite_canvas_edit, native_sprite_canvas_position,
         native_sprite_group_duplicate_edits, native_sprite_group_move_edits,
         native_sprite_secondary_action, native_sprite_selection_remove_edits,
         overworld_animation_preview_tick, parse_vanilla_overworld_level_tile, rectangle_cells,
-        route_canvas_endpoint, route_directional_canvas_endpoint, route_endpoint_canvas_pixel,
-        stroke_edits, toggle_native_sprite_selection, vanilla_overworld_level_for_tile,
+        remove_path_link, route_canvas_endpoint, route_directional_canvas_endpoint,
+        route_endpoint_canvas_pixel, stroke_edits, toggle_native_sprite_selection,
+        vanilla_overworld_level_for_tile,
     };
     use crate::document_loader::BoundedRead;
     use crate::overworld_editor_render;
     use eframe::egui;
+
+    fn route_link(value: u16) -> OverworldPathLink {
+        OverworldPathLink {
+            source: OverworldEndpoint {
+                x: value,
+                y: value + 1,
+                submap: 0,
+            },
+            destination: OverworldEndpoint {
+                x: value + 2,
+                y: value + 3,
+                submap: 1,
+            },
+            target: OverworldPathTarget {
+                x_tile: value as u8,
+                y_tile: value as u8,
+            },
+        }
+    }
+
+    #[test]
+    fn integrated_route_add_remove_rebases_selection_and_is_failure_atomic() {
+        let mut table = OverworldPathLinkTable {
+            links: vec![route_link(0), route_link(8)],
+        };
+        assert_eq!(append_path_link(&mut table, route_link(16)).unwrap(), 2);
+        assert_eq!(table.links[2], route_link(16));
+        assert_eq!(remove_path_link(&mut table, 2).unwrap(), Some(1));
+        assert_eq!(remove_path_link(&mut table, 0).unwrap(), Some(0));
+        assert_eq!(remove_path_link(&mut table, 0).unwrap(), None);
+
+        let before = table.clone();
+        assert!(remove_path_link(&mut table, 0).is_err());
+        assert_eq!(table, before);
+
+        table.links = (0..OverworldPathLinkTable::MAX_LINKS)
+            .map(|value| route_link(value as u16))
+            .collect();
+        let before = table.clone();
+        assert!(append_path_link(&mut table, route_link(0xff)).is_err());
+        assert_eq!(table, before);
+    }
 
     #[test]
     fn rom_overworld_lifecycle_and_transfer_use_every_typed_key_without_literals() {

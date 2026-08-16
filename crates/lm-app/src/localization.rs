@@ -2296,6 +2296,8 @@ pub enum ExtendedUiTextKey {
     RomOverworldRouteOrderNotice,
     RomOverworldRouteReload,
     RomOverworldRouteApply,
+    RomOverworldRouteAdd,
+    RomOverworldRouteRemove,
     RomOverworldRouteCommit,
     RomOverworldTerrainBlocksRoute,
     RomOverworldRouteStaged,
@@ -4128,7 +4130,7 @@ pub enum ExtendedUiTextKey {
 }
 
 impl ExtendedUiTextKey {
-    pub const ALL: [Self; 2424] = [
+    pub const ALL: [Self; 2426] = [
         Self::MwlDocumentEditorTitle,
         Self::MwlDocumentVersionFormat,
         Self::MwlDocumentFlagsHex,
@@ -4724,6 +4726,8 @@ impl ExtendedUiTextKey {
         Self::RomOverworldRouteOrderNotice,
         Self::RomOverworldRouteReload,
         Self::RomOverworldRouteApply,
+        Self::RomOverworldRouteAdd,
+        Self::RomOverworldRouteRemove,
         Self::RomOverworldRouteCommit,
         Self::RomOverworldTerrainBlocksRoute,
         Self::RomOverworldRouteStaged,
@@ -7309,6 +7313,8 @@ impl ExtendedUiTextKey {
             }
             Self::RomOverworldRouteReload => "Reload link",
             Self::RomOverworldRouteApply => "Apply route link",
+            Self::RomOverworldRouteAdd => "Add route from form",
+            Self::RomOverworldRouteRemove => "Remove selected route",
             Self::RomOverworldRouteCommit => "Commit route links",
             Self::RomOverworldTerrainBlocksRoute => {
                 "Commit or discard the staged terrain edit before changing route links."
