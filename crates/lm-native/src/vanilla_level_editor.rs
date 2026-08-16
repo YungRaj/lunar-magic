@@ -7792,20 +7792,25 @@ impl VanillaLevelEditor {
             && self.object_group_drag.is_none()
             && self.resizing_object.is_none()
             && self.resizing_layer2_object.is_none()
-            && let Some(shortcut) = canvas_entity_shortcut(response)
         {
-            if shortcut == CanvasEntityShortcut::Insert {
-                if let Some(position) = response
-                    .interact_pointer_pos()
-                    .or_else(|| response.ctx.pointer_hover_pos())
-                {
-                    self.apply_canvas_insert_shortcut(position, rect, cell, vertical);
+            if let Some(shortcut) = canvas_entity_shortcut(response) {
+                if shortcut == CanvasEntityShortcut::Insert {
+                    if let Some(position) = response
+                        .interact_pointer_pos()
+                        .or_else(|| response.ctx.pointer_hover_pos())
+                    {
+                        self.apply_canvas_insert_shortcut(position, rect, cell, vertical);
+                    } else {
+                        self.error =
+                            Some("Insert requires a pointer position on the level canvas".into());
+                    }
                 } else {
-                    self.error =
-                        Some("Insert requires a pointer position on the level canvas".into());
+                    self.apply_canvas_entity_shortcut(shortcut);
                 }
-            } else {
-                self.apply_canvas_entity_shortcut(shortcut);
+            } else if self.canvas_entity_selection.is_some()
+                && let Some((x_delta, y_delta)) = canvas_entity_nudge(response)
+            {
+                self.toolbar_nudge_selection(x_delta, y_delta);
             }
         }
     }
@@ -11904,6 +11909,40 @@ fn canvas_entity_shortcut(response: &egui::Response) -> Option<CanvasEntityShort
             None
         }
     })
+}
+
+fn canvas_entity_nudge(response: &egui::Response) -> Option<(i32, i32)> {
+    if !response.has_focus() {
+        return None;
+    }
+    response.ctx.input_mut(|input| {
+        let modifiers = input.modifiers;
+        if modifiers.ctrl || modifiers.alt || modifiers.mac_cmd {
+            return None;
+        }
+        for key in [
+            egui::Key::ArrowLeft,
+            egui::Key::ArrowRight,
+            egui::Key::ArrowUp,
+            egui::Key::ArrowDown,
+        ] {
+            if input.consume_key(modifiers, key) {
+                return canvas_nudge_delta(key, modifiers.shift);
+            }
+        }
+        None
+    })
+}
+
+fn canvas_nudge_delta(key: egui::Key, full_screen: bool) -> Option<(i32, i32)> {
+    let distance = if full_screen { 16 } else { 1 };
+    match key {
+        egui::Key::ArrowLeft => Some((-distance, 0)),
+        egui::Key::ArrowRight => Some((distance, 0)),
+        egui::Key::ArrowUp => Some((0, -distance)),
+        egui::Key::ArrowDown => Some((0, distance)),
+        _ => None,
+    }
 }
 
 fn mode_change_resets_layer2(source_mode: u8, target_mode: u8, layer2_loaded: bool) -> bool {
@@ -26371,6 +26410,20 @@ mod tests {
     fn toolbar_coordinate_commands_nudge_objects_and_sprites_through_staged_history() {
         assert_eq!(screen_nudge_delta(false, 1, -2), (1, -2));
         assert_eq!(screen_nudge_delta(true, 1, -2), (-2, 1));
+        assert_eq!(
+            canvas_nudge_delta(egui::Key::ArrowLeft, false),
+            Some((-1, 0))
+        );
+        assert_eq!(
+            canvas_nudge_delta(egui::Key::ArrowDown, false),
+            Some((0, 1))
+        );
+        assert_eq!(
+            canvas_nudge_delta(egui::Key::ArrowRight, true),
+            Some((16, 0))
+        );
+        assert_eq!(canvas_nudge_delta(egui::Key::ArrowUp, true), Some((0, -16)));
+        assert_eq!(canvas_nudge_delta(egui::Key::Enter, false), None);
 
         let mut app = AppState::default();
         app.load_rom(crate::test_support::pristine_smw_us_rom_bytes())
