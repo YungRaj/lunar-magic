@@ -193,6 +193,18 @@ enum MapPaintTool {
     RouteDestination,
 }
 
+fn paint_tool_samples_tile(tool: MapPaintTool, clicked: bool, ctrl: bool) -> bool {
+    clicked
+        && ctrl
+        && matches!(
+            tool,
+            MapPaintTool::Brush
+                | MapPaintTool::Rectangle
+                | MapPaintTool::Fill
+                | MapPaintTool::Replace
+        )
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum PendingClose {
     Editor,
@@ -2228,70 +2240,80 @@ impl RomOverworldEditor {
             self.x = x;
             self.y = y;
             self.loaded = None;
-            match self.paint_tool {
-                MapPaintTool::Select => {
-                    self.load_main_layer2_tile();
-                    self.refresh_map16_texture(ui.ctx());
-                }
-                MapPaintTool::Brush if !stale => action = Some((MapPaintTool::Brush, (x, y))),
-                MapPaintTool::Fill if !stale && response.clicked() => {
-                    action = Some((MapPaintTool::Fill, (x, y)));
-                }
-                MapPaintTool::Replace if !stale && response.clicked() => {
-                    action = Some((MapPaintTool::Replace, (x, y)));
-                }
-                MapPaintTool::Rectangle if !stale => {
-                    if response.drag_started() {
-                        self.paint_anchor = ui
-                            .input(|input| input.pointer.press_origin())
-                            .and_then(|origin| {
-                                composed_storage_tile(response.rect, origin, frame_size, state)
-                            })
-                            .map(|(x, y)| {
-                                if self.layer == 0 {
-                                    (x / 2, y / 2)
-                                } else {
-                                    (x, y)
-                                }
-                            })
-                            .or(Some((x, y)));
+            if paint_tool_samples_tile(
+                self.paint_tool,
+                response.clicked(),
+                ui.input(|input| input.modifiers.ctrl),
+            ) {
+                self.load_main_layer2_tile();
+                self.active_tile = self.tile.clone();
+                self.refresh_map16_texture(ui.ctx());
+            } else {
+                match self.paint_tool {
+                    MapPaintTool::Select => {
+                        self.load_main_layer2_tile();
+                        self.refresh_map16_texture(ui.ctx());
                     }
-                    if response.drag_stopped() || response.clicked() {
-                        action = Some((MapPaintTool::Rectangle, (x, y)));
+                    MapPaintTool::Brush if !stale => action = Some((MapPaintTool::Brush, (x, y))),
+                    MapPaintTool::Fill if !stale && response.clicked() => {
+                        action = Some((MapPaintTool::Fill, (x, y)));
                     }
-                }
-                MapPaintTool::RouteSource if !stale && response.clicked() => {
-                    if let Ok(submap) = level_editor_forms::parse_hex_u8(
-                        &self.main_path.source_submap,
-                        "route source submap",
-                    ) && let Some(endpoint) =
-                        composed_route_endpoint((x, y), submap, self.main_path.direction)
-                    {
-                        self.main_path.source_x = format!("{:04X}", endpoint.x);
-                        self.main_path.source_y = format!("{:04X}", endpoint.y);
-                        self.main_path.source_submap = format!("{:02X}", endpoint.submap);
+                    MapPaintTool::Replace if !stale && response.clicked() => {
+                        action = Some((MapPaintTool::Replace, (x, y)));
                     }
-                }
-                MapPaintTool::RouteDestination if !stale && response.clicked() => {
-                    if let Ok(submap) = level_editor_forms::parse_hex_u8(
-                        &self.main_path.destination_submap,
-                        "route destination submap",
-                    ) && let Some(endpoint) =
-                        composed_route_endpoint((x, y), submap, self.main_path.direction)
-                    {
-                        self.main_path.destination_x = format!("{:04X}", endpoint.x);
-                        self.main_path.destination_y = format!("{:04X}", endpoint.y);
-                        self.main_path.destination_submap = format!("{:02X}", endpoint.submap);
-                        self.main_path.one_way = false;
+                    MapPaintTool::Rectangle if !stale => {
+                        if response.drag_started() {
+                            self.paint_anchor = ui
+                                .input(|input| input.pointer.press_origin())
+                                .and_then(|origin| {
+                                    composed_storage_tile(response.rect, origin, frame_size, state)
+                                })
+                                .map(|(x, y)| {
+                                    if self.layer == 0 {
+                                        (x / 2, y / 2)
+                                    } else {
+                                        (x, y)
+                                    }
+                                })
+                                .or(Some((x, y)));
+                        }
+                        if response.drag_stopped() || response.clicked() {
+                            action = Some((MapPaintTool::Rectangle, (x, y)));
+                        }
                     }
+                    MapPaintTool::RouteSource if !stale && response.clicked() => {
+                        if let Ok(submap) = level_editor_forms::parse_hex_u8(
+                            &self.main_path.source_submap,
+                            "route source submap",
+                        ) && let Some(endpoint) =
+                            composed_route_endpoint((x, y), submap, self.main_path.direction)
+                        {
+                            self.main_path.source_x = format!("{:04X}", endpoint.x);
+                            self.main_path.source_y = format!("{:04X}", endpoint.y);
+                            self.main_path.source_submap = format!("{:02X}", endpoint.submap);
+                        }
+                    }
+                    MapPaintTool::RouteDestination if !stale && response.clicked() => {
+                        if let Ok(submap) = level_editor_forms::parse_hex_u8(
+                            &self.main_path.destination_submap,
+                            "route destination submap",
+                        ) && let Some(endpoint) =
+                            composed_route_endpoint((x, y), submap, self.main_path.direction)
+                        {
+                            self.main_path.destination_x = format!("{:04X}", endpoint.x);
+                            self.main_path.destination_y = format!("{:04X}", endpoint.y);
+                            self.main_path.destination_submap = format!("{:02X}", endpoint.submap);
+                            self.main_path.one_way = false;
+                        }
+                    }
+                    MapPaintTool::NativeSprite
+                    | MapPaintTool::RouteSource
+                    | MapPaintTool::RouteDestination
+                    | MapPaintTool::Brush
+                    | MapPaintTool::Rectangle
+                    | MapPaintTool::Fill
+                    | MapPaintTool::Replace => {}
                 }
-                MapPaintTool::NativeSprite
-                | MapPaintTool::RouteSource
-                | MapPaintTool::RouteDestination
-                | MapPaintTool::Brush
-                | MapPaintTool::Rectangle
-                | MapPaintTool::Fill
-                | MapPaintTool::Replace => {}
             }
         }
         if let Some((tool, position)) = action {
@@ -2455,7 +2477,16 @@ impl RomOverworldEditor {
                 self.x = x;
                 self.y = y;
                 self.loaded = None;
-                match self.paint_tool {
+                if paint_tool_samples_tile(
+                    self.paint_tool,
+                    response.clicked(),
+                    ui.input(|input| input.modifiers.ctrl),
+                ) {
+                    self.load_tile();
+                    self.active_tile = self.tile.clone();
+                    self.refresh_map16_texture(ui.ctx());
+                } else {
+                    match self.paint_tool {
                     MapPaintTool::Select => {
                         self.load_tile();
                         self.refresh_map16_texture(ui.ctx());
@@ -2653,6 +2684,7 @@ impl RomOverworldEditor {
                         }
                     }
                     _ => {}
+                    }
                 }
             }
             if shape.width > 0 && shape.height > 0 {
@@ -4358,9 +4390,10 @@ mod canvas_tests {
         native_sprite_canvas_position, native_sprite_group_duplicate_edits,
         native_sprite_group_move_edits, native_sprite_secondary_action,
         native_sprite_selection_remove_edits, overworld_animation_preview_tick,
-        parse_vanilla_overworld_level_tile, rectangle_cells, remove_path_link,
-        route_canvas_endpoint, route_directional_canvas_endpoint, route_endpoint_canvas_pixel,
-        stroke_edits, toggle_native_sprite_selection, vanilla_overworld_level_for_tile,
+        paint_tool_samples_tile, parse_vanilla_overworld_level_tile, rectangle_cells,
+        remove_path_link, route_canvas_endpoint, route_directional_canvas_endpoint,
+        route_endpoint_canvas_pixel, stroke_edits, toggle_native_sprite_selection,
+        vanilla_overworld_level_for_tile,
     };
     use crate::document_loader::BoundedRead;
     use crate::overworld_editor_render;
@@ -4857,6 +4890,28 @@ mod canvas_tests {
         );
         assert!(matching_tile_cells(3, 3, &tiles[..8], (0, 0)).is_empty());
         assert!(matching_tile_cells(3, 3, &tiles, (3, 0)).is_empty());
+    }
+
+    #[test]
+    fn ctrl_click_samples_only_with_active_terrain_tools() {
+        for tool in [
+            super::MapPaintTool::Brush,
+            super::MapPaintTool::Rectangle,
+            super::MapPaintTool::Fill,
+            super::MapPaintTool::Replace,
+        ] {
+            assert!(paint_tool_samples_tile(tool, true, true));
+            assert!(!paint_tool_samples_tile(tool, false, true));
+            assert!(!paint_tool_samples_tile(tool, true, false));
+        }
+        for tool in [
+            super::MapPaintTool::Select,
+            super::MapPaintTool::NativeSprite,
+            super::MapPaintTool::RouteSource,
+            super::MapPaintTool::RouteDestination,
+        ] {
+            assert!(!paint_tool_samples_tile(tool, true, true));
+        }
     }
 
     #[test]
