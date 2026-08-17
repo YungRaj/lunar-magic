@@ -3,7 +3,7 @@
 A cross-platform, clean-room reimplementation of Lunar Magic for Super Mario World, written in
 safe Rust.
 
-The current stable release is **1.0.0**. It provides the first supported portable release of the
+The current stable release is **1.0.1**. It provides the supported portable 1.0 release line of the
 native editor, command-line tools, isolated live-emulator backend, verified updater, and rollback
 launcher. The compatibility limitations documented below still apply; 1.0 denotes a stable
 release boundary, not a claim that every Lunar Magic 3.63 workflow is implemented.
