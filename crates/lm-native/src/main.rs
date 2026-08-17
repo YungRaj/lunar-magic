@@ -1,6 +1,7 @@
 mod about_dialog;
 mod animation_modes;
 mod animation_rate;
+mod app_icon;
 mod appearance_editor;
 mod appearance_editor_form;
 mod application;
@@ -157,6 +158,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let options = eframe::NativeOptions {
         viewport: eframe::egui::ViewportBuilder::default()
             .with_title("Lunar Magic Rust")
+            .with_icon(app_icon::original_moon())
             .with_inner_size(window_size)
             .with_min_inner_size([720.0, 480.0]),
         ..Default::default()

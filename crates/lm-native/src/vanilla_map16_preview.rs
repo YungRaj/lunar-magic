@@ -2653,6 +2653,45 @@ mod tests {
     }
 
     #[test]
+    fn embedded_application_icon_matches_original_moon_sprite() {
+        let bytes = crate::test_support::pristine_smw_us_rom_bytes();
+        let project = Project::new(RomImage::from_bytes(bytes.clone()).unwrap());
+        let level = project
+            .load_level_slot(
+                0x105,
+                lm_profile::smw_us_v1_vanilla_level_layout(),
+                &lm_level::SpriteLengthTable::standard(),
+            )
+            .unwrap();
+        let preview =
+            render_with_editor_palette_phase(bytes, 0x105, level.layer1.header, false, false, 0)
+                .unwrap();
+        let parts = lm_render::render_lunar_magic_standard_sprite(0x6e, false).unwrap();
+        let min_x = parts.iter().map(|part| part.x).min().unwrap();
+        let min_y = parts.iter().map(|part| part.y).min().unwrap();
+        let mut rgba = vec![0; 32 * 32 * 4];
+        for part in parts {
+            for (quadrant, word) in part.subtiles.into_iter().enumerate() {
+                let x = usize::try_from(part.x - min_x).unwrap() + quadrant / 2 * 8;
+                let y = usize::try_from(part.y - min_y).unwrap() + quadrant % 2 * 8;
+                let subtile = lm_level::Subtile(word);
+                draw_subtile(
+                    &mut rgba,
+                    32,
+                    (x, y),
+                    preview.sprite_tiles.get(usize::from(word & 0x01ff)),
+                    &preview.palette,
+                    8 + usize::from(subtile.palette()),
+                    (subtile.x_flip(), subtile.y_flip()),
+                );
+            }
+        }
+        let icon = crate::app_icon::original_moon();
+        assert_eq!((icon.width, icon.height), (32, 32));
+        assert_eq!(icon.rgba, rgba);
+    }
+
+    #[test]
     fn berry_high_plane_conversion_matches_the_recovered_all_or_nothing_rule() {
         let mut tiles = vec![IndexedTile::new([1; 64]); 0x12];
         synthesize_berry_tile_high_plane(&mut tiles);
