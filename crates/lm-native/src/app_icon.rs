@@ -31,11 +31,28 @@ pub(crate) fn original_moon() -> Arc<egui::IconData> {
     assert_eq!(info.color_type, png::ColorType::Rgba);
     assert_eq!(info.bit_depth, png::BitDepth::Eight);
     pixels.truncate(info.buffer_size());
+    let (pixels, width, height) = upscale_rgba_nearest(&pixels, info.width, info.height, 8);
     Arc::new(egui::IconData {
         rgba: pixels,
-        width: info.width,
-        height: info.height,
+        width,
+        height,
     })
+}
+
+fn upscale_rgba_nearest(source: &[u8], width: u32, height: u32, scale: u32) -> (Vec<u8>, u32, u32) {
+    assert_eq!(source.len(), width as usize * height as usize * 4);
+    let output_width = width * scale;
+    let output_height = height * scale;
+    let mut output = vec![0; output_width as usize * output_height as usize * 4];
+    for y in 0..output_height {
+        for x in 0..output_width {
+            let source_pixel = ((y / scale) * width + x / scale) as usize * 4;
+            let output_pixel = (y * output_width + x) as usize * 4;
+            output[output_pixel..output_pixel + 4]
+                .copy_from_slice(&source[source_pixel..source_pixel + 4]);
+        }
+    }
+    (output, output_width, output_height)
 }
 
 fn decode_base64(source: &str) -> Option<Vec<u8>> {
@@ -77,10 +94,10 @@ const fn base64_value(byte: u8) -> Option<u8> {
 #[cfg(test)]
 mod tests {
     #[test]
-    fn embedded_original_moon_is_a_transparent_32_pixel_icon() {
+    fn embedded_original_moon_is_a_transparent_256_pixel_icon() {
         let icon = super::original_moon();
-        assert_eq!((icon.width, icon.height), (32, 32));
-        assert_eq!(icon.rgba.len(), 32 * 32 * 4);
+        assert_eq!((icon.width, icon.height), (256, 256));
+        assert_eq!(icon.rgba.len(), 256 * 256 * 4);
         assert!(icon.rgba.chunks_exact(4).any(|pixel| pixel[3] == 0));
         assert!(icon.rgba.chunks_exact(4).any(|pixel| pixel[3] == 255));
     }

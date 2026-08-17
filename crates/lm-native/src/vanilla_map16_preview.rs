@@ -2671,22 +2671,22 @@ mod tests {
         assert_eq!(moon_map16, 0x06e);
         let source_x = moon_map16 % 32 * 16;
         let source_y = moon_map16 / 32 * 16;
-        let mut rgba = vec![0; 32 * 32 * 4];
+        let mut rgba = vec![0; 256 * 256 * 4];
         for y in 0..16 {
             for x in 0..16 {
                 let color = preview.image.pixels
                     [(source_y + y) * preview.image.size[0] + source_x + x]
                     .to_array();
-                for scaled_y in 0..2 {
-                    for scaled_x in 0..2 {
-                        let output = ((y * 2 + scaled_y) * 32 + x * 2 + scaled_x) * 4;
+                for scaled_y in 0..16 {
+                    for scaled_x in 0..16 {
+                        let output = ((y * 16 + scaled_y) * 256 + x * 16 + scaled_x) * 4;
                         rgba[output..output + 4].copy_from_slice(&color);
                     }
                 }
             }
         }
         let icon = crate::app_icon::original_moon();
-        assert_eq!((icon.width, icon.height), (32, 32));
+        assert_eq!((icon.width, icon.height), (256, 256));
         assert_eq!(icon.rgba, rgba);
     }
 
