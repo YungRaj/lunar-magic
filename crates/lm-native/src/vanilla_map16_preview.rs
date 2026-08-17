@@ -2666,24 +2666,23 @@ mod tests {
         let preview =
             render_with_editor_palette_phase(bytes, 0x105, level.layer1.header, false, false, 0)
                 .unwrap();
-        let parts = lm_render::render_lunar_magic_standard_sprite(0x6e, false).unwrap();
-        let min_x = parts.iter().map(|part| part.x).min().unwrap();
-        let min_y = parts.iter().map(|part| part.y).min().unwrap();
+        let moon_map16 =
+            usize::from(lm_render::lunar_magic_shared_extended_object_tile(0x18).unwrap());
+        assert_eq!(moon_map16, 0x06e);
+        let source_x = moon_map16 % 32 * 16;
+        let source_y = moon_map16 / 32 * 16;
         let mut rgba = vec![0; 32 * 32 * 4];
-        for part in parts {
-            for (quadrant, word) in part.subtiles.into_iter().enumerate() {
-                let x = usize::try_from(part.x - min_x).unwrap() + quadrant / 2 * 8;
-                let y = usize::try_from(part.y - min_y).unwrap() + quadrant % 2 * 8;
-                let subtile = lm_level::Subtile(word);
-                draw_subtile(
-                    &mut rgba,
-                    32,
-                    (x, y),
-                    preview.sprite_tiles.get(usize::from(word & 0x01ff)),
-                    &preview.palette,
-                    8 + usize::from(subtile.palette()),
-                    (subtile.x_flip(), subtile.y_flip()),
-                );
+        for y in 0..16 {
+            for x in 0..16 {
+                let color = preview.image.pixels
+                    [(source_y + y) * preview.image.size[0] + source_x + x]
+                    .to_array();
+                for scaled_y in 0..2 {
+                    for scaled_x in 0..2 {
+                        let output = ((y * 2 + scaled_y) * 32 + x * 2 + scaled_x) * 4;
+                        rgba[output..output + 4].copy_from_slice(&color);
+                    }
+                }
             }
         }
         let icon = crate::app_icon::original_moon();

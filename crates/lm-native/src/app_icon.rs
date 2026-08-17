@@ -1,30 +1,21 @@
 use eframe::egui;
 use std::{io::Cursor, sync::Arc};
 
-// Generated from standard sprite $6E using the graphics and palette in the pristine
-// Super Mario World (USA) ROM. Keeping the generated pixels in the binary means the
+// Generated from extended object $18 (Map16 tile $06E) using the graphics and palette in the
+// pristine Super Mario World (USA) ROM. Keeping the generated pixels in the binary means the
 // application icon is available before a user opens a ROM.
 const ORIGINAL_MOON_PNG_BASE64: &str = concat!(
-    "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",
+    "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",
 );
 
 pub(crate) fn original_moon() -> Arc<egui::IconData> {
