@@ -47,9 +47,12 @@ const VANILLA_LAYER2_VERTICAL_SCROLL: [u8; 16] = [3, 1, 1, 0, 0, 2, 2, 1, 0, 0, 
 const VANILLA_LAYER2_HORIZONTAL_SCROLL: [u8; 16] = [2, 2, 1, 0, 1, 2, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0];
 const VANILLA_INITIAL_LAYER1_Y: [u8; 4] = [0x00, 0x60, 0xc0, 0x00];
 const VANILLA_INITIAL_LAYER2_Y: [u8; 4] = [0x60, 0x90, 0xc0, 0x00];
-// At the default desktop window size this leaves the one-screen canvas pane close to 256:224,
-// minimizing its centered side bezels while retaining a useful, fixed-width editing column.
+// At the default desktop window size this leaves the one-screen canvas pane close to 256:224.
+// The user can drag the workspace divider away from this initial tools-column width.
 const ROM_LEVEL_TOOL_PANEL_WIDTH: f32 = 530.0;
+const ROM_LEVEL_TOOL_PANEL_MIN_WIDTH: f32 = 220.0;
+const ROM_LEVEL_CANVAS_MIN_WIDTH: f32 = 240.0;
+const ROM_LEVEL_WORKSPACE_DIVIDER_WIDTH: f32 = 7.0;
 const STANDARD_SPRITE_MAX: u8 = 0xed;
 const ORIGINAL_GENERAL_OPTIONS_DIALOG_ID: u16 = 0x041f;
 const ORIGINAL_SCAN_EXITS_CONTROL_ID: u32 = 0x22a9;
@@ -609,6 +612,7 @@ pub(crate) struct VanillaLevelEditor {
     background_512_height: bool,
     translucent_overlays: bool,
     tools_panel_visible: Option<bool>,
+    tool_panel_width: Option<f32>,
     tool_panel_generations: [u64; 4],
     requested_tool_panel: Option<LevelToolPanel>,
     screen_exit_table_form: Option<[Option<u16>; 32]>,
@@ -1055,7 +1059,11 @@ impl VanillaLevelEditor {
             }
         });
         let workspace_size = ui.available_size();
-        let tool_width = workspace_tool_width(workspace_size.x);
+        let tool_width = workspace_tool_width(
+            workspace_size.x,
+            self.tool_panel_width.unwrap_or(ROM_LEVEL_TOOL_PANEL_WIDTH),
+        );
+        self.tool_panel_width = Some(tool_width);
         let requested_tool_panel = self.requested_tool_panel.take();
         let visibility = if self.raw_layer1_pc_address.is_some() {
             crate::application::LevelViewVisibility {
@@ -1170,7 +1178,30 @@ impl VanillaLevelEditor {
                                 self.show_commit_controls(ui, catalog, &snapshot, custom_dsc);
                         }
                     });
-                ui.separator();
+                let (divider_rect, divider_response) = ui.allocate_exact_size(
+                    egui::vec2(ROM_LEVEL_WORKSPACE_DIVIDER_WIDTH, workspace_size.y),
+                    egui::Sense::drag(),
+                );
+                let divider_color = if divider_response.dragged() || divider_response.hovered() {
+                    ui.visuals().widgets.active.bg_fill
+                } else {
+                    ui.visuals().widgets.noninteractive.bg_stroke.color
+                };
+                ui.painter().vline(
+                    divider_rect.center().x,
+                    divider_rect.y_range(),
+                    egui::Stroke::new(2.0, divider_color),
+                );
+                let divider_response =
+                    divider_response.on_hover_cursor(egui::CursorIcon::ResizeHorizontal);
+                if divider_response.dragged() {
+                    let pointer_delta = ui.ctx().input(|input| input.pointer.delta().x);
+                    self.tool_panel_width = Some(workspace_tool_width(
+                        workspace_size.x,
+                        tool_width + pointer_delta,
+                    ));
+                    ui.ctx().request_repaint();
+                }
             }
             // As with the tools column, descendants of the canvas (notably its horizontally
             // scrollable toolbar and wrapped help text) may report a larger desired size than
@@ -17801,8 +17832,11 @@ fn vertical_fireball_needs_buoyancy_warning(sprites: &lm_level::NativeSpriteStre
             .any(|placement| placement.sprite_number == 0x33)
 }
 
-fn workspace_tool_width(available_width: f32) -> f32 {
-    ROM_LEVEL_TOOL_PANEL_WIDTH.min((available_width * 0.49).max(280.0))
+fn workspace_tool_width(available_width: f32, requested_width: f32) -> f32 {
+    let maximum =
+        (available_width - ROM_LEVEL_CANVAS_MIN_WIDTH - ROM_LEVEL_WORKSPACE_DIVIDER_WIDTH)
+            .max(ROM_LEVEL_TOOL_PANEL_MIN_WIDTH);
+    requested_width.clamp(ROM_LEVEL_TOOL_PANEL_MIN_WIDTH, maximum)
 }
 
 fn load_animation_textures(
@@ -21620,11 +21654,26 @@ mod tests {
     #[test]
     fn window_workspace_reserves_the_majority_for_the_canvas() {
         for width in [720.0_f32, 1_100.0, 1_600.0, 3_200.0] {
-            let tools = workspace_tool_width(width);
-            assert!(tools >= 280.0);
+            let tools = workspace_tool_width(width, ROM_LEVEL_TOOL_PANEL_WIDTH);
+            assert!(tools >= ROM_LEVEL_TOOL_PANEL_MIN_WIDTH);
             assert!(tools <= ROM_LEVEL_TOOL_PANEL_WIDTH);
-            assert!(width - tools > width * 0.50);
+            assert!(
+                width - tools - ROM_LEVEL_WORKSPACE_DIVIDER_WIDTH >= ROM_LEVEL_CANVAS_MIN_WIDTH
+            );
         }
+    }
+
+    #[test]
+    fn workspace_divider_honors_user_width_and_clamps_both_panes() {
+        assert_eq!(workspace_tool_width(1_200.0, 360.0), 360.0);
+        assert_eq!(
+            workspace_tool_width(1_200.0, 100.0),
+            ROM_LEVEL_TOOL_PANEL_MIN_WIDTH
+        );
+        assert_eq!(
+            workspace_tool_width(700.0, 900.0),
+            700.0 - ROM_LEVEL_CANVAS_MIN_WIDTH - ROM_LEVEL_WORKSPACE_DIVIDER_WIDTH
+        );
     }
 
     #[test]
