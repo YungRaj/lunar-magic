@@ -25274,6 +25274,51 @@ mod tests {
     }
 
     #[test]
+    fn levels_107_108_and_107s_door_destination_match_live_lunar_magic_extents() {
+        let image = RomImage::from_bytes(crate::test_support::pristine_smw_us_rom_bytes()).unwrap();
+        let project = lm_project::Project::new(image);
+        let layout = lm_profile::smw_us_v1_vanilla_level_layout();
+        let lengths = SpriteLengthTable::standard();
+
+        let level_107 = project.load_level_slot(0x107, layout, &lengths).unwrap();
+        let exit = level_107
+            .layer1
+            .objects
+            .records
+            .iter()
+            .filter_map(ObjectRecord::screen_exit)
+            .find(|exit| exit.screen == 0x0a)
+            .expect("pristine level 107 has its door exit on screen A");
+        assert_eq!(exit.destination_and_flags, 0x00ea);
+        assert_eq!(
+            screen_exit_follow_destination(&level_107.layer1.objects.records, None, 0x0a),
+            Ok(0x00ea)
+        );
+
+        for (slot, expected_tiles) in [(0x108, (32_u16, 448_u16)), (0x0ea, (32, 448))] {
+            let level = project.load_level_slot(slot, layout, &lengths).unwrap();
+            let mode = lm_profile::smw_us_v1_level_mode(level.layer1.header.level_mode());
+            assert!(mode.vertical, "level {slot:03X} must use a vertical canvas");
+            assert_eq!(
+                (
+                    VERTICAL_LEVEL_MINOR_TILES,
+                    u16::from(mode.editor_major_screens) * 16
+                ),
+                expected_tiles,
+                "level {slot:03X} must retain Lunar Magic's complete live editor canvas"
+            );
+            assert!(
+                level
+                    .layer1
+                    .objects
+                    .native_placements_for_orientation(true)
+                    .iter()
+                    .all(|placement| placement.major < expected_tiles.1)
+            );
+        }
+    }
+
+    #[test]
     fn level_1d9_midway_entrance_uses_the_vanilla_midway_screen_nibble() {
         let entrance = VanillaMainEntrance {
             position: 0x09,
