@@ -6,9 +6,8 @@ use lm_app::{
 use lm_level::{
     CustomMusicError, CustomMusicTrack, CustomTimeError, CustomTimeSettings,
     Layer1VerticalScrollMode, LegacyHeaderEdit, LevelScreenExtentMode, NativeSpriteRecordFields,
-    ObjectCoordinateNibbles, ObjectEdit, ObjectRecord, SCREEN_EXIT_REQUIRED_FLAG,
-    SecondaryExitTable, SeparateMidwayEntrance, SpriteLengthTable, SpriteToken,
-    native_level_screen_count,
+    ObjectCoordinateNibbles, ObjectEdit, ObjectRecord, SecondaryExitTable, SeparateMidwayEntrance,
+    SpriteLengthTable, SpriteToken, native_level_screen_count,
 };
 use lm_project::LevelSaveOptions;
 use lm_project::{Project, VanillaMainEntrance};
@@ -12516,7 +12515,8 @@ fn screen_exit_follow_destination(
 ) -> Result<u16, String> {
     let destination_and_flags = screen_exit_table(records)[usize::from(screen)]
         .ok_or_else(|| "No exit on this screen.".to_owned())?;
-    let destination_and_flags = canonical_screen_exit_flags(destination_and_flags);
+    // BuildPackedScreenExitArrayFromObjects @ $0043ACD0 adds `$10000` as an out-of-band
+    // presence marker. It does not promote compact `$00xx` destinations into bank `$01xx`.
     let destination = (destination_and_flags >> 3) & 0x1e00 | destination_and_flags & 0x01ff;
     if destination_and_flags & 0x0200 == 0 {
         return (destination < 0x200)
@@ -12530,14 +12530,6 @@ fn screen_exit_follow_destination(
         return Err("Destination is for overworld, not level.".into());
     }
     Ok(exit.destination_level)
-}
-
-const fn canonical_screen_exit_flags(destination_and_flags: u16) -> u16 {
-    if destination_and_flags & SCREEN_EXIT_REQUIRED_FLAG == 0 {
-        destination_and_flags | 0x0100 | SCREEN_EXIT_REQUIRED_FLAG
-    } else {
-        destination_and_flags
-    }
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -12668,7 +12660,6 @@ fn screen_exit_annotation_label(
     destination_and_flags: u16,
     secondary_exits: Option<&SecondaryExitTable>,
 ) -> String {
-    let destination_and_flags = canonical_screen_exit_flags(destination_and_flags);
     let destination = (destination_and_flags >> 3) & 0x1e00 | destination_and_flags & 0x01ff;
     if destination_and_flags & 0x0200 != 0 {
         let resolved = secondary_exits
@@ -25302,13 +25293,16 @@ mod tests {
             .expect("pristine level 107 has its door exit on screen A");
         assert_eq!(exit.destination_and_flags, 0x00ea);
         assert_eq!(
+            0x1_0000_u32 | u32::from(exit.destination_and_flags),
+            0x1_00ea
+        );
+        assert_eq!(
             screen_exit_follow_destination(&level_107.layer1.objects.records, None, 0x0a),
-            Ok(0x01ea)
+            Ok(0x00ea)
         );
 
-        let destination = project.load_level_slot(0x1ea, layout, &lengths).unwrap();
-        assert!(!lm_profile::smw_us_v1_level_mode(destination.layer1.header.level_mode()).vertical);
-        assert_eq!(destination.layer1.header.object_tileset(), 5);
+        let destination = project.load_level_slot(0x0ea, layout, &lengths).unwrap();
+        assert!(lm_profile::smw_us_v1_level_mode(destination.layer1.header.level_mode()).vertical);
 
         let level_108 = project.load_level_slot(0x108, layout, &lengths).unwrap();
         let mode = lm_profile::smw_us_v1_level_mode(level_108.layer1.header.level_mode());
