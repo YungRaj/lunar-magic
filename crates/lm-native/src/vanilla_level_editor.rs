@@ -15269,32 +15269,31 @@ fn draw_wrapped_background_viewport(
     background_512_height: bool,
 ) {
     const PLANE_WIDTH_PIXELS: i32 = 512;
-    const VIEW_WIDTH: i32 = 256;
-    const VIEW_HEIGHT: i32 = 224;
     let layer1_camera = (i32::from(camera.0) * 16, i32::from(camera.1) * 16);
     let (source_x, source_y) = vanilla_layer2_camera_pixels(entrance, layer1_camera);
     let plane_height_pixels = background_plane_height_pixels(background_512_height);
-    let viewport = egui::Rect::from_min_size(
-        world.min
-            + egui::vec2(
-                f32::from(camera.0) * cell_size,
-                f32::from(camera.1) * cell_size,
-            ),
-        egui::vec2(
-            f32::from(u8::try_from(VIEW_WIDTH / 16).unwrap()) * cell_size,
-            f32::from(u8::try_from(VIEW_HEIGHT / 16).unwrap()) * cell_size,
-        ),
-    );
-    let mut output_y = 0;
-    while output_y < VIEW_HEIGHT {
+    let viewport_min = world.min
+        + egui::vec2(
+            f32::from(camera.0) * cell_size,
+            f32::from(camera.1) * cell_size,
+        );
+    let visible = painter.clip_rect().intersect(world);
+    if !visible.is_positive() {
+        return;
+    }
+    let pixels_per_screen_pixel = cell_size / 16.0;
+    let (output_x_range, output_y_range) =
+        background_output_pixel_bounds(visible, viewport_min, pixels_per_screen_pixel);
+    let mut output_y = output_y_range.start;
+    while output_y < output_y_range.end {
         let plane_y = (source_y + output_y).rem_euclid(plane_height_pixels);
-        let rows = (plane_height_pixels - plane_y).min(VIEW_HEIGHT - output_y);
-        let mut output_x = 0;
-        while output_x < VIEW_WIDTH {
+        let rows = (plane_height_pixels - plane_y).min(output_y_range.end - output_y);
+        let mut output_x = output_x_range.start;
+        while output_x < output_x_range.end {
             let plane_x = (source_x + output_x).rem_euclid(PLANE_WIDTH_PIXELS);
-            let columns = (PLANE_WIDTH_PIXELS - plane_x).min(VIEW_WIDTH - output_x);
+            let columns = (PLANE_WIDTH_PIXELS - plane_x).min(output_x_range.end - output_x);
             let target = egui::Rect::from_min_size(
-                viewport.min
+                viewport_min
                     + egui::vec2(
                         screen_pixels_f32(output_x) * cell_size / 16.0,
                         screen_pixels_f32(output_y) * cell_size / 16.0,
@@ -15319,6 +15318,21 @@ fn draw_wrapped_background_viewport(
         }
         output_y += rows;
     }
+}
+
+fn background_output_pixel_bounds(
+    visible: egui::Rect,
+    viewport_min: egui::Pos2,
+    scale: f32,
+) -> (std::ops::Range<i32>, std::ops::Range<i32>) {
+    let scale = scale.max(f32::EPSILON);
+    let bounds = |minimum: f32, maximum: f32, origin: f32| {
+        (((minimum - origin) / scale).floor() as i32)..(((maximum - origin) / scale).ceil() as i32)
+    };
+    (
+        bounds(visible.min.x, visible.max.x, viewport_min.x),
+        bounds(visible.min.y, visible.max.y, viewport_min.y),
+    )
 }
 
 const fn background_plane_height_pixels(background_512_height: bool) -> i32 {
@@ -25363,6 +25377,18 @@ mod tests {
             vanilla_game_background_coordinates(0, 31, entrance, (0, 0), false).1,
             vanilla_game_background_coordinates(0, 31, entrance, (0, 0), true).1,
         );
+    }
+
+    #[test]
+    fn wrapped_background_covers_canvas_beyond_the_single_game_viewport() {
+        let visible = egui::Rect::from_min_max(egui::pos2(100.0, 40.0), egui::pos2(900.0, 640.0));
+        let (horizontal, vertical) =
+            background_output_pixel_bounds(visible, egui::pos2(250.0, 40.0), 2.0);
+        assert_eq!(horizontal, -75..325);
+        assert_eq!(vertical, 0..300);
+        assert!(horizontal.start < 0);
+        assert!(horizontal.end > 256);
+        assert!(vertical.end > 224);
     }
 
     #[test]
