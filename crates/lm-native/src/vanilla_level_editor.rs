@@ -632,6 +632,7 @@ pub(crate) struct VanillaLevelEditor {
     preview_camera_major_offset: i16,
     preview_camera_minor_offset: i16,
     preview_camera_pan_remainder: egui::Vec2,
+    preview_camera_primary_pan_active: bool,
     initial_vertical_scroll_tiles: Option<u16>,
     initial_horizontal_scroll_tiles: Option<u16>,
     canvas_navigation_screen: u16,
@@ -2884,6 +2885,7 @@ impl VanillaLevelEditor {
         self.preview_camera_major_offset = 0;
         self.preview_camera_minor_offset = 0;
         self.preview_camera_pan_remainder = egui::Vec2::ZERO;
+        self.preview_camera_primary_pan_active = false;
         self.pending_layer2_mode_reset = None;
         self.error = None;
         self.map16_key = None;
@@ -3549,11 +3551,9 @@ impl VanillaLevelEditor {
             if snes_viewport && response.hovered() {
                 let middle_down =
                     ui.input(|input| input.pointer.button_down(egui::PointerButton::Middle));
-                ui.ctx().set_cursor_icon(if middle_down {
-                    egui::CursorIcon::Grabbing
-                } else {
-                    egui::CursorIcon::Grab
-                });
+                if middle_down {
+                    ui.ctx().set_cursor_icon(egui::CursorIcon::Grabbing);
+                }
             }
             if snes_viewport && response.dragged_by(egui::PointerButton::Middle) {
                 let pointer_delta = ui.input(|input| input.pointer.delta());
@@ -3940,10 +3940,11 @@ impl VanillaLevelEditor {
             self.preview_camera_major_offset = 0;
             self.preview_camera_minor_offset = 0;
             self.preview_camera_pan_remainder = egui::Vec2::ZERO;
+            self.preview_camera_primary_pan_active = false;
         }
         let (x, y) = self.game_preview_camera_origin(major_tiles, minor_tiles, vertical);
         ui.monospace(format!("({x},{y})"));
-        ui.label("Middle-drag canvas to pan");
+        ui.label("Drag empty canvas to pan");
     }
 
     fn canvas_zoom_percent(&self) -> u16 {
@@ -7670,6 +7671,8 @@ impl VanillaLevelEditor {
             records,
             rect,
             cell,
+            major_tiles,
+            minor_tiles,
             vertical,
             visibility,
         );
@@ -7752,9 +7755,36 @@ impl VanillaLevelEditor {
         records: &[ObjectRecord],
         rect: egui::Rect,
         cell: f32,
+        major_tiles: u16,
+        minor_tiles: u16,
         vertical: bool,
         visibility: crate::application::LevelViewVisibility,
     ) {
+        let (primary_down, primary_released) = response.ctx.input(|input| {
+            (
+                input.pointer.button_down(egui::PointerButton::Primary),
+                input.pointer.button_released(egui::PointerButton::Primary),
+            )
+        });
+        if self.preview_camera_primary_pan_active {
+            if primary_down {
+                response.ctx.set_cursor_icon(egui::CursorIcon::Grabbing);
+                let pointer_delta = response.ctx.input(|input| input.pointer.delta());
+                self.pan_game_preview_camera(
+                    pointer_delta,
+                    cell,
+                    major_tiles,
+                    minor_tiles,
+                    vertical,
+                );
+                return;
+            }
+            if primary_released {
+                self.preview_camera_primary_pan_active = false;
+                return;
+            }
+            self.preview_camera_primary_pan_active = false;
+        }
         // Select on the physical press, not only on egui's synthesized click at release. A
         // click-and-drag response may cease to qualify as `clicked()` after even a tiny amount of
         // pointer motion (especially through remote-desktop clients), which previously made the
@@ -7820,6 +7850,24 @@ impl VanillaLevelEditor {
                 .interact_pointer_pos()
                 .or_else(|| response.ctx.pointer_interact_pos());
             self.finish_secondary_duplicate_drag(position, rect, cell, vertical);
+            return;
+        }
+        let empty_canvas_drag = self.game_preview()
+            && self.snes_viewport()
+            && self.placement_mode.is_none()
+            && hit_object.is_none()
+            && hit_object_resize.is_none()
+            && hit_layer2_object.is_none()
+            && hit_layer2_resize.is_none()
+            && hit_sprite.is_none();
+        if empty_canvas_drag {
+            response.ctx.set_cursor_icon(egui::CursorIcon::Grab);
+        }
+        if empty_canvas_drag && response.drag_started_by(egui::PointerButton::Primary) {
+            self.preview_camera_primary_pan_active = true;
+            response.ctx.set_cursor_icon(egui::CursorIcon::Grabbing);
+            let pointer_delta = response.ctx.input(|input| input.pointer.delta());
+            self.pan_game_preview_camera(pointer_delta, cell, major_tiles, minor_tiles, vertical);
             return;
         }
         if response.clicked()
