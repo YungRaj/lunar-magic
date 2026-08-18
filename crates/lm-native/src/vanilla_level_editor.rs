@@ -3771,8 +3771,7 @@ impl VanillaLevelEditor {
                 self.canvas_pan_mode = false;
             }
             if ui.selectable_label(self.canvas_pan_mode, "Pan").clicked() {
-                self.canvas_pan_mode = true;
-                self.placement_mode = None;
+                self.activate_canvas_pan_tool();
             }
             if ui
                 .selectable_value(
@@ -5180,6 +5179,17 @@ impl VanillaLevelEditor {
 
     pub(crate) fn toolbar_escape(&mut self) {
         self.placement_mode = None;
+        self.clear_canvas_entity_selection();
+        self.error = None;
+    }
+
+    fn activate_canvas_pan_tool(&mut self) {
+        self.canvas_pan_mode = true;
+        self.placement_mode = None;
+        self.clear_canvas_entity_selection();
+    }
+
+    fn clear_canvas_entity_selection(&mut self) {
         self.canvas_entity_selection = None;
         self.selected_object_group.clear();
         self.selected_layer2_object_group.clear();
@@ -5191,7 +5201,6 @@ impl VanillaLevelEditor {
         self.resizing_layer2_object = None;
         self.object_group_drag = None;
         self.secondary_duplicate_drag = false;
-        self.error = None;
     }
 
     pub(crate) fn toolbar_edit_layer1(&mut self) {
@@ -19578,6 +19587,37 @@ mod tests {
         assert_eq!(editor.canvas_entity_selection, None);
         assert!(editor.selected_sprite_group.is_empty());
         assert_eq!(editor.dragging_sprite, None);
+    }
+
+    #[test]
+    fn activating_pan_clears_every_canvas_selection_without_editing_entities() {
+        let mut editor = VanillaLevelEditor {
+            placement_mode: Some(CanvasPlacementMode::Object),
+            canvas_entity_selection: Some(CanvasEntitySelection::Sprite),
+            selected_object_group: vec![1, 2],
+            selected_layer2_object_group: vec![3],
+            selected_sprite_group: vec![4, 5],
+            dragging_object: Some(1),
+            dragging_layer2_object: Some(3),
+            dragging_sprite: Some(4),
+            resizing_object: Some(2),
+            resizing_layer2_object: Some(3),
+            ..VanillaLevelEditor::default()
+        };
+
+        editor.activate_canvas_pan_tool();
+
+        assert!(editor.canvas_pan_mode);
+        assert_eq!(editor.placement_mode, None);
+        assert_eq!(editor.canvas_entity_selection, None);
+        assert!(editor.selected_object_group.is_empty());
+        assert!(editor.selected_layer2_object_group.is_empty());
+        assert!(editor.selected_sprite_group.is_empty());
+        assert_eq!(editor.dragging_object, None);
+        assert_eq!(editor.dragging_layer2_object, None);
+        assert_eq!(editor.dragging_sprite, None);
+        assert_eq!(editor.resizing_object, None);
+        assert_eq!(editor.resizing_layer2_object, None);
     }
 
     #[test]
