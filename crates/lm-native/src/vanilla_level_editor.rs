@@ -52,7 +52,7 @@ const VANILLA_INITIAL_LAYER2_Y: [u8; 4] = [0x60, 0x90, 0xc0, 0x00];
 const ROM_LEVEL_TOOL_PANEL_WIDTH: f32 = 530.0;
 const ROM_LEVEL_TOOL_PANEL_MIN_WIDTH: f32 = 220.0;
 const ROM_LEVEL_CANVAS_MIN_WIDTH: f32 = 240.0;
-const ROM_LEVEL_WORKSPACE_DIVIDER_WIDTH: f32 = 7.0;
+const ROM_LEVEL_WORKSPACE_DIVIDER_WIDTH: f32 = 14.0;
 const STANDARD_SPRITE_MAX: u8 = 0xed;
 const ORIGINAL_GENERAL_OPTIONS_DIALOG_ID: u16 = 0x041f;
 const ORIGINAL_SCAN_EXITS_CONTROL_ID: u32 = 0x22a9;
@@ -613,6 +613,7 @@ pub(crate) struct VanillaLevelEditor {
     translucent_overlays: bool,
     tools_panel_visible: Option<bool>,
     tool_panel_width: Option<f32>,
+    tool_panel_drag_start_width: Option<f32>,
     tool_panel_generations: [u64; 4],
     requested_tool_panel: Option<LevelToolPanel>,
     screen_exit_table_form: Option<[Option<u16>; 32]>,
@@ -1187,20 +1188,34 @@ impl VanillaLevelEditor {
                 } else {
                     ui.visuals().widgets.noninteractive.bg_stroke.color
                 };
-                ui.painter().vline(
-                    divider_rect.center().x,
-                    divider_rect.y_range(),
-                    egui::Stroke::new(2.0, divider_color),
+                ui.painter().rect_filled(
+                    divider_rect.shrink2(egui::vec2(4.0, 0.0)),
+                    2.0,
+                    divider_color,
                 );
-                let divider_response =
-                    divider_response.on_hover_cursor(egui::CursorIcon::ResizeHorizontal);
+                for offset in [-2.0_f32, 2.0] {
+                    ui.painter().vline(
+                        divider_rect.center().x + offset,
+                        divider_rect.y_range().shrink(8.0),
+                        egui::Stroke::new(1.0, ui.visuals().widgets.active.fg_stroke.color),
+                    );
+                }
+                let divider_response = divider_response
+                    .on_hover_cursor(egui::CursorIcon::ResizeHorizontal)
+                    .on_hover_text("Drag to resize the tools and level canvas");
+                if divider_response.drag_started() {
+                    self.tool_panel_drag_start_width = Some(tool_width);
+                }
                 if divider_response.dragged() {
-                    let pointer_delta = ui.ctx().input(|input| input.pointer.delta().x);
                     self.tool_panel_width = Some(workspace_tool_width(
                         workspace_size.x,
-                        tool_width + pointer_delta,
+                        self.tool_panel_drag_start_width.unwrap_or(tool_width)
+                            + divider_response.drag_delta().x,
                     ));
                     ui.ctx().request_repaint();
+                }
+                if divider_response.drag_stopped() {
+                    self.tool_panel_drag_start_width = None;
                 }
             }
             // As with the tools column, descendants of the canvas (notably its horizontally
