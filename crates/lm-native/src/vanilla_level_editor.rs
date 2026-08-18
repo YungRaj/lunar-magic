@@ -50,9 +50,9 @@ const VANILLA_INITIAL_LAYER2_Y: [u8; 4] = [0x60, 0x90, 0xc0, 0x00];
 // At the default desktop window size this leaves the one-screen canvas pane close to 256:224.
 // The user can drag the workspace divider away from this initial tools-column width.
 const ROM_LEVEL_TOOL_PANEL_WIDTH: f32 = 530.0;
-const ROM_LEVEL_TOOL_PANEL_MIN_WIDTH: f32 = 220.0;
-const ROM_LEVEL_CANVAS_MIN_WIDTH: f32 = 240.0;
-const ROM_LEVEL_WORKSPACE_DIVIDER_WIDTH: f32 = 14.0;
+const ROM_LEVEL_TOOL_PANEL_MIN_WIDTH: f32 = 140.0;
+const ROM_LEVEL_CANVAS_MIN_WIDTH: f32 = 160.0;
+const ROM_LEVEL_WORKSPACE_DIVIDER_WIDTH: f32 = 12.0;
 const STANDARD_SPRITE_MAX: u8 = 0xed;
 const ORIGINAL_GENERAL_OPTIONS_DIALOG_ID: u16 = 0x041f;
 const ORIGINAL_SCAN_EXITS_CONTROL_ID: u32 = 0x22a9;
@@ -613,7 +613,6 @@ pub(crate) struct VanillaLevelEditor {
     translucent_overlays: bool,
     tools_panel_visible: Option<bool>,
     tool_panel_width: Option<f32>,
-    tool_panel_drag_start_width: Option<f32>,
     tool_panel_generations: [u64; 4],
     requested_tool_panel: Option<LevelToolPanel>,
     screen_exit_table_form: Option<[Option<u16>; 32]>,
@@ -1203,20 +1202,19 @@ impl VanillaLevelEditor {
                 let divider_response = divider_response
                     .on_hover_cursor(egui::CursorIcon::ResizeHorizontal)
                     .on_hover_text("Drag to resize the tools and level canvas");
-                if divider_response.drag_started() {
-                    self.tool_panel_drag_start_width = Some(tool_width);
-                }
                 let drag_finished = divider_response.drag_stopped();
-                if divider_response.dragged() || drag_finished {
-                    self.tool_panel_width = Some(workspace_tool_width(
-                        workspace_size.x,
-                        self.tool_panel_drag_start_width.unwrap_or(tool_width)
-                            + divider_response.drag_delta().x,
-                    ));
+                let pointer_down = divider_response.is_pointer_button_down_on();
+                if (pointer_down || divider_response.dragged() || drag_finished)
+                    && let Some(pointer) = divider_response.interact_pointer_pos()
+                {
+                    // Resolve directly from the pointer and the divider's current screen
+                    // position. This starts on mouse-down (without egui's drag threshold) and
+                    // catches up in one frame even when rendering temporarily lowers frame rate.
+                    let requested = tool_width + pointer.x - divider_rect.center().x;
+                    self.tool_panel_width = Some(workspace_tool_width(workspace_size.x, requested));
                     ui.ctx().request_repaint();
                 }
                 if drag_finished {
-                    self.tool_panel_drag_start_width = None;
                     // The divider is laid out before its new width can affect the canvas slot.
                     // Guarantee a post-release frame (and a follow-up for ScrollArea viewport
                     // state) so the renderer fills the final allocation after mouse-up.
