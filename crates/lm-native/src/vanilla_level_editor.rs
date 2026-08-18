@@ -9141,7 +9141,9 @@ impl VanillaLevelEditor {
                 self.selected_object_group.push(selected);
                 self.selected_layer2_object_group.clear();
                 self.reload_object_form();
-                self.placement_mode = None;
+                // Keep the active catalog item armed for repeated placement. The user leaves
+                // placement explicitly via Select/Move, Escape, another tool, or another item.
+                self.placement_mode = Some(CanvasPlacementMode::Object);
                 self.error = None;
             }
             Err(error) => self.error = Some(error.to_string()),
@@ -9212,7 +9214,7 @@ impl VanillaLevelEditor {
                         ObjectForm::from_record(&layer2.objects.records[selected]);
                 }
                 self.layer2_object_placement_template = Some(record);
-                self.placement_mode = None;
+                self.placement_mode = Some(CanvasPlacementMode::Layer2Object);
                 self.error = None;
             }
             Err(error) => self.error = Some(error.to_string()),
@@ -9328,7 +9330,7 @@ impl VanillaLevelEditor {
                     controller.level().sprites.header,
                     controller.level().sprites.tokens.get(selected),
                 );
-                self.placement_mode = None;
+                self.placement_mode = Some(CanvasPlacementMode::Sprite);
                 self.error = None;
             }
             Err(error) => self.error = Some(error.to_string()),
@@ -21544,6 +21546,30 @@ mod tests {
         );
         assert_eq!(records[editor.selected_object].command_id(), 0);
         assert_eq!(records[editor.selected_object].parameter(), 0x17);
+        assert_eq!(editor.placement_mode, Some(CanvasPlacementMode::Object));
+        editor.place_object_at_canvas(
+            egui::pos2(52.5, 8.5),
+            egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                egui::vec2(512.0, f32::from(NATIVE_LEVEL_MINOR_TILES)),
+            ),
+            1.0,
+            false,
+        );
+        assert_eq!(editor.error, None);
+        assert_eq!(
+            editor
+                .controller
+                .as_ref()
+                .unwrap()
+                .level()
+                .layer1
+                .objects
+                .native_placements()
+                .len(),
+            before + 2
+        );
+        assert_eq!(editor.placement_mode, Some(CanvasPlacementMode::Object));
     }
 
     #[test]
@@ -21813,6 +21839,10 @@ mod tests {
             records_after_extended[editor.selected_layer2_object].parameter(),
             0x10
         );
+        assert_eq!(
+            editor.placement_mode,
+            Some(CanvasPlacementMode::Layer2Object)
+        );
 
         let count_after_extended = records_after_extended
             .iter()
@@ -21833,6 +21863,10 @@ mod tests {
             vertical,
         );
         assert_eq!(editor.error, None);
+        assert_eq!(
+            editor.placement_mode,
+            Some(CanvasPlacementMode::Layer2Object)
+        );
         let records_after_standard = match editor.controller.as_ref().unwrap().layer2().unwrap() {
             lm_level::NativeLayer2Data::Objects(objects) => &objects.objects.records,
             lm_level::NativeLayer2Data::Tilemap(_) => unreachable!(),
@@ -27572,7 +27606,7 @@ mod tests {
         editor.place_sprite_at_canvas(egui::pos2(69.5 * cell, 7.5 * cell), canvas, cell, false);
         assert_eq!(editor.error, None);
         assert_eq!(editor.selected_sprite, 1);
-        assert_eq!(editor.placement_mode, None);
+        assert_eq!(editor.placement_mode, Some(CanvasPlacementMode::Sprite));
         let placements = editor
             .controller
             .as_ref()
