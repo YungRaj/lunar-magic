@@ -4229,6 +4229,27 @@ mod two_bpp_tests {
         assert_eq!(preview_graphics_tileset(0x108, 0x03), 0x0e);
         assert_eq!(preview_graphics_tileset(0x107, 0x03), 0x03);
         assert_eq!(preview_graphics_tileset(0x108, 0x04), 0x04);
+
+        let bytes = crate::test_support::pristine_smw_us_rom_bytes();
+        let project = Project::new(RomImage::from_bytes(bytes.clone()).unwrap());
+        let level = project
+            .load_level_slot(
+                0x108,
+                lm_profile::smw_us_v1_vanilla_level_layout(),
+                &lm_level::SpriteLengthTable::standard(),
+            )
+            .unwrap();
+        assert_eq!(level.layer1.header.object_tileset(), 0x03);
+        let preview = render_with_animation_view_state(
+            bytes,
+            0x108,
+            level.layer1.header,
+            false,
+            false,
+            VanillaAnimationViewState::default(),
+        )
+        .unwrap();
+        assert_eq!(preview.graphics_files, [0x14, 0x17, 0x19, 0x1a]);
     }
 
     #[test]
