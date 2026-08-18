@@ -6,10 +6,14 @@ use std::{
 
 pub(crate) const MAX_ROM_FILE_LEN: u64 = 32 * 1024 * 1024 + 512;
 
-pub(crate) fn choose_rom() -> Option<PathBuf> {
-    rfd::FileDialog::new()
-        .add_filter("SNES ROM", &["smc", "sfc"])
-        .pick_file()
+pub(crate) fn choose_rom_async() -> impl std::future::Future<Output = Option<PathBuf>> + 'static {
+    async {
+        rfd::AsyncFileDialog::new()
+            .add_filter("SNES ROM", &["smc", "sfc"])
+            .pick_file()
+            .await
+            .map(|handle| handle.path().to_owned())
+    }
 }
 
 pub(crate) fn choose_map16_bitmap() -> Option<PathBuf> {

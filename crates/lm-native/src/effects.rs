@@ -4,7 +4,19 @@ use crate::{
 };
 use eframe::egui;
 use lm_app::{AppState, FrontendEffect};
-use std::path::PathBuf;
+use std::{
+    future::Future,
+    path::PathBuf,
+    pin::Pin,
+    task::{Context, Poll, Waker},
+    time::Duration,
+};
+
+pub(crate) struct PendingRomPicker {
+    request_id: u64,
+    silently_add_copier_header: bool,
+    future: Pin<Box<dyn Future<Output = Option<PathBuf>>>>,
+}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum Confirmation {
@@ -24,6 +36,7 @@ pub(crate) struct EffectState {
     pub(crate) persistence: crate::persistence_worker::PersistenceWorker,
     pub(crate) rom_loader: RomLoader,
     pub(crate) completed_rom_save: bool,
+    pub(crate) pending_rom_picker: Option<PendingRomPicker>,
 }
 
 impl EffectState {
@@ -124,6 +137,7 @@ impl EffectState {
     }
 
     pub(crate) fn show_rom_loader(&mut self, context: &egui::Context, app: &mut AppState) {
+        self.poll_rom_picker(context, app);
         let catalog = app.localization().cloned();
         let Some(completion) = self.rom_loader.show(context, catalog.as_ref()) else {
             return;
@@ -208,16 +222,63 @@ impl EffectState {
     }
 
     fn choose_rom(&mut self, app: &mut AppState, request_id: u64) {
-        let path = self.requested_rom_path.take().or_else(dialogs::choose_rom);
+        if let Some(path) = self.requested_rom_path.take() {
+            self.start_rom_load(app, request_id, path, app.silently_add_copier_header());
+            return;
+        }
+        if self.pending_rom_picker.is_some() {
+            let _ = app.cancel_open(request_id);
+            self.error = Some("a ROM file selector is already open".into());
+            return;
+        }
+        self.pending_rom_picker = Some(PendingRomPicker {
+            request_id,
+            silently_add_copier_header: app.silently_add_copier_header(),
+            future: Box::pin(dialogs::choose_rom_async()),
+        });
+    }
+
+    fn poll_rom_picker(&mut self, context: &egui::Context, app: &mut AppState) {
+        let Some(picker) = self.pending_rom_picker.as_mut() else {
+            return;
+        };
+        let waker = Waker::noop();
+        let mut task_context = Context::from_waker(waker);
+        let Poll::Ready(path) = picker.future.as_mut().poll(&mut task_context) else {
+            // Native async panels wake their own continuation, but egui may otherwise remain idle
+            // while the modal panel is frontmost. A low-rate repaint guarantees prompt delivery
+            // without re-entering the active GUI update as the synchronous picker did.
+            context.request_repaint_after(Duration::from_millis(50));
+            return;
+        };
+        let picker = self
+            .pending_rom_picker
+            .take()
+            .expect("ready ROM picker must remain installed until completion");
         let Some(path) = path else {
-            if let Err(error) = app.cancel_open(request_id) {
+            if let Err(error) = app.cancel_open(picker.request_id) {
                 self.error = Some(error.to_string());
             }
             return;
         };
+        self.start_rom_load(
+            app,
+            picker.request_id,
+            path,
+            picker.silently_add_copier_header,
+        );
+    }
+
+    fn start_rom_load(
+        &mut self,
+        app: &mut AppState,
+        request_id: u64,
+        path: PathBuf,
+        silently_add_copier_header: bool,
+    ) {
         match self
             .rom_loader
-            .start(request_id, path, app.silently_add_copier_header())
+            .start(request_id, path, silently_add_copier_header)
         {
             Ok(()) => {}
             Err(error) => {
@@ -330,6 +391,44 @@ impl EffectState {
             Ok(effects) => self.handle(app, context, effects),
             Err(error) => self.error = Some(error.to_string()),
         }
+    }
+}
+
+#[cfg(test)]
+mod rom_picker_tests {
+    use super::*;
+    use lm_app::Command;
+
+    #[test]
+    fn cancelled_async_rom_picker_releases_the_open_request_without_blocking() {
+        let mut app = AppState::default();
+        let effects = app.dispatch(Command::Open).unwrap();
+        let request_id = effects
+            .into_iter()
+            .find_map(|effect| match effect {
+                FrontendEffect::ChooseRom { request_id } => Some(request_id),
+                _ => None,
+            })
+            .unwrap();
+        let mut state = EffectState {
+            pending_rom_picker: Some(PendingRomPicker {
+                request_id,
+                silently_add_copier_header: false,
+                future: Box::pin(async { None }),
+            }),
+            ..EffectState::default()
+        };
+
+        state.poll_rom_picker(&egui::Context::default(), &mut app);
+
+        assert!(state.pending_rom_picker.is_none());
+        assert!(state.error.is_none());
+        assert!(
+            app.dispatch(Command::Open)
+                .unwrap()
+                .into_iter()
+                .any(|effect| matches!(effect, FrontendEffect::ChooseRom { .. }))
+        );
     }
 }
 
