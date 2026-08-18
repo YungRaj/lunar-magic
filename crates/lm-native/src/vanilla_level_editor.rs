@@ -23,11 +23,11 @@ use crate::user_toolbar_images::{
 const ROM_LEVEL_CANVAS_CELL: f32 = 12.0;
 // In game view, 100% means one SNES screen fitted to the pane. Keep that as the
 // crisp default, but permit overview scales for tall and multi-screen levels.
-const ROM_LEVEL_CANVAS_MIN_ZOOM: u16 = 25;
-const ROM_LEVEL_CANVAS_MAX_ZOOM: u16 = 5_000;
-const ROM_LEVEL_CANVAS_ZOOM_STEP: u16 = 25;
+const ROM_LEVEL_CANVAS_MIN_ZOOM: u16 = 1;
+const ROM_LEVEL_CANVAS_MAX_ZOOM: u16 = 300;
+const ROM_LEVEL_CANVAS_ZOOM_STEP: u16 = 10;
 const ROM_LEVEL_CANVAS_INITIAL_PREVIOUS_ZOOM: u16 = 200;
-const ROM_LEVEL_CANVAS_ZOOM_MENU: [u16; 9] = [100, 125, 150, 175, 200, 300, 400, 600, 800];
+const ROM_LEVEL_CANVAS_ZOOM_MENU: [u16; 9] = [25, 50, 75, 100, 125, 150, 200, 250, 300];
 const CATALOG_PREVIEW_LOGICAL_SIDE: f32 = 256.0;
 const CATALOG_PREVIEW_ZOOM_MENU: [u16; 6] = [100, 200, 300, 400, 600, 800];
 const LUNAR_MAGIC_ANIMATION_TICK_SECONDS: f64 = 0.06;
@@ -3803,9 +3803,20 @@ impl VanillaLevelEditor {
                     &mut zoom,
                     ROM_LEVEL_CANVAS_MIN_ZOOM..=ROM_LEVEL_CANVAS_MAX_ZOOM,
                 )
-                .suffix("%")
-                .step_by(f64::from(ROM_LEVEL_CANVAS_ZOOM_STEP));
+                .show_value(false)
+                // The slider permits exact integer percentages; the +/- buttons use the
+                // coarser ten-point step. Aligning the slider itself to ten from a minimum of
+                // one would turn the default 100% into 101%.
+                .step_by(1.0);
                 ui.add_sized(egui::vec2(92.0, ui.spacing().interact_size.y), slider);
+                ui.add_sized(
+                    egui::vec2(58.0, ui.spacing().interact_size.y),
+                    egui::DragValue::new(&mut zoom)
+                        .range(ROM_LEVEL_CANVAS_MIN_ZOOM..=ROM_LEVEL_CANVAS_MAX_ZOOM)
+                        .suffix("%")
+                        .speed(1),
+                )
+                .on_hover_text("Click the value and type an exact zoom percentage");
                 if ui
                     .small_button(vanilla_text(catalog, ExtendedUiTextKey::VanillaLevelReset))
                     .clicked()
@@ -24833,7 +24844,7 @@ mod tests {
         let mut editor = VanillaLevelEditor::default();
         assert_eq!(
             ROM_LEVEL_CANVAS_ZOOM_MENU,
-            [100, 125, 150, 175, 200, 300, 400, 600, 800]
+            [25, 50, 75, 100, 125, 150, 200, 250, 300]
         );
         assert_eq!(editor.canvas_zoom_percent(), 100);
         assert!(editor.zoom_filter());
@@ -24854,9 +24865,9 @@ mod tests {
         editor.toolbar_zoom_toggle();
         assert_eq!(editor.canvas_zoom_percent(), 300);
         editor.toolbar_zoom_adjust(-10_000);
-        assert_eq!(editor.canvas_zoom_percent(), 25);
+        assert_eq!(editor.canvas_zoom_percent(), 1);
         editor.toolbar_zoom_adjust(10_000);
-        assert_eq!(editor.canvas_zoom_percent(), 5_000);
+        assert_eq!(editor.canvas_zoom_percent(), 300);
     }
 
     #[test]
