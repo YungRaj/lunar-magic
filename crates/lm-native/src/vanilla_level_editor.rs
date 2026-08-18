@@ -3506,8 +3506,8 @@ impl VanillaLevelEditor {
             egui::vec2(656.0, 512.0)
         } else if snes_viewport {
             // The editing surface follows the pane itself on every native window resize. Keep
-            // square SNES pixels and retain the complete centered 256×224 camera frame; surplus
-            // pane space becomes an equal bezel on the unconstrained axis.
+            // square SNES pixels and retain the complete 256×224 camera frame. Surplus pane
+            // space reveals adjacent level content so the editing canvas remains fully covered.
             canvas_available
         } else {
             tiled_surface_canvas_size(world_size, canvas_available)
@@ -3542,23 +3542,16 @@ impl VanillaLevelEditor {
             let (rect, response) =
                 ui.allocate_exact_size(canvas_size, egui::Sense::click_and_drag());
             let painter = ui.painter_at(rect);
-            // Game-pixel mode is a contained 256×224 camera, not an expanded level strip.
-            // Clip all game content to that centered camera rectangle so surplus pane space is a
-            // symmetric bezel instead of exposing neighboring level data on only one side.
-            let viewport_rect = snes_viewport.then(|| live_frame_rect(rect, [256, 224], cell));
-            let content_painter = viewport_rect.map_or_else(
-                || painter.clone(),
-                |viewport| painter.with_clip_rect(viewport),
-            );
             let paint_rect = if snes_viewport {
                 let (origin_x, origin_y) =
                     self.game_preview_camera_origin(major_tiles, minor_tiles, vertical);
                 let rendered_viewport = egui::vec2(16.0 * cell, 14.0 * cell);
                 let centered_surplus =
                     centered_snes_viewport_surplus(rect.size(), rendered_viewport);
+                let nominal_origin = rect.min + centered_surplus
+                    - egui::vec2(f32::from(origin_x) * cell, f32::from(origin_y) * cell);
                 egui::Rect::from_min_size(
-                    rect.min + centered_surplus
-                        - egui::vec2(f32::from(origin_x) * cell, f32::from(origin_y) * cell),
+                    covered_world_origin(rect, nominal_origin, world_size),
                     world_size,
                 )
             } else {
@@ -3595,7 +3588,7 @@ impl VanillaLevelEditor {
                     );
                 }
                 self.paint_object_canvas(
-                    &content_painter,
+                    &painter,
                     &response,
                     paint_rect,
                     cell,
@@ -3619,7 +3612,7 @@ impl VanillaLevelEditor {
                 );
                 if snes_viewport && let Some((texture, size, translucent)) = live_frame {
                     let live_rect = live_frame_rect(rect, size, cell);
-                    content_painter.image(
+                    painter.image(
                         texture,
                         live_rect,
                         egui::Rect::from_min_max(egui::Pos2::ZERO, egui::pos2(1.0, 1.0)),
@@ -3627,7 +3620,7 @@ impl VanillaLevelEditor {
                     );
                     if self.draw_selection_over_live() {
                         self.paint_selection_over_live_frame(
-                            &content_painter,
+                            &painter,
                             paint_rect,
                             cell,
                             major_tiles,
@@ -17652,8 +17645,8 @@ fn fitted_snes_viewport_cell(available: egui::Vec2, zoom_percent: u16) -> f32 {
     // already the canvas pane's complete inner rectangle. Reserving caption space here would
     // count that row twice and leave an avoidable border, especially after maximizing the window.
     let vertical_scale = available.y.max(1.0) / VIEWPORT_HEIGHT;
-    // Preserve the complete camera frame. Any surplus pane extent becomes a centered bezel on
-    // that axis; it must never be obtained by clipping opposite camera edges.
+    // Preserve the complete camera frame. Any surplus pane extent is filled by adjacent level
+    // content on that axis; it must never be obtained by distorting square game pixels.
     let fitted_pixel_scale = horizontal_scale.min(vertical_scale).max(1.0 / TILE_PIXELS);
     let zoom_steps = f32::from(clamp_canvas_zoom(zoom_percent)) / 100.0;
     (fitted_pixel_scale * zoom_steps).max(1.0 / TILE_PIXELS) * TILE_PIXELS
@@ -17663,6 +17656,25 @@ fn centered_snes_viewport_surplus(available: egui::Vec2, viewport: egui::Vec2) -
     egui::vec2(
         ((available.x - viewport.x) * 0.5).max(0.0),
         ((available.y - viewport.y) * 0.5).max(0.0),
+    )
+}
+
+fn covered_world_origin(
+    canvas: egui::Rect,
+    nominal_origin: egui::Pos2,
+    world_size: egui::Vec2,
+) -> egui::Pos2 {
+    let cover_axis = |canvas_min: f32, canvas_max: f32, nominal: f32, world_extent: f32| {
+        let canvas_extent = canvas_max - canvas_min;
+        if world_extent >= canvas_extent {
+            nominal.clamp(canvas_max - world_extent, canvas_min)
+        } else {
+            canvas_min + (canvas_extent - world_extent) * 0.5
+        }
+    };
+    egui::pos2(
+        cover_axis(canvas.min.x, canvas.max.x, nominal_origin.x, world_size.x),
+        cover_axis(canvas.min.y, canvas.max.y, nominal_origin.y, world_size.y),
     )
 }
 
@@ -25052,6 +25064,24 @@ mod tests {
     }
 
     #[test]
+    fn game_pixel_world_covers_compact_canvas_without_black_surplus() {
+        let canvas = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(674.0, 395.0));
+        let world_size = egui::vec2(4_096.0, 864.0);
+        for nominal in [
+            egui::pos2(110.0, 0.0),
+            egui::pos2(-1_500.0, -200.0),
+            egui::pos2(-4_000.0, -800.0),
+        ] {
+            let origin = covered_world_origin(canvas, nominal, world_size);
+            let world = egui::Rect::from_min_size(origin, world_size);
+            assert!(world.min.x <= canvas.min.x);
+            assert!(world.min.y <= canvas.min.y);
+            assert!(world.max.x >= canvas.max.x);
+            assert!(world.max.y >= canvas.max.y);
+        }
+    }
+
+    #[test]
     fn live_frame_selection_overlay_defaults_on_and_retains_an_explicit_choice() {
         let mut editor = VanillaLevelEditor::default();
         assert!(editor.draw_selection_over_live());
@@ -25105,8 +25135,8 @@ mod tests {
         let wide = fitted_snes_viewport_cell(egui::vec2(800.0, 480.0), 100);
         assert!((narrow - 34.285_713).abs() < 0.001);
         assert_eq!(wide, narrow);
-        // A width-only resize grows the symmetric side bezel without rescaling or cropping the
-        // complete 256×224 camera frame.
+        // A width-only resize reveals more adjacent level content without rescaling or cropping
+        // the complete 256×224 camera frame.
         assert!(800.0 / wide > 640.0 / narrow);
         assert!(
             centered_snes_viewport_surplus(
