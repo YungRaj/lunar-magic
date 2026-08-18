@@ -1078,6 +1078,7 @@ impl VanillaLevelEditor {
                         .max_rect(tool_rect)
                         .layout(egui::Layout::top_down(egui::Align::Min)),
                 );
+                tool_ui.set_clip_rect(tool_rect);
                 tool_ui.set_width(tool_width);
                 egui::ScrollArea::vertical()
                     .id_salt("vanilla-level-tool-panel")
@@ -1166,23 +1167,35 @@ impl VanillaLevelEditor {
                     });
                 ui.separator();
             }
-            ui.allocate_ui_with_layout(
-                egui::vec2(ui.available_width(), workspace_size.y),
-                egui::Layout::top_down(egui::Align::Center),
-                |ui| {
-                    self.object_canvas(
-                        ui,
-                        catalog,
-                        visibility,
-                        custom_sprites,
-                        external_assets,
-                        custom_objects,
-                        custom_map16,
-                        live_frame,
-                        toolbar_images,
-                        animation_rate,
-                    );
-                },
+            // As with the tools column, descendants of the canvas (notably its horizontally
+            // scrollable toolbar and wrapped help text) may report a larger desired size than
+            // the native window currently provides. A regular `allocate_ui_with_layout` then
+            // propagates that stale minimum back through the horizontal row after a window
+            // shrink, clipping the renderer and everything to its right. Reserve the exact
+            // remainder measured for this frame and constrain the complete canvas hierarchy to
+            // it, so every subsequent `available_size` reflects the resized window immediately.
+            let canvas_slot = ui.available_size();
+            let (canvas_rect, _) = ui.allocate_exact_size(canvas_slot, egui::Sense::hover());
+            let mut canvas_ui = ui.new_child(
+                egui::UiBuilder::new()
+                    .id_salt("vanilla-level-canvas-fixed")
+                    .max_rect(canvas_rect)
+                    .layout(egui::Layout::top_down(egui::Align::Center)),
+            );
+            canvas_ui.set_clip_rect(canvas_rect);
+            canvas_ui.set_min_size(canvas_rect.size());
+            canvas_ui.set_max_size(canvas_rect.size());
+            self.object_canvas(
+                &mut canvas_ui,
+                catalog,
+                visibility,
+                custom_sprites,
+                external_assets,
+                custom_objects,
+                custom_map16,
+                live_frame,
+                toolbar_images,
+                animation_rate,
             );
         });
         pending_command.or_else(|| self.pending_canvas_command.take())
@@ -3677,171 +3690,147 @@ impl VanillaLevelEditor {
         vertical: bool,
         live_frame_available: bool,
     ) {
-        // Keep the controls to one stable row. Wrapping made a horizontal window resize add or
-        // remove toolbar rows, so the canvas height jumped independently of the window and looked
-        // as though it was not following the native resize.
-        ui.scope(|ui| {
-            // macOS-style floating scrollbars are painted over their contents. In this compact
-            // toolbar that put the horizontal scrollbar directly on top of buttons whenever the
-            // window was narrow. Use a solid, permanently reserved scrollbar row here so controls
-            // remain clickable and the canvas below retains a stable height while resizing.
-            ui.style_mut().spacing.scroll.floating = false;
-            egui::ScrollArea::horizontal()
-                .id_salt("vanilla-level-canvas-tools")
-                .scroll_bar_visibility(egui::scroll_area::ScrollBarVisibility::AlwaysVisible)
-                .auto_shrink([false, true])
-                .show(ui, |ui| {
-                    ui.horizontal(|ui| {
-                        let mut game_preview = self.game_preview();
+        // Reflow the complete toolbar inside the canvas column. A horizontally scrolling single
+        // row made compact windows look clipped and left important editing buttons off-screen;
+        // wrapping keeps every control visible and clickable as the native window changes size.
+        ui.horizontal_wrapped(|ui| {
+            let mut game_preview = self.game_preview();
+            if ui
+                .toggle_value(
+                    &mut game_preview,
+                    vanilla_text(catalog, ExtendedUiTextKey::VanillaLevelGamePixels),
+                )
+                .changed()
+            {
+                self.game_preview = Some(game_preview);
+            }
+            if game_preview {
+                let mut snes_viewport = self.snes_viewport();
+                if ui
+                    .toggle_value(
+                        &mut snes_viewport,
+                        vanilla_text(catalog, ExtendedUiTextKey::VanillaLevelViewport),
+                    )
+                    .changed()
+                {
+                    self.snes_viewport = Some(snes_viewport);
+                }
+                if snes_viewport {
+                    if live_frame_available {
+                        let mut draw_selection = self.draw_selection_over_live();
                         if ui
                             .toggle_value(
-                                &mut game_preview,
-                                vanilla_text(catalog, ExtendedUiTextKey::VanillaLevelGamePixels),
+                                &mut draw_selection,
+                                vanilla_text(
+                                    catalog,
+                                    ExtendedUiTextKey::VanillaLevelSelectionOverGame,
+                                ),
                             )
+                            .on_hover_text(vanilla_text(
+                                catalog,
+                                ExtendedUiTextKey::VanillaLevelSelectionOverGameHelp,
+                            ))
                             .changed()
                         {
-                            self.game_preview = Some(game_preview);
+                            self.draw_selection_over_live = Some(draw_selection);
                         }
-                        if game_preview {
-                            let mut snes_viewport = self.snes_viewport();
-                            if ui
-                                .toggle_value(
-                                    &mut snes_viewport,
-                                    vanilla_text(catalog, ExtendedUiTextKey::VanillaLevelViewport),
-                                )
-                                .changed()
-                            {
-                                self.snes_viewport = Some(snes_viewport);
-                            }
-                            if snes_viewport {
-                                if live_frame_available {
-                                    let mut draw_selection = self.draw_selection_over_live();
-                                    if ui
-                                        .toggle_value(
-                                            &mut draw_selection,
-                                            vanilla_text(
-                                                catalog,
-                                                ExtendedUiTextKey::VanillaLevelSelectionOverGame,
-                                            ),
-                                        )
-                                        .on_hover_text(vanilla_text(
-                                            catalog,
-                                            ExtendedUiTextKey::VanillaLevelSelectionOverGameHelp,
-                                        ))
-                                        .changed()
-                                    {
-                                        self.draw_selection_over_live = Some(draw_selection);
-                                    }
-                                }
-                                self.show_preview_camera_tools(
-                                    ui,
-                                    catalog,
-                                    major_tiles,
-                                    minor_tiles,
-                                    vertical,
-                                );
-                            }
-                        }
-                        ui.separator();
-                        ui.label(vanilla_text(
-                            catalog,
-                            ExtendedUiTextKey::VanillaLevelCanvasTool,
-                        ));
-                        ui.selectable_value(
-                            &mut self.placement_mode,
-                            None,
-                            vanilla_text(catalog, ExtendedUiTextKey::VanillaLevelSelectMove),
-                        );
-                        ui.selectable_value(
-                            &mut self.placement_mode,
-                            Some(CanvasPlacementMode::Object),
-                            vanilla_text(catalog, ExtendedUiTextKey::VanillaLevelPlaceObject),
-                        );
-                        ui.selectable_value(
-                            &mut self.placement_mode,
-                            Some(CanvasPlacementMode::Sprite),
-                            vanilla_text(catalog, ExtendedUiTextKey::VanillaLevelPlaceSprite),
-                        );
-                        if matches!(
-                            self.controller.as_ref().and_then(LevelController::layer2),
-                            Some(lm_level::NativeLayer2Data::Tilemap(_))
-                        ) && layer2_tilemap_editable(self.shared_vanilla_background)
-                        {
-                            ui.selectable_value(
-                                &mut self.placement_mode,
-                                Some(CanvasPlacementMode::Layer2Tile),
-                                vanilla_text(
-                                    catalog,
-                                    ExtendedUiTextKey::VanillaLevelPaintLayer2Tile,
-                                ),
-                            );
-                        } else if matches!(
-                            self.controller.as_ref().and_then(LevelController::layer2),
-                            Some(lm_level::NativeLayer2Data::Objects(_))
-                        ) {
-                            ui.selectable_value(
-                                &mut self.placement_mode,
-                                Some(CanvasPlacementMode::Layer2Object),
-                                vanilla_text(
-                                    catalog,
-                                    ExtendedUiTextKey::VanillaLevelPlaceLayer2Object,
-                                ),
-                            );
-                        }
-                        ui.separator();
-                        ui.label(vanilla_text(catalog, ExtendedUiTextKey::VanillaLevelZoom));
-                        let mut zoom = self.canvas_zoom_percent();
-                        if ui.small_button("−").clicked() {
-                            zoom = zoom.saturating_sub(ROM_LEVEL_CANVAS_ZOOM_STEP);
-                        }
-                        let slider = egui::Slider::new(
-                            &mut zoom,
-                            ROM_LEVEL_CANVAS_MIN_ZOOM..=ROM_LEVEL_CANVAS_MAX_ZOOM,
-                        )
-                        .suffix("%")
-                        .step_by(f64::from(ROM_LEVEL_CANVAS_ZOOM_STEP));
-                        ui.add(slider);
-                        if ui
-                            .small_button(vanilla_text(
-                                catalog,
-                                ExtendedUiTextKey::VanillaLevelReset,
-                            ))
-                            .clicked()
-                        {
-                            zoom = 100;
-                        }
-                        if ui.small_button("+").clicked() {
-                            zoom = zoom.saturating_add(ROM_LEVEL_CANVAS_ZOOM_STEP);
-                        }
-                        let zoom = clamp_canvas_zoom(zoom);
-                        self.canvas_zoom_percent = Some(zoom);
-                        if zoom != 100 {
-                            self.canvas_previous_zoom_percent = Some(zoom);
-                        }
-                        if !(self.game_preview() && self.snes_viewport()) {
-                            ui.separator();
-                            ui.label(vanilla_text(catalog, ExtendedUiTextKey::VanillaLevelScreen));
-                            let screen_count = major_tiles.div_ceil(16).max(1);
-                            self.canvas_navigation_screen =
-                                self.canvas_navigation_screen.min(screen_count - 1);
-                            let changed = ui
-                                .add(
-                                    egui::DragValue::new(&mut self.canvas_navigation_screen)
-                                        .range(0..=screen_count - 1)
-                                        .hexadecimal(2, false, true),
-                                )
-                                .changed();
-                            if changed {
-                                let tile = self.canvas_navigation_screen.saturating_mul(16);
-                                if vertical {
-                                    self.initial_vertical_scroll_tiles = Some(tile);
-                                } else {
-                                    self.initial_horizontal_scroll_tiles = Some(tile);
-                                }
-                            }
-                        }
-                    })
-                });
+                    }
+                    self.show_preview_camera_tools(ui, catalog, major_tiles, minor_tiles, vertical);
+                }
+            }
+            ui.separator();
+            ui.label(vanilla_text(
+                catalog,
+                ExtendedUiTextKey::VanillaLevelCanvasTool,
+            ));
+            ui.selectable_value(
+                &mut self.placement_mode,
+                None,
+                vanilla_text(catalog, ExtendedUiTextKey::VanillaLevelSelectMove),
+            );
+            ui.selectable_value(
+                &mut self.placement_mode,
+                Some(CanvasPlacementMode::Object),
+                vanilla_text(catalog, ExtendedUiTextKey::VanillaLevelPlaceObject),
+            );
+            ui.selectable_value(
+                &mut self.placement_mode,
+                Some(CanvasPlacementMode::Sprite),
+                vanilla_text(catalog, ExtendedUiTextKey::VanillaLevelPlaceSprite),
+            );
+            if matches!(
+                self.controller.as_ref().and_then(LevelController::layer2),
+                Some(lm_level::NativeLayer2Data::Tilemap(_))
+            ) && layer2_tilemap_editable(self.shared_vanilla_background)
+            {
+                ui.selectable_value(
+                    &mut self.placement_mode,
+                    Some(CanvasPlacementMode::Layer2Tile),
+                    vanilla_text(catalog, ExtendedUiTextKey::VanillaLevelPaintLayer2Tile),
+                );
+            } else if matches!(
+                self.controller.as_ref().and_then(LevelController::layer2),
+                Some(lm_level::NativeLayer2Data::Objects(_))
+            ) {
+                ui.selectable_value(
+                    &mut self.placement_mode,
+                    Some(CanvasPlacementMode::Layer2Object),
+                    vanilla_text(catalog, ExtendedUiTextKey::VanillaLevelPlaceLayer2Object),
+                );
+            }
+            ui.end_row();
+            // Keep the zoom widgets together when the outer toolbar wraps. Splitting the minus,
+            // slider, reset, and plus controls across arbitrary rows made the compact toolbar
+            // difficult to read and operate.
+            ui.horizontal(|ui| {
+                ui.label(vanilla_text(catalog, ExtendedUiTextKey::VanillaLevelZoom));
+                let mut zoom = self.canvas_zoom_percent();
+                if ui.small_button("−").clicked() {
+                    zoom = zoom.saturating_sub(ROM_LEVEL_CANVAS_ZOOM_STEP);
+                }
+                let slider = egui::Slider::new(
+                    &mut zoom,
+                    ROM_LEVEL_CANVAS_MIN_ZOOM..=ROM_LEVEL_CANVAS_MAX_ZOOM,
+                )
+                .suffix("%")
+                .step_by(f64::from(ROM_LEVEL_CANVAS_ZOOM_STEP));
+                ui.add_sized(egui::vec2(92.0, ui.spacing().interact_size.y), slider);
+                if ui
+                    .small_button(vanilla_text(catalog, ExtendedUiTextKey::VanillaLevelReset))
+                    .clicked()
+                {
+                    zoom = 100;
+                }
+                if ui.small_button("+").clicked() {
+                    zoom = zoom.saturating_add(ROM_LEVEL_CANVAS_ZOOM_STEP);
+                }
+                let zoom = clamp_canvas_zoom(zoom);
+                self.canvas_zoom_percent = Some(zoom);
+                if zoom != 100 {
+                    self.canvas_previous_zoom_percent = Some(zoom);
+                }
+            });
+            if !(self.game_preview() && self.snes_viewport()) {
+                ui.separator();
+                ui.label(vanilla_text(catalog, ExtendedUiTextKey::VanillaLevelScreen));
+                let screen_count = major_tiles.div_ceil(16).max(1);
+                self.canvas_navigation_screen = self.canvas_navigation_screen.min(screen_count - 1);
+                let changed = ui
+                    .add(
+                        egui::DragValue::new(&mut self.canvas_navigation_screen)
+                            .range(0..=screen_count - 1)
+                            .hexadecimal(2, false, true),
+                    )
+                    .changed();
+                if changed {
+                    let tile = self.canvas_navigation_screen.saturating_mul(16);
+                    if vertical {
+                        self.initial_vertical_scroll_tiles = Some(tile);
+                    } else {
+                        self.initial_horizontal_scroll_tiles = Some(tile);
+                    }
+                }
+            }
         });
     }
 
@@ -9987,13 +9976,17 @@ impl VanillaLevelEditor {
                     self.sprite_catalog_preview_zoom.unwrap_or(100),
                 )
             };
-        ui.horizontal(|ui| {
+        // These labels are intentionally descriptive, so laying all five controls into one
+        // wrapping row can strand a button in a few pixels and break its text into single
+        // letters after a window shrink. Give every catalog action its own row; the surrounding
+        // tool pane already scrolls vertically and this remains readable at its minimum width.
+        ui.vertical(|ui| {
             if images
                 .original_catalog_button(
                     ui,
                     kind,
                     OriginalCatalogAction::PreviewIcons,
-                    "Show preview icons in list",
+                    "Preview icons",
                     previews,
                 )
                 .clicked()
@@ -10006,9 +9999,9 @@ impl VanillaLevelEditor {
                     kind,
                     OriginalCatalogAction::CompatibleGraphicsOnly,
                     if objects {
-                        "Hide objects without the correct BG1/FG3 graphics"
+                        "Compatible object graphics only"
                     } else {
-                        "Hide sprites without the correct SP3/SP4 graphics"
+                        "Compatible sprite graphics only"
                     },
                     compatible_only,
                 )
@@ -10022,7 +10015,7 @@ impl VanillaLevelEditor {
                         ui,
                         kind,
                         OriginalCatalogAction::VerticalLayout,
-                        "Use vertical layout",
+                        "Vertical layout",
                         vertical,
                     )
                     .clicked()
