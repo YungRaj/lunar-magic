@@ -631,6 +631,7 @@ pub(crate) struct VanillaLevelEditor {
     draw_selection_over_live: Option<bool>,
     preview_camera_major_offset: i16,
     preview_camera_minor_offset: i16,
+    preview_camera_pan_remainder: egui::Vec2,
     initial_vertical_scroll_tiles: Option<u16>,
     initial_horizontal_scroll_tiles: Option<u16>,
     canvas_navigation_screen: u16,
@@ -2882,6 +2883,7 @@ impl VanillaLevelEditor {
         self.midway_install_form = SeparateMidwayEntrance::default();
         self.preview_camera_major_offset = 0;
         self.preview_camera_minor_offset = 0;
+        self.preview_camera_pan_remainder = egui::Vec2::ZERO;
         self.pending_layer2_mode_reset = None;
         self.error = None;
         self.map16_key = None;
@@ -3544,6 +3546,25 @@ impl VanillaLevelEditor {
         let mut paint_canvas = |ui: &mut egui::Ui| {
             let (rect, response) =
                 ui.allocate_exact_size(canvas_size, egui::Sense::click_and_drag());
+            if snes_viewport && response.hovered() {
+                let middle_down =
+                    ui.input(|input| input.pointer.button_down(egui::PointerButton::Middle));
+                ui.ctx().set_cursor_icon(if middle_down {
+                    egui::CursorIcon::Grabbing
+                } else {
+                    egui::CursorIcon::Grab
+                });
+            }
+            if snes_viewport && response.dragged_by(egui::PointerButton::Middle) {
+                let pointer_delta = ui.input(|input| input.pointer.delta());
+                self.pan_game_preview_camera(
+                    pointer_delta,
+                    cell,
+                    major_tiles,
+                    minor_tiles,
+                    vertical,
+                );
+            }
             let painter = ui.painter_at(rect);
             let paint_rect = if snes_viewport {
                 let (origin_x, origin_y) =
@@ -3918,9 +3939,11 @@ impl VanillaLevelEditor {
         {
             self.preview_camera_major_offset = 0;
             self.preview_camera_minor_offset = 0;
+            self.preview_camera_pan_remainder = egui::Vec2::ZERO;
         }
         let (x, y) = self.game_preview_camera_origin(major_tiles, minor_tiles, vertical);
         ui.monospace(format!("({x},{y})"));
+        ui.label("Middle-drag canvas to pan");
     }
 
     fn canvas_zoom_percent(&self) -> u16 {
@@ -6912,6 +6935,44 @@ impl VanillaLevelEditor {
             minor_tiles,
             vertical,
         )
+    }
+
+    fn pan_game_preview_camera(
+        &mut self,
+        pointer_delta: egui::Vec2,
+        cell: f32,
+        major_tiles: u16,
+        minor_tiles: u16,
+        vertical: bool,
+    ) {
+        if !cell.is_finite() || cell <= 0.0 || !pointer_delta.is_finite() {
+            return;
+        }
+        self.preview_camera_pan_remainder -= pointer_delta / cell;
+        let tile_delta = egui::vec2(
+            self.preview_camera_pan_remainder.x.trunc(),
+            self.preview_camera_pan_remainder.y.trunc(),
+        );
+        self.preview_camera_pan_remainder -= tile_delta;
+        let entrance = game_preview_origin(self.entrance_form, major_tiles, minor_tiles, vertical);
+        let current = self.game_preview_camera_origin(major_tiles, minor_tiles, vertical);
+        let maximum = (
+            if vertical { minor_tiles } else { major_tiles }.saturating_sub(16),
+            if vertical { major_tiles } else { minor_tiles }.saturating_sub(14),
+        );
+        let next = (
+            (i32::from(current.0) + tile_delta.x as i32).clamp(0, i32::from(maximum.0)),
+            (i32::from(current.1) + tile_delta.y as i32).clamp(0, i32::from(maximum.1)),
+        );
+        let x_offset = next.0 - i32::from(entrance.0);
+        let y_offset = next.1 - i32::from(entrance.1);
+        let (major_offset, minor_offset) = if vertical {
+            (y_offset, x_offset)
+        } else {
+            (x_offset, y_offset)
+        };
+        self.preview_camera_major_offset = major_offset as i16;
+        self.preview_camera_minor_offset = minor_offset as i16;
     }
 
     fn canvas_cell(&self) -> f32 {
@@ -25603,6 +25664,27 @@ mod tests {
             ),
             (0, 16)
         );
+    }
+
+    #[test]
+    fn middle_drag_camera_pan_tracks_both_axes_and_fractional_pointer_motion() {
+        let mut horizontal = VanillaLevelEditor::default();
+        horizontal.pan_game_preview_camera(egui::vec2(-8.0, 0.0), 16.0, 512, 27, false);
+        assert_eq!(
+            horizontal.game_preview_camera_origin(512, 27, false),
+            (0, 0)
+        );
+        horizontal.pan_game_preview_camera(egui::vec2(-8.0, -16.0), 16.0, 512, 27, false);
+        assert_eq!(
+            horizontal.game_preview_camera_origin(512, 27, false),
+            (1, 1)
+        );
+
+        let mut vertical = VanillaLevelEditor::default();
+        vertical.pan_game_preview_camera(egui::vec2(-64.0, -256.0), 16.0, 512, 27, true);
+        assert_eq!(vertical.game_preview_camera_origin(512, 27, true), (4, 16));
+        vertical.pan_game_preview_camera(egui::vec2(9_999.0, 9_999.0), 16.0, 512, 27, true);
+        assert_eq!(vertical.game_preview_camera_origin(512, 27, true), (0, 0));
     }
 
     #[test]
