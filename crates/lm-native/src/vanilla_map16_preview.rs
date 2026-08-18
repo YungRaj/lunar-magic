@@ -844,7 +844,7 @@ fn render_with_editor_palette_phase_and_animation_view_state(
     }
     let rom = RomImage::from_bytes(rom_bytes).map_err(|error| error.to_string())?;
     let project = Project::new(rom);
-    let tileset = header.object_tileset();
+    let tileset = preview_graphics_tileset(level, header.object_tileset());
     let graphics_files =
         lm_profile::smw_us_v1_object_tileset_graphics_files(&project.rom, usize::from(tileset))
             .map_err(|error| error.to_string())?;
@@ -1092,6 +1092,18 @@ fn render_with_editor_palette_phase_and_animation_view_state(
         common_tiles: map16.common_tiles,
         tileset_tiles: map16.tileset_tiles,
     })
+}
+
+/// The retail ROM points its unused level $108 slope test at the ordinary Underground graphics
+/// row even though the surviving objects were authored for Nintendo's otherwise-unused
+/// "Underground 3" row. Present the recoverable intended artwork in the editor without mutating
+/// the level header or the opened ROM.
+const fn preview_graphics_tileset(level: u16, stored_tileset: u8) -> u8 {
+    if level == 0x108 && stored_tileset == 0x03 {
+        0x0e
+    } else {
+        stored_tileset
+    }
 }
 
 fn render_default_m16_overlay_atlas(
@@ -4210,6 +4222,13 @@ mod two_bpp_tests {
             apply_display_override(files, &overrides),
             [0x14, 0x123, 0x19, 0]
         );
+    }
+
+    #[test]
+    fn unused_level_108_previews_with_nintendos_matching_underground_3_graphics() {
+        assert_eq!(preview_graphics_tileset(0x108, 0x03), 0x0e);
+        assert_eq!(preview_graphics_tileset(0x107, 0x03), 0x03);
+        assert_eq!(preview_graphics_tileset(0x108, 0x04), 0x04);
     }
 
     #[test]
