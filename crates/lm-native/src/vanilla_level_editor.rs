@@ -3507,7 +3507,8 @@ impl VanillaLevelEditor {
         } else if snes_viewport {
             // The editing surface follows the pane itself on every native window resize. Keep
             // square SNES pixels and retain the complete 256×224 camera frame. Surplus pane
-            // space reveals adjacent level content so the editing canvas remains fully covered.
+            // space reveals adjacent level content where it exists and otherwise uses the level
+            // backdrop without shifting the selected camera away from the centered frame.
             canvas_available
         } else {
             tiled_surface_canvas_size(world_size, canvas_available)
@@ -3548,10 +3549,9 @@ impl VanillaLevelEditor {
                 let rendered_viewport = egui::vec2(16.0 * cell, 14.0 * cell);
                 let centered_surplus =
                     centered_snes_viewport_surplus(rect.size(), rendered_viewport);
-                let nominal_origin = rect.min + centered_surplus
-                    - egui::vec2(f32::from(origin_x) * cell, f32::from(origin_y) * cell);
                 egui::Rect::from_min_size(
-                    covered_world_origin(rect, nominal_origin, world_size),
+                    rect.min + centered_surplus
+                        - egui::vec2(f32::from(origin_x) * cell, f32::from(origin_y) * cell),
                     world_size,
                 )
             } else {
@@ -3573,7 +3573,15 @@ impl VanillaLevelEditor {
             if is_boss_battle_level_mode(level_mode) {
                 paint_boss_battle_diagnostic(&painter, rect);
             } else {
-                painter.rect_filled(rect, 0.0, egui::Color32::BLACK);
+                painter.rect_filled(
+                    rect,
+                    0.0,
+                    if snes_viewport {
+                        canvas_background_color(self.canvas_backdrop)
+                    } else {
+                        egui::Color32::BLACK
+                    },
+                );
                 if !snes_viewport {
                     let tiled_origin = if vertical {
                         egui::pos2(paint_rect.max.x, paint_rect.min.y)
@@ -17647,8 +17655,8 @@ fn fitted_snes_viewport_cell(available: egui::Vec2, zoom_percent: u16) -> f32 {
     // already the canvas pane's complete inner rectangle. Reserving caption space here would
     // count that row twice and leave an avoidable border, especially after maximizing the window.
     let vertical_scale = available.y.max(1.0) / VIEWPORT_HEIGHT;
-    // Preserve the complete camera frame. Any surplus pane extent is filled by adjacent level
-    // content on that axis; it must never be obtained by distorting square game pixels.
+    // Preserve the complete camera frame. Any surplus pane extent shows adjacent level content or
+    // the level backdrop on that axis; it must never be obtained by distorting square game pixels.
     let fitted_pixel_scale = horizontal_scale.min(vertical_scale).max(1.0 / TILE_PIXELS);
     let zoom_steps = f32::from(clamp_canvas_zoom(zoom_percent)) / 100.0;
     (fitted_pixel_scale * zoom_steps).max(1.0 / TILE_PIXELS) * TILE_PIXELS
@@ -17658,25 +17666,6 @@ fn centered_snes_viewport_surplus(available: egui::Vec2, viewport: egui::Vec2) -
     egui::vec2(
         ((available.x - viewport.x) * 0.5).max(0.0),
         ((available.y - viewport.y) * 0.5).max(0.0),
-    )
-}
-
-fn covered_world_origin(
-    canvas: egui::Rect,
-    nominal_origin: egui::Pos2,
-    world_size: egui::Vec2,
-) -> egui::Pos2 {
-    let cover_axis = |canvas_min: f32, canvas_max: f32, nominal: f32, world_extent: f32| {
-        let canvas_extent = canvas_max - canvas_min;
-        if world_extent >= canvas_extent {
-            nominal.clamp(canvas_max - world_extent, canvas_min)
-        } else {
-            canvas_min + (canvas_extent - world_extent) * 0.5
-        }
-    };
-    egui::pos2(
-        cover_axis(canvas.min.x, canvas.max.x, nominal_origin.x, world_size.x),
-        cover_axis(canvas.min.y, canvas.max.y, nominal_origin.y, world_size.y),
     )
 }
 
@@ -25098,20 +25087,19 @@ mod tests {
     }
 
     #[test]
-    fn game_pixel_world_covers_compact_canvas_without_black_surplus() {
+    fn game_pixel_world_keeps_every_camera_screen_aligned_with_the_centered_viewport() {
         let canvas = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(674.0, 395.0));
-        let world_size = egui::vec2(4_096.0, 864.0);
-        for nominal in [
-            egui::pos2(110.0, 0.0),
-            egui::pos2(-1_500.0, -200.0),
-            egui::pos2(-4_000.0, -800.0),
-        ] {
-            let origin = covered_world_origin(canvas, nominal, world_size);
-            let world = egui::Rect::from_min_size(origin, world_size);
-            assert!(world.min.x <= canvas.min.x);
-            assert!(world.min.y <= canvas.min.y);
-            assert!(world.max.x >= canvas.max.x);
-            assert!(world.max.y >= canvas.max.y);
+        let cell = fitted_snes_viewport_cell(canvas.size(), 100);
+        let viewport = egui::vec2(16.0 * cell, 14.0 * cell);
+        let surplus = centered_snes_viewport_surplus(canvas.size(), viewport);
+        let viewport_min = canvas.min + surplus;
+        for camera in [(0_u16, 0_u16), (16, 0), (304, 0), (0, 16), (0, 496)] {
+            let world_origin = canvas.min + surplus
+                - egui::vec2(f32::from(camera.0) * cell, f32::from(camera.1) * cell);
+            let aligned =
+                world_origin + egui::vec2(f32::from(camera.0) * cell, f32::from(camera.1) * cell);
+            assert!((aligned.x - viewport_min.x).abs() < 0.001);
+            assert!((aligned.y - viewport_min.y).abs() < 0.001);
         }
     }
 
