@@ -638,6 +638,7 @@ pub(crate) struct VanillaLevelEditor {
     canvas_navigation_screen: u16,
     open_levels_at_main_entrance: Option<bool>,
     placement_mode: Option<CanvasPlacementMode>,
+    canvas_pan_mode: bool,
     canvas_entity_selection: Option<CanvasEntitySelection>,
     auto_deselect_on_editor_select: bool,
     show_add_editor_ids: Option<bool>,
@@ -2886,6 +2887,7 @@ impl VanillaLevelEditor {
         self.preview_camera_minor_offset = 0;
         self.preview_camera_pan_remainder = egui::Vec2::ZERO;
         self.preview_camera_primary_pan_active = false;
+        self.canvas_pan_mode = false;
         self.pending_layer2_mode_reset = None;
         self.error = None;
         self.map16_key = None;
@@ -3758,40 +3760,69 @@ impl VanillaLevelEditor {
                 catalog,
                 ExtendedUiTextKey::VanillaLevelCanvasTool,
             ));
-            ui.selectable_value(
-                &mut self.placement_mode,
-                None,
-                vanilla_text(catalog, ExtendedUiTextKey::VanillaLevelSelectMove),
-            );
-            ui.selectable_value(
-                &mut self.placement_mode,
-                Some(CanvasPlacementMode::Object),
-                vanilla_text(catalog, ExtendedUiTextKey::VanillaLevelPlaceObject),
-            );
-            ui.selectable_value(
-                &mut self.placement_mode,
-                Some(CanvasPlacementMode::Sprite),
-                vanilla_text(catalog, ExtendedUiTextKey::VanillaLevelPlaceSprite),
-            );
+            if ui
+                .selectable_value(
+                    &mut self.placement_mode,
+                    None,
+                    vanilla_text(catalog, ExtendedUiTextKey::VanillaLevelSelectMove),
+                )
+                .clicked()
+            {
+                self.canvas_pan_mode = false;
+            }
+            if ui.selectable_label(self.canvas_pan_mode, "Pan").clicked() {
+                self.canvas_pan_mode = true;
+                self.placement_mode = None;
+            }
+            if ui
+                .selectable_value(
+                    &mut self.placement_mode,
+                    Some(CanvasPlacementMode::Object),
+                    vanilla_text(catalog, ExtendedUiTextKey::VanillaLevelPlaceObject),
+                )
+                .clicked()
+            {
+                self.canvas_pan_mode = false;
+            }
+            if ui
+                .selectable_value(
+                    &mut self.placement_mode,
+                    Some(CanvasPlacementMode::Sprite),
+                    vanilla_text(catalog, ExtendedUiTextKey::VanillaLevelPlaceSprite),
+                )
+                .clicked()
+            {
+                self.canvas_pan_mode = false;
+            }
             if matches!(
                 self.controller.as_ref().and_then(LevelController::layer2),
                 Some(lm_level::NativeLayer2Data::Tilemap(_))
             ) && layer2_tilemap_editable(self.shared_vanilla_background)
             {
-                ui.selectable_value(
-                    &mut self.placement_mode,
-                    Some(CanvasPlacementMode::Layer2Tile),
-                    vanilla_text(catalog, ExtendedUiTextKey::VanillaLevelPaintLayer2Tile),
-                );
+                if ui
+                    .selectable_value(
+                        &mut self.placement_mode,
+                        Some(CanvasPlacementMode::Layer2Tile),
+                        vanilla_text(catalog, ExtendedUiTextKey::VanillaLevelPaintLayer2Tile),
+                    )
+                    .clicked()
+                {
+                    self.canvas_pan_mode = false;
+                }
             } else if matches!(
                 self.controller.as_ref().and_then(LevelController::layer2),
                 Some(lm_level::NativeLayer2Data::Objects(_))
             ) {
-                ui.selectable_value(
-                    &mut self.placement_mode,
-                    Some(CanvasPlacementMode::Layer2Object),
-                    vanilla_text(catalog, ExtendedUiTextKey::VanillaLevelPlaceLayer2Object),
-                );
+                if ui
+                    .selectable_value(
+                        &mut self.placement_mode,
+                        Some(CanvasPlacementMode::Layer2Object),
+                        vanilla_text(catalog, ExtendedUiTextKey::VanillaLevelPlaceLayer2Object),
+                    )
+                    .clicked()
+                {
+                    self.canvas_pan_mode = false;
+                }
             }
             ui.end_row();
             // Keep the zoom widgets together when the outer toolbar wraps. Splitting the minus,
@@ -3927,7 +3958,7 @@ impl VanillaLevelEditor {
         }
         let (x, y) = self.game_preview_camera_origin(major_tiles, minor_tiles, vertical);
         ui.monospace(format!("({x},{y})"));
-        ui.label("Drag empty canvas to pan");
+        ui.label("Drag empty canvas, or choose Pan to drag anywhere");
     }
 
     fn canvas_zoom_percent(&self) -> u16 {
@@ -7767,6 +7798,27 @@ impl VanillaLevelEditor {
                 return;
             }
             self.preview_camera_primary_pan_active = false;
+        }
+        let dedicated_pan_tool = self.canvas_pan_mode
+            && self.placement_mode.is_none()
+            && self.game_preview()
+            && self.snes_viewport()
+            && response.hovered();
+        if dedicated_pan_tool {
+            response.ctx.set_cursor_icon(egui::CursorIcon::Grab);
+            if primary_down {
+                self.preview_camera_primary_pan_active = true;
+                response.ctx.set_cursor_icon(egui::CursorIcon::Grabbing);
+                let pointer_delta = response.ctx.input(|input| input.pointer.delta());
+                self.pan_game_preview_camera(
+                    pointer_delta,
+                    cell,
+                    major_tiles,
+                    minor_tiles,
+                    vertical,
+                );
+                return;
+            }
         }
         // Select on the physical press, not only on egui's synthesized click at release. A
         // click-and-drag response may cease to qualify as `clicked()` after even a tiny amount of
