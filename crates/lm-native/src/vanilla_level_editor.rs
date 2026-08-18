@@ -3548,23 +3548,6 @@ impl VanillaLevelEditor {
         let mut paint_canvas = |ui: &mut egui::Ui| {
             let (rect, response) =
                 ui.allocate_exact_size(canvas_size, egui::Sense::click_and_drag());
-            if snes_viewport && response.hovered() {
-                let middle_down =
-                    ui.input(|input| input.pointer.button_down(egui::PointerButton::Middle));
-                if middle_down {
-                    ui.ctx().set_cursor_icon(egui::CursorIcon::Grabbing);
-                }
-            }
-            if snes_viewport && response.dragged_by(egui::PointerButton::Middle) {
-                let pointer_delta = ui.input(|input| input.pointer.delta());
-                self.pan_game_preview_camera(
-                    pointer_delta,
-                    cell,
-                    major_tiles,
-                    minor_tiles,
-                    vertical,
-                );
-            }
             let painter = ui.painter_at(rect);
             let paint_rect = if snes_viewport {
                 let (origin_x, origin_y) =
@@ -25715,7 +25698,7 @@ mod tests {
     }
 
     #[test]
-    fn middle_drag_camera_pan_tracks_both_axes_and_fractional_pointer_motion() {
+    fn canvas_camera_pan_tracks_both_axes_and_fractional_pointer_motion() {
         let mut horizontal = VanillaLevelEditor::default();
         horizontal.pan_game_preview_camera(egui::vec2(-8.0, 0.0), 16.0, 512, 27, false);
         assert_eq!(
