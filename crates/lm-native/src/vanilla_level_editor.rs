@@ -3606,19 +3606,25 @@ impl VanillaLevelEditor {
             let (rect, response) =
                 ui.allocate_exact_size(canvas_size, egui::Sense::click_and_drag());
             let painter = ui.painter_at(rect);
-            let paint_rect = if snes_viewport {
+            let (paint_rect, game_viewport_rect) = if snes_viewport {
                 let (origin_x, origin_y) =
                     self.game_preview_camera_origin(major_tiles, minor_tiles, vertical);
                 let rendered_viewport = egui::vec2(16.0 * cell, 14.0 * cell);
                 let centered_surplus =
                     centered_snes_viewport_surplus(rect.size(), rendered_viewport);
-                egui::Rect::from_min_size(
-                    rect.min + centered_surplus
-                        - egui::vec2(f32::from(origin_x) * cell, f32::from(origin_y) * cell),
+                let camera_offset =
+                    egui::vec2(f32::from(origin_x) * cell, f32::from(origin_y) * cell);
+                let world_origin = covering_world_origin(
+                    rect,
                     world_size,
+                    rect.min + centered_surplus - camera_offset,
+                );
+                (
+                    egui::Rect::from_min_size(world_origin, world_size),
+                    egui::Rect::from_min_size(world_origin + camera_offset, rendered_viewport),
                 )
             } else {
-                egui::Rect::from_min_size(rect.min, world_size)
+                (egui::Rect::from_min_size(rect.min, world_size), rect)
             };
             self.canvas_geometry = Some(LevelCanvasGeometry {
                 rect: paint_rect,
@@ -3682,7 +3688,7 @@ impl VanillaLevelEditor {
                     custom_map16,
                 );
                 if snes_viewport && let Some((texture, size, translucent)) = live_frame {
-                    let live_rect = live_frame_rect(rect, size, cell);
+                    let live_rect = live_frame_rect(game_viewport_rect, size, cell);
                     painter.image(
                         texture,
                         live_rect,
@@ -17915,6 +17921,25 @@ fn centered_snes_viewport_surplus(available: egui::Vec2, viewport: egui::Vec2) -
     )
 }
 
+fn covering_world_origin(
+    canvas: egui::Rect,
+    world_size: egui::Vec2,
+    preferred: egui::Pos2,
+) -> egui::Pos2 {
+    let axis = |canvas_min: f32, canvas_max: f32, world_extent: f32, preferred: f32| {
+        let canvas_extent = canvas_max - canvas_min;
+        if world_extent >= canvas_extent {
+            preferred.clamp(canvas_max - world_extent, canvas_min)
+        } else {
+            canvas_min + (canvas_extent - world_extent) * 0.5
+        }
+    };
+    egui::pos2(
+        axis(canvas.min.x, canvas.max.x, world_size.x, preferred.x),
+        axis(canvas.min.y, canvas.max.y, world_size.y, preferred.y),
+    )
+}
+
 fn live_frame_rect(canvas: egui::Rect, size: [usize; 2], cell: f32) -> egui::Rect {
     let pixels_per_source_pixel = cell / 16.0;
     egui::Rect::from_center_size(
@@ -25410,6 +25435,24 @@ mod tests {
             assert!((aligned.x - viewport_min.x).abs() < 0.001);
             assert!((aligned.y - viewport_min.y).abs() < 0.001);
         }
+    }
+
+    #[test]
+    fn game_world_covers_resized_canvas_at_level_edges() {
+        let canvas = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(800.0, 600.0));
+        let world_size = egui::vec2(4_800.0, 1_000.0);
+        assert_eq!(
+            covering_world_origin(canvas, world_size, egui::pos2(57.0, 0.0)),
+            egui::pos2(0.0, 0.0)
+        );
+        assert_eq!(
+            covering_world_origin(canvas, world_size, egui::pos2(-4_500.0, -600.0)),
+            egui::pos2(-4_000.0, -400.0)
+        );
+        assert_eq!(
+            covering_world_origin(canvas, egui::vec2(400.0, 300.0), egui::pos2(-50.0, 0.0)),
+            egui::pos2(200.0, 150.0)
+        );
     }
 
     #[test]
