@@ -1059,9 +1059,18 @@ impl VanillaLevelEditor {
             }
         });
         let workspace_size = ui.available_size();
+        let workspace_left = ui.available_rect_before_wrap().left();
+        let divider_id = ui.make_persistent_id("vanilla-level-workspace-divider");
+        let pointer_requested_width = ui.ctx().read_response(divider_id).and_then(|response| {
+            (response.dragged() || response.drag_stopped())
+                .then(|| response.interact_pointer_pos())
+                .flatten()
+                .map(|pointer| pointer.x - workspace_left)
+        });
         let tool_width = workspace_tool_width(
             workspace_size.x,
-            self.tool_panel_width.unwrap_or(ROM_LEVEL_TOOL_PANEL_WIDTH),
+            pointer_requested_width
+                .unwrap_or(self.tool_panel_width.unwrap_or(ROM_LEVEL_TOOL_PANEL_WIDTH)),
         );
         self.tool_panel_width = Some(tool_width);
         let requested_tool_panel = self.requested_tool_panel.take();
@@ -1178,10 +1187,11 @@ impl VanillaLevelEditor {
                                 self.show_commit_controls(ui, catalog, &snapshot, custom_dsc);
                         }
                     });
-                let (divider_rect, divider_response) = ui.allocate_exact_size(
+                let (divider_rect, _) = ui.allocate_exact_size(
                     egui::vec2(ROM_LEVEL_WORKSPACE_DIVIDER_WIDTH, workspace_size.y),
-                    egui::Sense::drag(),
+                    egui::Sense::hover(),
                 );
+                let divider_response = ui.interact(divider_rect, divider_id, egui::Sense::drag());
                 let divider_color = if divider_response.dragged() || divider_response.hovered() {
                     ui.visuals().widgets.active.bg_fill
                 } else {
@@ -1203,15 +1213,10 @@ impl VanillaLevelEditor {
                     .on_hover_cursor(egui::CursorIcon::ResizeHorizontal)
                     .on_hover_text("Drag to resize the tools and level canvas");
                 let drag_finished = divider_response.drag_stopped();
-                let pointer_down = divider_response.is_pointer_button_down_on();
-                if (pointer_down || divider_response.dragged() || drag_finished)
-                    && let Some(pointer) = divider_response.interact_pointer_pos()
+                if divider_response.is_pointer_button_down_on()
+                    || divider_response.dragged()
+                    || drag_finished
                 {
-                    // Resolve directly from the pointer and the divider's current screen
-                    // position. This starts on mouse-down (without egui's drag threshold) and
-                    // catches up in one frame even when rendering temporarily lowers frame rate.
-                    let requested = tool_width + pointer.x - divider_rect.center().x;
-                    self.tool_panel_width = Some(workspace_tool_width(workspace_size.x, requested));
                     ui.ctx().request_repaint();
                 }
                 if drag_finished {
