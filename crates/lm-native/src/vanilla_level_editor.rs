@@ -3761,13 +3761,13 @@ impl VanillaLevelEditor {
                 ExtendedUiTextKey::VanillaLevelCanvasTool,
             ));
             if ui
-                .selectable_value(
-                    &mut self.placement_mode,
-                    None,
+                .selectable_label(
+                    self.placement_mode.is_none() && !self.canvas_pan_mode,
                     vanilla_text(catalog, ExtendedUiTextKey::VanillaLevelSelectMove),
                 )
                 .clicked()
             {
+                self.placement_mode = None;
                 self.canvas_pan_mode = false;
             }
             if ui.selectable_label(self.canvas_pan_mode, "Pan").clicked() {
