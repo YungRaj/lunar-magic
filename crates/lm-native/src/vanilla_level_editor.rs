@@ -1206,7 +1206,8 @@ impl VanillaLevelEditor {
                 if divider_response.drag_started() {
                     self.tool_panel_drag_start_width = Some(tool_width);
                 }
-                if divider_response.dragged() {
+                let drag_finished = divider_response.drag_stopped();
+                if divider_response.dragged() || drag_finished {
                     self.tool_panel_width = Some(workspace_tool_width(
                         workspace_size.x,
                         self.tool_panel_drag_start_width.unwrap_or(tool_width)
@@ -1214,8 +1215,13 @@ impl VanillaLevelEditor {
                     ));
                     ui.ctx().request_repaint();
                 }
-                if divider_response.drag_stopped() {
+                if drag_finished {
                     self.tool_panel_drag_start_width = None;
+                    // The divider is laid out before its new width can affect the canvas slot.
+                    // Guarantee a post-release frame (and a follow-up for ScrollArea viewport
+                    // state) so the renderer fills the final allocation after mouse-up.
+                    ui.ctx()
+                        .request_repaint_after(std::time::Duration::from_millis(16));
                 }
             }
             // As with the tools column, descendants of the canvas (notably its horizontally
