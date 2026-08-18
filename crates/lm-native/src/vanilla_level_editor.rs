@@ -21,9 +21,11 @@ use crate::user_toolbar_images::{
 };
 
 const ROM_LEVEL_CANVAS_CELL: f32 = 12.0;
-const ROM_LEVEL_CANVAS_MIN_ZOOM: u16 = 100;
+// In game view, 100% means one SNES screen fitted to the pane. Keep that as the
+// crisp default, but permit overview scales for tall and multi-screen levels.
+const ROM_LEVEL_CANVAS_MIN_ZOOM: u16 = 25;
 const ROM_LEVEL_CANVAS_MAX_ZOOM: u16 = 5_000;
-const ROM_LEVEL_CANVAS_ZOOM_STEP: u16 = 100;
+const ROM_LEVEL_CANVAS_ZOOM_STEP: u16 = 25;
 const ROM_LEVEL_CANVAS_INITIAL_PREVIOUS_ZOOM: u16 = 200;
 const ROM_LEVEL_CANVAS_ZOOM_MENU: [u16; 9] = [100, 125, 150, 175, 200, 300, 400, 600, 800];
 const CATALOG_PREVIEW_LOGICAL_SIDE: f32 = 256.0;
@@ -3853,6 +3855,26 @@ impl VanillaLevelEditor {
     ) {
         ui.separator();
         ui.label(vanilla_text(catalog, ExtendedUiTextKey::VanillaLevelCamera));
+        let entrance_origin =
+            game_preview_origin(self.entrance_form, major_tiles, minor_tiles, vertical);
+        let (camera_x, camera_y) =
+            self.game_preview_camera_origin(major_tiles, minor_tiles, vertical);
+        let screen_count = major_tiles.div_ceil(16).max(1);
+        let mut camera_screen =
+            (if vertical { camera_y } else { camera_x } / 16).min(screen_count - 1);
+        ui.label(vanilla_text(catalog, ExtendedUiTextKey::VanillaLevelScreen));
+        if ui
+            .add(
+                egui::DragValue::new(&mut camera_screen)
+                    .range(0..=screen_count - 1)
+                    .hexadecimal(2, false, true),
+            )
+            .on_hover_text("Absolute level screen shown by the game camera")
+            .changed()
+        {
+            self.preview_camera_major_offset =
+                camera_screen_offset(entrance_origin, camera_screen, major_tiles, vertical);
+        }
         for (label, major_delta, minor_delta) in [
             (
                 vanilla_text(catalog, ExtendedUiTextKey::VanillaLevelScreenMinus),
@@ -17758,6 +17780,23 @@ fn offset_camera_coordinate(origin: u16, offset: i16, maximum: u16) -> u16 {
     u16::try_from(clamped).expect("camera coordinate was clamped to a u16 bound")
 }
 
+fn camera_screen_offset(
+    entrance_origin: (u16, u16),
+    screen: u16,
+    major_tiles: u16,
+    vertical: bool,
+) -> i16 {
+    let entrance_major = if vertical {
+        entrance_origin.1
+    } else {
+        entrance_origin.0
+    };
+    let maximum = major_tiles.saturating_sub(if vertical { 14 } else { 16 });
+    let requested = screen.saturating_mul(16).min(maximum);
+    let delta = i32::from(requested) - i32::from(entrance_major);
+    i16::try_from(delta).unwrap_or(if delta < 0 { i16::MIN } else { i16::MAX })
+}
+
 #[cfg(feature = "visual-smoke")]
 fn visual_smoke_camera_offset(axis: &str) -> i16 {
     std::env::var(format!("LM_NATIVE_PREVIEW_CAMERA_{axis}"))
@@ -24790,7 +24829,7 @@ mod tests {
     }
 
     #[test]
-    fn toolbar_zoom_matches_lunar_magic_range_steps_and_previous_toggle() {
+    fn toolbar_zoom_preserves_lunar_magic_presets_and_supports_level_overview() {
         let mut editor = VanillaLevelEditor::default();
         assert_eq!(
             ROM_LEVEL_CANVAS_ZOOM_MENU,
@@ -24815,7 +24854,7 @@ mod tests {
         editor.toolbar_zoom_toggle();
         assert_eq!(editor.canvas_zoom_percent(), 300);
         editor.toolbar_zoom_adjust(-10_000);
-        assert_eq!(editor.canvas_zoom_percent(), 100);
+        assert_eq!(editor.canvas_zoom_percent(), 25);
         editor.toolbar_zoom_adjust(10_000);
         assert_eq!(editor.canvas_zoom_percent(), 5_000);
     }
@@ -25537,6 +25576,21 @@ mod tests {
         assert_eq!(
             offset_game_preview_origin((0, 498), 16, -4, 512, 27, true),
             (0, 498)
+        );
+        assert_eq!(camera_screen_offset((0, 12), 1, 512, false), 16);
+        assert_eq!(camera_screen_offset((0, 12), 1, 512, true), 4);
+        assert_eq!(camera_screen_offset((32, 12), 0, 512, false), -32);
+        assert_eq!(camera_screen_offset((0, 44), 0, 512, true), -44);
+        assert_eq!(
+            offset_game_preview_origin(
+                (0, 12),
+                camera_screen_offset((0, 12), 1, 512, true),
+                0,
+                512,
+                27,
+                true,
+            ),
+            (0, 16)
         );
     }
 
