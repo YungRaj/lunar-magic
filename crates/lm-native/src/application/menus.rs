@@ -993,7 +993,7 @@ impl NativeApplication {
     }
 
     pub(super) fn begin_live_emulator_test(&mut self) {
-        let Some(core) = crate::live_emulator::choose_core() else {
+        let Some(core) = self.live_emulator.choose_core() else {
             return;
         };
         let snapshot = match self.app.controller_snapshot() {
