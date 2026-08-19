@@ -2637,6 +2637,53 @@ pub(crate) fn render_sprite_graphics_files_atlas(
     Ok(render_sprite_graphics_atlas(&graphics, &palette))
 }
 
+pub(crate) fn render_boss_room_graphics_atlas(
+    rom_bytes: Vec<u8>,
+    level: u16,
+    header: LegacyLevelHeader,
+    sprite_graphics_files: [usize; 4],
+) -> Result<egui::ColorImage, String> {
+    let rom = RomImage::from_bytes(rom_bytes).map_err(|error| error.to_string())?;
+    let project = Project::new(rom);
+    let mut palette_header = game_palette_header(level, header);
+    if sprite_graphics_files[2] != 0x0a {
+        palette_header
+            .set_sprite_palette(2)
+            .expect("runtime sprite palette 2 is representable");
+        palette_header
+            .set_foreground_palette(7)
+            .expect("runtime foreground palette 7 is representable");
+    }
+    let palette = lm_profile::compose_smw_us_v1_level_palette(&project, level, palette_header, 0)
+        .map_err(|error| error.to_string())?
+        .palette;
+    let graphics = load_layer1_sprite_graphics_slots(&project, sprite_graphics_files, true)?;
+    let mut materialized = materialize_layer1_sprite_vram(&graphics);
+    // DrawMode7BossArena addresses the animated lava as BG characters $80-$83.
+    // Vanilla animation group 14 uploads those four tiles to foreground VRAM
+    // $0700 (materialized slots $70-$73); the boss BG character base then maps
+    // them to editor-atlas slots $180-$183. The fixed ceiling/bridge characters
+    // already live in the boss upload. Compose both runtime sources here.
+    let castle_files = lm_profile::smw_us_v1_object_tileset_graphics_files(&project.rom, 1)
+        .map_err(|error| error.to_string())?;
+    let mut castle = materialize_layer1_sprite_vram(&load_layer1_sprite_graphics_slots(
+        &project,
+        castle_files,
+        true,
+    )?);
+    apply_vanilla_common_animation_frame_with_view_state(
+        &project,
+        &mut castle,
+        0,
+        1,
+        VanillaAnimationViewState::default(),
+    )?;
+    for offset in 0..4 {
+        materialized[0x180 + offset] = castle[0x70 + offset].clone();
+    }
+    Ok(render_foreground_graphics_atlas(&materialized, &palette))
+}
+
 /// Render the neutral in-game Iggy/Larry Mode-7 platform viewport.
 pub(crate) fn render_iggy_larry_platform_cell(
     rom_bytes: Vec<u8>,
@@ -2742,7 +2789,12 @@ pub(crate) fn render_mode7_koopa_boss_frames(
     rom_bytes: Vec<u8>,
     identity: u8,
 ) -> Result<Vec<egui::ColorImage>, String> {
-    (0..4)
+    // The runtime table contains nine poses per Koopaling. Start with the
+    // complete front-facing pose (8), which is also the useful static editor
+    // representation, then retain the entire animation rather than truncating
+    // it before Morton's eyes and face ever appear.
+    std::iter::once(8)
+        .chain(0..8)
         .map(|frame| render_mode7_koopa_boss_animation_frame(rom_bytes.clone(), identity, frame))
         .collect()
 }
@@ -3060,7 +3112,7 @@ mod tests {
                 identity,
             )
             .unwrap();
-            assert_eq!(frames.len(), 4);
+            assert_eq!(frames.len(), 9);
             for image in &frames {
                 assert_eq!(image.size, [32, 32]);
                 assert!(image.pixels.iter().any(|pixel| pixel.a() != 0));
