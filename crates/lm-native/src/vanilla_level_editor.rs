@@ -3271,19 +3271,7 @@ impl VanillaLevelEditor {
                         custom_sprites,
                     )
                 });
-                let boss_files = match boss_kind {
-                    Some(BossBattleKind::KoopaKid { identity: 0..=2, .. }) => {
-                        Some([0x00, 0x01, 0x24, 0x22])
-                    }
-                    // GameMode12_PrepareLevel selects runtime sprite setting 19
-                    // for both rotating-platform fights and Reznor, regardless
-                    // of the serialized level header's ordinary setting.
-                    Some(BossBattleKind::KoopaKid { identity: 3 | 4, .. })
-                    | Some(BossBattleKind::Reznor) => Some([0x00, 0x01, 0x25, 0x22]),
-                    // Bowser selects runtime sprite setting 24.
-                    Some(BossBattleKind::Bowser) => Some([0x00, 0x0d, 0x24, 0x22]),
-                    _ => None,
-                };
+                let boss_files = boss_sprite_graphics_files(boss_kind);
                 if let Some(files) = boss_files {
                     match crate::vanilla_map16_preview::render_sprite_graphics_files_atlas(
                         snapshot.rom_bytes.clone(),
@@ -16832,6 +16820,27 @@ fn boss_battle_kind(
         })
 }
 
+fn boss_sprite_graphics_files(kind: Option<BossBattleKind>) -> Option<[usize; 4]> {
+    match kind {
+        Some(BossBattleKind::KoopaKid {
+            identity: 0..=2, ..
+        }) => Some([0x00, 0x01, 0x24, 0x22]),
+        // GameMode12_PrepareLevel selects runtime sprite setting 19 for the
+        // rotating-platform fights and Reznor. The serialized room header
+        // does not reliably describe this runtime substitution.
+        Some(BossBattleKind::KoopaKid {
+            identity: 3 | 4, ..
+        })
+        | Some(BossBattleKind::Reznor) => Some([0x00, 0x01, 0x25, 0x22]),
+        Some(BossBattleKind::KoopaKid {
+            identity: 5 | 6, ..
+        }) => Some([0x00, 0x01, 0x24, 0x22]),
+        // Bowser selects runtime sprite setting 24.
+        Some(BossBattleKind::Bowser) => Some([0x00, 0x0d, 0x24, 0x22]),
+        _ => None,
+    }
+}
+
 fn paint_boss_battle_arena(
     painter: &egui::Painter,
     _world: egui::Rect,
@@ -16874,7 +16883,7 @@ fn paint_boss_battle_arena(
     );
     match kind {
         BossBattleKind::KoopaKid {
-            identity,
+            identity: _,
             rotating_platform: true,
         } => {
             let center = arena_origin + egui::vec2(8.0 * cell, 8.5 * cell);
@@ -16893,11 +16902,9 @@ fn paint_boss_battle_arena(
                 ],
                 egui::Stroke::new((cell / 3.0).max(4.0), accent),
             );
-            paint_boss_label(painter, visible, koopa_kid_name(identity));
         }
         BossBattleKind::KoopaKid {
-            identity: identity @ (5 | 6),
-            ..
+            identity: 5 | 6, ..
         } => {
             // $03CC2B contains seven legal pipe/spawn columns ($18..$D8).
             // The controller creates two dummy $29 sprites in addition to the
@@ -16916,9 +16923,8 @@ fn paint_boss_battle_arena(
                     egui::StrokeKind::Inside,
                 );
             }
-            paint_boss_label(painter, visible, koopa_kid_name(identity));
         }
-        BossBattleKind::KoopaKid { identity, .. } => {
+        BossBattleKind::KoopaKid { .. } => {
             for side in [visible.left(), visible.right() - 1.25 * cell] {
                 painter.rect_filled(
                     egui::Rect::from_min_max(
@@ -16929,7 +16935,6 @@ fn paint_boss_battle_arena(
                     egui::Color32::from_rgb(88, 72, 72),
                 );
             }
-            paint_boss_label(painter, visible, koopa_kid_name(identity));
         }
         BossBattleKind::Reznor => {
             let brick = egui::Color32::from_rgb(24, 24, 40);
@@ -16999,7 +17004,6 @@ fn paint_boss_battle_arena(
                     accent,
                 );
             }
-            paint_boss_label(painter, visible, "Reznor");
         }
         BossBattleKind::Bowser => {
             painter.rect_filled(
@@ -17017,19 +17021,8 @@ fn paint_boss_battle_arena(
                     egui::Color32::from_rgb(72, 96, 128),
                 );
             }
-            paint_boss_label(painter, visible, "Bowser");
         }
     }
-}
-
-fn paint_boss_label(painter: &egui::Painter, target: egui::Rect, label: &str) {
-    painter.text(
-        target.left_top() + egui::vec2(10.0, 10.0),
-        egui::Align2::LEFT_TOP,
-        format!("{label} arena"),
-        egui::FontId::proportional(14.0),
-        egui::Color32::from_white_alpha(180),
-    );
 }
 
 fn paint_reznor_controller(
@@ -17755,8 +17748,24 @@ fn paint_boss_runtime_helpers(
         BossBattleKind::KoopaKid {
             identity: 3 | 4, ..
         } => {
-            // Iggy/Larry throw normal sprite $A7 from the tilting platform.
-            paint_standard(0xa7, 11.0, 6.6, 0);
+            // Iggy/Larry's generated $A7 uses the runtime boss sheet. Lunar
+            // Magic's ordinary $A7 preview keeps the serialized level's page
+            // selection and therefore resolves these characters through the
+            // message/auxiliary sheet in boss rooms.
+            if let Some(texture) = texture {
+                let center = origin + egui::vec2(11.0 * cell, 6.6 * cell);
+                for (x, character) in [(-cell, 0xc9_u8), (0.0, 0xca)] {
+                    paint_authentic_oam_tile(
+                        painter,
+                        texture,
+                        center + egui::vec2(x, -0.5 * cell),
+                        cell,
+                        character,
+                        0x36,
+                        true,
+                    );
+                }
+            }
         }
         BossBattleKind::Bowser => {
             // Bowser's controller generates these independently of the level
@@ -23493,6 +23502,34 @@ mod tests {
         assert_eq!(
             BOWSER_RUNTIME_HELPER_IDS,
             [0xa1, 0xa2, 0xa2, 0x33, 0x33, 0x33, 0x33, 0x7c]
+        );
+    }
+
+    #[test]
+    fn every_vanilla_boss_family_selects_its_runtime_sprite_graphics() {
+        for identity in 0..=6 {
+            let files = boss_sprite_graphics_files(Some(BossBattleKind::KoopaKid {
+                identity,
+                rotating_platform: matches!(identity, 3 | 4),
+            }));
+            let expected = if matches!(identity, 3 | 4) {
+                [0x00, 0x01, 0x25, 0x22]
+            } else {
+                [0x00, 0x01, 0x24, 0x22]
+            };
+            assert_eq!(
+                files,
+                Some(expected),
+                "Koopaling identity {identity} selected the wrong runtime GFX"
+            );
+        }
+        assert_eq!(
+            boss_sprite_graphics_files(Some(BossBattleKind::Reznor)),
+            Some([0x00, 0x01, 0x25, 0x22])
+        );
+        assert_eq!(
+            boss_sprite_graphics_files(Some(BossBattleKind::Bowser)),
+            Some([0x00, 0x0d, 0x24, 0x22])
         );
     }
 
