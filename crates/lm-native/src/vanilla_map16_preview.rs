@@ -2611,15 +2611,131 @@ pub(crate) fn render_sprite_graphics_files_atlas(
     level: u16,
     header: LegacyLevelHeader,
     graphics_files: [usize; 4],
+    mode7_boss_runtime_palette: bool,
 ) -> Result<egui::ColorImage, String> {
     let rom = RomImage::from_bytes(rom_bytes).map_err(|error| error.to_string())?;
     let project = Project::new(rom);
-    let palette_header = game_palette_header(level, header);
+    let mut palette_header = game_palette_header(level, header);
+    if mode7_boss_runtime_palette {
+        // CODE_009925 enters Morton/Roy/Ludwig/Reznor/Bowser rooms through
+        // CODE_00AE15. The latter selects sprite palette 2 and foreground
+        // palette 7 before LoadPalette; the serialized level header is not
+        // consulted for these two selectors. In particular, using level
+        // $095's stored sprite selector paints Reznor cyan/green rather than
+        // the orange runtime palette.
+        palette_header
+            .set_sprite_palette(2)
+            .expect("runtime sprite palette 2 is representable");
+        palette_header
+            .set_foreground_palette(7)
+            .expect("runtime foreground palette 7 is representable");
+    }
     let palette = lm_profile::compose_smw_us_v1_level_palette(&project, level, palette_header, 0)
         .map_err(|error| error.to_string())?
         .palette;
     let graphics = load_layer1_sprite_graphics_slots(&project, graphics_files, true)?;
     Ok(render_sprite_graphics_atlas(&graphics, &palette))
+}
+
+/// Render the neutral in-game Iggy/Larry Mode-7 platform viewport.
+pub(crate) fn render_iggy_larry_platform_cell(
+    rom_bytes: Vec<u8>,
+) -> Result<egui::ColorImage, String> {
+    const PALETTE_OFFSET: usize = 0x365c; // SNES $00:B65C, IggyLarryPlatColors
+    const MACRO_MAP_OFFSET: usize = 0x1d7ec; // SNES $03:D7EC
+    const TILE_MAP_OFFSET: usize = 0x1d8ec; // SNES $03:D8EC
+    let rom = RomImage::from_bytes(rom_bytes).map_err(|error| error.to_string())?;
+    let project = Project::new(rom);
+    let encoded = project
+        .load_decompressed_graphics_file(0x27, lm_profile::smw_us_v1_vanilla_graphics_layout())
+        .map_err(|error| error.to_string())?;
+    if encoded.len() % 24 != 0 {
+        return Err(format!(
+            "invalid packed Mode-7 GFX27 length {}",
+            encoded.len()
+        ));
+    }
+    let palette_bytes = project
+        .rom
+        .logical_bytes()
+        .get(PALETTE_OFFSET..PALETTE_OFFSET + 16)
+        .ok_or_else(|| "Iggy/Larry platform palette is truncated".to_owned())?;
+    let palette = Palette::decode_snes(palette_bytes)
+        .map_err(|length| format!("invalid Iggy/Larry platform palette length {length}"))?;
+    let logical = project.rom.logical_bytes();
+    let macro_map = logical
+        .get(MACRO_MAP_OFFSET..MACRO_MAP_OFFSET + 16 * 16)
+        .ok_or_else(|| "Iggy/Larry platform macro map is truncated".to_owned())?;
+    let tile_map = logical
+        .get(TILE_MAP_OFFSET..TILE_MAP_OFFSET + 108)
+        .ok_or_else(|| "Iggy/Larry platform tile map is truncated".to_owned())?;
+    const WIDTH: usize = 256;
+    const HEIGHT: usize = 224;
+    let mut rgba = vec![0_u8; WIDTH * HEIGHT * 4];
+    for screen_y in 0..HEIGHT {
+        for screen_x in 0..WIDTH {
+            // Use the legal face-on representative matrix. This exposes the
+            // complete iceberg-shaped platform encoded by DATA_03D7EC rather
+            // than arbitrarily cropping its collision/visible underside.
+            // Runtime rotation then compresses this same 128-line surface as
+            // it approaches the horizontal pose.
+            if !(64..192).contains(&screen_y) {
+                continue;
+            }
+            let source_x = screen_x;
+            let source_y = screen_y - 64;
+            let macro_value = usize::from(macro_map[(source_y / 8) * 16 + source_x / 16]);
+            // CODE_03D991 writes DATA_03D8EC+macro*4+half for
+            // horizontal halves 0 and 1. It then advances to the next source
+            // byte for the following eight-pixel row. There is no vertical
+            // quadrant in this lookup; treating it as a 2x2 Map16 cell was
+            // the source of the old checkerboard corruption.
+            let horizontal_half = (source_x & 15) / 8;
+            let map_index = macro_value * 4 + horizontal_half;
+            let tile_number = usize::from(tile_map[map_index]);
+            if tile_number == 0xff {
+                continue;
+            }
+            // GFX27 follows the dedicated CODE_00AB42 3bpp-to-Mode-7 path.
+            // Unlike the animated Koopaling converter, that routine emits
+            // every source tile once and does not interleave a mirrored copy.
+            // The table byte is therefore the direct source-tile number.
+            let tile_start = tile_number * 24;
+            let tile = encoded
+                .get(tile_start..tile_start + 24)
+                .ok_or_else(|| format!("GFX27 is missing tile ${tile_number:02X}"))?;
+            let local_x = source_x & 7;
+            // CODE_00AB42 does not consume ordinary SNES planar rows. Each
+            // three-byte group is eight consecutive 3-bit pixels, MSB first;
+            // CODE_00ABC4 rotates exactly three bits into every VRAM byte.
+            let row = source_y & 7;
+            let packed = u32::from(tile[row * 3]) << 16
+                | u32::from(tile[row * 3 + 1]) << 8
+                | u32::from(tile[row * 3 + 2]);
+            let color_index = usize::try_from((packed >> (21 - local_x * 3)) & 7)
+                .expect("a three-bit pixel fits usize");
+            if color_index == 0 {
+                continue;
+            }
+            let color = palette
+                .colors
+                .get(color_index)
+                .copied()
+                .unwrap_or_default()
+                .to_rgb8();
+            let destination = (screen_y * WIDTH + screen_x) * 4;
+            rgba[destination..destination + 4].copy_from_slice(&[
+                color.red,
+                color.green,
+                color.blue,
+                255,
+            ]);
+        }
+    }
+    Ok(egui::ColorImage::from_rgba_unmultiplied(
+        [WIDTH, HEIGHT],
+        &rgba,
+    ))
 }
 
 pub(crate) fn render_mode7_koopa_boss_frames(
@@ -2629,6 +2745,81 @@ pub(crate) fn render_mode7_koopa_boss_frames(
     (0..4)
         .map(|frame| render_mode7_koopa_boss_animation_frame(rom_bytes.clone(), identity, frame))
         .collect()
+}
+
+pub(crate) fn render_mode7_reznor_frame(rom_bytes: Vec<u8>) -> Result<egui::ColorImage, String> {
+    const REZNOR_COLUMNS: usize = 8;
+    const REZNOR_ROWS: usize = 8;
+    const SPRITE_COLORS_OFFSET: usize = 0x2cc; // SpriteColors+$54 in shared palette storage.
+    let rom = RomImage::from_bytes(rom_bytes).map_err(|error| error.to_string())?;
+    let project = Project::new(rom);
+    let encoded = project
+        .load_decompressed_graphics_file(0x27, lm_profile::smw_us_v1_vanilla_graphics_layout())
+        .map_err(|error| error.to_string())?;
+    if encoded.len() % 24 != 0 {
+        return Err(format!(
+            "invalid packed Reznor GFX27 length {}",
+            encoded.len()
+        ));
+    }
+    let shared = project
+        .load_shared_palette(lm_profile::smw_us_v1_shared_palette_layout())
+        .map_err(|error| error.to_string())?;
+    let palette_source = shared.palette_bytes();
+    let colors = palette_source
+        .get(SPRITE_COLORS_OFFSET..SPRITE_COLORS_OFFSET + 12)
+        .ok_or_else(|| "Reznor Mode-7 palette is truncated".to_owned())?;
+    let mut palette_bytes = [0_u8; 16];
+    palette_bytes[4..].copy_from_slice(colors);
+    let palette = Palette::decode_snes(&palette_bytes)
+        .map_err(|length| format!("invalid Reznor Mode-7 palette length {length}"))?;
+    let width = REZNOR_COLUMNS * 8;
+    let height = REZNOR_ROWS * 8;
+    let mut rgba = vec![0_u8; width * height * 4];
+    for cell in 0..REZNOR_COLUMNS * REZNOR_ROWS {
+        let column = cell % REZNOR_COLUMNS;
+        let row = cell / REZNOR_COLUMNS;
+        // CODE_00AB42 materializes GFX27 as two 64x64 source halves. The U.S.
+        // Reznor sign occupies tiles $40..$7E in 8-column strips whose second
+        // four rows begin eight characters later; its bottom-right terminator
+        // is the shared $3F character. This exact swizzle reproduces all 64
+        // cells of the original-game Mode-7 background.
+        let tile_number = if cell == 63 {
+            0x3f
+        } else {
+            0x40 + (row % 4) * 0x10 + (row / 4) * 8 + column
+        };
+        let tile_start = tile_number * 24;
+        let tile = encoded
+            .get(tile_start..tile_start + 24)
+            .ok_or_else(|| format!("Reznor GFX27 is missing tile ${tile_number:02X}"))?;
+        for y in 0..8 {
+            let packed = u32::from(tile[y * 3]) << 16
+                | u32::from(tile[y * 3 + 1]) << 8
+                | u32::from(tile[y * 3 + 2]);
+            for x in 0..8 {
+                let color_index = usize::try_from((packed >> (21 - x * 3)) & 7)
+                    .expect("a three-bit pixel fits usize");
+                if color_index == 0 {
+                    continue;
+                }
+                let color = palette.colors[color_index].to_rgb8();
+                let target_x = column * 8 + x;
+                let target_y = row * 8 + y;
+                let destination = (target_y * width + target_x) * 4;
+                rgba[destination..destination + 4].copy_from_slice(&[
+                    color.red,
+                    color.green,
+                    color.blue,
+                    255,
+                ]);
+            }
+        }
+    }
+    Ok(egui::ColorImage::from_rgba_unmultiplied(
+        [width, height],
+        &rgba,
+    ))
 }
 
 fn render_mode7_koopa_boss_animation_frame(
@@ -2717,7 +2908,12 @@ pub(crate) fn render_mode7_bowser_frame(rom_bytes: Vec<u8>) -> Result<egui::Colo
     // clown-car/propeller tilemap segments in the final 912-byte table.
     const TILEMAP_OFFSET: usize = 0x01_d9de;
     const TILEMAP_LEN: usize = 912;
-    const PALETTE: [u16; 6] = [0x0000, 0x2940, 0x3de0, 0x5280, 0x00b7, 0x023f];
+    // CODE_03DFCC selects one of eight 7-color sets from BowserColors.  At the
+    // normal battle scale DATA_03A265 selects set four.  These are dynamic
+    // colors in bank 00, not the similarly placed shared sprite-palette row.
+    const BOWSER_COLORS_OFFSET: usize = 0x369e;
+    // The normal $20 Mode-7 scale maps through DATA_03A265[4] to set zero.
+    const BOWSER_PALETTE_SET: usize = 0;
     let rom = RomImage::from_bytes(rom_bytes).map_err(|error| error.to_string())?;
     let project = Project::new(rom);
     let encoded = project
@@ -2730,17 +2926,44 @@ pub(crate) fn render_mode7_bowser_frame(rom_bytes: Vec<u8>) -> Result<egui::Colo
         .logical_bytes()
         .get(TILEMAP_OFFSET..TILEMAP_OFFSET + TILEMAP_LEN)
         .ok_or_else(|| "Bowser Mode-7 tilemap table is truncated".to_string())?;
+    let mut palette_bytes = [0_u8; 16];
+    let palette_start = BOWSER_COLORS_OFFSET + BOWSER_PALETTE_SET * 14;
+    palette_bytes[2..].copy_from_slice(
+        project
+            .rom
+            .logical_bytes()
+            .get(palette_start..palette_start + 14)
+            .ok_or_else(|| "Bowser dynamic Mode-7 palette is truncated".to_owned())?,
+    );
+    let palette = Palette::decode_snes(&palette_bytes)
+        .map_err(|length| format!("invalid Bowser Mode-7 palette length {length}"))?;
 
-    // Exact initial car assembly performed by UpdateMode7SpriteAnimations:
-    // six propeller tiles, two face rows, and four clown-car rows.
-    let mut car = [0xff_u8; 64];
-    car[1..7].copy_from_slice(&[0x6e, 0x70, 0x72, 0x74, 0x76, 0x56]);
-    car[8..16].copy_from_slice(&table[896..904]);
-    car[16..24].copy_from_slice(&table[0x320..0x328]);
-    car[24..32].copy_from_slice(&table[0x328..0x330]);
-    car[32..64].copy_from_slice(&table[864..896]);
-    let body = &table[30 * 16..31 * 16];
-    let mut rgba = vec![0_u8; 64 * 64 * 4];
+    // Exact normal-scale initial assembly from CODE_03DEDF.  The runtime map
+    // is 8x12: propeller, six clown-car rows, then four rows from Bowser frame
+    // $1E.  Keeping that ordering matters; the old 8x8 approximation overlaid
+    // a detached 4x4 body and discarded the lower third of the actual image.
+    let mut runtime_frame = [0xff_u8; 8 * 12];
+    runtime_frame[1..7].copy_from_slice(&[0x6e, 0x70, 0x72, 0x74, 0x76, 0x56]);
+    // ClownCarImage zero selects $0320 through DATA_03DED7 after the two
+    // fixed lower-car rows.  Missing that branch repeats $0360/$0368 and
+    // produces the conspicuous second orange bowl seen in the old preview.
+    for (row, start) in [0x380, 0x320, 0x328, 0x330, 0x338, 0x360, 0x368]
+        .into_iter()
+        .enumerate()
+    {
+        runtime_frame[(row + 1) * 8..(row + 2) * 8].copy_from_slice(&table[start..start + 8]);
+    }
+    for row in 0..4 {
+        let start = 0x1e0 + row * 8;
+        runtime_frame[(row + 8) * 8..(row + 9) * 8].copy_from_slice(&table[start..start + 8]);
+    }
+    // Mode 7 samples the boss and car around its center rather than presenting
+    // VRAM as a top-to-bottom tile sheet.  Flatten that sampled composition for
+    // the editor: Bowser's four rows sit above the eight-row clown-car image.
+    let mut frame = [0xff_u8; 8 * 12];
+    frame[..32].copy_from_slice(&runtime_frame[64..96]);
+    frame[32..].copy_from_slice(&runtime_frame[..64]);
+    let mut rgba = vec![0_u8; 64 * 96 * 4];
 
     let mut paint_tile = |tile_number: u8, target_x: usize, target_y: usize| {
         if tile_number == 0xff {
@@ -2756,12 +2979,7 @@ pub(crate) fn render_mode7_bowser_frame(rom_bytes: Vec<u8>) -> Result<egui::Colo
                 if color_index == 0 {
                     continue;
                 }
-                let word = if color_index == 1 {
-                    0x0000
-                } else {
-                    PALETTE.get(color_index - 2).copied().unwrap_or(0x7fff)
-                };
-                let color = lm_graphics::Bgr555(word).to_rgb8();
+                let color = palette.colors[color_index].to_rgb8();
                 let destination = ((target_y + y) * 64 + target_x + x) * 4;
                 rgba[destination..destination + 4].copy_from_slice(&[
                     color.red,
@@ -2772,14 +2990,10 @@ pub(crate) fn render_mode7_bowser_frame(rom_bytes: Vec<u8>) -> Result<egui::Colo
             }
         }
     };
-    for (cell, &tile) in car.iter().enumerate() {
+    for (cell, &tile) in frame.iter().enumerate() {
         paint_tile(tile, cell % 8 * 8, cell / 8 * 8);
     }
-    // The body is a separate 4x4 runtime sub-tilemap centered over the car.
-    for (cell, &tile) in body.iter().enumerate() {
-        paint_tile(tile, 16 + cell % 4 * 8, cell / 4 * 8);
-    }
-    Ok(egui::ColorImage::from_rgba_unmultiplied([64, 64], &rgba))
+    Ok(egui::ColorImage::from_rgba_unmultiplied([64, 96], &rgba))
 }
 
 fn draw_subtile(
@@ -2854,12 +3068,37 @@ mod tests {
     fn authentic_mode7_bowser_and_clown_car_decode_from_pristine_rom() {
         let image =
             render_mode7_bowser_frame(crate::test_support::pristine_smw_us_rom_bytes()).unwrap();
-        assert_eq!(image.size, [64, 64]);
+        assert_eq!(image.size, [64, 96]);
         let opaque = image.pixels.iter().filter(|pixel| pixel.a() != 0).count();
         assert!(
             opaque > 256,
             "Bowser composition only contained {opaque} pixels"
         );
+    }
+
+    #[test]
+    fn authentic_mode7_reznor_sign_decodes_from_pristine_rom() {
+        let image =
+            render_mode7_reznor_frame(crate::test_support::pristine_smw_us_rom_bytes()).unwrap();
+        assert_eq!(image.size, [64, 64]);
+        let opaque = image.pixels.iter().filter(|pixel| pixel.a() != 0).count();
+        assert!(opaque > 128, "Reznor sign only contained {opaque} pixels");
+    }
+
+    #[test]
+    fn authentic_iggy_larry_platform_uses_rom_macro_and_tile_maps() {
+        let image =
+            render_iggy_larry_platform_cell(crate::test_support::pristine_smw_us_rom_bytes())
+                .unwrap();
+        assert_eq!(image.size, [256, 224]);
+        let opaque = image.pixels.iter().filter(|pixel| pixel.a() != 0).count();
+        assert!(opaque > 5_000, "platform only contained {opaque} pixels");
+        assert!(
+            opaque < 256 * 128,
+            "platform exceeded its complete 256x128 ROM surface"
+        );
+        assert!(image.pixels[..64 * 256].iter().all(|pixel| pixel.a() == 0));
+        assert!(image.pixels[192 * 256..].iter().all(|pixel| pixel.a() == 0));
     }
 
     #[test]

@@ -441,8 +441,9 @@ enum BossBattleKind {
     Bowser,
 }
 
-const WENDY_LEMMY_RUNTIME_FIGURES: [(f32, f32); 3] = [(1.5, 4.5), (7.5, 4.5), (13.5, 4.5)];
+const WENDY_LEMMY_RUNTIME_FIGURES: [(f32, f32); 3] = [(3.5, 8.3), (7.5, 8.3), (11.5, 8.3)];
 const REZNOR_RUNTIME_FIGURES: [(f32, f32); 4] = [(8.0, 3.5), (11.5, 7.0), (8.0, 10.5), (4.5, 7.0)];
+#[cfg(test)]
 const BOWSER_RUNTIME_HELPER_IDS: [u8; 8] = [0xa1, 0xa2, 0xa2, 0x33, 0x33, 0x33, 0x33, 0x7c];
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -697,6 +698,7 @@ pub(crate) struct VanillaLevelEditor {
     shared_vanilla_background: bool,
     sprite_texture: Option<egui::TextureHandle>,
     boss_sprite_texture: Option<egui::TextureHandle>,
+    iggy_larry_platform_texture: Option<egui::TextureHandle>,
     mode7_boss_texture: Option<egui::TextureHandle>,
     mode7_boss_textures: Vec<egui::TextureHandle>,
     animated_sprite_textures: Vec<egui::TextureHandle>,
@@ -2980,6 +2982,7 @@ impl VanillaLevelEditor {
         self.shared_vanilla_background = false;
         self.sprite_texture = None;
         self.boss_sprite_texture = None;
+        self.iggy_larry_platform_texture = None;
         self.mode7_boss_texture = None;
         self.mode7_boss_textures.clear();
         self.animated_sprite_textures.clear();
@@ -3148,6 +3151,7 @@ impl VanillaLevelEditor {
         self.animated_background_plane_textures.clear();
         self.sprite_texture = None;
         self.boss_sprite_texture = None;
+        self.iggy_larry_platform_texture = None;
         self.mode7_boss_texture = None;
         self.mode7_boss_textures.clear();
         self.animated_sprite_textures.clear();
@@ -3285,10 +3289,35 @@ impl VanillaLevelEditor {
                                 controller.level().layer1.header
                             }),
                         files,
+                        matches!(
+                            boss_kind,
+                            Some(BossBattleKind::Reznor | BossBattleKind::Bowser)
+                                | Some(BossBattleKind::KoopaKid { identity: 0..=2, .. })
+                        ),
                     ) {
                         Ok(image) => {
                             self.boss_sprite_texture = Some(context.load_texture(
                                 format!("vanilla-boss-sprite-gfx-{level:03X}-{}", snapshot.revision),
+                                image,
+                                egui::TextureOptions::NEAREST,
+                            ));
+                        }
+                        Err(error) => self.map16_error = Some(error),
+                    }
+                }
+                if matches!(
+                    boss_kind,
+                    Some(BossBattleKind::KoopaKid { identity: 3 | 4, .. })
+                ) {
+                    match crate::vanilla_map16_preview::render_iggy_larry_platform_cell(
+                        snapshot.rom_bytes.clone(),
+                    ) {
+                        Ok(image) => {
+                            self.iggy_larry_platform_texture = Some(context.load_texture(
+                                format!(
+                                    "vanilla-iggy-larry-platform-{level:03X}-{}",
+                                    snapshot.revision
+                                ),
                                 image,
                                 egui::TextureOptions::NEAREST,
                             ));
@@ -3327,6 +3356,19 @@ impl VanillaLevelEditor {
                                     "vanilla-mode7-bowser-{level:03X}-{}",
                                     snapshot.revision
                                 ),
+                                image,
+                                egui::TextureOptions::NEAREST,
+                            ));
+                        }
+                        Err(error) => self.map16_error = Some(error),
+                    }
+                } else if matches!(boss_kind, Some(BossBattleKind::Reznor)) {
+                    match crate::vanilla_map16_preview::render_mode7_reznor_frame(
+                        snapshot.rom_bytes.clone(),
+                    ) {
+                        Ok(image) => {
+                            self.mode7_boss_texture = Some(context.load_texture(
+                                format!("vanilla-mode7-reznor-{level:03X}-{}", snapshot.revision),
                                 image,
                                 egui::TextureOptions::NEAREST,
                             ));
@@ -3656,13 +3698,15 @@ impl VanillaLevelEditor {
         }
         let canvas_available = ui.available_size();
         let boss_battle = boss_battle_kind(level_mode, &sprite_placements, custom_sprites);
-        let cell = if snes_viewport {
+        let cell = if boss_battle.is_some() {
+            fitted_snes_viewport_cell(canvas_available, self.canvas_zoom_percent())
+        } else if snes_viewport {
             fitted_snes_viewport_cell(canvas_available, self.canvas_zoom_percent())
         } else {
             self.canvas_cell()
         };
         let world_size = rom_canvas_size(major_tiles, minor_tiles, vertical, cell);
-        let canvas_size = if snes_viewport {
+        let canvas_size = if snes_viewport || boss_battle.is_some() {
             // The editing surface follows the pane itself on every native window resize. Keep
             // square SNES pixels and retain the complete 256×224 camera frame. Surplus pane
             // space reveals adjacent level content where it exists and otherwise uses the level
@@ -3701,7 +3745,13 @@ impl VanillaLevelEditor {
             let (rect, response) =
                 ui.allocate_exact_size(canvas_size, egui::Sense::click_and_drag());
             let painter = ui.painter_at(rect);
-            let (paint_rect, game_viewport_rect) = if snes_viewport {
+            let (paint_rect, game_viewport_rect) = if boss_battle.is_some() {
+                let arena = egui::Rect::from_min_size(
+                    egui::pos2(rect.center().x - 8.0 * cell, rect.top()),
+                    egui::vec2(16.0 * cell, 14.0 * cell),
+                );
+                (arena, arena)
+            } else if snes_viewport {
                 let (origin_x, origin_y) =
                     self.game_preview_camera_origin(major_tiles, minor_tiles, vertical);
                 let rendered_viewport = egui::vec2(16.0 * cell, 14.0 * cell);
@@ -7358,29 +7408,16 @@ impl VanillaLevelEditor {
         custom_map16: Option<&lm_app::NativeMap16SidecarDocument>,
         boss_battle: Option<BossBattleKind>,
     ) {
-        // Boss encounters are single-screen runtime scenes. Normal level
-        // coordinates deliberately preserve a fixed tile scale so the user
-        // can traverse many screens, but applying that scale to a boss room
-        // leaves the entire encounter as a tiny patch in the corner of a
-        // resizable canvas. Fit the 16x14 SNES playfield at 100% and retain
-        // the user's 0%..300% zoom multiplier around that fitted size.
-        let cell = if boss_battle.is_some() {
-            let visible = painter.clip_rect();
-            let fitted = (visible.width() / 16.0).min(visible.height() / 14.0);
-            fitted * (cell / ROM_LEVEL_CANVAS_CELL)
-        } else {
-            cell
-        };
-        let rect = if boss_battle.is_some() {
-            egui::Rect::from_min_size(
-                boss_arena_origin(painter, cell),
-                egui::vec2(16.0 * cell, 14.0 * cell),
-            )
-        } else {
-            rect
-        };
         if let Some(kind) = boss_battle {
-            paint_boss_battle_arena(painter, rect, cell, kind, self.boss_sprite_texture.as_ref());
+            paint_boss_battle_arena(
+                painter,
+                rect,
+                cell,
+                kind,
+                self.boss_sprite_texture.as_ref(),
+                self.mode7_boss_texture.as_ref(),
+                self.iggy_larry_platform_texture.as_ref(),
+            );
         } else {
             painter.rect_filled(rect, 0.0, canvas_background_color(self.canvas_backdrop));
         }
@@ -7547,27 +7584,28 @@ impl VanillaLevelEditor {
         let editor_overlays = !game_preview && visual_smoke_editor_overlays();
         let mut overlay_painter = painter.clone();
         overlay_painter.set_opacity(overlay_opacity(self.translucent_overlays));
-        let layer1_artwork_bounds = if visibility.layer1 && visual_smoke_editor_layer1() {
-            self.draw_object_artwork(
-                painter,
-                rect,
-                cell,
-                major_tiles,
-                object_minor_tiles,
-                vertical,
-                records,
-                placements,
-                custom_objects,
-                custom_map16,
-                map16_texture,
-                map16_texture_variants,
-                block_contents_texture,
-                visibility.surface_outline,
-                visibility.line_guide_outline,
-            )
-        } else {
-            HashMap::new()
-        };
+        let layer1_artwork_bounds =
+            if boss_battle.is_none() && visibility.layer1 && visual_smoke_editor_layer1() {
+                self.draw_object_artwork(
+                    painter,
+                    rect,
+                    cell,
+                    major_tiles,
+                    object_minor_tiles,
+                    vertical,
+                    records,
+                    placements,
+                    custom_objects,
+                    custom_map16,
+                    map16_texture,
+                    map16_texture_variants,
+                    block_contents_texture,
+                    visibility.surface_outline,
+                    visibility.line_guide_outline,
+                )
+            } else {
+                HashMap::new()
+            };
         self.layer1_z_order_bounds =
             object_interactive_bounds(rect, vertical, placements, &layer1_artwork_bounds, cell);
         self.layer2_z_order_bounds = object_interactive_bounds(
@@ -16881,6 +16919,8 @@ fn paint_boss_battle_arena(
     cell: f32,
     kind: BossBattleKind,
     boss_texture: Option<&egui::TextureHandle>,
+    mode7_boss_texture: Option<&egui::TextureHandle>,
+    iggy_larry_platform_texture: Option<&egui::TextureHandle>,
 ) {
     let visible = painter.clip_rect();
     let arena_origin = boss_arena_origin(painter, cell);
@@ -16896,9 +16936,9 @@ fn paint_boss_battle_arena(
             egui::Color32::from_rgb(200, 168, 80),
         ),
         BossBattleKind::Bowser => (
-            egui::Color32::from_rgb(8, 24, 48),
-            egui::Color32::from_rgb(80, 72, 64),
-            egui::Color32::from_rgb(176, 200, 224),
+            egui::Color32::BLACK,
+            egui::Color32::from_rgb(80, 80, 72),
+            egui::Color32::from_rgb(184, 184, 152),
         ),
     };
     painter.rect_filled(visible, 0.0, backdrop);
@@ -16921,7 +16961,6 @@ fn paint_boss_battle_arena(
             identity: _,
             rotating_platform: true,
         } => {
-            let center = arena_origin + egui::vec2(8.0 * cell, 8.5 * cell);
             painter.rect_filled(
                 egui::Rect::from_min_max(
                     egui::pos2(visible.left(), floor_y + 0.35 * cell),
@@ -16930,32 +16969,94 @@ fn paint_boss_battle_arena(
                 0.0,
                 egui::Color32::from_rgb(184, 48, 24),
             );
-            painter.line_segment(
-                [
-                    center - egui::vec2(5.0 * cell, 1.2 * cell),
-                    center + egui::vec2(5.0 * cell, 1.2 * cell),
-                ],
-                egui::Stroke::new((cell / 3.0).max(4.0), accent),
-            );
+            if let Some(texture) = iggy_larry_platform_texture {
+                // CODE_03C0C6 writes twenty $C4 large cells at y=$C4. At the
+                // neutral representative angle the low-byte X wrap covers the
+                // complete 256-pixel screen with sixteen visible cells.
+                painter.image(
+                    texture.id(),
+                    egui::Rect::from_min_size(arena_origin, egui::vec2(16.0 * cell, 14.0 * cell)),
+                    egui::Rect::from_min_max(egui::Pos2::ZERO, egui::pos2(1.0, 1.0)),
+                    egui::Color32::WHITE,
+                );
+            }
         }
         BossBattleKind::KoopaKid {
             identity: 5 | 6, ..
         } => {
-            // $03CC2B contains seven legal pipe/spawn columns ($18..$D8).
-            // The controller creates two dummy $29 sprites in addition to the
-            // real Koopaling, so retaining every pipe is important for an
-            // honest battle preview rather than a schematic four-pipe room.
+            // Wendy and Lemmy run on top of the fixed GFX22 castle room. The
+            // seven pipes are orange foreground machinery, not ordinary green
+            // level pipes. Reproduce the recognizable runtime composition and
+            // use the ROM's brace/slab characters instead of editor shapes.
+            painter.rect_filled(
+                egui::Rect::from_min_size(arena_origin, egui::vec2(16.0 * cell, 12.0 * cell)),
+                0.0,
+                egui::Color32::from_rgb(104, 104, 88),
+            );
+            let mortar =
+                egui::Stroke::new((cell / 18.0).max(1.0), egui::Color32::from_rgb(40, 48, 48));
+            for row in 0..12 {
+                for column in 0..16 {
+                    let x = column as f32 + if row & 1 == 0 { 0.0 } else { -0.5 };
+                    painter.rect_stroke(
+                        egui::Rect::from_min_size(
+                            arena_origin + egui::vec2(x * cell, row as f32 * cell),
+                            egui::vec2(cell, cell),
+                        ),
+                        0.0,
+                        mortar,
+                        egui::StrokeKind::Inside,
+                    );
+                }
+            }
+            if let Some(texture) = boss_texture {
+                for x in [3.0, 7.0, 11.0] {
+                    for (offset, character) in [(0.0, 0xc8), (1.0, 0xca)] {
+                        paint_authentic_oam_tile(
+                            painter,
+                            texture,
+                            arena_origin + egui::vec2((x + offset) * cell, 2.2 * cell),
+                            cell,
+                            character,
+                            0x0d,
+                            true,
+                        );
+                    }
+                }
+            }
+            let lava_top = arena_origin.y + 11.35 * cell;
+            painter.rect_filled(
+                egui::Rect::from_min_max(
+                    egui::pos2(arena_origin.x, lava_top),
+                    arena_origin + egui::vec2(16.0 * cell, 14.0 * cell),
+                ),
+                0.0,
+                egui::Color32::from_rgb(208, 48, 16),
+            );
+            painter.hline(
+                arena_origin.x..=arena_origin.x + 16.0 * cell,
+                lava_top,
+                egui::Stroke::new(0.22 * cell, egui::Color32::from_rgb(248, 184, 32)),
+            );
             for column in [1.5, 3.5, 5.5, 7.5, 9.5, 11.5, 13.5] {
                 let pipe = egui::Rect::from_min_max(
-                    arena_origin + egui::vec2((column - 0.75) * cell, 9.0 * cell),
+                    arena_origin + egui::vec2((column - 0.75) * cell, 8.7 * cell),
                     arena_origin + egui::vec2((column + 0.75) * cell, 12.0 * cell),
                 );
-                painter.rect_filled(pipe, 2.0, egui::Color32::from_rgb(40, 168, 72));
+                painter.rect_filled(pipe, 1.0, egui::Color32::from_rgb(216, 112, 24));
                 painter.rect_stroke(
                     pipe,
-                    2.0,
-                    egui::Stroke::new(2.0, egui::Color32::from_rgb(16, 72, 32)),
+                    1.0,
+                    egui::Stroke::new(2.0, egui::Color32::from_rgb(72, 40, 16)),
                     egui::StrokeKind::Inside,
+                );
+                painter.rect_filled(
+                    egui::Rect::from_min_size(
+                        pipe.min - egui::vec2(0.12 * cell, 0.18 * cell),
+                        egui::vec2(pipe.width() + 0.24 * cell, 0.48 * cell),
+                    ),
+                    1.0,
+                    egui::Color32::from_rgb(248, 144, 32),
                 );
             }
         }
@@ -16972,89 +17073,37 @@ fn paint_boss_battle_arena(
             }
         }
         BossBattleKind::Reznor => {
-            let brick = egui::Color32::from_rgb(24, 24, 40);
-            let brick_edge = egui::Stroke::new(1.0, egui::Color32::from_rgb(48, 40, 56));
-            let brick_width = 2.0 * cell;
-            let brick_height = cell;
-            let mut row = 0usize;
-            let mut y = visible.top();
-            while y < floor_y {
-                let offset = if row & 1 == 0 { 0.0 } else { -cell };
-                let mut x = visible.left() + offset;
-                while x < visible.right() {
-                    painter.rect(
-                        egui::Rect::from_min_size(
-                            egui::pos2(x, y),
-                            egui::vec2(brick_width, brick_height),
-                        ),
-                        0.0,
-                        brick,
-                        brick_edge,
-                        egui::StrokeKind::Inside,
-                    );
-                    x += brick_width;
-                }
-                row += 1;
-                y += brick_height;
-            }
-            painter.rect_filled(
-                egui::Rect::from_min_max(
-                    egui::pos2(visible.left(), floor_y + 0.55 * cell),
-                    visible.right_bottom(),
-                ),
-                0.0,
-                egui::Color32::from_rgb(192, 48, 24),
-            );
-            painter.hline(
-                visible.x_range(),
-                floor_y + 0.55 * cell,
-                egui::Stroke::new(0.28 * cell, egui::Color32::from_rgb(248, 184, 40)),
-            );
-            let mut x = visible.left();
-            while x < visible.right() {
-                let bridge = egui::Rect::from_min_size(
-                    egui::pos2(x, floor_y),
-                    egui::vec2(1.05 * cell, 0.55 * cell),
-                );
-                painter.rect_filled(bridge, 1.0, egui::Color32::from_rgb(184, 112, 48));
-                painter.rect_stroke(
-                    bridge,
-                    1.0,
-                    egui::Stroke::new(1.5, egui::Color32::from_rgb(72, 40, 24)),
-                    egui::StrokeKind::Inside,
-                );
-                x += 1.05 * cell;
-            }
-            let center = arena_origin + egui::vec2(8.0 * cell, 7.0 * cell);
-            painter.circle_stroke(
-                center,
-                3.5 * cell,
-                egui::Stroke::new((cell / 3.0).max(4.0), accent),
-            );
-            for direction in [egui::Vec2::X, egui::Vec2::Y, -egui::Vec2::X, -egui::Vec2::Y] {
-                let platform = center + direction * 3.5 * cell;
-                painter.rect_filled(
-                    egui::Rect::from_center_size(platform, egui::vec2(2.0 * cell, 0.5 * cell)),
-                    2.0,
-                    accent,
+            paint_mode7_boss_bridge_and_lava(painter, arena_origin, cell);
+            if let Some(texture) = mode7_boss_texture {
+                painter.image(
+                    texture.id(),
+                    egui::Rect::from_center_size(
+                        arena_origin + egui::vec2(8.0 * cell, 7.0 * cell),
+                        egui::vec2(8.0 * cell, 8.0 * cell),
+                    ),
+                    egui::Rect::from_min_max(egui::Pos2::ZERO, egui::pos2(1.0, 1.0)),
+                    egui::Color32::WHITE,
                 );
             }
         }
         BossBattleKind::Bowser => {
-            painter.rect_filled(
-                egui::Rect::from_min_max(
-                    egui::pos2(visible.left(), floor_y),
-                    visible.right_bottom(),
-                ),
-                0.0,
-                egui::Color32::from_rgb(24, 56, 88),
-            );
-            for x in [3.0, 8.0, 13.0] {
-                painter.circle_filled(
-                    arena_origin + egui::vec2(x * cell, 3.0 * cell),
-                    1.2 * cell,
-                    egui::Color32::from_rgb(72, 96, 128),
-                );
+            for row in 0..2 {
+                for column in -1..=16 {
+                    let x = column as f32 + if row == 0 { 0.5 } else { 0.0 };
+                    painter.rect(
+                        egui::Rect::from_min_size(
+                            arena_origin + egui::vec2(x * cell, (12 + row) as f32 * cell),
+                            egui::vec2(cell, cell),
+                        ),
+                        0.0,
+                        egui::Color32::from_rgb(80, 80, 72),
+                        egui::Stroke::new(
+                            (cell / 14.0).max(1.0),
+                            egui::Color32::from_rgb(24, 32, 32),
+                        ),
+                        egui::StrokeKind::Inside,
+                    );
+                }
             }
         }
     }
@@ -17457,6 +17506,7 @@ fn draw_sprite_placements(request: SpritePlacementDraw<'_>) -> SpritePlacementDr
     let mut standard_8a_count = 0_u8;
     let mut reznor_controller_count = 0_usize;
     let mut koopa_kid_controller_count = 0_usize;
+    let boss_kind = boss_battle_kind(level_mode, placements, custom_sprites);
     for placement in placements {
         let (tile_x, tile_y) = presented_sprite_tile_coordinates(*placement, vertical);
         let custom_display = custom_sprites.and_then(|table| {
@@ -17471,6 +17521,30 @@ fn draw_sprite_placements(request: SpritePlacementDraw<'_>) -> SpritePlacementDr
             && custom_display.is_none()
             && (matches!(placement.sprite_number, 0xa0 | 0xa9)
                 || placement.sprite_number == 0x29 && placement.first_byte >> 4 <= 6);
+        // Wendy/Lemmy's serialized $B6 records are controller-owned room
+        // machinery. Resolving them through the ordinary level sprite sheet
+        // produces the large blue platforms seen in the broken preview.
+        let boss_runtime_support = placement.extra_bits == 0
+            && (placement.sprite_number == 0xb6
+                && matches!(
+                    boss_kind,
+                    Some(BossBattleKind::KoopaKid {
+                        identity: 5 | 6,
+                        ..
+                    })
+                )
+                // The three $33 records in pristine Iggy/Larry rooms are
+                // controller support, not three simultaneous Podoboos in the
+                // top margin. Rendering them through the ordinary sprite
+                // definition produced the conspicuous repeated fire stacks.
+                || placement.sprite_number == 0x33
+                    && matches!(
+                        boss_kind,
+                        Some(BossBattleKind::KoopaKid {
+                            identity: 3 | 4,
+                            ..
+                        })
+                    ));
         let mut center = target.min
             + egui::vec2(
                 (f32::from(tile_x) + 0.5) * cell_size,
@@ -17486,6 +17560,7 @@ fn draw_sprite_placements(request: SpritePlacementDraw<'_>) -> SpritePlacementDr
                     position
                 }
                 0xa0 => (8.0, 4.5),
+                0x29 if matches!(placement.first_byte >> 4, 3 | 4) => (8.0, 3.45),
                 0x29 => (8.0, 7.5),
                 _ => unreachable!("boss controller set is exhaustive"),
             };
@@ -17511,7 +17586,7 @@ fn draw_sprite_placements(request: SpritePlacementDraw<'_>) -> SpritePlacementDr
             })
         });
         let uses_standard = custom_display.is_none();
-        let preview = if boss_controller {
+        let preview = if boss_controller || boss_runtime_support {
             None
         } else if uses_standard {
             lm_render::render_lunar_magic_standard_sprite_with_mode(placement.sprite_number, {
@@ -17603,7 +17678,7 @@ fn draw_sprite_placements(request: SpritePlacementDraw<'_>) -> SpritePlacementDr
                             texture.id(),
                             egui::Rect::from_center_size(
                                 marker.center(),
-                                egui::vec2(4.0 * cell_size, 4.0 * cell_size),
+                                egui::vec2(5.0 * cell_size, 7.5 * cell_size),
                             ),
                             egui::Rect::from_min_max(egui::Pos2::ZERO, egui::pos2(1.0, 1.0)),
                             egui::Color32::WHITE,
@@ -17621,7 +17696,7 @@ fn draw_sprite_placements(request: SpritePlacementDraw<'_>) -> SpritePlacementDr
                         paint_iggy_larry_oam(
                             painter,
                             texture,
-                            marker.center(),
+                            marker.center() + egui::vec2(0.0, 2.0 * cell_size),
                             cell_size,
                             identity,
                         );
@@ -17737,7 +17812,7 @@ fn draw_sprite_placements(request: SpritePlacementDraw<'_>) -> SpritePlacementDr
             hit = Some(placement.token_index);
         }
     }
-    if let Some(kind) = boss_battle_kind(level_mode, placements, custom_sprites) {
+    if let Some(kind) = boss_kind {
         paint_boss_runtime_helpers(
             painter,
             boss_texture.or(texture),
@@ -17756,39 +17831,23 @@ fn paint_wendy_lemmy_oam(
     cell: f32,
     identity: u8,
 ) {
-    // Complete idle frame 0 from CODE_03D484. DATA_03D456/$46D
-    // select five entries, not the three-piece approximation previously
-    // used here. Each tuple is x, y, character, OAM flags, size code.
-    const LEMMY_FRAME: [(i8, i8, u8, u8, u8); 5] = [
-        (-8, 4, 0x20, 0x05, 2),
-        (8, 4, 0x20, 0x45, 2),
-        (-8, 20, 0x26, 0x05, 2),
-        (8, 20, 0x26, 0x45, 2),
-        (0, 0, 0x08, 0x05, 2),
-    ];
-    const WENDY_FRAME: [(i8, i8, u8, u8, u8); 5] = [
-        (-8, 4, 0x20, 0x09, 2),
-        (8, 4, 0x20, 0x49, 2),
-        (-8, 20, 0x26, 0x09, 2),
-        (8, 20, 0x26, 0x49, 2),
-        (0, 0, 0x48, 0x09, 2),
-    ];
-    let frame = if identity == 6 {
-        &WENDY_FRAME
-    } else {
-        &LEMMY_FRAME
-    };
+    // Runtime frame $0C from CODE_03D484 is the legal pipe-emergence frame:
+    // DATA_03D456/$46D select two entries at frame-base $48, whose exact
+    // X/Y/tile/size values are (-8,0,$2A,large) and (8,0,$2A,large).
+    // Frame zero is the full standing body and must not be shown floating
+    // several tiles above a pipe as the old synthetic preview did.
+    let flags = if identity == 6 { 0x09 } else { 0x05 };
     let scale = cell / 16.0;
-    for &(x, y, character, flags, size) in frame {
-        let top_left = origin + egui::vec2(f32::from(x) * scale, f32::from(y) * scale);
+    for (x, tile_flags) in [(-8_i8, flags), (8, flags | 0x40)] {
+        let top_left = origin + egui::vec2(f32::from(x) * scale, 0.0);
         paint_authentic_oam_tile(
             painter,
             texture,
             top_left,
             cell,
-            character,
-            flags | 0x10,
-            size == 2,
+            0x2a,
+            tile_flags | 0x10,
+            true,
         );
     }
 }
@@ -17886,10 +17945,6 @@ fn paint_boss_runtime_helpers(
     animation_phase: u8,
 ) {
     let origin = boss_arena_origin(painter, cell);
-    let outlined_circle = |center: egui::Pos2, radius: f32, fill: egui::Color32| {
-        painter.circle_filled(center, radius, fill);
-        painter.circle_stroke(center, radius, egui::Stroke::new(2.0, egui::Color32::BLACK));
-    };
     let paint_standard = |sprite_number: u8, x: f32, y: f32, placement_first: u8| {
         let Some(texture) = texture else { return };
         let Some(parts) = lm_render::render_lunar_magic_standard_sprite_with_mode(
@@ -17916,153 +17971,22 @@ fn paint_boss_runtime_helpers(
         }
     };
     match kind {
-        BossBattleKind::Reznor => {
-            // Extended sprite $02 uses one authentic 8x8 OAM tile ($26/$2A,
-            // flags $35/$F5). Show two legal animation phases.
-            for (x, y) in [(6.3, 5.5), (10.2, 8.4)] {
-                if let Some(texture) = texture {
-                    paint_authentic_oam_tile(
-                        painter,
-                        texture,
-                        origin + egui::vec2(x * cell, y * cell),
-                        cell,
-                        if animation_phase & 1 == 0 { 0x26 } else { 0x2a },
-                        if animation_phase & 2 == 0 { 0x35 } else { 0xf5 },
-                        false,
-                    );
-                } else {
-                    outlined_circle(
-                        origin + egui::vec2(x * cell, y * cell),
-                        0.28 * cell,
-                        egui::Color32::from_rgb(248, 128, 24),
-                    );
-                }
-            }
-        }
+        // A representative editor frame must be a state the game can really
+        // display. The initial Reznor frame has all four fighters and no
+        // simultaneously synthesized fireballs.
+        BossBattleKind::Reznor => {}
         BossBattleKind::KoopaKid { identity: 2, .. } => {
             // Ludwig creates normal sprite $34 during his attack routine.
             paint_standard(0x34, 11.5, 7.2, 0);
         }
         BossBattleKind::KoopaKid {
             identity: 3 | 4, ..
-        } => {
-            // Iggy/Larry's generated $A7 uses the runtime boss sheet. Lunar
-            // Magic's ordinary $A7 preview keeps the serialized level's page
-            // selection and therefore resolves these characters through the
-            // message/auxiliary sheet in boss rooms.
-            if let Some(texture) = texture {
-                let center = origin + egui::vec2(11.0 * cell, 6.6 * cell);
-                for (x, character) in [(-cell, 0xc9_u8), (0.0, 0xca)] {
-                    paint_authentic_oam_tile(
-                        painter,
-                        texture,
-                        center + egui::vec2(x, -0.5 * cell),
-                        cell,
-                        character,
-                        0x36,
-                        true,
-                    );
-                }
-            }
-        }
-        BossBattleKind::Bowser => {
-            // Bowser's controller generates these independently of the level
-            // stream: $A1 bowling ball, two $A2 Mechakoopas, $33 raining fire,
-            // and $7C Peach. Present the complete encounter palette together.
-            debug_assert_eq!(BOWSER_RUNTIME_HELPER_IDS.len(), 8);
-            if let Some(texture) = texture {
-                paint_bowser_bowling_ball_oam(
-                    painter,
-                    texture,
-                    origin + egui::vec2(2.5 * cell, 10.6 * cell),
-                    cell,
-                );
-            }
-            for x in [6.0, 10.0] {
-                if let Some(texture) = texture {
-                    paint_mechakoopa_oam(
-                        painter,
-                        texture,
-                        origin + egui::vec2(x * cell, 10.7 * cell),
-                        cell,
-                    );
-                }
-            }
-            for (x, y) in [(3.0, 3.0), (6.5, 4.0), (10.0, 2.6), (13.5, 4.4)] {
-                if let Some(texture) = texture {
-                    paint_authentic_oam_tile(
-                        painter,
-                        texture,
-                        origin + egui::vec2(x * cell, y * cell),
-                        cell,
-                        if animation_phase & 2 == 0 { 0x2a } else { 0x2c },
-                        if animation_phase & 1 == 0 { 0x05 } else { 0x45 },
-                        true,
-                    );
-                }
-            }
-            paint_standard(0x7c, 13.5, 9.7, animation_phase & 1);
-        }
+        } => {}
+        // Bowling balls, Mechakoopas, falling fire, and Peach belong to
+        // different Bowser phases. The controller itself is the authentic
+        // opening-frame composition; never display all helpers together.
+        BossBattleKind::Bowser => {}
         BossBattleKind::KoopaKid { .. } => {}
-    }
-}
-
-fn paint_bowser_bowling_ball_oam(
-    painter: &egui::Painter,
-    texture: &egui::TextureHandle,
-    origin: egui::Pos2,
-    cell: f32,
-) {
-    const X: [i8; 12] = [-16, 0, 16, -16, 0, 16, -16, 0, 16, 0, 0, -8];
-    const Y: [i8; 12] = [-30, -30, -30, -14, -14, -14, 2, 2, 2, 2, 2, -22];
-    const TILE: [u8; 12] = [
-        0x45, 0x47, 0x45, 0x65, 0x66, 0x65, 0x45, 0x47, 0x45, 0x39, 0x38, 0x63,
-    ];
-    const FLAGS: [u8; 12] = [
-        0x0d, 0x0d, 0x4d, 0x0d, 0x0d, 0x4d, 0x8d, 0x8d, 0xcd, 0x0d, 0x0d, 0x0d,
-    ];
-    const LARGE: [bool; 12] = [
-        true, true, true, true, true, true, true, true, true, false, false, true,
-    ];
-    let scale = cell / 16.0;
-    for index in 0..12 {
-        paint_authentic_oam_tile(
-            painter,
-            texture,
-            origin + egui::vec2(f32::from(X[index]) * scale, f32::from(Y[index]) * scale),
-            cell,
-            TILE[index],
-            FLAGS[index],
-            LARGE[index],
-        );
-    }
-}
-
-fn paint_mechakoopa_oam(
-    painter: &egui::Painter,
-    texture: &egui::TextureHandle,
-    origin: egui::Pos2,
-    cell: f32,
-) {
-    // Runtime walking frame 0, facing right, including the animated wind-up key.
-    const PARTS: [(i8, i8, u8, u8, bool); 5] = [
-        (0, 0, 0x51, 0x4b, true),
-        (16, 8, 0x60, 0x4b, false),
-        (0, -8, 0x42, 0x4b, false),
-        (8, -8, 0x40, 0x4b, true),
-        (-7, 0, 0x70, 0x4d, false),
-    ];
-    let scale = cell / 16.0;
-    for (x, y, tile, flags, large) in PARTS {
-        paint_authentic_oam_tile(
-            painter,
-            texture,
-            origin + egui::vec2(f32::from(x) * scale, f32::from(y) * scale),
-            cell,
-            tile,
-            flags,
-            large,
-        );
     }
 }
 
