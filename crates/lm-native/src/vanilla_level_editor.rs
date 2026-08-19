@@ -431,6 +431,17 @@ enum CanvasEntitySelection {
     Sprite,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum BossBattleKind {
+    KoopaKid {
+        identity: u8,
+        rotating_platform: bool,
+    },
+    Reznor,
+    Bowser,
+    Unknown,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) enum CustomCollectionSelection {
     Objects(Vec<lm_level::ObjectRecord>),
@@ -3557,17 +3568,14 @@ impl VanillaLevelEditor {
             self.toolbar_nudge_selection(x_delta, y_delta);
         }
         let canvas_available = ui.available_size();
+        let boss_battle = boss_battle_kind(level_mode, &sprite_placements);
         let cell = if snes_viewport {
             fitted_snes_viewport_cell(canvas_available, self.canvas_zoom_percent())
         } else {
             self.canvas_cell()
         };
         let world_size = rom_canvas_size(major_tiles, minor_tiles, vertical, cell);
-        let canvas_size = if is_boss_battle_level_mode(level_mode) {
-            // Lunar Magic keeps its 512-row diagnostic plane but exposes a
-            // 656-pixel-wide editor DIB, repeating the plane horizontally.
-            egui::vec2(656.0, 512.0)
-        } else if snes_viewport {
+        let canvas_size = if snes_viewport {
             // The editing surface follows the pane itself on every native window resize. Keep
             // square SNES pixels and retain the complete 256×224 camera frame. Surplus pane
             // space reveals adjacent level content where it exists and otherwise uses the level
@@ -3639,84 +3647,81 @@ impl VanillaLevelEditor {
                 self.last_canvas_native_position =
                     object_native_position_at_canvas(position, paint_rect, cell, vertical);
             }
-            if is_boss_battle_level_mode(level_mode) {
-                paint_boss_battle_diagnostic(&painter, rect);
-            } else {
-                painter.rect_filled(
-                    rect,
-                    0.0,
-                    if snes_viewport {
-                        canvas_background_color(self.canvas_backdrop)
-                    } else {
-                        egui::Color32::BLACK
-                    },
-                );
-                if !snes_viewport {
-                    let tiled_origin = if vertical {
-                        egui::pos2(paint_rect.max.x, paint_rect.min.y)
-                    } else {
-                        egui::pos2(paint_rect.min.x, paint_rect.max.y)
-                    };
-                    toolbar_images.paint_tiled_surface(
-                        &painter,
-                        OriginalTiledImage::LevelCanvas,
-                        rect,
-                        tiled_origin,
-                    );
-                }
-                self.paint_object_canvas(
+            painter.rect_filled(
+                rect,
+                0.0,
+                if snes_viewport {
+                    canvas_background_color(self.canvas_backdrop)
+                } else {
+                    egui::Color32::BLACK
+                },
+            );
+            if !snes_viewport {
+                let tiled_origin = if vertical {
+                    egui::pos2(paint_rect.max.x, paint_rect.min.y)
+                } else {
+                    egui::pos2(paint_rect.min.x, paint_rect.max.y)
+                };
+                toolbar_images.paint_tiled_surface(
                     &painter,
-                    &response,
-                    paint_rect,
-                    cell,
-                    major_tiles,
-                    minor_tiles,
-                    vertical,
-                    level_mode,
-                    object_tileset,
-                    map16_animation_phase,
-                    animation_phase,
-                    visibility,
-                    &layer2_records,
-                    &layer2_placements,
-                    &layer2_tilemap,
-                    &records,
-                    &placements,
-                    &sprite_placements,
-                    custom_sprites,
-                    custom_objects,
-                    custom_map16,
+                    OriginalTiledImage::LevelCanvas,
+                    rect,
+                    tiled_origin,
                 );
-                if snes_viewport && let Some((texture, size, translucent)) = live_frame {
-                    let live_rect = live_frame_rect(game_viewport_rect, size, cell);
-                    painter.image(
-                        texture,
-                        live_rect,
-                        egui::Rect::from_min_max(egui::Pos2::ZERO, egui::pos2(1.0, 1.0)),
-                        live_frame_tint(translucent),
+            }
+            self.paint_object_canvas(
+                &painter,
+                &response,
+                paint_rect,
+                cell,
+                major_tiles,
+                minor_tiles,
+                vertical,
+                level_mode,
+                object_tileset,
+                map16_animation_phase,
+                animation_phase,
+                visibility,
+                &layer2_records,
+                &layer2_placements,
+                &layer2_tilemap,
+                &records,
+                &placements,
+                &sprite_placements,
+                custom_sprites,
+                custom_objects,
+                custom_map16,
+                boss_battle,
+            );
+            if snes_viewport && let Some((texture, size, translucent)) = live_frame {
+                let live_rect = live_frame_rect(game_viewport_rect, size, cell);
+                painter.image(
+                    texture,
+                    live_rect,
+                    egui::Rect::from_min_max(egui::Pos2::ZERO, egui::pos2(1.0, 1.0)),
+                    live_frame_tint(translucent),
+                );
+                if self.draw_selection_over_live() {
+                    self.paint_selection_over_live_frame(
+                        &painter,
+                        paint_rect,
+                        cell,
+                        major_tiles,
+                        minor_tiles,
+                        vertical,
+                        level_mode,
+                        map16_animation_phase,
+                        animation_phase,
+                        visibility,
+                        &layer2_records,
+                        &layer2_placements,
+                        &records,
+                        &placements,
+                        &sprite_placements,
+                        custom_sprites,
+                        custom_objects,
+                        custom_map16,
                     );
-                    if self.draw_selection_over_live() {
-                        self.paint_selection_over_live_frame(
-                            &painter,
-                            paint_rect,
-                            cell,
-                            major_tiles,
-                            minor_tiles,
-                            vertical,
-                            level_mode,
-                            map16_animation_phase,
-                            animation_phase,
-                            visibility,
-                            &layer2_records,
-                            &layer2_placements,
-                            &records,
-                            &placements,
-                            &sprite_placements,
-                            custom_sprites,
-                            custom_objects,
-                            custom_map16,
-                        );
-                    }
                 }
             }
         };
@@ -7259,8 +7264,13 @@ impl VanillaLevelEditor {
         custom_sprites: Option<&lm_level::SscResolvedTable>,
         custom_objects: Option<&lm_level::OscResolvedTable>,
         custom_map16: Option<&lm_app::NativeMap16SidecarDocument>,
+        boss_battle: Option<BossBattleKind>,
     ) {
-        painter.rect_filled(rect, 0.0, canvas_background_color(self.canvas_backdrop));
+        if let Some(kind) = boss_battle {
+            paint_boss_battle_arena(painter, rect, cell, kind);
+        } else {
+            painter.rect_filled(rect, 0.0, canvas_background_color(self.canvas_backdrop));
+        }
         let animation_phase_index = usize::from(map16_animation_phase);
         let map16_variant_start = animation_phase_index * 4;
         let map16_texture_variants = self
@@ -7317,7 +7327,8 @@ impl VanillaLevelEditor {
                 screen_pixels_f32(layer1_y - layer2_y) * cell / 16.0,
             ))
         });
-        if visibility.layer3
+        if boss_battle.is_none()
+            && visibility.layer3
             && !self.layer3_between_background_and_foreground
             && let (Some(texture), Some(position), Some(camera)) = (
                 self.layer3_low_texture.as_ref(),
@@ -7339,7 +7350,7 @@ impl VanillaLevelEditor {
                 game_camera.is_some(),
             );
         }
-        if visibility.layer2 && visual_smoke_editor_layer2() {
+        if boss_battle.is_none() && visibility.layer2 && visual_smoke_editor_layer2() {
             draw_layer2_tilemap(
                 painter,
                 if self.shared_vanilla_background {
@@ -7369,7 +7380,8 @@ impl VanillaLevelEditor {
                 visibility.line_guide_outline,
             );
         }
-        if visibility.layer3
+        if boss_battle.is_none()
+            && visibility.layer3
             && self.layer3_between_background_and_foreground
             && let (Some(position), Some(camera)) = (layer3_position, layer3_camera)
         {
@@ -7397,7 +7409,7 @@ impl VanillaLevelEditor {
         // The object cache uses SMW's 0x1B0-byte 16×27 screen pages. The 32×32 Layer 2 plane may
         // enlarge the visible canvas, but its final five rows are not object-cache coordinates.
         let object_minor_tiles = native_object_cache_minor_tiles(minor_tiles, vertical);
-        let layer2_artwork_bounds = if visibility.layer2 {
+        let layer2_artwork_bounds = if boss_battle.is_none() && visibility.layer2 {
             self.draw_object_artwork(
                 painter,
                 layer2_target,
@@ -7452,7 +7464,8 @@ impl VanillaLevelEditor {
             &layer2_artwork_bounds,
             cell,
         );
-        if visibility.layer3
+        if boss_battle.is_none()
+            && visibility.layer3
             && game_camera.is_none()
             && !self.layer3_between_background_and_foreground
             && let (Some(texture), Some(position), Some(camera)) = (
@@ -7602,7 +7615,8 @@ impl VanillaLevelEditor {
         });
         let hit_sprite = sprite_draw.as_ref().and_then(|result| result.hit);
         self.sprite_z_order_bounds = sprite_draw.map_or_else(HashMap::new, |result| result.bounds);
-        if visibility.layer3
+        if boss_battle.is_none()
+            && visibility.layer3
             && game_camera.is_some()
             && !self.layer3_between_background_and_foreground
             && let (Some(texture), Some(position), Some(camera)) = (
@@ -11276,6 +11290,7 @@ impl VanillaLevelEditor {
         self.sprite_catalog(ui, catalog);
         self.custom_sprite_catalog(ui, catalog, custom_sprites, external_assets, custom_map16);
         self.sprite_catalog_preview_area(ui, custom_sprites, external_assets, custom_map16);
+        self.show_boss_fight_editor(ui);
         self.sprite_form_controls(ui, catalog);
         sprite_save_constraint(ui, catalog, self.controller.as_ref());
         self.sprite_editor_actions(ui, catalog, token_count);
@@ -11284,6 +11299,101 @@ impl VanillaLevelEditor {
         {
             self.paste_target = None;
             self.paste_sprite(&text, token_count);
+        }
+    }
+
+    fn show_boss_fight_editor(&mut self, ui: &mut egui::Ui) {
+        let boss = self.controller.as_ref().and_then(|controller| {
+            let mode = controller.level().layer1.header.level_mode();
+            is_boss_battle_level_mode(mode).then(|| {
+                controller
+                    .level()
+                    .sprites
+                    .tokens
+                    .iter()
+                    .enumerate()
+                    .find_map(|(index, token)| match token {
+                        SpriteToken::Record(record) => record
+                            .native_fields()
+                            .ok()
+                            .filter(|fields| matches!(fields.sprite_number, 0x29 | 0xa0 | 0xa9))
+                            .map(|fields| (mode, index, fields)),
+                        SpriteToken::Screen(_) | SpriteToken::Control(_) => None,
+                    })
+            })
+        });
+        let Some(Some((mode, index, fields))) = boss else {
+            return;
+        };
+        let kind = match fields.sprite_number {
+            0x29 => koopa_kid_name(fields.y_low.min(6)),
+            0xa0 => "Bowser",
+            0xa9 => "Reznor",
+            _ => "Boss",
+        };
+        let mut selected_identity = fields.y_low.min(6);
+        let mut apply_identity = false;
+        let mut select_controller = false;
+        egui::CollapsingHeader::new(format!("Boss fight — {kind}"))
+            .id_salt("vanilla-boss-fight-editor")
+            .default_open(true)
+            .show(ui, |ui| {
+                ui.label(format!(
+                    "Boss mode ${:02X}; controller sprite ${:02X}",
+                    mode & 0x1f,
+                    fields.sprite_number
+                ));
+                if fields.sprite_number == 0x29 {
+                    egui::ComboBox::from_id_salt("vanilla-koopa-kid-identity")
+                        .selected_text(koopa_kid_name(selected_identity))
+                        .show_ui(ui, |ui| {
+                            for identity in 0..=6 {
+                                ui.selectable_value(
+                                    &mut selected_identity,
+                                    identity,
+                                    koopa_kid_name(identity),
+                                );
+                            }
+                        });
+                    apply_identity = ui
+                        .add_enabled(
+                            selected_identity != fields.y_low,
+                            egui::Button::new("Apply boss identity"),
+                        )
+                        .clicked();
+                }
+                select_controller = ui.button("Select boss controller sprite").clicked();
+                ui.label(
+                    "Move the selected controller on the canvas or use the semantic sprite fields below; changes remain staged until the level is saved.",
+                );
+            });
+        if apply_identity {
+            let mut edited = fields;
+            edited.y_low = selected_identity;
+            if let Some(controller) = self.controller.as_mut() {
+                match controller.apply_edits(&[NativeLevelEdit::SetSpriteFields {
+                    index,
+                    fields: edited,
+                }]) {
+                    Ok(()) => {
+                        self.selected_sprite = index;
+                        self.sprite_form = SpriteForm::from_token(
+                            controller.level().sprites.header,
+                            controller.level().sprites.tokens.get(index),
+                        );
+                        self.canvas_entity_selection = Some(CanvasEntitySelection::Sprite);
+                        self.error = None;
+                    }
+                    Err(error) => self.error = Some(error.to_string()),
+                }
+            }
+        } else if select_controller && let Some(controller) = self.controller.as_ref() {
+            self.selected_sprite = index;
+            self.sprite_form = SpriteForm::from_token(
+                controller.level().sprites.header,
+                controller.level().sprites.tokens.get(index),
+            );
+            self.canvas_entity_selection = Some(CanvasEntitySelection::Sprite);
         }
     }
 
@@ -16595,39 +16705,159 @@ const fn is_boss_battle_level_mode(level_mode: u8) -> bool {
     matches!(level_mode & 0x1f, 0x09 | 0x0b | 0x10)
 }
 
-fn paint_boss_battle_diagnostic(painter: &egui::Painter, target: egui::Rect) {
-    const PLANE_PIXELS: usize = 512;
-    const MESSAGE: &str = "CANNOT RENDER : This is a boss battle level!";
-    let rows = target.height().ceil().max(1.0) as usize;
-    for row in 0..rows {
-        let red = boss_battle_diagnostic_red(row);
-        let minimum = target.min + egui::vec2(0.0, row as f32);
-        painter.rect_filled(
-            egui::Rect::from_min_size(minimum, egui::vec2(target.width(), 1.0)),
-            0.0,
-            egui::Color32::from_rgb(red, 0, 0),
-        );
+fn boss_battle_kind(
+    level_mode: u8,
+    sprites: &[lm_level::NativeSpritePlacement],
+) -> Option<BossBattleKind> {
+    if !is_boss_battle_level_mode(level_mode) {
+        return None;
     }
-    let mut x = target.min.x + 106.0;
-    while x < target.max.x {
-        painter.text(
-            egui::pos2(x, target.min.y + 256.0),
-            egui::Align2::LEFT_CENTER,
-            MESSAGE,
-            egui::FontId::monospace(12.0),
-            egui::Color32::WHITE,
-        );
-        x += PLANE_PIXELS as f32;
+    if sprites.iter().any(|sprite| sprite.sprite_number == 0xa9) {
+        return Some(BossBattleKind::Reznor);
+    }
+    if sprites.iter().any(|sprite| sprite.sprite_number == 0xa0) {
+        return Some(BossBattleKind::Bowser);
+    }
+    sprites
+        .iter()
+        .find(|sprite| sprite.sprite_number == 0x29)
+        .map_or(Some(BossBattleKind::Unknown), |sprite| {
+            Some(BossBattleKind::KoopaKid {
+                identity: (sprite.first_byte >> 4).min(6),
+                rotating_platform: level_mode & 0x1f == 0x0b,
+            })
+        })
+}
+
+fn paint_boss_battle_arena(
+    painter: &egui::Painter,
+    world: egui::Rect,
+    cell: f32,
+    kind: BossBattleKind,
+) {
+    let visible = painter.clip_rect();
+    let (backdrop, floor, accent) = match kind {
+        BossBattleKind::KoopaKid { .. } => (
+            egui::Color32::from_rgb(16, 16, 24),
+            egui::Color32::from_rgb(104, 80, 64),
+            egui::Color32::from_rgb(216, 184, 96),
+        ),
+        BossBattleKind::Reznor => (
+            egui::Color32::from_rgb(8, 8, 16),
+            egui::Color32::from_rgb(88, 64, 48),
+            egui::Color32::from_rgb(200, 168, 80),
+        ),
+        BossBattleKind::Bowser => (
+            egui::Color32::from_rgb(8, 24, 48),
+            egui::Color32::from_rgb(80, 72, 64),
+            egui::Color32::from_rgb(176, 200, 224),
+        ),
+        BossBattleKind::Unknown => (
+            egui::Color32::from_rgb(24, 16, 24),
+            egui::Color32::from_rgb(80, 64, 64),
+            egui::Color32::from_rgb(200, 160, 160),
+        ),
+    };
+    painter.rect_filled(visible, 0.0, backdrop);
+    let floor_y = world.min.y + 12.0 * cell;
+    painter.rect_filled(
+        egui::Rect::from_min_max(
+            egui::pos2(visible.min.x, floor_y),
+            egui::pos2(visible.max.x, floor_y + 2.0 * cell),
+        ),
+        0.0,
+        floor,
+    );
+    painter.hline(
+        visible.x_range(),
+        floor_y,
+        egui::Stroke::new((cell / 8.0).max(2.0), accent),
+    );
+    match kind {
+        BossBattleKind::KoopaKid {
+            identity,
+            rotating_platform: true,
+        } => {
+            let center = world.min + egui::vec2(8.0 * cell, 8.5 * cell);
+            painter.line_segment(
+                [
+                    center - egui::vec2(5.0 * cell, 1.2 * cell),
+                    center + egui::vec2(5.0 * cell, 1.2 * cell),
+                ],
+                egui::Stroke::new((cell / 3.0).max(4.0), accent),
+            );
+            paint_boss_label(painter, visible, koopa_kid_name(identity));
+        }
+        BossBattleKind::KoopaKid { identity, .. } => {
+            paint_boss_label(painter, visible, koopa_kid_name(identity));
+        }
+        BossBattleKind::Reznor => {
+            let center = world.min + egui::vec2(8.0 * cell, 7.0 * cell);
+            painter.circle_stroke(
+                center,
+                3.5 * cell,
+                egui::Stroke::new((cell / 3.0).max(4.0), accent),
+            );
+            for direction in [egui::Vec2::X, egui::Vec2::Y, -egui::Vec2::X, -egui::Vec2::Y] {
+                let platform = center + direction * 3.5 * cell;
+                painter.rect_filled(
+                    egui::Rect::from_center_size(platform, egui::vec2(2.0 * cell, 0.5 * cell)),
+                    2.0,
+                    accent,
+                );
+            }
+            paint_boss_label(painter, visible, "Reznor");
+        }
+        BossBattleKind::Bowser => paint_boss_label(painter, visible, "Bowser"),
+        BossBattleKind::Unknown => paint_boss_label(painter, visible, "Boss battle"),
     }
 }
 
-const fn boss_battle_diagnostic_red(row: usize) -> u8 {
-    let plane_y = row % 512;
-    if plane_y < 256 {
-        plane_y as u8
-    } else {
-        (511 - plane_y) as u8
+fn paint_boss_label(painter: &egui::Painter, target: egui::Rect, label: &str) {
+    painter.text(
+        target.left_top() + egui::vec2(10.0, 10.0),
+        egui::Align2::LEFT_TOP,
+        format!("{label} arena"),
+        egui::FontId::proportional(14.0),
+        egui::Color32::from_white_alpha(180),
+    );
+}
+
+fn paint_boss_controller_marker(
+    painter: &egui::Painter,
+    marker: egui::Rect,
+    sprite_number: u8,
+    identity: u8,
+) {
+    let (label, color) = match sprite_number {
+        0x29 => (
+            koopa_kid_name(identity.min(6)),
+            egui::Color32::from_rgb(112, 200, 96),
+        ),
+        0xa0 => ("Bowser", egui::Color32::from_rgb(232, 168, 72)),
+        0xa9 => ("Reznor", egui::Color32::from_rgb(216, 112, 72)),
+        _ => ("Boss", egui::Color32::LIGHT_GRAY),
+    };
+    let body = marker.expand(marker.width() * 0.4);
+    painter.circle_filled(body.center(), body.width() * 0.42, color);
+    painter.circle_stroke(
+        body.center(),
+        body.width() * 0.42,
+        egui::Stroke::new(2.0, egui::Color32::BLACK),
+    );
+    if sprite_number != 0xa9 {
+        painter.text(
+            body.center_bottom() + egui::vec2(0.0, 3.0),
+            egui::Align2::CENTER_TOP,
+            label,
+            egui::FontId::proportional((marker.height() * 0.45).clamp(10.0, 16.0)),
+            egui::Color32::WHITE,
+        );
     }
+}
+
+fn koopa_kid_name(identity: u8) -> &'static str {
+    ["Morton", "Roy", "Ludwig", "Iggy", "Larry", "Lemmy", "Wendy"][identity.min(6) as usize]
 }
 
 #[derive(Clone, Copy)]
@@ -16690,13 +16920,22 @@ fn draw_sprite_placements(request: SpritePlacementDraw<'_>) -> SpritePlacementDr
     let mut hit = None;
     let mut bounds = HashMap::with_capacity(placements.len());
     let mut standard_8a_count = 0_u8;
+    let mut reznor_controller_count = 0_usize;
     for placement in placements {
         let (tile_x, tile_y) = presented_sprite_tile_coordinates(*placement, vertical);
-        let center = target.min
+        let boss_controller = is_boss_battle_level_mode(level_mode)
+            && matches!(placement.sprite_number, 0x29 | 0xa0 | 0xa9);
+        let mut center = target.min
             + egui::vec2(
                 (f32::from(tile_x) + 0.5) * cell_size,
                 (f32::from(tile_y) + 0.5) * cell_size,
             );
+        if boss_controller && placement.sprite_number == 0xa9 {
+            let wheel_positions = [(8.0, 3.5), (11.5, 7.0), (8.0, 10.5), (4.5, 7.0)];
+            let (x, y) = wheel_positions[reznor_controller_count % wheel_positions.len()];
+            center = target.min + egui::vec2(x * cell_size, y * cell_size);
+            reznor_controller_count = reznor_controller_count.saturating_add(1);
+        }
         let marker = egui::Rect::from_center_size(
             center,
             egui::vec2(cell_size.max(9.0), cell_size.max(9.0)),
@@ -16717,7 +16956,9 @@ fn draw_sprite_placements(request: SpritePlacementDraw<'_>) -> SpritePlacementDr
             })
         });
         let uses_standard = custom_display.is_none();
-        let preview = if uses_standard {
+        let preview = if boss_controller {
+            None
+        } else if uses_standard {
             lm_render::render_lunar_magic_standard_sprite_with_mode(placement.sprite_number, {
                 let mut mode = standard_sprite_preview_mode(
                     placement,
@@ -16749,6 +16990,14 @@ fn draw_sprite_placements(request: SpritePlacementDraw<'_>) -> SpritePlacementDr
             cell_size,
         );
         bounds.insert(placement.token_index, interactive_rect);
+        if boss_controller {
+            paint_boss_controller_marker(
+                painter,
+                marker,
+                placement.sprite_number,
+                placement.first_byte >> 4,
+            );
+        }
         if let (Some(texture), Some(parts)) = (texture, preview.as_deref()) {
             for part in parts {
                 draw_sprite_preview_definition_tinted(
@@ -22406,19 +22655,38 @@ mod tests {
     }
 
     #[test]
-    fn boss_battle_modes_use_lunar_magics_symmetric_red_diagnostic() {
+    fn boss_battle_modes_classify_native_boss_sprite_streams() {
         for mode in [0x09, 0x0b, 0x10, 0x29, 0x2b, 0x30] {
             assert!(is_boss_battle_level_mode(mode));
         }
         for mode in [0x00, 0x0a, 0x0c, 0x0d, 0x11, 0x1e] {
             assert!(!is_boss_battle_level_mode(mode));
         }
-        assert_eq!(boss_battle_diagnostic_red(0), 0);
-        assert_eq!(boss_battle_diagnostic_red(1), 1);
-        assert_eq!(boss_battle_diagnostic_red(255), 255);
-        assert_eq!(boss_battle_diagnostic_red(256), 255);
-        assert_eq!(boss_battle_diagnostic_red(511), 0);
-        assert_eq!(boss_battle_diagnostic_red(512), 0);
+        let placement = |sprite_number, first_byte| lm_level::NativeSpritePlacement {
+            token_index: 0,
+            first_byte,
+            extra_bits: 0,
+            screen: 0,
+            major: 0,
+            minor: 0,
+            sprite_number,
+        };
+        assert_eq!(
+            boss_battle_kind(0x09, &[placement(0xa9, 0)]),
+            Some(BossBattleKind::Reznor)
+        );
+        assert_eq!(
+            boss_battle_kind(0x10, &[placement(0xa0, 0)]),
+            Some(BossBattleKind::Bowser)
+        );
+        assert_eq!(
+            boss_battle_kind(0x0b, &[placement(0x29, 0x3c)]),
+            Some(BossBattleKind::KoopaKid {
+                identity: 3,
+                rotating_platform: true,
+            })
+        );
+        assert_eq!(boss_battle_kind(0, &[placement(0x29, 0x3c)]), None);
     }
 
     #[test]
