@@ -41,19 +41,9 @@ pub(crate) struct LiveEmulator {
     runtime_state: Option<lm_app::EmulatorRuntimeState>,
     audio: crate::live_audio::LiveAudio,
     status: String,
-    selected_core: Option<PathBuf>,
 }
 
 impl LiveEmulator {
-    pub(crate) fn choose_core(&mut self) -> Option<PathBuf> {
-        if let Some(path) = self.selected_core.clone() {
-            return Some(path);
-        }
-        let path = choose_core()?;
-        self.selected_core = Some(path.clone());
-        Some(path)
-    }
-
     pub(crate) fn start(
         &mut self,
         core: PathBuf,
@@ -907,14 +897,6 @@ mod tests {
             Some(path)
         );
         assert_eq!(configured_core(None), None);
-    }
-
-    #[test]
-    fn selected_core_is_reused_without_reopening_the_picker() {
-        let path = PathBuf::from("session-snes9x-libretro-core");
-        let mut emulator = LiveEmulator::default();
-        emulator.selected_core = Some(path.clone());
-        assert_eq!(emulator.choose_core(), Some(path));
     }
 
     #[test]

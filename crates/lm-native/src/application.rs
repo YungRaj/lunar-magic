@@ -224,7 +224,6 @@ pub(crate) struct NativeApplication {
     level_usage_dialog: LevelUsageDialog,
     rom_user_area_scan_dialog: RomUserAreaScanDialog,
     live_emulator: crate::live_emulator::LiveEmulator,
-    boss_runtime_attempt: Option<(u16, u64)>,
     integrated_emulator_options: IntegratedEmulatorOptions,
     auto_deselect_on_editor_select: bool,
     show_add_editor_ids: Option<bool>,
@@ -1386,34 +1385,6 @@ impl NativeApplication {
             }
             _ => None,
         };
-        let boss_context = live_context.filter(|_| self.vanilla_level_editor.is_boss_battle());
-        if self.live_emulator.source_context().is_none() {
-            if self.boss_runtime_attempt != boss_context {
-                self.boss_runtime_attempt = boss_context;
-                if let Some((level, revision)) = boss_context
-                    && let Some(core) = self.live_emulator.choose_core()
-                {
-                    let start = self
-                        .app
-                        .controller_snapshot()
-                        .map_err(|error| error.to_string())
-                        .and_then(|snapshot| {
-                            self.live_emulator
-                                .start(core, revision, level, snapshot.rom_bytes)
-                        });
-                    match start {
-                        Ok(()) => {
-                            self.app.status = format!(
-                                "Starting exact animated boss preview for level {level:03X}"
-                            );
-                        }
-                        Err(error) => self.effects.error = Some(error),
-                    }
-                }
-            }
-        } else {
-            self.boss_runtime_attempt = boss_context;
-        }
         if self.live_emulator.retain_for_open_project(live_context) {
             self.live_emulator
                 .set_editor_animation_playing(self.vanilla_level_editor.animation_playing());

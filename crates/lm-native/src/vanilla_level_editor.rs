@@ -752,12 +752,6 @@ fn wrapping_index(value: u8, delta: i8, modulus: u8) -> u8 {
 }
 
 impl VanillaLevelEditor {
-    pub(crate) fn is_boss_battle(&self) -> bool {
-        self.controller.as_ref().is_some_and(|controller| {
-            is_boss_battle_level_mode(controller.level().layer1.header.level_mode())
-        })
-    }
-
     pub(crate) fn set_auto_deselect_on_editor_select(&mut self, enabled: bool) {
         self.auto_deselect_on_editor_select = enabled;
     }
@@ -16737,24 +16731,95 @@ fn boss_battle_kind(
 
 fn paint_boss_battle_arena(
     painter: &egui::Painter,
-    _world: egui::Rect,
-    _cell: f32,
+    world: egui::Rect,
+    cell: f32,
     kind: BossBattleKind,
 ) {
     let visible = painter.clip_rect();
-    let label = match kind {
-        BossBattleKind::KoopaKid { identity, .. } => koopa_kid_name(identity),
-        BossBattleKind::Reznor => "Reznor",
-        BossBattleKind::Bowser => "Bowser",
-        BossBattleKind::Unknown => "boss battle",
+    let (backdrop, floor, accent) = match kind {
+        BossBattleKind::KoopaKid { .. } => (
+            egui::Color32::from_rgb(16, 16, 24),
+            egui::Color32::from_rgb(104, 80, 64),
+            egui::Color32::from_rgb(216, 184, 96),
+        ),
+        BossBattleKind::Reznor => (
+            egui::Color32::from_rgb(8, 8, 16),
+            egui::Color32::from_rgb(88, 64, 48),
+            egui::Color32::from_rgb(200, 168, 80),
+        ),
+        BossBattleKind::Bowser => (
+            egui::Color32::from_rgb(8, 24, 48),
+            egui::Color32::from_rgb(80, 72, 64),
+            egui::Color32::from_rgb(176, 200, 224),
+        ),
+        BossBattleKind::Unknown => (
+            egui::Color32::from_rgb(24, 16, 24),
+            egui::Color32::from_rgb(80, 64, 64),
+            egui::Color32::from_rgb(200, 160, 160),
+        ),
     };
-    painter.rect_filled(visible, 0.0, egui::Color32::BLACK);
+    painter.rect_filled(visible, 0.0, backdrop);
+    let floor_y = world.min.y + 12.0 * cell;
+    painter.rect_filled(
+        egui::Rect::from_min_max(
+            egui::pos2(visible.min.x, floor_y),
+            egui::pos2(visible.max.x, floor_y + 2.0 * cell),
+        ),
+        0.0,
+        floor,
+    );
+    painter.hline(
+        visible.x_range(),
+        floor_y,
+        egui::Stroke::new((cell / 8.0).max(2.0), accent),
+    );
+    match kind {
+        BossBattleKind::KoopaKid {
+            identity,
+            rotating_platform: true,
+        } => {
+            let center = world.min + egui::vec2(8.0 * cell, 8.5 * cell);
+            painter.line_segment(
+                [
+                    center - egui::vec2(5.0 * cell, 1.2 * cell),
+                    center + egui::vec2(5.0 * cell, 1.2 * cell),
+                ],
+                egui::Stroke::new((cell / 3.0).max(4.0), accent),
+            );
+            paint_boss_label(painter, visible, koopa_kid_name(identity));
+        }
+        BossBattleKind::KoopaKid { identity, .. } => {
+            paint_boss_label(painter, visible, koopa_kid_name(identity));
+        }
+        BossBattleKind::Reznor => {
+            let center = world.min + egui::vec2(8.0 * cell, 7.0 * cell);
+            painter.circle_stroke(
+                center,
+                3.5 * cell,
+                egui::Stroke::new((cell / 3.0).max(4.0), accent),
+            );
+            for direction in [egui::Vec2::X, egui::Vec2::Y, -egui::Vec2::X, -egui::Vec2::Y] {
+                let platform = center + direction * 3.5 * cell;
+                painter.rect_filled(
+                    egui::Rect::from_center_size(platform, egui::vec2(2.0 * cell, 0.5 * cell)),
+                    2.0,
+                    accent,
+                );
+            }
+            paint_boss_label(painter, visible, "Reznor");
+        }
+        BossBattleKind::Bowser => paint_boss_label(painter, visible, "Bowser"),
+        BossBattleKind::Unknown => paint_boss_label(painter, visible, "Boss battle"),
+    }
+}
+
+fn paint_boss_label(painter: &egui::Painter, target: egui::Rect, label: &str) {
     painter.text(
-        visible.center(),
-        egui::Align2::CENTER_CENTER,
-        format!("Starting exact animated {label} runtime…"),
+        target.left_top() + egui::vec2(10.0, 10.0),
+        egui::Align2::LEFT_TOP,
+        format!("{label} arena"),
         egui::FontId::proportional(14.0),
-        egui::Color32::from_white_alpha(210),
+        egui::Color32::from_white_alpha(180),
     );
 }
 
