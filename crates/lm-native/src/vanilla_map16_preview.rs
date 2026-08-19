@@ -2606,6 +2606,172 @@ fn render_sprite_graphics_atlas(
     egui::ColorImage::from_rgba_unmultiplied([WIDTH, HEIGHT], &rgba)
 }
 
+pub(crate) fn render_sprite_graphics_files_atlas(
+    rom_bytes: Vec<u8>,
+    level: u16,
+    header: LegacyLevelHeader,
+    graphics_files: [usize; 4],
+) -> Result<egui::ColorImage, String> {
+    let rom = RomImage::from_bytes(rom_bytes).map_err(|error| error.to_string())?;
+    let project = Project::new(rom);
+    let palette_header = game_palette_header(level, header);
+    let palette = lm_profile::compose_smw_us_v1_level_palette(&project, level, palette_header, 0)
+        .map_err(|error| error.to_string())?
+        .palette;
+    let graphics = load_layer1_sprite_graphics_slots(&project, graphics_files, true)?;
+    Ok(render_sprite_graphics_atlas(&graphics, &palette))
+}
+
+pub(crate) fn render_mode7_koopa_boss_frame(
+    rom_bytes: Vec<u8>,
+    identity: u8,
+) -> Result<egui::ColorImage, String> {
+    // SNES $03:D9DE, converted through the vanilla LoROM mapping.
+    const TILEMAP_OFFSET: usize = 0x01_d9de;
+    const TILEMAP_LEN: usize = 912;
+    const FRAME_BASES: [usize; 3] = [0, 9, 18];
+    const PALETTES: [[u16; 6]; 3] = [
+        [0x0000, 0x01e0, 0x02e0, 0x03e0, 0x00b7, 0x023f],
+        [0x0000, 0x6d08, 0x6dad, 0x7e31, 0x00b7, 0x023f],
+        [0x0000, 0x01ff, 0x031f, 0x03ff, 0x00b7, 0x023f],
+    ];
+    let identity = usize::from(identity);
+    let frame_base = *FRAME_BASES
+        .get(identity)
+        .ok_or_else(|| format!("Mode-7 Koopaling identity {identity} is outside 0..3"))?;
+    let rom = RomImage::from_bytes(rom_bytes).map_err(|error| error.to_string())?;
+    let project = Project::new(rom);
+    let encoded = project
+        .load_decompressed_graphics_file(0x0b, lm_profile::smw_us_v1_vanilla_graphics_layout())
+        .map_err(|error| error.to_string())?;
+    let tiles = lm_graphics::decode_planar_tiles(&encoded, 3)
+        .map_err(|error| format!("cannot decode Mode-7 Koopaling GFX0B: {error}"))?;
+    let tilemap = project
+        .rom
+        .logical_bytes()
+        .get(TILEMAP_OFFSET..TILEMAP_OFFSET + TILEMAP_LEN)
+        .ok_or_else(|| "Mode-7 Koopaling tilemap table is truncated".to_string())?;
+    let frame_start = frame_base * 16;
+    let frame = tilemap
+        .get(frame_start..frame_start + 16)
+        .ok_or_else(|| "Mode-7 Koopaling frame is outside the tilemap table".to_string())?;
+    let mut rgba = vec![0_u8; 32 * 32 * 4];
+    for (cell, &tile_number) in frame.iter().enumerate() {
+        if tile_number == 0xff {
+            continue;
+        }
+        // The runtime's Mode-7 conversion writes every source tile twice and
+        // interleaves the pair: source 0 normal/flipped, source 1 normal/flipped,
+        // and so on. UpdateMode7SpriteAnimations mirrors a frame with `tile ^= 1`,
+        // confirming that bit 0—not bit 7—is the horizontal-flip selector.
+        let tile = tiles
+            .get(usize::from(tile_number >> 1))
+            .ok_or_else(|| format!("Mode-7 tile ${tile_number:02X} is unavailable"))?;
+        let cell_x = cell % 4 * 8;
+        let cell_y = cell / 4 * 8;
+        for y in 0..8 {
+            for x in 0..8 {
+                let source_x = if tile_number & 1 != 0 { 7 - x } else { x };
+                let color_index = usize::from(tile.pixel(source_x, y).unwrap_or(0));
+                if color_index == 0 {
+                    continue;
+                }
+                // InitializeMode7TilemapsAndPalettes copies its six colors to
+                // palette entries 2..7. Entry 1 remains the room's black
+                // outline color.
+                let word = if color_index == 1 {
+                    0x0000
+                } else {
+                    PALETTES[identity]
+                        .get(color_index - 2)
+                        .copied()
+                        .unwrap_or(0x7fff)
+                };
+                let color = lm_graphics::Bgr555(word).to_rgb8();
+                let destination = ((cell_y + y) * 32 + cell_x + x) * 4;
+                rgba[destination..destination + 4].copy_from_slice(&[
+                    color.red,
+                    color.green,
+                    color.blue,
+                    255,
+                ]);
+            }
+        }
+    }
+    Ok(egui::ColorImage::from_rgba_unmultiplied([32, 32], &rgba))
+}
+
+pub(crate) fn render_mode7_bowser_frame(rom_bytes: Vec<u8>) -> Result<egui::ColorImage, String> {
+    // Bowser uses the same runtime Mode-7 converter as the Koopalings, but
+    // combines a 4x4 Bowser frame ($1E) with the independently animated 8x8
+    // clown-car/propeller tilemap segments in the final 912-byte table.
+    const TILEMAP_OFFSET: usize = 0x01_d9de;
+    const TILEMAP_LEN: usize = 912;
+    const PALETTE: [u16; 6] = [0x0000, 0x2940, 0x3de0, 0x5280, 0x00b7, 0x023f];
+    let rom = RomImage::from_bytes(rom_bytes).map_err(|error| error.to_string())?;
+    let project = Project::new(rom);
+    let encoded = project
+        .load_decompressed_graphics_file(0x21, lm_profile::smw_us_v1_vanilla_graphics_layout())
+        .map_err(|error| error.to_string())?;
+    let tiles = lm_graphics::decode_planar_tiles(&encoded, 3)
+        .map_err(|error| format!("cannot decode Bowser Mode-7 GFX21: {error}"))?;
+    let table = project
+        .rom
+        .logical_bytes()
+        .get(TILEMAP_OFFSET..TILEMAP_OFFSET + TILEMAP_LEN)
+        .ok_or_else(|| "Bowser Mode-7 tilemap table is truncated".to_string())?;
+
+    // Exact initial car assembly performed by UpdateMode7SpriteAnimations:
+    // six propeller tiles, two face rows, and four clown-car rows.
+    let mut car = [0xff_u8; 64];
+    car[1..7].copy_from_slice(&[0x6e, 0x70, 0x72, 0x74, 0x76, 0x56]);
+    car[8..16].copy_from_slice(&table[896..904]);
+    car[16..24].copy_from_slice(&table[0x320..0x328]);
+    car[24..32].copy_from_slice(&table[0x328..0x330]);
+    car[32..64].copy_from_slice(&table[864..896]);
+    let body = &table[30 * 16..31 * 16];
+    let mut rgba = vec![0_u8; 64 * 64 * 4];
+
+    let mut paint_tile = |tile_number: u8, target_x: usize, target_y: usize| {
+        if tile_number == 0xff {
+            return;
+        }
+        let Some(tile) = tiles.get(usize::from(tile_number >> 1)) else {
+            return;
+        };
+        for y in 0..8 {
+            for x in 0..8 {
+                let source_x = if tile_number & 1 != 0 { 7 - x } else { x };
+                let color_index = usize::from(tile.pixel(source_x, y).unwrap_or(0));
+                if color_index == 0 {
+                    continue;
+                }
+                let word = if color_index == 1 {
+                    0x0000
+                } else {
+                    PALETTE.get(color_index - 2).copied().unwrap_or(0x7fff)
+                };
+                let color = lm_graphics::Bgr555(word).to_rgb8();
+                let destination = ((target_y + y) * 64 + target_x + x) * 4;
+                rgba[destination..destination + 4].copy_from_slice(&[
+                    color.red,
+                    color.green,
+                    color.blue,
+                    255,
+                ]);
+            }
+        }
+    };
+    for (cell, &tile) in car.iter().enumerate() {
+        paint_tile(tile, cell % 8 * 8, cell / 8 * 8);
+    }
+    // The body is a separate 4x4 runtime sub-tilemap centered over the car.
+    for (cell, &tile) in body.iter().enumerate() {
+        paint_tile(tile, 16 + cell % 4 * 8, cell / 4 * 8);
+    }
+    Ok(egui::ColorImage::from_rgba_unmultiplied([64, 64], &rgba))
+}
+
 fn draw_subtile(
     rgba: &mut [u8],
     canvas_width: usize,
@@ -2650,6 +2816,31 @@ mod tests {
 
     fn tile_is_blank(tile: &IndexedTile) -> bool {
         tile.pixels().iter().all(|&pixel| pixel == 0)
+    }
+
+    #[test]
+    fn authentic_mode7_koopaling_frames_decode_from_pristine_rom() {
+        for identity in 0..=2 {
+            let image = render_mode7_koopa_boss_frame(
+                crate::test_support::pristine_smw_us_rom_bytes(),
+                identity,
+            )
+            .unwrap();
+            assert_eq!(image.size, [32, 32]);
+            assert!(image.pixels.iter().any(|pixel| pixel.a() != 0));
+        }
+    }
+
+    #[test]
+    fn authentic_mode7_bowser_and_clown_car_decode_from_pristine_rom() {
+        let image =
+            render_mode7_bowser_frame(crate::test_support::pristine_smw_us_rom_bytes()).unwrap();
+        assert_eq!(image.size, [64, 64]);
+        let opaque = image.pixels.iter().filter(|pixel| pixel.a() != 0).count();
+        assert!(
+            opaque > 256,
+            "Bowser composition only contained {opaque} pixels"
+        );
     }
 
     #[test]

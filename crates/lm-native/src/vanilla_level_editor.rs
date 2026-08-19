@@ -696,6 +696,8 @@ pub(crate) struct VanillaLevelEditor {
     animated_background_plane_textures: Vec<egui::TextureHandle>,
     shared_vanilla_background: bool,
     sprite_texture: Option<egui::TextureHandle>,
+    boss_sprite_texture: Option<egui::TextureHandle>,
+    mode7_boss_texture: Option<egui::TextureHandle>,
     animated_sprite_textures: Vec<egui::TextureHandle>,
     entrance_texture: Option<egui::TextureHandle>,
     sprite_tiles: Vec<lm_graphics::IndexedTile>,
@@ -2970,6 +2972,8 @@ impl VanillaLevelEditor {
         self.animated_background_plane_textures.clear();
         self.shared_vanilla_background = false;
         self.sprite_texture = None;
+        self.boss_sprite_texture = None;
+        self.mode7_boss_texture = None;
         self.animated_sprite_textures.clear();
         self.entrance_texture = None;
         self.sprite_tiles.clear();
@@ -3134,6 +3138,8 @@ impl VanillaLevelEditor {
         self.animated_background_map16_textures.clear();
         self.animated_background_plane_textures.clear();
         self.sprite_texture = None;
+        self.boss_sprite_texture = None;
+        self.mode7_boss_texture = None;
         self.animated_sprite_textures.clear();
         self.entrance_texture = None;
         self.sprite_tiles.clear();
@@ -3250,6 +3256,81 @@ impl VanillaLevelEditor {
                     preview.sprite_image,
                     egui::TextureOptions::NEAREST,
                 ));
+                let boss_kind = self.controller.as_ref().and_then(|controller| {
+                    let level = controller.level();
+                    boss_battle_kind(
+                        level.layer1.header.level_mode(),
+                        &level.sprites.native_placements(),
+                    )
+                });
+                let boss_files = match boss_kind {
+                    Some(BossBattleKind::KoopaKid { identity: 0..=2, .. }) => {
+                        Some([0x00, 0x01, 0x24, 0x22])
+                    }
+                    // GameMode12_PrepareLevel selects runtime sprite setting 19
+                    // for both rotating-platform fights and Reznor, regardless
+                    // of the serialized level header's ordinary setting.
+                    Some(BossBattleKind::KoopaKid { identity: 3 | 4, .. })
+                    | Some(BossBattleKind::Reznor) => Some([0x00, 0x01, 0x25, 0x22]),
+                    // Bowser selects runtime sprite setting 24.
+                    Some(BossBattleKind::Bowser) => Some([0x00, 0x0d, 0x24, 0x22]),
+                    _ => None,
+                };
+                if let Some(files) = boss_files {
+                    match crate::vanilla_map16_preview::render_sprite_graphics_files_atlas(
+                        snapshot.rom_bytes.clone(),
+                        level,
+                        self.controller
+                            .as_ref()
+                            .map_or_else(Default::default, |controller| {
+                                controller.level().layer1.header
+                            }),
+                        files,
+                    ) {
+                        Ok(image) => {
+                            self.boss_sprite_texture = Some(context.load_texture(
+                                format!("vanilla-boss-sprite-gfx-{level:03X}-{}", snapshot.revision),
+                                image,
+                                egui::TextureOptions::NEAREST,
+                            ));
+                        }
+                        Err(error) => self.map16_error = Some(error),
+                    }
+                }
+                if let Some(BossBattleKind::KoopaKid { identity: 0..=2, .. }) = boss_kind {
+                    match crate::vanilla_map16_preview::render_mode7_koopa_boss_frame(
+                        snapshot.rom_bytes.clone(),
+                        match boss_kind {
+                            Some(BossBattleKind::KoopaKid { identity, .. }) => identity,
+                            _ => unreachable!(),
+                        },
+                    ) {
+                        Ok(image) => {
+                            self.mode7_boss_texture = Some(context.load_texture(
+                                format!("vanilla-mode7-boss-{level:03X}-{}", snapshot.revision),
+                                image,
+                                egui::TextureOptions::NEAREST,
+                            ));
+                        }
+                        Err(error) => self.map16_error = Some(error),
+                    }
+                } else if matches!(boss_kind, Some(BossBattleKind::Bowser)) {
+                    match crate::vanilla_map16_preview::render_mode7_bowser_frame(
+                        snapshot.rom_bytes.clone(),
+                    ) {
+                        Ok(image) => {
+                            self.mode7_boss_texture = Some(context.load_texture(
+                                format!(
+                                    "vanilla-mode7-bowser-{level:03X}-{}",
+                                    snapshot.revision
+                                ),
+                                image,
+                                egui::TextureOptions::NEAREST,
+                            ));
+                        }
+                        Err(error) => self.map16_error = Some(error),
+                    }
+                }
                 self.animated_sprite_textures = load_animation_textures(
                     context,
                     &format!(
@@ -7216,6 +7297,8 @@ impl VanillaLevelEditor {
                 target: rect,
                 cell_size: cell,
                 texture: self.sprite_texture.as_ref(),
+                boss_texture: self.boss_sprite_texture.as_ref(),
+                mode7_boss_texture: self.mode7_boss_texture.as_ref(),
                 animated_texture: self
                     .animated_sprite_textures
                     .get(usize::from(animation_phase))
@@ -7588,6 +7671,8 @@ impl VanillaLevelEditor {
                 target: rect,
                 cell_size: cell,
                 texture: self.sprite_texture.as_ref(),
+                boss_texture: self.boss_sprite_texture.as_ref(),
+                mode7_boss_texture: self.mode7_boss_texture.as_ref(),
                 animated_texture: self
                     .animated_sprite_textures
                     .get(usize::from(animation_phase))
@@ -16923,11 +17008,44 @@ fn paint_boss_label(painter: &egui::Painter, target: egui::Rect, label: &str) {
 
 fn paint_reznor_controller(
     painter: &egui::Painter,
+    texture: Option<&egui::TextureHandle>,
     platform_center: egui::Pos2,
     cell: f32,
     sequence: usize,
     animation_phase: u8,
 ) {
+    if let Some(texture) = texture {
+        let scale = cell / 16.0;
+        let facing_flags = if sequence & 1 == 0 { 0x7f } else { 0x3f };
+        for &(x, y, tile) in &[
+            (0_i8, -32_i8, 0x40_u8),
+            (-16, -32, 0x42),
+            (0, -16, 0x60),
+            (-16, -16, 0x62),
+        ] {
+            paint_authentic_oam_tile(
+                painter,
+                texture,
+                platform_center + egui::vec2(f32::from(x) * scale, f32::from(y) * scale),
+                cell,
+                tile,
+                facing_flags,
+                true,
+            );
+        }
+        for (x, flags) in [(-16_i8, 0x33_u8), (0, 0x73)] {
+            paint_authentic_oam_tile(
+                painter,
+                texture,
+                platform_center + egui::vec2(f32::from(x) * scale, 0.0),
+                cell,
+                0x4e,
+                flags,
+                true,
+            );
+        }
+        return;
+    }
     let facing = if sequence & 1 == 0 { -1.0 } else { 1.0 };
     let orange = egui::Color32::from_rgb(232, 104, 40);
     let cream = egui::Color32::from_rgb(248, 216, 128);
@@ -17069,6 +17187,8 @@ struct SpritePlacementDraw<'a> {
     target: egui::Rect,
     cell_size: f32,
     texture: Option<&'a egui::TextureHandle>,
+    boss_texture: Option<&'a egui::TextureHandle>,
+    mode7_boss_texture: Option<&'a egui::TextureHandle>,
     animated_texture: Option<&'a egui::TextureHandle>,
     placements: &'a [lm_level::NativeSpritePlacement],
     cursor: Option<egui::Pos2>,
@@ -17101,6 +17221,8 @@ fn draw_sprite_placements(request: SpritePlacementDraw<'_>) -> SpritePlacementDr
         target,
         cell_size,
         texture,
+        boss_texture,
+        mode7_boss_texture,
         animated_texture,
         placements,
         cursor,
@@ -17221,6 +17343,7 @@ fn draw_sprite_placements(request: SpritePlacementDraw<'_>) -> SpritePlacementDr
                     for (sequence, (x, y)) in REZNOR_RUNTIME_FIGURES.into_iter().enumerate() {
                         paint_reznor_controller(
                             painter,
+                            boss_texture,
                             arena_origin + egui::vec2(x * cell_size, y * cell_size),
                             cell_size,
                             sequence,
@@ -17241,17 +17364,85 @@ fn draw_sprite_placements(request: SpritePlacementDraw<'_>) -> SpritePlacementDr
                             arena_origin + egui::vec2(x * cell_size, y * cell_size),
                             egui::vec2(cell_size.max(9.0), cell_size.max(9.0)) * 1.5,
                         );
-                        paint_boss_controller_marker(painter, figure, 0x29, identity);
+                        if let Some(texture) = boss_texture.or(texture) {
+                            paint_wendy_lemmy_oam(
+                                painter,
+                                texture,
+                                figure.center(),
+                                cell_size,
+                                identity,
+                            );
+                        } else {
+                            paint_boss_controller_marker(painter, figure, 0x29, identity);
+                        }
                     }
                 }
                 koopa_kid_controller_count = koopa_kid_controller_count.saturating_add(1);
             } else {
-                paint_boss_controller_marker(
-                    painter,
-                    marker,
-                    placement.sprite_number,
-                    placement.first_byte >> 4,
-                );
+                let identity = (placement.first_byte >> 4).min(6);
+                if placement.sprite_number == 0xa0 {
+                    if let Some(texture) = mode7_boss_texture {
+                        painter.image(
+                            texture.id(),
+                            egui::Rect::from_center_size(
+                                marker.center(),
+                                egui::vec2(4.0 * cell_size, 4.0 * cell_size),
+                            ),
+                            egui::Rect::from_min_max(egui::Pos2::ZERO, egui::pos2(1.0, 1.0)),
+                            egui::Color32::WHITE,
+                        );
+                    } else {
+                        paint_boss_controller_marker(
+                            painter,
+                            marker,
+                            placement.sprite_number,
+                            identity,
+                        );
+                    }
+                } else if placement.sprite_number == 0x29 && matches!(identity, 3 | 4) {
+                    if let Some(texture) = boss_texture {
+                        paint_iggy_larry_oam(
+                            painter,
+                            texture,
+                            marker.center(),
+                            cell_size,
+                            identity,
+                        );
+                    } else {
+                        paint_boss_controller_marker(
+                            painter,
+                            marker,
+                            placement.sprite_number,
+                            identity,
+                        );
+                    }
+                } else if placement.sprite_number == 0x29 && identity <= 2 {
+                    if let Some(texture) = mode7_boss_texture {
+                        painter.image(
+                            texture.id(),
+                            egui::Rect::from_center_size(
+                                marker.center(),
+                                egui::vec2(2.0 * cell_size, 2.0 * cell_size),
+                            ),
+                            egui::Rect::from_min_max(egui::Pos2::ZERO, egui::pos2(1.0, 1.0)),
+                            egui::Color32::WHITE,
+                        );
+                    } else {
+                        paint_boss_controller_marker(
+                            painter,
+                            marker,
+                            placement.sprite_number,
+                            identity,
+                        );
+                    }
+                } else {
+                    paint_boss_controller_marker(
+                        painter,
+                        marker,
+                        placement.sprite_number,
+                        identity,
+                    );
+                }
             }
         }
         if let (Some(texture), Some(parts)) = (texture, preview.as_deref()) {
@@ -17329,13 +17520,144 @@ fn draw_sprite_placements(request: SpritePlacementDraw<'_>) -> SpritePlacementDr
         }
     }
     if let Some(kind) = boss_battle_kind(level_mode, placements) {
-        paint_boss_runtime_helpers(painter, cell_size, kind, animation_phase);
+        paint_boss_runtime_helpers(
+            painter,
+            boss_texture.or(texture),
+            cell_size,
+            kind,
+            animation_phase,
+        );
     }
     SpritePlacementDrawResult { hit, bounds }
 }
 
+fn paint_wendy_lemmy_oam(
+    painter: &egui::Painter,
+    texture: &egui::TextureHandle,
+    origin: egui::Pos2,
+    cell: f32,
+    identity: u8,
+) {
+    // Authentic idle frame 2 from Spr029_KoopaKid_WendyLemmy_Draw
+    // ($03D484). Each tuple is x, y, character, OAM flags, size code.
+    const LEMMY_FRAME: [(i8, i8, u8, u8, u8); 3] = [
+        (-8, 0, 0x00, 0x05, 2),
+        (0, 8, 0x28, 0x05, 2),
+        (0, -8, 0x02, 0x05, 0),
+    ];
+    const WENDY_FRAME: [(i8, i8, u8, u8, u8); 3] = [
+        (-8, 0, 0x40, 0x09, 2),
+        (0, 8, 0x28, 0x09, 2),
+        (8, 0, 0x42, 0x09, 0),
+    ];
+    let frame = if identity == 6 {
+        &WENDY_FRAME
+    } else {
+        &LEMMY_FRAME
+    };
+    let scale = cell / 16.0;
+    for &(x, y, character, flags, size) in frame {
+        let top_left = origin + egui::vec2(f32::from(x) * scale, f32::from(y) * scale);
+        paint_authentic_oam_tile(
+            painter,
+            texture,
+            top_left,
+            cell,
+            character,
+            flags | 0x10,
+            size == 2,
+        );
+    }
+}
+
+fn paint_iggy_larry_oam(
+    painter: &egui::Painter,
+    texture: &egui::TextureHandle,
+    origin: egui::Pos2,
+    cell: f32,
+    identity: u8,
+) {
+    // Walking frame 0 from Spr029_KoopaKid_IggyLarry_Draw ($01FEBC).
+    // Iggy substitutes character $06 for the first entry; Larry uses $00.
+    let first_tile = if identity == 3 { 0x06 } else { 0x00 };
+    let flags = if identity == 3 { 0x37 } else { 0x3b };
+    for &(x, y, tile, large) in &[
+        (-9_i8, -6_i8, first_tile, true),
+        (-1, -14, 0x0c, false),
+        (0, 0, 0x02, true),
+        (-8, 9, 0x0a, false),
+    ] {
+        paint_authentic_oam_tile(
+            painter,
+            texture,
+            origin + egui::vec2(f32::from(x) * cell / 16.0, f32::from(y) * cell / 16.0),
+            cell,
+            tile,
+            flags,
+            large,
+        );
+    }
+}
+
+fn paint_authentic_oam_tile(
+    painter: &egui::Painter,
+    texture: &egui::TextureHandle,
+    top_left: egui::Pos2,
+    cell: f32,
+    character: u8,
+    flags: u8,
+    large: bool,
+) {
+    let side = if large { cell } else { cell / 2.0 };
+    let target = egui::Rect::from_min_size(top_left, egui::vec2(side, side));
+    if !large {
+        draw_sprite_atlas_subtile(
+            painter,
+            texture,
+            target,
+            authentic_oam_atlas_word(character, flags),
+            egui::Color32::WHITE,
+        );
+        return;
+    }
+    let flip_x = flags & 0x40 != 0;
+    let flip_y = flags & 0x80 != 0;
+    for display_y in 0..2_u8 {
+        for display_x in 0..2_u8 {
+            let source_x = if flip_x { 1 - display_x } else { display_x };
+            let source_y = if flip_y { 1 - display_y } else { display_y };
+            let subtile = character
+                .wrapping_add(source_x)
+                .wrapping_add(source_y.wrapping_mul(16));
+            let minimum = top_left
+                + egui::vec2(
+                    f32::from(display_x) * side / 2.0,
+                    f32::from(display_y) * side / 2.0,
+                );
+            draw_sprite_atlas_subtile(
+                painter,
+                texture,
+                egui::Rect::from_min_size(minimum, egui::vec2(side / 2.0, side / 2.0)),
+                authentic_oam_atlas_word(subtile, flags),
+                egui::Color32::WHITE,
+            );
+        }
+    }
+}
+
+fn authentic_oam_atlas_word(character: u8, flags: u8) -> u16 {
+    // SNES OBJ OAM is `vhoopppN cccccccc`; the editor atlas descriptor is
+    // `vh-ppp-N cccccccc`. Drop priority and move the three palette bits one
+    // position upward while retaining name-table selection and flips.
+    u16::from(character)
+        | (u16::from(flags & 0x01) << 8)
+        | (u16::from(flags & 0x0e) << 9)
+        | (u16::from(flags & 0xc0) << 8)
+}
+
 fn paint_boss_runtime_helpers(
     painter: &egui::Painter,
+    texture: Option<&egui::TextureHandle>,
     cell: f32,
     kind: BossBattleKind,
     animation_phase: u8,
@@ -17345,83 +17667,163 @@ fn paint_boss_runtime_helpers(
         painter.circle_filled(center, radius, fill);
         painter.circle_stroke(center, radius, egui::Stroke::new(2.0, egui::Color32::BLACK));
     };
+    let paint_standard = |sprite_number: u8, x: f32, y: f32, placement_first: u8| {
+        let Some(texture) = texture else { return };
+        let Some(parts) = lm_render::render_lunar_magic_standard_sprite_with_mode(
+            sprite_number,
+            lm_render::StandardSpritePreviewMode {
+                animation_phase,
+                placement_first,
+                ..Default::default()
+            },
+        ) else {
+            return;
+        };
+        let marker = egui::Rect::from_center_size(
+            origin + egui::vec2(x * cell, y * cell),
+            egui::vec2(cell, cell),
+        );
+        for part in parts {
+            draw_sprite_preview_definition(
+                painter,
+                texture,
+                sprite_preview_part_rect(marker, part.x, part.y, cell),
+                part.subtiles,
+            );
+        }
+    };
     match kind {
         BossBattleKind::Reznor => {
-            // Each live Reznor can emit extended sprite $02. Show two phases so
-            // the runtime-only projectile is represented in the static canvas.
+            // Extended sprite $02 uses one authentic 8x8 OAM tile ($26/$2A,
+            // flags $35/$F5). Show two legal animation phases.
             for (x, y) in [(6.3, 5.5), (10.2, 8.4)] {
-                outlined_circle(
-                    origin + egui::vec2(x * cell, y * cell),
-                    0.28 * cell,
-                    if animation_phase & 1 == 0 {
-                        egui::Color32::from_rgb(248, 184, 40)
-                    } else {
-                        egui::Color32::from_rgb(248, 96, 24)
-                    },
-                );
+                if let Some(texture) = texture {
+                    paint_authentic_oam_tile(
+                        painter,
+                        texture,
+                        origin + egui::vec2(x * cell, y * cell),
+                        cell,
+                        if animation_phase & 1 == 0 { 0x26 } else { 0x2a },
+                        if animation_phase & 2 == 0 { 0x35 } else { 0xf5 },
+                        false,
+                    );
+                } else {
+                    outlined_circle(
+                        origin + egui::vec2(x * cell, y * cell),
+                        0.28 * cell,
+                        egui::Color32::from_rgb(248, 128, 24),
+                    );
+                }
             }
         }
         BossBattleKind::KoopaKid { identity: 2, .. } => {
             // Ludwig creates normal sprite $34 during his attack routine.
-            outlined_circle(
-                origin + egui::vec2(11.5 * cell, 7.2 * cell),
-                0.38 * cell,
-                egui::Color32::from_rgb(248, 96, 32),
-            );
+            paint_standard(0x34, 11.5, 7.2, 0);
         }
         BossBattleKind::KoopaKid {
             identity: 3 | 4, ..
         } => {
             // Iggy/Larry throw normal sprite $A7 from the tilting platform.
-            outlined_circle(
-                origin + egui::vec2(11.0 * cell, 6.6 * cell),
-                0.48 * cell,
-                egui::Color32::from_rgb(112, 200, 72),
-            );
+            paint_standard(0xa7, 11.0, 6.6, 0);
         }
         BossBattleKind::Bowser => {
             // Bowser's controller generates these independently of the level
             // stream: $A1 bowling ball, two $A2 Mechakoopas, $33 raining fire,
             // and $7C Peach. Present the complete encounter palette together.
             debug_assert_eq!(BOWSER_RUNTIME_HELPER_IDS.len(), 8);
-            outlined_circle(
-                origin + egui::vec2(2.5 * cell, 10.6 * cell),
-                0.9 * cell,
-                egui::Color32::from_rgb(56, 64, 72),
-            );
+            if let Some(texture) = texture {
+                paint_bowser_bowling_ball_oam(
+                    painter,
+                    texture,
+                    origin + egui::vec2(2.5 * cell, 10.6 * cell),
+                    cell,
+                );
+            }
             for x in [6.0, 10.0] {
-                let body = egui::Rect::from_center_size(
-                    origin + egui::vec2(x * cell, 10.7 * cell),
-                    egui::vec2(0.9 * cell, 0.75 * cell),
-                );
-                painter.rect_filled(body, 2.0, egui::Color32::from_rgb(120, 184, 120));
-                painter.rect_stroke(
-                    body,
-                    2.0,
-                    egui::Stroke::new(2.0, egui::Color32::BLACK),
-                    egui::StrokeKind::Inside,
-                );
+                if let Some(texture) = texture {
+                    paint_mechakoopa_oam(
+                        painter,
+                        texture,
+                        origin + egui::vec2(x * cell, 10.7 * cell),
+                        cell,
+                    );
+                }
             }
             for (x, y) in [(3.0, 3.0), (6.5, 4.0), (10.0, 2.6), (13.5, 4.4)] {
-                outlined_circle(
-                    origin + egui::vec2(x * cell, y * cell),
-                    0.3 * cell,
-                    egui::Color32::from_rgb(248, 104, 32),
-                );
+                if let Some(texture) = texture {
+                    paint_authentic_oam_tile(
+                        painter,
+                        texture,
+                        origin + egui::vec2(x * cell, y * cell),
+                        cell,
+                        if animation_phase & 2 == 0 { 0x2a } else { 0x2c },
+                        if animation_phase & 1 == 0 { 0x05 } else { 0x45 },
+                        true,
+                    );
+                }
             }
-            let peach = origin + egui::vec2(13.5 * cell, 9.7 * cell);
-            outlined_circle(
-                peach - egui::vec2(0.0, 0.45 * cell),
-                0.28 * cell,
-                egui::Color32::from_rgb(248, 208, 168),
-            );
-            painter.rect_filled(
-                egui::Rect::from_center_size(peach, egui::vec2(0.8 * cell, 0.9 * cell)),
-                3.0,
-                egui::Color32::from_rgb(248, 112, 176),
-            );
+            paint_standard(0x7c, 13.5, 9.7, animation_phase & 1);
         }
         BossBattleKind::KoopaKid { .. } => {}
+    }
+}
+
+fn paint_bowser_bowling_ball_oam(
+    painter: &egui::Painter,
+    texture: &egui::TextureHandle,
+    origin: egui::Pos2,
+    cell: f32,
+) {
+    const X: [i8; 12] = [-16, 0, 16, -16, 0, 16, -16, 0, 16, 0, 0, -8];
+    const Y: [i8; 12] = [-30, -30, -30, -14, -14, -14, 2, 2, 2, 2, 2, -22];
+    const TILE: [u8; 12] = [
+        0x45, 0x47, 0x45, 0x65, 0x66, 0x65, 0x45, 0x47, 0x45, 0x39, 0x38, 0x63,
+    ];
+    const FLAGS: [u8; 12] = [
+        0x0d, 0x0d, 0x4d, 0x0d, 0x0d, 0x4d, 0x8d, 0x8d, 0xcd, 0x0d, 0x0d, 0x0d,
+    ];
+    const LARGE: [bool; 12] = [
+        true, true, true, true, true, true, true, true, true, false, false, true,
+    ];
+    let scale = cell / 16.0;
+    for index in 0..12 {
+        paint_authentic_oam_tile(
+            painter,
+            texture,
+            origin + egui::vec2(f32::from(X[index]) * scale, f32::from(Y[index]) * scale),
+            cell,
+            TILE[index],
+            FLAGS[index],
+            LARGE[index],
+        );
+    }
+}
+
+fn paint_mechakoopa_oam(
+    painter: &egui::Painter,
+    texture: &egui::TextureHandle,
+    origin: egui::Pos2,
+    cell: f32,
+) {
+    // Runtime walking frame 0, facing right, including the animated wind-up key.
+    const PARTS: [(i8, i8, u8, u8, bool); 5] = [
+        (0, 0, 0x51, 0x4b, true),
+        (16, 8, 0x60, 0x4b, false),
+        (0, -8, 0x42, 0x4b, false),
+        (8, -8, 0x40, 0x4b, true),
+        (-7, 0, 0x70, 0x4d, false),
+    ];
+    let scale = cell / 16.0;
+    for (x, y, tile, flags, large) in PARTS {
+        paint_authentic_oam_tile(
+            painter,
+            texture,
+            origin + egui::vec2(f32::from(x) * scale, f32::from(y) * scale),
+            cell,
+            tile,
+            flags,
+            large,
+        );
     }
 }
 
@@ -29007,6 +29409,8 @@ mod tests {
                     target,
                     cell_size: ROM_LEVEL_CANVAS_CELL,
                     texture: None,
+                    boss_texture: None,
+                    mode7_boss_texture: None,
                     animated_texture: None,
                     placements: std::slice::from_ref(&placement),
                     cursor: Some(cursor),
@@ -29032,6 +29436,8 @@ mod tests {
                     target,
                     cell_size: ROM_LEVEL_CANVAS_CELL,
                     texture: None,
+                    boss_texture: None,
+                    mode7_boss_texture: None,
                     animated_texture: None,
                     placements: std::slice::from_ref(&placement),
                     cursor: Some(cursor),
