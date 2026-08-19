@@ -20672,6 +20672,31 @@ mod tests {
         assert_eq!(reopened.level().layer1.objects.records.len(), baseline + 1);
         assert_eq!(reopened.level().sprites.tokens.len(), sprite_baseline + 1);
         assert_eq!(app.project().unwrap().rom.logical_len(), 0x10_0000);
+
+        // Exercise the same boundary as a user closing the editor and reopening the file. A
+        // controller decoded from the live project is not sufficient evidence that the bytes
+        // written by Save/Save As contain the staged edits.
+        let saved_rom = app.project().unwrap().save_snapshot();
+        let mut disk_reopen = AppState::default();
+        disk_reopen.load_rom(saved_rom).unwrap();
+        disk_reopen.dispatch(Command::SelectLevel(0x105)).unwrap();
+        let disk_snapshot = disk_reopen.controller_snapshot().unwrap();
+        let disk_level = LevelController::decode(
+            &disk_snapshot,
+            lm_profile::smw_us_v1_vanilla_level_layout(),
+            &SpriteLengthTable::standard(),
+        )
+        .unwrap();
+        assert_eq!(disk_level.level(), &expected);
+        assert!(
+            disk_reopen
+                .project()
+                .unwrap()
+                .identity
+                .as_ref()
+                .unwrap()
+                .checksum_matches()
+        );
     }
 
     #[test]
@@ -20742,7 +20767,7 @@ mod tests {
     }
 
     #[test]
-    fn staged_level_transition_can_auto_confirm_the_same_checked_save_path() {
+    fn save_as_auto_confirms_staged_level_through_the_checked_commit_path() {
         let mut app = AppState::default();
         app.load_rom(crate::test_support::pristine_smw_us_rom_bytes())
             .unwrap();
@@ -20759,7 +20784,7 @@ mod tests {
                 controller.level().sprites.header ^ 1,
             )])
             .unwrap();
-        let transition = Command::SelectLevel(0x106);
+        let transition = Command::SaveAs;
         let mut editor = VanillaLevelEditor {
             controller: Some(controller),
             auto_set_screens: Some(false),

@@ -518,8 +518,8 @@ fn gameplay_evidence_rejects_a_boot_snapshot_that_did_not_reach_the_destination(
 }
 
 #[test]
-#[ignore = "requires local Snes9x plus the supplied legally obtained SMW ROM fixture"]
-fn rust_expanded_rom_survives_snes9x_initialization() {
+#[ignore = "requires an official Snes9x libretro core, the gameplay driver, and the legally supplied SMW ROM"]
+fn rust_expanded_rom_reaches_level_gameplay_after_controller_input() {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
     let snes9x = require_snes9x_binary();
 
@@ -527,15 +527,20 @@ fn rust_expanded_rom_survives_snes9x_initialization() {
         RomImage::from_bytes(fs::read(source_rom(&root)).expect("read source SMW ROM"))
             .expect("decode source SMW ROM"),
     );
+    let plan = lm_profile::smw_us_v1_expanded_settings_installation_plan_for_rom(&project.rom)
+        .expect("build expanded-settings runtime installation");
     project
-        .expand_rom(Mapper::LoRom, 0x10_0000, 0xff, 0x7fdc)
-        .expect("expand and checksum generated ROM");
+        .install_relocatable_patch_with_expansion_retry(
+            &plan,
+            lm_profile::SMW_US_V1_EXPANDED_SETTINGS_MAXIMUM_LOROM_LEN,
+        )
+        .expect("install expanded-settings runtime and expand generated ROM");
 
     let directory = SmokeDirectory::create();
     let output = directory.0.join("Rust-generated-SMW.sfc");
     fs::write(&output, project.save_snapshot()).expect("write generated ROM");
 
-    require_snes9x_initialization(&snes9x, &output);
+    let _ = require_level_header_gameplay_evidence(&snes9x, &output, 0x000);
 }
 
 #[test]
@@ -1014,8 +1019,8 @@ fn rust_layer2_edit_survives_snes9x_initialization() {
 }
 
 #[test]
-#[ignore = "requires local Snes9x plus the supplied legally obtained SMW ROM fixture"]
-fn rust_layer1_object_edit_survives_snes9x_initialization() {
+#[ignore = "requires an official Snes9x libretro core, the gameplay driver, and the legally supplied SMW ROM"]
+fn rust_layer1_object_edit_reaches_level_gameplay_after_controller_input() {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
     let snes9x = require_snes9x_binary();
     let layout = lm_profile::smw_us_v1_vanilla_level_layout();
@@ -1083,7 +1088,7 @@ fn rust_layer1_object_edit_survives_snes9x_initialization() {
     let directory = SmokeDirectory::create();
     let output = directory.0.join("Rust-Layer1-object-edited-SMW.sfc");
     fs::write(&output, project.save_snapshot()).expect("write Layer 1 object-edited ROM");
-    require_snes9x_initialization(&snes9x, &output);
+    let _ = require_level_header_gameplay_evidence(&snes9x, &output, 0x000);
 }
 
 #[test]
@@ -1335,8 +1340,8 @@ fn rust_standard_time_music_and_sprite_headers_are_applied_in_snes9x_gameplay() 
 }
 
 #[test]
-#[ignore = "requires local Snes9x plus the supplied legally obtained SMW ROM fixture"]
-fn rust_standard_sprite_edit_survives_snes9x_initialization() {
+#[ignore = "requires an official Snes9x libretro core, the gameplay driver, and the legally supplied SMW ROM"]
+fn rust_standard_sprite_edit_reaches_level_gameplay_after_controller_input() {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
     let snes9x = require_snes9x_binary();
     let layout = lm_profile::smw_us_v1_vanilla_level_layout();
@@ -1387,7 +1392,7 @@ fn rust_standard_sprite_edit_survives_snes9x_initialization() {
     let directory = SmokeDirectory::create();
     let output = directory.0.join("Rust-standard-sprite-edited-SMW.sfc");
     fs::write(&output, project.save_snapshot()).expect("write sprite-edited ROM");
-    require_snes9x_initialization(&snes9x, &output);
+    let _ = require_level_header_gameplay_evidence(&snes9x, &output, 0x000);
 }
 
 #[test]
