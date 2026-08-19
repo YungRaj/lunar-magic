@@ -698,6 +698,7 @@ pub(crate) struct VanillaLevelEditor {
     sprite_texture: Option<egui::TextureHandle>,
     boss_sprite_texture: Option<egui::TextureHandle>,
     mode7_boss_texture: Option<egui::TextureHandle>,
+    mode7_boss_textures: Vec<egui::TextureHandle>,
     animated_sprite_textures: Vec<egui::TextureHandle>,
     entrance_texture: Option<egui::TextureHandle>,
     sprite_tiles: Vec<lm_graphics::IndexedTile>,
@@ -2980,6 +2981,7 @@ impl VanillaLevelEditor {
         self.sprite_texture = None;
         self.boss_sprite_texture = None;
         self.mode7_boss_texture = None;
+        self.mode7_boss_textures.clear();
         self.animated_sprite_textures.clear();
         self.entrance_texture = None;
         self.sprite_tiles.clear();
@@ -3147,6 +3149,7 @@ impl VanillaLevelEditor {
         self.sprite_texture = None;
         self.boss_sprite_texture = None;
         self.mode7_boss_texture = None;
+        self.mode7_boss_textures.clear();
         self.animated_sprite_textures.clear();
         self.entrance_texture = None;
         self.sprite_tiles.clear();
@@ -3294,19 +3297,23 @@ impl VanillaLevelEditor {
                     }
                 }
                 if let Some(BossBattleKind::KoopaKid { identity: 0..=2, .. }) = boss_kind {
-                    match crate::vanilla_map16_preview::render_mode7_koopa_boss_frame(
+                    match crate::vanilla_map16_preview::render_mode7_koopa_boss_frames(
                         snapshot.rom_bytes.clone(),
                         match boss_kind {
                             Some(BossBattleKind::KoopaKid { identity, .. }) => identity,
                             _ => unreachable!(),
                         },
                     ) {
-                        Ok(image) => {
-                            self.mode7_boss_texture = Some(context.load_texture(
-                                format!("vanilla-mode7-boss-{level:03X}-{}", snapshot.revision),
-                                image,
-                                egui::TextureOptions::NEAREST,
-                            ));
+                        Ok(images) => {
+                            self.mode7_boss_textures = load_animation_textures(
+                                context,
+                                &format!(
+                                    "vanilla-mode7-boss-{level:03X}-{}",
+                                    snapshot.revision
+                                ),
+                                images,
+                            );
+                            self.mode7_boss_texture = self.mode7_boss_textures.first().cloned();
                         }
                         Err(error) => self.map16_error = Some(error),
                     }
@@ -7294,7 +7301,10 @@ impl VanillaLevelEditor {
                 cell_size: cell,
                 texture: self.sprite_texture.as_ref(),
                 boss_texture: self.boss_sprite_texture.as_ref(),
-                mode7_boss_texture: self.mode7_boss_texture.as_ref(),
+                mode7_boss_texture: self
+                    .mode7_boss_textures
+                    .get(usize::from(animation_phase))
+                    .or(self.mode7_boss_texture.as_ref()),
                 animated_texture: self
                     .animated_sprite_textures
                     .get(usize::from(animation_phase))
@@ -7668,7 +7678,10 @@ impl VanillaLevelEditor {
                 cell_size: cell,
                 texture: self.sprite_texture.as_ref(),
                 boss_texture: self.boss_sprite_texture.as_ref(),
-                mode7_boss_texture: self.mode7_boss_texture.as_ref(),
+                mode7_boss_texture: self
+                    .mode7_boss_textures
+                    .get(usize::from(animation_phase))
+                    .or(self.mode7_boss_texture.as_ref()),
                 animated_texture: self
                     .animated_sprite_textures
                     .get(usize::from(animation_phase))

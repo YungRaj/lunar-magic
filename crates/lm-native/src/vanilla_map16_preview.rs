@@ -2622,9 +2622,19 @@ pub(crate) fn render_sprite_graphics_files_atlas(
     Ok(render_sprite_graphics_atlas(&graphics, &palette))
 }
 
-pub(crate) fn render_mode7_koopa_boss_frame(
+pub(crate) fn render_mode7_koopa_boss_frames(
     rom_bytes: Vec<u8>,
     identity: u8,
+) -> Result<Vec<egui::ColorImage>, String> {
+    (0..4)
+        .map(|frame| render_mode7_koopa_boss_animation_frame(rom_bytes.clone(), identity, frame))
+        .collect()
+}
+
+fn render_mode7_koopa_boss_animation_frame(
+    rom_bytes: Vec<u8>,
+    identity: u8,
+    animation_frame: usize,
 ) -> Result<egui::ColorImage, String> {
     // SNES $03:D9DE, converted through the vanilla LoROM mapping.
     const TILEMAP_OFFSET: usize = 0x01_d9de;
@@ -2651,7 +2661,7 @@ pub(crate) fn render_mode7_koopa_boss_frame(
         .logical_bytes()
         .get(TILEMAP_OFFSET..TILEMAP_OFFSET + TILEMAP_LEN)
         .ok_or_else(|| "Mode-7 Koopaling tilemap table is truncated".to_string())?;
-    let frame_start = frame_base * 16;
+    let frame_start = (frame_base + animation_frame % 9) * 16;
     let frame = tilemap
         .get(frame_start..frame_start + 16)
         .ok_or_else(|| "Mode-7 Koopaling frame is outside the tilemap table".to_string())?;
@@ -2821,13 +2831,22 @@ mod tests {
     #[test]
     fn authentic_mode7_koopaling_frames_decode_from_pristine_rom() {
         for identity in 0..=2 {
-            let image = render_mode7_koopa_boss_frame(
+            let frames = render_mode7_koopa_boss_frames(
                 crate::test_support::pristine_smw_us_rom_bytes(),
                 identity,
             )
             .unwrap();
-            assert_eq!(image.size, [32, 32]);
-            assert!(image.pixels.iter().any(|pixel| pixel.a() != 0));
+            assert_eq!(frames.len(), 4);
+            for image in &frames {
+                assert_eq!(image.size, [32, 32]);
+                assert!(image.pixels.iter().any(|pixel| pixel.a() != 0));
+            }
+            assert!(
+                frames
+                    .windows(2)
+                    .any(|pair| pair[0].pixels != pair[1].pixels),
+                "Mode-7 Koopaling identity {identity} remained frozen"
+            );
         }
     }
 
