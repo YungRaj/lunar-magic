@@ -1055,7 +1055,13 @@ impl VanillaLevelEditor {
         };
         let object_tileset = controller.level().layer1.header.object_tileset();
         let object_family = lm_profile::smw_us_v1_object_family(object_tileset);
-        self.ensure_map16_assets(ui.ctx(), &snapshot, object_tileset, special_world_passed);
+        self.ensure_map16_assets(
+            ui.ctx(),
+            &snapshot,
+            object_tileset,
+            special_world_passed,
+            custom_sprites,
+        );
         ui.horizontal(|ui| {
             ui.label(
                 vanilla_text(catalog, ExtendedUiTextKey::VanillaLevelObjectFamilyFormat)
@@ -3082,6 +3088,7 @@ impl VanillaLevelEditor {
         snapshot: &lm_app::ControllerSnapshot,
         object_tileset: u8,
         special_world_passed: bool,
+        custom_sprites: Option<&lm_level::SscResolvedTable>,
     ) {
         let sprite_tileset = self.form.sprite_tileset;
         let level = self.controller.as_ref().map_or(0, |controller| {
@@ -3261,6 +3268,7 @@ impl VanillaLevelEditor {
                     boss_battle_kind(
                         level.layer1.header.level_mode(),
                         &level.sprites.native_placements(),
+                        custom_sprites,
                     )
                 });
                 let boss_files = match boss_kind {
@@ -3652,7 +3660,7 @@ impl VanillaLevelEditor {
             self.toolbar_nudge_selection(x_delta, y_delta);
         }
         let canvas_available = ui.available_size();
-        let boss_battle = boss_battle_kind(level_mode, &sprite_placements);
+        let boss_battle = boss_battle_kind(level_mode, &sprite_placements, custom_sprites);
         let cell = if snes_viewport {
             fitted_snes_viewport_cell(canvas_available, self.canvas_zoom_percent())
         } else {
@@ -16790,18 +16798,36 @@ fn marker_fallback_tile(record: &ObjectRecord, artwork_rendered: bool) -> Option
 fn boss_battle_kind(
     level_mode: u8,
     sprites: &[lm_level::NativeSpritePlacement],
+    custom_sprites: Option<&lm_level::SscResolvedTable>,
 ) -> Option<BossBattleKind> {
-    if sprites.iter().any(|sprite| sprite.sprite_number == 0xa9) {
+    let vanilla_controller = |sprite: &&lm_level::NativeSpritePlacement| {
+        sprite.extra_bits == 0
+            && custom_sprites.is_none_or(|table| {
+                table
+                    .default_display(sprite.sprite_number, sprite.extra_bits)
+                    .is_none()
+            })
+    };
+    if sprites
+        .iter()
+        .filter(vanilla_controller)
+        .any(|sprite| sprite.sprite_number == 0xa9)
+    {
         return Some(BossBattleKind::Reznor);
     }
-    if sprites.iter().any(|sprite| sprite.sprite_number == 0xa0) {
+    if sprites
+        .iter()
+        .filter(vanilla_controller)
+        .any(|sprite| sprite.sprite_number == 0xa0)
+    {
         return Some(BossBattleKind::Bowser);
     }
     sprites
         .iter()
-        .find(|sprite| sprite.sprite_number == 0x29)
+        .filter(vanilla_controller)
+        .find(|sprite| sprite.sprite_number == 0x29 && sprite.first_byte >> 4 <= 6)
         .map(|sprite| BossBattleKind::KoopaKid {
-            identity: (sprite.first_byte >> 4).min(6),
+            identity: sprite.first_byte >> 4,
             rotating_platform: level_mode & 0x1f == 0x0b,
         })
 }
@@ -17248,7 +17274,18 @@ fn draw_sprite_placements(request: SpritePlacementDraw<'_>) -> SpritePlacementDr
     let mut koopa_kid_controller_count = 0_usize;
     for placement in placements {
         let (tile_x, tile_y) = presented_sprite_tile_coordinates(*placement, vertical);
-        let boss_controller = matches!(placement.sprite_number, 0x29 | 0xa0 | 0xa9);
+        let custom_display = custom_sprites.and_then(|table| {
+            table
+                .default_display(placement.sprite_number, placement.extra_bits)
+                .map(|sprite| (table, sprite))
+        });
+        // Custom sprites may deliberately reuse vanilla controller numbers.
+        // Only an ordinary three-byte record without an SSC replacement owns
+        // the built-in boss expansion path.
+        let boss_controller = placement.extra_bits == 0
+            && custom_display.is_none()
+            && (matches!(placement.sprite_number, 0xa0 | 0xa9)
+                || placement.sprite_number == 0x29 && placement.first_byte >> 4 <= 6);
         let mut center = target.min
             + egui::vec2(
                 (f32::from(tile_x) + 0.5) * cell_size,
@@ -17278,11 +17315,6 @@ fn draw_sprite_placements(request: SpritePlacementDraw<'_>) -> SpritePlacementDr
             center,
             egui::vec2(cell_size.max(9.0), cell_size.max(9.0)) * marker_scale,
         );
-        let custom_display = custom_sprites.and_then(|table| {
-            table
-                .default_display(placement.sprite_number, placement.extra_bits)
-                .map(|sprite| (table, sprite))
-        });
         let custom_preview = custom_display.and_then(|(table, sprite)| {
             lm_render::render_atlas_lunar_magic_custom_sprite_with(table, sprite, |index| {
                 external_sprite_definition(custom_map16, index)
@@ -17519,7 +17551,7 @@ fn draw_sprite_placements(request: SpritePlacementDraw<'_>) -> SpritePlacementDr
             hit = Some(placement.token_index);
         }
     }
-    if let Some(kind) = boss_battle_kind(level_mode, placements) {
+    if let Some(kind) = boss_battle_kind(level_mode, placements, custom_sprites) {
         paint_boss_runtime_helpers(
             painter,
             boss_texture.or(texture),
@@ -23418,28 +23450,40 @@ mod tests {
             sprite_number,
         };
         assert_eq!(
-            boss_battle_kind(0x09, &[placement(0xa9, 0)]),
+            boss_battle_kind(0x09, &[placement(0xa9, 0)], None),
             Some(BossBattleKind::Reznor)
         );
         assert_eq!(
-            boss_battle_kind(0x10, &[placement(0xa0, 0)]),
+            boss_battle_kind(0x10, &[placement(0xa0, 0)], None),
             Some(BossBattleKind::Bowser)
         );
         assert_eq!(
-            boss_battle_kind(0x0b, &[placement(0x29, 0x3c)]),
+            boss_battle_kind(0x0b, &[placement(0x29, 0x3c)], None),
             Some(BossBattleKind::KoopaKid {
                 identity: 3,
                 rotating_platform: true,
             })
         );
         assert_eq!(
-            boss_battle_kind(0, &[placement(0x29, 0x5c)]),
+            boss_battle_kind(0, &[placement(0x29, 0x5c)], None),
             Some(BossBattleKind::KoopaKid {
                 identity: 5,
                 rotating_platform: false,
             })
         );
-        assert_eq!(boss_battle_kind(0, &[placement(0x20, 0)]), None);
+        assert_eq!(boss_battle_kind(0, &[placement(0x20, 0)], None), None);
+        assert_eq!(
+            boss_battle_kind(0x0b, &[placement(0x29, 0x70)], None),
+            None,
+            "undefined/custom controller identities must not alias Wendy"
+        );
+        let mut extended_replacement = placement(0x29, 0x30);
+        extended_replacement.extra_bits = 2;
+        assert_eq!(
+            boss_battle_kind(0x0b, &[extended_replacement], None),
+            None,
+            "extended custom records must stay on the general sprite path"
+        );
     }
 
     #[test]
@@ -23467,6 +23511,10 @@ mod tests {
             (0x099, Some(1)),
             (0x09a, Some(0)),
             (0x09b, None),
+            // The same native controllers are legal outside the familiar
+            // original boss-room range and must be parsed from their streams.
+            (0x0e5, Some(0)),
+            (0x1f6, Some(3)),
         ];
         for (level, identity) in cases {
             app.dispatch(Command::SelectLevel(level)).unwrap();
@@ -23485,6 +23533,7 @@ mod tests {
             let kind = boss_battle_kind(
                 loaded.layer1.header.level_mode(),
                 &loaded.sprites.native_placements(),
+                None,
             );
             match identity {
                 Some(identity) => assert!(matches!(
