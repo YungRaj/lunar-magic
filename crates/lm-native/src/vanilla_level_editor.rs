@@ -439,7 +439,6 @@ enum BossBattleKind {
     },
     Reznor,
     Bowser,
-    Unknown,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -11305,24 +11304,22 @@ impl VanillaLevelEditor {
     fn show_boss_fight_editor(&mut self, ui: &mut egui::Ui) {
         let boss = self.controller.as_ref().and_then(|controller| {
             let mode = controller.level().layer1.header.level_mode();
-            is_boss_battle_level_mode(mode).then(|| {
-                controller
-                    .level()
-                    .sprites
-                    .tokens
-                    .iter()
-                    .enumerate()
-                    .find_map(|(index, token)| match token {
-                        SpriteToken::Record(record) => record
-                            .native_fields()
-                            .ok()
-                            .filter(|fields| matches!(fields.sprite_number, 0x29 | 0xa0 | 0xa9))
-                            .map(|fields| (mode, index, fields)),
-                        SpriteToken::Screen(_) | SpriteToken::Control(_) => None,
-                    })
-            })
+            controller
+                .level()
+                .sprites
+                .tokens
+                .iter()
+                .enumerate()
+                .find_map(|(index, token)| match token {
+                    SpriteToken::Record(record) => record
+                        .native_fields()
+                        .ok()
+                        .filter(|fields| matches!(fields.sprite_number, 0x29 | 0xa0 | 0xa9))
+                        .map(|fields| (mode, index, fields)),
+                    SpriteToken::Screen(_) | SpriteToken::Control(_) => None,
+                })
         });
-        let Some(Some((mode, index, fields))) = boss else {
+        let Some((mode, index, fields)) = boss else {
             return;
         };
         let kind = match fields.sprite_number {
@@ -16701,17 +16698,10 @@ fn marker_fallback_tile(record: &ObjectRecord, artwork_rendered: bool) -> Option
         .flatten()
 }
 
-const fn is_boss_battle_level_mode(level_mode: u8) -> bool {
-    matches!(level_mode & 0x1f, 0x09 | 0x0b | 0x10)
-}
-
 fn boss_battle_kind(
     level_mode: u8,
     sprites: &[lm_level::NativeSpritePlacement],
 ) -> Option<BossBattleKind> {
-    if !is_boss_battle_level_mode(level_mode) {
-        return None;
-    }
     if sprites.iter().any(|sprite| sprite.sprite_number == 0xa9) {
         return Some(BossBattleKind::Reznor);
     }
@@ -16721,21 +16711,20 @@ fn boss_battle_kind(
     sprites
         .iter()
         .find(|sprite| sprite.sprite_number == 0x29)
-        .map_or(Some(BossBattleKind::Unknown), |sprite| {
-            Some(BossBattleKind::KoopaKid {
-                identity: (sprite.first_byte >> 4).min(6),
-                rotating_platform: level_mode & 0x1f == 0x0b,
-            })
+        .map(|sprite| BossBattleKind::KoopaKid {
+            identity: (sprite.first_byte >> 4).min(6),
+            rotating_platform: level_mode & 0x1f == 0x0b,
         })
 }
 
 fn paint_boss_battle_arena(
     painter: &egui::Painter,
-    world: egui::Rect,
+    _world: egui::Rect,
     cell: f32,
     kind: BossBattleKind,
 ) {
     let visible = painter.clip_rect();
+    let arena_origin = visible.min;
     let (backdrop, floor, accent) = match kind {
         BossBattleKind::KoopaKid { .. } => (
             egui::Color32::from_rgb(16, 16, 24),
@@ -16752,14 +16741,9 @@ fn paint_boss_battle_arena(
             egui::Color32::from_rgb(80, 72, 64),
             egui::Color32::from_rgb(176, 200, 224),
         ),
-        BossBattleKind::Unknown => (
-            egui::Color32::from_rgb(24, 16, 24),
-            egui::Color32::from_rgb(80, 64, 64),
-            egui::Color32::from_rgb(200, 160, 160),
-        ),
     };
     painter.rect_filled(visible, 0.0, backdrop);
-    let floor_y = world.min.y + 12.0 * cell;
+    let floor_y = arena_origin.y + 12.0 * cell;
     painter.rect_filled(
         egui::Rect::from_min_max(
             egui::pos2(visible.min.x, floor_y),
@@ -16778,7 +16762,15 @@ fn paint_boss_battle_arena(
             identity,
             rotating_platform: true,
         } => {
-            let center = world.min + egui::vec2(8.0 * cell, 8.5 * cell);
+            let center = arena_origin + egui::vec2(8.0 * cell, 8.5 * cell);
+            painter.rect_filled(
+                egui::Rect::from_min_max(
+                    egui::pos2(visible.left(), floor_y + 0.35 * cell),
+                    visible.right_bottom(),
+                ),
+                0.0,
+                egui::Color32::from_rgb(184, 48, 24),
+            );
             painter.line_segment(
                 [
                     center - egui::vec2(5.0 * cell, 1.2 * cell),
@@ -16788,11 +16780,93 @@ fn paint_boss_battle_arena(
             );
             paint_boss_label(painter, visible, koopa_kid_name(identity));
         }
+        BossBattleKind::KoopaKid {
+            identity: identity @ (5 | 6),
+            ..
+        } => {
+            for column in [3.0, 6.0, 10.0, 13.0] {
+                let pipe = egui::Rect::from_min_max(
+                    arena_origin + egui::vec2((column - 0.75) * cell, 9.0 * cell),
+                    arena_origin + egui::vec2((column + 0.75) * cell, 12.0 * cell),
+                );
+                painter.rect_filled(pipe, 2.0, egui::Color32::from_rgb(40, 168, 72));
+                painter.rect_stroke(
+                    pipe,
+                    2.0,
+                    egui::Stroke::new(2.0, egui::Color32::from_rgb(16, 72, 32)),
+                    egui::StrokeKind::Inside,
+                );
+            }
+            paint_boss_label(painter, visible, koopa_kid_name(identity));
+        }
         BossBattleKind::KoopaKid { identity, .. } => {
+            for side in [visible.left(), visible.right() - 1.25 * cell] {
+                painter.rect_filled(
+                    egui::Rect::from_min_max(
+                        egui::pos2(side, visible.top()),
+                        egui::pos2(side + 1.25 * cell, floor_y),
+                    ),
+                    0.0,
+                    egui::Color32::from_rgb(88, 72, 72),
+                );
+            }
             paint_boss_label(painter, visible, koopa_kid_name(identity));
         }
         BossBattleKind::Reznor => {
-            let center = world.min + egui::vec2(8.0 * cell, 7.0 * cell);
+            let brick = egui::Color32::from_rgb(24, 24, 40);
+            let brick_edge = egui::Stroke::new(1.0, egui::Color32::from_rgb(48, 40, 56));
+            let brick_width = 2.0 * cell;
+            let brick_height = cell;
+            let mut row = 0usize;
+            let mut y = visible.top();
+            while y < floor_y {
+                let offset = if row & 1 == 0 { 0.0 } else { -cell };
+                let mut x = visible.left() + offset;
+                while x < visible.right() {
+                    painter.rect(
+                        egui::Rect::from_min_size(
+                            egui::pos2(x, y),
+                            egui::vec2(brick_width, brick_height),
+                        ),
+                        0.0,
+                        brick,
+                        brick_edge,
+                        egui::StrokeKind::Inside,
+                    );
+                    x += brick_width;
+                }
+                row += 1;
+                y += brick_height;
+            }
+            painter.rect_filled(
+                egui::Rect::from_min_max(
+                    egui::pos2(visible.left(), floor_y + 0.55 * cell),
+                    visible.right_bottom(),
+                ),
+                0.0,
+                egui::Color32::from_rgb(192, 48, 24),
+            );
+            painter.hline(
+                visible.x_range(),
+                floor_y + 0.55 * cell,
+                egui::Stroke::new(0.28 * cell, egui::Color32::from_rgb(248, 184, 40)),
+            );
+            let mut x = visible.left();
+            while x < visible.right() {
+                let bridge = egui::Rect::from_min_size(
+                    egui::pos2(x, floor_y),
+                    egui::vec2(1.05 * cell, 0.55 * cell),
+                );
+                painter.rect_filled(bridge, 1.0, egui::Color32::from_rgb(184, 112, 48));
+                painter.rect_stroke(
+                    bridge,
+                    1.0,
+                    egui::Stroke::new(1.5, egui::Color32::from_rgb(72, 40, 24)),
+                    egui::StrokeKind::Inside,
+                );
+                x += 1.05 * cell;
+            }
+            let center = arena_origin + egui::vec2(8.0 * cell, 7.0 * cell);
             painter.circle_stroke(
                 center,
                 3.5 * cell,
@@ -16808,8 +16882,24 @@ fn paint_boss_battle_arena(
             }
             paint_boss_label(painter, visible, "Reznor");
         }
-        BossBattleKind::Bowser => paint_boss_label(painter, visible, "Bowser"),
-        BossBattleKind::Unknown => paint_boss_label(painter, visible, "Boss battle"),
+        BossBattleKind::Bowser => {
+            painter.rect_filled(
+                egui::Rect::from_min_max(
+                    egui::pos2(visible.left(), floor_y),
+                    visible.right_bottom(),
+                ),
+                0.0,
+                egui::Color32::from_rgb(24, 56, 88),
+            );
+            for x in [3.0, 8.0, 13.0] {
+                painter.circle_filled(
+                    arena_origin + egui::vec2(x * cell, 3.0 * cell),
+                    1.2 * cell,
+                    egui::Color32::from_rgb(72, 96, 128),
+                );
+            }
+            paint_boss_label(painter, visible, "Bowser");
+        }
     }
 }
 
@@ -16821,6 +16911,63 @@ fn paint_boss_label(painter: &egui::Painter, target: egui::Rect, label: &str) {
         egui::FontId::proportional(14.0),
         egui::Color32::from_white_alpha(180),
     );
+}
+
+fn paint_reznor_controller(
+    painter: &egui::Painter,
+    platform_center: egui::Pos2,
+    cell: f32,
+    sequence: usize,
+    animation_phase: u8,
+) {
+    let facing = if sequence & 1 == 0 { -1.0 } else { 1.0 };
+    let orange = egui::Color32::from_rgb(232, 104, 40);
+    let cream = egui::Color32::from_rgb(248, 216, 128);
+    let outline = egui::Color32::from_rgb(40, 24, 24);
+    let body_center = platform_center + egui::vec2(-0.15 * facing * cell, -1.15 * cell);
+    painter.circle_filled(body_center, 0.78 * cell, orange);
+    painter.circle_stroke(body_center, 0.78 * cell, egui::Stroke::new(2.0, outline));
+    let head_center = body_center + egui::vec2(0.68 * facing * cell, -0.62 * cell);
+    painter.circle_filled(head_center, 0.57 * cell, orange);
+    painter.circle_stroke(head_center, 0.57 * cell, egui::Stroke::new(2.0, outline));
+    let muzzle = head_center + egui::vec2(0.45 * facing * cell, 0.18 * cell);
+    painter.circle_filled(muzzle, 0.33 * cell, cream);
+    painter.circle_stroke(muzzle, 0.33 * cell, egui::Stroke::new(1.5, outline));
+    let eye = head_center + egui::vec2(0.18 * facing * cell, -0.18 * cell);
+    painter.circle_filled(eye, 0.11 * cell, egui::Color32::WHITE);
+    painter.circle_filled(
+        eye + egui::vec2(0.035 * facing * cell, 0.0),
+        0.055 * cell,
+        outline,
+    );
+    for offset in [-0.38, 0.08] {
+        let foot = body_center + egui::vec2(offset * cell, 0.72 * cell);
+        painter.rect_filled(
+            egui::Rect::from_center_size(foot, egui::vec2(0.42 * cell, 0.3 * cell)),
+            2.0,
+            cream,
+        );
+    }
+    let platform = egui::Rect::from_center_size(
+        platform_center + egui::vec2(0.0, 0.17 * cell),
+        egui::vec2(2.25 * cell, 0.42 * cell),
+    );
+    painter.rect_filled(platform, 2.0, egui::Color32::from_rgb(224, 184, 64));
+    painter.rect_stroke(
+        platform,
+        2.0,
+        egui::Stroke::new(2.0, outline),
+        egui::StrokeKind::Inside,
+    );
+    if animation_phase & 2 != 0 {
+        let flame = body_center - egui::vec2(1.0 * facing * cell, 0.1 * cell);
+        painter.circle_filled(flame, 0.18 * cell, egui::Color32::YELLOW);
+        painter.circle_stroke(
+            flame,
+            0.18 * cell,
+            egui::Stroke::new(2.0, egui::Color32::RED),
+        );
+    }
 }
 
 fn paint_boss_controller_marker(
@@ -16838,13 +16985,60 @@ fn paint_boss_controller_marker(
         0xa9 => ("Reznor", egui::Color32::from_rgb(216, 112, 72)),
         _ => ("Boss", egui::Color32::LIGHT_GRAY),
     };
-    let body = marker.expand(marker.width() * 0.4);
-    painter.circle_filled(body.center(), body.width() * 0.42, color);
-    painter.circle_stroke(
-        body.center(),
-        body.width() * 0.42,
-        egui::Stroke::new(2.0, egui::Color32::BLACK),
-    );
+    let body = marker.expand(marker.width() * if sprite_number == 0x29 { 0.05 } else { 0.4 });
+    if sprite_number == 0xa0 {
+        let car = body.translate(egui::vec2(0.0, body.height() * 0.18));
+        painter.circle_filled(car.center(), car.width() * 0.46, egui::Color32::WHITE);
+        painter.circle_stroke(
+            car.center(),
+            car.width() * 0.46,
+            egui::Stroke::new(2.0, egui::Color32::BLACK),
+        );
+        painter.circle_filled(
+            body.center() - egui::vec2(0.0, body.height() * 0.2),
+            body.width() * 0.3,
+            egui::Color32::from_rgb(56, 152, 64),
+        );
+        painter.line_segment(
+            [
+                car.center() - egui::vec2(car.width() * 0.18, 0.0),
+                car.center() + egui::vec2(car.width() * 0.18, 0.0),
+            ],
+            egui::Stroke::new(2.0, egui::Color32::BLACK),
+        );
+    } else {
+        painter.circle_filled(body.center(), body.width() * 0.42, color);
+        painter.circle_stroke(
+            body.center(),
+            body.width() * 0.42,
+            egui::Stroke::new(2.0, egui::Color32::BLACK),
+        );
+        if sprite_number == 0x29 {
+            let head = body.center() - egui::vec2(0.0, body.height() * 0.26);
+            painter.circle_filled(
+                head,
+                body.width() * 0.28,
+                egui::Color32::from_rgb(232, 192, 96),
+            );
+            for x in [-0.09, 0.09] {
+                painter.circle_filled(
+                    head + egui::vec2(x * body.width(), -0.04 * body.height()),
+                    body.width() * 0.035,
+                    egui::Color32::BLACK,
+                );
+            }
+            let hair = egui::Color32::from_rgb(240, 104, 32);
+            for x in [-0.12, 0.0, 0.12] {
+                painter.line_segment(
+                    [
+                        head - egui::vec2(x * body.width(), body.height() * 0.22),
+                        head - egui::vec2(x * body.width(), body.height() * 0.36),
+                    ],
+                    egui::Stroke::new(3.0, hair),
+                );
+            }
+        }
+    }
     if sprite_number != 0xa9 {
         painter.text(
             body.center_bottom() + egui::vec2(0.0, 3.0),
@@ -16923,22 +17117,35 @@ fn draw_sprite_placements(request: SpritePlacementDraw<'_>) -> SpritePlacementDr
     let mut reznor_controller_count = 0_usize;
     for placement in placements {
         let (tile_x, tile_y) = presented_sprite_tile_coordinates(*placement, vertical);
-        let boss_controller = is_boss_battle_level_mode(level_mode)
-            && matches!(placement.sprite_number, 0x29 | 0xa0 | 0xa9);
+        let boss_controller = matches!(placement.sprite_number, 0x29 | 0xa0 | 0xa9);
         let mut center = target.min
             + egui::vec2(
                 (f32::from(tile_x) + 0.5) * cell_size,
                 (f32::from(tile_y) + 0.5) * cell_size,
             );
-        if boss_controller && placement.sprite_number == 0xa9 {
-            let wheel_positions = [(8.0, 3.5), (11.5, 7.0), (8.0, 10.5), (4.5, 7.0)];
-            let (x, y) = wheel_positions[reznor_controller_count % wheel_positions.len()];
-            center = target.min + egui::vec2(x * cell_size, y * cell_size);
-            reznor_controller_count = reznor_controller_count.saturating_add(1);
+        if boss_controller {
+            let arena_origin = painter.clip_rect().min;
+            let (x, y) = match placement.sprite_number {
+                0xa9 => {
+                    let wheel_positions = [(8.0, 3.5), (11.5, 7.0), (8.0, 10.5), (4.5, 7.0)];
+                    let position = wheel_positions[reznor_controller_count % wheel_positions.len()];
+                    reznor_controller_count = reznor_controller_count.saturating_add(1);
+                    position
+                }
+                0xa0 => (8.0, 4.5),
+                0x29 => (8.0, 7.5),
+                _ => unreachable!("boss controller set is exhaustive"),
+            };
+            center = arena_origin + egui::vec2(x * cell_size, y * cell_size);
         }
+        let marker_scale = match placement.sprite_number {
+            0xa0 if boss_controller => 3.0,
+            0x29 if boss_controller => 1.5,
+            _ => 1.0,
+        };
         let marker = egui::Rect::from_center_size(
             center,
-            egui::vec2(cell_size.max(9.0), cell_size.max(9.0)),
+            egui::vec2(cell_size.max(9.0), cell_size.max(9.0)) * marker_scale,
         );
         let custom_display = custom_sprites.and_then(|table| {
             table
@@ -16983,20 +17190,36 @@ fn draw_sprite_placements(request: SpritePlacementDraw<'_>) -> SpritePlacementDr
         if selected_only && !is_selected {
             continue;
         }
-        let interactive_rect = resolved_sprite_preview_bounds(
+        let mut interactive_rect = resolved_sprite_preview_bounds(
             marker,
             preview.as_deref(),
             external_preview.as_deref(),
             cell_size,
         );
+        if boss_controller && placement.sprite_number == 0xa9 {
+            interactive_rect = egui::Rect::from_min_max(
+                marker.center() - egui::vec2(1.25 * cell_size, 2.25 * cell_size),
+                marker.center() + egui::vec2(1.25 * cell_size, 0.75 * cell_size),
+            );
+        }
         bounds.insert(placement.token_index, interactive_rect);
         if boss_controller {
-            paint_boss_controller_marker(
-                painter,
-                marker,
-                placement.sprite_number,
-                placement.first_byte >> 4,
-            );
+            if placement.sprite_number == 0xa9 {
+                paint_reznor_controller(
+                    painter,
+                    marker.center(),
+                    cell_size,
+                    reznor_controller_count.saturating_sub(1),
+                    animation_phase,
+                );
+            } else {
+                paint_boss_controller_marker(
+                    painter,
+                    marker,
+                    placement.sprite_number,
+                    placement.first_byte >> 4,
+                );
+            }
         }
         if let (Some(texture), Some(parts)) = (texture, preview.as_deref()) {
             for part in parts {
@@ -22656,12 +22879,6 @@ mod tests {
 
     #[test]
     fn boss_battle_modes_classify_native_boss_sprite_streams() {
-        for mode in [0x09, 0x0b, 0x10, 0x29, 0x2b, 0x30] {
-            assert!(is_boss_battle_level_mode(mode));
-        }
-        for mode in [0x00, 0x0a, 0x0c, 0x0d, 0x11, 0x1e] {
-            assert!(!is_boss_battle_level_mode(mode));
-        }
         let placement = |sprite_number, first_byte| lm_level::NativeSpritePlacement {
             token_index: 0,
             first_byte,
@@ -22686,7 +22903,62 @@ mod tests {
                 rotating_platform: true,
             })
         );
-        assert_eq!(boss_battle_kind(0, &[placement(0x29, 0x3c)]), None);
+        assert_eq!(
+            boss_battle_kind(0, &[placement(0x29, 0x5c)]),
+            Some(BossBattleKind::KoopaKid {
+                identity: 5,
+                rotating_platform: false,
+            })
+        );
+        assert_eq!(boss_battle_kind(0, &[placement(0x20, 0)]), None);
+    }
+
+    #[test]
+    fn pristine_boss_canvas_covers_every_vanilla_boss_family() {
+        let mut app = AppState::default();
+        app.load_rom(crate::test_support::pristine_smw_us_rom_bytes())
+            .unwrap();
+        let cases = [
+            (0x093, Some(5)),
+            (0x094, Some(6)),
+            (0x095, None),
+            (0x096, Some(4)),
+            (0x097, Some(3)),
+            (0x098, Some(2)),
+            (0x099, Some(1)),
+            (0x09a, Some(0)),
+            (0x09b, None),
+        ];
+        for (level, identity) in cases {
+            app.dispatch(Command::SelectLevel(level)).unwrap();
+            let snapshot = app.controller_snapshot().unwrap();
+            let mut editor = VanillaLevelEditor::default();
+            editor.load(
+                &snapshot,
+                EditorKey {
+                    revision: snapshot.revision,
+                    level,
+                    sprite_lengths_signature: ssc_sprite_lengths_signature(None),
+                },
+                None,
+            );
+            let loaded = editor.controller.as_ref().unwrap().level();
+            let kind = boss_battle_kind(
+                loaded.layer1.header.level_mode(),
+                &loaded.sprites.native_placements(),
+            );
+            match identity {
+                Some(identity) => assert!(matches!(
+                    kind,
+                    Some(BossBattleKind::KoopaKid {
+                        identity: actual,
+                        ..
+                    }) if actual == identity
+                )),
+                None if level == 0x095 => assert_eq!(kind, Some(BossBattleKind::Reznor)),
+                None => assert_eq!(kind, Some(BossBattleKind::Bowser)),
+            }
+        }
     }
 
     #[test]
