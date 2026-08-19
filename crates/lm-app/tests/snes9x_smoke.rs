@@ -1087,6 +1087,30 @@ fn rust_layer1_object_edit_survives_snes9x_initialization() {
 }
 
 #[test]
+#[ignore = "requires local Snes9x plus the supplied legally obtained SMW ROM fixture"]
+fn rust_normal_vram_patch_survives_snes9x_initialization() {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let snes9x = require_snes9x_binary();
+    let mut project = Project::new(
+        RomImage::from_bytes(fs::read(source_rom(&root)).expect("read source SMW ROM"))
+            .expect("decode source SMW ROM"),
+    );
+    project
+        .expand_rom(Mapper::LoRom, 0x10_0000, 0xff, 0x7fdc)
+        .expect("expand VRAM-patched ROM");
+    let plan = lm_profile::smw_us_v1_normal_vram_patch_installation_plan(project.rom.logical_len())
+        .expect("build Normal VRAM patch");
+    project
+        .install_relocatable_patch(&plan)
+        .expect("install Normal VRAM patch");
+
+    let directory = SmokeDirectory::create();
+    let output = directory.0.join("Rust-normal-VRAM-patched-SMW.sfc");
+    fs::write(&output, project.save_snapshot()).expect("write Normal VRAM-patched ROM");
+    require_snes9x_initialization(&snes9x, &output);
+}
+
+#[test]
 #[ignore = "requires an official Snes9x libretro core, the gameplay driver, and the legally supplied SMW ROM"]
 fn rust_title_recorder_captures_real_joypad_input_in_snes9x() {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");

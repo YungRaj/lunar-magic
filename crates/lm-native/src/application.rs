@@ -981,6 +981,31 @@ impl NativeApplication {
     /// ROM editor windows use this acknowledgement before discarding their staged controller.
     fn try_dispatch(&mut self, context: &egui::Context, command: Command) -> bool {
         let opens_native_overworld = matches!(&command, Command::ShowOverworld);
+        let mouse_gesture = self
+            .vanilla_level_editor
+            .take_mouse_gesture_command(&command);
+        let auto_save_mouse_gesture = mouse_gesture && self.save_mouse_gestures.unwrap_or(false);
+        // Canvas edits live in the level controller until they have passed the native level
+        // serializer.  File > Save and Save As used to persist only the application's
+        // already-committed ROM image, silently omitting newly placed objects and sprites. Route
+        // either explicit ROM save through the same checked level-save transition used when
+        // leaving an edited level. The transition re-emits the original command after
+        // expansion/serialization succeeds, and its authorization token prevents this branch
+        // from starting the cycle again.
+        let save_staged_level = command_saves_staged_level(
+            &command,
+            self.vanilla_level_editor.has_staged_recovery_edits(),
+        );
+        if save_staged_level
+            && self
+                .vanilla_level_editor
+                .request_save_prompt_transition(command.clone())
+        {
+            self.vanilla_level_editor
+                .auto_confirm_pending_transition_save();
+            self.app.status = "Committing staged level before saving ROM".into();
+            return true;
+        }
         if matches!(command, Command::Save) {
             if self.ips_sibling_save_authorized {
                 self.ips_sibling_save_authorized = false;
@@ -989,10 +1014,6 @@ impl NativeApplication {
                 return true;
             }
         }
-        let mouse_gesture = self
-            .vanilla_level_editor
-            .take_mouse_gesture_command(&command);
-        let auto_save_mouse_gesture = mouse_gesture && self.save_mouse_gestures.unwrap_or(false);
         if (self.save_prompt.unwrap_or(true) || auto_save_mouse_gesture)
             && command_leaves_staged_level(&self.app, &command)
             && self
@@ -2501,6 +2522,10 @@ fn same_name_ips_sibling_exists(rom_path: &std::path::Path) -> bool {
     std::fs::metadata(same_name_ips_sibling_path(rom_path)).is_ok_and(|metadata| !metadata.is_dir())
 }
 
+fn command_saves_staged_level(command: &Command, has_staged_level: bool) -> bool {
+    has_staged_level && matches!(command, Command::Save | Command::SaveAs)
+}
+
 fn command_leaves_staged_level(app: &lm_app::AppState, command: &Command) -> bool {
     let lm_app::EditorMode::Level(current) = app.mode else {
         return false;
@@ -3879,6 +3904,15 @@ fn save_visual_smoke_image(image: &egui::ColorImage, path: &str) -> Result<(), S
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn explicit_rom_save_commits_staged_level_before_persistence() {
+        assert!(command_saves_staged_level(&Command::Save, true));
+        assert!(command_saves_staged_level(&Command::SaveAs, true));
+        assert!(!command_saves_staged_level(&Command::Save, false));
+        assert!(!command_saves_staged_level(&Command::SaveAs, false));
+        assert!(!command_saves_staged_level(&Command::Reload, true));
+    }
 
     #[test]
     fn application_confirmation_dialogs_have_no_literal_widget_text() {
