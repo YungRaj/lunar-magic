@@ -17060,18 +17060,10 @@ fn paint_boss_battle_arena(
                 );
             }
         }
-        BossBattleKind::KoopaKid { .. } => {
-            for side in [visible.left(), visible.right() - 1.25 * cell] {
-                painter.rect_filled(
-                    egui::Rect::from_min_max(
-                        egui::pos2(side, visible.top()),
-                        egui::pos2(side + 1.25 * cell, floor_y),
-                    ),
-                    0.0,
-                    egui::Color32::from_rgb(88, 72, 72),
-                );
-            }
-        }
+        // Morton, Roy, and Ludwig's complete walls and ceiling are OBJ tiles
+        // painted below from the runtime OAM tables.  Synthetic side slabs
+        // hid those tiles and visibly clipped both sides of Ludwig's room.
+        BossBattleKind::KoopaKid { .. } => {}
         BossBattleKind::Reznor => {
             paint_mode7_boss_bridge_and_lava(painter, arena_origin, cell);
             if let Some(texture) = mode7_boss_texture {
@@ -17146,11 +17138,6 @@ fn paint_mode7_boss_bridge_and_lava(painter: &egui::Painter, origin: egui::Pos2,
     );
 }
 
-fn boss_arena_origin(painter: &egui::Painter, cell: f32) -> egui::Pos2 {
-    let visible = painter.clip_rect();
-    egui::pos2(visible.center().x - 8.0 * cell, visible.top())
-}
-
 fn paint_morton_roy_room(
     painter: &egui::Painter,
     texture: &egui::TextureHandle,
@@ -17178,9 +17165,6 @@ fn paint_morton_roy_room(
         paint_brick(0.0, y as f32);
         paint_brick(15.0, y as f32);
     }
-
-    // GFX22 characters $C8/$CA are the two 16x16 halves of the familiar
-    // cross-braced panels. Characters $CC/$CE form the matching stone slab.
     for x in [3.0, 7.0, 11.0] {
         for (offset, character) in [(0.0, 0xc8), (1.0, 0xca)] {
             paint_authentic_oam_tile(
@@ -17194,29 +17178,33 @@ fn paint_morton_roy_room(
             );
         }
     }
-    for &(x, y, width) in &[
-        (5.0, 1.0, 2),
-        (9.0, 1.0, 2),
-        (3.0, 6.0, 2),
-        (6.0, 5.0, 2),
-        (10.0, 6.0, 2),
-        (12.0, 5.0, 2),
-        (5.0, 8.0, 2),
+    for &(x, y) in &[
+        (5.0, 1.0),
+        (9.0, 1.0),
+        (3.0, 6.0),
+        (6.0, 5.0),
+        (10.0, 6.0),
+        (12.0, 5.0),
+        (5.0, 8.0),
     ] {
-        for index in 0..width {
+        for index in 0..2 {
             paint_authentic_oam_tile(
                 painter,
                 texture,
                 origin + egui::vec2((x + index as f32) * cell, y * cell),
                 cell,
-                if index & 1 == 0 { 0xcc } else { 0xce },
+                if index == 0 { 0xcc } else { 0xce },
                 0x0d,
                 true,
             );
         }
     }
-
     paint_mode7_boss_bridge_and_lava(painter, origin, cell);
+}
+
+fn boss_arena_origin(painter: &egui::Painter, cell: f32) -> egui::Pos2 {
+    let visible = painter.clip_rect();
+    egui::pos2(visible.center().x - 8.0 * cell, visible.top())
 }
 
 fn paint_mode7_boss_oam_background(
@@ -17561,7 +17549,13 @@ fn draw_sprite_placements(request: SpritePlacementDraw<'_>) -> SpritePlacementDr
                 }
                 0xa0 => (8.0, 4.5),
                 0x29 if matches!(placement.first_byte >> 4, 3 | 4) => (8.0, 3.45),
-                0x29 => (8.0, 7.5),
+                0x29 => match placement.first_byte >> 4 {
+                    // Neutral legal frames place Morton and Ludwig on the
+                    // right-hand floor, as their opening game states do.
+                    0 => (13.0, 9.3),
+                    2 => (13.0, 9.0),
+                    _ => (8.0, 7.5),
+                },
                 _ => unreachable!("boss controller set is exhaustive"),
             };
             center = arena_origin + egui::vec2(x * cell_size, y * cell_size);
@@ -17651,18 +17645,29 @@ fn draw_sprite_placements(request: SpritePlacementDraw<'_>) -> SpritePlacementDr
                 if koopa_kid_controller_count == 0 {
                     let arena_origin = boss_arena_origin(painter, cell_size);
                     let identity = (placement.first_byte >> 4).min(6);
-                    for (x, y) in WENDY_LEMMY_RUNTIME_FIGURES {
+                    for (sequence, (x, y)) in WENDY_LEMMY_RUNTIME_FIGURES.into_iter().enumerate() {
                         let figure = egui::Rect::from_center_size(
                             arena_origin + egui::vec2(x * cell_size, y * cell_size),
                             egui::vec2(cell_size.max(9.0), cell_size.max(9.0)) * 1.5,
                         );
                         if let Some(texture) = boss_texture.or(texture) {
+                            // Pipe foreground masks the lower OAM pieces as
+                            // the real boss and puppets emerge.
+                            let emergence_painter =
+                                painter.with_clip_rect(egui::Rect::from_min_max(
+                                    painter.clip_rect().min,
+                                    egui::pos2(
+                                        painter.clip_rect().max.x,
+                                        arena_origin.y + 9.0 * cell_size,
+                                    ),
+                                ));
                             paint_wendy_lemmy_oam(
-                                painter,
+                                &emergence_painter,
                                 texture,
                                 figure.center(),
                                 cell_size,
                                 identity,
+                                sequence,
                             );
                         } else {
                             paint_boss_controller_marker(painter, figure, 0x29, identity);
@@ -17812,15 +17817,6 @@ fn draw_sprite_placements(request: SpritePlacementDraw<'_>) -> SpritePlacementDr
             hit = Some(placement.token_index);
         }
     }
-    if let Some(kind) = boss_kind {
-        paint_boss_runtime_helpers(
-            painter,
-            boss_texture.or(texture),
-            cell_size,
-            kind,
-            animation_phase,
-        );
-    }
     SpritePlacementDrawResult { hit, bounds }
 }
 
@@ -17830,7 +17826,40 @@ fn paint_wendy_lemmy_oam(
     origin: egui::Pos2,
     cell: f32,
     identity: u8,
+    sequence: usize,
 ) {
+    if identity == 5 {
+        // A legal neutral room state is one normal Lemmy plus two generated
+        // puppets. Frame four is Lemmy's normal five-piece pose; frame two is
+        // the three-piece puppet. Frame zero is the much larger defeated pose
+        // and was the source of the previous incorrect monster-like preview.
+        let scale = cell / 16.0;
+        let normal = [
+            (-8_i8, 5_i8, 0x22_u8, 0x15_u8, true),
+            (8, 5, 0x22, 0x55, true),
+            (0, 0, 0x04, 0x15, true),
+            (0, -8, 0x12, 0x15, false),
+            (8, -8, 0x12, 0x55, false),
+        ];
+        let puppet = [
+            (-8_i8, 0_i8, 0x00_u8, 0x15_u8, true),
+            (0, 8, 0x28, 0x15, true),
+            (0, -8, 0x02, 0x15, false),
+        ];
+        let parts: &[(i8, i8, u8, u8, bool)] = if sequence == 0 { &normal } else { &puppet };
+        for &(x, y, tile, flags, large) in parts {
+            paint_authentic_oam_tile(
+                painter,
+                texture,
+                origin + egui::vec2(f32::from(x) * scale, f32::from(y) * scale),
+                cell,
+                tile,
+                flags,
+                large,
+            );
+        }
+        return;
+    }
     // Runtime frame $0C from CODE_03D484 is the legal pipe-emergence frame:
     // DATA_03D456/$46D select two entries at frame-base $48, whose exact
     // X/Y/tile/size values are (-8,0,$2A,large) and (8,0,$2A,large).
@@ -17935,59 +17964,6 @@ fn authentic_oam_atlas_word(character: u8, flags: u8) -> u16 {
         | (u16::from(flags & 0x01) << 8)
         | (u16::from(flags & 0x0e) << 9)
         | (u16::from(flags & 0xc0) << 8)
-}
-
-fn paint_boss_runtime_helpers(
-    painter: &egui::Painter,
-    texture: Option<&egui::TextureHandle>,
-    cell: f32,
-    kind: BossBattleKind,
-    animation_phase: u8,
-) {
-    let origin = boss_arena_origin(painter, cell);
-    let paint_standard = |sprite_number: u8, x: f32, y: f32, placement_first: u8| {
-        let Some(texture) = texture else { return };
-        let Some(parts) = lm_render::render_lunar_magic_standard_sprite_with_mode(
-            sprite_number,
-            lm_render::StandardSpritePreviewMode {
-                animation_phase,
-                placement_first,
-                ..Default::default()
-            },
-        ) else {
-            return;
-        };
-        let marker = egui::Rect::from_center_size(
-            origin + egui::vec2(x * cell, y * cell),
-            egui::vec2(cell, cell),
-        );
-        for part in parts {
-            draw_sprite_preview_definition(
-                painter,
-                texture,
-                sprite_preview_part_rect(marker, part.x, part.y, cell),
-                part.subtiles,
-            );
-        }
-    };
-    match kind {
-        // A representative editor frame must be a state the game can really
-        // display. The initial Reznor frame has all four fighters and no
-        // simultaneously synthesized fireballs.
-        BossBattleKind::Reznor => {}
-        BossBattleKind::KoopaKid { identity: 2, .. } => {
-            // Ludwig creates normal sprite $34 during his attack routine.
-            paint_standard(0x34, 11.5, 7.2, 0);
-        }
-        BossBattleKind::KoopaKid {
-            identity: 3 | 4, ..
-        } => {}
-        // Bowling balls, Mechakoopas, falling fire, and Peach belong to
-        // different Bowser phases. The controller itself is the authentic
-        // opening-frame composition; never display all helpers together.
-        BossBattleKind::Bowser => {}
-        BossBattleKind::KoopaKid { .. } => {}
-    }
 }
 
 fn sprite_preview_part_rect(marker: egui::Rect, x: i16, y: i16, cell_size: f32) -> egui::Rect {
