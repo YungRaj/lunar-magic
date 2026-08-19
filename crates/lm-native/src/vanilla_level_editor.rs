@@ -16847,7 +16847,7 @@ fn boss_sprite_graphics_files(kind: Option<BossBattleKind>) -> Option<[usize; 4]
         | Some(BossBattleKind::Reznor) => Some([0x00, 0x01, 0x25, 0x22]),
         Some(BossBattleKind::KoopaKid {
             identity: 5 | 6, ..
-        }) => Some([0x00, 0x01, 0x24, 0x22]),
+        }) => Some([0x00, 0x01, 0x0a, 0x22]),
         // Bowser selects runtime sprite setting 24.
         Some(BossBattleKind::Bowser) => Some([0x00, 0x0d, 0x24, 0x22]),
         _ => None,
@@ -23525,10 +23525,11 @@ mod tests {
                 identity,
                 rotating_platform: matches!(identity, 3 | 4),
             }));
-            let expected = if matches!(identity, 3 | 4) {
-                [0x00, 0x01, 0x25, 0x22]
-            } else {
-                [0x00, 0x01, 0x24, 0x22]
+            let expected = match identity {
+                0..=2 => [0x00, 0x01, 0x24, 0x22],
+                3 | 4 => [0x00, 0x01, 0x25, 0x22],
+                5 | 6 => [0x00, 0x01, 0x0a, 0x22],
+                _ => unreachable!(),
             };
             assert_eq!(
                 files,
