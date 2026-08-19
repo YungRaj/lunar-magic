@@ -441,7 +441,7 @@ enum BossBattleKind {
     Bowser,
 }
 
-const WENDY_LEMMY_RUNTIME_FIGURES: [(f32, f32); 3] = [(3.5, 8.3), (7.5, 8.3), (11.5, 8.3)];
+const WENDY_LEMMY_RUNTIME_FIGURES: [(f32, f32); 3] = [(3.5, 7.25), (7.5, 7.25), (11.5, 7.25)];
 const REZNOR_RUNTIME_FIGURES: [(f32, f32); 4] = [(8.0, 3.5), (11.5, 7.0), (8.0, 10.5), (4.5, 7.0)];
 #[cfg(test)]
 const BOWSER_RUNTIME_HELPER_IDS: [u8; 8] = [0xa1, 0xa2, 0xa2, 0x33, 0x33, 0x33, 0x33, 0x7c];

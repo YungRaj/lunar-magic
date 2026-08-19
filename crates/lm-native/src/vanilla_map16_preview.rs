@@ -2831,10 +2831,16 @@ fn render_mode7_koopa_boss_animation_frame(
     const TILEMAP_OFFSET: usize = 0x01_d9de;
     const TILEMAP_LEN: usize = 912;
     const FRAME_BASES: [usize; 3] = [0, 9, 18];
-    const PALETTES: [[u16; 6]; 3] = [
-        [0x0000, 0x01e0, 0x02e0, 0x03e0, 0x00b7, 0x023f],
-        [0x0000, 0x6d08, 0x6dad, 0x7e31, 0x00b7, 0x023f],
-        [0x0000, 0x01ff, 0x031f, 0x03ff, 0x00b7, 0x023f],
+    // KoopaPalPtrLo/Hi selects these six-color slices from StandardColors for
+    // Morton, Roy, and Ludwig.  Hardcoded approximate colors collapsed
+    // Morton's eye and face pixels into the black outline, leaving a visibly
+    // hollow body.  Read the active ROM table so installed palette edits also
+    // preview correctly.
+    const STANDARD_COLORS_OFFSET: usize = 0x1b0;
+    const PALETTE_OFFSETS: [usize; 3] = [
+        STANDARD_COLORS_OFFSET + 0x6c,
+        STANDARD_COLORS_OFFSET + 0x54,
+        STANDARD_COLORS_OFFSET + 0x48,
     ];
     let identity = usize::from(identity);
     let frame_base = *FRAME_BASES
@@ -2842,6 +2848,18 @@ fn render_mode7_koopa_boss_animation_frame(
         .ok_or_else(|| format!("Mode-7 Koopaling identity {identity} is outside 0..3"))?;
     let rom = RomImage::from_bytes(rom_bytes).map_err(|error| error.to_string())?;
     let project = Project::new(rom);
+    let shared = project
+        .load_shared_palette(lm_profile::smw_us_v1_shared_palette_layout())
+        .map_err(|error| error.to_string())?;
+    let palette_offset = PALETTE_OFFSETS[identity];
+    let colors = shared
+        .palette_bytes()
+        .get(palette_offset..palette_offset + 12)
+        .ok_or_else(|| "Mode-7 Koopaling palette is truncated".to_owned())?;
+    let mut palette_bytes = [0_u8; 16];
+    palette_bytes[4..].copy_from_slice(colors);
+    let palette = Palette::decode_snes(&palette_bytes)
+        .map_err(|length| format!("invalid Mode-7 Koopaling palette length {length}"))?;
     let encoded = project
         .load_decompressed_graphics_file(0x0b, lm_profile::smw_us_v1_vanilla_graphics_layout())
         .map_err(|error| error.to_string())?;
@@ -2880,15 +2898,7 @@ fn render_mode7_koopa_boss_animation_frame(
                 // InitializeMode7TilemapsAndPalettes copies its six colors to
                 // palette entries 2..7. Entry 1 remains the room's black
                 // outline color.
-                let word = if color_index == 1 {
-                    0x0000
-                } else {
-                    PALETTES[identity]
-                        .get(color_index - 2)
-                        .copied()
-                        .unwrap_or(0x7fff)
-                };
-                let color = lm_graphics::Bgr555(word).to_rgb8();
+                let color = palette.colors[color_index].to_rgb8();
                 let destination = ((cell_y + y) * 32 + cell_x + x) * 4;
                 rgba[destination..destination + 4].copy_from_slice(&[
                     color.red,
