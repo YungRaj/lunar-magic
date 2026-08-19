@@ -441,6 +441,10 @@ enum BossBattleKind {
     Bowser,
 }
 
+const WENDY_LEMMY_RUNTIME_FIGURES: [(f32, f32); 3] = [(1.5, 4.5), (7.5, 4.5), (13.5, 4.5)];
+const REZNOR_RUNTIME_FIGURES: [(f32, f32); 4] = [(8.0, 3.5), (11.5, 7.0), (8.0, 10.5), (4.5, 7.0)];
+const BOWSER_RUNTIME_HELPER_IDS: [u8; 8] = [0xa1, 0xa2, 0xa2, 0x33, 0x33, 0x33, 0x33, 0x7c];
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) enum CustomCollectionSelection {
     Objects(Vec<lm_level::ObjectRecord>),
@@ -16784,7 +16788,11 @@ fn paint_boss_battle_arena(
             identity: identity @ (5 | 6),
             ..
         } => {
-            for column in [3.0, 6.0, 10.0, 13.0] {
+            // $03CC2B contains seven legal pipe/spawn columns ($18..$D8).
+            // The controller creates two dummy $29 sprites in addition to the
+            // real Koopaling, so retaining every pipe is important for an
+            // honest battle preview rather than a schematic four-pipe room.
+            for column in [1.5, 3.5, 5.5, 7.5, 9.5, 11.5, 13.5] {
                 let pipe = egui::Rect::from_min_max(
                     arena_origin + egui::vec2((column - 0.75) * cell, 9.0 * cell),
                     arena_origin + egui::vec2((column + 0.75) * cell, 12.0 * cell),
@@ -17115,6 +17123,7 @@ fn draw_sprite_placements(request: SpritePlacementDraw<'_>) -> SpritePlacementDr
     let mut bounds = HashMap::with_capacity(placements.len());
     let mut standard_8a_count = 0_u8;
     let mut reznor_controller_count = 0_usize;
+    let mut koopa_kid_controller_count = 0_usize;
     for placement in placements {
         let (tile_x, tile_y) = presented_sprite_tile_coordinates(*placement, vertical);
         let boss_controller = matches!(placement.sprite_number, 0x29 | 0xa0 | 0xa9);
@@ -17205,13 +17214,37 @@ fn draw_sprite_placements(request: SpritePlacementDraw<'_>) -> SpritePlacementDr
         bounds.insert(placement.token_index, interactive_rect);
         if boss_controller {
             if placement.sprite_number == 0xa9 {
-                paint_reznor_controller(
-                    painter,
-                    marker.center(),
-                    cell_size,
-                    reznor_controller_count.saturating_sub(1),
-                    animation_phase,
-                );
+                // One stream controller ($A9) initializes all four runtime
+                // Reznors. Draw the complete generated group exactly once.
+                if reznor_controller_count == 1 {
+                    let arena_origin = painter.clip_rect().min;
+                    for (sequence, (x, y)) in REZNOR_RUNTIME_FIGURES.into_iter().enumerate() {
+                        paint_reznor_controller(
+                            painter,
+                            arena_origin + egui::vec2(x * cell_size, y * cell_size),
+                            cell_size,
+                            sequence,
+                            animation_phase.wrapping_add(sequence as u8),
+                        );
+                    }
+                }
+            } else if placement.sprite_number == 0x29 && matches!(placement.first_byte >> 4, 5 | 6)
+            {
+                // Wendy/Lemmy's sole stream controller creates two dummy $29
+                // sprites ($03CCE8). Preview the real figure plus both decoys
+                // at three deterministic legal spawn columns.
+                if koopa_kid_controller_count == 0 {
+                    let arena_origin = painter.clip_rect().min;
+                    let identity = (placement.first_byte >> 4).min(6);
+                    for (x, y) in WENDY_LEMMY_RUNTIME_FIGURES {
+                        let figure = egui::Rect::from_center_size(
+                            arena_origin + egui::vec2(x * cell_size, y * cell_size),
+                            egui::vec2(cell_size.max(9.0), cell_size.max(9.0)) * 1.5,
+                        );
+                        paint_boss_controller_marker(painter, figure, 0x29, identity);
+                    }
+                }
+                koopa_kid_controller_count = koopa_kid_controller_count.saturating_add(1);
             } else {
                 paint_boss_controller_marker(
                     painter,
@@ -17295,7 +17328,101 @@ fn draw_sprite_placements(request: SpritePlacementDraw<'_>) -> SpritePlacementDr
             hit = Some(placement.token_index);
         }
     }
+    if let Some(kind) = boss_battle_kind(level_mode, placements) {
+        paint_boss_runtime_helpers(painter, cell_size, kind, animation_phase);
+    }
     SpritePlacementDrawResult { hit, bounds }
+}
+
+fn paint_boss_runtime_helpers(
+    painter: &egui::Painter,
+    cell: f32,
+    kind: BossBattleKind,
+    animation_phase: u8,
+) {
+    let origin = painter.clip_rect().min;
+    let outlined_circle = |center: egui::Pos2, radius: f32, fill: egui::Color32| {
+        painter.circle_filled(center, radius, fill);
+        painter.circle_stroke(center, radius, egui::Stroke::new(2.0, egui::Color32::BLACK));
+    };
+    match kind {
+        BossBattleKind::Reznor => {
+            // Each live Reznor can emit extended sprite $02. Show two phases so
+            // the runtime-only projectile is represented in the static canvas.
+            for (x, y) in [(6.3, 5.5), (10.2, 8.4)] {
+                outlined_circle(
+                    origin + egui::vec2(x * cell, y * cell),
+                    0.28 * cell,
+                    if animation_phase & 1 == 0 {
+                        egui::Color32::from_rgb(248, 184, 40)
+                    } else {
+                        egui::Color32::from_rgb(248, 96, 24)
+                    },
+                );
+            }
+        }
+        BossBattleKind::KoopaKid { identity: 2, .. } => {
+            // Ludwig creates normal sprite $34 during his attack routine.
+            outlined_circle(
+                origin + egui::vec2(11.5 * cell, 7.2 * cell),
+                0.38 * cell,
+                egui::Color32::from_rgb(248, 96, 32),
+            );
+        }
+        BossBattleKind::KoopaKid {
+            identity: 3 | 4, ..
+        } => {
+            // Iggy/Larry throw normal sprite $A7 from the tilting platform.
+            outlined_circle(
+                origin + egui::vec2(11.0 * cell, 6.6 * cell),
+                0.48 * cell,
+                egui::Color32::from_rgb(112, 200, 72),
+            );
+        }
+        BossBattleKind::Bowser => {
+            // Bowser's controller generates these independently of the level
+            // stream: $A1 bowling ball, two $A2 Mechakoopas, $33 raining fire,
+            // and $7C Peach. Present the complete encounter palette together.
+            debug_assert_eq!(BOWSER_RUNTIME_HELPER_IDS.len(), 8);
+            outlined_circle(
+                origin + egui::vec2(2.5 * cell, 10.6 * cell),
+                0.9 * cell,
+                egui::Color32::from_rgb(56, 64, 72),
+            );
+            for x in [6.0, 10.0] {
+                let body = egui::Rect::from_center_size(
+                    origin + egui::vec2(x * cell, 10.7 * cell),
+                    egui::vec2(0.9 * cell, 0.75 * cell),
+                );
+                painter.rect_filled(body, 2.0, egui::Color32::from_rgb(120, 184, 120));
+                painter.rect_stroke(
+                    body,
+                    2.0,
+                    egui::Stroke::new(2.0, egui::Color32::BLACK),
+                    egui::StrokeKind::Inside,
+                );
+            }
+            for (x, y) in [(3.0, 3.0), (6.5, 4.0), (10.0, 2.6), (13.5, 4.4)] {
+                outlined_circle(
+                    origin + egui::vec2(x * cell, y * cell),
+                    0.3 * cell,
+                    egui::Color32::from_rgb(248, 104, 32),
+                );
+            }
+            let peach = origin + egui::vec2(13.5 * cell, 9.7 * cell);
+            outlined_circle(
+                peach - egui::vec2(0.0, 0.45 * cell),
+                0.28 * cell,
+                egui::Color32::from_rgb(248, 208, 168),
+            );
+            painter.rect_filled(
+                egui::Rect::from_center_size(peach, egui::vec2(0.8 * cell, 0.9 * cell)),
+                3.0,
+                egui::Color32::from_rgb(248, 112, 176),
+            );
+        }
+        BossBattleKind::KoopaKid { .. } => {}
+    }
 }
 
 fn sprite_preview_part_rect(marker: egui::Rect, x: i16, y: i16, cell_size: f32) -> egui::Rect {
@@ -22911,6 +23038,16 @@ mod tests {
             })
         );
         assert_eq!(boss_battle_kind(0, &[placement(0x20, 0)]), None);
+    }
+
+    #[test]
+    fn boss_runtime_controller_expansion_covers_generated_fighters_and_helpers() {
+        assert_eq!(WENDY_LEMMY_RUNTIME_FIGURES.len(), 3);
+        assert_eq!(REZNOR_RUNTIME_FIGURES.len(), 4);
+        assert_eq!(
+            BOWSER_RUNTIME_HELPER_IDS,
+            [0xa1, 0xa2, 0xa2, 0x33, 0x33, 0x33, 0x33, 0x7c]
+        );
     }
 
     #[test]
