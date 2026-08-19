@@ -17165,12 +17165,15 @@ fn paint_morton_roy_room(
         paint_brick(0.0, y as f32);
         paint_brick(15.0, y as f32);
     }
-    for x in [3.0, 7.0, 11.0] {
+    // ProcM7BossObjBG's Morton/Roy room, aligned to the 256x224 gameplay
+    // viewport beneath the status bar.  The previous evenly-spaced guess put
+    // every brace and most of the small stone shelves in the wrong place.
+    for x in [3.0, 6.0, 9.0] {
         for (offset, character) in [(0.0, 0xc8), (1.0, 0xca)] {
             paint_authentic_oam_tile(
                 painter,
                 texture,
-                origin + egui::vec2((x + offset) * cell, 2.6 * cell),
+                origin + egui::vec2((x + offset) * cell, 0.65 * cell),
                 cell,
                 character,
                 0x0d,
@@ -17179,13 +17182,13 @@ fn paint_morton_roy_room(
         }
     }
     for &(x, y) in &[
-        (5.0, 1.0),
-        (9.0, 1.0),
-        (3.0, 6.0),
+        (5.0, -0.85),
+        (12.0, -0.85),
+        (4.0, 3.0),
+        (10.0, 3.0),
         (6.0, 5.0),
-        (10.0, 6.0),
         (12.0, 5.0),
-        (5.0, 8.0),
+        (4.0, 7.0),
     ] {
         for index in 0..2 {
             paint_authentic_oam_tile(
@@ -17829,22 +17832,23 @@ fn paint_wendy_lemmy_oam(
     sequence: usize,
 ) {
     if identity == 5 {
-        // A legal neutral room state is one normal Lemmy plus two generated
-        // puppets. Frame four is Lemmy's normal five-piece pose; frame two is
-        // the three-piece puppet. Frame zero is the much larger defeated pose
-        // and was the source of the previous incorrect monster-like preview.
+        // CODE_03D484's exact legal emerged composition.  The real Lemmy uses
+        // animation frame 0 (five 16x16 pieces); generated dummy sprites use
+        // frame $14 (the three-piece Lemmy puppet).  The previous code read
+        // poses from a sprite-sheet layout instead of the runtime tables and
+        // consequently selected unrelated white/orange characters.
         let scale = cell / 16.0;
         let normal = [
-            (-8_i8, 5_i8, 0x22_u8, 0x15_u8, true),
-            (8, 5, 0x22, 0x55, true),
-            (0, 0, 0x04, 0x15, true),
-            (0, -8, 0x12, 0x15, false),
-            (8, -8, 0x12, 0x55, false),
+            (-8_i8, 4_i8, 0x20_u8, 0x15_u8, true),
+            (8, 4, 0x20, 0x55, true),
+            (-8, 20, 0x26, 0x15, true),
+            (8, 20, 0x26, 0x55, true),
+            (0, 0, 0x08, 0x15, true),
         ];
         let puppet = [
-            (-8_i8, 0_i8, 0x00_u8, 0x15_u8, true),
-            (0, 8, 0x28, 0x15, true),
-            (0, -8, 0x02, 0x15, false),
+            (-8_i8, 5_i8, 0x4e_u8, 0x17_u8, true),
+            (8, 5, 0x4e, 0x57, true),
+            (0, 3, 0x60, 0x17, true),
         ];
         let parts: &[(i8, i8, u8, u8, bool)] = if sequence == 0 { &normal } else { &puppet };
         for &(x, y, tile, flags, large) in parts {
