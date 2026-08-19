@@ -90,7 +90,6 @@ mod palette_editor;
 mod path_editor;
 mod path_editor_forms;
 mod persistence_worker;
-#[cfg(test)]
 mod pristine_full_level_render;
 mod profile_loader;
 mod progress_localization;

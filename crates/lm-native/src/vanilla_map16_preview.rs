@@ -2787,16 +2787,55 @@ pub(crate) fn render_iggy_larry_platform_cell(
 
 pub(crate) fn render_mode7_koopa_boss_frames(
     rom_bytes: Vec<u8>,
+    level: u16,
+    header: LegacyLevelHeader,
     identity: u8,
 ) -> Result<Vec<egui::ColorImage>, String> {
-    // The runtime table contains nine poses per Koopaling. Start with the
-    // complete front-facing pose (8), which is also the useful static editor
-    // representation, then retain the entire animation rather than truncating
-    // it before Morton's eyes and face ever appear.
-    std::iter::once(8)
-        .chain(0..8)
-        .map(|frame| render_mode7_koopa_boss_animation_frame(rom_bytes.clone(), identity, frame))
+    // SpriteMisc1602 indexes these nine poses directly. Keep the authentic
+    // order so the neutral wall-walking pose is the editor's initial frame.
+    (0..9)
+        .map(|frame| {
+            render_mode7_koopa_boss_animation_frame(
+                rom_bytes.clone(),
+                level,
+                header,
+                identity,
+                frame,
+            )
+        })
         .collect()
+}
+
+pub(crate) fn render_lemmy_wendy_room(
+    rom_bytes: Vec<u8>,
+    level: u16,
+) -> Result<egui::ColorImage, String> {
+    const VIEWPORT_WIDTH: usize = 256;
+    const VIEWPORT_HEIGHT: usize = 224;
+    let rendered = crate::pristine_full_level_render::render_artwork(rom_bytes, level, 2)?
+        .ok_or_else(|| format!("boss level {level:03X} has no renderable room artwork"))?;
+    if rendered.canvas.width() < VIEWPORT_WIDTH || rendered.canvas.height() < VIEWPORT_HEIGHT {
+        return Err(format!(
+            "boss room raster is {}x{}, smaller than 256x224",
+            rendered.canvas.width(),
+            rendered.canvas.height()
+        ));
+    }
+    // Wendy/Lemmy's controller enters the lower 256x224 room. Cropping from
+    // the bottom preserves the exact ROM-authored panels, braces, pipes,
+    // border blocks, and animated-lava row while excluding the entrance room.
+    let source_y = rendered.canvas.height() - VIEWPORT_HEIGHT;
+    let mut rgba = Vec::with_capacity(VIEWPORT_WIDTH * VIEWPORT_HEIGHT * 4);
+    for y in source_y..source_y + VIEWPORT_HEIGHT {
+        for x in 0..VIEWPORT_WIDTH {
+            let pixel = rendered.canvas.get(x, y).expect("validated boss-room crop");
+            rgba.extend_from_slice(&[pixel.red, pixel.green, pixel.blue, pixel.alpha]);
+        }
+    }
+    Ok(egui::ColorImage::from_rgba_unmultiplied(
+        [VIEWPORT_WIDTH, VIEWPORT_HEIGHT],
+        &rgba,
+    ))
 }
 
 pub(crate) fn render_mode7_reznor_frame(rom_bytes: Vec<u8>) -> Result<egui::ColorImage, String> {
@@ -2876,6 +2915,8 @@ pub(crate) fn render_mode7_reznor_frame(rom_bytes: Vec<u8>) -> Result<egui::Colo
 
 fn render_mode7_koopa_boss_animation_frame(
     rom_bytes: Vec<u8>,
+    level: u16,
+    header: LegacyLevelHeader,
     identity: u8,
     animation_frame: usize,
 ) -> Result<egui::ColorImage, String> {
@@ -2908,7 +2949,16 @@ fn render_mode7_koopa_boss_animation_frame(
         .palette_bytes()
         .get(palette_offset..palette_offset + 12)
         .ok_or_else(|| "Mode-7 Koopaling palette is truncated".to_owned())?;
+    let level_palette = lm_profile::compose_smw_us_v1_level_palette(
+        &project,
+        level,
+        game_palette_header(level, header),
+        0,
+    )
+    .map_err(|error| error.to_string())?
+    .palette;
     let mut palette_bytes = [0_u8; 16];
+    palette_bytes[2..4].copy_from_slice(&level_palette.colors[1].0.to_le_bytes());
     palette_bytes[4..].copy_from_slice(colors);
     let palette = Palette::decode_snes(&palette_bytes)
         .map_err(|length| format!("invalid Mode-7 Koopaling palette length {length}"))?;
@@ -3106,12 +3156,19 @@ mod tests {
 
     #[test]
     fn authentic_mode7_koopaling_frames_decode_from_pristine_rom() {
-        for identity in 0..=2 {
-            let frames = render_mode7_koopa_boss_frames(
-                crate::test_support::pristine_smw_us_rom_bytes(),
-                identity,
+        let bytes = crate::test_support::pristine_smw_us_rom_bytes();
+        let project = Project::new(RomImage::from_bytes(bytes.clone()).unwrap());
+        let level = project
+            .load_level_slot(
+                0x09a,
+                lm_profile::smw_us_v1_vanilla_level_layout(),
+                &lm_level::SpriteLengthTable::standard(),
             )
             .unwrap();
+        for identity in 0..=2 {
+            let frames =
+                render_mode7_koopa_boss_frames(bytes.clone(), 0x09a, level.layer1.header, identity)
+                    .unwrap();
             assert_eq!(frames.len(), 9);
             for image in &frames {
                 assert_eq!(image.size, [32, 32]);
@@ -3124,6 +3181,37 @@ mod tests {
                 "Mode-7 Koopaling identity {identity} remained frozen"
             );
         }
+        let palette = lm_profile::compose_smw_us_v1_level_palette(
+            &project,
+            0x09a,
+            game_palette_header(0x09a, level.layer1.header),
+            0,
+        )
+        .unwrap()
+        .palette;
+        let eye = palette.colors[1].to_rgb8();
+        let eye = egui::Color32::from_rgb(eye.red, eye.green, eye.blue);
+        let morton = render_mode7_koopa_boss_frames(bytes, 0x09a, level.layer1.header, 0).unwrap();
+        assert!(
+            morton[6..].iter().all(|frame| frame.pixels.contains(&eye)),
+            "Morton's front-facing poses must retain the loaded CGRAM eye/detail color"
+        );
+    }
+
+    #[test]
+    fn lemmy_room_uses_the_rom_authored_lower_composite() {
+        let room = render_lemmy_wendy_room(crate::test_support::pristine_smw_us_rom_bytes(), 0x093)
+            .unwrap();
+        assert_eq!(room.size, [256, 224]);
+        let distinct = room
+            .pixels
+            .iter()
+            .copied()
+            .collect::<std::collections::HashSet<_>>();
+        assert!(
+            distinct.len() > 16,
+            "boss room collapsed to a synthetic flat fill"
+        );
     }
 
     #[test]

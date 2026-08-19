@@ -699,6 +699,7 @@ pub(crate) struct VanillaLevelEditor {
     sprite_texture: Option<egui::TextureHandle>,
     boss_sprite_texture: Option<egui::TextureHandle>,
     boss_room_texture: Option<egui::TextureHandle>,
+    boss_room_canvas_texture: Option<egui::TextureHandle>,
     iggy_larry_platform_texture: Option<egui::TextureHandle>,
     mode7_boss_texture: Option<egui::TextureHandle>,
     mode7_boss_textures: Vec<egui::TextureHandle>,
@@ -2984,6 +2985,7 @@ impl VanillaLevelEditor {
         self.sprite_texture = None;
         self.boss_sprite_texture = None;
         self.boss_room_texture = None;
+        self.boss_room_canvas_texture = None;
         self.iggy_larry_platform_texture = None;
         self.mode7_boss_texture = None;
         self.mode7_boss_textures.clear();
@@ -3154,6 +3156,7 @@ impl VanillaLevelEditor {
         self.sprite_texture = None;
         self.boss_sprite_texture = None;
         self.boss_room_texture = None;
+        self.boss_room_canvas_texture = None;
         self.iggy_larry_platform_texture = None;
         self.mode7_boss_texture = None;
         self.mode7_boss_textures.clear();
@@ -3353,6 +3356,12 @@ impl VanillaLevelEditor {
                 if let Some(BossBattleKind::KoopaKid { identity: 0..=2, .. }) = boss_kind {
                     match crate::vanilla_map16_preview::render_mode7_koopa_boss_frames(
                         snapshot.rom_bytes.clone(),
+                        level,
+                        self.controller
+                            .as_ref()
+                            .map_or_else(Default::default, |controller| {
+                                controller.level().layer1.header
+                            }),
                         match boss_kind {
                             Some(BossBattleKind::KoopaKid { identity, .. }) => identity,
                             _ => unreachable!(),
@@ -3368,6 +3377,26 @@ impl VanillaLevelEditor {
                                 images,
                             );
                             self.mode7_boss_texture = self.mode7_boss_textures.first().cloned();
+                        }
+                        Err(error) => self.map16_error = Some(error),
+                    }
+                } else if matches!(
+                    boss_kind,
+                    Some(BossBattleKind::KoopaKid { identity: 5 | 6, .. })
+                ) {
+                    match crate::vanilla_map16_preview::render_lemmy_wendy_room(
+                        snapshot.rom_bytes.clone(),
+                        level,
+                    ) {
+                        Ok(image) => {
+                            self.boss_room_canvas_texture = Some(context.load_texture(
+                                format!(
+                                    "vanilla-pipe-boss-room-{level:03X}-{}",
+                                    snapshot.revision
+                                ),
+                                image,
+                                egui::TextureOptions::NEAREST,
+                            ));
                         }
                         Err(error) => self.map16_error = Some(error),
                     }
@@ -7449,6 +7478,7 @@ impl VanillaLevelEditor {
                 self.iggy_larry_platform_texture.as_ref(),
                 self.foreground_texture.as_ref(),
                 self.boss_room_texture.as_ref(),
+                self.boss_room_canvas_texture.as_ref(),
                 self.map16_texture.as_ref(),
             );
         } else {
@@ -16956,6 +16986,7 @@ fn paint_boss_battle_arena(
     iggy_larry_platform_texture: Option<&egui::TextureHandle>,
     foreground_texture: Option<&egui::TextureHandle>,
     boss_room_texture: Option<&egui::TextureHandle>,
+    boss_room_canvas_texture: Option<&egui::TextureHandle>,
     map16_texture: Option<&egui::TextureHandle>,
 ) {
     let visible = painter.clip_rect();
@@ -17020,75 +17051,85 @@ fn paint_boss_battle_arena(
         BossBattleKind::KoopaKid {
             identity: 5 | 6, ..
         } => {
-            // Wendy and Lemmy run on top of the fixed GFX22 castle room. The
-            // seven pipes are orange foreground machinery, not ordinary green
-            // level pipes. Reproduce the recognizable runtime composition and
-            // use the ROM's brace/slab characters instead of editor shapes.
-            if let Some(texture) = boss_room_texture {
-                // The pipe arena is a runtime composition, not level $093's
-                // serialized entrance chamber. Fill its castle shell from
-                // the GFX22 brick character used by the boss-room OAM path.
-                for row in 0..12 {
-                    for column in 0..16 {
-                        paint_boss_room_quad(
-                            painter,
-                            texture,
-                            arena_origin + egui::vec2(column as f32 * cell, row as f32 * cell),
-                            cell,
-                            [0xa0, 0xa1, 0xb0, 0xb1],
-                            2,
-                        );
+            if let Some(texture) = boss_room_canvas_texture {
+                painter.image(
+                    texture.id(),
+                    egui::Rect::from_min_size(arena_origin, egui::vec2(16.0 * cell, 14.0 * cell)),
+                    egui::Rect::from_min_max(egui::Pos2::ZERO, egui::pos2(1.0, 1.0)),
+                    egui::Color32::WHITE,
+                );
+            } else {
+                // Wendy and Lemmy run on top of the fixed GFX22 castle room. The
+                // seven pipes are orange foreground machinery, not ordinary green
+                // level pipes. Reproduce the recognizable runtime composition and
+                // use the ROM's brace/slab characters instead of editor shapes.
+                if let Some(texture) = boss_room_texture {
+                    // The pipe arena is a runtime composition, not level $093's
+                    // serialized entrance chamber. Fill its castle shell from
+                    // the GFX22 brick character used by the boss-room OAM path.
+                    for row in 0..12 {
+                        for column in 0..16 {
+                            paint_boss_room_quad(
+                                painter,
+                                texture,
+                                arena_origin + egui::vec2(column as f32 * cell, row as f32 * cell),
+                                cell,
+                                [0xa0, 0xa1, 0xb0, 0xb1],
+                                2,
+                            );
+                        }
                     }
                 }
-            }
-            if let Some(texture) = foreground_texture {
-                // Level $093's seven command-$34 objects occupy columns
-                // 1,3,...,13 with encoded top rows 19,20,20,19,18,19,20.
-                // At runtime the boss room displays the same GFX14 pipe
-                // characters through palette row 3 and extends each body to
-                // the lava. Preserve that exact geometry and ROM artwork.
-                for (column, top) in [
-                    (1.0_f32, 7.0_f32),
-                    (3.0, 8.0),
-                    (5.0, 8.0),
-                    (7.0, 7.0),
-                    (9.0, 6.0),
-                    (11.0, 7.0),
-                    (13.0, 8.0),
-                ] {
-                    paint_lemmy_pipe_map16_pair(
-                        painter,
-                        texture,
-                        arena_origin + egui::vec2(column * cell, top * cell),
-                        cell,
-                        true,
-                    );
-                    for row in (top as usize + 1)..12 {
+                if let Some(texture) = foreground_texture {
+                    // Level $093's seven command-$34 objects occupy columns
+                    // 1,3,...,13 with encoded top rows 19,20,20,19,18,19,20.
+                    // At runtime the boss room displays the same GFX14 pipe
+                    // characters through palette row 3 and extends each body to
+                    // the lava. Preserve that exact geometry and ROM artwork.
+                    for (column, top) in [
+                        (1.0_f32, 7.0_f32),
+                        (3.0, 8.0),
+                        (5.0, 8.0),
+                        (7.0, 7.0),
+                        (9.0, 6.0),
+                        (11.0, 7.0),
+                        (13.0, 8.0),
+                    ] {
                         paint_lemmy_pipe_map16_pair(
                             painter,
                             texture,
-                            arena_origin + egui::vec2(column * cell, row as f32 * cell),
+                            arena_origin + egui::vec2(column * cell, top * cell),
                             cell,
-                            false,
+                            true,
                         );
+                        for row in (top as usize + 1)..12 {
+                            paint_lemmy_pipe_map16_pair(
+                                painter,
+                                texture,
+                                arena_origin + egui::vec2(column * cell, row as f32 * cell),
+                                cell,
+                                false,
+                            );
+                        }
                     }
                 }
-            }
-            if let Some(texture) = boss_room_texture {
-                for pair in 0..16 {
-                    for (subtile, character) in [0x80, 0x81, 0x82, 0x83].into_iter().enumerate() {
-                        paint_boss_room_subtile(
-                            painter,
-                            texture,
-                            arena_origin
-                                + egui::vec2(
-                                    (pair as f32 + (subtile & 1) as f32 * 0.5) * cell,
-                                    (12.0 + (subtile >> 1) as f32 * 0.5) * cell,
-                                ),
-                            cell / 2.0,
-                            character,
-                            3,
-                        );
+                if let Some(texture) = boss_room_texture {
+                    for pair in 0..16 {
+                        for (subtile, character) in [0x80, 0x81, 0x82, 0x83].into_iter().enumerate()
+                        {
+                            paint_boss_room_subtile(
+                                painter,
+                                texture,
+                                arena_origin
+                                    + egui::vec2(
+                                        (pair as f32 + (subtile & 1) as f32 * 0.5) * cell,
+                                        (12.0 + (subtile >> 1) as f32 * 0.5) * cell,
+                                    ),
+                                cell / 2.0,
+                                character,
+                                3,
+                            );
+                        }
                     }
                 }
             }
@@ -17857,12 +17898,11 @@ fn draw_sprite_placements(request: SpritePlacementDraw<'_>) -> SpritePlacementDr
                     }
                 } else if placement.sprite_number == 0x29 && identity <= 2 {
                     if let Some(texture) = mode7_boss_texture {
-                        let arena_origin = boss_arena_origin(painter, cell_size);
                         painter.image(
                             texture.id(),
                             egui::Rect::from_center_size(
-                                arena_origin + egui::vec2(8.0 * cell_size, 6.5 * cell_size),
-                                egui::vec2(3.5 * cell_size, 3.5 * cell_size),
+                                marker.center(),
+                                egui::vec2(2.0 * cell_size, 2.0 * cell_size),
                             ),
                             egui::Rect::from_min_max(egui::Pos2::ZERO, egui::pos2(1.0, 1.0)),
                             egui::Color32::WHITE,

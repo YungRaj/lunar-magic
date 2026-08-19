@@ -11,6 +11,7 @@ use std::sync::OnceLock;
 // Lunar Magic's deterministic multiple-image export was captured at this built-in animation
 // phase. Levels $001, $014, $0D7, $0E3, and $1DD independently select phase 2 as their exact or
 // tied-best native match, so corpus comparisons must not mistake animation for renderer defects.
+#[cfg(test)]
 const NATIVE_EXPORT_MAP16_PHASE: usize = 2;
 // The multiple-image export captures the palette counter one tick behind the Map16 counter.
 // Native Dragon Coins are RGB FFD600 (palette phase 1), while Map16 phase 2 is independently
@@ -19,6 +20,7 @@ const NATIVE_EXPORT_PALETTE_PHASE: usize = 1;
 static PRISTINE_REFERENCED_SECONDARY_EXITS: OnceLock<Result<Vec<bool>, String>> = OnceLock::new();
 
 /// One pristine level's core Lunar Magic editor artwork, without toolkit text overlays.
+#[cfg_attr(not(test), allow(dead_code))]
 pub(crate) struct PristineFullLevelRender {
     pub(crate) canvas: Canvas,
     pub(crate) screens: u8,
@@ -28,11 +30,31 @@ pub(crate) struct PristineFullLevelRender {
 /// Renders one full pristine level at Lunar Magic's native 16-pixel Map16 scale.
 ///
 /// Empty Layer 1 slots return `None`, matching Lunar Magic 3.63's multiple-image exporter.
+#[cfg(test)]
 pub(crate) fn render(
     rom_bytes: Vec<u8>,
     level_number: u16,
     map16_phase: usize,
     sprite_phase: u8,
+) -> Result<Option<PristineFullLevelRender>, String> {
+    render_impl(rom_bytes, level_number, map16_phase, sprite_phase, true)
+}
+
+/// Renders only the ROM-authored level planes, without sprites or editor entrance overlays.
+pub(crate) fn render_artwork(
+    rom_bytes: Vec<u8>,
+    level_number: u16,
+    map16_phase: usize,
+) -> Result<Option<PristineFullLevelRender>, String> {
+    render_impl(rom_bytes, level_number, map16_phase, 0, false)
+}
+
+fn render_impl(
+    rom_bytes: Vec<u8>,
+    level_number: u16,
+    map16_phase: usize,
+    sprite_phase: u8,
+    editor_overlays: bool,
 ) -> Result<Option<PristineFullLevelRender>, String> {
     if map16_phase >= 8 || sprite_phase >= 4 {
         return Err("full-level animation phase is out of range".into());
@@ -227,6 +249,14 @@ pub(crate) fn render(
             }
             None => {}
         }
+    }
+
+    if !editor_overlays {
+        return Ok(Some(PristineFullLevelRender {
+            canvas,
+            screens,
+            vertical: mode.vertical,
+        }));
     }
 
     draw_sprites(
