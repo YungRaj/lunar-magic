@@ -4050,7 +4050,7 @@ mod user_toolbar_tests {
         );
         assert_eq!(
             native.pending_vram_patch_selection,
-            Some(crate::vram_patch_options_dialog::VramPatchSelection::None)
+            Some(crate::vram_patch_options_dialog::VramPatchSelection::Normal)
         );
         native.apply_user_toolbar_native_action(
             &egui::Context::default(),
@@ -4058,7 +4058,7 @@ mod user_toolbar_tests {
         );
         assert_eq!(
             native.pending_vram_patch_selection,
-            Some(crate::vram_patch_options_dialog::VramPatchSelection::Normal)
+            Some(crate::vram_patch_options_dialog::VramPatchSelection::None)
         );
     }
 

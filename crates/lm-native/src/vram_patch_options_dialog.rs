@@ -2,9 +2,8 @@ use eframe::egui;
 use lm_app::{AppState, Command, ControllerSnapshot, ExtendedUiTextKey, LocalizationCatalog};
 use lm_profile::{
     SmwUsV1VramPatchState, detect_smw_us_v1_vram_patch,
-    smw_us_v1_normal_vram_patch_installation_plan,
 };
-use lm_project::{Project, RatsOwnershipManifest, RomMutation};
+use lm_project::{Project, RomMutation};
 use lm_rom::RomImage;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -149,12 +148,12 @@ fn text(catalog: Option<&LocalizationCatalog>, key: ExtendedUiTextKey) -> String
 
 pub(crate) fn effective_selection(app: &AppState) -> Option<VramPatchSelection> {
     match detect(app).ok()? {
-        SmwUsV1VramPatchState::Absent => Some(VramPatchSelection::Normal),
-        SmwUsV1VramPatchState::Installed { version, .. } => Some(match version {
-            2 => VramPatchSelection::Hd16x9,
-            3 => VramPatchSelection::Hd21x9,
-            _ => VramPatchSelection::Normal,
-        }),
+        // Absence is not a user choice. Installing this optional runtime as a side effect of an
+        // ordinary object/sprite save made otherwise valid edited ROMs fail during the title
+        // transition. The dialog may still default its explicit radio choice to Normal, but a
+        // level commit remains patch-free until the user confirms that choice.
+        SmwUsV1VramPatchState::Absent => None,
+        SmwUsV1VramPatchState::Installed { .. } => None,
         SmwUsV1VramPatchState::Unknown { .. } => None,
     }
 }
@@ -253,42 +252,23 @@ pub(crate) fn prepare_level_save_command(
         .map_err(|error| error.to_string())?;
     match detect_smw_us_v1_vram_patch(&staged.rom).map_err(|error| error.to_string())? {
         SmwUsV1VramPatchState::Absent => {
-            let plan = smw_us_v1_normal_vram_patch_installation_plan(staged.rom.logical_len())
-                .map_err(|error| error.to_string())?;
-            staged
-                .install_relocatable_patch(&plan)
-                .map_err(|error| error.to_string())?;
+            return Err(
+                "Normal VRAM patch installation is disabled because the standalone runtime does not yet pass post-title gameplay verification; the level edit was not changed"
+                    .into(),
+            );
         }
         SmwUsV1VramPatchState::Installed {
             requires_replacement: false,
             ..
         } => {}
         SmwUsV1VramPatchState::Installed {
-            owner,
             requires_replacement: true,
             ..
         } => {
-            let mut plan = smw_us_v1_normal_vram_patch_installation_plan(staged.rom.logical_len())
-                .map_err(|error| error.to_string())?;
-            // A recognized older generation owns the fixed hooks. Lunar Magic overwrites their
-            // current operands while reclaiming that authenticated RATS allocation.
-            for write in &mut plan.writes {
-                write.expected = staged
-                    .rom
-                    .read(write.offset, write.replacement.len())
-                    .map_err(|error| error.to_string())?
-                    .to_vec();
-            }
-            staged
-                .replace_relocatable_patch(
-                    &plan,
-                    &RatsOwnershipManifest {
-                        owned: vec![owner],
-                        retained: Vec::new(),
-                    },
-                    0xff,
-                )
-                .map_err(|error| error.to_string())?;
+            return Err(
+                "Normal VRAM patch replacement is disabled until the standalone runtime passes post-title gameplay verification; the level edit was not changed"
+                    .into(),
+            );
         }
         SmwUsV1VramPatchState::Unknown { .. } => {
             return Err(
@@ -387,10 +367,10 @@ mod tests {
     }
 
     #[test]
-    fn pristine_rom_defaults_the_save_runtime_on_and_dialog_retains_a_pending_toggle() {
+    fn pristine_rom_does_not_install_a_runtime_until_the_dialog_confirms_one() {
         let mut app = AppState::default();
         app.load_rom(vanilla_bytes()).unwrap();
-        assert_eq!(effective_selection(&app), Some(VramPatchSelection::Normal));
+        assert_eq!(effective_selection(&app), None);
 
         let mut dialog = VramPatchOptionsDialog::default();
         dialog.open(&app, Some(VramPatchSelection::None));
@@ -431,7 +411,7 @@ mod tests {
     }
 
     #[test]
-    fn deferred_normal_is_one_undoable_level_save_and_reopens_installed() {
+    fn deferred_normal_rejects_before_mutating_a_pristine_rom() {
         let mut app = AppState::default();
         app.load_rom(vanilla_bytes()).unwrap();
         let snapshot = app.controller_snapshot().unwrap();
@@ -445,24 +425,10 @@ mod tests {
                     .logical_len(),
             ),
         };
-        let combined =
-            prepare_level_save_command(&snapshot, VramPatchSelection::Normal, level_save).unwrap();
-        app.dispatch(combined).unwrap();
-
-        let reopened = app.controller_snapshot().unwrap();
-        let image = RomImage::from_bytes(reopened.rom_bytes).unwrap();
-        assert!(matches!(
-            detect_smw_us_v1_vram_patch(&image).unwrap(),
-            SmwUsV1VramPatchState::Installed {
-                version: 1,
-                generation: 0x0115,
-                requires_replacement: false,
-                ..
-            }
-        ));
-        app.dispatch(Command::Undo).unwrap();
-        let undone = app.controller_snapshot().unwrap();
-        assert_eq!(undone.rom_bytes, vanilla_bytes());
+        assert!(
+            prepare_level_save_command(&snapshot, VramPatchSelection::Normal, level_save).is_err()
+        );
+        assert_eq!(app.controller_snapshot().unwrap().rom_bytes, vanilla_bytes());
     }
 
     #[test]
@@ -483,7 +449,7 @@ mod tests {
     }
 
     #[test]
-    fn recognized_old_generation_is_replaced_atomically_and_undo_restores_it() {
+    fn recognized_old_generation_is_rejected_without_mutation() {
         let old_bytes = old_or_unknown_runtime_bytes(true);
         let mut app = AppState::default();
         app.load_rom(old_bytes.clone()).unwrap();
@@ -502,21 +468,9 @@ mod tests {
             description: "Save level 105".into(),
             mutation: RomMutation::unchanged(snapshot.identity.mapper, image.logical_len()),
         };
-        app.dispatch(
-            prepare_level_save_command(&snapshot, VramPatchSelection::Normal, command).unwrap(),
-        )
-        .unwrap();
-        let reopened = app.controller_snapshot().unwrap();
-        assert!(matches!(
-            detect_smw_us_v1_vram_patch(&RomImage::from_bytes(reopened.rom_bytes).unwrap())
-                .unwrap(),
-            SmwUsV1VramPatchState::Installed {
-                generation: 0x0115,
-                requires_replacement: false,
-                ..
-            }
-        ));
-        app.dispatch(Command::Undo).unwrap();
+        assert!(
+            prepare_level_save_command(&snapshot, VramPatchSelection::Normal, command).is_err()
+        );
         assert_eq!(app.controller_snapshot().unwrap().rom_bytes, old_bytes);
     }
 
