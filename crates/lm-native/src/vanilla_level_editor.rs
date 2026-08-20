@@ -20880,7 +20880,7 @@ mod tests {
     }
 
     #[test]
-    fn deferred_vram_option_can_save_an_unchanged_pristine_level() {
+    fn deferred_vram_option_rejects_unsafe_pristine_install_atomically() {
         let mut app = AppState::default();
         app.load_rom(crate::test_support::pristine_smw_us_rom_bytes())
             .unwrap();
@@ -20895,23 +20895,14 @@ mod tests {
         assert!(!controller.is_modified());
 
         let level_save = prepare_commit(&controller, &snapshot).unwrap();
-        let combined = crate::vram_patch_options_dialog::prepare_level_save_command(
+        let error = crate::vram_patch_options_dialog::prepare_level_save_command(
             &snapshot,
             crate::vram_patch_options_dialog::VramPatchSelection::Normal,
             level_save,
         )
-        .unwrap();
-        app.dispatch(combined).unwrap();
-        let reopened = app.controller_snapshot().unwrap();
-        let image = RomImage::from_bytes(reopened.rom_bytes).unwrap();
-        assert!(matches!(
-            lm_profile::detect_smw_us_v1_vram_patch(&image).unwrap(),
-            lm_profile::SmwUsV1VramPatchState::Installed {
-                generation: 0x0115,
-                requires_replacement: false,
-                ..
-            }
-        ));
+        .unwrap_err();
+        assert!(error.contains("standalone runtime does not yet pass post-title gameplay"));
+        assert_eq!(app.controller_snapshot().unwrap(), snapshot);
     }
 
     #[test]
