@@ -305,6 +305,18 @@ const fn placement_mode_visible(
     }
 }
 
+const fn placement_press_accepted(
+    primary_pressed: bool,
+    mode: Option<CanvasPlacementMode>,
+    visibility: crate::application::LevelViewVisibility,
+) -> bool {
+    primary_pressed
+        && match mode {
+            Some(mode) => placement_mode_visible(mode, visibility),
+            None => false,
+        }
+}
+
 impl SpriteForm {
     fn from_token(header: u8, token: Option<&SpriteToken>) -> Self {
         let semantic_header = lm_level::NativeSpriteHeader::from_raw(header);
@@ -8208,9 +8220,13 @@ impl VanillaLevelEditor {
             self.pan_game_preview_camera(pointer_delta, cell, major_tiles, minor_tiles, vertical);
             return;
         }
-        if response.clicked()
+        // Placement must use the physical press edge just like selection above. `clicked()` is
+        // emitted only after release and is cancelled by a few pixels of pointer motion, which
+        // made catalog objects appear impossible to place with trackpads and remote desktops.
+        // Placement mode owns primary press, so inserting here cannot conflict with selection,
+        // dragging, or the dedicated pan tool.
+        if placement_press_accepted(primary_pressed, self.placement_mode, visibility)
             && let Some(mode) = self.placement_mode
-            && placement_mode_visible(mode, visibility)
             && let Some(position) = response.interact_pointer_pos()
         {
             match mode {
@@ -21002,6 +21018,21 @@ mod tests {
         ));
         assert!(placement_mode_visible(
             CanvasPlacementMode::Layer2Tile,
+            visibility
+        ));
+        assert!(placement_press_accepted(
+            true,
+            Some(CanvasPlacementMode::Layer2Object),
+            visibility
+        ));
+        assert!(!placement_press_accepted(
+            false,
+            Some(CanvasPlacementMode::Layer2Object),
+            visibility
+        ));
+        assert!(!placement_press_accepted(
+            true,
+            Some(CanvasPlacementMode::Object),
             visibility
         ));
     }
